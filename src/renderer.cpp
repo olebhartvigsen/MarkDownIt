@@ -176,26 +176,30 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc, float widthDip)
             }
             if (fmt) {
                 std::u32string text32;
-                // For list items, prepend a bullet or number.
+                float markerW = 0.0f;
+                // For list items, account for the marker width offset.
                 if (n.block == BlockKind::List) {
-                    // We need a counter for ordered lists. For now we
-                    // store the marker in the text itself during render.
-                    // Measure with a placeholder marker.
+                    markerW = 24.0f;
                     text32 += n.ordered ? U"1. " : U"\u2022  ";
                 }
                 for (const auto& ib : n.children) text32 += ib.text;
                 if (text32.empty()) { curY += kBlockGap; continue; }
                 std::u16string text16 = ToUtf16(text32);
                 IDWriteTextLayout* layout = nullptr;
+                float layoutW = drawW - markerW;
                 HRESULT hr = dw->CreateTextLayout(
                     reinterpret_cast<const WCHAR*>(text16.data()),
                     static_cast<UINT32>(text16.size()),
-                    fmt, drawW, 1.0e9f, &layout);
+                    fmt, layoutW > 0 ? layoutW : drawW, 1.0e9f, &layout);
                 if (SUCCEEDED(hr) && layout) {
                     DWRITE_TEXT_METRICS m = {};
                     layout->GetMetrics(&m);
                     blockH = m.height;
                     layout->Release();
+                }
+                // H1 gets an HR line underneath: add 5 DIPs.
+                if (n.block == BlockKind::Heading && n.level == 1) {
+                    blockH += 5.0f;
                 }
             }
         }
@@ -266,50 +270,66 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
         if (!fmt) { continue; }
 
-        // Build the text with optional marker prefix.
-        std::u32string text32;
+        // For list items: draw the marker separately so wrapped lines
+        // align with the text, not the marker.
+        float markerW = 0.0f;
+        std::u16string marker16;
         if (n.block == BlockKind::List) {
+            const float kMarkerW = 24.0f;
+            markerW = kMarkerW;
             if (n.ordered) {
                 ++listCounter;
-                // Simple number-to-string for the marker.
                 char buf[16];
                 snprintf(buf, sizeof(buf), "%d. ", listCounter);
                 for (const char* p = buf; *p; ++p)
-                    text32.push_back(static_cast<char32_t>(*p));
+                    marker16.push_back(static_cast<char16_t>(*p));
             } else {
-                text32 += U"\u2022  ";  // bullet + two spaces
+                marker16 += u"\u2022 ";
             }
         } else {
             listCounter = 0;
         }
 
-        // Quote border line.
-        if (n.block == BlockKind::BlockQuote && quoteBorder) {
-            // We draw the border after knowing height, but for now draw a
-            // fixed-height border. We will measure first.
-        }
-
         for (const auto& ib : n.children) {
             text32 += ib.text;
         }
-        if (text32.empty()) {
+        if (text32.empty() && marker16.empty()) {
             curY += kBlockGap;
             continue;
         }
 
         std::u16string text16 = ToUtf16(text32);
 
+        // Text starts after the marker for list items.
+        float textX = drawX + markerW;
+        float textW = drawW - markerW;
+
         IDWriteTextLayout* layout = nullptr;
         HRESULT hr = dw->CreateTextLayout(
             reinterpret_cast<const WCHAR*>(text16.data()),
             static_cast<UINT32>(text16.size()),
-            fmt, drawW, 1.0e9f, &layout);
+            fmt, textW > 0 ? textW : drawW, 1.0e9f, &layout);
         if (FAILED(hr) || !layout) continue;
 
         DWRITE_TEXT_METRICS metrics = {};
         layout->GetMetrics(&metrics);
 
-        D2D1_POINT_2F origin = D2D1::Point2F(drawX, curY);
+        // Draw marker first (for list items).
+        if (!marker16.empty()) {
+            IDWriteTextLayout* markerLayout = nullptr;
+            hr = dw->CreateTextLayout(
+                reinterpret_cast<const WCHAR*>(marker16.data()),
+                static_cast<UINT32>(marker16.size()),
+                fmt, markerW, 1.0e9f, &markerLayout);
+            if (SUCCEEDED(hr) && markerLayout) {
+                D2D1_POINT_2F mOrigin = D2D1::Point2F(drawX, curY);
+                rt->DrawTextLayout(mOrigin, markerLayout, black,
+                                   D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                markerLayout->Release();
+            }
+        }
+
+        D2D1_POINT_2F origin = D2D1::Point2F(textX, curY);
         rt->DrawTextLayout(origin, layout, black, D2D1_DRAW_TEXT_OPTIONS_CLIP);
 
         // Draw quote border on the left.
@@ -317,6 +337,19 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             D2D1_POINT_2F p1 = D2D1::Point2F(kPadX + 4.0f, curY);
             D2D1_POINT_2F p2 = D2D1::Point2F(kPadX + 4.0f, curY + metrics.height);
             rt->DrawLine(p1, p2, quoteBorder, 3.0f);
+        }
+
+        // Draw HR line under H1 headings.
+        if (n.block == BlockKind::Heading && n.level == 1) {
+            ID2D1SolidColorBrush* hrBrush = nullptr;
+            rt->CreateSolidColorBrush(D2D1::ColorF(0xDDDDDD), &hrBrush);
+            if (hrBrush) {
+                D2D1_POINT_2F p1 = D2D1::Point2F(drawX, curY + metrics.height + 4.0f);
+                D2D1_POINT_2F p2 = D2D1::Point2F(drawX + drawW, curY + metrics.height + 4.0f);
+                rt->DrawLine(p1, p2, hrBrush, 1.0f);
+                hrBrush->Release();
+            }
+            curY += 5.0f;  // extra for HR line
         }
 
         layout->Release();
