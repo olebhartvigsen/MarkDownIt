@@ -211,12 +211,9 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
 
         case MD_BLOCK_UL:
         case MD_BLOCK_OL: {
-            int idx = push_node(*ctx, Node{});
-            ctx->doc->nodes[idx].block = BlockKind::List;
-            ctx->doc->nodes[idx].ordered = (type == MD_BLOCK_OL);
-            // The list node itself is a container; its children (LI contents)
-            // become inlines. Mark merge_inlines for the LI level.
-            ctx->block_stack.push_back({type, idx, false});
+            // The list container does NOT create a renderable node.
+            // Only LI nodes are rendered. Track ordered flag on the stack.
+            ctx->block_stack.push_back({type, -1, false});
             break;
         }
 
