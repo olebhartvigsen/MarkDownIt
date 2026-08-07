@@ -46,6 +46,7 @@ struct ParserCtx {
     std::vector<SpanFrame> span_stack;
     bool capture_title;  // true when we enter the first H1 and title is empty
     int list_depth;      // current list nesting depth (0 = top level)
+    int quote_depth;     // current blockquote nesting depth
     int table_node_idx;  // current table node index, -1 if none
     bool in_header;      // true when in THEAD
     TableRow* cur_row;   // current row being filled, nullptr if none
@@ -201,8 +202,8 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
         case MD_BLOCK_QUOTE: {
             int idx = push_node(*ctx, Node{});
             ctx->doc->nodes[idx].block = BlockKind::BlockQuote;
-            // merge_inlines=true so paragraph text inside the quote goes
-            // to this node, not a separate paragraph node.
+            ctx->doc->nodes[idx].depth = ctx->quote_depth;
+            ctx->quote_depth++;
             ctx->block_stack.push_back({type, idx, true});
             break;
         }
@@ -292,6 +293,9 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
     if (type == MD_BLOCK_UL || type == MD_BLOCK_OL) {
         if (ctx->list_depth > 0) ctx->list_depth--;
     }
+    if (type == MD_BLOCK_QUOTE) {
+        if (ctx->quote_depth > 0) ctx->quote_depth--;
+    }
     if (type == MD_BLOCK_TH || type == MD_BLOCK_TD) {
         ctx->cur_cell = nullptr;
     }
@@ -333,6 +337,8 @@ int cb_enter_span(MD_SPANTYPE type, void* detail, void* userdata) {
             frame.url = attr_to_string(img->src);
             break;
         }
+        case MD_SPAN_DEL:
+            break;
         default:
             break;
     }
@@ -406,7 +412,7 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
     if (text32.empty()) return 0;
 
     // Determine inline style from span stack.
-    bool em = false, strong = false, code = false;
+    bool em = false, strong = false, code = false, strike = false;
     InlineKind kind = InlineKind::Text;
     std::string url;
     for (const auto& sf : ctx->span_stack) {
@@ -424,6 +430,7 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
     ib.em = em;
     ib.strong = strong;
     ib.code = code;
+ib.strike = strike;
 
     // Capture title: if we are inside the first H1, append to doc.title.
     // Must do this BEFORE the std::move(ib) below, otherwise ib.text is moved-from.
@@ -443,6 +450,7 @@ bool ParseMarkdown(const std::string& utf8, Document& out) {
     ctx.doc = &out;
     ctx.capture_title = false;
     ctx.list_depth = 0;
+    ctx.quote_depth = 0;
     ctx.table_node_idx = -1;
     ctx.in_header = false;
     ctx.cur_row = nullptr;

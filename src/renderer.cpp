@@ -240,8 +240,9 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc, float widthDip)
         float drawW = contentWidth;
 
         if (n.block == BlockKind::BlockQuote) {
-            drawX += 16.0f;
-            drawW -= 16.0f;
+            float quoteIndent = 16.0f * (n.depth + 1);
+            drawX += quoteIndent;
+            drawW -= quoteIndent;
         } else if (n.block == BlockKind::List) {
             float listIndent = 24.0f * (n.depth + 1);
             drawX += listIndent;
@@ -345,8 +346,9 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         float drawW = contentWidth;
 
         if (n.block == BlockKind::BlockQuote) {
-            drawX += 16.0f;
-            drawW -= 16.0f;
+            float quoteIndent = 16.0f * (n.depth + 1);
+            drawX += quoteIndent;
+            drawW -= quoteIndent;
         } else if (n.block == BlockKind::List) {
             float listIndent = 24.0f * (n.depth + 1);
             drawX += listIndent;
@@ -421,6 +423,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             bool strong;
             bool code;
             bool link;
+            bool strike;
         };
         std::u16string text16;
         std::vector<SpanRange> spans;
@@ -435,7 +438,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             UINT32 length = static_cast<UINT32>(part16.size());
             if (length > 0) {
                 spans.push_back({start, length, ib.em, ib.strong, ib.code,
-                                 ib.kind == InlineKind::Link});
+                                 ib.kind == InlineKind::Link, ib.strike});
             }
         }
 
@@ -475,6 +478,9 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 if (linkBrush) {
                     layout->SetDrawingEffect(linkBrush, range);
                 }
+            }
+            if (s.strike) {
+                layout->SetStrikethrough(TRUE, range);
             }
         }
 

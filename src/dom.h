@@ -30,6 +30,8 @@ enum class InlineKind {
     Link,           // [text](url)
     Image,          // ![alt](src)
     LineBreak,      // hard break
+    Strike,         // ~~strikethrough~~
+    Underline,      // ++underline++ (not standard md4c)
 };
 
 // A single inline span within a block.
@@ -43,6 +45,7 @@ struct InlineBlock {
     bool            em     = false;   // emphasis (italic)
     bool            strong = false;   // strong (bold)
     bool            code   = false;   // inline code
+    bool            strike = false;   // ~~strikethrough~~
 };
 
 // A table cell: plain text (no inline spans in cells for now).
