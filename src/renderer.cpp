@@ -3,6 +3,7 @@
 #include <d2d1.h>
 #include <dwrite.h>
 #include <string>
+#include <vector>
 
 Renderer::Renderer() {}
 Renderer::~Renderer() { Release(); }
@@ -292,15 +293,33 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             listCounter = 0;
         }
 
+        // Build full text and track each inline block's range for styling.
+        // We store the UTF-16 start position and length of each inline.
+        struct SpanRange {
+            UINT32 start;
+            UINT32 length;
+            bool em;
+            bool strong;
+            bool code;
+        };
+        std::u16string text16;
+        std::vector<SpanRange> spans;
+
         for (const auto& ib : n.children) {
-            text32 += ib.text;
+            // Convert this inline block's text to UTF-16 and record its range.
+            std::u16string part16 = ToUtf16(ib.text);
+            UINT32 start = static_cast<UINT32>(text16.size());
+            text16 += part16;
+            UINT32 length = static_cast<UINT32>(part16.size());
+            if (length > 0) {
+                spans.push_back({start, length, ib.em, ib.strong, ib.code});
+            }
         }
-        if (text32.empty() && marker16.empty()) {
+
+        if (text16.empty() && marker16.empty()) {
             curY += kBlockGap;
             continue;
         }
-
-        std::u16string text16 = ToUtf16(text32);
 
         // Text starts after the marker for list items.
         float textX = drawX + markerW;
@@ -312,6 +331,22 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             static_cast<UINT32>(text16.size()),
             fmt, textW > 0 ? textW : drawW, 1.0e9f, &layout);
         if (FAILED(hr) || !layout) continue;
+
+        // Apply inline span styling via DWRITE_TEXT_RANGE.
+        for (const auto& s : spans) {
+            DWRITE_TEXT_RANGE range = {s.start, s.length};
+            if (s.strong) {
+                layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, range);
+            }
+            if (s.em) {
+                layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, range);
+            }
+            if (s.code) {
+                // Switch to monospace font for inline code spans.
+                layout->SetFontFamilyName(L"Consolas", range);
+                layout->SetFontSize(14.0f * (96.0f / 72.0f), range);
+            }
+        }
 
         DWRITE_TEXT_METRICS metrics = {};
         layout->GetMetrics(&metrics);
