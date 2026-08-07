@@ -46,7 +46,7 @@ void FileWatcher::Start(HWND hwnd, const std::wstring& path) {
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         nullptr,
         OPEN_EXISTING,
-        FILE_FLAG_BACKUP_SEMANTICS,
+        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
         nullptr);
     if (state_.dirHandle == INVALID_HANDLE_VALUE) {
         state_.dirHandle = nullptr;
@@ -77,22 +77,47 @@ DWORD WINAPI FileWatcher::ThreadProc(LPVOID param) {
 void FileWatcher::Run() {
     const DWORD bufSize = 4096;
     BYTE buffer[4096];
-    HANDLE waits[2] = { state_.stopEvent, state_.dirHandle };
+    OVERLAPPED ov = {};
+    ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!ov.hEvent) return;
+
+    HANDLE waits[2] = { state_.stopEvent, ov.hEvent };
 
     while (state_.running) {
         DWORD bytesReturned = 0;
         ZeroMemory(buffer, bufSize);
+        ResetEvent(ov.hEvent);
+
+        // Overlapped (async) mode: returns immediately with ERROR_IO_PENDING.
         BOOL ok = ReadDirectoryChangesW(
             state_.dirHandle,
             buffer, bufSize, FALSE,
-            FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_FILE_NAME,
-            &bytesReturned, nullptr, nullptr);
+            FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_FILE_NAME |
+            FILE_NOTIFY_CHANGE_SIZE,
+            &bytesReturned, &ov, nullptr);
 
-        if (!state_.running) break;
+        if (!ok) {
+            DWORD err = GetLastError();
+            if (err == ERROR_IO_PENDING) {
+                // Normal: wait for the event or stop signal.
+            } else {
+                break;  // real error
+            }
+        }
 
-        if (!ok) break;  // error or handle closed
+        DWORD result = WaitForMultipleObjects(2, waits, FALSE, INFINITE);
 
-        // Walk the FILE_NOTIFY_INFORMATION chain and look for our basename.
+        if (result == WAIT_OBJECT_0) break;        // stop event
+        if (result != WAIT_OBJECT_0 + 1) break;     // unexpected
+
+        // Get the actual bytes returned by the overlapped operation.
+        DWORD transferred = 0;
+        if (!GetOverlappedResult(state_.dirHandle, &ov, &transferred, FALSE)) {
+            break;
+        }
+        if (transferred == 0) continue;
+
+        // Walk the FILE_NOTIFY_INFORMATION chain for our basename.
         BYTE* ptr = buffer;
         while (true) {
             FILE_NOTIFY_INFORMATION* info = (FILE_NOTIFY_INFORMATION*)ptr;
@@ -101,8 +126,8 @@ void FileWatcher::Run() {
                 std::wstring name(info->FileName,
                                   info->FileNameLength / sizeof(WCHAR));
                 if (_wcsicmp(name.c_str(), state_.fileName.c_str()) == 0) {
-                    // Debounce: editors write in two close bursts. Wait 300ms
-                    // then post a single reload so we catch the final state.
+                    // Debounce 300ms: editors write in bursts. We want the
+                    // final state, not the intermediate save.
                     Sleep(300);
                     if (state_.running) {
                         PostMessageW(state_.hwnd, WM_USER_RELOAD, 0, 0);
@@ -114,4 +139,6 @@ void FileWatcher::Run() {
             ptr += info->NextEntryOffset;
         }
     }
+
+    CloseHandle(ov.hEvent);
 }
