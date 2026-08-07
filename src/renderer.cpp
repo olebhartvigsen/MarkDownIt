@@ -301,6 +301,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             bool em;
             bool strong;
             bool code;
+            bool link;
         };
         std::u16string text16;
         std::vector<SpanRange> spans;
@@ -312,7 +313,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             text16 += part16;
             UINT32 length = static_cast<UINT32>(part16.size());
             if (length > 0) {
-                spans.push_back({start, length, ib.em, ib.strong, ib.code});
+                spans.push_back({start, length, ib.em, ib.strong, ib.code,
+                                 ib.kind == InlineKind::Link});
             }
         }
 
@@ -345,6 +347,10 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 // Switch to monospace font for inline code spans.
                 layout->SetFontFamilyName(L"Consolas", range);
                 layout->SetFontSize(14.0f * (96.0f / 72.0f), range);
+            }
+            if (s.link) {
+                // Underline links so they are visually distinct.
+                layout->SetUnderline(TRUE, range);
             }
         }
 
