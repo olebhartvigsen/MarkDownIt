@@ -25,7 +25,7 @@ static bool DownloadImage(const std::wstring& url, std::vector<BYTE>& out) {
     for (auto& c : lower) c = towlower(c);
     bool https = (lower.find(L"https://") == 0);
 
-    if (!WinCrackUrl(url.c_str(), static_cast<DWORD>(url.size()), 0, &uc))
+    if (!WinHttpCrackUrl(url.c_str(), static_cast<DWORD>(url.size()), 0, &uc))
         return false;
 
     HINTERNET hSession = WinHttpOpen(L"MarkDownIt/1.0",
