@@ -22,6 +22,7 @@ endif()
 # Main application
 add_executable(MarkDownIt WIN32
     src/main.cpp
+    src/app.cpp
     src/parser.cpp
 )
 
