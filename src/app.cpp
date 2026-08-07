@@ -1,7 +1,3 @@
-// AppWindow: Win32 window with Direct2D + DirectWrite rendering.
-//
-// Task 7: open files via command line and drag-and-drop.
-
 #include "app.h"
 #include "parser.h"
 
@@ -13,6 +9,7 @@
 #include <sstream>
 #include <string>
 #include <cstdio>
+#include <cmath>
 
 const wchar_t* AppWindow::kClassName = L"MarkDownItWindow";
 
@@ -65,10 +62,9 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     int w = 900, h = 640;
     int x = (sw - w) / 2, y = (sh - h) / 2;
 
-    // WS_EX_ACCEPTFILES enables drag-and-drop from Explorer.
     hwnd_ = CreateWindowExW(
         WS_EX_ACCEPTFILES, kClassName, L"MarkDownIt",
-        WS_OVERLAPPEDWINDOW,
+        WS_OVERLAPPEDWINDOW | WS_VSCROLL,
         x, y, w, h,
         nullptr, nullptr, hInst, this);
 
@@ -104,13 +100,25 @@ void AppWindow::LoadSampleDoc() {
         "## Open a file\n\n"
         "Drag a .md file onto this window, or launch with a path:\n"
         "    MarkDownIt.exe C:\\path\\to\\file.md\n\n"
-        "Code blocks, lists, blockquotes, and inline formatting arrive in"
-        " later tasks.\n";
+        "Code blocks, lists, blockquotes, and inline formatting arrive in "
+        "later tasks.\n\n"
+        "## Scroll\n\n"
+        "This is a long block of text so you can test the scrollbar. "
+        "Use the mouse wheel, the scrollbar, page down, or the arrow keys. "
+        "Resize the window and the text reflows. The scroll range updates "
+        "automatically when the content height changes.\n\n"
+        "Resize wider to see fewer lines. Resize narrower to see more lines "
+        "and more scrolling. The content stays readable at any width.\n\n"
+        "## End\n\n"
+        "This is the last block. You have scrolled to the bottom.\n";
     ParseMarkdown(sample, doc_);
 }
 
+void AppWindow::Repaint() {
+    InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
 void AppWindow::OpenFile(const std::wstring& path) {
-    // Read the file as binary bytes (markdown is UTF-8).
     std::ifstream f(path.c_str(), std::ios::binary);
     if (!f.is_open()) {
         MessageBoxW(hwnd_, L"Could not open file", L"MarkDownIt", MB_ICONWARNING);
@@ -123,24 +131,36 @@ void AppWindow::OpenFile(const std::wstring& path) {
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
     file_path_ = path;
+    scrollY_ = 0.0f;
+    totalH_ = 0.0f;
 
-    // Set title bar to "MarkDownIt - <basename>".
     std::wstring title = L"MarkDownIt";
     size_t slash = path.find_last_of(L"\\/");
     std::wstring base = (slash != std::wstring::npos)
         ? path.substr(slash + 1) : path;
-    if (!base.empty()) {
-        title = L"MarkDownIt - " + base;
-    } else if (!doc_.title.empty()) {
-        // Fall back to the H1 text if we could not get a basename.
-        std::u16string t16;
-        for (char32_t c : doc_.title) {
-            if (c <= 0xFFFF) t16.push_back(static_cast<char16_t>(c));
-        }
-        title = L"MarkDownIt - " + std::wstring(t16.begin(), t16.end());
-    }
+    if (!base.empty()) title = L"MarkDownIt - " + base;
     SetWindowTextW(hwnd_, title.c_str());
-    InvalidateRect(hwnd_, nullptr, TRUE);
+
+    UpdateScrollInfo();
+    Repaint();
+}
+
+void AppWindow::Reload() {
+    if (file_path_.empty()) return;
+    std::ifstream f(file_path_.c_str(), std::ios::binary);
+    if (!f.is_open()) return;
+    std::stringstream ss;
+    ss << f.rdbuf();
+    std::string utf8 = ss.str();
+
+    float savedY = scrollY_;
+    doc_ = Document{};
+    ParseMarkdown(utf8, doc_);
+    UpdateScrollInfo();
+    // Restore scroll position if it still fits.
+    if (scrollY_ > savedY) scrollY_ = savedY;
+    UpdateScrollInfo();
+    Repaint();
 }
 
 void AppWindow::OnDropFiles(HWND hwnd, HDROP hDrop) {
@@ -163,8 +183,7 @@ void AppWindow::OnCreate(HWND hwnd) {
     }
 
     hr = DWriteCreateFactory(
-        DWRITE_FACTORY_TYPE_SHARED,
-        __uuidof(IDWriteFactory),
+        DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
         reinterpret_cast<IUnknown**>(&dw_factory_));
     if (FAILED(hr) || !dw_factory_) {
         MessageBoxW(hwnd, L"DWriteCreateFactory failed", L"MarkDownIt", MB_ICONERROR);
@@ -188,6 +207,76 @@ void AppWindow::OnCreate(HWND hwnd) {
 
     EnsureRenderer();
     LoadSampleDoc();
+    UpdateScrollInfo();
+}
+
+void AppWindow::UpdateScrollInfo() {
+    if (!hwnd_) return;
+
+    // totalH_ and clientH are in DIPs; scrollY is in DIPs.
+    float maxScroll = 0.0f;
+    if (totalH_ > static_cast<float>(clientH_)) {
+        maxScroll = totalH_ - static_cast<float>(clientH_);
+    }
+
+    if (scrollY_ < 0.0f) scrollY_ = 0.0f;
+    if (scrollY_ > maxScroll) scrollY_ = maxScroll;
+
+    SCROLLINFO si = {};
+    si.cbSize = sizeof(si);
+    si.fMask  = SIF_RANGE | SIF_PAGE | SIF_POS;
+    si.nMin   = 0;
+    si.nMax   = static_cast<int>(totalH_);
+    si.nPage  = static_cast<UINT>(clientH_ > 0 ? clientH_ : 1);
+    si.nPos   = static_cast<int>(scrollY_);
+    SetScrollInfo(hwnd_, SB_VERT, &si, TRUE);
+}
+
+void AppWindow::OnSize(HWND hwnd, int width, int height) {
+    clientW_ = width;
+    clientH_ = height;
+    if (rt_) {
+        D2D1_SIZE_U size = D2D1::SizeU(
+            width > 0 ? width : 1, height > 0 ? height : 1);
+        rt_->Resize(size);
+    }
+    UpdateScrollInfo();
+    Repaint();
+}
+
+void AppWindow::OnVScroll(HWND hwnd, int code, int pos) {
+    float oldY = scrollY_;
+    float page = static_cast<float>(clientH_ > 0 ? clientH_ : 1);
+
+    switch (code) {
+        case SB_LINEUP:        scrollY_ -= 30.0f; break;
+        case SB_LINEDOWN:      scrollY_ += 30.0f; break;
+        case SB_PAGEUP:        scrollY_ -= page;  break;
+        case SB_PAGEDOWN:      scrollY_ += page;  break;
+        case SB_THUMBTRACK:
+        case SB_THUMBPOSITION: {
+            SCROLLINFO si = {};
+            si.cbSize = sizeof(si);
+            si.fMask = SIF_TRACKPOS;
+            GetScrollInfo(hwnd, SB_VERT, &si);
+            scrollY_ = static_cast<float>(si.nTrackPos);
+            break;
+        }
+        case SB_TOP:     scrollY_ = 0.0f; break;
+        case SB_BOTTOM:  scrollY_ = totalH_; break;
+    }
+
+    UpdateScrollInfo();
+    if (std::fabs(scrollY_ - oldY) > 0.01f) Repaint();
+}
+
+void AppWindow::OnMouseWheel(HWND hwnd, int delta) {
+    float oldY = scrollY_;
+    // WHEEL_DELTA is 120; scroll 3 lines per notch, ~40 DIPs per line.
+    float step = 120.0f;
+    scrollY_ -= (delta / WHEEL_DELTA) * step * 3.0f;
+    UpdateScrollInfo();
+    if (std::fabs(scrollY_ - oldY) > 0.01f) Repaint();
 }
 
 void AppWindow::RecreateRenderTarget() {
@@ -208,29 +297,31 @@ void AppWindow::RecreateRenderTarget() {
 
 void AppWindow::OnPaint(HWND hwnd) {
     if (!rt_) { ValidateRect(hwnd, nullptr); return; }
+
+    // Measure content height first (no draw), so the scrollbar is correct
+    // and we do not draw the whole document twice.
+    if (renderer_inited_ && dw_factory_) {
+        D2D1_SIZE_F size = rt_->GetSize();
+        totalH_ = renderer_.Measure(dw_factory_, doc_, size.width);
+        UpdateScrollInfo();
+    }
+
     PAINTSTRUCT ps;
     BeginPaint(hwnd, &ps);
     rt_->BeginDraw();
     rt_->Clear(D2D1::ColorF(D2D1::ColorF::White));
+
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
-        renderer_.Render(rt_, dw_factory_, doc_, size.width);
+        renderer_.Render(rt_, dw_factory_, doc_, size.width, scrollY_);
     }
+
     HRESULT hr = rt_->EndDraw();
     if (hr == D2DERR_RECREATE_TARGET) {
         RecreateRenderTarget();
         InvalidateRect(hwnd, nullptr, TRUE);
     }
     EndPaint(hwnd, &ps);
-}
-
-void AppWindow::OnSize(HWND hwnd, int width, int height) {
-    if (rt_) {
-        D2D1_SIZE_U size = D2D1::SizeU(
-            width > 0 ? width : 1, height > 0 ? height : 1);
-        rt_->Resize(size);
-    }
-    InvalidateRect(hwnd, nullptr, FALSE);
 }
 
 void AppWindow::OnDestroy() {
@@ -246,17 +337,39 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_CREATE:    OnCreate(hwnd);    return 0;
         case WM_PAINT:     OnPaint(hwnd);     return 0;
         case WM_DROPFILES: OnDropFiles(hwnd, (HDROP)wp); return 0;
+        case WM_VSCROLL:   OnVScroll(hwnd, (int)LOWORD(wp), (int)HIWORD(wp)); return 0;
+        case WM_MOUSEWHEEL: {
+            int delta = GET_WHEEL_DELTA_WPARAM(wp);
+            OnMouseWheel(hwnd, delta);
+            return 0;
+        }
+        case WM_KEYDOWN: {
+            switch (wp) {
+                case VK_DOWN: OnVScroll(hwnd, SB_LINEDOWN, 0); break;
+                case VK_UP:   OnVScroll(hwnd, SB_LINEUP, 0);   break;
+                case VK_NEXT: OnVScroll(hwnd, SB_PAGEDOWN, 0); break;
+                case VK_PRIOR:OnVScroll(hwnd, SB_PAGEUP, 0);   break;
+                case VK_HOME: OnVScroll(hwnd, SB_TOP, 0);     break;
+                case VK_END:  OnVScroll(hwnd, SB_BOTTOM, 0);  break;
+                default: return DefWindowProcW(hwnd, msg, wp, lp);
+            }
+            return 0;
+        }
         case WM_SIZE: {
             int w = LOWORD(lp), h = HIWORD(lp);
             OnSize(hwnd, w, h);
             return 0;
         }
         case WM_DPICHANGED: {
+            // Recreate text formats so they pick up the new DPI.
+            renderer_.Release();
+            EnsureRenderer();
             RECT* rc = (RECT*)lp;
             SetWindowPos(hwnd, nullptr, rc->left, rc->top,
                 rc->right - rc->left, rc->bottom - rc->top,
                 SWP_NOZORDER | SWP_NOACTIVATE);
-            InvalidateRect(hwnd, nullptr, FALSE);
+            UpdateScrollInfo();
+            Repaint();
             return 0;
         }
         case WM_ERASEBKGND: return 1;
