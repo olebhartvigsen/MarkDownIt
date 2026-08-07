@@ -512,6 +512,29 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
         if (drewImages) continue;
 
+        // Draw inline code background (light gray) before text.
+        ID2D1SolidColorBrush* codeBg = nullptr;
+        rt->CreateSolidColorBrush(D2D1::ColorF(0xF0F0F0), &codeBg);
+        if (codeBg) {
+            for (const auto& s : spans) {
+                if (s.code) {
+                    DWRITE_TEXT_METRICS tm = {};
+                    layout->GetMetrics(&tm);
+                    UINT32 hitCount = 0;
+                    DWRITE_HIT_TEST_METRICS htm[64];
+                    layout->HitTestTextRange(s.start, s.length,
+                        textX, curY, htm, 64, &hitCount);
+                    for (UINT32 h = 0; h < hitCount; ++h) {
+                        D2D1_RECT_F r = D2D1::RectF(
+                            htm[h].left - 2.0f, htm[h].top,
+                            htm[h].right + 2.0f, htm[h].bottom);
+                        rt->FillRectangle(r, codeBg);
+                    }
+                }
+            }
+            codeBg->Release();
+        }
+
         // Draw marker first (for list items).
         if (!marker16.empty()) {
             IDWriteTextLayout* markerLayout = nullptr;
