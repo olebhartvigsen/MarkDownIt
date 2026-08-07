@@ -337,6 +337,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
     float curY = kPadTop;
     int listCounter = 0;
+    BlockKind prevBlock = BlockKind::Paragraph;
+    int prevDepth = -1;
 
     for (const Node& n : doc.nodes) {
         float drawX = kPadX;
@@ -393,6 +395,10 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (n.block == BlockKind::List) {
             const float kMarkerW = 24.0f;
             markerW = kMarkerW;
+            // Reset counter when starting a new list or changing depth.
+            if (prevBlock != BlockKind::List || n.depth != prevDepth) {
+                listCounter = 0;
+            }
             if (n.ordered) {
                 ++listCounter;
                 char buf[16];
@@ -404,16 +410,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             }
         } else {
             listCounter = 0;
-        }
-        // Reset counter when depth changes (each level starts at 1).
-        static int lastDepth = -1;
-        if (n.block == BlockKind::List) {
-            if (n.depth != lastDepth) {
-                listCounter = 0;
-                lastDepth = n.depth;
-            }
-        } else {
-            lastDepth = -1;
         }
 
         // Build full text and track each inline block's range for styling.
@@ -561,6 +557,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
         layout->Release();
         curY += metrics.height + kBlockGap;
+        prevBlock = n.block;
+        prevDepth = n.depth;
     }
 
     rt->SetTransform(D2D1::Matrix3x2F::Identity());
