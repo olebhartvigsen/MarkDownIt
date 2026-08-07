@@ -25,7 +25,11 @@ public:
 
 private:
     IDWriteTextFormat* body_fmt_ = nullptr;
+    IDWriteTextFormat* code_fmt_ = nullptr;      // monospace for code blocks
     IDWriteTextFormat* heading_fmt_[7] = {};
 
     std::u16string ToUtf16(const std::u32string& s32);
+    void DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+                       const Node& n, float x, float y, float width, float& outH);
+    void DrawThematicBreak(ID2D1RenderTarget* rt, float x, float y, float width);
 };

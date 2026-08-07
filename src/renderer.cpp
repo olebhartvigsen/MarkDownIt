@@ -21,6 +21,16 @@ bool Renderer::Init(IDWriteFactory* dw) {
         L"", &body_fmt_);
     if (FAILED(hr) || !body_fmt_) return false;
 
+    // Monospace font for code blocks: Consolas 14pt.
+    hr = dw->CreateTextFormat(
+        L"Consolas", nullptr,
+        DWRITE_FONT_WEIGHT_REGULAR,
+        DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL,
+        14.0f * kPtToDip,
+        L"", &code_fmt_);
+    if (FAILED(hr) || !code_fmt_) return false;
+
     const float sizes[7] = {0.0f, 24.0f, 22.0f, 20.0f, 18.0f, 16.0f, 16.0f};
     for (int lvl = 1; lvl <= 6; ++lvl) {
         hr = dw->CreateTextFormat(
@@ -39,6 +49,7 @@ bool Renderer::Init(IDWriteFactory* dw) {
 void Renderer::Release() {
     auto rel = [](IDWriteTextFormat*& p) { if (p) { p->Release(); p = nullptr; } };
     rel(body_fmt_);
+    rel(code_fmt_);
     for (int i = 1; i <= 6; ++i) rel(heading_fmt_[i]);
 }
 
@@ -57,43 +68,139 @@ std::u16string Renderer::ToUtf16(const std::u32string& s32) {
     return out;
 }
 
+void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+                              const Node& n, float x, float y,
+                              float width, float& outH) {
+    if (!rt || !dw || !code_fmt_) { outH = 0.0f; return; }
+
+    // Convert raw text (UTF-32) to UTF-16 for DirectWrite.
+    std::u16string text16 = ToUtf16(n.raw);
+
+    // Draw a light gray background rounded rect.
+    ID2D1SolidColorBrush* bgBrush = nullptr;
+    rt->CreateSolidColorBrush(D2D1::ColorF(0xF5F5F5), &bgBrush);
+    ID2D1SolidColorBrush* codeBrush = nullptr;
+    rt->CreateSolidColorBrush(D2D1::ColorF(0x333333), &codeBrush);
+
+    const float kCodePad = 10.0f;
+    float codeWidth = width - 2.0f * kCodePad;
+    if (codeWidth <= 0) { outH = 0.0f; if (bgBrush) bgBrush->Release(); if (codeBrush) codeBrush->Release(); return; }
+
+    IDWriteTextLayout* layout = nullptr;
+    HRESULT hr = dw->CreateTextLayout(
+        reinterpret_cast<const WCHAR*>(text16.data()),
+        static_cast<UINT32>(text16.size()),
+        code_fmt_, codeWidth, 1.0e9f, &layout);
+    if (FAILED(hr) || !layout) {
+        if (bgBrush) bgBrush->Release();
+        if (codeBrush) codeBrush->Release();
+        outH = 0.0f;
+        return;
+    }
+
+    DWRITE_TEXT_METRICS metrics = {};
+    layout->GetMetrics(&metrics);
+
+    float blockH = metrics.height + 2.0f * kCodePad;
+
+    // Background rect.
+    D2D1_RECT_F bgRect = D2D1::RectF(x, y, x + width, y + blockH);
+    rt->FillRectangle(bgRect, bgBrush);
+
+    // Draw text.
+    D2D1_POINT_2F origin = D2D1::Point2F(x + kCodePad, y + kCodePad);
+    rt->DrawTextLayout(origin, layout, codeBrush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+
+    layout->Release();
+    bgBrush->Release();
+    codeBrush->Release();
+    outH = blockH;
+}
+
+void Renderer::DrawThematicBreak(ID2D1RenderTarget* rt, float x, float y, float width) {
+    ID2D1SolidColorBrush* lineBrush = nullptr;
+    rt->CreateSolidColorBrush(D2D1::ColorF(0xCCCCCC), &lineBrush);
+    if (!lineBrush) return;
+    D2D1_POINT_2F p1 = D2D1::Point2F(x, y);
+    D2D1_POINT_2F p2 = D2D1::Point2F(x + width, y);
+    rt->DrawLine(p1, p2, lineBrush, 1.0f);
+    lineBrush->Release();
+}
 
 float Renderer::Measure(IDWriteFactory* dw, const Document& doc, float widthDip) {
     if (!dw) return 0.0f;
     const float kPadX = 24.0f;
     const float kPadTop = 24.0f;
     const float kBlockGap = 12.0f;
-
     if (widthDip <= 2.0f * kPadX) return kPadTop;
     float contentWidth = widthDip - 2.0f * kPadX;
 
     float curY = kPadTop;
     for (const Node& n : doc.nodes) {
-        IDWriteTextFormat* fmt = nullptr;
-        if (n.block == BlockKind::Heading) {
-            int lvl = n.level; if (lvl < 1) lvl = 1; if (lvl > 6) lvl = 6;
-            fmt = heading_fmt_[lvl];
-        } else if (n.block == BlockKind::Paragraph) {
-            fmt = body_fmt_;
+        float blockH = 0.0f;
+        float drawX = kPadX;
+        float drawW = contentWidth;
+
+        if (n.block == BlockKind::BlockQuote) {
+            drawX += 16.0f;
+            drawW -= 16.0f;
+        } else if (n.block == BlockKind::List) {
+            drawX += 24.0f;
+            drawW -= 24.0f;
         }
-        if (!fmt) continue;
 
-        std::u32string text32;
-        for (const auto& ib : n.children) text32 += ib.text;
-        if (text32.empty()) { curY += kBlockGap; continue; }
-        std::u16string text16 = ToUtf16(text32);
+        if (n.block == BlockKind::CodeBlock) {
+            std::u16string text16 = ToUtf16(n.raw);
+            IDWriteTextLayout* layout = nullptr;
+            HRESULT hr = dw->CreateTextLayout(
+                reinterpret_cast<const WCHAR*>(text16.data()),
+                static_cast<UINT32>(text16.size()),
+                code_fmt_, drawW - 20.0f, 1.0e9f, &layout);
+            if (SUCCEEDED(hr) && layout) {
+                DWRITE_TEXT_METRICS m = {};
+                layout->GetMetrics(&m);
+                blockH = m.height + 20.0f;
+                layout->Release();
+            }
+        } else if (n.block == BlockKind::ThematicBreak) {
+            blockH = 12.0f;
+        } else {
+            IDWriteTextFormat* fmt = nullptr;
+            if (n.block == BlockKind::Heading) {
+                int lvl = n.level; if (lvl < 1) lvl = 1; if (lvl > 6) lvl = 6;
+                fmt = heading_fmt_[lvl];
+            } else if (n.block == BlockKind::Paragraph ||
+                       n.block == BlockKind::BlockQuote ||
+                       n.block == BlockKind::List) {
+                fmt = body_fmt_;
+            }
+            if (fmt) {
+                std::u32string text32;
+                // For list items, prepend a bullet or number.
+                if (n.block == BlockKind::List) {
+                    // We need a counter for ordered lists. For now we
+                    // store the marker in the text itself during render.
+                    // Measure with a placeholder marker.
+                    text32 += n.ordered ? U"1. " : U"\u2022  ";
+                }
+                for (const auto& ib : n.children) text32 += ib.text;
+                if (text32.empty()) { curY += kBlockGap; continue; }
+                std::u16string text16 = ToUtf16(text32);
+                IDWriteTextLayout* layout = nullptr;
+                HRESULT hr = dw->CreateTextLayout(
+                    reinterpret_cast<const WCHAR*>(text16.data()),
+                    static_cast<UINT32>(text16.size()),
+                    fmt, drawW, 1.0e9f, &layout);
+                if (SUCCEEDED(hr) && layout) {
+                    DWRITE_TEXT_METRICS m = {};
+                    layout->GetMetrics(&m);
+                    blockH = m.height;
+                    layout->Release();
+                }
+            }
+        }
 
-        IDWriteTextLayout* layout = nullptr;
-        HRESULT hr = dw->CreateTextLayout(
-            reinterpret_cast<const WCHAR*>(text16.data()),
-            static_cast<UINT32>(text16.size()),
-            fmt, contentWidth, 1.0e9f, &layout);
-        if (FAILED(hr) || !layout) continue;
-
-        DWRITE_TEXT_METRICS metrics = {};
-        layout->GetMetrics(&metrics);
-        layout->Release();
-        curY += metrics.height + kBlockGap;
+        curY += blockH + kBlockGap;
     }
     return curY;
 }
@@ -104,7 +211,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     const float kPadX = 24.0f;
     const float kPadTop = 24.0f;
     const float kBlockGap = 12.0f;
-
     if (widthDip <= 2.0f * kPadX) return kPadTop;
     float contentWidth = widthDip - 2.0f * kPadX;
 
@@ -112,24 +218,77 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     rt->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black), &black);
     if (!black) return kPadTop;
 
-    // Apply scroll translation so content moves up as scrollY increases.
+    // Quote border brush.
+    ID2D1SolidColorBrush* quoteBorder = nullptr;
+    rt->CreateSolidColorBrush(D2D1::ColorF(0x999999), &quoteBorder);
+
+    // Apply scroll translation.
     rt->SetTransform(D2D1::Matrix3x2F::Translation(0.0f, -scrollY));
 
     float curY = kPadTop;
+    int listCounter = 0;
 
     for (const Node& n : doc.nodes) {
+        float drawX = kPadX;
+        float drawW = contentWidth;
+
+        if (n.block == BlockKind::BlockQuote) {
+            drawX += 16.0f;
+            drawW -= 16.0f;
+        } else if (n.block == BlockKind::List) {
+            drawX += 24.0f;
+            drawW -= 24.0f;
+        }
+
+        if (n.block == BlockKind::CodeBlock) {
+            float blockH = 0.0f;
+            DrawCodeBlock(rt, dw, n, drawX, curY, drawW, blockH);
+            curY += blockH + kBlockGap;
+            continue;
+        }
+
+        if (n.block == BlockKind::ThematicBreak) {
+            DrawThematicBreak(rt, drawX, curY + 6.0f, drawW);
+            curY += 12.0f + kBlockGap;
+            continue;
+        }
+
+        // Heading, Paragraph, BlockQuote, List: all use body or heading fmt.
         IDWriteTextFormat* fmt = nullptr;
         if (n.block == BlockKind::Heading) {
-            int lvl = n.level;
-            if (lvl < 1) lvl = 1;
-            if (lvl > 6) lvl = 6;
+            int lvl = n.level; if (lvl < 1) lvl = 1; if (lvl > 6) lvl = 6;
             fmt = heading_fmt_[lvl];
-        } else if (n.block == BlockKind::Paragraph) {
+        } else if (n.block == BlockKind::Paragraph ||
+                   n.block == BlockKind::BlockQuote ||
+                   n.block == BlockKind::List) {
             fmt = body_fmt_;
         }
-        if (!fmt) continue;
 
+        if (!fmt) { continue; }
+
+        // Build the text with optional marker prefix.
         std::u32string text32;
+        if (n.block == BlockKind::List) {
+            if (n.ordered) {
+                ++listCounter;
+                // Simple number-to-string for the marker.
+                char buf[16];
+                snprintf(buf, sizeof(buf), "%d. ", listCounter);
+                for (const char* p = buf; *p; ++p)
+                    text32.push_back(static_cast<char32_t>(*p));
+            } else {
+                text32 += U"\u2022  ";  // bullet + two spaces
+            }
+        } else {
+            listCounter = 0;
+        }
+
+        // Quote border line.
+        if (n.block == BlockKind::BlockQuote && quoteBorder) {
+            // We draw the border after knowing height, but for now draw a
+            // fixed-height border. We will measure first.
+        }
+
         for (const auto& ib : n.children) {
             text32 += ib.text;
         }
@@ -137,28 +296,36 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             curY += kBlockGap;
             continue;
         }
+
         std::u16string text16 = ToUtf16(text32);
 
         IDWriteTextLayout* layout = nullptr;
         HRESULT hr = dw->CreateTextLayout(
             reinterpret_cast<const WCHAR*>(text16.data()),
             static_cast<UINT32>(text16.size()),
-            fmt, contentWidth, 1.0e9f, &layout);
+            fmt, drawW, 1.0e9f, &layout);
         if (FAILED(hr) || !layout) continue;
 
         DWRITE_TEXT_METRICS metrics = {};
         layout->GetMetrics(&metrics);
 
-        D2D1_POINT_2F origin = D2D1::Point2F(kPadX, curY);
+        D2D1_POINT_2F origin = D2D1::Point2F(drawX, curY);
         rt->DrawTextLayout(origin, layout, black, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+
+        // Draw quote border on the left.
+        if (n.block == BlockKind::BlockQuote && quoteBorder) {
+            D2D1_POINT_2F p1 = D2D1::Point2F(kPadX + 4.0f, curY);
+            D2D1_POINT_2F p2 = D2D1::Point2F(kPadX + 4.0f, curY + metrics.height);
+            rt->DrawLine(p1, p2, quoteBorder, 3.0f);
+        }
 
         layout->Release();
         curY += metrics.height + kBlockGap;
     }
 
-    // Reset transform before we return.
     rt->SetTransform(D2D1::Matrix3x2F::Identity());
 
-    black->Release();
+    if (black) black->Release();
+    if (quoteBorder) quoteBorder->Release();
     return curY;
 }

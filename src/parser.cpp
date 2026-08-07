@@ -196,7 +196,9 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
         case MD_BLOCK_QUOTE: {
             int idx = push_node(*ctx, Node{});
             ctx->doc->nodes[idx].block = BlockKind::BlockQuote;
-            ctx->block_stack.push_back({type, idx, false});
+            // merge_inlines=true so paragraph text inside the quote goes
+            // to this node, not a separate paragraph node.
+            ctx->block_stack.push_back({type, idx, true});
             break;
         }
 
