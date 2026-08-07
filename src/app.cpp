@@ -221,10 +221,18 @@ void AppWindow::OnCreate(HWND hwnd) {
 void AppWindow::UpdateScrollInfo() {
     if (!hwnd_) return;
 
-    // totalH_ and clientH are in DIPs; scrollY is in DIPs.
+    // Use DIPs for consistent scrollbar math. The render target's
+    // GetSize() returns DIPs; WM_SIZE gives pixels. At non-100% DPI
+    // these differ, so we must use DIPs for both totalH_ and page size.
+    float clientHDip = static_cast<float>(clientH_);
+    if (rt_) {
+        D2D1_SIZE_F rtSize = rt_->GetSize();
+        clientHDip = rtSize.height;
+    }
+
     float maxScroll = 0.0f;
-    if (totalH_ > static_cast<float>(clientH_)) {
-        maxScroll = totalH_ - static_cast<float>(clientH_);
+    if (totalH_ > clientHDip) {
+        maxScroll = totalH_ - clientHDip;
     }
 
     if (scrollY_ < 0.0f) scrollY_ = 0.0f;
@@ -235,7 +243,7 @@ void AppWindow::UpdateScrollInfo() {
     si.fMask  = SIF_RANGE | SIF_PAGE | SIF_POS;
     si.nMin   = 0;
     si.nMax   = static_cast<int>(totalH_);
-    si.nPage  = static_cast<UINT>(clientH_ > 0 ? clientH_ : 1);
+    si.nPage  = static_cast<UINT>(clientHDip > 0 ? clientHDip : 1);
     si.nPos   = static_cast<int>(scrollY_);
     SetScrollInfo(hwnd_, SB_VERT, &si, TRUE);
 }
@@ -255,6 +263,10 @@ void AppWindow::OnSize(HWND hwnd, int width, int height) {
 void AppWindow::OnVScroll(HWND hwnd, int code, int pos) {
     float oldY = scrollY_;
     float page = static_cast<float>(clientH_ > 0 ? clientH_ : 1);
+    if (rt_) {
+        D2D1_SIZE_F rtSize = rt_->GetSize();
+        page = rtSize.height;
+    }
 
     switch (code) {
         case SB_LINEUP:        scrollY_ -= 30.0f; break;
