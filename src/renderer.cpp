@@ -270,6 +270,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
         if (!fmt) { continue; }
 
+        std::u32string text32;
+
         // For list items: draw the marker separately so wrapped lines
         // align with the text, not the marker.
         float markerW = 0.0f;
