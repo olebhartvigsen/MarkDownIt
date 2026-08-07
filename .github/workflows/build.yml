@@ -29,3 +29,22 @@ jobs:
         with:
           name: MarkDownIt-x64
           path: build/Release/MarkDownIt.exe
+
+  test:
+    name: Tests
+    runs-on: windows-2022
+    needs: build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure CMake (with tests)
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTS=ON
+
+      - name: Build tests
+        run: cmake --build build --config Release
+
+      - name: Run tests
+        shell: bash
+        run: build/Release/MarkDownIt.tests.exe

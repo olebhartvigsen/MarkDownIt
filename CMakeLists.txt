@@ -14,9 +14,15 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY
 # Core parser only (md4c.c + md4c.h), HTML renderer (entity.c) not needed.
 add_library(md4c STATIC third_party/md4c/md4c.c)
 target_include_directories(md4c PUBLIC third_party/md4c)
+# Suppress md4c warnings under MSVC /W4 (it is C99 clean, but /W4 is noisy).
+if(MSVC)
+    target_compile_options(md4c PRIVATE /W1)
+endif()
 
+# Main application
 add_executable(MarkDownIt WIN32
     src/main.cpp
+    src/parser.cpp
 )
 
 target_link_libraries(MarkDownIt PRIVATE
@@ -36,3 +42,26 @@ target_compile_definitions(MarkDownIt PRIVATE
     WIN32_LEAN_AND_MEAN
     NOMINMAX
 )
+
+# Tests: standalone console exe, no Win32 entry point.
+option(BUILD_TESTS "Build test binary" OFF)
+if(BUILD_TESTS)
+    add_executable(MarkDownIt.tests
+        tests/parser_smoke.cpp
+        src/parser.cpp
+    )
+    target_link_libraries(MarkDownIt.tests PRIVATE md4c)
+    target_include_directories(MarkDownIt.tests PRIVATE
+        src
+        tests
+        third_party/md4c
+    )
+    target_compile_definitions(MarkDownIt.tests PRIVATE
+        UNICODE
+        _UNICODE
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
+    )
+    # Tests are a console app, not a GUI app (needs main(), not wWinMain).
+    set_target_properties(MarkDownIt.tests PROPERTIES WIN32_EXECUTABLE OFF)
+endif()
