@@ -79,8 +79,7 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // Convert raw text (UTF-32) to UTF-16 for DirectWrite.
     // Strip trailing newlines (md4c appends at end of code blocks).
     std::u32string raw = n.raw;
-    while (!raw.empty() && (raw.back() == U'
-' || raw.back() == U'')) {
+    while (!raw.empty() && (raw.back() == 0x0A || raw.back() == 0x0D)) {
         raw.pop_back();
     }
     std::u16string text16 = ToUtf16(raw);
