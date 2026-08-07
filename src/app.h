@@ -1,8 +1,5 @@
 #pragma once
 
-// AppWindow: owns the Win32 window and Direct2D render target.
-// DirectWrite factory + Renderer draw the parsed markdown.
-
 #include <windows.h>
 #include <d2d1.h>
 #include <dwrite.h>
@@ -18,23 +15,22 @@ public:
     bool Init(HINSTANCE hInst, int nCmdShow);
     int  Run();
 
+    // Open a markdown file: read, parse, update title bar, repaint.
+    void OpenFile(const std::wstring& path);
+
 private:
     HWND    hwnd_ = nullptr;
     HINSTANCE hinst_ = nullptr;
 
-    // Direct2D
     ID2D1Factory*          d2d_factory_ = nullptr;
     ID2D1HwndRenderTarget* rt_ = nullptr;
-
-    // DirectWrite
     IDWriteFactory*        dw_factory_ = nullptr;
 
-    // Renderer
     Renderer               renderer_;
     bool                   renderer_inited_ = false;
 
-    // Sample document (hardcoded for Task 6; real file open is Task 7)
     Document               doc_;
+    std::wstring           file_path_;   // empty means no file (sample shown)
 
     static const wchar_t* kClassName;
 
@@ -42,9 +38,11 @@ private:
     void OnCreate(HWND hwnd);
     void OnPaint(HWND hwnd);
     void OnSize(HWND hwnd, int width, int height);
+    void OnDropFiles(HWND hwnd, HDROP hDrop);
     void OnDestroy();
     void RecreateRenderTarget();
     void EnsureRenderer();
+    void LoadSampleDoc();
 
     static LRESULT CALLBACK WndProcThunk(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 };

@@ -34,6 +34,7 @@ target_link_libraries(MarkDownIt PRIVATE
     user32
     gdi32
     ole32
+    shell32
     shlwapi
     windowscodecs
 )
