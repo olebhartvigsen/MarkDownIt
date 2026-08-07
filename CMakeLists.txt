@@ -40,6 +40,7 @@ target_link_libraries(MarkDownIt PRIVATE
     shell32
     shlwapi
     windowscodecs
+    winhttp
 )
 
 target_compile_definitions(MarkDownIt PRIVATE

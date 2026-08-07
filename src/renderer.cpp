@@ -500,17 +500,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         bool drewImages = false;
         for (const auto& ib : n.children) {
             if (ib.kind == InlineKind::Image && !ib.url.empty()) {
-                // Convert URL from UTF-8 to UTF-32 for ImageHelper.
-                std::u32string url32;
-                for (unsigned char c : ib.url) {
-                    if (c < 0x80) url32.push_back(static_cast<char32_t>(c));
-                    else {
-                        // Simple UTF-8 decode for URL.
-                        // URLs are typically ASCII, so this is rare.
-                        url32.push_back(static_cast<char32_t>(c));
-                    }
-                }
-                ID2D1Bitmap* bmp = ImageHelper::LoadBitmapFromFile(rt, url32, drawW);
+                // Pass URL directly (UTF-8) to ImageHelper.
+                ID2D1Bitmap* bmp = ImageHelper::LoadBitmapFromUrl(rt, ib.url, drawW);
                 if (bmp) {
                     D2D1_SIZE_F bmpSize = bmp->GetSize();
                     float drawW2 = drawW;
