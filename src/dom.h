@@ -45,13 +45,26 @@ struct InlineBlock {
     bool            code   = false;   // inline code
 };
 
+// A table cell: plain text (no inline spans in cells for now).
+struct TableCell {
+    std::u32string text;
+    bool isHeader = false;
+};
+
+// A table row: list of cells.
+struct TableRow {
+    std::vector<TableCell> cells;
+};
+
 // A block-level node. The renderer's input unit.
 struct Node {
     BlockKind                  block = BlockKind::Paragraph;
     int                        level = 0;    // heading level 1-6
     std::vector<InlineBlock>   children;     // inline spans
     bool                       ordered = false;  // list: ordered vs unordered
+    int                        depth = 0;       // list nesting depth (0=top)
     std::u32string             raw;          // code block raw text (UTF-32)
+    std::vector<TableRow>     rows;         // table rows (for BlockKind::Table)
 };
 
 // The full parsed document: a flat list of blocks plus an optional title

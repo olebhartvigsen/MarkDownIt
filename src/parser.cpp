@@ -45,6 +45,11 @@ struct ParserCtx {
     std::vector<Frame> block_stack;
     std::vector<SpanFrame> span_stack;
     bool capture_title;  // true when we enter the first H1 and title is empty
+    int list_depth;      // current list nesting depth (0 = top level)
+    int table_node_idx;  // current table node index, -1 if none
+    bool in_header;      // true when in THEAD
+    TableRow* cur_row;   // current row being filled, nullptr if none
+    std::u32string* cur_cell;  // current cell text, nullptr if none
 };
 
 // Append a new node to the document and return its index.
@@ -213,6 +218,7 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
         case MD_BLOCK_OL: {
             // The list container does NOT create a renderable node.
             // Only LI nodes are rendered. Track ordered flag on the stack.
+            ctx->list_depth++;
             ctx->block_stack.push_back({type, -1, false});
             break;
         }
@@ -228,14 +234,47 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
             int idx = push_node(*ctx, Node{});
             ctx->doc->nodes[idx].block = BlockKind::List;
             ctx->doc->nodes[idx].ordered = ordered;
+            ctx->doc->nodes[idx].depth = ctx->list_depth - 1;
             // merge_inlines: subsequent P inside this LI adds to this node
             ctx->block_stack.push_back({type, idx, true});
             break;
         }
 
+        case MD_BLOCK_TABLE: {
+            int idx = push_node(*ctx, Node{});
+            ctx->doc->nodes[idx].block = BlockKind::Table;
+            ctx->table_node_idx = idx;
+            ctx->block_stack.push_back({type, idx, false});
+            break;
+        }
+        case MD_BLOCK_THEAD:
+            ctx->in_header = true;
+            ctx->block_stack.push_back({type, -1, false});
+            break;
+        case MD_BLOCK_TBODY:
+            ctx->in_header = false;
+            ctx->block_stack.push_back({type, -1, false});
+            break;
+        case MD_BLOCK_TR: {
+            if (ctx->table_node_idx >= 0) {
+                ctx->doc->nodes[ctx->table_node_idx].rows.push_back(TableRow{});
+                ctx->cur_row = &ctx->doc->nodes[ctx->table_node_idx].rows.back();
+            }
+            ctx->block_stack.push_back({type, -1, false});
+            break;
+        }
+        case MD_BLOCK_TH:
+        case MD_BLOCK_TD: {
+            if (ctx->cur_row) {
+                ctx->cur_row->cells.push_back(TableCell{});
+                ctx->cur_row->cells.back().isHeader = ctx->in_header;
+                ctx->cur_cell = &ctx->cur_row->cells.back().text;
+            }
+            ctx->block_stack.push_back({type, -1, false});
+            break;
+        }
         default:
-            // TABLE, THEAD, TBODY, TR, TH, TD, HTML, UL_DETAIL, OL_DETAIL,
-        // LI_DETAIL, H_DETAIL: v1 treats tables as opaque; push a placeholder.
+            // HTML, detail structs we do not use.
             ctx->block_stack.push_back({type, -1, false});
             break;
     }
@@ -249,6 +288,21 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
     }
     if (type == MD_BLOCK_H) {
         ctx->capture_title = false;
+    }
+    if (type == MD_BLOCK_UL || type == MD_BLOCK_OL) {
+        if (ctx->list_depth > 0) ctx->list_depth--;
+    }
+    if (type == MD_BLOCK_TH || type == MD_BLOCK_TD) {
+        ctx->cur_cell = nullptr;
+    }
+    if (type == MD_BLOCK_TR) {
+        ctx->cur_row = nullptr;
+    }
+    if (type == MD_BLOCK_THEAD) {
+        ctx->in_header = false;
+    }
+    if (type == MD_BLOCK_TABLE) {
+        ctx->table_node_idx = -1;
     }
     return 0;
 }
@@ -303,6 +357,13 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
     if (idx < 0) return 0;
 
     Node& node = ctx->doc->nodes[idx];
+
+    // Table cells: raw text goes to cur_cell (UTF-32).
+    if (ctx->cur_cell) {
+        Utf8Decoder d;
+        d.decode(text, size, *ctx->cur_cell);
+        return 0;
+    }
 
     // Code blocks: raw text goes to node.raw (no inline spans in code).
     if (!ctx->block_stack.empty() && ctx->block_stack.back().type == MD_BLOCK_CODE) {
@@ -381,6 +442,11 @@ bool ParseMarkdown(const std::string& utf8, Document& out) {
     ParserCtx ctx;
     ctx.doc = &out;
     ctx.capture_title = false;
+    ctx.list_depth = 0;
+    ctx.table_node_idx = -1;
+    ctx.in_header = false;
+    ctx.cur_row = nullptr;
+    ctx.cur_cell = nullptr;
 
     MD_PARSER parser{};
     parser.abi_version = 0;

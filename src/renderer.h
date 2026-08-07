@@ -32,4 +32,6 @@ private:
     void DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                        const Node& n, float x, float y, float width, float& outH);
     void DrawThematicBreak(ID2D1RenderTarget* rt, float x, float y, float width);
+    void DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+                   const Node& n, float x, float y, float width, float& outH);
 };
