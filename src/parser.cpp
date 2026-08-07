@@ -365,12 +365,13 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
     ib.strong = strong;
     ib.code = code;
 
-    node.children.push_back(std::move(ib));
-
     // Capture title: if we are inside the first H1, append to doc.title.
+    // Must do this BEFORE the std::move(ib) below, otherwise ib.text is moved-from.
     if (ctx->capture_title) {
         ctx->doc->title += ib.text;
     }
+
+    node.children.push_back(std::move(ib));
 
     return 0;
 }

@@ -13,8 +13,11 @@ TEST(ParserSmoke, HeadingsAndParagraph) {
     EXPECT_EQ(doc.nodes[0].level, 1);
 
     EXPECT_EQ(static_cast<int>(doc.nodes[1].block),
-              static_cast<int>(BlockKind::Paragraph));
+              static_cast<int>(BlockKind::Heading));
     EXPECT_EQ(doc.nodes[1].level, 2);
+
+    EXPECT_EQ(static_cast<int>(doc.nodes[2].block),
+              static_cast<int>(BlockKind::Paragraph));
 }
 
 // Verify heading text is captured as a UTF-32 inline child.
