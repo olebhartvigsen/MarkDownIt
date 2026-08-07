@@ -27,6 +27,16 @@ renders them with Direct2D/DirectWrite.
 - Build: CMake 3.20+, Visual Studio 2022 Build Tools, Windows 10 SDK
 - CI: GitHub Actions windows-2022, .github/workflows/build.yml
 
+## Markdown style guide
+
+Markdown authored or reviewed in this project should follow the Google
+Markdown Style Guide:
+https://google.github.io/styleguide/docguide/style.html
+
+Key takeaways: use proper list syntax (1. for ordered, - for unordered),
+not bold paragraphs with manual numbering. Use semantic markdown, not
+visual hacks.
+
 ## Mandatory rules
 
 - Humanizer skill is OBLIGATORY on all generated or reviewed text for use
