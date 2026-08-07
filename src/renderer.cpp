@@ -527,7 +527,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     for (UINT32 h = 0; h < hitCount; ++h) {
                         D2D1_RECT_F r = D2D1::RectF(
                             htm[h].left - 2.0f, htm[h].top,
-                            htm[h].right + 2.0f, htm[h].bottom);
+                            htm[h].left + htm[h].width + 2.0f,
+                            htm[h].top + htm[h].height);
                         rt->FillRectangle(r, codeBg);
                     }
                 }
