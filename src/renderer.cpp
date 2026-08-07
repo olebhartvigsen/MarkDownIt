@@ -20,7 +20,7 @@ bool Renderer::Init(IDWriteFactory* dw) {
         DWRITE_FONT_WEIGHT_REGULAR,
         DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL,
-        16.0f * kPtToDip,
+        14.0f * kPtToDip,
         L"", &body_fmt_);
     if (FAILED(hr) || !body_fmt_) return false;
 
@@ -30,11 +30,11 @@ bool Renderer::Init(IDWriteFactory* dw) {
         DWRITE_FONT_WEIGHT_REGULAR,
         DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL,
-        14.0f * kPtToDip,
+        13.0f * kPtToDip,
         L"", &code_fmt_);
     if (FAILED(hr) || !code_fmt_) return false;
 
-    const float sizes[7] = {0.0f, 24.0f, 22.0f, 20.0f, 18.0f, 16.0f, 16.0f};
+    const float sizes[7] = {0.0f, 20.0f, 18.0f, 16.0f, 15.0f, 14.0f, 14.0f};
     for (int lvl = 1; lvl <= 6; ++lvl) {
         hr = dw->CreateTextFormat(
             L"Segoe UI", nullptr,
@@ -227,7 +227,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
 float Renderer::Measure(IDWriteFactory* dw, const Document& doc, float widthDip) {
     if (!dw) return 0.0f;
-    const float kPadX = 24.0f;
+    const float kPadX = 48.0f;
     const float kPadTop = 24.0f;
     const float kBlockGap = 12.0f;
     if (widthDip <= 2.0f * kPadX) return kPadTop;
@@ -300,7 +300,7 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc, float widthDip)
                     layout->Release();
                 }
                 // H1 gets an HR line underneath: add 5 DIPs.
-                if (n.block == BlockKind::Heading && n.level == 1) {
+                if (n.block == BlockKind::Heading && n.level <= 2) {
                     blockH += 5.0f;
                 }
             }
@@ -314,7 +314,7 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc, float widthDip)
 float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                        const Document& doc, float widthDip, float scrollY) {
     if (!rt || !dw) return 0.0f;
-    const float kPadX = 24.0f;
+    const float kPadX = 48.0f;
     const float kPadTop = 24.0f;
     const float kBlockGap = 12.0f;
     if (widthDip <= 2.0f * kPadX) return kPadTop;
@@ -543,7 +543,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
 
         // Draw HR line under H1 headings.
-        if (n.block == BlockKind::Heading && n.level == 1) {
+        if (n.block == BlockKind::Heading && n.level <= 2) {
             ID2D1SolidColorBrush* hrBrush = nullptr;
             rt->CreateSolidColorBrush(D2D1::ColorF(0xDDDDDD), &hrBrush);
             if (hrBrush) {
