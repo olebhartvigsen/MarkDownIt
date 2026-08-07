@@ -7,6 +7,7 @@
 #include <string>
 #include "dom.h"
 #include "renderer.h"
+#include "filewatch.h"
 
 class AppWindow {
 public:
@@ -33,6 +34,8 @@ private:
     Document               doc_;
     std::wstring           file_path_;
 
+    FileWatcher            watcher_;   // live reload (Task 9)
+
     // Scroll state (in DIPs)
     float  scrollY_    = 0.0f;
     float  totalH_     = 0.0f;
@@ -48,6 +51,7 @@ private:
     void OnVScroll(HWND hwnd, int code, int pos);
     void OnMouseWheel(HWND hwnd, int delta);
     void OnDropFiles(HWND hwnd, HDROP hDrop);
+    void OnReload();
     void OnDestroy();
     void RecreateRenderTarget();
     void EnsureRenderer();

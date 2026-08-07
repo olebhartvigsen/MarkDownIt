@@ -143,6 +143,9 @@ void AppWindow::OpenFile(const std::wstring& path) {
 
     UpdateScrollInfo();
     Repaint();
+
+    // Start watching the file for live reload.
+    watcher_.Start(hwnd_, path);
 }
 
 void AppWindow::Reload() {
@@ -161,6 +164,11 @@ void AppWindow::Reload() {
     if (scrollY_ > savedY) scrollY_ = savedY;
     UpdateScrollInfo();
     Repaint();
+}
+
+void AppWindow::OnReload() {
+    // Called when the FileWatcher posts WM_USER_RELOAD (file changed on disk).
+    Reload();
 }
 
 void AppWindow::OnDropFiles(HWND hwnd, HDROP hDrop) {
@@ -325,6 +333,7 @@ void AppWindow::OnPaint(HWND hwnd) {
 }
 
 void AppWindow::OnDestroy() {
+    watcher_.Stop();
     renderer_.Release();
     SafeRelease(rt_);
     SafeRelease(dw_factory_);
@@ -351,6 +360,7 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 case VK_PRIOR:OnVScroll(hwnd, SB_PAGEUP, 0);   break;
                 case VK_HOME: OnVScroll(hwnd, SB_TOP, 0);     break;
                 case VK_END:  OnVScroll(hwnd, SB_BOTTOM, 0);  break;
+                case VK_F5:  Reload();                        break;
                 default: return DefWindowProcW(hwnd, msg, wp, lp);
             }
             return 0;
@@ -372,6 +382,7 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             Repaint();
             return 0;
         }
+        case WM_USER_RELOAD: OnReload(); return 0;
         case WM_ERASEBKGND: return 1;
         case WM_DESTROY:   OnDestroy();   return 0;
         default: return DefWindowProcW(hwnd, msg, wp, lp);

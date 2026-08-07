@@ -24,6 +24,7 @@ add_executable(MarkDownIt WIN32
     src/main.cpp
     src/app.cpp
     src/renderer.cpp
+    src/filewatch.cpp
     src/parser.cpp
 )
 
