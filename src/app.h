@@ -1,6 +1,7 @@
 #pragma once
 
 #include <windows.h>
+#include <shellapi.h>
 #include <d2d1.h>
 #include <dwrite.h>
 #include <string>
