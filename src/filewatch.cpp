@@ -6,14 +6,9 @@
 FileWatcher::FileWatcher() {}
 FileWatcher::~FileWatcher() { Stop(); }
 
-std::wstring FileWatcher::Basename(const std::wstring& path) {
-    size_t slash = path.find_last_of(L"\\/");
-    return (slash != std::wstring::npos) ? path.substr(slash + 1) : path;
-}
-
 void FileWatcher::Stop() {
     if (!state_.running) {
-        if (state_.dirHandle) { CloseHandle(state_.dirHandle); state_.dirHandle = nullptr; }
+        if (state_.stopEvent) { CloseHandle(state_.stopEvent); state_.stopEvent = nullptr; }
         return;
     }
     InterlockedExchange(&state_.running, 0);
@@ -24,7 +19,6 @@ void FileWatcher::Stop() {
         state_.thread = nullptr;
     }
     if (state_.stopEvent) { CloseHandle(state_.stopEvent); state_.stopEvent = nullptr; }
-    if (state_.dirHandle) { CloseHandle(state_.dirHandle); state_.dirHandle = nullptr; }
 }
 
 void FileWatcher::Start(HWND hwnd, const std::wstring& path) {
@@ -33,39 +27,24 @@ void FileWatcher::Start(HWND hwnd, const std::wstring& path) {
 
     state_.hwnd     = hwnd;
     state_.filePath = path;
-    state_.fileName = Basename(path);
+    state_.hasPrev  = false;
 
-    // Open the directory containing the file (needs FILE_LIST_DIRECTORY).
-    size_t slash = path.find_last_of(L"\\/");
-    std::wstring dir = (slash != std::wstring::npos) ? path.substr(0, slash) : L".";
-    if (dir.empty()) dir = L".";
-
-    state_.dirHandle = CreateFileW(
-        dir.c_str(),
-        FILE_LIST_DIRECTORY,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        nullptr,
-        OPEN_EXISTING,
-        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
-        nullptr);
-    if (state_.dirHandle == INVALID_HANDLE_VALUE) {
-        state_.dirHandle = nullptr;
-        return;
+    // Record current last-write time so we do not fire on startup.
+    WIN32_FILE_ATTRIBUTE_DATA fad;
+    if (GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fad)) {
+        state_.lastWrite = fad.ftLastWriteTime;
+        state_.hasPrev = true;
     }
 
     state_.stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    if (!state_.stopEvent) {
-        CloseHandle(state_.dirHandle);
-        state_.dirHandle = nullptr;
-        return;
-    }
+    if (!state_.stopEvent) return;
 
     InterlockedExchange(&state_.running, 1);
     state_.thread = CreateThread(nullptr, 0, ThreadProc, this, 0, nullptr);
     if (!state_.thread) {
         InterlockedExchange(&state_.running, 0);
-        CloseHandle(state_.stopEvent);   state_.stopEvent = nullptr;
-        CloseHandle(state_.dirHandle);  state_.dirHandle = nullptr;
+        CloseHandle(state_.stopEvent);
+        state_.stopEvent = nullptr;
     }
 }
 
@@ -75,70 +54,30 @@ DWORD WINAPI FileWatcher::ThreadProc(LPVOID param) {
 }
 
 void FileWatcher::Run() {
-    const DWORD bufSize = 4096;
-    BYTE buffer[4096];
-    OVERLAPPED ov = {};
-    ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    if (!ov.hEvent) return;
-
-    HANDLE waits[2] = { state_.stopEvent, ov.hEvent };
-
     while (state_.running) {
-        DWORD bytesReturned = 0;
-        ZeroMemory(buffer, bufSize);
-        ResetEvent(ov.hEvent);
+        // Sleep 500ms, wake early if stop event is signalled.
+        DWORD result = WaitForSingleObject(state_.stopEvent, 500);
+        if (result == WAIT_OBJECT_0) break;
 
-        // Overlapped (async) mode: returns immediately with ERROR_IO_PENDING.
-        BOOL ok = ReadDirectoryChangesW(
-            state_.dirHandle,
-            buffer, bufSize, FALSE,
-            FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_FILE_NAME |
-            FILE_NOTIFY_CHANGE_SIZE,
-            &bytesReturned, &ov, nullptr);
-
-        if (!ok) {
-            DWORD err = GetLastError();
-            if (err == ERROR_IO_PENDING) {
-                // Normal: wait for the event or stop signal.
-            } else {
-                break;  // real error
-            }
+        WIN32_FILE_ATTRIBUTE_DATA fad;
+        if (!GetFileAttributesExW(state_.filePath.c_str(),
+                                   GetFileExInfoStandard, &fad)) {
+            continue;  // file might be temporarily locked during save
         }
 
-        DWORD result = WaitForMultipleObjects(2, waits, FALSE, INFINITE);
-
-        if (result == WAIT_OBJECT_0) break;        // stop event
-        if (result != WAIT_OBJECT_0 + 1) break;     // unexpected
-
-        // Get the actual bytes returned by the overlapped operation.
-        DWORD transferred = 0;
-        if (!GetOverlappedResult(state_.dirHandle, &ov, &transferred, FALSE)) {
-            break;
-        }
-        if (transferred == 0) continue;
-
-        // Walk the FILE_NOTIFY_INFORMATION chain for our basename.
-        BYTE* ptr = buffer;
-        while (true) {
-            FILE_NOTIFY_INFORMATION* info = (FILE_NOTIFY_INFORMATION*)ptr;
-            if (info->Action == FILE_ACTION_MODIFIED ||
-                info->Action == FILE_ACTION_RENAMED_NEW_NAME) {
-                std::wstring name(info->FileName,
-                                  info->FileNameLength / sizeof(WCHAR));
-                if (_wcsicmp(name.c_str(), state_.fileName.c_str()) == 0) {
-                    // Debounce 300ms: editors write in bursts. We want the
-                    // final state, not the intermediate save.
-                    Sleep(300);
-                    if (state_.running) {
-                        PostMessageW(state_.hwnd, WM_USER_RELOAD, 0, 0);
-                    }
-                    break;
+        FILETIME current = fad.ftLastWriteTime;
+        if (state_.hasPrev) {
+            if (CompareFileTime(&current, &state_.lastWrite) > 0) {
+                state_.lastWrite = current;
+                // Small debounce: editors write in two bursts.
+                Sleep(100);
+                if (state_.running) {
+                    PostMessageW(state_.hwnd, WM_USER_RELOAD, 0, 0);
                 }
             }
-            if (info->NextEntryOffset == 0) break;
-            ptr += info->NextEntryOffset;
+        } else {
+            state_.lastWrite = current;
+            state_.hasPrev = true;
         }
     }
-
-    CloseHandle(ov.hEvent);
 }
