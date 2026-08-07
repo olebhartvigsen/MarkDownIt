@@ -382,7 +382,7 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             Repaint();
             return 0;
         }
-        case WM_USER_RELOAD: OnReload(); return 0;
+        case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
         case WM_ERASEBKGND: return 1;
         case WM_DESTROY:   OnDestroy();   return 0;
         default: return DefWindowProcW(hwnd, msg, wp, lp);
