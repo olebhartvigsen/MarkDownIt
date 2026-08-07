@@ -1,0 +1,31 @@
+name: Build MarkDownIt
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (x64)
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build Release exe
+        run: cmake --build build --config Release
+
+      - name: Verify exe type
+        shell: bash
+        run: file build/Release/MarkDownIt.exe
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MarkDownIt-x64
+          path: build/Release/MarkDownIt.exe
