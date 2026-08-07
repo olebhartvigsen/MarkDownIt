@@ -26,7 +26,7 @@ HRESULT STDMETHODCALLTYPE ColorTextRenderer::DrawGlyphRun(
     IUnknown* effect) {
     // If effect is set, this range had SetDrawingEffect called (links).
     ID2D1Brush* brush = effect ? static_cast<ID2D1Brush*>(linkBrush_) : defaultBrush_;
-    rt_->DrawGlyphRun(D2D1::Point2F(baselineX, baselineY), run, desc, brush, mode);
+    rt_->DrawGlyphRun(D2D1::Point2F(baselineX, baselineY), run, brush, mode);
     return S_OK;
 }
 

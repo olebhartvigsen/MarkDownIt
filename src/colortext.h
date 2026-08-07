@@ -11,7 +11,7 @@ class ColorTextRenderer : public IDWriteTextRenderer {
 public:
     ColorTextRenderer(ID2D1RenderTarget* rt, ID2D1SolidColorBrush* defaultBrush,
                        ID2D1SolidColorBrush* linkBrush);
-    ~ColorTextRenderer() override;
+    ~ColorTextRenderer();
 
     // IUnknown
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override;
