@@ -77,7 +77,14 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (!rt || !dw || !code_fmt_) { outH = 0.0f; return; }
 
     // Convert raw text (UTF-32) to UTF-16 for DirectWrite.
-    std::u16string text16 = ToUtf16(n.raw);
+    // Strip trailing newlines (md4c appends 
+ at end of code blocks).
+    std::u32string raw = n.raw;
+    while (!raw.empty() && (raw.back() == U'
+' || raw.back() == U'')) {
+        raw.pop_back();
+    }
+    std::u16string text16 = ToUtf16(raw);
 
     // Draw a light gray background rounded rect.
     ID2D1SolidColorBrush* bgBrush = nullptr;
@@ -250,7 +257,12 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc, float widthDip)
         }
 
         if (n.block == BlockKind::CodeBlock) {
-            std::u16string text16 = ToUtf16(n.raw);
+            std::u32string raw = n.raw;
+            while (!raw.empty() && (raw.back() == U'
+' || raw.back() == U'')) {
+                raw.pop_back();
+            }
+            std::u16string text16 = ToUtf16(raw);
             IDWriteTextLayout* layout = nullptr;
             HRESULT hr = dw->CreateTextLayout(
                 reinterpret_cast<const WCHAR*>(text16.data()),
