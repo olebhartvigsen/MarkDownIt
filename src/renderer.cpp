@@ -256,8 +256,7 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc, float widthDip)
 
         if (n.block == BlockKind::CodeBlock) {
             std::u32string raw = n.raw;
-            while (!raw.empty() && (raw.back() == U'
-' || raw.back() == U'')) {
+            while (!raw.empty() && (raw.back() == 0x0A || raw.back() == 0x0D)) {
                 raw.pop_back();
             }
             std::u16string text16 = ToUtf16(raw);
