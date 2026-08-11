@@ -52,7 +52,7 @@ if(MSVC)
             COMMAND ${UICC_EXE} ${RIBBON_XML} ${RIBBON_BML}
                 /header:${RIBBON_HEADER}
                 /res:${RIBBON_RC2}
-                /name:MARKDOWNIT_RIBBON
+                /name:MARKDOWNIT
             DEPENDS ${RIBBON_XML}
             COMMENT "Compiling Ribbon markup (UICC)"
             VERBATIM

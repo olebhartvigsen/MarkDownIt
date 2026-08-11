@@ -83,6 +83,8 @@ jobs:
           cat build/ribbon/ribbonUI.h
           echo "=== ribbonUI.rc2 ==="
           cat build/ribbon/ribbonUI.rc2
+          echo "=== .bml size ==="
+          ls -la build/ribbon/ribbonUI.bml
           echo "=== app.res check ==="
           python3 -c "
           with open('build/ribbon/app.res','rb') as f:
@@ -96,9 +98,21 @@ jobs:
               print('Resource name IS in .res')
           else:
               print('Resource name NOT in .res')
-              # Try ASCII
               idx2 = data.find(b'MARKDOWNIT_RIBBON')
               print(f'MARKDOWNIT_RIBBON ASCII in .res: {idx2}')
+          # Check if .bml content is embedded by searching for its first bytes
+          with open('build/ribbon/ribbonUI.bml','rb') as f:
+              bml = f.read()
+          print(f'.bml size: {len(bml)} bytes')
+          if len(bml) > 10:
+              # Search for the first 20 bytes of BML in the .res
+              chunk = bml[:20]
+              idx3 = data.find(chunk)
+              print(f'BML content in .res: {idx3}')
+              if idx3 > 0:
+                  print('BML IS embedded in .res')
+              else:
+                  print('BML is NOT embedded in .res')
           "
 
       - name: Verify exe type
