@@ -87,6 +87,19 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
 
     ShowWindow(hwnd_, nCmdShow);
     UpdateWindow(hwnd_);
+
+    // Initialize the Ribbon Framework after the window is visible.
+    // The framework subclasses the window and needs it to be fully
+    // created and shown before it can attach.
+    InitRibbon(hwnd_, this);
+
+    // Extend the DWM frame slightly into the client area. This is
+    // required by the Ribbon Framework to render the title bar area
+    // properly on Windows 10/11. Without this, the min/max/close
+    // buttons may not appear and the ribbon renders all-white.
+    MARGINS margins = { 0, 0, 0, 1 };
+    DwmExtendFrameIntoClientArea(hwnd_, &margins);
+
     return true;
 }
 
@@ -228,7 +241,6 @@ void AppWindow::OnCreate(HWND hwnd) {
 
     EnsureRenderer();
     LoadSampleDoc();
-    InitRibbon(hwnd_, this);
     UpdateScrollInfo();
 }
 
@@ -344,12 +356,27 @@ void AppWindow::OnPaint(HWND hwnd) {
     PAINTSTRUCT ps;
     BeginPaint(hwnd, &ps);
     rt_->BeginDraw();
+
+    // Only clear the area below the ribbon. Painting over the ribbon
+    // area causes the ribbon to appear all-white (the D2D white fill
+    // covers the ribbon's themed background before it can render).
+    float ribbonH = GetRibbonHeightDip();
+    D2D1_SIZE_F size = rt_->GetSize();
+    if (ribbonH > 0 && ribbonH < size.height) {
+        // Push a clip to the area below the ribbon
+        rt_->PushAxisAlignedClip(
+            D2D1::RectF(0, ribbonH, size.width, size.height), (D2D1_ANTIALIAS_MODE)0);
+    }
     rt_->Clear(D2D1::ColorF(D2D1::ColorF::White));
 
     if (renderer_inited_ && dw_factory_) {
-        D2D1_SIZE_F size = rt_->GetSize();
         renderer_.Render(rt_, dw_factory_, doc_, size.width, scrollY_,
                           GetRibbonHeightDip());
+    }
+
+    // Pop the clip if we pushed it for the ribbon area
+    if (ribbonH > 0 && ribbonH < size.height) {
+        rt_->PopAxisAlignedClip();
     }
 
     HRESULT hr = rt_->EndDraw();
