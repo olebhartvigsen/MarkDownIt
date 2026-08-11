@@ -14,8 +14,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Find UICC.exe
+        id: find-uicc
+        shell: powershell
+        run: |
+          $uicc = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\uicc.exe" | Select-Object -Last 1
+          if ($uicc) {
+            "uicc_path=$($uicc.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Found UICC: $($uicc.FullName)"
+          } else {
+            $uicc = Get-ChildItem "C:\Program Files\Windows Kits\10\bin\*\x64\uicc.exe" | Select-Object -Last 1
+            if ($uicc) {
+              "uicc_path=$($uicc.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+              Write-Host "Found UICC: $($uicc.FullName)"
+            } else {
+              Write-Error "UICC.exe not found"
+              exit 1
+            }
+          }
+
       - name: Configure CMake
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DUICC_EXE="${{ steps.find-uicc.outputs.uicc_path }}"
 
       - name: Build Release exe
         run: cmake --build build --config Release

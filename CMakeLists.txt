@@ -18,24 +18,26 @@ endif()
 
 # ── Windows Ribbon Framework: compile ribbon.xml with UICC.exe ──────────
 if(MSVC)
-    # Search for UICC.exe in the Windows SDK.
-    # The SDK installs under: Windows Kits\10\bin\<version>\x64\uicc.exe
-    file(GLOB UICC_PATHS
-        "C:/Program Files (x86)/Windows Kits/10/bin/*/x64/uicc.exe"
-        "C:/Program Files/Windows Kits/10/bin/*/x64/uicc.exe"
-    )
-    if(UICC_PATHS)
-        # Sort and pick the latest version.
-        list(SORT UICC_PATHS COMPARE NATURAL ORDER DESCENDING)
-        list(GET UICC_PATHS 0 UICC_EXE)
-    else()
-        # Fallback: try environment variables set by VS.
-        find_program(UICC_EXE NAMES uicc
-            HINTS ENV{WindowsSdkVerBinPath} ENV{WindowsSdkBinPath}
-            PATH_SUFFIXES x64
-            REQUIRED
+    # Allow UICC_EXE to be passed via -DUICC_EXE=...
+    if(NOT UICC_EXE)
+        # Search for UICC.exe: Windows Kits\10\bin\<version>\x64\uicc.exe
+        file(GLOB UICC_CANDIDATES
+            "C:/Program Files (x86)/Windows Kits/10/bin/*/x64/uicc.exe"
+            "C:/Program Files/Windows Kits/10/bin/*/x64/uicc.exe"
         )
+        if(UICC_CANDIDATES)
+            list(SORT UICC_CANDIDATES COMPARE NATURAL ORDER DESCENDING)
+            list(GET UICC_CANDIDATES 0 UICC_EXE)
+        endif()
     endif()
+
+    if(NOT UICC_EXE)
+        message(FATAL_ERROR
+            "UICC.exe not found. Pass -DUICC_EXE=<path-to-uicc.exe> or ensure "
+            "Windows SDK is installed at the standard location.")
+    endif()
+
+    message(STATUS "Using UICC: ${UICC_EXE}")
 
     set(RIBBON_XML ${CMAKE_CURRENT_SOURCE_DIR}/src/ribbon.xml)
     set(RIBBON_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/ribbon)
@@ -55,7 +57,6 @@ if(MSVC)
         VERBATIM
     )
 
-    # Generate the .rc file that includes the rc2.
     set(RIBBON_RC ${CMAKE_CURRENT_BINARY_DIR}/ribbon/app.rc)
     add_custom_command(
         OUTPUT ${RIBBON_RC}
