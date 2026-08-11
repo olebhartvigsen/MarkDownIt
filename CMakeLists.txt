@@ -58,7 +58,28 @@ if(MSVC)
             VERBATIM
         )
 
-        add_custom_target(ribbon_markup ALL DEPENDS ${RIBBON_HEADER} ${RIBBON_RC2} ${RIBBON_BML})
+        # Step 2: Compile the RC file to a .res using rc.exe.
+        # Find rc.exe in the Windows SDK.
+        file(GLOB RC_CANDIDATES
+            "C:/Program Files (x86)/Windows Kits/10/bin/*/x64/rc.exe"
+            "C:/Program Files (x86)/Windows Kits/10/bin/*/x86/rc.exe"
+        )
+        list(SORT RC_CANDIDATES COMPARE NATURAL ORDER DESCENDING)
+        if(RC_CANDIDATES)
+            list(GET RC_CANDIDATES 0 RC_EXE)
+        endif()
+        # The app.rc includes ribbonUI.rc2 which references ribbonUI.bml.
+        # Both are in RIBBON_OUT_DIR.
+        set(RIBBON_RC ${CMAKE_CURRENT_SOURCE_DIR}/src/app.rc)
+        set(RIBBON_RES ${RIBBON_OUT_DIR}/app.res)
+        add_custom_command(
+            OUTPUT ${RIBBON_RES}
+            COMMAND ${RC_EXE} /nologo /r /I${RIBBON_OUT_DIR} /fo${RIBBON_RES} ${RIBBON_RC}
+            DEPENDS ${RIBBON_RC} ${RIBBON_RC2} ${RIBBON_BML}
+            COMMENT "Compiling Ribbon RC resource"
+            VERBATIM
+        )
+        add_custom_target(ribbon_markup ALL DEPENDS ${RIBBON_RES})
     endif()
 endif()
 
@@ -78,15 +99,9 @@ if(MSVC AND RIBBON_AVAILABLE)
     target_include_directories(MarkDownIt PRIVATE ${RIBBON_OUT_DIR})
     add_dependencies(MarkDownIt ribbon_markup)
 
-    # Add the .rc file as a source. VS will auto-compile it.
-    # The include path to ribbonUI.rc2 is set via target_include_directories.
-    message(STATUS "Adding app.rc to sources: ${CMAKE_CURRENT_SOURCE_DIR}/src/app.rc")
-    message(STATUS "RIBBON_OUT_DIR for includes: ${RIBBON_OUT_DIR}")
-    target_sources(MarkDownIt PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app.rc)
-    # Set the RC include path explicitly
-    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/src/app.rc
-        PROPERTIES COMPILE_FLAGS "/I ${RIBBON_OUT_DIR}"
-    )
+    # Add the compiled .res as an object source.
+    # This is how CMake VS generator handles .res files.
+    target_sources(MarkDownIt PRIVATE ${RIBBON_RES})
 
     # uiribbon.lib and propsys.lib
     if(NOT UIRIBBON_LIB)
