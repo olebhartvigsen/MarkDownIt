@@ -99,9 +99,8 @@ if(MSVC AND RIBBON_AVAILABLE)
     target_include_directories(MarkDownIt PRIVATE ${RIBBON_OUT_DIR})
     add_dependencies(MarkDownIt ribbon_markup)
 
-    # Add the compiled .res as a source file.
+    # Add the compiled .res as a source file and link flag.
     target_sources(MarkDownIt PRIVATE ${RIBBON_RES})
-    # Also add to link flags to ensure the linker picks it up.
     set_property(TARGET MarkDownIt APPEND PROPERTY LINK_FLAGS "${RIBBON_RES}")
 
     # uiribbon.lib and propsys.lib
@@ -165,8 +164,12 @@ target_compile_definitions(MarkDownIt PRIVATE
     NOMINMAX
 )
 
-# The linker will embed the .res resources (including our manifest
-# with ComCtl32 v6 and Ribbon dependency) into the exe automatically.
+# Suppress the linker's auto-generated manifest (our .res provides one
+# via resource ID 1, type 24). Without /MANIFEST:NO we get a duplicate
+# resource error.
+set_target_properties(MarkDownIt PROPERTIES
+    LINK_FLAGS "/MANIFEST:NO"
+)
 
 # Tests
 option(BUILD_TESTS "Build test binary" OFF)
