@@ -121,6 +121,12 @@ if(MSVC AND RIBBON_AVAILABLE)
             find_library(PROPSYS_LIB NAMES propsys HINTS ${SDK_LIB_DIR})
         endif()
     endif()
+    if(UIRIBBON_LIB)
+        set(UIRIBBON_LINK_LIB ${UIRIBBON_LIB})
+    endif()
+    if(PROPSYS_LIB)
+        set(PROPSYS_LINK_LIB ${PROPSYS_LIB})
+    endif()
     message(STATUS "Using uiribbon.lib: ${UIRIBBON_LIB}")
     message(STATUS "Using propsys.lib: ${PROPSYS_LIB}")
 endif() # MSVC AND RIBBON_AVAILABLE
@@ -138,8 +144,8 @@ target_link_libraries(MarkDownIt PRIVATE
     windowscodecs
     winhttp
     comdlg32
-    $<$<BOOL:${RIBBON_AVAILABLE}>:${UIRIBBON_LIB}>
-    $<$<BOOL:${RIBBON_AVAILABLE}>:${PROPSYS_LIB}>
+    ${UIRIBBON_LINK_LIB}
+    ${PROPSYS_LINK_LIB}
 )
 
 target_compile_definitions(MarkDownIt PRIVATE
