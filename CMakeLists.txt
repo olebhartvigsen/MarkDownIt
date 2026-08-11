@@ -5,32 +5,37 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Static runtime so the exe has zero redistributable deps.
-# MultiThreaded for Release, MultiThreadedDebug for Debug.
 set(CMAKE_MSVC_RUNTIME_LIBRARY
     "MultiThreaded$<STREQUAL:${CMAKE_BUILD_TYPE},Debug>"
 )
 
 # md4c: vendored markdown parser (MIT, release-0.5.3, tag commit 472c417).
-# Core parser only (md4c.c + md4c.h), HTML renderer (entity.c) not needed.
 add_library(md4c STATIC third_party/md4c/md4c.c)
 target_include_directories(md4c PUBLIC third_party/md4c)
-# Suppress md4c warnings under MSVC /W4 (it is C99 clean, but /W4 is noisy).
 if(MSVC)
     target_compile_options(md4c PRIVATE /W1)
 endif()
 
 # ── Windows Ribbon Framework: compile ribbon.xml with UICC.exe ──────────
-# UICC.exe is the UI Command Compiler from the Windows SDK.
-# It generates: ribbonUI.h (command IDs), ribbonUI.rc2 (resource include),
-# and ribbonUI.bml (compiled binary markup).
 if(MSVC)
-    # Find UICC.exe in the Windows SDK.
-    find_program(UICC_EXE NAMES uicc
-        HINTS "$ENV{WindowsSdkVerBinPath}" "$ENV{WindowsSdkBinPath}"
-        PATHS "C:/Program Files (x86)/Windows Kits/10/bin"
-        PATH_SUFFIXES "x64" "x86"
-        REQUIRED
+    # Search for UICC.exe in the Windows SDK.
+    # The SDK installs under: Windows Kits\10\bin\<version>\x64\uicc.exe
+    file(GLOB UICC_PATHS
+        "C:/Program Files (x86)/Windows Kits/10/bin/*/x64/uicc.exe"
+        "C:/Program Files/Windows Kits/10/bin/*/x64/uicc.exe"
     )
+    if(UICC_PATHS)
+        # Sort and pick the latest version.
+        list(SORT UICC_PATHS COMPARE NATURAL ORDER DESCENDING)
+        list(GET UICC_PATHS 0 UICC_EXE)
+    else()
+        # Fallback: try environment variables set by VS.
+        find_program(UICC_EXE NAMES uicc
+            HINTS ENV{WindowsSdkVerBinPath} ENV{WindowsSdkBinPath}
+            PATH_SUFFIXES x64
+            REQUIRED
+        )
+    endif()
 
     set(RIBBON_XML ${CMAKE_CURRENT_SOURCE_DIR}/src/ribbon.xml)
     set(RIBBON_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/ribbon)
@@ -50,7 +55,7 @@ if(MSVC)
         VERBATIM
     )
 
-    # Generate the .rc file from the template, substituting the rc2 path.
+    # Generate the .rc file that includes the rc2.
     set(RIBBON_RC ${CMAKE_CURRENT_BINARY_DIR}/ribbon/app.rc)
     add_custom_command(
         OUTPUT ${RIBBON_RC}
@@ -61,7 +66,6 @@ if(MSVC)
         VERBATIM
     )
 
-    # Custom target so the RC generation runs before the main build.
     add_custom_target(ribbon_markup DEPENDS ${RIBBON_HEADER} ${RIBBON_RC2} ${RIBBON_BML} ${RIBBON_RC})
 endif()
 
@@ -78,7 +82,6 @@ add_executable(MarkDownIt WIN32
 )
 
 if(MSVC)
-    # Add the ribbon resource file and generated header to the build.
     target_sources(MarkDownIt PRIVATE ${RIBBON_RC})
     target_include_directories(MarkDownIt PRIVATE ${RIBBON_OUT_DIR})
     add_dependencies(MarkDownIt ribbon_markup)
@@ -127,6 +130,5 @@ if(BUILD_TESTS)
         WIN32_LEAN_AND_MEAN
         NOMINMAX
     )
-    # Tests are a console app, not a GUI app (needs main(), not wWinMain).
     set_target_properties(MarkDownIt.tests PROPERTIES WIN32_EXECUTABLE OFF)
 endif()
