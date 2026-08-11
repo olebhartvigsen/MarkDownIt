@@ -129,6 +129,59 @@ static bool RestoreWinPlacement(HWND hwnd) {
     return true;
 }
 
+// Find the Ribbon Framework's internal DirectUI window.
+static BOOL CALLBACK FindRibbonWnd(HWND hwnd, LPARAM lParam) {
+    wchar_t cls[256];
+    if (GetClassNameW(hwnd, cls, 256) > 0) {
+        if (wcscmp(cls, L"DirectUIHWND") == 0) {
+            *(HWND*)lParam = hwnd;
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+// The Ribbon Framework always renders an Application Menu button at the
+// left edge. There is no API to remove it, so we shift the ribbon's
+// internal window left by the button width, pushing the button off-screen.
+static void HideAppMenuButton(HWND mainWnd) {
+    HWND ribbonWnd = nullptr;
+    EnumChildWindows(mainWnd, FindRibbonWnd, (LPARAM)&ribbonWnd);
+    if (!ribbonWnd) return;
+
+    RECT rc;
+    GetWindowRect(ribbonWnd, &rc);
+    if (rc.right - rc.left == 0) return;
+
+    // Account for Windows reference offset (parent coordinates).
+    POINT origin = {0, 0};
+    ClientToScreen(mainWnd, &origin);
+    int parentX = origin.x;
+    int parentY = origin.y;
+
+    // Application Menu button width: 26 DIPs at 96 DPI.
+    UINT dpi = GetWindowDpi ? 0 : 96;
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (user32) {
+        typedef UINT (WINAPI *PFN_GetDpiForWindow)(HWND);
+        auto fn = (PFN_GetDpiForWindow)GetProcAddress(user32, "GetDpiForWindow");
+        if (fn) dpi = fn(mainWnd);
+        else dpi = 96;
+    } else {
+        dpi = 96;
+    }
+    int buttonW = 26 * static_cast<int>(dpi) / 96;
+
+    // Shift the ribbon window left by buttonW and widen by buttonW.
+    // The button (leftmost buttonW pixels) goes off-screen.
+    SetWindowPos(ribbonWnd, nullptr,
+        (rc.left - parentX) - buttonW,
+        rc.top - parentY,
+        (rc.right - rc.left) + buttonW,
+        rc.bottom - rc.top,
+        SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     hinst_ = hInst;
     EnableDpiAwareness();
@@ -510,6 +563,7 @@ void AppWindow::OnDestroy() {
 void AppWindow::OnRibbonHeightChanged() {
     ResizeContentWindow();
     Repaint();
+    HideAppMenuButton(hwnd_);
 }
 
 void AppWindow::RecreateRenderer() {
@@ -601,6 +655,7 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 KillTimer(hwnd_, 1);
                 ResizeContentWindow();
                 Repaint();
+                HideAppMenuButton(hwnd_);
             }
             return 0;
         case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
