@@ -17,12 +17,10 @@ if(MSVC)
     target_compile_options(md4c PRIVATE /W1)
 endif()
 
-# ── Windows Ribbon Framework: compile ribbon.xml with UICC.exe ──────────
+# Windows Ribbon Framework: compile ribbon.xml with UICC.exe
 if(MSVC)
     # Allow UICC_EXE to be passed via -DUICC_EXE=...
     if(NOT UICC_EXE)
-        # Search for UICC.exe: Windows Kits\10\bin\<version>\x64\uicc.exe
-        # UICC.exe may only be x86 on some runners; search all architectures.
         file(GLOB UICC_CANDIDATES
             "C:/Program Files (x86)/Windows Kits/10/bin/*/x64/uicc.exe"
             "C:/Program Files/Windows Kits/10/bin/*/x64/uicc.exe"
@@ -62,17 +60,14 @@ if(MSVC)
             VERBATIM
         )
 
-        set(RIBBON_RC ${CMAKE_CURRENT_BINARY_DIR}/ribbon/app.rc)
-        add_custom_command(
-            OUTPUT ${RIBBON_RC}
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/ribbon
-            COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/src/app.rc ${RIBBON_RC}
-            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/app.rc
-            COMMENT "Preparing ribbon RC file"
-            VERBATIM
+        # Generate the RC file directly. The rc2 (from UICC) references
+        # the .bml binary resource and defines MARKDOWNIT_RIBBON.
+        set(RIBBON_RC ${RIBBON_OUT_DIR}/app.rc)
+        file(WRITE ${RIBBON_RC}
+            "#include \"ribbonUI.rc2\"\n"
         )
 
-        add_custom_target(ribbon_markup DEPENDS ${RIBBON_HEADER} ${RIBBON_RC2} ${RIBBON_BML} ${RIBBON_RC})
+        add_custom_target(ribbon_markup DEPENDS ${RIBBON_HEADER} ${RIBBON_RC2} ${RIBBON_BML})
     endif()
 endif()
 
