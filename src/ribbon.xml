@@ -14,11 +14,11 @@
         <String>Open</String>
       </Command.LabelTitle>
       <Command.LargeImages>
-        <Image Id="IDB_OPEN_32" MinDPI="96"/>
-        <Image Id="IDB_OPEN_64" MinDPI="192"/>
+        <Image Source="2001" MinDPI="96"/>
+        <Image Source="2002" MinDPI="192"/>
       </Command.LargeImages>
       <Command.SmallImages>
-        <Image Id="IDB_OPEN_16" MinDPI="96"/>
+        <Image Source="2000" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
     <Command Name="cmdReload" Symbol="IDC_CMD_RELOAD" Id="10101">
@@ -26,11 +26,11 @@
         <String>Reload</String>
       </Command.LabelTitle>
       <Command.LargeImages>
-        <Image Id="IDB_RELOAD_32" MinDPI="96"/>
-        <Image Id="IDB_RELOAD_64" MinDPI="192"/>
+        <Image Source="2004" MinDPI="96"/>
+        <Image Source="2005" MinDPI="192"/>
       </Command.LargeImages>
       <Command.SmallImages>
-        <Image Id="IDB_RELOAD_16" MinDPI="96"/>
+        <Image Source="2003" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
     <Command Name="cmdWrap" Symbol="IDC_CMD_WRAP" Id="10200">
@@ -38,11 +38,11 @@
         <String>Wrap</String>
       </Command.LabelTitle>
       <Command.LargeImages>
-        <Image Id="IDB_WRAP_32" MinDPI="96"/>
-        <Image Id="IDB_WRAP_64" MinDPI="192"/>
+        <Image Source="2007" MinDPI="96"/>
+        <Image Source="2008" MinDPI="192"/>
       </Command.LargeImages>
       <Command.SmallImages>
-        <Image Id="IDB_WRAP_16" MinDPI="96"/>
+        <Image Source="2006" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
     <Command Name="cmdZoomIn" Symbol="IDC_CMD_ZOOMIN" Id="10201">
@@ -50,11 +50,11 @@
         <String>Zoom In</String>
       </Command.LabelTitle>
       <Command.LargeImages>
-        <Image Id="IDB_ZOOMIN_32" MinDPI="96"/>
-        <Image Id="IDB_ZOOMIN_64" MinDPI="192"/>
+        <Image Source="2010" MinDPI="96"/>
+        <Image Source="2011" MinDPI="192"/>
       </Command.LargeImages>
       <Command.SmallImages>
-        <Image Id="IDB_ZOOMIN_16" MinDPI="96"/>
+        <Image Source="2009" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
     <Command Name="cmdZoomOut" Symbol="IDC_CMD_ZOOMOUT" Id="10202">
@@ -62,11 +62,11 @@
         <String>Zoom Out</String>
       </Command.LabelTitle>
       <Command.LargeImages>
-        <Image Id="IDB_ZOOMOUT_32" MinDPI="96"/>
-        <Image Id="IDB_ZOOMOUT_64" MinDPI="192"/>
+        <Image Source="2013" MinDPI="96"/>
+        <Image Source="2014" MinDPI="192"/>
       </Command.LargeImages>
       <Command.SmallImages>
-        <Image Id="IDB_ZOOMOUT_16" MinDPI="96"/>
+        <Image Source="2012" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
     <Command Name="cmdAbout" Symbol="IDC_CMD_ABOUT" Id="10300">
@@ -74,11 +74,11 @@
         <String>About</String>
       </Command.LabelTitle>
       <Command.LargeImages>
-        <Image Id="IDB_ABOUT_32" MinDPI="96"/>
-        <Image Id="IDB_ABOUT_64" MinDPI="192"/>
+        <Image Source="2016" MinDPI="96"/>
+        <Image Source="2017" MinDPI="192"/>
       </Command.LargeImages>
       <Command.SmallImages>
-        <Image Id="IDB_ABOUT_16" MinDPI="96"/>
+        <Image Source="2015" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
   </Application.Commands>
