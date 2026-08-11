@@ -87,6 +87,20 @@ if(MSVC)
     target_sources(MarkDownIt PRIVATE ${RIBBON_RC})
     target_include_directories(MarkDownIt PRIVATE ${RIBBON_OUT_DIR})
     add_dependencies(MarkDownIt ribbon_markup)
+
+    # Find uiribbon.lib in the Windows SDK
+    find_library(UIRIBBON_LIB NAMES uiribbon
+        HINTS "C:/Program Files (x86)/Windows Kits/10/Lib" "C:/Program Files/Windows Kits/10/Lib"
+        PATH_SUFFIXES "um/x64"
+        REQUIRED
+    )
+    find_library(PROPSYS_LIB NAMES propsys
+        HINTS "C:/Program Files (x86)/Windows Kits/10/Lib" "C:/Program Files/Windows Kits/10/Lib"
+        PATH_SUFFIXES "um/x64"
+        REQUIRED
+    )
+    message(STATUS "Using uiribbon.lib: ${UIRIBBON_LIB}")
+    message(STATUS "Using propsys.lib: ${PROPSYS_LIB}")
 endif()
 
 target_link_libraries(MarkDownIt PRIVATE
@@ -102,8 +116,8 @@ target_link_libraries(MarkDownIt PRIVATE
     windowscodecs
     winhttp
     comdlg32
-    uiribbon
-    propsys
+    ${UIRIBBON_LIB}
+    ${PROPSYS_LIB}
 )
 
 target_compile_definitions(MarkDownIt PRIVATE
