@@ -76,6 +76,31 @@ jobs:
       - name: Build Release exe
         run: cmake --build build --config Release
 
+      - name: Show generated ribbon files
+        shell: bash
+        run: |
+          echo "=== ribbonUI.h ==="
+          cat build/ribbon/ribbonUI.h
+          echo "=== ribbonUI.rc2 ==="
+          cat build/ribbon/ribbonUI.rc2
+          echo "=== app.res check ==="
+          python3 -c "
+          with open('build/ribbon/app.res','rb') as f:
+              data = f.read()
+          print(f'.res file size: {len(data)} bytes')
+          # Search for MARKDOWNIT_RIBBON as wide string
+          wide = 'MARKDOWNIT_RIBBON'.encode('utf-16-le')
+          idx = data.find(wide)
+          print(f'MARKDOWNIT_RIBBON wide string in .res: {idx}')
+          if idx > 0:
+              print('Resource name IS in .res')
+          else:
+              print('Resource name NOT in .res')
+              # Try ASCII
+              idx2 = data.find(b'MARKDOWNIT_RIBBON')
+              print(f'MARKDOWNIT_RIBBON ASCII in .res: {idx2}')
+          "
+
       - name: Verify exe type
         shell: bash
         run: file build/Release/MarkDownIt.exe
