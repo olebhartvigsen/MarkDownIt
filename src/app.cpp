@@ -152,7 +152,7 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     wc2.hInstance     = hInst;
     wc2.lpszClassName = kContentClassName;
     wc2.hCursor       = LoadCursor(nullptr, IDC_ARROW);
-    wc2.hbrBackground = nullptr;
+    wc2.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
     wc2.style         = CS_HREDRAW | CS_VREDRAW;
     if (!RegisterClassW(&wc2)) {
         MessageBoxW(nullptr, L"RegisterClass (content) failed", L"MarkDownIt", MB_ICONERROR);
@@ -390,7 +390,7 @@ void AppWindow::ResizeContentWindow() {
     SetWindowPos(hwnd_content_, nullptr,
         0, contentY,
         rc.right - rc.left, contentH,
-        SWP_NOZORDER | SWP_NOACTIVATE);
+        SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
 }
 
 void AppWindow::OnSize(HWND hwnd, int width, int height) {
@@ -647,7 +647,6 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             OnContentSize(hwnd, w, h);
             return 0;
         }
-        case WM_ERASEBKGND: return 1;
         default: return DefWindowProcW(hwnd, msg, wp, lp);
     }
 }
