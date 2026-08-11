@@ -112,6 +112,11 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     ResizeContentWindow();
     Repaint();
 
+    // Set a one-shot timer to re-layout and repaint after the ribbon
+    // has had time to report its height. The ribbon's OnViewChanged
+    // callback may fire asynchronously, so this is a safety net.
+    SetTimer(hwnd_, 1, 300, nullptr);
+
     return true;
 }
 
@@ -239,7 +244,7 @@ void AppWindow::OnCreate(HWND hwnd) {
     // the D2D Present() from overwriting the ribbon's rendering.
     hwnd_content_ = CreateWindowExW(
         0, kContentClassName, L"",
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_CLIPSIBLINGS,
         0, 0, 0, 0,
         hwnd, nullptr, hinst_, this);
     if (!hwnd_content_) {
@@ -320,7 +325,10 @@ void AppWindow::OnContentSize(HWND hwnd, int width, int height) {
     if (rt_) {
         D2D1_SIZE_U size = D2D1::SizeU(
             width > 0 ? width : 1, height > 0 ? height : 1);
-        rt_->Resize(size);
+        HRESULT hr = rt_->Resize(size);
+        if (hr == D2DERR_RECREATE_TARGET) {
+            RecreateRenderTarget();
+        }
     }
     UpdateScrollInfo();
     Repaint();
@@ -381,7 +389,10 @@ void AppWindow::RecreateRenderTarget() {
 }
 
 void AppWindow::OnContentPaint(HWND hwnd) {
-    if (!rt_) { ValidateRect(hwnd, nullptr); return; }
+    if (!rt_) {
+        RecreateRenderTarget();
+        if (!rt_) { ValidateRect(hwnd, nullptr); return; }
+    }
 
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
@@ -419,6 +430,7 @@ void AppWindow::OnDestroy() {
 
 void AppWindow::OnRibbonHeightChanged() {
     ResizeContentWindow();
+    Repaint();
 }
 
 void AppWindow::RecreateRenderer() {
@@ -505,6 +517,13 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             Repaint();
             return 0;
         }
+        case WM_TIMER:
+            if (wp == 1) {
+                KillTimer(hwnd_, 1);
+                ResizeContentWindow();
+                Repaint();
+            }
+            return 0;
         case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
         case WM_ERASEBKGND: return 1;
         case WM_DESTROY:   OnDestroy();   return 0;

@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <Application xmlns='http://schemas.microsoft.com/windows/2009/Ribbon'>
   <Application.Commands>
-    <Command Name="cmdTabFile" Symbol="IDC_TAB_FILE" Id="10000">
+    <Command Name="cmdAppMenu" Symbol="IDC_APP_MENU" Id="10000">
       <Command.LabelTitle>
         <String>File</String>
       </Command.LabelTitle>
@@ -11,22 +11,11 @@
         <String>View</String>
       </Command.LabelTitle>
     </Command>
-    <Command Name="cmdGroupActions" Symbol="IDC_GROUP_ACTIONS" Id="10010">
-      <Command.LabelTitle>
-        <String>Actions</String>
-      </Command.LabelTitle>
-    </Command>
-    <Command Name="cmdGroupInfo" Symbol="IDC_GROUP_INFO" Id="10011">
-      <Command.LabelTitle>
-        <String>Info</String>
-      </Command.LabelTitle>
-    </Command>
     <Command Name="cmdGroupDisplay" Symbol="IDC_GROUP_DISPLAY" Id="10020">
       <Command.LabelTitle>
         <String>Display</String>
       </Command.LabelTitle>
     </Command>
-
     <Command Name="cmdOpen" Symbol="IDC_CMD_OPEN" Id="10100">
       <Command.LabelTitle>
         <String>Open</String>
@@ -102,16 +91,18 @@
   </Application.Commands>
   <Application.Views>
     <Ribbon>
-      <Ribbon.Tabs>
-        <Tab CommandName="cmdTabFile">
-          <Group CommandName="cmdGroupActions" SizeDefinition="TwoButtons">
+      <Ribbon.ApplicationMenu>
+        <ApplicationMenu CommandName="cmdAppMenu">
+          <MenuGroup>
             <Button CommandName="cmdOpen" />
             <Button CommandName="cmdReload" />
-          </Group>
-          <Group CommandName="cmdGroupInfo" SizeDefinition="OneButton">
+          </MenuGroup>
+          <MenuGroup>
             <Button CommandName="cmdAbout" />
-          </Group>
-        </Tab>
+          </MenuGroup>
+        </ApplicationMenu>
+      </Ribbon.ApplicationMenu>
+      <Ribbon.Tabs>
         <Tab CommandName="cmdTabView">
           <Group CommandName="cmdGroupDisplay" SizeDefinition="ThreeButtons">
             <ToggleButton CommandName="cmdWrap" />
