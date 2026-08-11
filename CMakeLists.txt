@@ -102,8 +102,8 @@ if(MSVC AND RIBBON_AVAILABLE)
     target_include_directories(MarkDownIt PRIVATE ${RIBBON_OUT_DIR})
     add_dependencies(MarkDownIt ribbon_markup)
 
-    # Link the compiled .res resource file directly
-    target_link_libraries(MarkDownIt PRIVATE ${RIBBON_RES})
+    # Add the compiled .res as a source (VS treats .res as object files)
+    target_sources(MarkDownIt PRIVATE ${RIBBON_RES})
 
     # uiribbon.lib and propsys.lib
     if(NOT UIRIBBON_LIB)
