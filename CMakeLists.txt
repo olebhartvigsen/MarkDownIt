@@ -5,7 +5,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Static runtime so the exe has zero redistributable deps.
-# Multi-config generators (Visual Studio) need per-config runtime.
 set(CMAKE_MSVC_RUNTIME_LIBRARY
     "$<$<CONFIG:Debug>:MultiThreadedDebug>$<$<CONFIG:Release>:MultiThreaded>$<$<CONFIG:RelWithDebInfo>:MultiThreaded>$<$<CONFIG:MinSizeRel>:MultiThreaded>"
 )
@@ -19,7 +18,6 @@ endif()
 
 # Windows Ribbon Framework: compile ribbon.xml with UICC.exe
 if(MSVC)
-    # Allow UICC_EXE to be passed via -DUICC_EXE=...
     if(NOT UICC_EXE)
         file(GLOB UICC_CANDIDATES
             "C:/Program Files (x86)/Windows Kits/10/bin/*/x64/uicc.exe"
@@ -33,8 +31,7 @@ if(MSVC)
     endif()
 
     if(NOT UICC_EXE)
-        message(WARNING "UICC.exe not found. Ribbon will not be built. "
-            "Pass -DUICC_EXE=<path> when building the main target.")
+        message(WARNING "UICC.exe not found. Ribbon will not be built.")
         set(RIBBON_AVAILABLE FALSE)
     else()
         message(STATUS "Using UICC: ${UICC_EXE}")
@@ -48,6 +45,7 @@ if(MSVC)
     set(RIBBON_BML ${RIBBON_OUT_DIR}/ribbonUI.bml)
 
     if(RIBBON_AVAILABLE)
+        # Step 1: Compile ribbon.xml -> ribbonUI.h + ribbonUI.rc2 + ribbonUI.bml
         add_custom_command(
             OUTPUT ${RIBBON_HEADER} ${RIBBON_RC2} ${RIBBON_BML}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${RIBBON_OUT_DIR}
@@ -60,14 +58,31 @@ if(MSVC)
             VERBATIM
         )
 
-        # Generate the RC file directly. The rc2 (from UICC) references
-        # the .bml binary resource and defines MARKDOWNIT_RIBBON.
+        # Step 2: Generate app.rc that includes the rc2
         set(RIBBON_RC ${RIBBON_OUT_DIR}/app.rc)
         file(WRITE ${RIBBON_RC}
             "#include \"ribbonUI.rc2\"\n"
         )
 
-        add_custom_target(ribbon_markup DEPENDS ${RIBBON_HEADER} ${RIBBON_RC2} ${RIBBON_BML})
+        # Step 3: Compile app.rc -> app.res using rc.exe
+        # Find rc.exe in the Windows SDK or MSVC
+        find_program(RC_EXE NAMES rc
+            HINTS "C:/Program Files (x86)/Windows Kits/10/bin/${SDK_VERSION}/x64"
+            PATHS "C:/Program Files (x86)/Windows Kits/10/bin"
+            PATH_SUFFIXES "10.0.26100.0/x64" "10.0.22621.0/x64" "10.0.19041.0/x64"
+            REQUIRED
+        )
+        set(RIBBON_RES ${RIBBON_OUT_DIR}/app.res)
+        add_custom_command(
+            OUTPUT ${RIBBON_RES}
+            COMMAND ${RC_EXE} /nologo /r /I${RIBBON_OUT_DIR}
+                /fo${RIBBON_RES} ${RIBBON_RC}
+            DEPENDS ${RIBBON_RC} ${RIBBON_RC2} ${RIBBON_BML}
+            COMMENT "Compiling Ribbon RC resource"
+            VERBATIM
+        )
+
+        add_custom_target(ribbon_markup ALL DEPENDS ${RIBBON_RES})
     endif()
 endif()
 
@@ -84,12 +99,13 @@ add_executable(MarkDownIt WIN32
 )
 
 if(MSVC AND RIBBON_AVAILABLE)
-    target_sources(MarkDownIt PRIVATE ${RIBBON_RC})
     target_include_directories(MarkDownIt PRIVATE ${RIBBON_OUT_DIR})
     add_dependencies(MarkDownIt ribbon_markup)
 
-    # uiribbon.lib and propsys.lib paths can be passed from CI
-    # or auto-discovered via glob.
+    # Link the compiled .res resource file directly
+    target_link_libraries(MarkDownIt PRIVATE ${RIBBON_RES})
+
+    # uiribbon.lib and propsys.lib
     if(NOT UIRIBBON_LIB)
         file(GLOB SDK_LIB_DIRS
             "C:/Program Files (x86)/Windows Kits/10/Lib/*/um/x64"
@@ -150,7 +166,7 @@ target_compile_definitions(MarkDownIt PRIVATE
     NOMINMAX
 )
 
-# Tests: standalone console exe, no Win32 entry point.
+# Tests
 option(BUILD_TESTS "Build test binary" OFF)
 if(BUILD_TESTS)
     add_executable(MarkDownIt.tests
