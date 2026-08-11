@@ -1,1 +1,6 @@
 #include "ribbonUI.rc2"
+
+// Application manifest: enables ComCtl32 v6 (visual styles) and
+// Windows Ribbon Framework theming. Resource ID 1 is required for
+// the exe loader to pick it up.
+1 24 "app.manifest"

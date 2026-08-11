@@ -74,8 +74,8 @@ if(MSVC)
         set(RIBBON_RES ${RIBBON_OUT_DIR}/app.res)
         add_custom_command(
             OUTPUT ${RIBBON_RES}
-            COMMAND ${RC_EXE} /nologo /r /I${RIBBON_OUT_DIR} /fo${RIBBON_RES} ${RIBBON_RC}
-            DEPENDS ${RIBBON_RC} ${RIBBON_RC2} ${RIBBON_BML}
+            COMMAND ${RC_EXE} /nologo /r /I${RIBBON_OUT_DIR} /I${CMAKE_CURRENT_SOURCE_DIR}/src /fo${RIBBON_RES} ${RIBBON_RC}
+            DEPENDS ${RIBBON_RC} ${RIBBON_RC2} ${RIBBON_BML} ${CMAKE_CURRENT_SOURCE_DIR}/src/app.manifest
             COMMENT "Compiling Ribbon RC resource"
             VERBATIM
         )
@@ -163,6 +163,12 @@ target_compile_definitions(MarkDownIt PRIVATE
     _UNICODE
     WIN32_LEAN_AND_MEAN
     NOMINMAX
+)
+
+# Don't let the linker generate a default manifest - we embed our own
+# via the .res resource file (with ComCtl32 v6 + Ribbon dependency).
+set_target_properties(MarkDownIt PROPERTIES
+    LINK_FLAGS "/MANIFEST:NO"
 )
 
 # Tests

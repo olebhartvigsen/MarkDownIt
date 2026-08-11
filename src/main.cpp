@@ -9,11 +9,6 @@
 #include "app.h"
 #include "dom.h"
 
-// Enable ComCtl32 v6 (visual styles) for modern themed controls.
-#pragma comment(linker,"\"/manifestdependency:type='win32' \
-name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
-processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
-
 // Strip surrounding quotes from a command-line argument if present.
 static std::wstring Unquote(std::wstring s) {
     if (s.size() >= 2 && s.front() == L'"' && s.back() == L'"') {
