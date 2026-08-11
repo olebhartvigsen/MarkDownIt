@@ -14,7 +14,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Find SDK tools and libs
+      - name: Find SDK tools and generate uiribbon.lib
         id: find-sdk
         shell: powershell
         run: |
@@ -25,18 +25,45 @@ jobs:
             Write-Host "Found UICC: $($uicc.FullName)"
           }
 
-          # Find uiribbon.lib
-          $uiribbonLib = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\Lib" -Recurse -Filter "uiribbon.lib" -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -match "x64" } | Sort-Object FullName | Select-Object -Last 1
-          if ($uiribbonLib) {
-            "uiribbon_lib=$($uiribbonLib.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            Write-Host "Found uiribbon.lib: $($uiribbonLib.FullName)"
-          }
-
           # Find propsys.lib
           $propsysLib = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\Lib" -Recurse -Filter "propsys.lib" -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -match "x64" } | Sort-Object FullName | Select-Object -Last 1
           if ($propsysLib) {
             "propsys_lib=$($propsysLib.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             Write-Host "Found propsys.lib: $($propsysLib.FullName)"
+          }
+
+          # uiribbon.lib is not shipped with modern Windows SDKs.
+          # Generate it from uiribbon.dll using dumpbin + lib.exe.
+          $dumpbin = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $libexe = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\lib.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          Write-Host "dumpbin: $dumpbin"
+          Write-Host "lib.exe: $libexe"
+
+          $libDir = "D:\a\_temp\uiribbon_lib"
+          New-Item -ItemType Directory -Force -Path $libDir | Out-Null
+          $defFile = "$libDir\uiribbon.def"
+          $libFile = "$libDir\uiribbon.lib"
+
+          # Export symbols from uiribbon.dll
+          $exports = & $dumpbin /exports "C:\Windows\System32\uiribbon.dll"
+          $defContent = "LIBRARY uiribbon.dll`nEXPORTS`n"
+          foreach ($line in $exports) {
+            if ($line -match '^\s+\d+\s+[0-9A-F]+\s+(\S+)') {
+              $funcName = $matches[1]
+              $defContent += "  $funcName`n"
+            }
+          }
+          Set-Content -Path $defFile -Value $defContent -Encoding ASCII
+          Write-Host "Generated .def with exports"
+
+          # Create import library
+          & $libexe /def:"$defFile" /out:"$libFile" /machine:x64
+          if (Test-Path $libFile) {
+            "uiribbon_lib=$libFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Generated uiribbon.lib: $libFile"
+          } else {
+            Write-Error "Failed to generate uiribbon.lib"
+            exit 1
           }
 
       - name: Configure CMake
