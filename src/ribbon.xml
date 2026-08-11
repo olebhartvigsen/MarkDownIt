@@ -1,19 +1,19 @@
 <?xml version='1.0' encoding='utf-8'?>
 <Application xmlns='http://schemas.microsoft.com/windows/2009/Ribbon'>
   <Application.Commands>
-    <Command Name="cmdAppMenu" Symbol="IDC_APP_MENU" Id="10000">
+    <Command Name="cmdTabHome" Symbol="IDC_TAB_HOME" Id="10001">
+      <Command.LabelTitle>
+        <String>Home</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdGroupFile" Symbol="IDC_GROUP_FILE" Id="10010">
       <Command.LabelTitle>
         <String>File</String>
       </Command.LabelTitle>
     </Command>
-    <Command Name="cmdTabView" Symbol="IDC_TAB_VIEW" Id="10001">
+    <Command Name="cmdGroupView" Symbol="IDC_GROUP_VIEW" Id="10020">
       <Command.LabelTitle>
         <String>View</String>
-      </Command.LabelTitle>
-    </Command>
-    <Command Name="cmdGroupDisplay" Symbol="IDC_GROUP_DISPLAY" Id="10020">
-      <Command.LabelTitle>
-        <String>Display</String>
       </Command.LabelTitle>
     </Command>
     <Command Name="cmdOpen" Symbol="IDC_CMD_OPEN" Id="10100">
@@ -91,20 +91,14 @@
   </Application.Commands>
   <Application.Views>
     <Ribbon>
-      <Ribbon.ApplicationMenu>
-        <ApplicationMenu CommandName="cmdAppMenu">
-          <MenuGroup>
+      <Ribbon.Tabs>
+        <Tab CommandName="cmdTabHome">
+          <Group CommandName="cmdGroupFile" SizeDefinition="ThreeButtons">
             <Button CommandName="cmdOpen" />
             <Button CommandName="cmdReload" />
-          </MenuGroup>
-          <MenuGroup>
             <Button CommandName="cmdAbout" />
-          </MenuGroup>
-        </ApplicationMenu>
-      </Ribbon.ApplicationMenu>
-      <Ribbon.Tabs>
-        <Tab CommandName="cmdTabView">
-          <Group CommandName="cmdGroupDisplay" SizeDefinition="ThreeButtons">
+          </Group>
+          <Group CommandName="cmdGroupView" SizeDefinition="ThreeButtons">
             <ToggleButton CommandName="cmdWrap" />
             <Button CommandName="cmdZoomIn" />
             <Button CommandName="cmdZoomOut" />
