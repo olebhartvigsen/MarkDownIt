@@ -99,9 +99,10 @@ if(MSVC AND RIBBON_AVAILABLE)
     target_include_directories(MarkDownIt PRIVATE ${RIBBON_OUT_DIR})
     add_dependencies(MarkDownIt ribbon_markup)
 
-    # Add the compiled .res as an object source.
-    # This is how CMake VS generator handles .res files.
+    # Add the compiled .res as a source file.
     target_sources(MarkDownIt PRIVATE ${RIBBON_RES})
+    # Also add to link flags to ensure the linker picks it up.
+    set_property(TARGET MarkDownIt APPEND PROPERTY LINK_FLAGS "${RIBBON_RES}")
 
     # uiribbon.lib and propsys.lib
     if(NOT UIRIBBON_LIB)
