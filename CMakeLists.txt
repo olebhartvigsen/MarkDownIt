@@ -22,9 +22,11 @@ if(MSVC)
     # Allow UICC_EXE to be passed via -DUICC_EXE=...
     if(NOT UICC_EXE)
         # Search for UICC.exe: Windows Kits\10\bin\<version>\x64\uicc.exe
+        # UICC.exe may only be x86 on some runners; search all architectures.
         file(GLOB UICC_CANDIDATES
             "C:/Program Files (x86)/Windows Kits/10/bin/*/x64/uicc.exe"
             "C:/Program Files/Windows Kits/10/bin/*/x64/uicc.exe"
+            "C:/Program Files (x86)/Windows Kits/10/bin/*/x86/uicc.exe"
         )
         if(UICC_CANDIDATES)
             list(SORT UICC_CANDIDATES COMPARE NATURAL ORDER DESCENDING)
@@ -33,12 +35,13 @@ if(MSVC)
     endif()
 
     if(NOT UICC_EXE)
-        message(FATAL_ERROR
-            "UICC.exe not found. Pass -DUICC_EXE=<path-to-uicc.exe> or ensure "
-            "Windows SDK is installed at the standard location.")
+        message(WARNING "UICC.exe not found. Ribbon will not be built. "
+            "Pass -DUICC_EXE=<path> when building the main target.")
+        set(RIBBON_AVAILABLE FALSE)
+    else()
+        message(STATUS "Using UICC: ${UICC_EXE}")
+        set(RIBBON_AVAILABLE TRUE)
     endif()
-
-    message(STATUS "Using UICC: ${UICC_EXE}")
 
     set(RIBBON_XML ${CMAKE_CURRENT_SOURCE_DIR}/src/ribbon.xml)
     set(RIBBON_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/ribbon)
@@ -46,29 +49,31 @@ if(MSVC)
     set(RIBBON_RC2 ${RIBBON_OUT_DIR}/ribbonUI.rc2)
     set(RIBBON_BML ${RIBBON_OUT_DIR}/ribbonUI.bml)
 
-    add_custom_command(
-        OUTPUT ${RIBBON_HEADER} ${RIBBON_RC2} ${RIBBON_BML}
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${RIBBON_OUT_DIR}
-        COMMAND ${UICC_EXE} ${RIBBON_XML} ${RIBBON_BML}
-            /header:${RIBBON_HEADER}
-            /res:${RIBBON_RC2}
-            /name:MARKDOWNIT_RIBBON
-        DEPENDS ${RIBBON_XML}
-        COMMENT "Compiling Ribbon markup (UICC)"
-        VERBATIM
-    )
+    if(RIBBON_AVAILABLE)
+        add_custom_command(
+            OUTPUT ${RIBBON_HEADER} ${RIBBON_RC2} ${RIBBON_BML}
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${RIBBON_OUT_DIR}
+            COMMAND ${UICC_EXE} ${RIBBON_XML} ${RIBBON_BML}
+                /header:${RIBBON_HEADER}
+                /res:${RIBBON_RC2}
+                /name:MARKDOWNIT_RIBBON
+            DEPENDS ${RIBBON_XML}
+            COMMENT "Compiling Ribbon markup (UICC)"
+            VERBATIM
+        )
 
-    set(RIBBON_RC ${CMAKE_CURRENT_BINARY_DIR}/ribbon/app.rc)
-    add_custom_command(
-        OUTPUT ${RIBBON_RC}
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/ribbon
-        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/src/app.rc ${RIBBON_RC}
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/app.rc
-        COMMENT "Preparing ribbon RC file"
-        VERBATIM
-    )
+        set(RIBBON_RC ${CMAKE_CURRENT_BINARY_DIR}/ribbon/app.rc)
+        add_custom_command(
+            OUTPUT ${RIBBON_RC}
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/ribbon
+            COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/src/app.rc ${RIBBON_RC}
+            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/app.rc
+            COMMENT "Preparing ribbon RC file"
+            VERBATIM
+        )
 
-    add_custom_target(ribbon_markup DEPENDS ${RIBBON_HEADER} ${RIBBON_RC2} ${RIBBON_BML} ${RIBBON_RC})
+        add_custom_target(ribbon_markup DEPENDS ${RIBBON_HEADER} ${RIBBON_RC2} ${RIBBON_BML} ${RIBBON_RC})
+    endif()
 endif()
 
 # Main application
@@ -83,7 +88,7 @@ add_executable(MarkDownIt WIN32
     src/ribbon.cpp
 )
 
-if(MSVC)
+if(MSVC AND RIBBON_AVAILABLE)
     target_sources(MarkDownIt PRIVATE ${RIBBON_RC})
     target_include_directories(MarkDownIt PRIVATE ${RIBBON_OUT_DIR})
     add_dependencies(MarkDownIt ribbon_markup)
@@ -118,7 +123,7 @@ if(MSVC)
     endif()
     message(STATUS "Using uiribbon.lib: ${UIRIBBON_LIB}")
     message(STATUS "Using propsys.lib: ${PROPSYS_LIB}")
-endif()
+endif() # MSVC AND RIBBON_AVAILABLE
 
 target_link_libraries(MarkDownIt PRIVATE
     md4c
@@ -133,8 +138,8 @@ target_link_libraries(MarkDownIt PRIVATE
     windowscodecs
     winhttp
     comdlg32
-    ${UIRIBBON_LIB}
-    ${PROPSYS_LIB}
+    $<$<BOOL:${RIBBON_AVAILABLE}>:${UIRIBBON_LIB}>
+    $<$<BOOL:${RIBBON_AVAILABLE}>:${PROPSYS_LIB}>
 )
 
 target_compile_definitions(MarkDownIt PRIVATE

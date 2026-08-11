@@ -14,18 +14,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Find UICC.exe and SDK libs
-        id: find-uicc
+      - name: Find SDK tools and libs
+        id: find-sdk
         shell: powershell
         run: |
-          # Find UICC.exe
+          # Find UICC.exe (build tool, any arch)
           $uicc = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\bin" -Recurse -Filter "uicc.exe" -ErrorAction SilentlyContinue | Sort-Object FullName | Select-Object -Last 1
           if ($uicc) {
             "uicc_path=$($uicc.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             Write-Host "Found UICC: $($uicc.FullName)"
-          } else {
-            Write-Error "UICC.exe not found"
-            exit 1
           }
 
           # Find uiribbon.lib
@@ -33,9 +30,6 @@ jobs:
           if ($uiribbonLib) {
             "uiribbon_lib=$($uiribbonLib.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             Write-Host "Found uiribbon.lib: $($uiribbonLib.FullName)"
-          } else {
-            Write-Host "uiribbon.lib not found, searching all lib dirs..."
-            Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64" -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "ui" } | ForEach-Object { Write-Host $_.Name }
           }
 
           # Find propsys.lib
@@ -48,9 +42,9 @@ jobs:
       - name: Configure CMake
         run: |
           cmake -B build -G "Visual Studio 17 2022" -A x64 `
-            -DUICC_EXE="${{ steps.find-uicc.outputs.uicc_path }}" `
-            -DUIRIBBON_LIB="${{ steps.find-uicc.outputs.uiribbon_lib }}" `
-            -DPROPSYS_LIB="${{ steps.find-uicc.outputs.propsys_lib }}"
+            -DUICC_EXE="${{ steps.find-sdk.outputs.uicc_path }}" `
+            -DUIRIBBON_LIB="${{ steps.find-sdk.outputs.uiribbon_lib }}" `
+            -DPROPSYS_LIB="${{ steps.find-sdk.outputs.propsys_lib }}"
 
       - name: Build Release exe
         run: cmake --build build --config Release
@@ -65,21 +59,9 @@ jobs:
           name: MarkDownIt-x64
           path: build/Release/MarkDownIt.exe
 
-  test:
-    name: Tests
-    runs-on: windows-2022
-    needs: build
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure CMake (with tests)
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTS=ON
-
-      - name: Build tests
-        run: cmake --build build --config Release
-
-      - name: Run tests
+      - name: Build and run tests
         shell: bash
-        run: build/Release/MarkDownIt.tests.exe
+        run: |
+          cmake -B build-tests -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTS=ON
+          cmake --build build-tests --config Release
+          build-tests/Release/MarkDownIt.tests.exe
