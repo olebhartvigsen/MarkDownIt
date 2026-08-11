@@ -18,26 +18,16 @@ jobs:
         id: find-uicc
         shell: powershell
         run: |
-          $paths = @(
-            "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\uicc.exe",
-            "C:\Program Files\Windows Kits\10\bin\*\x64\uicc.exe"
-          )
-          $uicc = $null
-          foreach ($p in $paths) {
-            $found = Get-ChildItem $p -ErrorAction SilentlyContinue | Select-Object -Last 1
-            if ($found) { $uicc = $found; break }
-          }
+          # Search all installed Windows SDKs for uicc.exe
+          $uicc = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\bin" -Recurse -Filter "uicc.exe" -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -match "x64" } | Select-Object -Last 1
           if ($uicc) {
             "uicc_path=$($uicc.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             Write-Host "Found UICC: $($uicc.FullName)"
           } else {
-            # Try using vswhere to find the SDK path
-            $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-            if (Test-Path $vswhere) {
-              $sdkPath = & $vswhere -latest -property installationPath
-              Write-Host "VS install path: $sdkPath"
-            }
-            Write-Error "UICC.exe not found in any Windows SDK location"
+            # List all Windows Kits bin dirs for debugging
+            Write-Host "Searching Windows Kits bin directories..."
+            Get-ChildItem -Path "C:\Program Files*\Windows Kits" -Recurse -Filter "uicc.exe" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
+            Write-Error "UICC.exe not found"
             exit 1
           }
 
