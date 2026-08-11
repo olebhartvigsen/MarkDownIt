@@ -1,4 +1,65 @@
+
+// Icon resource IDs for ribbon buttons.
+#define IDB_OPEN_16     2000
+#define IDB_OPEN_32     2001
+#define IDB_OPEN_64     2002
+#define IDB_RELOAD_16   2003
+#define IDB_RELOAD_32   2004
+#define IDB_RELOAD_64   2005
+#define IDB_WRAP_16     2006
+#define IDB_WRAP_32     2007
+#define IDB_WRAP_64     2008
+#define IDB_ZOOMIN_16   2009
+#define IDB_ZOOMIN_32   2010
+#define IDB_ZOOMIN_64   2011
+#define IDB_ZOOMOUT_16  2012
+#define IDB_ZOOMOUT_32  2013
+#define IDB_ZOOMOUT_64  2014
+#define IDB_ABOUT_16    2015
+#define IDB_ABOUT_32    2016
+#define IDB_ABOUT_64    2017
+#define IDB_FILEGRP_32  2018
+#define IDB_VIEWGRP_32  2019
+
 #include "ribbonUI.rc2"
+
+// Ribbon button icons (Tabler Icons, converted to PNG).
+// The Ribbon Framework loads these by resource ID via IUIImageFromImage.
+// Small (16x16) for collapsed/compact view, Large (32x32) for normal view.
+
+// Open
+IDB_OPEN_16    PNG "icons/open_16.png"
+IDB_OPEN_32    PNG "icons/open_32.png"
+IDB_OPEN_64    PNG "icons/open_64.png"
+
+// Reload
+IDB_RELOAD_16  PNG "icons/reload_16.png"
+IDB_RELOAD_32  PNG "icons/reload_32.png"
+IDB_RELOAD_64  PNG "icons/reload_64.png"
+
+// Wrap
+IDB_WRAP_16    PNG "icons/wrap_16.png"
+IDB_WRAP_32    PNG "icons/wrap_32.png"
+IDB_WRAP_64    PNG "icons/wrap_64.png"
+
+// Zoom In
+IDB_ZOOMIN_16  PNG "icons/zoom-in_16.png"
+IDB_ZOOMIN_32  PNG "icons/zoom-in_32.png"
+IDB_ZOOMIN_64  PNG "icons/zoom-in_64.png"
+
+// Zoom Out
+IDB_ZOOMOUT_16 PNG "icons/zoom-out_16.png"
+IDB_ZOOMOUT_32 PNG "icons/zoom-out_32.png"
+IDB_ZOOMOUT_64 PNG "icons/zoom-out_64.png"
+
+// About
+IDB_ABOUT_16   PNG "icons/about_16.png"
+IDB_ABOUT_32   PNG "icons/about_32.png"
+IDB_ABOUT_64   PNG "icons/about_64.png"
+
+// Group icons
+IDB_FILEGRP_32 PNG "icons/file-group_32.png"
+IDB_VIEWGRP_32 PNG "icons/view-group_32.png"
 
 // Application manifest: enables ComCtl32 v6 (visual styles) and
 // Windows Ribbon Framework theming. Resource ID 1 is required for
