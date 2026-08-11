@@ -54,6 +54,81 @@ static void EnableDpiAwareness() {
     SetProcessDPIAware();
 }
 
+// Save window placement to registry. Called at shutdown.
+static void SaveWinPlacement(HWND hwnd) {
+    WINDOWPLACEMENT wp;
+    ZeroMemory(&wp, sizeof(wp));
+    wp.length = sizeof(wp);
+    if (!GetWindowPlacement(hwnd, &wp)) return;
+
+    HKEY hKey = nullptr;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\MarkDownIt", 0, nullptr, 0,
+            KEY_SET_VALUE, nullptr, &hKey, nullptr) != ERROR_SUCCESS)
+        return;
+
+    DWORD maximized = IsZoomed(hwnd) ? 1u : 0u;
+    RegSetValueExW(hKey, L"WindowPlacement", 0, REG_BINARY,
+        reinterpret_cast<BYTE*>(&wp), sizeof(wp));
+    RegSetValueExW(hKey, L"WindowMaximized", 0, REG_DWORD,
+        reinterpret_cast<BYTE*>(&maximized), sizeof(maximized));
+
+    RegCloseKey(hKey);
+}
+
+// Restore window placement from registry if available and on-screen.
+// Returns true on successful restore (also calls ShowWindow itself).
+static bool RestoreWinPlacement(HWND hwnd) {
+    HKEY hKey = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\MarkDownIt", 0,
+            KEY_QUERY_VALUE, &hKey) != ERROR_SUCCESS)
+        return false;
+
+    DWORD size = sizeof(WINDOWPLACEMENT);
+    DWORD type = 0;
+    WINDOWPLACEMENT wp;
+    ZeroMemory(&wp, sizeof(wp));
+    wp.length = sizeof(wp);
+    LSTATUS lr = RegQueryValueExW(hKey, L"WindowPlacement", nullptr, &type,
+        reinterpret_cast<BYTE*>(&wp), &size);
+
+    DWORD maxVal = 0;
+    DWORD maxSz = sizeof(maxVal);
+    DWORD maxType = 0;
+    RegQueryValueExW(hKey, L"WindowMaximized", nullptr, &maxType,
+        reinterpret_cast<BYTE*>(&maxVal), &maxSz);
+
+    RegCloseKey(hKey);
+
+    if (lr != ERROR_SUCCESS || type != REG_BINARY || wp.length != sizeof(WINDOWPLACEMENT))
+        return false;
+
+    // Validate that the restored rect is at least partially on-screen.
+    // Minimum visible window: 200x100 pixels.
+    RECT rc = wp.rcNormalPosition;
+    HMONITOR hMon = MonitorFromRect(&rc, MONITOR_DEFAULTTONEAREST);
+    if (!hMon) return false;
+
+    MONITORINFO mi;
+    ZeroMemory(&mi, sizeof(mi));
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(hMon, &mi)) return false;
+
+    RECT work = mi.rcWork;
+    int visLeft = (rc.left > work.left) ? rc.left : work.left;
+    int visTop = (rc.top > work.top) ? rc.top : work.top;
+    int visRight = (rc.right < work.right) ? rc.right : work.right;
+    int visBottom = (rc.bottom < work.bottom) ? rc.bottom : work.bottom;
+    int visW = visRight - visLeft;
+    int visH = visBottom - visTop;
+    if (visW < 200 || visH < 100) return false;
+
+    wp.showCmd = SW_SHOWNORMAL;
+    wp.flags = 0;
+    SetWindowPlacement(hwnd, &wp);
+    ShowWindow(hwnd, maxVal ? SW_SHOWMAXIMIZED : SW_SHOWNORMAL);
+    return true;
+}
+
 bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     hinst_ = hInst;
     EnableDpiAwareness();
@@ -100,7 +175,10 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
         return false;
     }
 
-    ShowWindow(hwnd_, nCmdShow);
+    // Restore saved window placement, or use default if not available.
+    if (!RestoreWinPlacement(hwnd_)) {
+        ShowWindow(hwnd_, nCmdShow);
+    }
     UpdateWindow(hwnd_);
 
     // Initialize the Ribbon Framework after the window is visible.
@@ -419,6 +497,7 @@ void AppWindow::OnContentPaint(HWND hwnd) {
 }
 
 void AppWindow::OnDestroy() {
+    SaveWinPlacement(hwnd_);
     DestroyRibbon();
     watcher_.Stop();
     renderer_.Release();
