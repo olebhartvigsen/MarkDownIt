@@ -165,11 +165,8 @@ target_compile_definitions(MarkDownIt PRIVATE
     NOMINMAX
 )
 
-# Don't let the linker generate a default manifest - we embed our own
-# via the .res resource file (with ComCtl32 v6 + Ribbon dependency).
-set_target_properties(MarkDownIt PROPERTIES
-    LINK_FLAGS "/MANIFEST:NO"
-)
+# The linker will embed the .res resources (including our manifest
+# with ComCtl32 v6 and Ribbon dependency) into the exe automatically.
 
 # Tests
 option(BUILD_TESTS "Build test binary" OFF)
