@@ -106,6 +106,12 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     // Initialize the Ribbon Framework after the window is visible.
     InitRibbon(hwnd_, this);
 
+    // Force a content resize + repaint. The ribbon may not fire
+    // OnViewChanged immediately, so we ensure the content window
+    // is positioned correctly right after initialization.
+    ResizeContentWindow();
+    Repaint();
+
     return true;
 }
 
@@ -393,7 +399,11 @@ void AppWindow::OnContentPaint(HWND hwnd) {
         renderer_.Render(rt_, dw_factory_, doc_, size.width, scrollY_, 0.0f);
     }
 
-    (void)rt_->EndDraw();
+    HRESULT hr = rt_->EndDraw();
+    if (hr == D2DERR_RECREATE_TARGET) {
+        RecreateRenderTarget();
+        InvalidateRect(hwnd, nullptr, FALSE);
+    }
     EndPaint(hwnd, &ps);
 }
 

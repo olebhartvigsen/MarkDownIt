@@ -1,13 +1,31 @@
 <?xml version='1.0' encoding='utf-8'?>
 <Application xmlns='http://schemas.microsoft.com/windows/2009/Ribbon'>
   <Application.Commands>
-    <Command Name="cmdTabHome" Symbol="IDC_TAB_HOME" Id="10000">
+    <Command Name="cmdTabFile" Symbol="IDC_TAB_FILE" Id="10000">
       <Command.LabelTitle>
-        <String>Home</String>
+        <String>File</String>
       </Command.LabelTitle>
     </Command>
-    <Command Name="cmdGroupFile" />
-    <Command Name="cmdGroupView" />
+    <Command Name="cmdTabView" Symbol="IDC_TAB_VIEW" Id="10001">
+      <Command.LabelTitle>
+        <String>View</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdGroupActions" Symbol="IDC_GROUP_ACTIONS" Id="10010">
+      <Command.LabelTitle>
+        <String>Actions</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdGroupInfo" Symbol="IDC_GROUP_INFO" Id="10011">
+      <Command.LabelTitle>
+        <String>Info</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdGroupDisplay" Symbol="IDC_GROUP_DISPLAY" Id="10020">
+      <Command.LabelTitle>
+        <String>Display</String>
+      </Command.LabelTitle>
+    </Command>
 
     <Command Name="cmdOpen" Symbol="IDC_CMD_OPEN" Id="10100">
       <Command.LabelTitle>
@@ -31,6 +49,18 @@
       </Command.LargeImages>
       <Command.SmallImages>
         <Image Source="icons/reload_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
+    <Command Name="cmdAbout" Symbol="IDC_CMD_ABOUT" Id="10102">
+      <Command.LabelTitle>
+        <String>About</String>
+      </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/about_32.png" MinDPI="96"/>
+        <Image Source="icons/about_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/about_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
     <Command Name="cmdWrap" Symbol="IDC_CMD_WRAP" Id="10200">
@@ -69,28 +99,21 @@
         <Image Source="icons/zoom-out_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
-    <Command Name="cmdAbout" Symbol="IDC_CMD_ABOUT" Id="10300">
-      <Command.LabelTitle>
-        <String>About</String>
-      </Command.LabelTitle>
-      <Command.LargeImages>
-        <Image Source="icons/about_32.png" MinDPI="96"/>
-        <Image Source="icons/about_64.png" MinDPI="192"/>
-      </Command.LargeImages>
-      <Command.SmallImages>
-        <Image Source="icons/about_16.png" MinDPI="96"/>
-      </Command.SmallImages>
-    </Command>
   </Application.Commands>
   <Application.Views>
     <Ribbon>
       <Ribbon.Tabs>
-        <Tab CommandName="cmdTabHome">
-          <Group CommandName="cmdGroupFile" SizeDefinition="TwoButtons">
+        <Tab CommandName="cmdTabFile">
+          <Group CommandName="cmdGroupActions" SizeDefinition="TwoButtons">
             <Button CommandName="cmdOpen" />
             <Button CommandName="cmdReload" />
           </Group>
-          <Group CommandName="cmdGroupView" SizeDefinition="ThreeButtons">
+          <Group CommandName="cmdGroupInfo" SizeDefinition="OneButton">
+            <Button CommandName="cmdAbout" />
+          </Group>
+        </Tab>
+        <Tab CommandName="cmdTabView">
+          <Group CommandName="cmdGroupDisplay" SizeDefinition="ThreeButtons">
             <ToggleButton CommandName="cmdWrap" />
             <Button CommandName="cmdZoomIn" />
             <Button CommandName="cmdZoomOut" />
