@@ -1,0 +1,60 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Application xmlns='http://schemas.microsoft.com/windows/2009/Ribbon'>
+  <Application.Commands>
+    <Command Name="cmdTabHome" Symbol="IDC_TAB_HOME" Id="10000">
+      <Command.LabelTitle>
+        <String>Home</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdGroupFile" />
+    <Command Name="cmdGroupView" />
+
+    <Command Name="cmdOpen" Symbol="IDC_CMD_OPEN" Id="10100">
+      <Command.LabelTitle>
+        <String>Open</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdReload" Symbol="IDC_CMD_RELOAD" Id="10101">
+      <Command.LabelTitle>
+        <String>Reload</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdWrap" Symbol="IDC_CMD_WRAP" Id="10200">
+      <Command.LabelTitle>
+        <String>Wrap</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdZoomIn" Symbol="IDC_CMD_ZOOMIN" Id="10201">
+      <Command.LabelTitle>
+        <String>Zoom In</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdZoomOut" Symbol="IDC_CMD_ZOOMOUT" Id="10202">
+      <Command.LabelTitle>
+        <String>Zoom Out</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdAbout" Symbol="IDC_CMD_ABOUT" Id="10300">
+      <Command.LabelTitle>
+        <String>About</String>
+      </Command.LabelTitle>
+    </Command>
+  </Application.Commands>
+  <Application.Views>
+    <Ribbon>
+      <Ribbon.Tabs>
+        <Tab CommandName="cmdTabHome">
+          <Group CommandName="cmdGroupFile" SizeDefinition="TwoButtons">
+            <Button CommandName="cmdOpen" />
+            <Button CommandName="cmdReload" />
+          </Group>
+          <Group CommandName="cmdGroupView" SizeDefinition="ThreeButtons">
+            <ToggleButton CommandName="cmdWrap" />
+            <Button CommandName="cmdZoomIn" />
+            <Button CommandName="cmdZoomOut" />
+          </Group>
+        </Tab>
+      </Ribbon.Tabs>
+    </Ribbon>
+  </Application.Views>
+</Application>

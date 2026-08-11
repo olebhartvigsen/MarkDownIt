@@ -9,13 +9,6 @@
 #include "renderer.h"
 #include "filewatch.h"
 
-#define IDC_TB_OPEN     1001
-#define IDC_TB_RELOAD   1002
-#define IDC_TB_WRAP     1003
-#define IDC_TB_ZOOMIN   1004
-#define IDC_TB_ZOOMOUT  1005
-#define IDC_TB_ABOUT    1006
-
 class AppWindow {
 public:
     AppWindow();
@@ -27,11 +20,19 @@ public:
     void OpenFile(const std::wstring& path);
     void Reload();
 
+    // Public action methods, called by the Ribbon command handler.
+    void OpenFileDialog();
+    void ZoomIn();
+    void ZoomOut();
+    void ToggleWrap();
+    void ShowAbout();
+
+    // Called by CRibbonApplication::OnViewChanged when ribbon height changes.
+    void OnRibbonHeightChanged();
+
 private:
     HWND    hwnd_ = nullptr;
     HINSTANCE hinst_ = nullptr;
-    HWND    hwndToolbar_ = nullptr;
-    float   ribbonHeightPx_ = 0.0f;
 
     ID2D1Factory*          d2d_factory_ = nullptr;
     ID2D1HwndRenderTarget* rt_ = nullptr;
@@ -67,15 +68,6 @@ private:
     void UpdateScrollInfo();
     void LoadSampleDoc();
     void Repaint();
-    void CreateToolbar();
-    void RepositionToolbar();
-    void OnCommand(WPARAM wp);
-    void OpenFileDialog();
-    void ZoomIn();
-    void ZoomOut();
-    void ToggleWrap();
-    void ShowAbout();
-    void UpdateWrapButton();
     float GetRibbonHeightDip();
     void RecreateRenderer();
 

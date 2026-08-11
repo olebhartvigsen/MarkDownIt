@@ -4,9 +4,15 @@
 // Drag-and-drop is handled in the window (WS_EX_ACCEPTFILES + WM_DROPFILES).
 
 #include <windows.h>
+#include <ole2.h>   // OleInitialize for COM (Ribbon framework)
 #include <string>
 #include "app.h"
 #include "dom.h"
+
+// Enable ComCtl32 v6 (visual styles) for modern themed controls.
+#pragma comment(linker,"\"/manifestdependency:type='win32' \
+name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
+processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 // Strip surrounding quotes from a command-line argument if present.
 static std::wstring Unquote(std::wstring s) {
@@ -17,6 +23,9 @@ static std::wstring Unquote(std::wstring s) {
 }
 
 int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR lpCmdLine, int nCmdShow) {
+    // COM initialization required by the Windows Ribbon Framework.
+    OleInitialize(nullptr);
+
     AppWindow app;
     if (!app.Init(hInst, nCmdShow)) {
         return 1;

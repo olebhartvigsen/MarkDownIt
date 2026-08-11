@@ -1,4 +1,5 @@
 #include "app.h"
+#include "ribbon.h"
 #include "parser.h"
 #include <commdlg.h>
 
@@ -227,7 +228,7 @@ void AppWindow::OnCreate(HWND hwnd) {
 
     EnsureRenderer();
     LoadSampleDoc();
-    CreateToolbar();
+    InitRibbon(hwnd_, this);
     UpdateScrollInfo();
 }
 
@@ -360,6 +361,7 @@ void AppWindow::OnPaint(HWND hwnd) {
 }
 
 void AppWindow::OnDestroy() {
+    DestroyRibbon();
     watcher_.Stop();
     renderer_.Release();
     SafeRelease(rt_);
@@ -369,81 +371,25 @@ void AppWindow::OnDestroy() {
 }
 
 float AppWindow::GetRibbonHeightDip() {
-    if (!rt_ || ribbonHeightPx_ == 0.0f) return 0.0f;
+    if (!rt_ || g_ribbonHeight == 0) return 0.0f;
     D2D1_SIZE_F dipSize = rt_->GetSize();
     D2D1_SIZE_U pxSize = rt_->GetPixelSize();
     if (pxSize.height == 0) return 0.0f;
     float scale = dipSize.height / (float)(pxSize.height);
-    return ribbonHeightPx_ * scale;
+    return (float)g_ribbonHeight * scale;
+}
+
+void AppWindow::OnRibbonHeightChanged() {
+    // The ribbon framework reports a new height via OnViewChanged.
+    // Trigger a repaint and scroll info update so content offsets below the ribbon.
+    UpdateScrollInfo();
+    Repaint();
 }
 
 void AppWindow::RecreateRenderer() {
     renderer_.Release();
     renderer_inited_ = false;
     EnsureRenderer();
-}
-
-void AppWindow::CreateToolbar() {
-    struct Btn { const wchar_t* label; int id; };
-    Btn buttons[] = {
-        { L"Open",     IDC_TB_OPEN },
-        { L"Reload",   IDC_TB_RELOAD },
-        { L"Wrap: On", IDC_TB_WRAP },
-        { L"Zoom +",   IDC_TB_ZOOMIN },
-        { L"Zoom -",   IDC_TB_ZOOMOUT },
-        { L"About",    IDC_TB_ABOUT },
-    };
-    UINT dpi = GetWindowDpi(hwnd_);
-    int btnH = MulDiv(28, dpi, 96);
-    int btnW = MulDiv(72, dpi, 96);
-    int pad  = MulDiv(4, dpi, 96);
-    int top  = MulDiv(4, dpi, 96);
-    int x = pad;
-    for (const auto& b : buttons) {
-        CreateWindowExW(0, L"BUTTON", b.label,
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            x, top, btnW, btnH,
-            hwnd_, (HMENU)(LONG_PTR)(b.id),
-            hinst_, nullptr);
-        x += btnW + pad;
-    }
-    ribbonHeightPx_ = (float)(btnH + top * 2);
-}
-
-void AppWindow::RepositionToolbar() {
-    UINT dpi = GetWindowDpi(hwnd_);
-    int btnH = MulDiv(28, dpi, 96);
-    int btnW = MulDiv(72, dpi, 96);
-    int pad  = MulDiv(4, dpi, 96);
-    int top  = MulDiv(4, dpi, 96);
-    int x = pad;
-    int ids[] = { IDC_TB_OPEN, IDC_TB_RELOAD, IDC_TB_WRAP,
-                 IDC_TB_ZOOMIN, IDC_TB_ZOOMOUT, IDC_TB_ABOUT };
-    for (int id : ids) {
-        HWND btn = GetDlgItem(hwnd_, id);
-        if (btn) MoveWindow(btn, x, top, btnW, btnH, TRUE);
-        x += btnW + pad;
-    }
-    ribbonHeightPx_ = (float)(btnH + top * 2);
-}
-
-void AppWindow::UpdateWrapButton() {
-    HWND btn = GetDlgItem(hwnd_, IDC_TB_WRAP);
-    if (btn) {
-        SetWindowTextW(btn, renderer_.Wrap() ? L"Wrap: On" : L"Wrap: Off");
-    }
-}
-
-void AppWindow::OnCommand(WPARAM wp) {
-    int id = LOWORD(wp);
-    switch (id) {
-        case IDC_TB_OPEN:    OpenFileDialog(); break;
-        case IDC_TB_RELOAD:  Reload();        break;
-        case IDC_TB_WRAP:    ToggleWrap();    break;
-        case IDC_TB_ZOOMIN:  ZoomIn();        break;
-        case IDC_TB_ZOOMOUT: ZoomOut();       break;
-        case IDC_TB_ABOUT:   ShowAbout();     break;
-    }
 }
 
 void AppWindow::OpenFileDialog() {
@@ -484,7 +430,7 @@ void AppWindow::ZoomOut() {
 
 void AppWindow::ToggleWrap() {
     renderer_.SetWrap(!renderer_.Wrap());
-    UpdateWrapButton();
+    UpdateRibbonWrapState(renderer_.Wrap());
     UpdateScrollInfo();
     Repaint();
 }
@@ -505,7 +451,6 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_PAINT:     OnPaint(hwnd);     return 0;
         case WM_DROPFILES: OnDropFiles(hwnd, (HDROP)wp); return 0;
         case WM_VSCROLL:   OnVScroll(hwnd, (int)LOWORD(wp), (int)HIWORD(wp)); return 0;
-        case WM_COMMAND:    OnCommand(wp); return 0;
         case WM_MOUSEWHEEL: {
             int delta = GET_WHEEL_DELTA_WPARAM(wp);
             OnMouseWheel(hwnd, delta);
@@ -533,7 +478,6 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             // Recreate text formats so they pick up the new DPI.
             renderer_.Release();
             EnsureRenderer();
-            RepositionToolbar();
             RECT* rc = (RECT*)lp;
             SetWindowPos(hwnd, nullptr, rc->left, rc->top,
                 rc->right - rc->left, rc->bottom - rc->top,
