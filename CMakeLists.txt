@@ -80,7 +80,13 @@ if(MSVC AND RIBBON_AVAILABLE)
 
     # Add the .rc file as a source. VS will auto-compile it.
     # The include path to ribbonUI.rc2 is set via target_include_directories.
+    message(STATUS "Adding app.rc to sources: ${CMAKE_CURRENT_SOURCE_DIR}/src/app.rc")
+    message(STATUS "RIBBON_OUT_DIR for includes: ${RIBBON_OUT_DIR}")
     target_sources(MarkDownIt PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app.rc)
+    # Set the RC include path explicitly
+    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/src/app.rc
+        PROPERTIES COMPILE_FLAGS "/I ${RIBBON_OUT_DIR}"
+    )
 
     # uiribbon.lib and propsys.lib
     if(NOT UIRIBBON_LIB)
