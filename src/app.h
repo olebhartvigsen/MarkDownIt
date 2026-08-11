@@ -3,7 +3,6 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <d2d1.h>
-#include <dwmapi.h>
 #include <dwrite.h>
 #include <string>
 #include "dom.h"
@@ -31,8 +30,12 @@ public:
     // Called by CRibbonApplication::OnViewChanged when ribbon height changes.
     void OnRibbonHeightChanged();
 
+    HWND GetHwnd() const { return hwnd_; }
+    HWND GetContentHwnd() const { return hwnd_content_; }
+
 private:
     HWND    hwnd_ = nullptr;
+    HWND    hwnd_content_ = nullptr;
     HINSTANCE hinst_ = nullptr;
 
     ID2D1Factory*          d2d_factory_ = nullptr;
@@ -45,7 +48,7 @@ private:
     Document               doc_;
     std::wstring           file_path_;
 
-    FileWatcher            watcher_;   // live reload (Task 9)
+    FileWatcher            watcher_;
 
     // Scroll state (in DIPs)
     float  scrollY_    = 0.0f;
@@ -54,13 +57,17 @@ private:
     int    clientH_    = 0;
 
     static const wchar_t* kClassName;
+    static const wchar_t* kContentClassName;
 
     LRESULT WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+    LRESULT ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
     void OnCreate(HWND hwnd);
-    void OnPaint(HWND hwnd);
     void OnSize(HWND hwnd, int width, int height);
-    void OnVScroll(HWND hwnd, int code, int pos);
-    void OnMouseWheel(HWND hwnd, int delta);
+    void ResizeContentWindow();
+    void OnContentPaint(HWND hwnd);
+    void OnContentVScroll(HWND hwnd, int code, int pos);
+    void OnContentMouseWheel(HWND hwnd, int delta);
+    void OnContentSize(HWND hwnd, int width, int height);
     void OnDropFiles(HWND hwnd, HDROP hDrop);
     void OnReload();
     void OnDestroy();
@@ -69,8 +76,8 @@ private:
     void UpdateScrollInfo();
     void LoadSampleDoc();
     void Repaint();
-    float GetRibbonHeightDip();
     void RecreateRenderer();
 
     static LRESULT CALLBACK WndProcThunk(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+    static LRESULT CALLBACK ContentWndProcThunk(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 };

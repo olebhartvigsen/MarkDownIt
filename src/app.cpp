@@ -14,6 +14,7 @@
 #include <cmath>
 
 const wchar_t* AppWindow::kClassName = L"MarkDownItWindow";
+const wchar_t* AppWindow::kContentClassName = L"MarkDownItContent";
 
 template <typename T>
 inline void SafeRelease(T*& p) {
@@ -57,6 +58,7 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     hinst_ = hInst;
     EnableDpiAwareness();
 
+    // Register the main window class.
     WNDCLASSW wc = {};
     wc.lpfnWndProc   = WndProcThunk;
     wc.hInstance     = hInst;
@@ -69,6 +71,19 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
         return false;
     }
 
+    // Register the content child window class.
+    WNDCLASSW wc2 = {};
+    wc2.lpfnWndProc   = ContentWndProcThunk;
+    wc2.hInstance     = hInst;
+    wc2.lpszClassName = kContentClassName;
+    wc2.hCursor       = LoadCursor(nullptr, IDC_ARROW);
+    wc2.hbrBackground = nullptr;
+    wc2.style         = CS_HREDRAW | CS_VREDRAW;
+    if (!RegisterClassW(&wc2)) {
+        MessageBoxW(nullptr, L"RegisterClass (content) failed", L"MarkDownIt", MB_ICONERROR);
+        return false;
+    }
+
     int sw = GetSystemMetrics(SM_CXSCREEN);
     int sh = GetSystemMetrics(SM_CYSCREEN);
     int w = 900, h = 640;
@@ -76,7 +91,7 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
 
     hwnd_ = CreateWindowExW(
         WS_EX_ACCEPTFILES, kClassName, L"MarkDownIt",
-        WS_OVERLAPPEDWINDOW | WS_VSCROLL,
+        WS_OVERLAPPEDWINDOW,
         x, y, w, h,
         nullptr, nullptr, hInst, this);
 
@@ -89,16 +104,7 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     UpdateWindow(hwnd_);
 
     // Initialize the Ribbon Framework after the window is visible.
-    // The framework subclasses the window and needs it to be fully
-    // created and shown before it can attach.
     InitRibbon(hwnd_, this);
-
-    // Extend the DWM frame slightly into the client area. This is
-    // required by the Ribbon Framework to render the title bar area
-    // properly on Windows 10/11. Without this, the min/max/close
-    // buttons may not appear and the ribbon renders all-white.
-    MARGINS margins = { 0, 0, 0, 1 };
-    DwmExtendFrameIntoClientArea(hwnd_, &margins);
 
     return true;
 }
@@ -140,7 +146,7 @@ void AppWindow::LoadSampleDoc() {
 }
 
 void AppWindow::Repaint() {
-    InvalidateRect(hwnd_, nullptr, FALSE);
+    if (hwnd_content_) InvalidateRect(hwnd_content_, nullptr, FALSE);
 }
 
 void AppWindow::OpenFile(const std::wstring& path) {
@@ -169,7 +175,6 @@ void AppWindow::OpenFile(const std::wstring& path) {
     UpdateScrollInfo();
     Repaint();
 
-    // Start watching the file for live reload.
     watcher_.Start(hwnd_, path);
 }
 
@@ -185,14 +190,12 @@ void AppWindow::Reload() {
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
     UpdateScrollInfo();
-    // Restore scroll position if it still fits.
     if (scrollY_ > savedY) scrollY_ = savedY;
     UpdateScrollInfo();
     Repaint();
 }
 
 void AppWindow::OnReload() {
-    // Called when the FileWatcher posts WM_USER_RELOAD (file changed on disk).
     Reload();
 }
 
@@ -208,6 +211,7 @@ void AppWindow::OnDropFiles(HWND hwnd, HDROP hDrop) {
 
 void AppWindow::OnCreate(HWND hwnd) {
     hwnd_ = hwnd;
+
     D2D1_FACTORY_OPTIONS opts = {};
     HRESULT hr = D2D1CreateFactory(
         D2D1_FACTORY_TYPE_SINGLE_THREADED, opts, &d2d_factory_);
@@ -224,8 +228,22 @@ void AppWindow::OnCreate(HWND hwnd) {
         return;
     }
 
+    // Create the content child window. The D2D render target will be
+    // created on this child, NOT on the main window. This prevents
+    // the D2D Present() from overwriting the ribbon's rendering.
+    hwnd_content_ = CreateWindowExW(
+        0, kContentClassName, L"",
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL,
+        0, 0, 0, 0,
+        hwnd, nullptr, hinst_, this);
+    if (!hwnd_content_) {
+        MessageBoxW(hwnd, L"CreateWindow (content) failed", L"MarkDownIt", MB_ICONERROR);
+        return;
+    }
+
+    // Create D2D render target on the child window.
     RECT rc;
-    GetClientRect(hwnd, &rc);
+    GetClientRect(hwnd_content_, &rc);
     D2D1_SIZE_U size = D2D1::SizeU(
         (rc.right - rc.left) > 0 ? (rc.right - rc.left) : 1,
         (rc.bottom - rc.top) > 0 ? (rc.bottom - rc.top) : 1);
@@ -233,7 +251,7 @@ void AppWindow::OnCreate(HWND hwnd) {
     rtProps.pixelFormat = D2D1::PixelFormat(
         DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED);
     hr = d2d_factory_->CreateHwndRenderTarget(
-        rtProps, D2D1::HwndRenderTargetProperties(hwnd, size), &rt_);
+        rtProps, D2D1::HwndRenderTargetProperties(hwnd_content_, size), &rt_);
     if (FAILED(hr)) {
         MessageBoxW(hwnd, L"CreateHwndRenderTarget failed", L"MarkDownIt", MB_ICONERROR);
         return;
@@ -245,11 +263,8 @@ void AppWindow::OnCreate(HWND hwnd) {
 }
 
 void AppWindow::UpdateScrollInfo() {
-    if (!hwnd_) return;
+    if (!hwnd_content_) return;
 
-    // Use DIPs for consistent scrollbar math. The render target's
-    // GetSize() returns DIPs; WM_SIZE gives pixels. At non-100% DPI
-    // these differ, so we must use DIPs for both totalH_ and page size.
     float clientHDip = static_cast<float>(clientH_);
     if (rt_) {
         D2D1_SIZE_F rtSize = rt_->GetSize();
@@ -271,10 +286,29 @@ void AppWindow::UpdateScrollInfo() {
     si.nMax   = static_cast<int>(totalH_);
     si.nPage  = static_cast<UINT>(clientHDip > 0 ? clientHDip : 1);
     si.nPos   = static_cast<int>(scrollY_);
-    SetScrollInfo(hwnd_, SB_VERT, &si, TRUE);
+    SetScrollInfo(hwnd_content_, SB_VERT, &si, TRUE);
+}
+
+void AppWindow::ResizeContentWindow() {
+    if (!hwnd_ || !hwnd_content_) return;
+
+    RECT rc;
+    GetClientRect(hwnd_, &rc);
+    int contentY = static_cast<int>(g_ribbonHeight);
+    int contentH = rc.bottom - contentY;
+    if (contentH < 1) contentH = 1;
+
+    SetWindowPos(hwnd_content_, nullptr,
+        0, contentY,
+        rc.right - rc.left, contentH,
+        SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 void AppWindow::OnSize(HWND hwnd, int width, int height) {
+    ResizeContentWindow();
+}
+
+void AppWindow::OnContentSize(HWND hwnd, int width, int height) {
     clientW_ = width;
     clientH_ = height;
     if (rt_) {
@@ -286,7 +320,7 @@ void AppWindow::OnSize(HWND hwnd, int width, int height) {
     Repaint();
 }
 
-void AppWindow::OnVScroll(HWND hwnd, int code, int pos) {
+void AppWindow::OnContentVScroll(HWND hwnd, int code, int pos) {
     float oldY = scrollY_;
     float page = static_cast<float>(clientH_ > 0 ? clientH_ : 1);
     if (rt_) {
@@ -296,9 +330,9 @@ void AppWindow::OnVScroll(HWND hwnd, int code, int pos) {
 
     switch (code) {
         case SB_LINEUP:        scrollY_ -= 30.0f; break;
-        case SB_LINEDOWN:      scrollY_ += 30.0f; break;
-        case SB_PAGEUP:        scrollY_ -= page;  break;
-        case SB_PAGEDOWN:      scrollY_ += page;  break;
+        case SB_LINEDOWN:       scrollY_ += 30.0f; break;
+        case SB_PAGEUP:         scrollY_ -= page;  break;
+        case SB_PAGEDOWN:       scrollY_ += page;  break;
         case SB_THUMBTRACK:
         case SB_THUMBPOSITION: {
             SCROLLINFO si = {};
@@ -316,9 +350,8 @@ void AppWindow::OnVScroll(HWND hwnd, int code, int pos) {
     if (std::fabs(scrollY_ - oldY) > 0.01f) Repaint();
 }
 
-void AppWindow::OnMouseWheel(HWND hwnd, int delta) {
+void AppWindow::OnContentMouseWheel(HWND hwnd, int delta) {
     float oldY = scrollY_;
-    // WHEEL_DELTA is 120; scroll 3 lines per notch, ~40 DIPs per line.
     float step = 120.0f;
     scrollY_ -= (delta / WHEEL_DELTA) * step * 3.0f;
     UpdateScrollInfo();
@@ -327,9 +360,9 @@ void AppWindow::OnMouseWheel(HWND hwnd, int delta) {
 
 void AppWindow::RecreateRenderTarget() {
     SafeRelease(rt_);
-    if (d2d_factory_ && hwnd_) {
+    if (d2d_factory_ && hwnd_content_) {
         RECT rc;
-        GetClientRect(hwnd_, &rc);
+        GetClientRect(hwnd_content_, &rc);
         D2D1_SIZE_U size = D2D1::SizeU(
             (rc.right - rc.left) > 0 ? (rc.right - rc.left) : 1,
             (rc.bottom - rc.top) > 0 ? (rc.bottom - rc.top) : 1);
@@ -337,53 +370,30 @@ void AppWindow::RecreateRenderTarget() {
         rtProps.pixelFormat = D2D1::PixelFormat(
             DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED);
         d2d_factory_->CreateHwndRenderTarget(
-            rtProps, D2D1::HwndRenderTargetProperties(hwnd_, size), &rt_);
+            rtProps, D2D1::HwndRenderTargetProperties(hwnd_content_, size), &rt_);
     }
 }
 
-void AppWindow::OnPaint(HWND hwnd) {
+void AppWindow::OnContentPaint(HWND hwnd) {
     if (!rt_) { ValidateRect(hwnd, nullptr); return; }
 
-    // Measure content height first (no draw), so the scrollbar is correct
-    // and we do not draw the whole document twice.
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
-        totalH_ = renderer_.Measure(dw_factory_, doc_, size.width,
-                                      GetRibbonHeightDip());
+        totalH_ = renderer_.Measure(dw_factory_, doc_, size.width, 0.0f);
         UpdateScrollInfo();
     }
 
     PAINTSTRUCT ps;
     BeginPaint(hwnd, &ps);
     rt_->BeginDraw();
-
-    // Only clear the area below the ribbon. Painting over the ribbon
-    // area causes the ribbon to appear all-white (the D2D white fill
-    // covers the ribbon's themed background before it can render).
-    float ribbonH = GetRibbonHeightDip();
-    D2D1_SIZE_F size = rt_->GetSize();
-    if (ribbonH > 0 && ribbonH < size.height) {
-        // Push a clip to the area below the ribbon
-        rt_->PushAxisAlignedClip(
-            D2D1::RectF(0, ribbonH, size.width, size.height), (D2D1_ANTIALIAS_MODE)0);
-    }
     rt_->Clear(D2D1::ColorF(D2D1::ColorF::White));
 
     if (renderer_inited_ && dw_factory_) {
-        renderer_.Render(rt_, dw_factory_, doc_, size.width, scrollY_,
-                          GetRibbonHeightDip());
+        D2D1_SIZE_F size = rt_->GetSize();
+        renderer_.Render(rt_, dw_factory_, doc_, size.width, scrollY_, 0.0f);
     }
 
-    // Pop the clip if we pushed it for the ribbon area
-    if (ribbonH > 0 && ribbonH < size.height) {
-        rt_->PopAxisAlignedClip();
-    }
-
-    HRESULT hr = rt_->EndDraw();
-    if (hr == D2DERR_RECREATE_TARGET) {
-        RecreateRenderTarget();
-        InvalidateRect(hwnd, nullptr, TRUE);
-    }
+    (void)rt_->EndDraw();
     EndPaint(hwnd, &ps);
 }
 
@@ -397,20 +407,8 @@ void AppWindow::OnDestroy() {
     PostQuitMessage(0);
 }
 
-float AppWindow::GetRibbonHeightDip() {
-    if (!rt_ || g_ribbonHeight == 0) return 0.0f;
-    D2D1_SIZE_F dipSize = rt_->GetSize();
-    D2D1_SIZE_U pxSize = rt_->GetPixelSize();
-    if (pxSize.height == 0) return 0.0f;
-    float scale = dipSize.height / (float)(pxSize.height);
-    return (float)g_ribbonHeight * scale;
-}
-
 void AppWindow::OnRibbonHeightChanged() {
-    // The ribbon framework reports a new height via OnViewChanged.
-    // Trigger a repaint and scroll info update so content offsets below the ribbon.
-    UpdateScrollInfo();
-    Repaint();
+    ResizeContentWindow();
 }
 
 void AppWindow::RecreateRenderer() {
@@ -472,50 +470,76 @@ void AppWindow::ShowAbout() {
         L"About MarkDownIt", MB_OK | MB_ICONINFORMATION);
 }
 
+//
+// Main window WndProc.
+// Handles WM_SIZE, WM_DROPFILES, WM_DESTROY, WM_DPICHANGED.
+// Does NOT handle WM_PAINT (validated by DefWindowProc, ribbon paints NC).
+//
 LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case WM_CREATE:    OnCreate(hwnd);    return 0;
-        case WM_PAINT:     OnPaint(hwnd);     return 0;
         case WM_DROPFILES: OnDropFiles(hwnd, (HDROP)wp); return 0;
-        case WM_VSCROLL:   OnVScroll(hwnd, (int)LOWORD(wp), (int)HIWORD(wp)); return 0;
-        case WM_MOUSEWHEEL: {
-            int delta = GET_WHEEL_DELTA_WPARAM(wp);
-            OnMouseWheel(hwnd, delta);
-            return 0;
-        }
-        case WM_KEYDOWN: {
-            switch (wp) {
-                case VK_DOWN: OnVScroll(hwnd, SB_LINEDOWN, 0); break;
-                case VK_UP:   OnVScroll(hwnd, SB_LINEUP, 0);   break;
-                case VK_NEXT: OnVScroll(hwnd, SB_PAGEDOWN, 0); break;
-                case VK_PRIOR:OnVScroll(hwnd, SB_PAGEUP, 0);   break;
-                case VK_HOME: OnVScroll(hwnd, SB_TOP, 0);     break;
-                case VK_END:  OnVScroll(hwnd, SB_BOTTOM, 0);  break;
-                case VK_F5:  Reload();                        break;
-                default: return DefWindowProcW(hwnd, msg, wp, lp);
-            }
-            return 0;
-        }
         case WM_SIZE: {
             int w = LOWORD(lp), h = HIWORD(lp);
             OnSize(hwnd, w, h);
             return 0;
         }
         case WM_DPICHANGED: {
-            // Recreate text formats so they pick up the new DPI.
             renderer_.Release();
             EnsureRenderer();
             RECT* rc = (RECT*)lp;
             SetWindowPos(hwnd, nullptr, rc->left, rc->top,
                 rc->right - rc->left, rc->bottom - rc->top,
                 SWP_NOZORDER | SWP_NOACTIVATE);
-            UpdateScrollInfo();
+            ResizeContentWindow();
             Repaint();
             return 0;
         }
         case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
         case WM_ERASEBKGND: return 1;
         case WM_DESTROY:   OnDestroy();   return 0;
+        case WM_PAINT: {
+            // Main window does not paint. The ribbon framework handles
+            // its own area, and the content child handles content.
+            ValidateRect(hwnd, nullptr);
+            return 0;
+        }
+        default: return DefWindowProcW(hwnd, msg, wp, lp);
+    }
+}
+
+//
+// Content child window WndProc.
+// Handles WM_PAINT, WM_VSCROLL, WM_MOUSEWHEEL, WM_KEYDOWN, WM_SIZE.
+//
+LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+        case WM_PAINT:     OnContentPaint(hwnd); return 0;
+        case WM_VSCROLL:    OnContentVScroll(hwnd, (int)LOWORD(wp), (int)HIWORD(wp)); return 0;
+        case WM_MOUSEWHEEL: {
+            int delta = GET_WHEEL_DELTA_WPARAM(wp);
+            OnContentMouseWheel(hwnd, delta);
+            return 0;
+        }
+        case WM_KEYDOWN: {
+            switch (wp) {
+                case VK_DOWN: OnContentVScroll(hwnd, SB_LINEDOWN, 0); break;
+                case VK_UP:   OnContentVScroll(hwnd, SB_LINEUP, 0);   break;
+                case VK_NEXT: OnContentVScroll(hwnd, SB_PAGEDOWN, 0); break;
+                case VK_PRIOR:OnContentVScroll(hwnd, SB_PAGEUP, 0);   break;
+                case VK_HOME: OnContentVScroll(hwnd, SB_TOP, 0);     break;
+                case VK_END:  OnContentVScroll(hwnd, SB_BOTTOM, 0);  break;
+                case VK_F5:   Reload();                              break;
+                default: return DefWindowProcW(hwnd, msg, wp, lp);
+            }
+            return 0;
+        }
+        case WM_SIZE: {
+            int w = LOWORD(lp), h = HIWORD(lp);
+            OnContentSize(hwnd, w, h);
+            return 0;
+        }
+        case WM_ERASEBKGND: return 1;
         default: return DefWindowProcW(hwnd, msg, wp, lp);
     }
 }
@@ -530,5 +554,19 @@ LRESULT CALLBACK AppWindow::WndProcThunk(HWND hwnd, UINT msg, WPARAM wp, LPARAM 
         self = (AppWindow*)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
     }
     if (self) return self->WndProc(hwnd, msg, wp, lp);
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+LRESULT CALLBACK AppWindow::ContentWndProcThunk(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    AppWindow* self = nullptr;
+    if (msg == WM_CREATE) {
+        CREATESTRUCTW* cs = (CREATESTRUCTW*)lp;
+        self = (AppWindow*)cs->lpCreateParams;
+        // Content window also stores a pointer to the AppWindow.
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)self);
+    } else {
+        self = (AppWindow*)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+    }
+    if (self) return self->ContentWndProc(hwnd, msg, wp, lp);
     return DefWindowProcW(hwnd, msg, wp, lp);
 }

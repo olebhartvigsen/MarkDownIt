@@ -156,7 +156,6 @@ target_link_libraries(MarkDownIt PRIVATE
     windowscodecs
     winhttp
     comdlg32
-    dwmapi
     ${UIRIBBON_LINK_LIB}
     ${PROPSYS_LINK_LIB}
 )
