@@ -193,6 +193,7 @@ void AppWindow::OnDropFiles(HWND hwnd, HDROP hDrop) {
 }
 
 void AppWindow::OnCreate(HWND hwnd) {
+    hwnd_ = hwnd;
     D2D1_FACTORY_OPTIONS opts = {};
     HRESULT hr = D2D1CreateFactory(
         D2D1_FACTORY_TYPE_SINGLE_THREADED, opts, &d2d_factory_);
