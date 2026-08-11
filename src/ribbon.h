@@ -1,4 +1,4 @@
-"
+
 #pragma once
 
 // Windows Ribbon Framework: COM classes and framework init/destroy.

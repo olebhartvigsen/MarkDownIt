@@ -58,7 +58,7 @@ void UpdateRibbonWrapState(bool wrapped)
     var.vt = VT_BOOL;
     var.boolVal = wrapped ? VARIANT_TRUE : VARIANT_FALSE;
     g_pRibbonFramework->SetUICommandProperty(IDC_CMD_WRAP,
-        UI_PKEY_BooleanValue, &var);
+        UI_PKEY_BooleanValue, var);
     PropVariantClear(&var);
 }
 
