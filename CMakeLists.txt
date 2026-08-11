@@ -99,9 +99,8 @@ if(MSVC AND RIBBON_AVAILABLE)
     target_include_directories(MarkDownIt PRIVATE ${RIBBON_OUT_DIR})
     add_dependencies(MarkDownIt ribbon_markup)
 
-    # Add the compiled .res as a source file and link flag.
+    # Add the compiled .res as a source file.
     target_sources(MarkDownIt PRIVATE ${RIBBON_RES})
-    set_property(TARGET MarkDownIt APPEND PROPERTY LINK_FLAGS "${RIBBON_RES}")
 
     # uiribbon.lib and propsys.lib
     if(NOT UIRIBBON_LIB)
@@ -164,12 +163,9 @@ target_compile_definitions(MarkDownIt PRIVATE
     NOMINMAX
 )
 
-# Suppress the linker's auto-generated manifest (our .res provides one
-# via resource ID 1, type 24). Without /MANIFEST:NO we get a duplicate
-# resource error.
-set_target_properties(MarkDownIt PROPERTIES
-    LINK_FLAGS "/MANIFEST:NO"
-)
+# The linker auto-generates a manifest from the
+# #pragma comment(linker, "/manifestdependency:...") in main.cpp,
+# which enables ComCtl32 v6 (visual styles) for the ribbon framework.
 
 # Tests
 option(BUILD_TESTS "Build test binary" OFF)
