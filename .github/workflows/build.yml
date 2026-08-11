@@ -18,15 +18,13 @@ jobs:
         id: find-uicc
         shell: powershell
         run: |
-          # Search all installed Windows SDKs for uicc.exe
-          $uicc = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\bin" -Recurse -Filter "uicc.exe" -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -match "x64" } | Select-Object -Last 1
+          # UICC.exe is a build tool, not architecture-specific for output.
+          # On the runner it may only be the x86 variant; use the latest version.
+          $uicc = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\bin" -Recurse -Filter "uicc.exe" -ErrorAction SilentlyContinue | Sort-Object FullName | Select-Object -Last 1
           if ($uicc) {
             "uicc_path=$($uicc.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             Write-Host "Found UICC: $($uicc.FullName)"
           } else {
-            # List all Windows Kits bin dirs for debugging
-            Write-Host "Searching Windows Kits bin directories..."
-            Get-ChildItem -Path "C:\Program Files*\Windows Kits" -Recurse -Filter "uicc.exe" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
             Write-Error "UICC.exe not found"
             exit 1
           }
