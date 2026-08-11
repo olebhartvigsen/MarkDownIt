@@ -14,12 +14,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Find UICC.exe
+      - name: Find UICC.exe and SDK libs
         id: find-uicc
         shell: powershell
         run: |
-          # UICC.exe is a build tool, not architecture-specific for output.
-          # On the runner it may only be the x86 variant; use the latest version.
+          # Find UICC.exe
           $uicc = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\bin" -Recurse -Filter "uicc.exe" -ErrorAction SilentlyContinue | Sort-Object FullName | Select-Object -Last 1
           if ($uicc) {
             "uicc_path=$($uicc.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
@@ -29,8 +28,29 @@ jobs:
             exit 1
           }
 
+          # Find uiribbon.lib
+          $uiribbonLib = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\Lib" -Recurse -Filter "uiribbon.lib" -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -match "x64" } | Sort-Object FullName | Select-Object -Last 1
+          if ($uiribbonLib) {
+            "uiribbon_lib=$($uiribbonLib.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Found uiribbon.lib: $($uiribbonLib.FullName)"
+          } else {
+            Write-Host "uiribbon.lib not found, searching all lib dirs..."
+            Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\Lib\10.0.26100.0\um\x64" -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "ui" } | ForEach-Object { Write-Host $_.Name }
+          }
+
+          # Find propsys.lib
+          $propsysLib = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\Lib" -Recurse -Filter "propsys.lib" -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -match "x64" } | Sort-Object FullName | Select-Object -Last 1
+          if ($propsysLib) {
+            "propsys_lib=$($propsysLib.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Found propsys.lib: $($propsysLib.FullName)"
+          }
+
       - name: Configure CMake
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DUICC_EXE="${{ steps.find-uicc.outputs.uicc_path }}"
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64 `
+            -DUICC_EXE="${{ steps.find-uicc.outputs.uicc_path }}" `
+            -DUIRIBBON_LIB="${{ steps.find-uicc.outputs.uiribbon_lib }}" `
+            -DPROPSYS_LIB="${{ steps.find-uicc.outputs.propsys_lib }}"
 
       - name: Build Release exe
         run: cmake --build build --config Release

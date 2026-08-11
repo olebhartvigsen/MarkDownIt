@@ -88,21 +88,33 @@ if(MSVC)
     target_include_directories(MarkDownIt PRIVATE ${RIBBON_OUT_DIR})
     add_dependencies(MarkDownIt ribbon_markup)
 
-    # Find uiribbon.lib and propsys.lib in the Windows SDK lib directory.
-    # The SDK installs at: Windows Kits/10/Lib/<version>/um/x64/
-    file(GLOB SDK_LIB_DIRS
-        "C:/Program Files (x86)/Windows Kits/10/Lib/*/um/x64"
-        "C:/Program Files/Windows Kits/10/Lib/*/um/x64"
-    )
-    list(SORT SDK_LIB_DIRS COMPARE NATURAL ORDER DESCENDING)
-    if(SDK_LIB_DIRS)
-        list(GET SDK_LIB_DIRS 0 SDK_LIB_DIR)
-        message(STATUS "SDK lib dir: ${SDK_LIB_DIR}")
-        find_library(UIRIBBON_LIB NAMES uiribbon HINTS ${SDK_LIB_DIR} REQUIRED)
-        find_library(PROPSYS_LIB NAMES propsys HINTS ${SDK_LIB_DIR} REQUIRED)
-    else()
-        find_library(UIRIBBON_LIB NAMES uiribbon REQUIRED)
-        find_library(PROPSYS_LIB NAMES propsys REQUIRED)
+    # uiribbon.lib and propsys.lib paths can be passed from CI
+    # or auto-discovered via glob.
+    if(NOT UIRIBBON_LIB)
+        file(GLOB SDK_LIB_DIRS
+            "C:/Program Files (x86)/Windows Kits/10/Lib/*/um/x64"
+            "C:/Program Files/Windows Kits/10/Lib/*/um/x64"
+        )
+        list(SORT SDK_LIB_DIRS COMPARE NATURAL ORDER DESCENDING)
+        if(SDK_LIB_DIRS)
+            list(GET SDK_LIB_DIRS 0 SDK_LIB_DIR)
+            find_library(UIRIBBON_LIB NAMES uiribbon HINTS ${SDK_LIB_DIR})
+        endif()
+    endif()
+    if(NOT PROPSYS_LIB)
+        if(NOT SDK_LIB_DIR)
+            file(GLOB SDK_LIB_DIRS
+                "C:/Program Files (x86)/Windows Kits/10/Lib/*/um/x64"
+                "C:/Program Files/Windows Kits/10/Lib/*/um/x64"
+            )
+            list(SORT SDK_LIB_DIRS COMPARE NATURAL ORDER DESCENDING)
+            if(SDK_LIB_DIRS)
+                list(GET SDK_LIB_DIRS 0 SDK_LIB_DIR)
+            endif()
+        endif()
+        if(SDK_LIB_DIR)
+            find_library(PROPSYS_LIB NAMES propsys HINTS ${SDK_LIB_DIR})
+        endif()
     endif()
     message(STATUS "Using uiribbon.lib: ${UIRIBBON_LIB}")
     message(STATUS "Using propsys.lib: ${PROPSYS_LIB}")
