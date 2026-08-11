@@ -1,4 +1,1 @@
 #include "ribbonUI.rc2"
-
-// Ribbon binary markup resource.
-// MARKDOWNIT_RIBBON is the resource name referenced by LoadUI.

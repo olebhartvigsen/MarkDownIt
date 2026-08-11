@@ -58,31 +58,7 @@ if(MSVC)
             VERBATIM
         )
 
-        # Step 2: Generate app.rc that includes the rc2
-        set(RIBBON_RC ${RIBBON_OUT_DIR}/app.rc)
-        file(WRITE ${RIBBON_RC}
-            "#include \"ribbonUI.rc2\"\n"
-        )
-
-        # Step 3: Compile app.rc -> app.res using rc.exe
-        # Find rc.exe in the Windows SDK or MSVC
-        find_program(RC_EXE NAMES rc
-            HINTS "C:/Program Files (x86)/Windows Kits/10/bin/${SDK_VERSION}/x64"
-            PATHS "C:/Program Files (x86)/Windows Kits/10/bin"
-            PATH_SUFFIXES "10.0.26100.0/x64" "10.0.22621.0/x64" "10.0.19041.0/x64"
-            REQUIRED
-        )
-        set(RIBBON_RES ${RIBBON_OUT_DIR}/app.res)
-        add_custom_command(
-            OUTPUT ${RIBBON_RES}
-            COMMAND ${RC_EXE} /nologo /r /I${RIBBON_OUT_DIR}
-                /fo${RIBBON_RES} ${RIBBON_RC}
-            DEPENDS ${RIBBON_RC} ${RIBBON_RC2} ${RIBBON_BML}
-            COMMENT "Compiling Ribbon RC resource"
-            VERBATIM
-        )
-
-        add_custom_target(ribbon_markup ALL DEPENDS ${RIBBON_RES})
+        add_custom_target(ribbon_markup ALL DEPENDS ${RIBBON_HEADER} ${RIBBON_RC2} ${RIBBON_BML})
     endif()
 endif()
 
@@ -102,8 +78,9 @@ if(MSVC AND RIBBON_AVAILABLE)
     target_include_directories(MarkDownIt PRIVATE ${RIBBON_OUT_DIR})
     add_dependencies(MarkDownIt ribbon_markup)
 
-    # Add the compiled .res as a source (VS treats .res as object files)
-    target_sources(MarkDownIt PRIVATE ${RIBBON_RES})
+    # Add the .rc file as a source. VS will auto-compile it.
+    # The include path to ribbonUI.rc2 is set via target_include_directories.
+    target_sources(MarkDownIt PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/app.rc)
 
     # uiribbon.lib and propsys.lib
     if(NOT UIRIBBON_LIB)
