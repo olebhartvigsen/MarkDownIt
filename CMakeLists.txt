@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Static runtime so the exe has zero redistributable deps.
 set(CMAKE_MSVC_RUNTIME_LIBRARY
-    "MultiThreaded$<STREQUAL:${CMAKE_BUILD_TYPE},Debug>"
+    "MultiThreaded$<$<CONFIG:Debug>:d>"
 )
 
 # md4c: vendored markdown parser (MIT, release-0.5.3, tag commit 472c417).
