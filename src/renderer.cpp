@@ -359,7 +359,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     rt->SetTransform(D2D1::Matrix3x2F::Identity());
     rt->PushAxisAlignedClip(
         D2D1::RectF(0.0f, topOffsetDip, clipSize.width, clipSize.height),
-        D2D1_ANTIALIAS_MODE_PER_PRIM);
+        (D2D1_ANTIALIAS_MODE)0);
 
     // Apply scroll translation.
     rt->SetTransform(D2D1::Matrix3x2F::Translation(0.0f, -scrollY));
