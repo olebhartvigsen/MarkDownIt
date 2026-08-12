@@ -238,6 +238,17 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         }
     }
 
+    if (nCmdID == IDC_CMD_EDIT && ppropvarNewValue)
+    {
+        if (IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
+        {
+            ppropvarNewValue->vt = VT_BOOL;
+            ppropvarNewValue->boolVal =
+                (m_pApp && m_pApp->IsEditing()) ? VARIANT_TRUE : VARIANT_FALSE;
+            return S_OK;
+        }
+    }
+
     return E_NOTIMPL;
 }
 
@@ -259,10 +270,27 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     {
     case IDC_CMD_OPEN:    m_pApp->OpenFileDialog();    break;
     case IDC_CMD_RELOAD:  m_pApp->Reload();            break;
+    case IDC_CMD_SAVE:    m_pApp->Save();              break;
+    case IDC_CMD_SAVEAS:  m_pApp->SaveAs();            break;
     case IDC_CMD_WRAP:    m_pApp->ToggleWrap();        break;
     case IDC_CMD_ZOOMIN:  m_pApp->ZoomIn();            break;
     case IDC_CMD_ZOOMOUT: m_pApp->ZoomOut();           break;
     case IDC_CMD_ABOUT:   m_pApp->ShowAbout();         break;
+    case IDC_CMD_BOLD:    m_pApp->ToggleBold();        break;
+    case IDC_CMD_ITALIC: m_pApp->ToggleItalic();      break;
+    case IDC_CMD_STRIKE:  m_pApp->ToggleStrike();      break;
+    case IDC_CMD_CODE:    m_pApp->ToggleCode();        break;
+    case IDC_CMD_LINK:    m_pApp->InsertLinkCmd();     break;
+    case IDC_CMD_CLEARFORMAT: m_pApp->ClearFormat();  break;
+    case IDC_CMD_H1:      m_pApp->SetHeading(1);       break;
+    case IDC_CMD_H2:      m_pApp->SetHeading(2);       break;
+    case IDC_CMD_H3:      m_pApp->SetHeading(3);       break;
+    case IDC_CMD_BULLETS: m_pApp->ToggleBullets();     break;
+    case IDC_CMD_NUMBERING: m_pApp->ToggleNumbering();break;
+    case IDC_CMD_QUOTE:   m_pApp->ToggleQuote();       break;
+    case IDC_CMD_INDENT:  m_pApp->Indent();            break;
+    case IDC_CMD_OUTDENT: m_pApp->Outdent();           break;
+    case IDC_CMD_EDIT:    m_pApp->ToggleEdit();        break;
     }
     return S_OK;
 }

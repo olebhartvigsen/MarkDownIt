@@ -16,6 +16,16 @@
         <String>View</String>
       </Command.LabelTitle>
     </Command>
+    <Command Name="cmdGroupFormat" Symbol="IDC_GROUP_FORMAT" Id="10030">
+      <Command.LabelTitle>
+        <String>Format</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdGroupParagraph" Symbol="IDC_GROUP_PARAGRAPH" Id="10040">
+      <Command.LabelTitle>
+        <String>Paragraph</String>
+      </Command.LabelTitle>
+    </Command>
     <Command Name="cmdOpen" Symbol="IDC_CMD_OPEN" Id="10100">
       <Command.LabelTitle>
         <String>Open</String>
@@ -39,6 +49,16 @@
       <Command.SmallImages>
         <Image Source="icons/reload_16.png" MinDPI="96"/>
       </Command.SmallImages>
+    </Command>
+    <Command Name="cmdSave" Symbol="IDC_CMD_SAVE" Id="10103">
+      <Command.LabelTitle>
+        <String>Save</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdSaveAs" Symbol="IDC_CMD_SAVEAS" Id="10104">
+      <Command.LabelTitle>
+        <String>Save As</String>
+      </Command.LabelTitle>
     </Command>
     <Command Name="cmdAppMenu" Symbol="IDC_CMD_APPMENU" Id="10000">
       <Command.LabelTitle>
@@ -93,6 +113,81 @@
         <Image Source="icons/zoom-out_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
+    <Command Name="cmdBold" Symbol="IDC_CMD_BOLD" Id="10300">
+      <Command.LabelTitle>
+        <String>Bold</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdItalic" Symbol="IDC_CMD_ITALIC" Id="10301">
+      <Command.LabelTitle>
+        <String>Italic</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdStrike" Symbol="IDC_CMD_STRIKE" Id="10302">
+      <Command.LabelTitle>
+        <String>Strikethrough</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdCode" Symbol="IDC_CMD_CODE" Id="10303">
+      <Command.LabelTitle>
+        <String>Code</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdLink" Symbol="IDC_CMD_LINK" Id="10304">
+      <Command.LabelTitle>
+        <String>Link</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdClearFormat" Symbol="IDC_CMD_CLEARFORMAT" Id="10305">
+      <Command.LabelTitle>
+        <String>Clear Format</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdHeading1" Symbol="IDC_CMD_H1" Id="10400">
+      <Command.LabelTitle>
+        <String>H1</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdHeading2" Symbol="IDC_CMD_H2" Id="10401">
+      <Command.LabelTitle>
+        <String>H2</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdHeading3" Symbol="IDC_CMD_H3" Id="10402">
+      <Command.LabelTitle>
+        <String>H3</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdBullets" Symbol="IDC_CMD_BULLETS" Id="10403">
+      <Command.LabelTitle>
+        <String>Bullets</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdNumbering" Symbol="IDC_CMD_NUMBERING" Id="10404">
+      <Command.LabelTitle>
+        <String>Numbering</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdQuote" Symbol="IDC_CMD_QUOTE" Id="10405">
+      <Command.LabelTitle>
+        <String>Quote</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdIndent" Symbol="IDC_CMD_INDENT" Id="10406">
+      <Command.LabelTitle>
+        <String>Indent</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdOutdent" Symbol="IDC_CMD_OUTDENT" Id="10407">
+      <Command.LabelTitle>
+        <String>Outdent</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdEditToggle" Symbol="IDC_CMD_EDIT" Id="10500">
+      <Command.LabelTitle>
+        <String>Edit</String>
+      </Command.LabelTitle>
+    </Command>
   </Application.Commands>
   <Application.Views>
     <Ribbon>
@@ -105,9 +200,27 @@
       </Ribbon.ApplicationMenu>
       <Ribbon.Tabs>
         <Tab CommandName="cmdTabHome">
-          <Group CommandName="cmdGroupFile" SizeDefinition="TwoButtons">
+          <Group CommandName="cmdGroupFile" SizeDefinition="ThreeButtons">
             <Button CommandName="cmdOpen" />
             <Button CommandName="cmdReload" />
+            <Button CommandName="cmdSave" />
+          </Group>
+          <Group CommandName="cmdGroupFormat" SizeDefinition="SixButtons">
+            <ToggleButton CommandName="cmdBold" />
+            <ToggleButton CommandName="cmdItalic" />
+            <ToggleButton CommandName="cmdStrike" />
+            <ToggleButton CommandName="cmdCode" />
+            <Button CommandName="cmdLink" />
+            <Button CommandName="cmdClearFormat" />
+          </Group>
+          <Group CommandName="cmdGroupParagraph" SizeDefinition="SevenButtons">
+            <Button CommandName="cmdHeading1" />
+            <Button CommandName="cmdHeading2" />
+            <Button CommandName="cmdHeading3" />
+            <ToggleButton CommandName="cmdBullets" />
+            <ToggleButton CommandName="cmdNumbering" />
+            <ToggleButton CommandName="cmdQuote" />
+            <Button CommandName="cmdEditToggle" />
           </Group>
           <Group CommandName="cmdGroupView" SizeDefinition="ThreeButtons">
             <ToggleButton CommandName="cmdWrap" />

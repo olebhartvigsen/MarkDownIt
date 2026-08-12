@@ -41,6 +41,20 @@ public:
     bool SaveAs();
     bool IsDirty() const { return dirty_; }
     void SetEdit(bool on);
+    bool IsEditing() const { return editing_; }
+    void ToggleEdit() { SetEdit(!editing_); }
+    void ToggleBold();
+    void ToggleItalic();
+    void ToggleStrike();
+    void ToggleCode();
+    void InsertLinkCmd();
+    void ClearFormat();
+    void SetHeading(int level);
+    void ToggleBullets();
+    void ToggleNumbering();
+    void ToggleQuote();
+    void Indent();
+    void Outdent();
 
     // Called by CRibbonApplication::OnViewChanged when ribbon height changes.
     void OnRibbonHeightChanged();

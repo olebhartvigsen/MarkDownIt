@@ -1166,6 +1166,106 @@ void AppWindow::SetEdit(bool on) {
     Repaint();
 }
 
+void AppWindow::ToggleBold() {
+    if (!editing_) return;
+    ToggleInlineMarker(&buffer_, &sel_, "**");
+    editor_.BreakUndoCoalesce();
+    OnBufferChanged();
+}
+
+void AppWindow::ToggleItalic() {
+    if (!editing_) return;
+    ToggleInlineMarker(&buffer_, &sel_, "*");
+    editor_.BreakUndoCoalesce();
+    OnBufferChanged();
+}
+
+void AppWindow::ToggleStrike() {
+    if (!editing_) return;
+    ToggleInlineMarker(&buffer_, &sel_, "~~");
+    editor_.BreakUndoCoalesce();
+    OnBufferChanged();
+}
+
+void AppWindow::ToggleCode() {
+    if (!editing_) return;
+    ToggleInlineMarker(&buffer_, &sel_, "`");
+    editor_.BreakUndoCoalesce();
+    OnBufferChanged();
+}
+
+void AppWindow::InsertLinkCmd() {
+    if (!editing_) return;
+    InsertLink(&buffer_, &sel_, "https://");
+    editor_.BreakUndoCoalesce();
+    OnBufferChanged();
+}
+
+void AppWindow::ClearFormat() {
+    if (!editing_) return;
+    // Remove all inline markers from the selection.
+    // For each marker type, toggle it off if present.
+    const char* markers[] = {"**", "*", "~~", "`"};
+    for (auto m : markers) {
+        if (!sel_.Empty()) {
+            uint32_t s = sel_.Start();
+            uint32_t e = s + sel_.Length();
+            const std::string& text = buffer_.Text();
+            if (IsWrappedIn(text, s, e, m)) {
+                uint32_t mlen = static_cast<uint32_t>(strlen(m));
+                buffer_.Splice(e - mlen, mlen, "");
+                buffer_.Splice(s, mlen, "");
+                sel_.anchor = {s};
+                sel_.active = {e - mlen * 2};
+            }
+        }
+    }
+    editor_.BreakUndoCoalesce();
+    OnBufferChanged();
+}
+
+void AppWindow::SetHeading(int level) {
+    if (!editing_) return;
+    SetHeadingLevel(&buffer_, &sel_, level);
+    editor_.BreakUndoCoalesce();
+    OnBufferChanged();
+}
+
+void AppWindow::ToggleBullets() {
+    if (!editing_) return;
+    ToggleUnorderedList(&buffer_, &sel_);
+    editor_.BreakUndoCoalesce();
+    OnBufferChanged();
+}
+
+void AppWindow::ToggleNumbering() {
+    if (!editing_) return;
+    ToggleOrderedList(&buffer_, &sel_);
+    editor_.BreakUndoCoalesce();
+    OnBufferChanged();
+}
+
+void AppWindow::ToggleQuote() {
+    if (!editing_) return;
+    ToggleBlockquote(&buffer_, &sel_);
+    editor_.BreakUndoCoalesce();
+    OnBufferChanged();
+}
+
+void AppWindow::Indent() {
+    if (!editing_) return;
+    IndentLine(&buffer_, &sel_);
+    editor_.BreakUndoCoalesce();
+    OnBufferChanged();
+}
+
+void AppWindow::Outdent() {
+    if (!editing_) return;
+    OutdentLine(&buffer_, &sel_);
+    editor_.BreakUndoCoalesce();
+    OnBufferChanged();
+}
+
 void AppWindow::OnDestroy() {
     SaveWinPlacement(hwnd_);
     DestroyRibbon();
