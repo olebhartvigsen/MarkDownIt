@@ -1,4 +1,3 @@
-#include <oleauto.h>
 #include "ribbon.h"
 #include "app.h"
 
