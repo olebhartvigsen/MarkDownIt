@@ -77,7 +77,7 @@ inline LayoutMetrics BaseMetrics() {
     LayoutMetrics m = {};
     m.padX = 56.0f;
     m.padTop = 32.0f;
-    m.maxContentWidth = 720.0f;
+    m.maxContentWidth = 800.0f;
     m.bodyLineHeight = 1.3f;
     m.headingLineHeight = 1.25f;
     m.codeLineHeight = 1.45f;
