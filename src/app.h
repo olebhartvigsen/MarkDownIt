@@ -11,6 +11,7 @@
 #include "textbuffer.h"
 #include "layoutcache.h"
 #include "caret.h"
+#include "editcontroller.h"
 
 class AppWindow {
 public:
@@ -67,6 +68,9 @@ private:
     bool         caret_visible_ = false;
     bool         editing_ = false;
     bool         has_focus_ = false;
+    EditController  editor_;
+    wchar_t      surrogate_buf_ = 0;  // high surrogate waiting for low
+    bool         has_surrogate_ = false;
 
     static const wchar_t* kClassName;
     static const wchar_t* kContentClassName;
@@ -90,6 +94,8 @@ private:
     void OnLButtonUp(HWND hwnd);
     void OnSetFocus(HWND hwnd);
     void OnKillFocus(HWND hwnd);
+    void OnChar(HWND hwnd, wchar_t ch);
+    void InitEditor();
     void OnDestroy();
     void RecreateRenderTarget();
     void EnsureRenderer();

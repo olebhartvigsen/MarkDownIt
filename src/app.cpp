@@ -216,6 +216,10 @@ void AppWindow::EnsureRenderer() {
     renderer_.SetLayoutCache(&layout_cache_);
 }
 
+void AppWindow::InitEditor() {
+    editor_ = EditController(&buffer_, &sel_);
+}
+
 void AppWindow::LoadSampleDoc() {
     const char* sample =
         "# MarkDownIt\n\n"
@@ -328,6 +332,61 @@ void AppWindow::OnSetFocus(HWND hwnd) {
 void AppWindow::OnKillFocus(HWND hwnd) {
     has_focus_ = false;
     DestroyCaret();
+}
+
+void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
+    if (!has_focus_) return;
+
+    // Handle surrogate pairs: emoji and CJK arrive as two WM_CHAR messages.
+    if (ch >= 0xD800 && ch <= 0xDBFF) {
+        // High surrogate: buffer it and wait for the low.
+        surrogate_buf_ = ch;
+        has_surrogate_ = true;
+        return;
+    }
+    if (has_surrogate_ && ch >= 0xDC00 && ch <= 0xDFFF) {
+        // Low surrogate: combine with the buffered high.
+        char32_t cp = 0x10000 + ((surrogate_buf_ - 0xD800) << 10) + (ch - 0xDC00);
+        char utf8[5] = {};
+        if (cp <= 0x7F) { utf8[0] = (char)cp; }
+        else if (cp <= 0x7FF) {
+            utf8[0] = 0xC0 | (cp >> 6);
+            utf8[1] = 0x80 | (cp & 0x3F);
+        } else if (cp <= 0xFFFF) {
+            utf8[0] = 0xE0 | (cp >> 12);
+            utf8[1] = 0x80 | ((cp >> 6) & 0x3F);
+            utf8[2] = 0x80 | (cp & 0x3F);
+        } else {
+            utf8[0] = 0xF0 | (cp >> 18);
+            utf8[1] = 0x80 | ((cp >> 12) & 0x3F);
+            utf8[2] = 0x80 | ((cp >> 6) & 0x3F);
+            utf8[3] = 0x80 | (cp & 0x3F);
+        }
+        has_surrogate_ = false;
+        editor_.InsertText(std::string(utf8));
+        OnBufferChanged();
+        return;
+    }
+    has_surrogate_ = false;
+
+    // Filter control characters below 0x20 except tab.
+    if (ch < 0x20 && ch != '	') return;
+
+    // Convert UTF-16 code unit to UTF-8.
+    char32_t cp = static_cast<char32_t>(ch);
+    char utf8[5] = {};
+    if (cp <= 0x7F) {
+        utf8[0] = (char)cp;
+    } else if (cp <= 0x7FF) {
+        utf8[0] = 0xC0 | (cp >> 6);
+        utf8[1] = 0x80 | (cp & 0x3F);
+    } else {
+        utf8[0] = 0xE0 | (cp >> 12);
+        utf8[1] = 0x80 | ((cp >> 6) & 0x3F);
+        utf8[2] = 0x80 | (cp & 0x3F);
+    }
+    editor_.InsertText(std::string(utf8));
+    OnBufferChanged();
 }
 
 void AppWindow::OpenFile(const std::wstring& path) {
@@ -446,6 +505,7 @@ void AppWindow::OnCreate(HWND hwnd) {
 
     EnsureRenderer();
     LoadSampleDoc();
+    InitEditor();
     UpdateScrollInfo();
 }
 
@@ -754,6 +814,7 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         case WM_LBUTTONUP:   OnLButtonUp(hwnd);    return 0;
+        case WM_CHAR:        OnChar(hwnd, static_cast<wchar_t>(wp)); return 0;
         case WM_SETFOCUS:  OnSetFocus(hwnd);   return 0;
         case WM_KILLFOCUS: OnKillFocus(hwnd);  return 0;
         case WM_VSCROLL:    OnContentVScroll(hwnd, (int)LOWORD(wp), (int)HIWORD(wp)); return 0;
