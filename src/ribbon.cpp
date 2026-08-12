@@ -121,7 +121,7 @@ STDMETHODIMP CRibbonApplication::OnCreateUICommand(
     // created by the Ribbon Framework, even without ApplicationMenu in XML.
     // Return E_NOTIMPL to prevent handler creation. This suppresses
     // the button via the COM API.
-    if (typeID == UI_COMMANDTYPE_APPLICATIONMENU)
+    if (typeID == (UI_COMMANDTYPE)0)  // UI_COMMANDTYPE_APPLICATIONMENU
     {
         *ppCommandHandler = NULL;
         return E_NOTIMPL;
@@ -233,24 +233,9 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
     PROPVARIANT* ppropvarNewValue)
 {
     UNREFERENCED_PARAMETER(nCmdID);
+    UNREFERENCED_PARAMETER(key);
     UNREFERENCED_PARAMETER(ppropvarCurrentValue);
-
-    // Set the Application Menu button label to empty and disable it.
-    if (ppropvarNewValue)
-    {
-        if (IsEqualPropertyKey(key, UI_PKEY_Enabled))
-        {
-            ppropvarNewValue->vt = VT_BOOL;
-            ppropvarNewValue->boolVal = VARIANT_FALSE;
-            return S_OK;
-        }
-        if (IsEqualPropertyKey(key, UI_PKEY_LabelTitle))
-        {
-            ppropvarNewValue->vt = VT_LPWSTR;
-            ppropvarNewValue->pwszVal = SysAllocString(L"");
-            return S_OK;
-        }
-    }
+    UNREFERENCED_PARAMETER(ppropvarNewValue);
     return E_NOTIMPL;
 }
 
