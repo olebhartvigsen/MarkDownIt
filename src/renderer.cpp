@@ -896,7 +896,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 rt->DrawLine(p1, p2, hrBrush, 1.0f);
                 hrBrush->Release();
             }
-            curY += m.ruleGapAbove + m.ruleGapBelow;
         }
 
         if (cache_) {
@@ -919,7 +918,12 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         } else {
             layout->Release();
         }
+
+        // Advance curY past the text AND the H1/H2 underline gap.
         curY += metrics.height;
+        if (n.block == BlockKind::Heading && n.level <= 2) {
+            curY += m.ruleGapAbove + m.ruleGapBelow;
+        }
         prevBlock = n.block;
         prevDepth = n.depth;
     }

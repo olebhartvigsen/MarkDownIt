@@ -582,34 +582,6 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     float docX = static_cast<float>(x);
     float docY = static_cast<float>(y) + scrollY_;
     uint32_t offset = layout_cache_.PointToOffset(docX, docY);
-
-    // Debug: log click coordinates and what PointToOffset returns
-    {
-        char dbg[256];
-        int n = snprintf(dbg, sizeof(dbg),
-            "Click: px=(%d,%d) doc=(%.1f,%.1f) scrollY=%.1f offset=%u blocks=%zu\n",
-            x, y, docX, docY, scrollY_, offset,
-            layout_cache_.Blocks().size());
-        if (n > 0) {
-            FILE* f = nullptr;
-            fopen_s(&f, "C:\\Users\\au19277\\projekter\\MarkDownIt\\build\\Release\\click_log.txt", "a");
-            if (f) { fwrite(dbg, 1, n, f); fclose(f); }
-        }
-        // Also log all blocks
-        for (size_t i = 0; i < layout_cache_.Blocks().size(); i++) {
-            const auto& bl = layout_cache_.Blocks()[i];
-            n = snprintf(dbg, sizeof(dbg),
-                "  block %zu: x=%.1f y=%.1f w=%.1f h=%.1f srcOff=%u srcLen=%u u16=%zu\n",
-                i, bl.x, bl.y, bl.width, bl.height,
-                bl.srcOffset, bl.srcLength, bl.u16ToSrc.size());
-            if (n > 0) {
-                FILE* f = nullptr;
-                fopen_s(&f, "C:\\Users\\au19277\\projekter\\MarkDownIt\\build\\Release\\click_log.txt", "a");
-                if (f) { fwrite(dbg, 1, n, f); fclose(f); }
-            }
-        }
-    }
-
     if (offset != UINT32_MAX) {
         sel_.Collapse({offset});
     }
