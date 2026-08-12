@@ -94,4 +94,25 @@ TEST(ParserSmoke, Empty) {
     EXPECT_EQ(doc.nodes.size(), 0u);
 }
 
+// Source offsets on nodes.
+TEST(ParserOffsets, HeadingCarriesSourceRange) {
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown("# Title\n\nBody text\n", doc));
+    ASSERT_EQ(doc.nodes.size(), 2u);
+    EXPECT_EQ(doc.nodes[0].srcOffset, 0u);
+    EXPECT_EQ(doc.nodes[0].contentOffset, 2u);   // after "# "
+    EXPECT_EQ(doc.nodes[1].srcOffset, 9u);
+}
+
+// Source offsets on inline spans.
+TEST(ParserOffsets, InlineSpanHasOffset) {
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown("# Hello", doc));
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    ASSERT_EQ(doc.nodes[0].children.size(), 1u);
+    // "Hello" starts at byte offset 2 in the source (after "# ")
+    EXPECT_EQ(doc.nodes[0].children[0].srcOffset, 2u);
+    EXPECT_EQ(doc.nodes[0].children[0].srcLength, 5u);
+}
+
 RUN_ALL_TESTS()

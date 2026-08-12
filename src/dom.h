@@ -46,6 +46,8 @@ struct InlineBlock {
     bool            strong = false;   // strong (bold)
     bool            code   = false;   // inline code
     bool            strike = false;   // ~~strikethrough~~
+    uint32_t        srcOffset = 0;   // byte offset into the UTF-8 source
+    uint32_t        srcLength = 0;   // byte length of this span
 };
 
 // A table cell: plain text (no inline spans in cells for now).
@@ -66,6 +68,9 @@ struct Node {
     std::vector<InlineBlock>   children;     // inline spans
     bool                       ordered = false;  // list: ordered vs unordered
     int                        depth = 0;       // list nesting depth (0=top)
+    uint32_t                   srcOffset = 0;  // byte offset into UTF-8 source
+    uint32_t                   srcLength = 0;  // byte length of this block in source
+    uint32_t                   contentOffset = 0; // where editable text starts, after markers
     std::u32string             raw;          // code block raw text (UTF-32)
     std::vector<TableRow>     rows;         // table rows (for BlockKind::Table)
 };

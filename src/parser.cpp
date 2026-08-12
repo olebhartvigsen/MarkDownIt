@@ -28,6 +28,7 @@ struct Frame {
     MD_BLOCKTYPE type;
     int node_index;
     bool merge_inlines;  // true for LI: inlines go to this node, not a new P
+    bool owns_node;      // true if this frame created the node (for offset tracking)
 };
 
 // Frame on the span stack: which inline span we are inside, and accumulated
@@ -38,6 +39,13 @@ struct SpanFrame {
     bool em;
     bool strong;
     bool code;
+};
+
+// Tracks source offset accumulation per node.
+struct NodeOffsetInfo {
+    uint32_t firstTextOffset = 0;
+    uint32_t lastTextEnd = 0;
+    bool hasText = false;
 };
 
 struct ParserCtx {
@@ -51,12 +59,16 @@ struct ParserCtx {
     bool in_header;      // true when in THEAD
     TableRow* cur_row;   // current row being filled, nullptr if none
     std::u32string* cur_cell;  // current cell text, nullptr if none
+    const char* input;        // pointer to start of input (for offset calculation)
+    MD_SIZE inputSize;        // size of input
+    std::vector<NodeOffsetInfo> nodeOffsets;  // per-node offset tracking
 };
 
 // Append a new node to the document and return its index.
 int push_node(ParserCtx& ctx, Node n) {
     int idx = static_cast<int>(ctx.doc->nodes.size());
     ctx.doc->nodes.push_back(std::move(n));
+    ctx.nodeOffsets.push_back(NodeOffsetInfo{});
     return idx;
 }
 
@@ -156,6 +168,14 @@ std::string attr_to_string(const MD_ATTRIBUTE& attr) {
     return std::string(attr.text, attr.size);
 }
 
+// Find the start of the line containing the given byte offset.
+uint32_t BlockLineStart(const char* input, uint32_t offset) {
+    while (offset > 0 && input[offset - 1] != '\n') {
+        offset--;
+    }
+    return offset;
+}
+
 // --- md4c callbacks ---
 
 int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
@@ -163,18 +183,18 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
 
     switch (type) {
         case MD_BLOCK_DOC:
-            ctx->block_stack.push_back({type, -1, false});
+            ctx->block_stack.push_back({type, -1, false, false});
             break;
 
         case MD_BLOCK_P: {
             // If inside a LI with merge_inlines, reuse the LI node.
             if (!ctx->block_stack.empty() && ctx->block_stack.back().merge_inlines) {
                 int li_idx = ctx->block_stack.back().node_index;
-                ctx->block_stack.push_back({type, li_idx, false});
+                ctx->block_stack.push_back({type, li_idx, false, false});
             } else {
                 int idx = push_node(*ctx, Node{});
                 ctx->doc->nodes[idx].block = BlockKind::Paragraph;
-                ctx->block_stack.push_back({type, idx, false});
+                ctx->block_stack.push_back({type, idx, false, true});
             }
             break;
         }
@@ -195,7 +215,7 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
         case MD_BLOCK_CODE: {
             int idx = push_node(*ctx, Node{});
             ctx->doc->nodes[idx].block = BlockKind::CodeBlock;
-            ctx->block_stack.push_back({type, idx, false});
+            ctx->block_stack.push_back({type, idx, false, true});
             break;
         }
 
@@ -211,7 +231,7 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
         case MD_BLOCK_HR: {
             int idx = push_node(*ctx, Node{});
             ctx->doc->nodes[idx].block = BlockKind::ThematicBreak;
-            ctx->block_stack.push_back({type, idx, false});
+            ctx->block_stack.push_back({type, idx, false, true});
             break;
         }
 
@@ -220,7 +240,7 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
             // The list container does NOT create a renderable node.
             // Only LI nodes are rendered. Track ordered flag on the stack.
             ctx->list_depth++;
-            ctx->block_stack.push_back({type, -1, false});
+            ctx->block_stack.push_back({type, -1, false, false});
             break;
         }
 
@@ -237,7 +257,7 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
             ctx->doc->nodes[idx].ordered = ordered;
             ctx->doc->nodes[idx].depth = ctx->list_depth - 1;
             // merge_inlines: subsequent P inside this LI adds to this node
-            ctx->block_stack.push_back({type, idx, true});
+            ctx->block_stack.push_back({type, idx, true, true});
             break;
         }
 
@@ -245,23 +265,23 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
             int idx = push_node(*ctx, Node{});
             ctx->doc->nodes[idx].block = BlockKind::Table;
             ctx->table_node_idx = idx;
-            ctx->block_stack.push_back({type, idx, false});
+            ctx->block_stack.push_back({type, idx, false, true});
             break;
         }
         case MD_BLOCK_THEAD:
             ctx->in_header = true;
-            ctx->block_stack.push_back({type, -1, false});
+            ctx->block_stack.push_back({type, -1, false, false});
             break;
         case MD_BLOCK_TBODY:
             ctx->in_header = false;
-            ctx->block_stack.push_back({type, -1, false});
+            ctx->block_stack.push_back({type, -1, false, false});
             break;
         case MD_BLOCK_TR: {
             if (ctx->table_node_idx >= 0) {
                 ctx->doc->nodes[ctx->table_node_idx].rows.push_back(TableRow{});
                 ctx->cur_row = &ctx->doc->nodes[ctx->table_node_idx].rows.back();
             }
-            ctx->block_stack.push_back({type, -1, false});
+            ctx->block_stack.push_back({type, -1, false, false});
             break;
         }
         case MD_BLOCK_TH:
@@ -271,12 +291,12 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
                 ctx->cur_row->cells.back().isHeader = ctx->in_header;
                 ctx->cur_cell = &ctx->cur_row->cells.back().text;
             }
-            ctx->block_stack.push_back({type, -1, false});
+            ctx->block_stack.push_back({type, -1, false, false});
             break;
         }
         default:
             // HTML, detail structs we do not use.
-            ctx->block_stack.push_back({type, -1, false});
+            ctx->block_stack.push_back({type, -1, false, false});
             break;
     }
     return 0;
@@ -284,7 +304,18 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
 
 int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
     auto* ctx = static_cast<ParserCtx*>(userdata);
+    // Compute source offsets for the leaving block before popping the frame.
     if (!ctx->block_stack.empty()) {
+        Frame& frame = ctx->block_stack.back();
+        if (frame.owns_node && frame.node_index >= 0) {
+            auto& noi = ctx->nodeOffsets[frame.node_index];
+            if (noi.hasText) {
+                Node& node = ctx->doc->nodes[frame.node_index];
+                node.srcOffset = BlockLineStart(ctx->input, noi.firstTextOffset);
+                node.srcLength = noi.lastTextEnd - node.srcOffset;
+                node.contentOffset = noi.firstTextOffset;
+            }
+        }
         ctx->block_stack.pop_back();
     }
     if (type == MD_BLOCK_H) {
@@ -364,6 +395,17 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
 
     Node& node = ctx->doc->nodes[idx];
 
+    // Track source offsets for this node.
+    if (ctx->input) {
+        uint32_t off = static_cast<uint32_t>(text - ctx->input);
+        auto& noi = ctx->nodeOffsets[idx];
+        if (!noi.hasText) {
+            noi.firstTextOffset = off;
+            noi.hasText = true;
+        }
+        noi.lastTextEnd = off + static_cast<uint32_t>(size);
+    }
+
     // Table cells: raw text goes to cur_cell (UTF-32).
     if (ctx->cur_cell) {
         Utf8Decoder d;
@@ -432,6 +474,12 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
     ib.code = code;
 ib.strike = strike;
 
+    // Set source offset for this inline span.
+    if (ctx->input) {
+        ib.srcOffset = static_cast<uint32_t>(text - ctx->input);
+        ib.srcLength = static_cast<uint32_t>(size);
+    }
+
     // Capture title: if we are inside the first H1, append to doc.title.
     // Must do this BEFORE the std::move(ib) below, otherwise ib.text is moved-from.
     if (ctx->capture_title) {
@@ -448,6 +496,8 @@ ib.strike = strike;
 bool ParseMarkdown(const std::string& utf8, Document& out) {
     ParserCtx ctx;
     ctx.doc = &out;
+    ctx.input = utf8.data();
+    ctx.inputSize = static_cast<MD_SIZE>(utf8.size());
     ctx.capture_title = false;
     ctx.list_depth = 0;
     ctx.quote_depth = 0;
