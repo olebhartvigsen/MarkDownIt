@@ -215,9 +215,7 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         bl.u16ToSrc = std::move(cu16ToSrc);
         // Store the font em height for correct caret sizing.
         if (code_fmt_) {
-            FLOAT fontSize = 0.0f;
-            code_fmt_->GetFontSize(&fontSize);
-            bl.fontHeight = fontSize;
+            bl.fontHeight = code_fmt_->GetFontSize();
         }
         cache_->Add(bl);
     } else {
@@ -915,9 +913,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             bl.u16ToSrc = std::move(u16ToSrc);
             // Store the font em height for correct caret sizing.
             if (fmt) {
-                FLOAT fontSize = 0.0f;
-                fmt->GetFontSize(&fontSize);
-                bl.fontHeight = fontSize;
+                bl.fontHeight = fmt->GetFontSize();
             }
             cache_->Add(bl);
         } else {
