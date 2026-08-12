@@ -295,6 +295,26 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         }
     }
 
+    // Enable/disable format buttons based on edit mode.
+    if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_Enabled))
+    {
+        static const UINT fmtCmds[] = {
+            IDC_CMD_BOLD, IDC_CMD_ITALIC, IDC_CMD_CODE, IDC_CMD_STRIKE,
+            IDC_CMD_H1, IDC_CMD_H2, IDC_CMD_H3,
+            IDC_CMD_BULLETS, IDC_CMD_NUMBERING, IDC_CMD_QUOTE,
+            IDC_CMD_LINK, IDC_CMD_CLEARFORMAT,
+            IDC_CMD_INDENT, IDC_CMD_OUTDENT
+        };
+        for (auto cmd : fmtCmds) {
+            if (nCmdID == cmd) {
+                ppropvarNewValue->vt = VT_BOOL;
+                ppropvarNewValue->boolVal =
+                    (m_pApp && m_pApp->IsEditing()) ? VARIANT_TRUE : VARIANT_FALSE;
+                return S_OK;
+            }
+        }
+    }
+
     // Formatting toggle buttons: query the caret's format state.
     if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
     {

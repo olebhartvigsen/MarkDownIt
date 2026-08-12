@@ -1163,6 +1163,25 @@ void AppWindow::SetEdit(bool on) {
         DestroyCaret();
         caret_visible_ = false;
     }
+    // Invalidate the Edit toggle and all format buttons so the ribbon
+    // re-queries their pressed and enabled state.
+    if (g_pRibbonFramework) {
+        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_EDIT,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
+        static const UINT fmtCmds[] = {
+            IDC_CMD_BOLD, IDC_CMD_ITALIC, IDC_CMD_CODE, IDC_CMD_STRIKE,
+            IDC_CMD_H1, IDC_CMD_H2, IDC_CMD_H3,
+            IDC_CMD_BULLETS, IDC_CMD_NUMBERING, IDC_CMD_QUOTE,
+            IDC_CMD_LINK, IDC_CMD_CLEARFORMAT,
+            IDC_CMD_INDENT, IDC_CMD_OUTDENT
+        };
+        for (auto cmd : fmtCmds) {
+            g_pRibbonFramework->InvalidateUICommand(cmd,
+                UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
+            g_pRibbonFramework->InvalidateUICommand(cmd,
+                UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
+        }
+    }
     Repaint();
 }
 

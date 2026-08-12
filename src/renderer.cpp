@@ -643,6 +643,9 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         };
         std::u16string text16;
         std::vector<SpanRange> spans;
+        // Map each UTF-16 position to UTF-8 source byte offset.
+        // Walk each inline block codepoint by codepoint to build this.
+        std::vector<uint32_t> u16ToSrc;
 
         for (const auto& ib : n.children) {
             if (ib.kind == InlineKind::Image) continue;
@@ -650,6 +653,22 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             UINT32 start = static_cast<UINT32>(text16.size());
             text16 += part16;
             UINT32 length = static_cast<UINT32>(part16.size());
+            // Walk the UTF-32 codepoints and for each, compute its UTF-8
+            // byte size and its UTF-16 code unit count, advancing both.
+            uint32_t srcByte = ib.srcOffset;
+            size_t u16Idx = start;
+            for (char32_t cp : ib.text) {
+                // UTF-8 byte length of this codepoint
+                int utf8Len = (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
+                              (cp <= 0xFFFF) ? 3 : 4;
+                // UTF-16 code unit count
+                int utf16Len = (cp <= 0xFFFF) ? 1 : 2;
+                for (int u = 0; u < utf16Len; u++) {
+                    u16ToSrc.push_back(srcByte);
+                }
+                srcByte += utf8Len;
+                u16Idx += utf16Len;
+            }
             if (length > 0) {
                 spans.push_back({start, length, ib.em, ib.strong,
                                  ib.code, ib.kind == InlineKind::Link,
@@ -771,6 +790,52 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 rt->DrawTextLayout(mOrigin, markerLayout, blockBrush,
                     D2D1_DRAW_TEXT_OPTIONS_CLIP);
                 markerLayout->Release();
+            }
+        }
+
+        // Draw selection highlight behind the text.
+        if (selBrush && sel && !sel->Empty() && !u16ToSrc.empty()) {
+            uint32_t selStart = sel->Start();
+            uint32_t selEnd = selStart + sel->Length();
+            uint32_t blockStart = n.srcOffset;
+            uint32_t blockEnd = blockStart + n.srcLength;
+            if (selStart < blockEnd && selEnd > blockStart) {
+                // Find UTF-16 positions for the selection boundaries
+                // by binary search on u16ToSrc.
+                auto findU16 = [&](uint32_t srcOff) -> UINT32 {
+                    // Find first u16 index where u16ToSrc[idx] >= srcOff.
+                    // If not found, return text16.size().
+                    if (srcOff <= u16ToSrc[0]) return 0;
+                    size_t lo = 0, hi = u16ToSrc.size();
+                    while (lo < hi) {
+                        size_t mid = (lo + hi) / 2;
+                        if (u16ToSrc[mid] < srcOff) lo = mid + 1;
+                        else hi = mid;
+                    }
+                    return (lo < u16ToSrc.size()) ?
+                        static_cast<UINT32>(lo) :
+                        static_cast<UINT32>(text16.size());
+                };
+                UINT32 u16Start = findU16(selStart);
+                UINT32 u16End = (selEnd >= blockEnd) ?
+                    static_cast<UINT32>(text16.size()) :
+                    findU16(selEnd);
+                if (u16End > u16Start) {
+                    UINT32 hitCount = 0;
+                    DWRITE_HIT_TEST_METRICS htm[64];
+                    HRESULT hrHit = layout->HitTestTextRange(
+                        u16Start, u16End - u16Start,
+                        textX, curY, htm, 64, &hitCount);
+                    if (SUCCEEDED(hrHit)) {
+                        for (UINT32 h = 0; h < hitCount; ++h) {
+                            D2D1_RECT_F r = D2D1::RectF(
+                                htm[h].left, htm[h].top,
+                                htm[h].left + htm[h].width,
+                                htm[h].top + htm[h].height);
+                            rt->FillRectangle(r, selBrush);
+                        }
+                    }
+                }
             }
         }
 
