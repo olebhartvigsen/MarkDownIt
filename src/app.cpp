@@ -697,10 +697,8 @@ void AppWindow::OpenFile(const std::wstring& path) {
         (unsigned char)raw[2] == 0xBF);
     std::string utf8 = has_bom_ ? raw.substr(3) : raw;
 
-    // Detect line endings: check for 
-.
-    use_crlf_ = (utf8.find("
-") != std::string::npos);
+    // Detect line endings: check for CR LF (0x0D 0x0A)
+    use_crlf_ = (utf8.find("\x0D\x0A") != std::string::npos);
 
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
@@ -1005,13 +1003,15 @@ bool AppWindow::DoSave(const std::wstring& path) {
     // Determine line endings.
     std::string out;
     if (has_bom_) {
-        out += "\xEF\xBB\xBF";
+        out += (char)0xEF;
+        out += (char)0xBB;
+        out += (char)0xBF;
     }
     if (use_crlf_) {
         for (size_t i = 0; i < content.size(); i++) {
-            if (content[i] == '\n' && (i == 0 || content[i - 1] != '\r'))
-                out += "\r\n";
-            else if (content[i] != '\r')
+            if (content[i] == 0x0A && (i == 0 || content[i - 1] != 0x0D))
+                { out += (char)0x0D; out += (char)0x0A; }
+            else if (content[i] != 0x0D)
                 out += content[i];
         }
     } else {
