@@ -58,6 +58,8 @@ public:
     FormatState GetFormatState() const;
     void InvalidateFormatButtons();
     void ToggleEdit() { SetEdit(!editing_); }
+    void OpenPendingFile(const std::wstring& path) { pending_file_ = path; }
+    void ProcessPendingFile();
     void ToggleBold();
     void ToggleItalic();
     void ToggleStrike();
@@ -119,6 +121,7 @@ private:
     bool        dirty_ = false;
     bool        use_crlf_ = false;
     bool        has_bom_ = false;
+    std::wstring pending_file_;  // file to open after init completes
 
     static const wchar_t* kClassName;
     static const wchar_t* kContentClassName;

@@ -31,7 +31,7 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR lpCmdLine, int nCmdShow
         return 1;
     }
     if (lpCmdLine && *lpCmdLine) {
-        app.OpenFile(Unquote(lpCmdLine));
+        app.OpenPendingFile(Unquote(lpCmdLine));
     }
     return app.Run();
 }

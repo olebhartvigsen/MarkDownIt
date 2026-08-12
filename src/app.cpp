@@ -197,6 +197,12 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     // has had time to report its height. The ribbon's OnViewChanged
     // callback may fire asynchronously, so this is a safety net.
     SetTimer(hwnd_, 1, 300, nullptr);
+    // If a file was queued on the command line, open it after the
+    // message loop starts. Timer ID 3 fires after 50ms, giving the
+    // ribbon and content window time to initialize properly.
+    if (!pending_file_.empty()) {
+        SetTimer(hwnd_, 3, 50, nullptr);
+    }
 
     return true;
 }
@@ -738,6 +744,8 @@ void AppWindow::OpenFile(const std::wstring& path) {
     ClearDirty();
     scrollY_ = 0.0f;
     totalH_ = 0.0f;
+    sel_.Collapse({0});
+    layout_cache_.Clear();
 
     std::wstring title = L"MarkDownIt";
     size_t slash = path.find_last_of(L"\\/");
@@ -1018,6 +1026,13 @@ void AppWindow::OnContentPaint(HWND hwnd) {
     UpdateCaretPosition();
 }
 
+
+void AppWindow::ProcessPendingFile() {
+    if (pending_file_.empty()) return;
+    std::wstring path;
+    path.swap(pending_file_);
+    OpenFile(path);
+}
 
 void AppWindow::MarkDirty() {
     if (!dirty_) {
@@ -1657,6 +1672,10 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 KillTimer(hwnd_, 1);
                 ResizeContentWindow();
                 Repaint();
+            } else if (wp == 3) {
+                // Open file from command line after init is complete.
+                KillTimer(hwnd_, 3);
+                ProcessPendingFile();
             }
             return 0;
         case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
