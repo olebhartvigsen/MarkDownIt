@@ -394,19 +394,19 @@ void AppWindow::ScheduleReparse() {
     // For small documents (< 100 KB), reparse immediately.
     // For larger ones, debounce with a 150 ms timer.
     if (buffer_.Text().size() < 100 * 1024) {
-        if (reparse_timer_) { KillTimer(content_wnd_, reparse_timer_); reparse_timer_ = 0; }
+        if (reparse_timer_) { KillTimer(hwnd_content_, reparse_timer_); reparse_timer_ = 0; }
         reparse_pending_ = false;
         OnReparseTimer();
         return;
     }
     if (reparse_timer_) return;  // already scheduled
     reparse_pending_ = true;
-    reparse_timer_ = SetTimer(content_wnd_, 2, 150, nullptr);
+    reparse_timer_ = SetTimer(hwnd_content_, 2, 150, nullptr);
 }
 
 void AppWindow::OnReparseTimer() {
     reparse_pending_ = false;
-    if (reparse_timer_) { KillTimer(content_wnd_, reparse_timer_); reparse_timer_ = 0; }
+    if (reparse_timer_) { KillTimer(hwnd_content_, reparse_timer_); reparse_timer_ = 0; }
     doc_ = Document{};
     ParseMarkdown(buffer_.Text(), doc_);
     layout_cache_.Clear();
