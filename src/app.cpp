@@ -1266,9 +1266,214 @@ void AppWindow::ToggleCode() {
     OnBufferChanged();
 }
 
+// Build an in-memory dialog template for the Insert Link dialog.
+// This avoids needing a .rc resource file.
+static std::vector<BYTE> BuildLinkDialogTemplate() {
+    // Align helper: pad to 4-byte boundary.
+    auto align = [](std::vector<BYTE>& buf) {
+        while (buf.size() % 4 != 0) buf.push_back(0);
+    };
+    auto pushStr = [](std::vector<BYTE>& buf, const wchar_t* s) {
+        while (*s) {
+            buf.push_back(static_cast<BYTE>(*s & 0xFF));
+            buf.push_back(static_cast<BYTE>(*s >> 8));
+            s++;
+        }
+        buf.push_back(0); buf.push_back(0);  // null terminator
+    };
+
+    std::vector<BYTE> buf;
+    // DLGTEMPLATE
+    DWORD style = WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+                | DS_MODALFRAME | DS_SETFONT;
+    pushStr(buf, L"Segoe UI");  // menu (none... actually this is menu field)
+    // Wait, DLGTEMPLATE order is: style, exStyle, cdit, x, y, cx, cy
+    // Then: menu, class, title, (if DS_SETFONT: fontSize, font)
+    // Let me rebuild properly.
+    buf.clear();
+
+    // DLGTEMPLATE fields (6 dwords):
+    // style
+    buf.push_back(style & 0xFF); buf.push_back((style>>8) & 0xFF);
+    buf.push_back((style>>16) & 0xFF); buf.push_back((style>>24) & 0xFF);
+    // exStyle
+    buf.push_back(0); buf.push_back(0); buf.push_back(0); buf.push_back(0);
+    // cdit = 4 (label + edit + OK + Cancel buttons)
+    buf.push_back(4); buf.push_back(0); buf.push_back(0); buf.push_back(0);
+    // x, y, cx, cy (in dialog units)
+    // cx=200, cy=80
+    WORD cx = 200, cy = 80;
+    buf.push_back(10); buf.push_back(0);   // x
+    buf.push_back(10); buf.push_back(0);   // y
+    buf.push_back(cx & 0xFF); buf.push_back(cx >> 8);   // cx
+    buf.push_back(cy & 0xFF); buf.push_back(cy >> 8);   // cy
+
+    // menu: none (empty string)
+    buf.push_back(0); buf.push_back(0);
+    // class: none (empty string = default)
+    buf.push_back(0); buf.push_back(0);
+    // title
+    pushStr(buf, L"Insert Link");
+    // font (since DS_SETFONT): fontSize (WORD) + typeface (WSTR)
+    WORD fontSize = 9;
+    buf.push_back(fontSize & 0xFF); buf.push_back(fontSize >> 8);
+    pushStr(buf, L"Segoe UI");
+
+    align(buf);
+
+    // --- Item 1: static text label ---
+    // DLGITEMTEMPLATE: style, exStyle, x, y, cx, cy, id
+    DWORD labStyle = WS_CHILD | WS_VISIBLE | SS_LEFT;
+    buf.push_back(labStyle & 0xFF); buf.push_back((labStyle>>8)&0xFF);
+    buf.push_back((labStyle>>16)&0xFF); buf.push_back((labStyle>>24)&0xFF);
+    buf.push_back(0); buf.push_back(0); buf.push_back(0); buf.push_back(0); // exStyle
+    buf.push_back(10); buf.push_back(0);  // x
+    buf.push_back(10); buf.push_back(0);  // y
+    buf.push_back(180); buf.push_back(0); // cx
+    buf.push_back(12); buf.push_back(0);  // cy
+    buf.push_back(1000); buf.push_back(0); // id = 1000
+
+    // class: static
+    buf.push_back(0x0082); buf.push_back(0);  // atom for STATIC
+    // title
+    pushStr(buf, L"Link URL:");
+    // creation data: none
+    buf.push_back(0); buf.push_back(0);
+
+    align(buf);
+
+    // --- Item 2: edit control ---
+    DWORD editStyle = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP
+                    | ES_AUTOHSCROLL;
+    buf.push_back(editStyle & 0xFF); buf.push_back((editStyle>>8)&0xFF);
+    buf.push_back((editStyle>>16)&0xFF); buf.push_back((editStyle>>24)&0xFF);
+    buf.push_back(0); buf.push_back(0); buf.push_back(0); buf.push_back(0); // exStyle
+    buf.push_back(10); buf.push_back(0);  // x
+    buf.push_back(25); buf.push_back(0);  // y
+    buf.push_back(180); buf.push_back(0); // cx
+    buf.push_back(14); buf.push_back(0);  // cy
+    buf.push_back(1001); buf.push_back(0); // id = 1001
+
+    // class: edit
+    buf.push_back(0x0081); buf.push_back(0);  // atom for EDIT
+    // title: empty
+    buf.push_back(0); buf.push_back(0);
+    // creation data: none
+    buf.push_back(0); buf.push_back(0);
+
+    align(buf);
+
+    // --- Item 3: OK button ---
+    DWORD btnStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP
+                   | BS_PUSHBUTTON | BS_DEFPUSHBUTTON;
+    buf.push_back(btnStyle & 0xFF); buf.push_back((btnStyle>>8)&0xFF);
+    buf.push_back((btnStyle>>16)&0xFF); buf.push_back((btnStyle>>24)&0xFF);
+    buf.push_back(0); buf.push_back(0); buf.push_back(0); buf.push_back(0); // exStyle
+    buf.push_back(140); buf.push_back(0); // x
+    buf.push_back(50); buf.push_back(0);  // y
+    buf.push_back(50); buf.push_back(0); // cx
+    buf.push_back(14); buf.push_back(0); // cy
+    buf.push_back(IDOK & 0xFF); buf.push_back(IDOK >> 8); // id = IDOK
+
+    // class: button
+    buf.push_back(0x0080); buf.push_back(0);  // atom for BUTTON
+    // title
+    pushStr(buf, L"OK");
+    // creation data: none
+    buf.push_back(0); buf.push_back(0);
+
+    align(buf);
+
+    // --- Item 4: Cancel button ---
+    DWORD btnCancelStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP
+                         | BS_PUSHBUTTON;
+    buf.push_back(btnCancelStyle & 0xFF); buf.push_back((btnCancelStyle>>8)&0xFF);
+    buf.push_back((btnCancelStyle>>16)&0xFF); buf.push_back((btnCancelStyle>>24)&0xFF);
+    buf.push_back(0); buf.push_back(0); buf.push_back(0); buf.push_back(0);
+    buf.push_back(80); buf.push_back(0);  // x (right of OK)
+    buf.push_back(50); buf.push_back(0);  // y
+    buf.push_back(50); buf.push_back(0);  // cx
+    buf.push_back(14); buf.push_back(0);  // cy
+    buf.push_back(IDCANCEL & 0xFF); buf.push_back(IDCANCEL >> 8);
+
+    // class: button
+    buf.push_back(0x0080); buf.push_back(0);
+    // title
+    pushStr(buf, L"Cancel");
+    // creation data: none
+    buf.push_back(0); buf.push_back(0);
+
+    align(buf);
+
+    return buf;
+}
+
+// Dialog procedure for the Insert Link dialog.
+static INT_PTR CALLBACK LinkDialogProc(HWND hDlg, UINT msg, WPARAM wp, LPARAM lp) {
+    static std::wstring* pResult = nullptr;
+    switch (msg) {
+    case WM_INITDIALOG: {
+        pResult = reinterpret_cast<std::wstring*>(lp);
+        // Pre-fill with https://
+        SetDlgItemTextW(hDlg, 1001, L"https://");
+        // Focus the URL field and select all.
+        HWND hEdit = GetDlgItem(hDlg, 1001);
+        SetFocus(hEdit);
+        Edit_SetSel(hEdit, 0, -1);
+        return FALSE;  // we already set focus
+    }
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {
+        case IDOK: {
+            wchar_t buf[2048];
+            GetDlgItemTextW(hDlg, 1001, buf, 2048);
+            if (pResult) *pResult = buf;
+            EndDialog(hDlg, IDOK);
+            return TRUE;
+        }
+        case IDCANCEL:
+            EndDialog(hDlg, IDCANCEL);
+            return TRUE;
+        }
+        break;
+    case WM_CLOSE:
+        EndDialog(hDlg, IDCANCEL);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+// Convert wstring to UTF-8 string.
+static std::string WideToUtf8(const std::wstring& ws) {
+    std::string out;
+    for (wchar_t ch : ws) {
+        if (ch < 0x80) out += static_cast<char>(ch);
+        else if (ch < 0x800) {
+            out += static_cast<char>(0xC0 | (ch >> 6));
+            out += static_cast<char>(0x80 | (ch & 0x3F));
+        } else {
+            out += static_cast<char>(0xE0 | (ch >> 12));
+            out += static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+            out += static_cast<char>(0x80 | (ch & 0x3F));
+        }
+    }
+    return out;
+}
+
 void AppWindow::InsertLinkCmd() {
     if (!editing_) return;
-    InsertLink(&buffer_, &sel_, "https://");
+    // Build the dialog template in memory.
+    auto tmpl = BuildLinkDialogTemplate();
+    std::wstring url;
+    INT_PTR result = DialogBoxIndirectParamW(
+        GetModuleHandle(NULL),
+        reinterpret_cast<DLGTEMPLATE*>(tmpl.data()),
+        hwnd_,
+        LinkDialogProc,
+        reinterpret_cast<LPARAM>(&url));
+    if (result != IDOK || url.empty()) return;
+    std::string urlUtf8 = WideToUtf8(url);
+    InsertLink(&buffer_, &sel_, urlUtf8);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
 }
