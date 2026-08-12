@@ -36,6 +36,10 @@ public:
     void ToggleWrap();
     bool IsWrapEnabled() const;
     void ShowAbout();
+    bool Save();
+    bool SaveAs();
+    bool IsDirty() const { return dirty_; }
+    void SetEdit(bool on);
 
     // Called by CRibbonApplication::OnViewChanged when ribbon height changes.
     void OnRibbonHeightChanged();
@@ -81,6 +85,11 @@ private:
     UINT_PTR    reparse_timer_ = 0;
     bool        reparse_pending_ = false;
 
+    // File lifecycle
+    bool        dirty_ = false;
+    bool        use_crlf_ = false;
+    bool        has_bom_ = false;
+
     static const wchar_t* kClassName;
     static const wchar_t* kContentClassName;
 
@@ -109,6 +118,13 @@ private:
     void OnReparseTimer();
     void ScheduleReparse();
     void OnDestroy();
+    void OnClose();
+    bool DoSave(const std::wstring& path);
+    void MarkDirty();
+    void ClearDirty();
+    void UpdateTitleBar();
+    std::wstring SaveDialog();
+    int  PromptSaveDiscardCancel();
     void RecreateRenderTarget();
     void EnsureRenderer();
     void UpdateScrollInfo();

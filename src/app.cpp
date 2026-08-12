@@ -431,6 +431,13 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 OnBufferChanged();
             }
             break;
+        case 0x53:  // Ctrl+S = save, Ctrl+Shift+S = save as
+            if (ctrl && shift) {
+                SaveAs();
+            } else if (ctrl && !shift) {
+                Save();
+            }
+            break;
         case 0x43:  // Ctrl+C = copy
             if (ctrl && !shift) {
                 if (!sel_.Empty()) {
@@ -681,13 +688,26 @@ void AppWindow::OpenFile(const std::wstring& path) {
     }
     std::stringstream ss;
     ss << f.rdbuf();
-    std::string utf8 = ss.str();
+    std::string raw = ss.str();
+
+    // Detect BOM (UTF-8 BOM: EF BB BF)
+    has_bom_ = (raw.size() >= 3 &&
+        (unsigned char)raw[0] == 0xEF &&
+        (unsigned char)raw[1] == 0xBB &&
+        (unsigned char)raw[2] == 0xBF);
+    std::string utf8 = has_bom_ ? raw.substr(3) : raw;
+
+    // Detect line endings: check for 
+.
+    use_crlf_ = (utf8.find("
+") != std::string::npos);
 
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
     buffer_.SetText(utf8);
     undo_stack_.Clear();
     file_path_ = path;
+    ClearDirty();
     scrollY_ = 0.0f;
     totalH_ = 0.0f;
 
@@ -950,6 +970,153 @@ void AppWindow::OnContentPaint(HWND hwnd) {
     UpdateCaretPosition();
 }
 
+
+void AppWindow::MarkDirty() {
+    if (!dirty_) {
+        dirty_ = true;
+        UpdateTitleBar();
+    }
+}
+
+void AppWindow::ClearDirty() {
+    if (dirty_) {
+        dirty_ = false;
+        UpdateTitleBar();
+    }
+}
+
+void AppWindow::UpdateTitleBar() {
+    std::wstring title = L"MarkDownIt";
+    if (!file_path_.empty()) {
+        size_t slash = file_path_.find_last_of(L"\\/");
+        std::wstring base = (slash != std::wstring::npos)
+            ? file_path_.substr(slash + 1) : file_path_;
+        title = L"MarkDownIt - " + base;
+    }
+    if (dirty_) title = L"*" + title;
+    SetWindowTextW(hwnd_, title.c_str());
+}
+
+bool AppWindow::DoSave(const std::wstring& path) {
+    // Get the buffer content as UTF-8.
+    std::string content = buffer_.Text();
+
+    // Detect and strip BOM if present on load, add it back on save.
+    // Determine line endings.
+    std::string out;
+    if (has_bom_) {
+        out += "\xEF\xBB\xBF";
+    }
+    if (use_crlf_) {
+        for (size_t i = 0; i < content.size(); i++) {
+            if (content[i] == '\n' && (i == 0 || content[i - 1] != '\r'))
+                out += "\r\n";
+            else if (content[i] != '\r')
+                out += content[i];
+        }
+    } else {
+        out = content;
+    }
+
+    // Atomic save: write to temp file in same directory, then rename.
+    std::wstring tempPath = path + L".mdtmp";
+
+    // Suspend the file watcher during save so our own write doesn't trigger reload.
+    watcher_.Stop();
+
+    FILE* fp = nullptr;
+    if (_wfopen_s(&fp, tempPath.c_str(), L"wb") != 0 || !fp) {
+        watcher_.Start(hwnd_, file_path_);
+        return false;
+    }
+    fwrite(out.data(), 1, out.size(), fp);
+    fflush(fp);
+    fclose(fp);
+
+    // MoveFileEx with MOVEFILE_REPLACE_EXISTING for atomic replace.
+    BOOL ok = MoveFileExW(tempPath.c_str(), path.c_str(),
+        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+    if (!ok) {
+        // Try to delete the temp file.
+        DeleteFileW(tempPath.c_str());
+        watcher_.Start(hwnd_, file_path_);
+        return false;
+    }
+
+    // Restart watcher.
+    if (!file_path_.empty()) watcher_.Start(hwnd_, file_path_);
+
+    ClearDirty();
+    return true;
+}
+
+bool AppWindow::Save() {
+    if (file_path_.empty()) return SaveAs();
+    return DoSave(file_path_);
+}
+
+bool AppWindow::SaveAs() {
+    std::wstring path = SaveDialog();
+    if (path.empty()) return false;
+    file_path_ = path;
+    UpdateTitleBar();
+    bool ok = DoSave(path);
+    if (ok) watcher_.Start(hwnd_, file_path_);
+    return ok;
+}
+
+std::wstring AppWindow::SaveDialog() {
+    wchar_t szFile[MAX_PATH] = {};
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd_;
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrFilter = L"Markdown (*.md)\0*.md\0All Files (*.*)\0*.*\0";
+    ofn.lpstrDefExt = L"md";
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    if (file_path_.empty()) {
+        ofn.lpstrFileTitle = nullptr;
+    } else {
+        // Pre-fill with current path.
+        wcscpy_s(szFile, MAX_PATH, file_path_.c_str());
+    }
+    if (GetSaveFileNameW(&ofn)) return szFile;
+    return {};
+}
+
+int AppWindow::PromptSaveDiscardCancel() {
+    return MessageBoxW(hwnd_,
+        L"The document has unsaved changes. Save before closing?",
+        L"MarkDownIt", MB_YESNOCANCEL | MB_ICONQUESTION);
+}
+
+void AppWindow::OnClose() {
+    if (dirty_) {
+        int result = PromptSaveDiscardCancel();
+        if (result == IDCANCEL) return;
+        if (result == IDYES) {
+            if (!Save()) return;  // save failed or cancelled, don't close
+        }
+        // IDNO: discard, proceed to close
+    }
+    DestroyWindow(hwnd_);
+}
+
+void AppWindow::SetEdit(bool on) {
+    editing_ = on;
+    if (on && has_focus_ && !caret_visible_) {
+        CreateCaret(hwnd_content_, nullptr, 2, 16);
+        ShowCaret(hwnd_content_);
+        caret_visible_ = true;
+    }
+    if (!on && caret_visible_) {
+        DestroyCaret();
+        caret_visible_ = false;
+    }
+    Repaint();
+}
+
 void AppWindow::OnDestroy() {
     SaveWinPlacement(hwnd_);
     DestroyRibbon();
@@ -1063,6 +1230,7 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
         case WM_ERASEBKGND: return 1;
+        case WM_CLOSE:      OnClose();         return 0;
         case WM_DESTROY:   OnDestroy();   return 0;
         case WM_PAINT: {
             // Main window does not paint. The ribbon framework handles
