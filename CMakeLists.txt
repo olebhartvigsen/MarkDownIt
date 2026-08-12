@@ -93,6 +93,7 @@ add_executable(MarkDownIt WIN32
     src/filewatch.cpp
     src/parser.cpp
     src/ribbon.cpp
+    src/textbuffer.cpp
 )
 
 if(MSVC AND RIBBON_AVAILABLE)
@@ -176,7 +177,10 @@ option(BUILD_TESTS "Build test binary" OFF)
 if(BUILD_TESTS)
     add_executable(MarkDownIt.tests
         tests/parser_smoke.cpp
+        tests/textbuffer_test.cpp
+        tests/test_main.cpp
         src/parser.cpp
+        src/textbuffer.cpp
     )
     target_link_libraries(MarkDownIt.tests PRIVATE md4c)
     target_include_directories(MarkDownIt.tests PRIVATE

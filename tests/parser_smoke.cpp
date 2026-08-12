@@ -115,4 +115,3 @@ TEST(ParserOffsets, InlineSpanHasOffset) {
     EXPECT_EQ(doc.nodes[0].children[0].srcLength, 5u);
 }
 
-RUN_ALL_TESTS()
