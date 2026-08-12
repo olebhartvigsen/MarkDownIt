@@ -98,6 +98,7 @@ add_executable(MarkDownIt WIN32
     src/editcontroller.cpp
     src/navigation.cpp
     src/undostack.cpp
+    src/clipboard.cpp
 )
 
 if(MSVC AND RIBBON_AVAILABLE)
@@ -188,6 +189,7 @@ if(BUILD_TESTS)
         tests/navigation_test.cpp
         tests/undo_test.cpp
         tests/incremental_test.cpp
+        tests/clipboard_test.cpp
         tests/test_main.cpp
         src/parser.cpp
         src/textbuffer.cpp
@@ -195,6 +197,7 @@ if(BUILD_TESTS)
         src/editcontroller.cpp
         src/navigation.cpp
         src/undostack.cpp
+        src/clipboard.cpp
     )
     target_link_libraries(MarkDownIt.tests PRIVATE md4c)
     target_include_directories(MarkDownIt.tests PRIVATE

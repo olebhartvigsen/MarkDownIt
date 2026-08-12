@@ -335,6 +335,37 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         case VK_F5:
             Reload();
             break;
+        case 0x43:  // Ctrl+C = copy
+            if (ctrl && !shift) {
+                if (!sel_.Empty()) {
+                    uint32_t s = sel_.Start();
+                    uint32_t len = sel_.Length();
+                    std::string sel_text = buffer_.Text().substr(s, len);
+                    ClipboardCopy(hwnd_content_, sel_text);
+                }
+            }
+            break;
+        case 0x58:  // Ctrl+X = cut
+            if (ctrl && !shift) {
+                if (!sel_.Empty()) {
+                    uint32_t s = sel_.Start();
+                    uint32_t len = sel_.Length();
+                    std::string sel_text = buffer_.Text().substr(s, len);
+                    ClipboardCut(hwnd_content_, sel_text);
+                    editor_.DeleteSelection();
+                    OnBufferChanged();
+                }
+            }
+            break;
+        case 0x56:  // Ctrl+V = paste
+            if (ctrl && !shift) {
+                std::string text = ClipboardPaste(hwnd_content_);
+                if (!text.empty()) {
+                    editor_.InsertText(text);
+                    OnBufferChanged();
+                }
+            }
+            break;
         case 0x5A:  // Ctrl+Z = undo, Ctrl+Y = redo
             if (ctrl && !shift) {
                 editor_.Undo();

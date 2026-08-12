@@ -14,6 +14,7 @@
 #include "editcontroller.h"
 #include "navigation.h"
 #include "undostack.h"
+#include "clipboard.h"
 
 class AppWindow {
 public:
