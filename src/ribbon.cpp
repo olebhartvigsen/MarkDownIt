@@ -117,16 +117,6 @@ STDMETHODIMP CRibbonApplication::OnCreateUICommand(
     UINT nCmdID, UI_COMMANDTYPE typeID,
     IUICommandHandler** ppCommandHandler)
 {
-    // The Application Menu button ("Fil" on Danish Windows) is always
-    // created by the Ribbon Framework, even without ApplicationMenu in XML.
-    // Return E_NOTIMPL to prevent handler creation. This suppresses
-    // the button via the COM API.
-    if (typeID == (UI_COMMANDTYPE)0)  // UI_COMMANDTYPE_APPLICATIONMENU
-    {
-        *ppCommandHandler = NULL;
-        return E_NOTIMPL;
-    }
-
     UNREFERENCED_PARAMETER(nCmdID);
 
     if (!m_pCommandHandler)

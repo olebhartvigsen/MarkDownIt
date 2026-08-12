@@ -40,6 +40,11 @@
         <Image Source="icons/reload_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
+    <Command Name="cmdAppMenu" Symbol="IDC_CMD_APPMENU" Id="10000">
+      <Command.LabelTitle>
+        <String>Fil</String>
+      </Command.LabelTitle>
+    </Command>
     <Command Name="cmdAbout" Symbol="IDC_CMD_ABOUT" Id="10102">
       <Command.LabelTitle>
         <String>About</String>
@@ -91,12 +96,18 @@
   </Application.Commands>
   <Application.Views>
     <Ribbon>
+      <Ribbon.ApplicationMenu>
+        <ApplicationMenu CommandName="cmdAppMenu">
+          <MenuGroup Class="MajorItems">
+            <Button CommandName="cmdAbout" />
+          </MenuGroup>
+        </ApplicationMenu>
+      </Ribbon.ApplicationMenu>
       <Ribbon.Tabs>
         <Tab CommandName="cmdTabHome">
-          <Group CommandName="cmdGroupFile" SizeDefinition="ThreeButtons">
+          <Group CommandName="cmdGroupFile" SizeDefinition="TwoButtons">
             <Button CommandName="cmdOpen" />
             <Button CommandName="cmdReload" />
-            <Button CommandName="cmdAbout" />
           </Group>
           <Group CommandName="cmdGroupView" SizeDefinition="ThreeButtons">
             <ToggleButton CommandName="cmdWrap" />
