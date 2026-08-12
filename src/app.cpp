@@ -2,6 +2,7 @@
 #include "ribbon.h"
 #include "parser.h"
 #include <commdlg.h>
+#include <windowsx.h>
 
 #include <windows.h>
 #include <shellapi.h>
@@ -212,6 +213,7 @@ int AppWindow::Run() {
 void AppWindow::EnsureRenderer() {
     if (renderer_inited_ || !dw_factory_) return;
     renderer_inited_ = renderer_.Init(dw_factory_);
+    renderer_.SetLayoutCache(&layout_cache_);
 }
 
 void AppWindow::LoadSampleDoc() {
@@ -234,10 +236,58 @@ void AppWindow::LoadSampleDoc() {
         "## End\n\n"
         "This is the last block. You have scrolled to the bottom.\n";
     ParseMarkdown(sample, doc_);
+    buffer_.SetText(sample);
 }
 
 void AppWindow::Repaint() {
     if (hwnd_content_) InvalidateRect(hwnd_content_, nullptr, TRUE);
+}
+
+void AppWindow::OnBufferChanged() {
+    doc_ = Document{};
+    ParseMarkdown(buffer_.Text(), doc_);
+    layout_cache_.Clear();
+    UpdateScrollInfo();
+    Repaint();
+    UpdateCaretPosition();
+}
+
+void AppWindow::UpdateCaretPosition() {
+    if (!has_focus_ || !hwnd_content_) return;
+    float x, y, h;
+    if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &x, &y, &h)) {
+        int cx = static_cast<int>(x);
+        int cy = static_cast<int>(y - scrollY_);
+        SetCaretPos(cx, cy);
+    }
+}
+
+void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
+    SetFocus(hwnd);
+    // Convert screen coordinates to document coordinates by adding scrollY.
+    float docX = static_cast<float>(x);
+    float docY = static_cast<float>(y) + scrollY_;
+    uint32_t offset = layout_cache_.PointToOffset(docX, docY);
+    if (offset != UINT32_MAX) {
+        sel_.Collapse({offset});
+    }
+    UpdateCaretPosition();
+}
+
+void AppWindow::OnSetFocus(HWND hwnd) {
+    has_focus_ = true;
+    float x, y, h;
+    if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &x, &y, &h)) {
+        CreateCaret(hwnd, nullptr, 1, static_cast<int>(h));
+        SetCaretPos(static_cast<int>(x),
+                    static_cast<int>(y - scrollY_));
+        ShowCaret(hwnd);
+    }
+}
+
+void AppWindow::OnKillFocus(HWND hwnd) {
+    has_focus_ = false;
+    DestroyCaret();
 }
 
 void AppWindow::OpenFile(const std::wstring& path) {
@@ -252,6 +302,7 @@ void AppWindow::OpenFile(const std::wstring& path) {
 
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
+    buffer_.SetText(utf8);
     file_path_ = path;
     scrollY_ = 0.0f;
     totalH_ = 0.0f;
@@ -284,6 +335,7 @@ void AppWindow::Reload() {
     float savedY = scrollY_;
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
+    buffer_.SetText(utf8);
     UpdateScrollInfo();
     if (scrollY_ > savedY) scrollY_ = savedY;
     UpdateScrollInfo();
@@ -451,6 +503,7 @@ void AppWindow::OnContentVScroll(HWND hwnd, int code, int pos) {
 
     UpdateScrollInfo();
     if (std::fabs(scrollY_ - oldY) > 0.01f) Repaint();
+    UpdateCaretPosition();
 }
 
 void AppWindow::OnContentMouseWheel(HWND hwnd, int delta) {
@@ -459,6 +512,7 @@ void AppWindow::OnContentMouseWheel(HWND hwnd, int delta) {
     scrollY_ -= (delta / WHEEL_DELTA) * step * 3.0f;
     UpdateScrollInfo();
     if (std::fabs(scrollY_ - oldY) > 0.01f) Repaint();
+    UpdateCaretPosition();
 }
 
 void AppWindow::RecreateRenderTarget() {
@@ -507,6 +561,7 @@ void AppWindow::OnContentPaint(HWND hwnd) {
             RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
     }
     EndPaint(hwnd, &ps);
+    UpdateCaretPosition();
 }
 
 void AppWindow::OnDestroy() {
@@ -640,6 +695,14 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case WM_PAINT:     OnContentPaint(hwnd); return 0;
+        case WM_LBUTTONDOWN: {
+            int x = GET_X_LPARAM(lp);
+            int y = GET_Y_LPARAM(lp);
+            OnLButtonDown(hwnd, x, y);
+            return 0;
+        }
+        case WM_SETFOCUS:  OnSetFocus(hwnd);   return 0;
+        case WM_KILLFOCUS: OnKillFocus(hwnd);  return 0;
         case WM_VSCROLL:    OnContentVScroll(hwnd, (int)LOWORD(wp), (int)HIWORD(wp)); return 0;
         case WM_MOUSEWHEEL: {
             int delta = GET_WHEEL_DELTA_WPARAM(wp);

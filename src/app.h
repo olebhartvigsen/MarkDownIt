@@ -8,6 +8,9 @@
 #include "dom.h"
 #include "renderer.h"
 #include "filewatch.h"
+#include "textbuffer.h"
+#include "layoutcache.h"
+#include "caret.h"
 
 class AppWindow {
 public:
@@ -57,6 +60,14 @@ private:
     int    clientW_    = 0;
     int    clientH_    = 0;
 
+    // Editor state
+    TextBuffer   buffer_;
+    LayoutCache  layout_cache_;
+    Selection    sel_;
+    bool         caret_visible_ = false;
+    bool         editing_ = false;
+    bool         has_focus_ = false;
+
     static const wchar_t* kClassName;
     static const wchar_t* kContentClassName;
 
@@ -71,6 +82,11 @@ private:
     void OnContentSize(HWND hwnd, int width, int height);
     void OnDropFiles(HWND hwnd, HDROP hDrop);
     void OnReload();
+    void OnBufferChanged();
+    void UpdateCaretPosition();
+    void OnLButtonDown(HWND hwnd, int x, int y);
+    void OnSetFocus(HWND hwnd);
+    void OnKillFocus(HWND hwnd);
     void OnDestroy();
     void RecreateRenderTarget();
     void EnsureRenderer();
