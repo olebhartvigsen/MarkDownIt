@@ -4,6 +4,7 @@
 #include <dwrite.h>
 #include <string>
 #include "dom.h"
+#include "theme.h"
 
 class Renderer {
 public:
@@ -36,10 +37,17 @@ private:
     float zoom_ = 1.0f;
     bool wrapEnabled_ = true;
 
+    LayoutMetrics ComputeMetrics() const;
+    static float GapForTransition(BlockKind prev, BlockKind cur,
+                                  BlockKind next, int curDepth,
+                                  int prevDepth, const LayoutMetrics& m);
+
     std::u16string ToUtf16(const std::u32string& s32);
     void DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                        const Node& n, float x, float y, float width, float& outH);
     void DrawThematicBreak(ID2D1RenderTarget* rt, float x, float y, float width);
     void DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                    const Node& n, float x, float y, float width, float& outH);
+    float MeasureTable(IDWriteFactory* dw, const Node& n,
+                       float x, float width);
 };
