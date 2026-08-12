@@ -17,6 +17,10 @@ struct BlockLayout {
     uint32_t srcLength = 0;
     uint32_t textStartOffset = 0;  // source offset of layout char 0
     size_t nodeIndex = 0;
+    // Maps each UTF-16 code-unit position in the layout to its
+    // UTF-8 source byte offset. Built during Render() for accurate
+    // hit-testing and caret placement when inline syntax is present.
+    std::vector<uint32_t> u16ToSrc;
 };
 
 class LayoutCache {

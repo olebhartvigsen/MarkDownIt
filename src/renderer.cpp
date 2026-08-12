@@ -190,7 +190,33 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     D2D1_POINT_2F origin = D2D1::Point2F(x + m.codePad, y + m.codePad);
     rt->DrawTextLayout(origin, layout, codeBrush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
 
-    layout->Release();
+    if (cache_) {
+        // Build u16ToSrc mapping for the code block.
+        std::vector<uint32_t> cu16ToSrc;
+        uint32_t srcByte = n.contentOffset;
+        for (char32_t cp : raw) {
+            int utf8Len = (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
+                          (cp <= 0xFFFF) ? 3 : 4;
+            int utf16Len = (cp <= 0xFFFF) ? 1 : 2;
+            for (int u = 0; u < utf16Len; u++)
+                cu16ToSrc.push_back(srcByte);
+            srcByte += utf8Len;
+        }
+        BlockLayout bl;
+        bl.layout = layout;
+        bl.x = x + m.codePad;
+        bl.y = y + m.codePad;
+        bl.width = codeWidth;
+        bl.height = metrics.height;
+        bl.srcOffset = n.srcOffset;
+        bl.srcLength = n.srcLength;
+        bl.textStartOffset = n.contentOffset;
+        bl.nodeIndex = 0;
+        bl.u16ToSrc = std::move(cu16ToSrc);
+        cache_->Add(bl);
+    } else {
+        layout->Release();
+    }
     if (bgBrush) bgBrush->Release();
     if (borderBrush) borderBrush->Release();
     if (codeBrush) codeBrush->Release();
@@ -880,6 +906,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             bl.srcLength = n.srcLength;
             bl.textStartOffset = n.contentOffset;
             bl.nodeIndex = nodeIdx;
+            bl.u16ToSrc = std::move(u16ToSrc);
             cache_->Add(bl);
         } else {
             layout->Release();

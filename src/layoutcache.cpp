@@ -63,11 +63,19 @@ uint32_t LayoutCache::PointToOffset(float x, float y) const {
         localX, localY, &isTrailingHit, &isInside, &htm);
 
     // htm.textPosition is a UTF-16 code-unit position within the layout.
-    // We need to convert it to a UTF-8 source offset.
-    // For now, use textStartOffset + the UTF-16 position as a first
-    // approximation. The conversion helper handles multi-byte chars.
-    // The layout text was built from the node's children, so the
-    // textStartOffset is the source offset of the first character.
+    // Use the u16ToSrc mapping to convert to a UTF-8 source offset.
+    if (!bl.u16ToSrc.empty() && htm.textPosition < bl.u16ToSrc.size()) {
+        uint32_t srcOff = bl.u16ToSrc[htm.textPosition];
+        if (isTrailingHit && htm.textPosition + 1 < bl.u16ToSrc.size()) {
+            // For trailing hits, advance to the next source position.
+            // But only if the next position is within the same inline block.
+            // Use the next mapped position if it's > current.
+            uint32_t nextOff = bl.u16ToSrc[htm.textPosition + 1];
+            if (nextOff > srcOff) return nextOff;
+        }
+        return srcOff;
+    }
+    // Fallback: linear approximation (for blocks without mapping).
     return bl.textStartOffset + htm.textPosition;
 }
 
@@ -80,14 +88,30 @@ bool LayoutCache::OffsetToCaretRect(uint32_t offset,
     const auto& bl = blocks_[idx];
     if (!bl.layout) return false;
 
-    // Convert source offset to UTF-16 position within this layout.
-    uint32_t localOffset = (offset >= bl.textStartOffset)
-        ? offset - bl.textStartOffset : 0;
+    // Convert source offset to UTF-16 position within this layout
+    // using the u16ToSrc mapping (reverse lookup).
+    uint32_t u16Pos = 0;
+    if (!bl.u16ToSrc.empty()) {
+        // Binary search for the first u16 index whose src offset >= offset.
+        size_t lo = 0, hi = bl.u16ToSrc.size();
+        while (lo < hi) {
+            size_t mid = (lo + hi) / 2;
+            if (bl.u16ToSrc[mid] < offset) lo = mid + 1;
+            else hi = mid;
+        }
+        u16Pos = (lo < bl.u16ToSrc.size())
+            ? static_cast<uint32_t>(lo)
+            : static_cast<uint32_t>(bl.u16ToSrc.size());
+    } else {
+        // Fallback: linear approximation.
+        u16Pos = (offset >= bl.textStartOffset)
+            ? offset - bl.textStartOffset : 0;
+    }
 
     DWRITE_HIT_TEST_METRICS htm = {};
     FLOAT caretX = 0.0f, caretY = 0.0f;
     bl.layout->HitTestTextPosition(
-        localOffset, FALSE, &caretX, &caretY, &htm);
+        u16Pos, FALSE, &caretX, &caretY, &htm);
 
     if (outX) *outX = bl.x + caretX;
     if (outY) *outY = bl.y + caretY;
