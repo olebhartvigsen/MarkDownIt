@@ -237,7 +237,7 @@ void AppWindow::LoadSampleDoc() {
 }
 
 void AppWindow::Repaint() {
-    if (hwnd_content_) InvalidateRect(hwnd_content_, nullptr, FALSE);
+    if (hwnd_content_) InvalidateRect(hwnd_content_, nullptr, TRUE);
 }
 
 void AppWindow::OpenFile(const std::wstring& path) {
@@ -392,7 +392,7 @@ void AppWindow::ResizeContentWindow() {
     SetWindowPos(hwnd_content_, nullptr,
         0, contentY,
         rc.right - rc.left, contentH,
-        SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
+        SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 void AppWindow::OnSize(HWND hwnd, int width, int height) {
@@ -413,7 +413,10 @@ void AppWindow::OnContentSize(HWND hwnd, int width, int height) {
         RecreateRenderTarget();
     }
     UpdateScrollInfo();
-    Repaint();
+    // Force immediate repaint (not deferred). This ensures the newly
+    // exposed area gets painted right away during a resize drag.
+    RedrawWindow(hwnd, nullptr, nullptr,
+        RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
 }
 
 void AppWindow::OnContentVScroll(HWND hwnd, int code, int pos) {
