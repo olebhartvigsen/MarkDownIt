@@ -19,6 +19,19 @@
 #include "autoformat.h"
 #include "inputfilter.h"
 
+// Active formatting state at the caret position, used to set
+// the pressed/unpressed state of ribbon toggle buttons.
+struct FormatState {
+    bool bold = false;
+    bool italic = false;
+    bool code = false;
+    bool strike = false;
+    int  headingLevel = 0;
+    bool inBullets = false;
+    bool inNumbering = false;
+    bool inQuote = false;
+};
+
 class AppWindow {
 public:
     AppWindow();
@@ -42,6 +55,8 @@ public:
     bool IsDirty() const { return dirty_; }
     void SetEdit(bool on);
     bool IsEditing() const { return editing_; }
+    FormatState GetFormatState() const;
+    void InvalidateFormatButtons();
     void ToggleEdit() { SetEdit(!editing_); }
     void ToggleBold();
     void ToggleItalic();

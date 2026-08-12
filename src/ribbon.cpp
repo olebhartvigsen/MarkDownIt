@@ -62,6 +62,52 @@ void UpdateRibbonWrapState(bool wrapped)
     PropVariantClear(&var);
 }
 
+void SetRibbonToggle(UINT cmdId, bool on)
+{
+    if (!g_pRibbonFramework) return;
+    PROPVARIANT var;
+    PropVariantInit(&var);
+    var.vt = VT_BOOL;
+    var.boolVal = on ? VARIANT_TRUE : VARIANT_FALSE;
+    g_pRibbonFramework->SetUICommandProperty(cmdId,
+        UI_PKEY_BooleanValue, var);
+    PropVariantClear(&var);
+}
+
+void InvalidateRibbonFormatCommands()
+{
+    if (!g_pRibbonFramework) return;
+    // Invalidate so the framework re-queries UpdateProperty for each.
+    static const UINT fmtCmds[] = {
+        IDC_CMD_BOLD, IDC_CMD_ITALIC, IDC_CMD_CODE, IDC_CMD_STRIKE,
+        IDC_CMD_H1, IDC_CMD_H2, IDC_CMD_H3,
+        IDC_CMD_BULLETS, IDC_CMD_NUMBERING, IDC_CMD_QUOTE
+    };
+    for (auto cmd : fmtCmds)
+    {
+        g_pRibbonFramework->InvalidateUICommand(cmd,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
+    }
+}
+
+void UpdateRibbonFormatState(const FormatState& state)
+{
+    if (!g_pRibbonFramework) return;
+    SetRibbonToggle(IDC_CMD_BOLD, state.bold);
+    SetRibbonToggle(IDC_CMD_ITALIC, state.italic);
+    SetRibbonToggle(IDC_CMD_CODE, state.code);
+    SetRibbonToggle(IDC_CMD_STRIKE, state.strike);
+    SetRibbonToggle(IDC_CMD_BULLETS, state.inBullets);
+    SetRibbonToggle(IDC_CMD_NUMBERING, state.inNumbering);
+    SetRibbonToggle(IDC_CMD_QUOTE, state.inQuote);
+    // H1/H2/H3 are not toggle buttons; they are action buttons.
+    // We use the pressed state to show "current heading level"
+    // via BooleanValue on toggle-style commands only.
+    SetRibbonToggle(IDC_CMD_H1, state.headingLevel == 1);
+    SetRibbonToggle(IDC_CMD_H2, state.headingLevel == 2);
+    SetRibbonToggle(IDC_CMD_H3, state.headingLevel == 3);
+}
+
 //
 // CRibbonApplication: IUIApplication implementation.
 //
@@ -247,6 +293,33 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
                 (m_pApp && m_pApp->IsEditing()) ? VARIANT_TRUE : VARIANT_FALSE;
             return S_OK;
         }
+    }
+
+    // Formatting toggle buttons: query the caret's format state.
+    if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
+    {
+        bool on = false;
+        if (m_pApp)
+        {
+            FormatState fs = m_pApp->GetFormatState();
+            switch (nCmdID)
+            {
+            case IDC_CMD_BOLD:     on = fs.bold;      break;
+            case IDC_CMD_ITALIC:   on = fs.italic;    break;
+            case IDC_CMD_CODE:     on = fs.code;      break;
+            case IDC_CMD_STRIKE:   on = fs.strike;    break;
+            case IDC_CMD_BULLETS:  on = fs.inBullets;  break;
+            case IDC_CMD_NUMBERING:on = fs.inNumbering;break;
+            case IDC_CMD_QUOTE:    on = fs.inQuote;   break;
+            case IDC_CMD_H1:       on = (fs.headingLevel == 1); break;
+            case IDC_CMD_H2:       on = (fs.headingLevel == 2); break;
+            case IDC_CMD_H3:       on = (fs.headingLevel == 3); break;
+            default: return E_NOTIMPL;
+            }
+        }
+        ppropvarNewValue->vt = VT_BOOL;
+        ppropvarNewValue->boolVal = on ? VARIANT_TRUE : VARIANT_FALSE;
+        return S_OK;
     }
 
     return E_NOTIMPL;

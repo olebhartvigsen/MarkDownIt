@@ -1166,6 +1166,56 @@ void AppWindow::SetEdit(bool on) {
     Repaint();
 }
 
+FormatState AppWindow::GetFormatState() const {
+    FormatState fs;
+    uint32_t offset = sel_.active;
+    const auto& text = buffer_.Text();
+    if (offset > text.size()) offset = static_cast<uint32_t>(text.size());
+
+    // Find the block containing this offset.
+    for (const auto& node : doc_.nodes) {
+        uint32_t blockStart = node.srcOffset;
+        uint32_t blockEnd = blockStart + node.srcLength;
+        if (offset < blockStart || offset > blockEnd) continue;
+
+        // Block-level state.
+        if (node.block == BlockKind::Heading) {
+            fs.headingLevel = node.level;
+        } else if (node.block == BlockKind::List) {
+            if (node.ordered) fs.inNumbering = true;
+            else fs.inBullets = true;
+        } else if (node.block == BlockKind::BlockQuote) {
+            fs.inQuote = true;
+        }
+
+        // Inline-level state: find the InlineBlock containing the offset.
+        // The caret sits between two characters. We check the span that
+        // contains the character just before the caret (if any), since
+        // that is the formatting context the caret is "inside".
+        uint32_t checkOffset = offset;
+        if (checkOffset > blockStart && checkOffset > 0) checkOffset--;
+
+        for (const auto& child : node.children) {
+            uint32_t cs = child.srcOffset;
+            uint32_t ce = cs + child.srcLength;
+            if (checkOffset >= cs && checkOffset < ce) {
+                if (child.strong) fs.bold = true;
+                if (child.em)     fs.italic = true;
+                if (child.code)   fs.code = true;
+                if (child.strike) fs.strike = true;
+                break;
+            }
+        }
+        break;
+    }
+    return fs;
+}
+
+void AppWindow::InvalidateFormatButtons() {
+    FormatState fs = GetFormatState();
+    UpdateRibbonFormatState(fs);
+}
+
 void AppWindow::ToggleBold() {
     if (!editing_) return;
     ToggleInlineMarker(&buffer_, &sel_, "**");

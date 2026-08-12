@@ -29,6 +29,12 @@ void DestroyRibbon();
 // Called by AppWindow after toggling wrap mode.
 void UpdateRibbonWrapState(bool wrapped);
 
+// Notify the ribbon that the formatting state at the caret changed.
+// Sets the pressed/unpressed state of Bold, Italic, Code, Strikethrough,
+// Bullets, Numbering, Quote toggle buttons, and H1/H2/H3 enabled state.
+struct FormatState;
+void UpdateRibbonFormatState(const FormatState& state);
+
 class CRibbonApplication : public IUIApplication
 {
 public:

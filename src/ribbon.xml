@@ -333,9 +333,9 @@
             <Button CommandName="cmdClearFormat" />
           </Group>
           <Group CommandName="cmdGroupParagraph" SizeDefinition="SevenButtons">
-            <Button CommandName="cmdHeading1" />
-            <Button CommandName="cmdHeading2" />
-            <Button CommandName="cmdHeading3" />
+            <ToggleButton CommandName="cmdHeading1" />
+            <ToggleButton CommandName="cmdHeading2" />
+            <ToggleButton CommandName="cmdHeading3" />
             <ToggleButton CommandName="cmdBullets" />
             <ToggleButton CommandName="cmdNumbering" />
             <ToggleButton CommandName="cmdQuote" />
