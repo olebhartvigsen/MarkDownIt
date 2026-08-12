@@ -42,4 +42,6 @@ struct Registrar {
 
 #define ASSERT_TRUE(a) do { testlite::checks()++; if (!(a)) { testlite::failures()++; std::cerr << "  FAIL " << __FILE__ << ":" << __LINE__ << " ASSERT_TRUE(" #a ")\n"; return; } } while(0)
 
+#define ASSERT_EQ(a, b) do { testlite::checks()++; auto _va = (a); auto _vb = (b); if (!(_va == _vb)) { testlite::failures()++; std::cerr << "  FAIL " << __FILE__ << ":" << __LINE__ << " ASSERT_EQ(" #a ", " #b ")\n"; return; } } while(0)
+
 #define RUN_ALL_TESTS() int main() { int passed = 0; for (auto& t : testlite::registry()) { size_t before = testlite::failures(); std::cout << "[ RUN ] " << t.name << "\n"; t.fn(); if (testlite::failures() == before) { std::cout << "[ OK ] " << t.name << "\n"; passed++; } else { std::cout << "[ FAIL ] " << t.name << "\n"; } } std::cout << "\n" << testlite::checks() << " checks, " << testlite::failures() << " failures, " << passed << " passed\n"; return testlite::failures() ? 1 : 0; }
