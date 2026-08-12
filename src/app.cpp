@@ -264,7 +264,11 @@ void AppWindow::OpenFile(const std::wstring& path) {
     SetWindowTextW(hwnd_, title.c_str());
 
     UpdateScrollInfo();
-    Repaint();
+    // Force render target recreation — the D2D hwnd target can become
+    // invalid after the GetOpenFileNameW modal dialog closes.
+    SafeRelease(rt_);
+    RedrawWindow(hwnd_content_, nullptr, nullptr,
+        RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
 
     watcher_.Start(hwnd_, path);
 }
@@ -498,7 +502,9 @@ void AppWindow::OnContentPaint(HWND hwnd) {
     HRESULT hr = rt_->EndDraw();
     if (hr == D2DERR_RECREATE_TARGET) {
         RecreateRenderTarget();
-        InvalidateRect(hwnd, nullptr, FALSE);
+        // Force immediate repaint after target recreation.
+        RedrawWindow(hwnd, nullptr, nullptr,
+            RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
     }
     EndPaint(hwnd, &ps);
 }
