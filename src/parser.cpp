@@ -589,7 +589,9 @@ double MeasureParseMs(const std::string& utf8) {
 // This is used by the incremental correctness test.
 std::string DocumentToString(const Document& doc) {
     std::string s;
-    s += "title:" + std::string(doc.title.begin(), doc.title.end()) + "\n";
+    s += "title:";
+    for (char32_t c : doc.title) s += static_cast<char>(c < 128 ? c : '?');
+    s += "\n";
     for (size_t i = 0; i < doc.nodes.size(); i++) {
         const auto& n = doc.nodes[i];
         s += "node[" + std::to_string(i) + "] block=" + std::to_string((int)n.block);
