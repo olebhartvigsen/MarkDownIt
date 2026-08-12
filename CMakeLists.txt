@@ -180,9 +180,11 @@ if(BUILD_TESTS)
         tests/parser_smoke.cpp
         tests/textbuffer_test.cpp
         tests/caret_test.cpp
+        tests/hittest_test.cpp
         tests/test_main.cpp
         src/parser.cpp
         src/textbuffer.cpp
+        src/layoutcache.cpp
     )
     target_link_libraries(MarkDownIt.tests PRIVATE md4c)
     target_include_directories(MarkDownIt.tests PRIVATE

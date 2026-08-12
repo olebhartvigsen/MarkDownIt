@@ -2,6 +2,7 @@
 #include <dwrite.h>
 #include <vector>
 #include <cstdint>
+#include <string>
 #include "dom.h"
 
 // One entry per rendered block: the live layout plus the rect it
@@ -31,6 +32,23 @@ public:
     // Find the block owning a source offset. Returns -1 if none.
     int BlockForOffset(uint32_t offset) const;
 
+    // Screen point to source offset. Used for mouse clicks.
+    // Returns UINT32_MAX on failure.
+    uint32_t PointToOffset(float x, float y) const;
+
+    // Source offset to a caret rectangle. Used to place the caret.
+    // Returns false if no block owns the offset.
+    bool OffsetToCaretRect(uint32_t offset,
+                            float* outX, float* outY,
+                            float* outH) const;
+
 private:
     std::vector<BlockLayout> blocks_;
 };
+
+// UTF-8 / UTF-16 offset conversion helpers.
+// The buffer is UTF-8, DirectWrite layouts are UTF-16. These functions
+// convert between byte offsets in the UTF-8 string and code-unit offsets
+// in the UTF-16 string.
+uint32_t Utf8OffsetToUtf16(const std::string& s, uint32_t byteOffset);
+uint32_t Utf16OffsetToUtf8(const std::string& s, uint32_t u16Offset);
