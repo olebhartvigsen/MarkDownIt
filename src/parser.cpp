@@ -10,6 +10,7 @@
 // images). Tables are parsed but stored as paragraphs (Task 10+).
 
 #include "parser.h"
+#include <chrono>
 
 #include <cstring>
 #include <stack>
@@ -580,9 +581,11 @@ static uint32_t FindBlockEnd(const std::string& text, uint32_t offset) {
 }
 
 double MeasureParseMs(const std::string& utf8) {
-    // Include <chrono> at the top of parser.cpp if not already included.
-    // This is a standalone function for diagnostics.
-    return 0.0;  // measured separately
+    auto start = std::chrono::high_resolution_clock::now();
+    Document doc;
+    ParseMarkdown(utf8, doc);
+    auto end = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration<double, std::milli>(end - start).count();
 }
 
 // Serialize a Document to a comparable string for correctness testing.
