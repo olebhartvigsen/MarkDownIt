@@ -218,6 +218,7 @@ void AppWindow::EnsureRenderer() {
 
 void AppWindow::InitEditor() {
     editor_ = EditController(&buffer_, &sel_);
+    editor_.SetUndoStack(&undo_stack_);
 }
 
 void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
@@ -232,6 +233,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 ? MoveWordLeft(buffer_, sel_.active.offset)
                 : MoveLeft(buffer_, sel_.active.offset);
             desiredX_ = -1.0f;
+            if (!shift) editor_.BreakUndoCoalesce();
             if (shift) sel_.active = {newOffset};
             else sel_.Collapse({newOffset});
             UpdateCaretPosition();
@@ -243,6 +245,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 ? MoveWordRight(buffer_, sel_.active.offset)
                 : MoveRight(buffer_, sel_.active.offset);
             desiredX_ = -1.0f;
+            if (!shift) editor_.BreakUndoCoalesce();
             if (shift) sel_.active = {newOffset};
             else sel_.Collapse({newOffset});
             UpdateCaretPosition();
@@ -287,6 +290,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 newOffset = MoveLineStart(layout_cache_, sel_.active.offset);
             }
             desiredX_ = -1.0f;
+            if (!shift) editor_.BreakUndoCoalesce();
             if (shift) sel_.active = {newOffset};
             else sel_.Collapse({newOffset});
             UpdateCaretPosition();
@@ -301,6 +305,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 newOffset = MoveLineEnd(layout_cache_, sel_.active.offset);
             }
             desiredX_ = -1.0f;
+            if (!shift) editor_.BreakUndoCoalesce();
             if (shift) sel_.active = {newOffset};
             else sel_.Collapse({newOffset});
             UpdateCaretPosition();
@@ -329,6 +334,15 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         }
         case VK_F5:
             Reload();
+            break;
+        case 0x5A:  // Ctrl+Z = undo, Ctrl+Y = redo
+            if (ctrl && !shift) {
+                editor_.Undo();
+                OnBufferChanged();
+            } else if ((ctrl && shift) || (ctrl && wp == 0x59)) {
+                editor_.Redo();
+                OnBufferChanged();
+            }
             break;
         case VK_BACK:
             editor_.DeleteBackward();
@@ -369,6 +383,7 @@ void AppWindow::LoadSampleDoc() {
         "This is the last block. You have scrolled to the bottom.\n";
     ParseMarkdown(sample, doc_);
     buffer_.SetText(sample);
+    undo_stack_.Clear();
 }
 
 void AppWindow::Repaint() {
@@ -530,6 +545,7 @@ void AppWindow::OpenFile(const std::wstring& path) {
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
     buffer_.SetText(utf8);
+    undo_stack_.Clear();
     file_path_ = path;
     scrollY_ = 0.0f;
     totalH_ = 0.0f;
@@ -563,6 +579,7 @@ void AppWindow::Reload() {
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
     buffer_.SetText(utf8);
+    undo_stack_.Clear();
     UpdateScrollInfo();
     if (scrollY_ > savedY) scrollY_ = savedY;
     UpdateScrollInfo();

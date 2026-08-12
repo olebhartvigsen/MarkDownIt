@@ -13,6 +13,7 @@
 #include "caret.h"
 #include "editcontroller.h"
 #include "navigation.h"
+#include "undostack.h"
 
 class AppWindow {
 public:
@@ -70,6 +71,7 @@ private:
     bool         editing_ = false;
     bool         has_focus_ = false;
     EditController  editor_;
+    UndoStack       undo_stack_;
     wchar_t      surrogate_buf_ = 0;  // high surrogate waiting for low
     bool         has_surrogate_ = false;
     float        desiredX_ = -1.0f;  // preserved column for vertical nav

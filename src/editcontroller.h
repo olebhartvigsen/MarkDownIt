@@ -2,13 +2,16 @@
 #include "textbuffer.h"
 #include "caret.h"
 #include "dom.h"
+#include "undostack.h"
 #include <string>
 
 class EditController {
 public:
-    EditController() : buf_(nullptr), sel_(nullptr) {}
+    EditController() : buf_(nullptr), sel_(nullptr), undo_(nullptr) {}
     EditController(TextBuffer* buf, Selection* sel)
-        : buf_(buf), sel_(sel) {}
+        : buf_(buf), sel_(sel), undo_(nullptr) {}
+
+    void SetUndoStack(UndoStack* u) { undo_ = u; }
 
     void InsertText(const std::string& utf8);
     void DeleteBackward();
@@ -16,12 +19,23 @@ public:
     void DeleteSelection();
 
     // Insert a paragraph break, context-aware.
-    // The Document is needed to determine the current block type.
     void InsertParagraphBreak(const Document& doc);
+
+    // Undo/redo: apply inverse or re-apply an entry.
+    void Undo();
+    void Redo();
+
+    // Break undo coalescing (call on caret movement).
+    void BreakUndoCoalesce() { if (undo_) undo_->BreakCoalesce(); }
 
 private:
     TextBuffer* buf_;
     Selection*  sel_;
+    UndoStack*  undo_;
+
+    void RecordAndApply(uint32_t offset, uint32_t length,
+                       const std::string& replacement,
+                       EditType type);
 };
 
 // Find the previous grapheme boundary before the given offset.
