@@ -6,6 +6,7 @@
 #include "dom.h"
 #include "theme.h"
 #include "layoutcache.h"
+#include "caret.h"
 
 class Renderer {
 public:
@@ -26,7 +27,8 @@ public:
     // Returns the total rendered height in DIPs (unscrolled).
     float Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                  const Document& doc, float widthDip, float scrollY,
-                 float topOffsetDip);
+                 float topOffsetDip,
+                 const Selection* sel = nullptr);
 
     // Measure the total content height in DIPs without drawing.
     // Use this when only the scrollbar range needs updating.

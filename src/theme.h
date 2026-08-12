@@ -71,6 +71,8 @@ struct Palette {
     D2D1_COLOR_F tableBorder;
     D2D1_COLOR_F tableHeaderBg;
     D2D1_COLOR_F tableRowAlt;
+    D2D1_COLOR_F selectionBg;
+    D2D1_COLOR_F selectionText;
 };
 
 inline LayoutMetrics BaseMetrics() {
@@ -155,5 +157,7 @@ inline Palette BasePalette() {
     p.tableBorder = D2D1::ColorF(0xD0D7DE);
     p.tableHeaderBg = D2D1::ColorF(0xF6F8FA);
     p.tableRowAlt = D2D1::ColorF(0xFAFBFC);
+    p.selectionBg = D2D1::ColorF(0xB4D5FE);
+    p.selectionText = D2D1::ColorF(0x000000);
     return p;
 }

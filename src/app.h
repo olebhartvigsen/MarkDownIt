@@ -85,6 +85,9 @@ private:
     void OnBufferChanged();
     void UpdateCaretPosition();
     void OnLButtonDown(HWND hwnd, int x, int y);
+    void OnLButtonDblClk(HWND hwnd, int x, int y);
+    void OnMouseMove(HWND hwnd, int x, int y);
+    void OnLButtonUp(HWND hwnd);
     void OnSetFocus(HWND hwnd);
     void OnKillFocus(HWND hwnd);
     void OnDestroy();

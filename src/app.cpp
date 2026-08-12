@@ -156,7 +156,7 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     wc2.lpszClassName = kContentClassName;
     wc2.hCursor       = LoadCursor(nullptr, IDC_ARROW);
     wc2.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
-    wc2.style         = CS_HREDRAW | CS_VREDRAW;
+    wc2.style         = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     if (!RegisterClassW(&wc2)) {
         MessageBoxW(nullptr, L"RegisterClass (content) failed", L"MarkDownIt", MB_ICONERROR);
         return false;
@@ -264,7 +264,7 @@ void AppWindow::UpdateCaretPosition() {
 
 void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     SetFocus(hwnd);
-    // Convert screen coordinates to document coordinates by adding scrollY.
+    SetCapture(hwnd);
     float docX = static_cast<float>(x);
     float docY = static_cast<float>(y) + scrollY_;
     uint32_t offset = layout_cache_.PointToOffset(docX, docY);
@@ -272,6 +272,46 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
         sel_.Collapse({offset});
     }
     UpdateCaretPosition();
+    Repaint();
+}
+
+void AppWindow::OnLButtonDblClk(HWND hwnd, int x, int y) {
+    SetFocus(hwnd);
+    float docX = static_cast<float>(x);
+    float docY = static_cast<float>(y) + scrollY_;
+    uint32_t offset = layout_cache_.PointToOffset(docX, docY);
+    if (offset == UINT32_MAX) return;
+
+    const std::string& text = buffer_.Text();
+    if (offset >= text.size()) return;
+
+    uint32_t start = offset;
+    while (start > 0 && !isspace(static_cast<unsigned char>(text[start - 1])))
+        start--;
+    uint32_t end = offset;
+    while (end < text.size() && !isspace(static_cast<unsigned char>(text[end])))
+        end++;
+
+    sel_.anchor = {start};
+    sel_.active = {end};
+    UpdateCaretPosition();
+    Repaint();
+}
+
+void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
+    if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) return;
+    float docX = static_cast<float>(x);
+    float docY = static_cast<float>(y) + scrollY_;
+    uint32_t offset = layout_cache_.PointToOffset(docX, docY);
+    if (offset != UINT32_MAX) {
+        sel_.active = {offset};
+    }
+    UpdateCaretPosition();
+    Repaint();
+}
+
+void AppWindow::OnLButtonUp(HWND hwnd) {
+    ReleaseCapture();
 }
 
 void AppWindow::OnSetFocus(HWND hwnd) {
@@ -550,7 +590,7 @@ void AppWindow::OnContentPaint(HWND hwnd) {
 
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
-        renderer_.Render(rt_, dw_factory_, doc_, size.width, scrollY_, 0.0f);
+        renderer_.Render(rt_, dw_factory_, doc_, size.width, scrollY_, 0.0f, &sel_);
     }
 
     HRESULT hr = rt_->EndDraw();
@@ -701,6 +741,19 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             OnLButtonDown(hwnd, x, y);
             return 0;
         }
+        case WM_LBUTTONDBLCLK: {
+            int x = GET_X_LPARAM(lp);
+            int y = GET_Y_LPARAM(lp);
+            OnLButtonDblClk(hwnd, x, y);
+            return 0;
+        }
+        case WM_MOUSEMOVE: {
+            int x = GET_X_LPARAM(lp);
+            int y = GET_Y_LPARAM(lp);
+            OnMouseMove(hwnd, x, y);
+            return 0;
+        }
+        case WM_LBUTTONUP:   OnLButtonUp(hwnd);    return 0;
         case WM_SETFOCUS:  OnSetFocus(hwnd);   return 0;
         case WM_KILLFOCUS: OnKillFocus(hwnd);  return 0;
         case WM_VSCROLL:    OnContentVScroll(hwnd, (int)LOWORD(wp), (int)HIWORD(wp)); return 0;

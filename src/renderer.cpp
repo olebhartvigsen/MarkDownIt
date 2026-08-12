@@ -482,7 +482,8 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
 
 float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                        const Document& doc, float widthDip, float scrollY,
-                       float topOffsetDip) {
+                       float topOffsetDip,
+                       const Selection* sel) {
     if (!rt || !dw) return 0.0f;
     LayoutMetrics m = ComputeMetrics();
     Palette pal = BasePalette();
@@ -513,6 +514,11 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
     ID2D1SolidColorBrush* quoteBorder = nullptr;
     rt->CreateSolidColorBrush(pal.quoteBar, &quoteBorder);
+
+    ID2D1SolidColorBrush* selBrush = nullptr;
+    if (sel && !sel->Empty()) {
+        rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
+    }
 
     // Clip to content area (below the ribbon).
     D2D1_SIZE_F clipSize = rt->GetSize();
@@ -826,5 +832,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (mutedBrush) mutedBrush->Release();
     if (linkBrush) linkBrush->Release();
     if (quoteBorder) quoteBorder->Release();
+    if (selBrush) selBrush->Release();
     return curY;
 }
