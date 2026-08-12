@@ -5,6 +5,7 @@
 #include <string>
 #include "dom.h"
 #include "theme.h"
+#include "layoutcache.h"
 
 class Renderer {
 public:
@@ -17,6 +18,8 @@ public:
     float Zoom() const { return zoom_; }
     void SetWrap(bool w);
     bool Wrap() const { return wrapEnabled_; }
+
+    void SetLayoutCache(LayoutCache* cache) { cache_ = cache; }
 
     // Draw the document. scrollY is the vertical offset in DIPs.
     // widthDip is the client width in DIPs.
@@ -36,6 +39,7 @@ private:
     IDWriteTextFormat* heading_fmt_[7] = {};
     float zoom_ = 1.0f;
     bool wrapEnabled_ = true;
+    LayoutCache* cache_ = nullptr;
 
     LayoutMetrics ComputeMetrics() const;
     static float GapForTransition(BlockKind prev, BlockKind cur,

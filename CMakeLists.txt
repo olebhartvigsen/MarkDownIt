@@ -94,6 +94,7 @@ add_executable(MarkDownIt WIN32
     src/parser.cpp
     src/ribbon.cpp
     src/textbuffer.cpp
+    src/layoutcache.cpp
 )
 
 if(MSVC AND RIBBON_AVAILABLE)

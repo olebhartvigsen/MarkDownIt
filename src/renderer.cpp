@@ -523,12 +523,16 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
     rt->SetTransform(D2D1::Matrix3x2F::Translation(0.0f, -scrollY));
 
+    // Clear the layout cache before rebuilding.
+    if (cache_) cache_->Clear();
+
     float curY = m.padTop + topOffsetDip;
     int listCounter = 0;
     BlockKind prevBlock = BlockKind::Paragraph;
     int prevDepth = -1;
 
-    for (const auto& n : doc.nodes) {
+    for (size_t nodeIdx = 0; nodeIdx < doc.nodes.size(); ++nodeIdx) {
+        const auto& n = doc.nodes[nodeIdx];
         float drawX = originX;
         float drawW = contentWidth;
 
@@ -794,7 +798,21 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             curY += m.ruleGapAbove + m.ruleGapBelow;
         }
 
-        layout->Release();
+        if (cache_) {
+            BlockLayout bl;
+            bl.layout = layout;
+            bl.x = textX;
+            bl.y = curY;
+            bl.width = textW > 0 ? textW : drawW;
+            bl.height = metrics.height;
+            bl.srcOffset = n.srcOffset;
+            bl.srcLength = n.srcLength;
+            bl.textStartOffset = n.contentOffset;
+            bl.nodeIndex = nodeIdx;
+            cache_->Add(bl);
+        } else {
+            layout->Release();
+        }
         curY += metrics.height;
         prevBlock = n.block;
         prevDepth = n.depth;
