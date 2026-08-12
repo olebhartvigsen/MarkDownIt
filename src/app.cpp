@@ -1168,7 +1168,7 @@ void AppWindow::SetEdit(bool on) {
 
 FormatState AppWindow::GetFormatState() const {
     FormatState fs;
-    uint32_t offset = sel_.active;
+    uint32_t offset = sel_.active.offset;
     const auto& text = buffer_.Text();
     if (offset > text.size()) offset = static_cast<uint32_t>(text.size());
 
