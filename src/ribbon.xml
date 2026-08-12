@@ -339,7 +339,7 @@
             <ToggleButton CommandName="cmdBullets" />
             <ToggleButton CommandName="cmdNumbering" />
             <ToggleButton CommandName="cmdQuote" />
-            <Button CommandName="cmdEditToggle" />
+            <ToggleButton CommandName="cmdEditToggle" />
           </Group>
           <Group CommandName="cmdGroupView" SizeDefinition="ThreeButtons">
             <ToggleButton CommandName="cmdWrap" />

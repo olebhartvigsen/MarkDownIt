@@ -155,7 +155,7 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     wc2.hInstance     = hInst;
     wc2.lpszClassName = kContentClassName;
     wc2.hCursor       = LoadCursor(nullptr, IDC_ARROW);
-    wc2.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
+    wc2.hbrBackground = nullptr;
     wc2.style         = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     if (!RegisterClassW(&wc2)) {
         MessageBoxW(nullptr, L"RegisterClass (content) failed", L"MarkDownIt", MB_ICONERROR);
@@ -526,7 +526,7 @@ void AppWindow::LoadSampleDoc() {
 }
 
 void AppWindow::Repaint() {
-    if (hwnd_content_) InvalidateRect(hwnd_content_, nullptr, TRUE);
+    if (hwnd_content_) InvalidateRect(hwnd_content_, nullptr, FALSE);
 }
 
 void AppWindow::ScheduleReparse() {
@@ -555,12 +555,15 @@ void AppWindow::OnReparseTimer() {
 }
 
 void AppWindow::OnBufferChanged() {
+    MarkDirty();
+    InvalidateFormatButtons();
     layout_cache_.Clear();
     ScheduleReparse();
 }
 
 void AppWindow::UpdateCaretPosition() {
     if (!has_focus_ || !hwnd_content_) return;
+    InvalidateFormatButtons();
     float x, y, h;
     if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &x, &y, &h)) {
         int cx = static_cast<int>(x);
@@ -1467,6 +1470,7 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case WM_PAINT:     OnContentPaint(hwnd); return 0;
+        case WM_ERASEBKGND: return 1;  // D2D handles all painting
         case WM_LBUTTONDOWN: {
             int x = GET_X_LPARAM(lp);
             int y = GET_Y_LPARAM(lp);
