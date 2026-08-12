@@ -101,6 +101,7 @@ add_executable(MarkDownIt WIN32
     src/clipboard.cpp
     src/formatting.cpp
     src/autoformat.cpp
+    src/inputfilter.cpp
 )
 
 if(MSVC AND RIBBON_AVAILABLE)
@@ -194,6 +195,7 @@ if(BUILD_TESTS)
         tests/clipboard_test.cpp
         tests/formatting_test.cpp
         tests/autoformat_test.cpp
+        tests/inputfilter_test.cpp
         tests/test_main.cpp
         src/parser.cpp
         src/textbuffer.cpp
@@ -204,6 +206,7 @@ if(BUILD_TESTS)
         src/clipboard.cpp
         src/formatting.cpp
         src/autoformat.cpp
+        src/inputfilter.cpp
     )
     target_link_libraries(MarkDownIt.tests PRIVATE md4c)
     target_include_directories(MarkDownIt.tests PRIVATE

@@ -17,6 +17,7 @@
 #include "clipboard.h"
 #include "formatting.h"
 #include "autoformat.h"
+#include "inputfilter.h"
 
 class AppWindow {
 public:

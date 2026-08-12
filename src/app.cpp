@@ -678,8 +678,8 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
         }
         has_surrogate_ = false;
         std::string ins(utf8);
+        ins = EscapeForInsert(buffer_, sel_.active.offset, ins);
         editor_.InsertText(ins);
-        if (!ins.empty()) CheckAutoformat(&buffer_, &sel_, ins[0]);
         OnBufferChanged();
         return;
     }
@@ -702,8 +702,10 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
         utf8[2] = 0x80 | (cp & 0x3F);
     }
     std::string ins2(utf8);
+    // Escape markdown metacharacters in the typed text.
+    ins2 = EscapeForInsert(buffer_, sel_.active.offset, ins2);
     editor_.InsertText(ins2);
-    if (!ins2.empty()) CheckAutoformat(&buffer_, &sel_, ins2[0]);
+    if (!ins2.empty() && !ins2.empty()) CheckAutoformat(&buffer_, &sel_, ins2[0]);
     OnBufferChanged();
 }
 
