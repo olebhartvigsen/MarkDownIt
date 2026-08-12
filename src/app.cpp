@@ -227,6 +227,22 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
     bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
     bool ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
 
+    // Toggle edit mode with Ctrl+E
+    if (ctrl && !shift && vk == 0x45) {
+        SetEdit(!editing_);
+        return;
+    }
+
+    // In read-only mode, suppress editing keys but allow navigation and copy.
+    if (!editing_) {
+        bool isNavigation = (vk == VK_LEFT || vk == VK_RIGHT ||
+            vk == VK_UP || vk == VK_DOWN ||
+            vk == VK_HOME || vk == VK_END ||
+            vk == VK_PRIOR || vk == VK_NEXT);
+        bool isCopy = (ctrl && vk == 0x43);  // Ctrl+C
+        if (!isNavigation && !isCopy && !shift) return;
+    }
+
     switch (vk) {
         case VK_LEFT: {
             uint32_t newOffset = ctrl
@@ -623,6 +639,17 @@ void AppWindow::OnKillFocus(HWND hwnd) {
 
 void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
     if (!has_focus_) return;
+
+    // Auto-enter edit mode on first printable character.
+    if (!editing_ && ch >= 0x20 && ch != 0x7F) {
+        editing_ = true;
+        if (!caret_visible_) {
+            CreateCaret(hwnd_content_, nullptr, 2, 16);
+            ShowCaret(hwnd_content_);
+            caret_visible_ = true;
+        }
+    }
+    if (!editing_) return;  // read-only: suppress input
 
     // Handle surrogate pairs: emoji and CJK arrive as two WM_CHAR messages.
     if (ch >= 0xD800 && ch <= 0xDBFF) {
