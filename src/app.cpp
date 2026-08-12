@@ -339,7 +339,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             if (ctrl && !shift) {
                 editor_.Undo();
                 OnBufferChanged();
-            } else if ((ctrl && shift) || (ctrl && wp == 0x59)) {
+            } else if ((ctrl && shift) || (ctrl && vk == 0x59)) {
                 editor_.Redo();
                 OnBufferChanged();
             }
