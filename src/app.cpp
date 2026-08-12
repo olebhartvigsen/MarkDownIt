@@ -129,74 +129,7 @@ static bool RestoreWinPlacement(HWND hwnd) {
     return true;
 }
 
-// Find the Ribbon Framework's internal DirectUI window.
-// The Ribbon creates a child window of class "DirectUIHWND" inside the
-// host window. We need its handle to reposition it.
-static HWND FindRibbonWindow(HWND mainWnd) {
-    // Try direct child first (most common).
-    HWND ribbon = FindWindowExW(mainWnd, nullptr, L"DirectUIHWND", nullptr);
-    if (ribbon) return ribbon;
-    // Fall back to recursive enumeration.
-    struct Ctx { HWND found; };
-    Ctx ctx = { nullptr };
-    auto cb = [](HWND hwnd, LPARAM lp) -> BOOL {
-        wchar_t cls[256];
-        if (GetClassNameW(hwnd, cls, 256) > 0) {
-            if (wcsstr(cls, L"DirectUI") != nullptr) {
-                ((Ctx*)lp)->found = hwnd;
-                return FALSE;
-            }
-        }
-        return TRUE;
-    };
-    EnumChildWindows(mainWnd, cb, (LPARAM)&ctx);
-    return ctx.found;
-}
-
-// The Windows Ribbon Framework always renders an Application Menu button
-// at the left edge of the ribbon. There is no API to remove it, so we
-// shift the ribbon's internal DirectUI window to the left, pushing the
-// Application Menu button into negative coordinates where the parent
-// clips it. At the same time we widen the window by the same amount so
-// no content is lost.
-//
-// The Application Menu button is approximately 60 DIPs wide. We use 60
-// as the shift amount, which comfortably covers the button at any DPI.
-//
-// This function must be called after the ribbon has been initialised and
-// whenever the ribbon re-layouts. We call it from a repeating timer to
-// catch all cases.
-static void HideAppMenuButton(HWND mainWnd) {
-    HWND ribbonWnd = FindRibbonWindow(mainWnd);
-    if (!ribbonWnd) return;
-
-    RECT rc;
-    GetWindowRect(ribbonWnd, &rc);
-    if (rc.right - rc.left == 0) return;
-
-    // Convert screen coordinates to parent client coordinates.
-    POINT origin = {0, 0};
-    ClientToScreen(mainWnd, &origin);
-    int x = (rc.left - origin.x);
-    int y = (rc.top - origin.y);
-    int w = (rc.right - rc.left);
-    int h = (rc.bottom - rc.top);
-
-    // Application Menu button is approximately 60 DIPs wide.
-    UINT dpi = GetWindowDpi(mainWnd);
-    int buttonW = static_cast<int>(60.0 * dpi / 96.0 + 0.5);
-
-    // Only shift once: if already shifted, don't shift again.
-    // Detect by checking if window x is already negative.
-    if (x < 0) return;
-
-    SetWindowPos(ribbonWnd, nullptr,
-        x - buttonW,
-        y,
-        w + buttonW,
-        h,
-        SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS);
-}
+// Fil button hidden via COM API (OnCreateUICommand returns E_NOTIMPL for APPLICATIONMENU)
 
 bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     hinst_ = hInst;
@@ -262,7 +195,7 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     // Set a one-shot timer to re-layout and repaint after the ribbon
     // has had time to report its height. The ribbon's OnViewChanged
     // callback may fire asynchronously, so this is a safety net.
-    SetTimer(hwnd_, 1, 200, nullptr);
+    SetTimer(hwnd_, 1, 300, nullptr);
 
     return true;
 }
@@ -473,9 +406,11 @@ void AppWindow::OnContentSize(HWND hwnd, int width, int height) {
         D2D1_SIZE_U size = D2D1::SizeU(
             width > 0 ? width : 1, height > 0 ? height : 1);
         HRESULT hr = rt_->Resize(size);
-        if (hr == D2DERR_RECREATE_TARGET) {
+        if (FAILED(hr) || hr == D2DERR_RECREATE_TARGET) {
             RecreateRenderTarget();
         }
+    } else {
+        RecreateRenderTarget();
     }
     UpdateScrollInfo();
     Repaint();
@@ -579,7 +514,6 @@ void AppWindow::OnDestroy() {
 void AppWindow::OnRibbonHeightChanged() {
     ResizeContentWindow();
     Repaint();
-    HideAppMenuButton(hwnd_);
 }
 
 void AppWindow::RecreateRenderer() {
@@ -668,17 +602,9 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_TIMER:
             if (wp == 1) {
-                // Repeating timer: re-layout and hide the AppMenu button.
-                // The ribbon may re-layout multiple times during init.
-                // After 3 seconds, stop the timer.
-                static int timerTicks = 0;
-                timerTicks++;
+                KillTimer(hwnd_, 1);
                 ResizeContentWindow();
                 Repaint();
-                HideAppMenuButton(hwnd_);
-                if (timerTicks >= 15) {
-                    KillTimer(hwnd_, 1);
-                }
             }
             return 0;
         case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
