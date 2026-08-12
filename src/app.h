@@ -75,6 +75,8 @@ private:
     wchar_t      surrogate_buf_ = 0;  // high surrogate waiting for low
     bool         has_surrogate_ = false;
     float        desiredX_ = -1.0f;  // preserved column for vertical nav
+    UINT_PTR    reparse_timer_ = 0;
+    bool        reparse_pending_ = false;
 
     static const wchar_t* kClassName;
     static const wchar_t* kContentClassName;
@@ -101,6 +103,8 @@ private:
     void OnChar(HWND hwnd, wchar_t ch);
     void InitEditor();
     void OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp);
+    void OnReparseTimer();
+    void ScheduleReparse();
     void OnDestroy();
     void RecreateRenderTarget();
     void EnsureRenderer();

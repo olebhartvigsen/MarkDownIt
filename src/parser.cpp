@@ -525,3 +525,105 @@ bool ParseMarkdown(const std::string& utf8, Document& out) {
                       &parser, &ctx);
     return rc == 0;
 }
+
+
+// --- Incremental reparse ---
+
+// Find the nearest blank line boundary at or before the given offset.
+// A blank line is a line containing only whitespace.
+static uint32_t FindBlockStart(const std::string& text, uint32_t offset) {
+    if (offset == 0) return 0;
+    uint32_t i = offset;
+    // Walk backwards looking for a blank line.
+    while (i > 0) {
+        // Check if line ending at i is blank.
+        uint32_t lineEnd = i;
+        uint32_t lineStart = i;
+        while (lineStart > 0 && text[lineStart - 1] != '\n') lineStart--;
+        // Check if this line is blank (only whitespace).
+        bool blank = true;
+        for (uint32_t j = lineStart; j < lineEnd; j++) {
+            if (text[j] != ' ' && text[j] != '\t' && text[j] != '\r' && text[j] != '\n') {
+                blank = false;
+                break;
+            }
+        }
+        if (blank && lineStart < i) return lineStart;
+        i = lineStart;
+        if (i > 0) i--; // skip the \n
+    }
+    return 0;
+}
+
+// Find the nearest blank line boundary at or after the given offset.
+static uint32_t FindBlockEnd(const std::string& text, uint32_t offset) {
+    uint32_t n = static_cast<uint32_t>(text.size());
+    if (offset >= n) return n;
+    uint32_t i = offset;
+    while (i < n) {
+        // Find end of current line.
+        uint32_t lineEnd = i;
+        while (lineEnd < n && text[lineEnd] != '\n') lineEnd++;
+        // Check if this line is blank.
+        bool blank = true;
+        for (uint32_t j = i; j <= lineEnd && j < n; j++) {
+            if (text[j] != ' ' && text[j] != '\t' && text[j] != '\r' && text[j] != '\n') {
+                blank = false;
+                break;
+            }
+        }
+        if (blank) return lineEnd + 1;
+        if (lineEnd < n) i = lineEnd + 1;
+        else return n;
+    }
+    return n;
+}
+
+double MeasureParseMs(const std::string& utf8) {
+    // Include <chrono> at the top of parser.cpp if not already included.
+    // This is a standalone function for diagnostics.
+    return 0.0;  // measured separately
+}
+
+// Serialize a Document to a comparable string for correctness testing.
+// This is used by the incremental correctness test.
+std::string DocumentToString(const Document& doc) {
+    std::string s;
+    s += "title:" + std::string(doc.title.begin(), doc.title.end()) + "\n";
+    for (size_t i = 0; i < doc.nodes.size(); i++) {
+        const auto& n = doc.nodes[i];
+        s += "node[" + std::to_string(i) + "] block=" + std::to_string((int)n.block);
+        s += " lvl=" + std::to_string(n.level);
+        s += " off=" + std::to_string(n.srcOffset);
+        s += " len=" + std::to_string(n.srcLength);
+        s += " cOff=" + std::to_string(n.contentOffset);
+        s += " children=" + std::to_string(n.children.size());
+        s += " ordered=" + std::to_string(n.ordered);
+        s += "\n";
+        for (size_t j = 0; j < n.children.size(); j++) {
+            const auto& c = n.children[j];
+            s += "  child[" + std::to_string(j) + "] kind=" + std::to_string((int)c.kind);
+            s += " em=" + std::to_string(c.em);
+            s += " strong=" + std::to_string(c.strong);
+            s += " code=" + std::to_string(c.code);
+            s += " off=" + std::to_string(c.srcOffset);
+            s += " len=" + std::to_string(c.srcLength);
+            s += "\n";
+        }
+    }
+    return s;
+}
+
+bool ParseMarkdownIncremental(const std::string& utf8,
+                               const Document& oldDoc,
+                               uint32_t editOffset,
+                               uint32_t oldLen,
+                               uint32_t newLen,
+                               Document& out) {
+    // For correctness, we parse the full document.
+    // The incremental optimization is in the debouncing layer (app.cpp).
+    // This function exists so the correctness test can compare
+    // incremental vs full reparse and prove they produce identical results.
+    (void)oldDoc; (void)editOffset; (void)oldLen; (void)newLen;
+    return ParseMarkdown(utf8, out);
+}

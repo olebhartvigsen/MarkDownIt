@@ -187,6 +187,7 @@ if(BUILD_TESTS)
         tests/editcontroller_test.cpp
         tests/navigation_test.cpp
         tests/undo_test.cpp
+        tests/incremental_test.cpp
         tests/test_main.cpp
         src/parser.cpp
         src/textbuffer.cpp
