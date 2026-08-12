@@ -5,6 +5,7 @@
 
 class EditController {
 public:
+    EditController() : buf_(nullptr), sel_(nullptr) {}
     EditController(TextBuffer* buf, Selection* sel)
         : buf_(buf), sel_(sel) {}
 
