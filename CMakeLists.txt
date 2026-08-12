@@ -178,6 +178,7 @@ if(BUILD_TESTS)
     add_executable(MarkDownIt.tests
         tests/parser_smoke.cpp
         tests/textbuffer_test.cpp
+        tests/caret_test.cpp
         tests/test_main.cpp
         src/parser.cpp
         src/textbuffer.cpp
