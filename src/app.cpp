@@ -335,18 +335,33 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         case VK_F5:
             Reload();
             break;
-        case 0x43:  // Ctrl+C = copy
+        case 0x42:  // Ctrl+B = bold
             if (ctrl && !shift) {
-                if (!sel_.Empty()) {
-                    uint32_t s = sel_.Start();
-                    uint32_t len = sel_.Length();
-                    std::string sel_text = buffer_.Text().substr(s, len);
-                    ClipboardCopy(hwnd_content_, sel_text);
-                }
+                ToggleInlineMarker(&buffer_, &sel_, "**");
+                editor_.BreakUndoCoalesce();
+                OnBufferChanged();
             }
             break;
-        case 0x58:  // Ctrl+X = cut
+        case 0x49:  // Ctrl+I = italic
             if (ctrl && !shift) {
+                ToggleInlineMarker(&buffer_, &sel_, "*");
+                editor_.BreakUndoCoalesce();
+                OnBufferChanged();
+            }
+            break;
+        case 0x4B:  // Ctrl+K = link
+            if (ctrl && !shift) {
+                InsertLink(&buffer_, &sel_, "https://");
+                editor_.BreakUndoCoalesce();
+                OnBufferChanged();
+            }
+            break;
+        case 0x58:  // Ctrl+X = cut, Ctrl+Shift+X = strikethrough
+            if (ctrl && shift) {
+                ToggleInlineMarker(&buffer_, &sel_, "~~");
+                editor_.BreakUndoCoalesce();
+                OnBufferChanged();
+            } else if (ctrl && !shift) {
                 if (!sel_.Empty()) {
                     uint32_t s = sel_.Start();
                     uint32_t len = sel_.Length();
@@ -357,6 +372,24 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 }
             }
             break;
+        case VK_OEM_3:  // Ctrl+` = inline code (backtick key)
+            if (ctrl && !shift) {
+                ToggleInlineMarker(&buffer_, &sel_, "`");
+                editor_.BreakUndoCoalesce();
+                OnBufferChanged();
+            }
+            break;
+        case 0x43:  // Ctrl+C = copy
+            if (ctrl && !shift) {
+                if (!sel_.Empty()) {
+                    uint32_t s = sel_.Start();
+                    uint32_t len = sel_.Length();
+                    std::string sel_text = buffer_.Text().substr(s, len);
+                    ClipboardCopy(hwnd_content_, sel_text);
+                }
+            }
+            break;
+
         case 0x56:  // Ctrl+V = paste
             if (ctrl && !shift) {
                 std::string text = ClipboardPaste(hwnd_content_);
