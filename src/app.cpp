@@ -359,9 +359,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         case 0x36:  // Ctrl+6 = H6
             if (ctrl && !shift) {
                 int level = static_cast<int>(vk - 0x30);
-                SetHeadingLevel(&buffer_, &sel_, level);
-                editor_.BreakUndoCoalesce();
-                OnBufferChanged();
+                SetHeading(level);
             }
             break;
         case 0x30:  // Ctrl+0 = remove heading
@@ -1503,7 +1501,14 @@ void AppWindow::ClearFormat() {
 
 void AppWindow::SetHeading(int level) {
     if (!editing_) return;
-    SetHeadingLevel(&buffer_, &sel_, level);
+    // Toggle: if the caret is already in a heading of this level,
+    // remove the heading (revert to paragraph).
+    FormatState fs = GetFormatState();
+    if (fs.headingLevel == level) {
+        SetHeadingLevel(&buffer_, &sel_, 0);
+    } else {
+        SetHeadingLevel(&buffer_, &sel_, level);
+    }
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
 }
