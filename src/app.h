@@ -12,6 +12,7 @@
 #include "layoutcache.h"
 #include "caret.h"
 #include "editcontroller.h"
+#include "navigation.h"
 
 class AppWindow {
 public:
@@ -71,6 +72,7 @@ private:
     EditController  editor_;
     wchar_t      surrogate_buf_ = 0;  // high surrogate waiting for low
     bool         has_surrogate_ = false;
+    float        desiredX_ = -1.0f;  // preserved column for vertical nav
 
     static const wchar_t* kClassName;
     static const wchar_t* kContentClassName;
@@ -96,6 +98,7 @@ private:
     void OnKillFocus(HWND hwnd);
     void OnChar(HWND hwnd, wchar_t ch);
     void InitEditor();
+    void OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp);
     void OnDestroy();
     void RecreateRenderTarget();
     void EnsureRenderer();

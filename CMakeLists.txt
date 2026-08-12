@@ -96,6 +96,7 @@ add_executable(MarkDownIt WIN32
     src/textbuffer.cpp
     src/layoutcache.cpp
     src/editcontroller.cpp
+    src/navigation.cpp
 )
 
 if(MSVC AND RIBBON_AVAILABLE)
@@ -183,11 +184,13 @@ if(BUILD_TESTS)
         tests/caret_test.cpp
         tests/hittest_test.cpp
         tests/editcontroller_test.cpp
+        tests/navigation_test.cpp
         tests/test_main.cpp
         src/parser.cpp
         src/textbuffer.cpp
         src/layoutcache.cpp
         src/editcontroller.cpp
+        src/navigation.cpp
     )
     target_link_libraries(MarkDownIt.tests PRIVATE md4c)
     target_include_directories(MarkDownIt.tests PRIVATE

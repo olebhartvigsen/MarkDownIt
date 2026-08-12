@@ -220,6 +220,134 @@ void AppWindow::InitEditor() {
     editor_ = EditController(&buffer_, &sel_);
 }
 
+void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
+    if (!has_focus_) return;
+
+    bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+    bool ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+
+    switch (vk) {
+        case VK_LEFT: {
+            uint32_t newOffset = ctrl
+                ? MoveWordLeft(buffer_, sel_.active.offset)
+                : MoveLeft(buffer_, sel_.active.offset);
+            desiredX_ = -1.0f;
+            if (shift) sel_.active = {newOffset};
+            else sel_.Collapse({newOffset});
+            UpdateCaretPosition();
+            Repaint();
+            break;
+        }
+        case VK_RIGHT: {
+            uint32_t newOffset = ctrl
+                ? MoveWordRight(buffer_, sel_.active.offset)
+                : MoveRight(buffer_, sel_.active.offset);
+            desiredX_ = -1.0f;
+            if (shift) sel_.active = {newOffset};
+            else sel_.Collapse({newOffset});
+            UpdateCaretPosition();
+            Repaint();
+            break;
+        }
+        case VK_UP: {
+            float lineHeight = 20.0f;
+            if (rt_) {
+                D2D1_SIZE_F sz = rt_->GetSize();
+                lineHeight = sz.height / 40.0f;  // rough estimate
+                if (lineHeight < 16.0f) lineHeight = 16.0f;
+            }
+            uint32_t newOffset = MoveVertical(layout_cache_,
+                sel_.active.offset, -1, &desiredX_, scrollY_, lineHeight);
+            if (shift) sel_.active = {newOffset};
+            else sel_.Collapse({newOffset});
+            UpdateCaretPosition();
+            Repaint();
+            break;
+        }
+        case VK_DOWN: {
+            float lineHeight = 20.0f;
+            if (rt_) {
+                D2D1_SIZE_F sz = rt_->GetSize();
+                lineHeight = sz.height / 40.0f;
+                if (lineHeight < 16.0f) lineHeight = 16.0f;
+            }
+            uint32_t newOffset = MoveVertical(layout_cache_,
+                sel_.active.offset, 1, &desiredX_, scrollY_, lineHeight);
+            if (shift) sel_.active = {newOffset};
+            else sel_.Collapse({newOffset});
+            UpdateCaretPosition();
+            Repaint();
+            break;
+        }
+        case VK_HOME: {
+            uint32_t newOffset;
+            if (ctrl) {
+                newOffset = 0;
+            } else {
+                newOffset = MoveLineStart(layout_cache_, sel_.active.offset);
+            }
+            desiredX_ = -1.0f;
+            if (shift) sel_.active = {newOffset};
+            else sel_.Collapse({newOffset});
+            UpdateCaretPosition();
+            Repaint();
+            break;
+        }
+        case VK_END: {
+            uint32_t newOffset;
+            if (ctrl) {
+                newOffset = static_cast<uint32_t>(buffer_.Length());
+            } else {
+                newOffset = MoveLineEnd(layout_cache_, sel_.active.offset);
+            }
+            desiredX_ = -1.0f;
+            if (shift) sel_.active = {newOffset};
+            else sel_.Collapse({newOffset});
+            UpdateCaretPosition();
+            Repaint();
+            break;
+        }
+        case VK_NEXT: {  // Page Down
+            float page = 0.0f;
+            if (rt_) page = rt_->GetSize().height;
+            else page = static_cast<float>(clientH_);
+            scrollY_ += page;
+            UpdateScrollInfo();
+            Repaint();
+            UpdateCaretPosition();
+            break;
+        }
+        case VK_PRIOR: {  // Page Up
+            float page = 0.0f;
+            if (rt_) page = rt_->GetSize().height;
+            else page = static_cast<float>(clientH_);
+            scrollY_ -= page;
+            UpdateScrollInfo();
+            Repaint();
+            UpdateCaretPosition();
+            break;
+        }
+        case VK_F5:
+            Reload();
+            break;
+        case VK_BACK:
+            editor_.DeleteBackward();
+            OnBufferChanged();
+            break;
+        case VK_DELETE:
+            editor_.DeleteForward();
+            OnBufferChanged();
+            break;
+        case VK_RETURN:
+            editor_.InsertParagraphBreak(doc_);
+            OnBufferChanged();
+            break;
+        default:
+            DefWindowProcW(hwnd, WM_KEYDOWN, vk, lp);
+            break;
+    }
+}
+
 void AppWindow::LoadSampleDoc() {
     const char* sample =
         "# MarkDownIt\n\n"
@@ -823,31 +951,9 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             OnContentMouseWheel(hwnd, delta);
             return 0;
         }
-        case WM_KEYDOWN: {
-            switch (wp) {
-                case VK_DOWN: OnContentVScroll(hwnd, SB_LINEDOWN, 0); break;
-                case VK_UP:   OnContentVScroll(hwnd, SB_LINEUP, 0);   break;
-                case VK_NEXT: OnContentVScroll(hwnd, SB_PAGEDOWN, 0); break;
-                case VK_PRIOR:OnContentVScroll(hwnd, SB_PAGEUP, 0);   break;
-                case VK_HOME: OnContentVScroll(hwnd, SB_TOP, 0);     break;
-                case VK_END:  OnContentVScroll(hwnd, SB_BOTTOM, 0);  break;
-                case VK_F5:   Reload();                              break;
-                case VK_BACK:
-                    editor_.DeleteBackward();
-                    OnBufferChanged();
-                    break;
-                case VK_DELETE:
-                    editor_.DeleteForward();
-                    OnBufferChanged();
-                    break;
-                case VK_RETURN:
-                    editor_.InsertParagraphBreak(doc_);
-                    OnBufferChanged();
-                    break;
-                default: return DefWindowProcW(hwnd, msg, wp, lp);
-            }
+        case WM_KEYDOWN:
+            OnKeyDown(hwnd, wp, lp);
             return 0;
-        }
         case WM_SIZE: {
             int w = LOWORD(lp), h = HIWORD(lp);
             OnContentSize(hwnd, w, h);
