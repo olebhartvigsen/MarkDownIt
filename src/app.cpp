@@ -746,7 +746,27 @@ void AppWindow::Reload() {
 }
 
 void AppWindow::OnReload() {
+    if (dirty_) {
+        // Buffer has unsaved changes. Prompt the user.
+        int result = MessageBoxW(hwnd_,
+            L"The file has been changed on disk. Keep your changes, "
+            L"or reload the file from disk?",
+            L"MarkDownIt - File Changed",
+            MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON1);
+        if (result != IDNO) return;  // IDYES = keep mine
+    }
+
+    // Save caret position so we can restore it after reload.
+    uint32_t savedOffset = sel_.active.offset;
+
     Reload();
+
+    // Restore caret, clamped to new text length.
+    uint32_t textLen = static_cast<uint32_t>(buffer_.Text().size());
+    if (savedOffset > textLen) savedOffset = textLen;
+    sel_.Collapse({savedOffset});
+    UpdateCaretPosition();
+    Repaint();
 }
 
 void AppWindow::OnDropFiles(HWND hwnd, HDROP hDrop) {
