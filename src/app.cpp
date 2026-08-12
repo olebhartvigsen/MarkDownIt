@@ -643,7 +643,9 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
             utf8[3] = 0x80 | (cp & 0x3F);
         }
         has_surrogate_ = false;
-        editor_.InsertText(std::string(utf8));
+        std::string ins(utf8);
+        editor_.InsertText(ins);
+        if (!ins.empty()) CheckAutoformat(&buffer_, &sel_, ins[0]);
         OnBufferChanged();
         return;
     }
@@ -665,7 +667,9 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
         utf8[1] = 0x80 | ((cp >> 6) & 0x3F);
         utf8[2] = 0x80 | (cp & 0x3F);
     }
-    editor_.InsertText(std::string(utf8));
+    std::string ins2(utf8);
+    editor_.InsertText(ins2);
+    if (!ins2.empty()) CheckAutoformat(&buffer_, &sel_, ins2[0]);
     OnBufferChanged();
 }
 

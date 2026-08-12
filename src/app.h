@@ -16,6 +16,7 @@
 #include "undostack.h"
 #include "clipboard.h"
 #include "formatting.h"
+#include "autoformat.h"
 
 class AppWindow {
 public:

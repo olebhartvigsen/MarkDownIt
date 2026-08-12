@@ -100,6 +100,7 @@ add_executable(MarkDownIt WIN32
     src/undostack.cpp
     src/clipboard.cpp
     src/formatting.cpp
+    src/autoformat.cpp
 )
 
 if(MSVC AND RIBBON_AVAILABLE)
@@ -192,6 +193,7 @@ if(BUILD_TESTS)
         tests/incremental_test.cpp
         tests/clipboard_test.cpp
         tests/formatting_test.cpp
+        tests/autoformat_test.cpp
         tests/test_main.cpp
         src/parser.cpp
         src/textbuffer.cpp
@@ -201,6 +203,7 @@ if(BUILD_TESTS)
         src/undostack.cpp
         src/clipboard.cpp
         src/formatting.cpp
+        src/autoformat.cpp
     )
     target_link_libraries(MarkDownIt.tests PRIVATE md4c)
     target_include_directories(MarkDownIt.tests PRIVATE
