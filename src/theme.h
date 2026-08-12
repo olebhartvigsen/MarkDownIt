@@ -78,14 +78,14 @@ inline LayoutMetrics BaseMetrics() {
     m.padX = 56.0f;
     m.padTop = 32.0f;
     m.maxContentWidth = 720.0f;
-    m.bodyLineHeight = 1.55f;
+    m.bodyLineHeight = 1.3f;
     m.headingLineHeight = 1.25f;
     m.codeLineHeight = 1.45f;
     m.paraGap = 16.0f;
     m.headingGapBefore = 32.0f;
     m.headingGapBeforeMinor = 24.0f;
     m.headingGapAfter = 10.0f;
-    m.listItemGap = 6.0f;
+    m.listItemGap = 4.0f;
     m.listGap = 16.0f;
     m.codeBlockGap = 18.0f;
     m.ruleGapAbove = 8.0f;
