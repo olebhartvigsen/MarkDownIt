@@ -208,7 +208,7 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
             if (h->level == 1 && ctx->doc->title.empty()) {
                 ctx->capture_title = true;
             }
-            ctx->block_stack.push_back({type, idx, false});
+            ctx->block_stack.push_back({type, idx, false, true});
             break;
         }
 
@@ -224,7 +224,7 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
             ctx->doc->nodes[idx].block = BlockKind::BlockQuote;
             ctx->doc->nodes[idx].depth = ctx->quote_depth;
             ctx->quote_depth++;
-            ctx->block_stack.push_back({type, idx, true});
+            ctx->block_stack.push_back({type, idx, true, true});
             break;
         }
 
