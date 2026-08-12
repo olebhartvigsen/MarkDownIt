@@ -54,11 +54,25 @@
       <Command.LabelTitle>
         <String>Save</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/save_32.png" MinDPI="96"/>
+        <Image Source="icons/save_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/save_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdSaveAs" Symbol="IDC_CMD_SAVEAS" Id="10104">
       <Command.LabelTitle>
         <String>Save As</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/save-as_32.png" MinDPI="96"/>
+        <Image Source="icons/save-as_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/save-as_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdAppMenu" Symbol="IDC_CMD_APPMENU" Id="10000">
       <Command.LabelTitle>
@@ -117,76 +131,181 @@
       <Command.LabelTitle>
         <String>Bold</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/bold_32.png" MinDPI="96"/>
+        <Image Source="icons/bold_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/bold_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdItalic" Symbol="IDC_CMD_ITALIC" Id="10301">
       <Command.LabelTitle>
         <String>Italic</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/italic_32.png" MinDPI="96"/>
+        <Image Source="icons/italic_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/italic_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdStrike" Symbol="IDC_CMD_STRIKE" Id="10302">
       <Command.LabelTitle>
         <String>Strikethrough</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/strikethrough_32.png" MinDPI="96"/>
+        <Image Source="icons/strikethrough_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/strikethrough_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdCode" Symbol="IDC_CMD_CODE" Id="10303">
       <Command.LabelTitle>
         <String>Code</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/code_32.png" MinDPI="96"/>
+        <Image Source="icons/code_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/code_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdLink" Symbol="IDC_CMD_LINK" Id="10304">
       <Command.LabelTitle>
         <String>Link</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/link_32.png" MinDPI="96"/>
+        <Image Source="icons/link_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/link_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdClearFormat" Symbol="IDC_CMD_CLEARFORMAT" Id="10305">
       <Command.LabelTitle>
         <String>Clear Format</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/clear-format_32.png" MinDPI="96"/>
+        <Image Source="icons/clear-format_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/clear-format_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdHeading1" Symbol="IDC_CMD_H1" Id="10400">
       <Command.LabelTitle>
         <String>H1</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/h1_32.png" MinDPI="96"/>
+        <Image Source="icons/h1_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/h1_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdHeading2" Symbol="IDC_CMD_H2" Id="10401">
       <Command.LabelTitle>
         <String>H2</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/h2_32.png" MinDPI="96"/>
+        <Image Source="icons/h2_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/h2_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdHeading3" Symbol="IDC_CMD_H3" Id="10402">
       <Command.LabelTitle>
         <String>H3</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/h3_32.png" MinDPI="96"/>
+        <Image Source="icons/h3_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/h3_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdBullets" Symbol="IDC_CMD_BULLETS" Id="10403">
       <Command.LabelTitle>
         <String>Bullets</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/bullets_32.png" MinDPI="96"/>
+        <Image Source="icons/bullets_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/bullets_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdNumbering" Symbol="IDC_CMD_NUMBERING" Id="10404">
       <Command.LabelTitle>
         <String>Numbering</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/numbering_32.png" MinDPI="96"/>
+        <Image Source="icons/numbering_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/numbering_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdQuote" Symbol="IDC_CMD_QUOTE" Id="10405">
       <Command.LabelTitle>
         <String>Quote</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/quote_32.png" MinDPI="96"/>
+        <Image Source="icons/quote_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/quote_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdIndent" Symbol="IDC_CMD_INDENT" Id="10406">
       <Command.LabelTitle>
         <String>Indent</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/indent_32.png" MinDPI="96"/>
+        <Image Source="icons/indent_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/indent_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdOutdent" Symbol="IDC_CMD_OUTDENT" Id="10407">
       <Command.LabelTitle>
         <String>Outdent</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/outdent_32.png" MinDPI="96"/>
+        <Image Source="icons/outdent_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/outdent_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdEditToggle" Symbol="IDC_CMD_EDIT" Id="10500">
       <Command.LabelTitle>
         <String>Edit</String>
       </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/edit_32.png" MinDPI="96"/>
+        <Image Source="icons/edit_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/edit_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
   </Application.Commands>
   <Application.Views>
