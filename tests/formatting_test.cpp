@@ -105,3 +105,96 @@ TEST(Formatting, InsertLinkEmptySelection) {
     EXPECT_EQ(b.Text(), "hello[](https://example.com)");
     EXPECT_EQ(s.active.offset, 6u);  // Between [ and ].
 }
+
+
+TEST(Formatting, SetHeadingLevel2) {
+    TextBuffer b;
+    b.SetText("hello world");
+    Selection s;
+    s.Collapse({3});
+    SetHeadingLevel(&b, &s, 2);
+    EXPECT_EQ(b.Text(), "## hello world");
+}
+
+TEST(Formatting, SetHeadingLevel0RemovesHeading) {
+    TextBuffer b;
+    b.SetText("## hello world");
+    Selection s;
+    s.Collapse({5});
+    SetHeadingLevel(&b, &s, 0);
+    EXPECT_EQ(b.Text(), "hello world");
+}
+
+TEST(Formatting, ToggleUnorderedListAdds) {
+    TextBuffer b;
+    b.SetText("hello world");
+    Selection s;
+    s.Collapse({3});
+    ToggleUnorderedList(&b, &s);
+    EXPECT_EQ(b.Text(), "- hello world");
+}
+
+TEST(Formatting, ToggleUnorderedListRemoves) {
+    TextBuffer b;
+    b.SetText("- hello world");
+    Selection s;
+    s.Collapse({5});
+    ToggleUnorderedList(&b, &s);
+    EXPECT_EQ(b.Text(), "hello world");
+}
+
+TEST(Formatting, ToggleOrderedListAdds) {
+    TextBuffer b;
+    b.SetText("hello world");
+    Selection s;
+    s.Collapse({3});
+    ToggleOrderedList(&b, &s);
+    EXPECT_EQ(b.Text(), "1. hello world");
+}
+
+TEST(Formatting, ToggleOrderedListRemoves) {
+    TextBuffer b;
+    b.SetText("1. hello world");
+    Selection s;
+    s.Collapse({5});
+    ToggleOrderedList(&b, &s);
+    EXPECT_EQ(b.Text(), "hello world");
+}
+
+TEST(Formatting, ToggleBlockquoteAdds) {
+    TextBuffer b;
+    b.SetText("hello world");
+    Selection s;
+    s.Collapse({3});
+    ToggleBlockquote(&b, &s);
+    EXPECT_EQ(b.Text(), "> hello world");
+}
+
+TEST(Formatting, ToggleBlockquoteRemoves) {
+    TextBuffer b;
+    b.SetText("> hello world");
+    Selection s;
+    s.Collapse({5});
+    ToggleBlockquote(&b, &s);
+    EXPECT_EQ(b.Text(), "hello world");
+}
+
+TEST(Formatting, IndentLine) {
+    TextBuffer b;
+    b.SetText("hello\nworld");
+    Selection s;
+    s.Collapse({7});  // in "world"
+    IndentLine(&b, &s);
+    EXPECT_EQ(b.Text(), "hello\n  world");
+    EXPECT_EQ(s.active.offset, 9u);
+}
+
+TEST(Formatting, OutdentLine) {
+    TextBuffer b;
+    b.SetText("  hello world");
+    Selection s;
+    s.Collapse({5});
+    OutdentLine(&b, &s);
+    EXPECT_EQ(b.Text(), "hello world");
+    EXPECT_EQ(s.active.offset, 3u);
+}

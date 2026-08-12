@@ -335,6 +335,58 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         case VK_F5:
             Reload();
             break;
+        case 0x31:  // Ctrl+1 = H1
+        case 0x32:  // Ctrl+2 = H2
+        case 0x33:  // Ctrl+3 = H3
+        case 0x34:  // Ctrl+4 = H4
+        case 0x35:  // Ctrl+5 = H5
+        case 0x36:  // Ctrl+6 = H6
+            if (ctrl && !shift) {
+                int level = static_cast<int>(vk - 0x30);
+                SetHeadingLevel(&buffer_, &sel_, level);
+                editor_.BreakUndoCoalesce();
+                OnBufferChanged();
+            }
+            break;
+        case 0x30:  // Ctrl+0 = remove heading
+            if (ctrl && !shift) {
+                SetHeadingLevel(&buffer_, &sel_, 0);
+                editor_.BreakUndoCoalesce();
+                OnBufferChanged();
+            }
+            break;
+        case 0x37:  // Ctrl+7/Ctrl+Shift+7 = ordered list
+            if (ctrl && shift) {
+                ToggleOrderedList(&buffer_, &sel_);
+                editor_.BreakUndoCoalesce();
+                OnBufferChanged();
+            }
+            break;
+        case 0x38:  // Ctrl+8/Ctrl+Shift+8 = unordered list
+            if (ctrl && shift) {
+                ToggleUnorderedList(&buffer_, &sel_);
+                editor_.BreakUndoCoalesce();
+                OnBufferChanged();
+            }
+            break;
+        case VK_OEM_PERIOD:  // Ctrl+Shift+. = blockquote
+            if (ctrl && shift) {
+                ToggleBlockquote(&buffer_, &sel_);
+                editor_.BreakUndoCoalesce();
+                OnBufferChanged();
+            }
+            break;
+        case VK_TAB:
+            if (shift) {
+                OutdentLine(&buffer_, &sel_);
+                editor_.BreakUndoCoalesce();
+                OnBufferChanged();
+            } else {
+                IndentLine(&buffer_, &sel_);
+                editor_.BreakUndoCoalesce();
+                OnBufferChanged();
+            }
+            break;
         case 0x42:  // Ctrl+B = bold
             if (ctrl && !shift) {
                 ToggleInlineMarker(&buffer_, &sel_, "**");
