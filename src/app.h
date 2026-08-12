@@ -25,6 +25,7 @@ public:
     void ZoomIn();
     void ZoomOut();
     void ToggleWrap();
+    bool IsWrapEnabled() const;
     void ShowAbout();
 
     // Called by CRibbonApplication::OnViewChanged when ribbon height changes.

@@ -232,10 +232,22 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
     const PROPVARIANT* ppropvarCurrentValue,
     PROPVARIANT* ppropvarNewValue)
 {
-    UNREFERENCED_PARAMETER(nCmdID);
-    UNREFERENCED_PARAMETER(key);
     UNREFERENCED_PARAMETER(ppropvarCurrentValue);
-    UNREFERENCED_PARAMETER(ppropvarNewValue);
+
+    // The Ribbon framework queries the initial toggle state of the
+    // Wrap ToggleButton via UI_PKEY_BooleanValue. Return the renderer's
+    // current wrap state (true by default).
+    if (nCmdID == IDC_CMD_WRAP && ppropvarNewValue)
+    {
+        if (IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
+        {
+            ppropvarNewValue->vt = VT_BOOL;
+            ppropvarNewValue->boolVal =
+                (m_pApp && m_pApp->IsWrapEnabled()) ? VARIANT_TRUE : VARIANT_FALSE;
+            return S_OK;
+        }
+    }
+
     return E_NOTIMPL;
 }
 

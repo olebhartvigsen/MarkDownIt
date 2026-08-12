@@ -561,6 +561,10 @@ void AppWindow::ZoomOut() {
     Repaint();
 }
 
+bool AppWindow::IsWrapEnabled() const {
+    return renderer_.Wrap();
+}
+
 void AppWindow::ToggleWrap() {
     renderer_.SetWrap(!renderer_.Wrap());
     UpdateRibbonWrapState(renderer_.Wrap());
