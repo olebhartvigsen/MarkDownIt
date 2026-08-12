@@ -114,8 +114,17 @@ bool LayoutCache::OffsetToCaretRect(uint32_t offset,
         u16Pos, FALSE, &caretX, &caretY, &htm);
 
     if (outX) *outX = bl.x + caretX;
-    if (outY) *outY = bl.y + caretY;
-    if (outH) *outH = htm.height;
+    // Vertically center the caret on the text within the line.
+    // caretY is the top of the line; the text occupies roughly the
+    // em-height portion, centered by the line-spacing/baseline ratio.
+    if (outY) {
+        float caretH = (bl.fontHeight > 0.0f) ? bl.fontHeight : htm.height;
+        float lineH = htm.height;
+        *outY = bl.y + caretY + (lineH - caretH) * 0.5f;
+    }
+    // Use the font's em height for the caret, not the full line height
+    // (which includes leading/line-spacing and makes the caret too tall).
+    if (outH) *outH = (bl.fontHeight > 0.0f) ? bl.fontHeight : htm.height;
     return true;
 }
 

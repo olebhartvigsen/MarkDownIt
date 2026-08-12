@@ -651,7 +651,11 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
     if (!editing_ && ch >= 0x20 && ch != 0x7F) {
         editing_ = true;
         if (!caret_visible_) {
-            CreateCaret(hwnd_content_, nullptr, 2, 16);
+            float cx, cy, ch2;
+            if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &cx, &cy, &ch2))
+                CreateCaret(hwnd_content_, nullptr, 2, static_cast<int>(ch2));
+            else
+                CreateCaret(hwnd_content_, nullptr, 2, 16);
             ShowCaret(hwnd_content_);
             caret_visible_ = true;
         }
@@ -1171,7 +1175,11 @@ void AppWindow::OnClose() {
 void AppWindow::SetEdit(bool on) {
     editing_ = on;
     if (on && has_focus_ && !caret_visible_) {
-        CreateCaret(hwnd_content_, nullptr, 2, 16);
+        float cx, cy, ch;
+        if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &cx, &cy, &ch))
+            CreateCaret(hwnd_content_, nullptr, 2, static_cast<int>(ch));
+        else
+            CreateCaret(hwnd_content_, nullptr, 2, 16);
         ShowCaret(hwnd_content_);
         caret_visible_ = true;
     }

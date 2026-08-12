@@ -21,6 +21,7 @@ struct BlockLayout {
     // UTF-8 source byte offset. Built during Render() for accurate
     // hit-testing and caret placement when inline syntax is present.
     std::vector<uint32_t> u16ToSrc;
+    float fontHeight = 0.0f;  // em size in DIP (for caret height)
 };
 
 class LayoutCache {
