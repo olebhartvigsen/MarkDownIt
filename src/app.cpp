@@ -832,6 +832,18 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 case VK_HOME: OnContentVScroll(hwnd, SB_TOP, 0);     break;
                 case VK_END:  OnContentVScroll(hwnd, SB_BOTTOM, 0);  break;
                 case VK_F5:   Reload();                              break;
+                case VK_BACK:
+                    editor_.DeleteBackward();
+                    OnBufferChanged();
+                    break;
+                case VK_DELETE:
+                    editor_.DeleteForward();
+                    OnBufferChanged();
+                    break;
+                case VK_RETURN:
+                    editor_.InsertParagraphBreak(doc_);
+                    OnBufferChanged();
+                    break;
                 default: return DefWindowProcW(hwnd, msg, wp, lp);
             }
             return 0;
