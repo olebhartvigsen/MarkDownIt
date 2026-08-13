@@ -197,12 +197,6 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     // has had time to report its height. The ribbon's OnViewChanged
     // callback may fire asynchronously, so this is a safety net.
     SetTimer(hwnd_, 1, 300, nullptr);
-    // If a file was queued on the command line, open it after the
-    // message loop starts. Timer ID 3 fires after 50ms, giving the
-    // ribbon and content window time to initialize properly.
-    if (!pending_file_.empty()) {
-        SetTimer(hwnd_, 3, 50, nullptr);
-    }
 
     return true;
 }

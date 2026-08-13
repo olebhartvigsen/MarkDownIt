@@ -58,7 +58,10 @@ public:
     FormatState GetFormatState() const;
     void InvalidateFormatButtons();
     void ToggleEdit() { SetEdit(!editing_); }
-    void OpenPendingFile(const std::wstring& path) { pending_file_ = path; }
+    void OpenPendingFile(const std::wstring& path) {
+        pending_file_ = path;
+        if (hwnd_) SetTimer(hwnd_, 3, 50, nullptr);
+    }
     void ProcessPendingFile();
     void ToggleBold();
     void ToggleItalic();
