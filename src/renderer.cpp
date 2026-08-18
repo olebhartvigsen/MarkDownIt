@@ -507,7 +507,8 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
         prevBlock = n.block;
         prevDepth = n.depth;
     }
-    return curY;
+    // Add bottom padding so the last block is not cut off at maximum scroll.
+    return curY + m.padTop;
 }
 
 float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
