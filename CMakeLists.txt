@@ -102,6 +102,7 @@ add_executable(MarkDownIt WIN32
     src/formatting.cpp
     src/autoformat.cpp
     src/inputfilter.cpp
+    src/fileassoc.cpp
 )
 
 if(MSVC AND RIBBON_AVAILABLE)

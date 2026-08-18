@@ -1,5 +1,7 @@
 #include "app.h"
+#include "resource.h"
 #include "ribbon.h"
+#include "fileassoc.h"
 #include "parser.h"
 #include <commdlg.h>
 #include <windowsx.h>
@@ -144,6 +146,7 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = nullptr;
     wc.style         = CS_HREDRAW | CS_VREDRAW;
+    wc.hIcon         = LoadIconW(hInst, MAKEINTRESOURCEW(IDI_APPICON));
     if (!RegisterClassW(&wc)) {
         MessageBoxW(nullptr, L"RegisterClass failed", L"MarkDownIt", MB_ICONERROR);
         return false;
@@ -197,6 +200,15 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     // has had time to report its height. The ribbon's OnViewChanged
     // callback may fire asynchronously, so this is a safety net.
     SetTimer(hwnd_, 1, 300, nullptr);
+
+    // Register .md file association so Explorer shows our document icon
+    // and double-click opens files in MarkDownIt.
+    // TODO: gate behind a settings toggle in a future release.
+    {
+        wchar_t exePath[MAX_PATH] = {};
+        GetModuleFileNameW(hInst, exePath, MAX_PATH);
+        RegisterMdAssociation(exePath);
+    }
 
     return true;
 }

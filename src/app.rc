@@ -1,1 +1,9 @@
+#include "resource.h"
+
+// Application icon: shown in the taskbar, Alt+Tab, and window title bar.
+IDI_APPICON ICON "markdownit.ico"
+
+// Document icon: shown for .md files associated with MarkDownIt.
+IDI_DOCICON ICON "markdownit-doc.ico"
+
 #include "ribbonUI.rc2"
