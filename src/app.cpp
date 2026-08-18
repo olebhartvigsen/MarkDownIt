@@ -714,8 +714,24 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
     OnBufferChanged();
 }
 
+// Debug log helper: writes to C:\\Users\\au19277\\MarkDownIt-debug.log
+static void mdi_log(const wchar_t* msg) {
+    HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-debug.log",
+        FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h != INVALID_HANDLE_VALUE) {
+        SetFilePointer(h, 0, nullptr, FILE_END);
+        DWORD written;
+        WriteFile(h, msg, (DWORD)(wcslen(msg) * sizeof(wchar_t)), &written, nullptr);
+        WriteFile(h, L"\r\n", 4, &written, nullptr);
+        CloseHandle(h);
+    }
+    OutputDebugStringW(msg);
+    OutputDebugStringW(L"\n");
+}
+
 void AppWindow::OpenFile(const std::wstring& path) {
-    OutputDebugStringW((std::wstring(L"[MDI] OpenFile: ") + path + L"\n").c_str());
+    mdi_log((std::wstring(L"[MDI] OpenFile: ") + path).c_str());
     std::ifstream f(path.c_str(), std::ios::binary);
     if (!f.is_open()) {
         MessageBoxW(hwnd_, L"Could not open file", L"MarkDownIt", MB_ICONWARNING);
@@ -757,13 +773,13 @@ void AppWindow::OpenFile(const std::wstring& path) {
     // Force render target recreation — the D2D hwnd target can become
     // invalid after the GetOpenFileNameW modal dialog closes.
     SafeRelease(rt_);
-    OutputDebugStringW(L"[MDI] OpenFile: rt released, redrawing\n");
+    mdi_log(L"[MDI] OpenFile: rt released, redrawing");
     RedrawWindow(hwnd_content_, nullptr, nullptr,
         RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
-    OutputDebugStringW(L"[MDI] OpenFile: redraw done, starting watcher\n");
+    mdi_log(L"[MDI] OpenFile: redraw done, starting watcher");
 
     watcher_.Start(hwnd_, path);
-    OutputDebugStringW(L"[MDI] OpenFile: complete\n");
+    mdi_log(L"[MDI] OpenFile: complete");
 }
 
 void AppWindow::Reload() {
@@ -996,13 +1012,13 @@ void AppWindow::RecreateRenderTarget() {
 }
 
 void AppWindow::OnContentPaint(HWND hwnd) {
-    OutputDebugStringW(L"[MDI] OnContentPaint: entered\n");
+    mdi_log(L"[MDI] OnContentPaint: entered");
     if (!rt_) {
-        OutputDebugStringW(L"[MDI] OnContentPaint: rt_ null, recreating\n");
+        mdi_log(L"[MDI] OnContentPaint: rt_ null, recreating");
         RecreateRenderTarget();
-        if (!rt_) { OutputDebugStringW(L"[MDI] OnContentPaint: recreate failed\n"); ValidateRect(hwnd, nullptr); return; }
+        if (!rt_) { mdi_log(L"[MDI] OnContentPaint: recreate failed"); ValidateRect(hwnd, nullptr); return; }
     }
-    OutputDebugStringW(L"[MDI] OnContentPaint: rt_ OK, measuring\n");
+    mdi_log(L"[MDI] OnContentPaint: rt_ OK, measuring");
 
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
@@ -1032,26 +1048,34 @@ void AppWindow::OnContentPaint(HWND hwnd) {
 }
 
 
-// SEH wrapper: no C++ objects with destructors in this function.
-static void OpenFileSEH(AppWindow* app, const wchar_t* path) {
+// SEH wrapper: pass the std::wstring by reference, no C++ temporaries.
+// The function itself must not have any C++ objects with destructors.
+static void OpenFileSEHInner(AppWindow* app, const std::wstring& path) {
     __try {
         app->OpenFile(path);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         DWORD code = GetExceptionCode();
         wchar_t buf[256];
-        swprintf_s(buf, 256, L"[MDI] CRASH in OpenFile: exception 0x%08X\n", code);
+        swprintf_s(buf, 256, L"[MDI] CRASH in OpenFile: exception 0x%08X", code);
         OutputDebugStringW(buf);
+        OutputDebugStringW(L"\n");
+        mdi_log(buf);
     }
 }
 
+static void OpenFileSEH(AppWindow* app, const wchar_t* path) {
+    std::wstring ws(path);
+    OpenFileSEHInner(app, ws);
+}
+
 void AppWindow::ProcessPendingFile() {
-    OutputDebugStringW(L"[MDI] ProcessPendingFile: entered\n");
-    if (pending_file_.empty()) { OutputDebugStringW(L"[MDI] ProcessPendingFile: empty, returning\n"); return; }
+    mdi_log(L"[MDI] ProcessPendingFile: entered");
+    if (pending_file_.empty()) { mdi_log(L"[MDI] ProcessPendingFile: empty, returning"); return; }
     std::wstring path;
     path.swap(pending_file_);
-    OutputDebugStringW((std::wstring(L"[MDI] ProcessPendingFile: calling OpenFile: ") + path + L"\n").c_str());
+    mdi_log((std::wstring(L"[MDI] ProcessPendingFile: calling OpenFile: ") + path).c_str());
     OpenFileSEH(this, path.c_str());
-    OutputDebugStringW(L"[MDI] ProcessPendingFile: OpenFile returned\n");
+    mdi_log(L"[MDI] ProcessPendingFile: OpenFile returned");
 }
 
 void AppWindow::MarkDirty() {
@@ -1699,9 +1723,9 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             } else if (wp == 3) {
                 // Open file from command line after init is complete.
                 KillTimer(hwnd_, 3);
-                OutputDebugStringW(L"[MDI] WM_TIMER 3: about to call ProcessPendingFile\n");
+                mdi_log(L"[MDI] WM_TIMER 3: about to call ProcessPendingFile");
                 ProcessPendingFile();
-                OutputDebugStringW(L"[MDI] WM_TIMER 3: ProcessPendingFile returned\n");
+                mdi_log(L"[MDI] WM_TIMER 3: ProcessPendingFile returned");
             }
             return 0;
         case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
