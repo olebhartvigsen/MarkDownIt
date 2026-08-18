@@ -733,6 +733,7 @@ static void mdi_log(const wchar_t* msg) {
 void AppWindow::OpenFile(const std::wstring& path) {
     mdi_log((std::wstring(L"[MDI] OpenFile: ") + path).c_str());
     std::ifstream f(path.c_str(), std::ios::binary);
+    mdi_log(L"[MDI] OpenFile: step 1 - opening ifstream");
     if (!f.is_open()) {
         MessageBoxW(hwnd_, L"Could not open file", L"MarkDownIt", MB_ICONWARNING);
         return;
@@ -740,9 +741,11 @@ void AppWindow::OpenFile(const std::wstring& path) {
     std::stringstream ss;
     ss << f.rdbuf();
     std::string raw = ss.str();
+    mdi_log(L"[MDI] OpenFile: step 2 - reading file");
 
     // Detect BOM (UTF-8 BOM: EF BB BF)
     has_bom_ = (raw.size() >= 3 &&
+    mdi_log(L"[MDI] OpenFile: step 3 - BOM/CRLF detect");
         (unsigned char)raw[0] == 0xEF &&
         (unsigned char)raw[1] == 0xBB &&
         (unsigned char)raw[2] == 0xBF);
@@ -753,8 +756,10 @@ void AppWindow::OpenFile(const std::wstring& path) {
 
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
+    mdi_log(L"[MDI] OpenFile: step 4 - ParseMarkdown");
     buffer_.SetText(utf8);
     undo_stack_.Clear();
+    mdi_log(L"[MDI] OpenFile: step 5 - ParseMarkdown done");
     file_path_ = path;
     ClearDirty();
     scrollY_ = 0.0f;
@@ -763,6 +768,7 @@ void AppWindow::OpenFile(const std::wstring& path) {
     layout_cache_.Clear();
 
     std::wstring title = L"MarkDownIt";
+    mdi_log(L"[MDI] OpenFile: step 6 - title bar");
     size_t slash = path.find_last_of(L"\\/");
     std::wstring base = (slash != std::wstring::npos)
         ? path.substr(slash + 1) : path;
@@ -771,9 +777,11 @@ void AppWindow::OpenFile(const std::wstring& path) {
 
     UpdateScrollInfo();
     // Force render target recreation — the D2D hwnd target can become
+    mdi_log(L"[MDI] OpenFile: step 7 - UpdateScrollInfo");
     // invalid after the GetOpenFileNameW modal dialog closes.
     SafeRelease(rt_);
     mdi_log(L"[MDI] OpenFile: rt released, redrawing");
+    mdi_log(L"[MDI] OpenFile: step 8 - SafeRelease rt_");
     RedrawWindow(hwnd_content_, nullptr, nullptr,
         RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
     mdi_log(L"[MDI] OpenFile: redraw done, starting watcher");
