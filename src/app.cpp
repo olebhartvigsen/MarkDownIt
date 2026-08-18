@@ -715,7 +715,7 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
 }
 
 void AppWindow::OpenFile(const std::wstring& path) {
-    OutputDebugStringW((L"[MDI] OpenFile: \" + path + L"\"\n").c_str());
+    OutputDebugStringW((std::wstring(L"[MDI] OpenFile: ") + path + L"\n").c_str());
     std::ifstream f(path.c_str(), std::ios::binary);
     if (!f.is_open()) {
         MessageBoxW(hwnd_, L"Could not open file", L"MarkDownIt", MB_ICONWARNING);
@@ -1037,7 +1037,7 @@ void AppWindow::ProcessPendingFile() {
     if (pending_file_.empty()) return;
     std::wstring path;
     path.swap(pending_file_);
-    OutputDebugStringW((L"[MDI] ProcessPendingFile: calling OpenFile with \"" + path + L"\"\n").c_str());
+    OutputDebugStringW((std::wstring(L"[MDI] ProcessPendingFile: calling OpenFile: ") + path + L"\n").c_str());
     OpenFile(path);
     OutputDebugStringW(L"[MDI] ProcessPendingFile: OpenFile returned\n");
 }
