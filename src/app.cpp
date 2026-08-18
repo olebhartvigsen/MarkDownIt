@@ -715,6 +715,7 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
 }
 
 void AppWindow::OpenFile(const std::wstring& path) {
+    OutputDebugStringW((L"[MDI] OpenFile: \" + path + L"\"\n").c_str());
     std::ifstream f(path.c_str(), std::ios::binary);
     if (!f.is_open()) {
         MessageBoxW(hwnd_, L"Could not open file", L"MarkDownIt", MB_ICONWARNING);
@@ -756,10 +757,13 @@ void AppWindow::OpenFile(const std::wstring& path) {
     // Force render target recreation — the D2D hwnd target can become
     // invalid after the GetOpenFileNameW modal dialog closes.
     SafeRelease(rt_);
+    OutputDebugStringW(L"[MDI] OpenFile: rt released, redrawing\n");
     RedrawWindow(hwnd_content_, nullptr, nullptr,
         RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
+    OutputDebugStringW(L"[MDI] OpenFile: redraw done, starting watcher\n");
 
     watcher_.Start(hwnd_, path);
+    OutputDebugStringW(L"[MDI] OpenFile: complete\n");
 }
 
 void AppWindow::Reload() {
@@ -992,10 +996,13 @@ void AppWindow::RecreateRenderTarget() {
 }
 
 void AppWindow::OnContentPaint(HWND hwnd) {
+    OutputDebugStringW(L"[MDI] OnContentPaint: entered\n");
     if (!rt_) {
+        OutputDebugStringW(L"[MDI] OnContentPaint: rt_ null, recreating\n");
         RecreateRenderTarget();
-        if (!rt_) { ValidateRect(hwnd, nullptr); return; }
+        if (!rt_) { OutputDebugStringW(L"[MDI] OnContentPaint: recreate failed\n"); ValidateRect(hwnd, nullptr); return; }
     }
+    OutputDebugStringW(L"[MDI] OnContentPaint: rt_ OK, measuring\n");
 
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
@@ -1026,10 +1033,13 @@ void AppWindow::OnContentPaint(HWND hwnd) {
 
 
 void AppWindow::ProcessPendingFile() {
+    OutputDebugStringW(L"[MDI] ProcessPendingFile: entered\n");
     if (pending_file_.empty()) return;
     std::wstring path;
     path.swap(pending_file_);
+    OutputDebugStringW((L"[MDI] ProcessPendingFile: calling OpenFile with \"" + path + L"\"\n").c_str());
     OpenFile(path);
+    OutputDebugStringW(L"[MDI] ProcessPendingFile: OpenFile returned\n");
 }
 
 void AppWindow::MarkDirty() {
