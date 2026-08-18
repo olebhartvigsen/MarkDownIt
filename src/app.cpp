@@ -1034,11 +1034,18 @@ void AppWindow::OnContentPaint(HWND hwnd) {
 
 void AppWindow::ProcessPendingFile() {
     OutputDebugStringW(L"[MDI] ProcessPendingFile: entered\n");
-    if (pending_file_.empty()) return;
+    if (pending_file_.empty()) { OutputDebugStringW(L"[MDI] ProcessPendingFile: empty, returning\n"); return; }
     std::wstring path;
     path.swap(pending_file_);
     OutputDebugStringW((std::wstring(L"[MDI] ProcessPendingFile: calling OpenFile: ") + path + L"\n").c_str());
-    OpenFile(path);
+    __try {
+        OpenFile(path);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        DWORD code = GetExceptionCode();
+        wchar_t buf[256];
+        swprintf_s(buf, 256, L"[MDI] CRASH in OpenFile: exception 0x%08X\n", code);
+        OutputDebugStringW(buf);
+    }
     OutputDebugStringW(L"[MDI] ProcessPendingFile: OpenFile returned\n");
 }
 
@@ -1687,7 +1694,9 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             } else if (wp == 3) {
                 // Open file from command line after init is complete.
                 KillTimer(hwnd_, 3);
+                OutputDebugStringW(L"[MDI] WM_TIMER 3: about to call ProcessPendingFile\n");
                 ProcessPendingFile();
+                OutputDebugStringW(L"[MDI] WM_TIMER 3: ProcessPendingFile returned\n");
             }
             return 0;
         case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
