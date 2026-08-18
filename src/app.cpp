@@ -1032,20 +1032,25 @@ void AppWindow::OnContentPaint(HWND hwnd) {
 }
 
 
-void AppWindow::ProcessPendingFile() {
-    OutputDebugStringW(L"[MDI] ProcessPendingFile: entered\n");
-    if (pending_file_.empty()) { OutputDebugStringW(L"[MDI] ProcessPendingFile: empty, returning\n"); return; }
-    std::wstring path;
-    path.swap(pending_file_);
-    OutputDebugStringW((std::wstring(L"[MDI] ProcessPendingFile: calling OpenFile: ") + path + L"\n").c_str());
+// SEH wrapper: no C++ objects with destructors in this function.
+static void OpenFileSEH(AppWindow* app, const wchar_t* path) {
     __try {
-        OpenFile(path);
+        app->OpenFile(path);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         DWORD code = GetExceptionCode();
         wchar_t buf[256];
         swprintf_s(buf, 256, L"[MDI] CRASH in OpenFile: exception 0x%08X\n", code);
         OutputDebugStringW(buf);
     }
+}
+
+void AppWindow::ProcessPendingFile() {
+    OutputDebugStringW(L"[MDI] ProcessPendingFile: entered\n");
+    if (pending_file_.empty()) { OutputDebugStringW(L"[MDI] ProcessPendingFile: empty, returning\n"); return; }
+    std::wstring path;
+    path.swap(pending_file_);
+    OutputDebugStringW((std::wstring(L"[MDI] ProcessPendingFile: calling OpenFile: ") + path + L"\n").c_str());
+    OpenFileSEH(this, path.c_str());
     OutputDebugStringW(L"[MDI] ProcessPendingFile: OpenFile returned\n");
 }
 
