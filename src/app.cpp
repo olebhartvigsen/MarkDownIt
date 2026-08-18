@@ -745,11 +745,11 @@ void AppWindow::OpenFile(const std::wstring& path) {
 
     // Detect BOM (UTF-8 BOM: EF BB BF)
     has_bom_ = (raw.size() >= 3 &&
-    mdi_log(L"[MDI] OpenFile: step 3 - BOM/CRLF detect");
         (unsigned char)raw[0] == 0xEF &&
         (unsigned char)raw[1] == 0xBB &&
         (unsigned char)raw[2] == 0xBF);
     std::string utf8 = has_bom_ ? raw.substr(3) : raw;
+    mdi_log(L"[MDI] OpenFile: step 3 - BOM/CRLF detect");
 
     // Detect line endings: check for CR LF (0x0D 0x0A)
     use_crlf_ = (utf8.find("\x0D\x0A") != std::string::npos);
