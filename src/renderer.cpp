@@ -492,11 +492,9 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
             }
         }
 
-        float gap = (prevBlock == BlockKind::Paragraph &&
-                     n.block == BlockKind::Paragraph)
-            ? 0 : GapForTransition(prevBlock, n.block,
-                                   BlockKind::Paragraph,
-                                   n.depth, prevDepth, m);
+        float gap = GapForTransition(prevBlock, n.block,
+                                    BlockKind::Paragraph,
+                                    n.depth, prevDepth, m);
         // First block: no gap before it.
         bool isFirst = (prevBlock == BlockKind::Paragraph &&
                         prevDepth == -1 && curY == m.padTop + topOffsetDip);
