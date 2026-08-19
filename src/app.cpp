@@ -216,13 +216,16 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
     // callback may fire asynchronously, so this is a safety net.
     SetTimer(hwnd_, 1, 300, nullptr);
 
-    // Register .md file association so Explorer shows our document icon
-    // and double-click opens files in MarkDownIt.
-    // TODO: gate behind a settings toggle in a future release.
+    // Register .md/.markdown file association based on the saved setting.
     {
-        wchar_t exePath[MAX_PATH] = {};
-        GetModuleFileNameW(hInst, exePath, MAX_PATH);
-        RegisterMdAssociation(exePath);
+        settings_ = LoadSettings();
+        if (settings_.fileAssoc) {
+            wchar_t exePath[MAX_PATH] = {};
+            GetModuleFileNameW(hInst, exePath, MAX_PATH);
+            RegisterMdAssociation(exePath);
+        }
+        // Apply content width setting to the renderer.
+        renderer_.SetContentWidthMode(settings_.contentWidthMode);
     }
 
     return true;
@@ -1744,6 +1747,57 @@ void AppWindow::ShowAbout() {
         L"Drag a .md file onto the window or use Open.\n"
         L"F5 to reload, mouse wheel to scroll.",
         L"About MarkDownIt", MB_OK | MB_ICONINFORMATION);
+}
+
+//
+// Settings (Fil menu)
+//
+
+bool AppWindow::IsMdRegistered() const {
+    return settings_.fileAssoc;
+}
+
+void AppWindow::ToggleMdAssociation() {
+    settings_.fileAssoc = !settings_.fileAssoc;
+    if (settings_.fileAssoc) {
+        wchar_t exePath[MAX_PATH] = {};
+        GetModuleFileNameW(hinst_, exePath, MAX_PATH);
+        RegisterMdAssociation(exePath);
+    } else {
+        UnregisterMdAssociation();
+    }
+    SaveSettings(settings_);
+    InvalidateSettingsButtons();
+}
+
+int AppWindow::GetContentWidthMode() const {
+    return settings_.contentWidthMode;
+}
+
+void AppWindow::SetContentWidthMode(int mode) {
+    if (mode < 0 || mode > 3) mode = 0;
+    settings_.contentWidthMode = mode;
+    renderer_.SetContentWidthMode(mode);
+    SaveSettings(settings_);
+    InvalidateSettingsButtons();
+    // Force a repaint so the new width takes effect immediately.
+    layout_cache_.Clear();
+    UpdateScrollInfo();
+    Repaint();
+}
+
+void AppWindow::InvalidateSettingsButtons() {
+    if (!g_pRibbonFramework) return;
+    g_pRibbonFramework->InvalidateUICommand(IDC_CMD_ASSOC_MD,
+        UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
+    static const UINT widthCmds[] = {
+        IDC_CMD_WIDTH_STD, IDC_CMD_WIDTH_960,
+        IDC_CMD_WIDTH_1600, IDC_CMD_WIDTH_FULL
+    };
+    for (auto cmd : widthCmds) {
+        g_pRibbonFramework->InvalidateUICommand(cmd,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
+    }
 }
 
 //

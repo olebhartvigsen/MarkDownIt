@@ -1,9 +1,3 @@
-// File association: register .md files so Explorer shows the MarkDownIt
-// document icon and double-click opens the file in MarkDownIt.
-//
-// Per-user (HKCU), no admin rights needed. Later a settings toggle
-// can call UnregisterMdAssociation() to undo.
-
 #include <windows.h>
 #include <shlwapi.h>
 #include <shlobj.h>
@@ -11,7 +5,7 @@
 #include "fileassoc.h"
 
 static const wchar_t* kProgId  = L"MarkDownIt.md";
-static const wchar_t* kExt     = L".md";
+static const wchar_t* kExts[]   = { L".md", L".markdown" };
 
 // Write a string value to a registry key.
 static bool SetStr(HKEY root, const wchar_t* sub, const wchar_t* val,
@@ -25,6 +19,16 @@ static bool SetStr(HKEY root, const wchar_t* sub, const wchar_t* val,
         reinterpret_cast<const BYTE*>(data), len) == ERROR_SUCCESS;
     RegCloseKey(hKey);
     return ok;
+}
+
+// Remove the default value of a key (used during unregister to clear
+// the .md/.markdown default without deleting the key itself).
+static void ClearDefault(HKEY root, const wchar_t* sub) {
+    HKEY hKey = nullptr;
+    if (RegOpenKeyExW(root, sub, 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
+        RegDeleteValueW(hKey, nullptr);
+        RegCloseKey(hKey);
+    }
 }
 
 // Write a DWORD value to a registry key (used for OpenWithProgids).
@@ -42,23 +46,20 @@ static bool SetDword(HKEY root, const wchar_t* sub, const wchar_t* val,
 
 // Delete a key with all its subkeys (recursive).
 static void DeleteTree(HKEY root, const wchar_t* sub) {
-    // SHDeleteKeyW does recursive delete in one call.
     SHDeleteKeyW(root, sub);
 }
 
 void RegisterMdAssociation(const wchar_t* exePath) {
-    // Build "exePath" "%1" for the open command.
+    // Build open command and icon path once.
     std::wstring openCmd = L"\"";
     openCmd += exePath;
     openCmd += L"\" \"%1\"";
 
-    // Build "exePath,1" for DefaultIcon (resource index 1 = IDI_DOCICON).
     std::wstring iconPath = L"\"";
     iconPath += exePath;
     iconPath += L"\",1";
 
     // --- Register the ProgID: MarkDownIt.md ---
-    // FriendlyTypeName shown in Explorer's Type column.
     SetStr(HKEY_CURRENT_USER,
         L"Software\\Classes\\MarkDownIt.md",
         nullptr,
@@ -76,35 +77,66 @@ void RegisterMdAssociation(const wchar_t* exePath) {
         nullptr,
         openCmd.c_str());
 
-    // --- Associate .md extension with the ProgID ---
-    // Point .md's default to our ProgID so we become the handler.
-    SetStr(HKEY_CURRENT_USER,
-        L"Software\\Classes\\.md",
-        nullptr,
-        kProgId);
-    // OpenWithProgids makes us appear in the "Open with" list.
-    SetDword(HKEY_CURRENT_USER,
-        L"Software\\Classes\\.md\\OpenWithProgids",
-        kProgId,
-        0);
+    // --- Associate each extension with the ProgID ---
+    for (const wchar_t* ext : kExts) {
+        // Build "\\Software\\Classes\\<ext>" path
+        std::wstring extKey = L"Software\\Classes\\";
+        extKey += ext;
+        // Point the extension's default to our ProgID.
+        SetStr(HKEY_CURRENT_USER, extKey.c_str(), nullptr, kProgId);
 
-    // Notify the shell that associations changed so Explorer refreshes
-    // its icon cache immediately.
+        // OpenWithProgids makes us appear in the "Open with" list.
+        std::wstring progIdKey = extKey + L"\\OpenWithProgids";
+        SetDword(HKEY_CURRENT_USER, progIdKey.c_str(), kProgId, 0);
+    }
+
+    // Notify the shell that associations changed.
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 }
 
 void UnregisterMdAssociation() {
     // Remove the ProgID entirely.
     DeleteTree(HKEY_CURRENT_USER, L"Software\\Classes\\MarkDownIt.md");
-    // Remove our ProgID reference from the .md extension.
-    // Do NOT delete HKCU\.md itself, other apps may use OpenWithProgids.
-    // Clear the default value of .md so Windows falls back.
-    HKEY hKey = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER,
-            L"Software\\Classes\\.md\\OpenWithProgids", 0,
-            KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
-        RegDeleteValueW(hKey, kProgId);
-        RegCloseKey(hKey);
+
+    // Remove our ProgID reference from each extension.
+    // Do NOT delete the extension key itself, other apps may use it.
+    for (const wchar_t* ext : kExts) {
+        std::wstring progIdKey = L"Software\\Classes\\";
+        progIdKey += ext;
+        progIdKey += L"\\OpenWithProgids";
+
+        HKEY hKey = nullptr;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, progIdKey.c_str(), 0,
+                KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
+            RegDeleteValueW(hKey, kProgId);
+            RegCloseKey(hKey);
+        }
+
+        // Clear the default value of the extension so Windows falls back.
+        std::wstring extKey = L"Software\\Classes\\";
+        extKey += ext;
+        ClearDefault(HKEY_CURRENT_USER, extKey.c_str());
     }
+
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+}
+
+bool IsMdRegistered() {
+    // Check whether .md's default value points to our ProgID.
+    HKEY hKey = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\.md", 0,
+            KEY_QUERY_VALUE, &hKey) != ERROR_SUCCESS)
+        return false;
+
+    wchar_t buf[64] = {};
+    DWORD sz = sizeof(buf);
+    DWORD type = 0;
+    bool found = false;
+    if (RegQueryValueExW(hKey, nullptr, nullptr, &type,
+            reinterpret_cast<BYTE*>(buf), &sz) == ERROR_SUCCESS &&
+        type == REG_SZ) {
+        found = (wcsncmp(buf, kProgId, wcslen(kProgId)) == 0);
+    }
+    RegCloseKey(hKey);
+    return found;
 }

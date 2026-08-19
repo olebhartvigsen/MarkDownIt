@@ -13,7 +13,19 @@ Renderer::Renderer() {}
 Renderer::~Renderer() { Release(); }
 
 LayoutMetrics Renderer::ComputeMetrics() const {
-    return ScaleMetrics(BaseMetrics(), zoom_);
+    LayoutMetrics m = ScaleMetrics(BaseMetrics(), zoom_);
+    // Override the content width cap based on the user's width setting.
+    // Mode 3 (Full) means no cap, so we use a very large value.
+    if (contentWidthMode_ == 0) {
+        m.maxContentWidth = 800.0f * zoom_;       // Standard (default)
+    } else if (contentWidthMode_ == 1) {
+        m.maxContentWidth = 960.0f * zoom_;
+    } else if (contentWidthMode_ == 2) {
+        m.maxContentWidth = 1600.0f * zoom_;
+    } else {
+        m.maxContentWidth = 100000.0f;            // Full window width
+    }
+    return m;
 }
 
 float Renderer::GapForTransition(BlockKind prev, BlockKind cur,
@@ -109,6 +121,11 @@ void Renderer::SetZoom(float z) {
 
 void Renderer::SetWrap(bool w) {
     wrapEnabled_ = w;
+}
+
+void Renderer::SetContentWidthMode(int mode) {
+    if (mode < 0 || mode > 3) mode = 0;
+    contentWidthMode_ = mode;
 }
 
 std::u16string Renderer::ToUtf16(const std::u32string& s32) {

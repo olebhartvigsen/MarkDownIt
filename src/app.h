@@ -18,6 +18,7 @@
 #include "formatting.h"
 #include "autoformat.h"
 #include "inputfilter.h"
+#include "settings.h"
 
 // Active formatting state at the caret position, used to set
 // the pressed/unpressed state of ribbon toggle buttons.
@@ -58,6 +59,14 @@ public:
     FormatState GetFormatState() const;
     void InvalidateFormatButtons();
     void ToggleEdit() { SetEdit(!editing_); }
+
+    // Settings (Fil menu)
+    bool IsMdRegistered() const;
+    void ToggleMdAssociation();
+    int  GetContentWidthMode() const;
+    void SetContentWidthMode(int mode);
+    void InvalidateSettingsButtons();
+
     void OpenPendingFile(const std::wstring& path) {
         pending_file_ = path;
         if (hwnd_) SetTimer(hwnd_, 3, 50, nullptr);
@@ -135,6 +144,9 @@ private:
     bool        use_crlf_ = false;
     bool        has_bom_ = false;
     std::wstring pending_file_;  // file to open after init completes
+
+    // Persisted settings
+    AppSettings    settings_;
 
     static const wchar_t* kClassName;
     static const wchar_t* kContentClassName;

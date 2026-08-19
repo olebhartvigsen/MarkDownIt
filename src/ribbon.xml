@@ -307,6 +307,37 @@
         <Image Source="icons/edit_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
+    <Command Name="cmdAssocMd" Symbol="IDC_CMD_ASSOC_MD" Id="10600">
+      <Command.LabelTitle>
+        <String>Associate .md files</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>File Association</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Register .md and .markdown extensions to open in MarkDownIt</String>
+      </Command.TooltipDescription>
+    </Command>
+    <Command Name="cmdWidthStandard" Symbol="IDC_CMD_WIDTH_STD" Id="10601">
+      <Command.LabelTitle>
+        <String>Standard</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdWidth960" Symbol="IDC_CMD_WIDTH_960" Id="10602">
+      <Command.LabelTitle>
+        <String>960 px</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdWidth1600" Symbol="IDC_CMD_WIDTH_1600" Id="10603">
+      <Command.LabelTitle>
+        <String>1600 px</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdWidthFull" Symbol="IDC_CMD_WIDTH_FULL" Id="10604">
+      <Command.LabelTitle>
+        <String>Full width</String>
+      </Command.LabelTitle>
+    </Command>
   </Application.Commands>
   <Application.Views>
     <Ribbon>
@@ -314,6 +345,15 @@
         <ApplicationMenu CommandName="cmdAppMenu">
           <MenuGroup Class="MajorItems">
             <Button CommandName="cmdAbout" />
+          </MenuGroup>
+          <MenuGroup Class="MajorItems">
+            <ToggleButton CommandName="cmdAssocMd" />
+          </MenuGroup>
+          <MenuGroup Class="MajorItems">
+            <ToggleButton CommandName="cmdWidthStandard" />
+            <ToggleButton CommandName="cmdWidth960" />
+            <ToggleButton CommandName="cmdWidth1600" />
+            <ToggleButton CommandName="cmdWidthFull" />
           </MenuGroup>
         </ApplicationMenu>
       </Ribbon.ApplicationMenu>

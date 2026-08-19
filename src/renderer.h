@@ -20,6 +20,10 @@ public:
     void SetWrap(bool w);
     bool Wrap() const { return wrapEnabled_; }
 
+    // Content width mode: 0=Standard(800), 1=960, 2=1600, 3=Full width.
+    void SetContentWidthMode(int mode);
+    int  ContentWidthMode() const { return contentWidthMode_; }
+
     void SetLayoutCache(LayoutCache* cache) { cache_ = cache; }
 
     // Draw the document. scrollY is the vertical offset in DIPs.
@@ -41,6 +45,7 @@ private:
     IDWriteTextFormat* heading_fmt_[7] = {};
     float zoom_ = 1.0f;
     bool wrapEnabled_ = true;
+    int  contentWidthMode_ = 0;  // 0=Standard(800), 1=960, 2=1600, 3=Full
     LayoutCache* cache_ = nullptr;
 
     LayoutMetrics ComputeMetrics() const;

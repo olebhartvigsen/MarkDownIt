@@ -295,6 +295,32 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         }
     }
 
+    // Settings toggle buttons (Fil menu): file association + width modes.
+    if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
+    {
+        if (nCmdID == IDC_CMD_ASSOC_MD)
+        {
+            ppropvarNewValue->vt = VT_BOOL;
+            ppropvarNewValue->boolVal =
+                (m_pApp && m_pApp->IsMdRegistered())
+                    ? VARIANT_TRUE : VARIANT_FALSE;
+            return S_OK;
+        }
+        static const UINT widthCmds[4] = {
+            IDC_CMD_WIDTH_STD, IDC_CMD_WIDTH_960,
+            IDC_CMD_WIDTH_1600, IDC_CMD_WIDTH_FULL
+        };
+        for (int i = 0; i < 4; ++i) {
+            if (nCmdID == widthCmds[i]) {
+                ppropvarNewValue->vt = VT_BOOL;
+                ppropvarNewValue->boolVal =
+                    (m_pApp && m_pApp->GetContentWidthMode() == i)
+                        ? VARIANT_TRUE : VARIANT_FALSE;
+                return S_OK;
+            }
+        }
+    }
+
     // Enable/disable format buttons based on edit mode.
     if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_Enabled))
     {
@@ -384,6 +410,11 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_INDENT:  m_pApp->Indent();            break;
     case IDC_CMD_OUTDENT: m_pApp->Outdent();           break;
     case IDC_CMD_EDIT:    m_pApp->ToggleEdit();        break;
+    case IDC_CMD_ASSOC_MD:    m_pApp->ToggleMdAssociation();         break;
+    case IDC_CMD_WIDTH_STD:   m_pApp->SetContentWidthMode(0);        break;
+    case IDC_CMD_WIDTH_960:   m_pApp->SetContentWidthMode(1);        break;
+    case IDC_CMD_WIDTH_1600:  m_pApp->SetContentWidthMode(2);        break;
+    case IDC_CMD_WIDTH_FULL:  m_pApp->SetContentWidthMode(3);        break;
     }
     return S_OK;
 }
