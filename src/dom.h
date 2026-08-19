@@ -54,6 +54,7 @@ struct InlineBlock {
 struct TableCell {
     std::u32string text;
     bool isHeader = false;
+    uint32_t srcOffset = 0;  // byte offset into UTF-8 source
 };
 
 // A table row: list of cells.
@@ -71,6 +72,7 @@ struct Node {
     uint32_t                   srcOffset = 0;  // byte offset into UTF-8 source
     uint32_t                   srcLength = 0;  // byte length of this block in source
     uint32_t                   contentOffset = 0; // where editable text starts, after markers
+    uint32_t                   contentLength = 0; // byte length of editable text
     std::u32string             raw;          // code block raw text (UTF-32)
     std::vector<TableRow>     rows;         // table rows (for BlockKind::Table)
 };

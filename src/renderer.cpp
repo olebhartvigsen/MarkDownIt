@@ -128,7 +128,8 @@ std::u16string Renderer::ToUtf16(const std::u32string& s32) {
 
 void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                               const Node& n, float x, float y,
-                              float width, float& outH) {
+                              float width, float& outH,
+                              const Selection* sel) {
     if (!rt || !dw || !code_fmt_) { outH = 0.0f; return; }
 
     LayoutMetrics m = ComputeMetrics();
@@ -184,6 +185,70 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     } else {
         rt->FillRectangle(bgRect, bgBrush);
         rt->DrawRectangle(bgRect, borderBrush, 1.0f);
+    }
+
+    // Draw selection highlight behind the text.
+    if (sel && !sel->Empty()) {
+        ID2D1SolidColorBrush* selBrush = nullptr;
+        rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
+        if (selBrush) {
+            uint32_t selStart = sel->Start();
+            uint32_t selEnd = selStart + sel->Length();
+            uint32_t blockStart = n.srcOffset;
+            uint32_t blockEnd = blockStart + n.srcLength;
+            if (selStart < blockEnd && selEnd > blockStart) {
+                // Map selection offsets to the raw text (contentOffset based).
+                uint32_t textStart = n.contentOffset;
+                uint32_t textEnd = textStart + n.contentLength;
+                uint32_t localStart = (selStart > textStart) ?
+                    (selStart - textStart) : 0;
+                uint32_t localEnd = (selEnd < textEnd) ?
+                    (selEnd - textStart) :
+                    (textEnd > textStart ? textEnd - textStart : 0);
+                // Convert UTF-8 local offsets to UTF-16 indices.
+                // Walk the raw text to build the mapping inline.
+                std::u32string::const_iterator it = raw.begin();
+                UINT32 u16Start = 0, u16End = 0;
+                uint32_t byteIdx = 0;
+                bool pastStart = false, pastEnd = false;
+                for (char32_t cp : raw) {
+                    int utf8Len = (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
+                                  (cp <= 0xFFFF) ? 3 : 4;
+                    int utf16Len = (cp <= 0xFFFF) ? 1 : 2;
+                    if (!pastStart && byteIdx >= localStart) {
+                        u16Start = u16End;
+                        pastStart = true;
+                    }
+                    if (!pastEnd && byteIdx >= localEnd) {
+                        pastEnd = true;
+                        break;
+                    }
+                    u16End += utf16Len;
+                    byteIdx += utf8Len;
+                }
+                if (!pastStart) u16Start = u16End;  // past end
+                if (!pastEnd) u16End = static_cast<UINT32>(text16.size());
+                if (u16End > u16Start) {
+                    UINT32 hitCount = 0;
+                    DWRITE_HIT_TEST_METRICS htm[64];
+                    D2D1_POINT_2F origin2 = D2D1::Point2F(
+                        x + m.codePad, y + m.codePad);
+                    HRESULT hrHit = layout->HitTestTextRange(
+                        u16Start, u16End - u16Start,
+                        origin2.x, origin2.y, htm, 64, &hitCount);
+                    if (SUCCEEDED(hrHit)) {
+                        for (UINT32 h = 0; h < hitCount; ++h) {
+                            D2D1_RECT_F r = D2D1::RectF(
+                                htm[h].left, htm[h].top,
+                                htm[h].left + htm[h].width,
+                                htm[h].top + htm[h].height);
+                            rt->FillRectangle(r, selBrush);
+                        }
+                    }
+                }
+            }
+            selBrush->Release();
+        }
     }
 
     // Draw text.
@@ -278,7 +343,8 @@ float Renderer::MeasureTable(IDWriteFactory* dw, const Node& n,
 
 void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                           const Node& n, float x, float y,
-                          float width, float& outH) {
+                          float width, float& outH,
+                          const Selection* sel) {
     if (!rt || !dw || !body_fmt_ || n.rows.empty()) { outH = 0.0f; return; }
 
     LayoutMetrics m = ComputeMetrics();
@@ -292,6 +358,9 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     rt->CreateSolidColorBrush(pal.tableRowAlt, &altBg);
     ID2D1SolidColorBrush* borderBrush = nullptr;
     rt->CreateSolidColorBrush(pal.tableBorder, &borderBrush);
+    ID2D1SolidColorBrush* selBrush = nullptr;
+    if (sel && !sel->Empty())
+        rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
 
     size_t cols = 0;
     for (const auto& row : n.rows) {
@@ -358,9 +427,68 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                         static_cast<UINT32>(text16.size())};
                     layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, r);
                 }
-                D2D1_POINT_2F origin = D2D1::Point2F(
+                D2D1_POINT_2F cellOrigin = D2D1::Point2F(
                     cellX + m.cellPadX, curY + m.cellPadY);
-                rt->DrawTextLayout(origin, layout, textBrush,
+                // Draw selection highlight for this cell.
+                if (selBrush && sel && !sel->Empty() &&
+                    !row.cells[c].text.empty()) {
+                    const auto& cell = row.cells[c];
+                    uint32_t selStart = sel->Start();
+                    uint32_t selEnd = selStart + sel->Length();
+                    // Use cell.srcOffset and cell text length.
+                    uint32_t cellStart = cell.srcOffset;
+                    // Compute cell text length from the UTF-32 text.
+                    uint32_t cellTextLen = 0;
+                    for (char32_t cp : cell.text) {
+                        cellTextLen += (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
+                                       (cp <= 0xFFFF) ? 3 : 4;
+                    }
+                    uint32_t cellEnd = cellStart + cellTextLen;
+                    if (selStart < cellEnd && selEnd > cellStart) {
+                        uint32_t localStart = (selStart > cellStart) ?
+                            (selStart - cellStart) : 0;
+                        uint32_t localEnd = (selEnd < cellEnd) ?
+                            (selEnd - cellStart) : cellTextLen;
+                        // Convert UTF-8 offsets to UTF-16 indices.
+                        UINT32 u16Start = 0, u16End = 0;
+                        uint32_t byteIdx = 0;
+                        bool pastStart = false, pastEnd = false;
+                        for (char32_t cp : cell.text) {
+                            int utf8Len = (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
+                                          (cp <= 0xFFFF) ? 3 : 4;
+                            if (!pastStart && byteIdx >= localStart) {
+                                u16Start = u16End;
+                                pastStart = true;
+                            }
+                            if (!pastEnd && byteIdx >= localEnd) {
+                                pastEnd = true;
+                                break;
+                            }
+                            u16End += (cp <= 0xFFFF) ? 1 : 2;
+                            byteIdx += utf8Len;
+                        }
+                        if (!pastStart) u16Start = u16End;
+                        if (!pastEnd) u16End = static_cast<UINT32>(text16.size());
+                        if (u16End > u16Start) {
+                            UINT32 hitCount = 0;
+                            DWRITE_HIT_TEST_METRICS htm[64];
+                            HRESULT hrHit = layout->HitTestTextRange(
+                                u16Start, u16End - u16Start,
+                                cellOrigin.x, cellOrigin.y,
+                                htm, 64, &hitCount);
+                            if (SUCCEEDED(hrHit)) {
+                                for (UINT32 h = 0; h < hitCount; ++h) {
+                                    D2D1_RECT_F r = D2D1::RectF(
+                                        htm[h].left, htm[h].top,
+                                        htm[h].left + htm[h].width,
+                                        htm[h].top + htm[h].height);
+                                    rt->FillRectangle(r, selBrush);
+                                }
+                            }
+                        }
+                    }
+                }
+                rt->DrawTextLayout(cellOrigin, layout, textBrush,
                     D2D1_DRAW_TEXT_OPTIONS_CLIP);
                 layout->Release();
             }
@@ -386,6 +514,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (headerBg) headerBg->Release();
     if (altBg) altBg->Release();
     if (borderBrush) borderBrush->Release();
+    if (selBrush) selBrush->Release();
     outH = curY - y;
 }
 
@@ -594,7 +723,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
         if (n.block == BlockKind::CodeBlock) {
             float blockH = 0.0f;
-            DrawCodeBlock(rt, dw, n, drawX, curY, drawW, blockH);
+            DrawCodeBlock(rt, dw, n, drawX, curY, drawW, blockH, sel);
             curY += blockH + 0;
             prevBlock = n.block;
             prevDepth = n.depth;
@@ -603,7 +732,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
         if (n.block == BlockKind::Table) {
             float blockH = 0.0f;
-            DrawTable(rt, dw, n, drawX, curY, drawW, blockH);
+            DrawTable(rt, dw, n, drawX, curY, drawW, blockH, sel);
             curY += blockH;
             prevBlock = n.block;
             prevDepth = n.depth;

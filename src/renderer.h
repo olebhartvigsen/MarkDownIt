@@ -50,10 +50,12 @@ private:
 
     std::u16string ToUtf16(const std::u32string& s32);
     void DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
-                       const Node& n, float x, float y, float width, float& outH);
+                       const Node& n, float x, float y, float width, float& outH,
+                       const Selection* sel = nullptr);
     void DrawThematicBreak(ID2D1RenderTarget* rt, float x, float y, float width);
     void DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
-                   const Node& n, float x, float y, float width, float& outH);
+                   const Node& n, float x, float y, float width, float& outH,
+                   const Selection* sel = nullptr);
     float MeasureTable(IDWriteFactory* dw, const Node& n,
                        float x, float width);
 };

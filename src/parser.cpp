@@ -60,6 +60,7 @@ struct ParserCtx {
     bool in_header;      // true when in THEAD
     TableRow* cur_row;   // current row being filled, nullptr if none
     std::u32string* cur_cell;  // current cell text, nullptr if none
+    TableCell* cur_cell_obj;   // current TableCell object, nullptr if none
     const char* input;        // pointer to start of input (for offset calculation)
     MD_SIZE inputSize;        // size of input
     std::vector<NodeOffsetInfo> nodeOffsets;  // per-node offset tracking
@@ -291,6 +292,7 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
                 ctx->cur_row->cells.push_back(TableCell{});
                 ctx->cur_row->cells.back().isHeader = ctx->in_header;
                 ctx->cur_cell = &ctx->cur_row->cells.back().text;
+                ctx->cur_cell_obj = &ctx->cur_row->cells.back();
             }
             ctx->block_stack.push_back({type, -1, false, false});
             break;
@@ -315,6 +317,7 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
                 node.srcOffset = BlockLineStart(ctx->input, noi.firstTextOffset);
                 node.srcLength = noi.lastTextEnd - node.srcOffset;
                 node.contentOffset = noi.firstTextOffset;
+                node.contentLength = noi.lastTextEnd - noi.firstTextOffset;
             }
         }
         ctx->block_stack.pop_back();
@@ -330,6 +333,7 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
     }
     if (type == MD_BLOCK_TH || type == MD_BLOCK_TD) {
         ctx->cur_cell = nullptr;
+        ctx->cur_cell_obj = nullptr;
     }
     if (type == MD_BLOCK_TR) {
         ctx->cur_row = nullptr;
@@ -409,6 +413,10 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
 
     // Table cells: raw text goes to cur_cell (UTF-32).
     if (ctx->cur_cell) {
+        // Set srcOffset on first text for this cell.
+        if (ctx->cur_cell_obj && ctx->cur_cell_obj->text.empty()) {
+            ctx->cur_cell_obj->srcOffset = static_cast<uint32_t>(text - ctx->input);
+        }
         Utf8Decoder d;
         d.decode(text, size, *ctx->cur_cell);
         return 0;
@@ -506,6 +514,7 @@ bool ParseMarkdown(const std::string& utf8, Document& out) {
     ctx.in_header = false;
     ctx.cur_row = nullptr;
     ctx.cur_cell = nullptr;
+    ctx.cur_cell_obj = nullptr;
 
     MD_PARSER parser{};
     parser.abi_version = 0;
