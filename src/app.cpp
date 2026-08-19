@@ -16,6 +16,20 @@
 #include <cstdio>
 #include <cmath>
 
+
+static void mdi_debug(const wchar_t* msg) {
+    HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-debug.log",
+        FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h != INVALID_HANDLE_VALUE) {
+        SetFilePointer(h, 0, nullptr, FILE_END);
+        DWORD written;
+        WriteFile(h, msg, (DWORD)(wcslen(msg) * sizeof(wchar_t)), &written, nullptr);
+        WriteFile(h, L"\r\n", 4, &written, nullptr);
+        CloseHandle(h);
+    }
+}
+
 const wchar_t* AppWindow::kClassName = L"MarkDownItWindow";
 const wchar_t* AppWindow::kContentClassName = L"MarkDownItContent";
 
@@ -36,6 +50,7 @@ static UINT GetWindowDpi(HWND hwnd) {
 
 AppWindow::AppWindow() {}
 AppWindow::~AppWindow() {
+    mdi_debug(L"[MDI] OpenFile: before SafeRelease rt_");
     SafeRelease(rt_);
     SafeRelease(d2d_factory_);
     SafeRelease(dw_factory_);
@@ -717,11 +732,13 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
 }
 
 void AppWindow::OpenFile(const std::wstring& path) {
+    mdi_debug(L"[MDI] OpenFile enter");
     // Exit edit mode: destroy caret, invalidate ribbon state.
     if (editing_) {
         SetEdit(false);
     }
     std::ifstream f(path.c_str(), std::ios::binary);
+    mdi_debug(L"[MDI] OpenFile: ifstream opened");
     if (!f.is_open()) {
         MessageBoxW(hwnd_, L"Could not open file", L"MarkDownIt", MB_ICONWARNING);
         return;
@@ -736,13 +753,16 @@ void AppWindow::OpenFile(const std::wstring& path) {
         (unsigned char)raw[1] == 0xBB &&
         (unsigned char)raw[2] == 0xBF);
     std::string utf8 = has_bom_ ? raw.substr(3) : raw;
+    mdi_debug(L"[MDI] OpenFile: BOM detected");
 
     // Detect line endings: check for CR LF (0x0D 0x0A)
     use_crlf_ = (utf8.find("\x0D\x0A") != std::string::npos);
 
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
+    mdi_debug(L"[MDI] OpenFile: ParseMarkdown done");
     buffer_.SetText(utf8);
+    mdi_debug(L"[MDI] OpenFile: SetText done");
     undo_stack_.Clear();
     file_path_ = path;
     ClearDirty();
@@ -762,10 +782,12 @@ void AppWindow::OpenFile(const std::wstring& path) {
     UpdateScrollInfo();
     // Force render target recreation — the D2D hwnd target can become
     // invalid after the GetOpenFileNameW modal dialog closes.
+    mdi_debug(L"[MDI] OpenFile: before SafeRelease rt_");
     SafeRelease(rt_);
     RedrawWindow(hwnd_content_, nullptr, nullptr,
         RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
 
+    mdi_debug(L"[MDI] OpenFile: before watcher_.Start");
     watcher_.Start(hwnd_, path);
 }
 
@@ -780,7 +802,9 @@ void AppWindow::Reload() {
     float savedY = scrollY_;
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
+    mdi_debug(L"[MDI] OpenFile: ParseMarkdown done");
     buffer_.SetText(utf8);
+    mdi_debug(L"[MDI] OpenFile: SetText done");
     undo_stack_.Clear();
     UpdateScrollInfo();
     if (scrollY_ > savedY) scrollY_ = savedY;
@@ -956,6 +980,7 @@ float AppWindow::ClampScroll(float y) const {
 
 // Start a smooth scroll animation from current scrollY_ to targetY.
 void AppWindow::StartScrollAnimation(float targetY) {
+    mdi_debug(L"[MDI] StartScrollAnimation enter");
     targetY = ClampScroll(targetY);
     if (std::fabs(targetY - scrollY_) < 0.5f) {
         scrollY_ = targetY;
@@ -980,6 +1005,7 @@ void AppWindow::StopScrollAnimation() {
 
 // Called on each tick of the scroll animation timer.
 void AppWindow::OnScrollTimer() {
+    mdi_debug(L"[MDI] OnScrollTimer tick");
     DWORD elapsed = GetTickCount() - scroll_anim_start_time_;
     if (elapsed >= SCROLL_ANIM_MS) {
         // Animation complete.
@@ -1045,6 +1071,7 @@ void AppWindow::OnContentMouseWheel(HWND hwnd, int delta) {
 }
 
 void AppWindow::RecreateRenderTarget() {
+    mdi_debug(L"[MDI] OpenFile: before SafeRelease rt_");
     SafeRelease(rt_);
     if (d2d_factory_ && hwnd_content_) {
         RECT rc;
@@ -1061,6 +1088,8 @@ void AppWindow::RecreateRenderTarget() {
 }
 
 void AppWindow::OnContentPaint(HWND hwnd) {
+    static int paint_count = 0; paint_count++;
+    if (paint_count <= 3) { wchar_t b[32]; swprintf_s(b, 32, L"[MDI] OnContentPaint #%d", paint_count); mdi_debug(b); }
     if (!rt_) {
             RecreateRenderTarget();
         if (!rt_) { ValidateRect(hwnd, nullptr); return; }
@@ -1095,6 +1124,7 @@ void AppWindow::OnContentPaint(HWND hwnd) {
 
 
 void AppWindow::ProcessPendingFile() {
+    mdi_debug(L"[MDI] ProcessPendingFile enter");
     if (pending_file_.empty()) return;
     std::wstring path;
     path.swap(pending_file_);
@@ -1236,6 +1266,7 @@ void AppWindow::OnClose() {
 }
 
 void AppWindow::SetEdit(bool on) {
+    mdi_debug(L"[MDI] SetEdit called");
     editing_ = on;
     if (on && has_focus_ && !caret_visible_) {
         float cx, cy, ch;
@@ -1640,6 +1671,7 @@ void AppWindow::OnDestroy() {
     DestroyRibbon();
     watcher_.Stop();
     renderer_.Release();
+    mdi_debug(L"[MDI] OpenFile: before SafeRelease rt_");
     SafeRelease(rt_);
     SafeRelease(dw_factory_);
     SafeRelease(d2d_factory_);
