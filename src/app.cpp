@@ -17,6 +17,20 @@
 #include <cmath>
 
 
+
+static void mdi_dbg(const wchar_t* msg) {
+    HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-debug.log",
+        FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h != INVALID_HANDLE_VALUE) {
+        SetFilePointer(h, 0, nullptr, FILE_END);
+        DWORD written;
+        WriteFile(h, msg, (DWORD)(wcslen(msg) * sizeof(wchar_t)), &written, nullptr);
+        WriteFile(h, L"\r\n", 4, &written, nullptr);
+        CloseHandle(h);
+    }
+}
+
 const wchar_t* AppWindow::kClassName = L"MarkDownItWindow";
 const wchar_t* AppWindow::kContentClassName = L"MarkDownItContent";
 
@@ -745,7 +759,9 @@ void AppWindow::OpenFile(const std::wstring& path) {
     use_crlf_ = (utf8.find("\x0D\x0A") != std::string::npos);
 
     doc_ = Document{};
+    mdi_dbg(L"DBG: before ParseMarkdown");
     ParseMarkdown(utf8, doc_);
+    mdi_dbg(L"DBG: after ParseMarkdown");
     buffer_.SetText(utf8);
     undo_stack_.Clear();
     file_path_ = path;
@@ -766,11 +782,15 @@ void AppWindow::OpenFile(const std::wstring& path) {
     UpdateScrollInfo();
     // Force render target recreation — the D2D hwnd target can become
     // invalid after the GetOpenFileNameW modal dialog closes.
+    mdi_dbg(L"DBG: before SafeRelease");
     SafeRelease(rt_);
+    mdi_dbg(L"DBG: after SafeRelease, before RedrawWindow");
     RedrawWindow(hwnd_content_, nullptr, nullptr,
         RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
 
+    mdi_dbg(L"DBG: before watcher.Start");
     watcher_.Start(hwnd_, path);
+    mdi_dbg(L"DBG: OpenFile COMPLETE");
 }
 
 void AppWindow::Reload() {
@@ -783,7 +803,9 @@ void AppWindow::Reload() {
 
     float savedY = scrollY_;
     doc_ = Document{};
+    mdi_dbg(L"DBG: before ParseMarkdown");
     ParseMarkdown(utf8, doc_);
+    mdi_dbg(L"DBG: after ParseMarkdown");
     buffer_.SetText(utf8);
     undo_stack_.Clear();
     UpdateScrollInfo();
