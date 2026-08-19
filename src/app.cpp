@@ -1747,10 +1747,7 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             } else if (wp == 3) {
                 // Open file from command line after init is complete.
                 KillTimer(hwnd_, 3);
-                            ProcessPendingFile();
-                        } else if (wp == 4) {
-                // Smooth scroll animation tick.
-                OnScrollTimer();
+                ProcessPendingFile();
             }
             return 0;
         case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
@@ -1811,6 +1808,12 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             OnContentSize(hwnd, w, h);
             return 0;
         }
+        case WM_TIMER:
+            if (wp == 4) {
+                // Smooth scroll animation tick.
+                OnScrollTimer();
+            }
+            return 0;
         default: return DefWindowProcW(hwnd, msg, wp, lp);
     }
 }

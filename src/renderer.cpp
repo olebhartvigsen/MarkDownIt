@@ -188,7 +188,7 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     }
 
     // Draw selection highlight behind the text.
-    if (sel && !sel->Empty()) {
+    if (sel && !sel->Empty() && !raw.empty() && !text16.empty()) {
         ID2D1SolidColorBrush* selBrush = nullptr;
         rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
         if (selBrush) {
@@ -431,7 +431,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     cellX + m.cellPadX, curY + m.cellPadY);
                 // Draw selection highlight for this cell.
                 if (selBrush && sel && !sel->Empty() &&
-                    !row.cells[c].text.empty()) {
+                    !row.cells[c].text.empty() && !text16.empty()) {
                     const auto& cell = row.cells[c];
                     uint32_t selStart = sel->Start();
                     uint32_t selEnd = selStart + sel->Length();
