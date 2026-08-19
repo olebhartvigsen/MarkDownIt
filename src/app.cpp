@@ -245,13 +245,15 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         return;
     }
 
-    // In read-only mode, suppress editing keys but allow navigation and copy.
+    // In view mode, suppress editing keys but allow navigation, selection,
+    // and copy (Ctrl+C).
     if (!editing_) {
         bool isNavigation = (vk == VK_LEFT || vk == VK_RIGHT ||
             vk == VK_UP || vk == VK_DOWN ||
             vk == VK_HOME || vk == VK_END ||
             vk == VK_PRIOR || vk == VK_NEXT);
         bool isCopy = (ctrl && vk == 0x43);  // Ctrl+C
+        // Shift+navigation is allowed (extends selection for copy).
         if (!isNavigation && !isCopy && !shift) return;
     }
 
@@ -573,6 +575,7 @@ void AppWindow::OnBufferChanged() {
 
 void AppWindow::UpdateCaretPosition() {
     if (!has_focus_ || !hwnd_content_) return;
+    if (!editing_) return;  // No caret in view mode.
     InvalidateFormatButtons();
     float x, y, h;
     if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &x, &y, &h)) {
@@ -591,7 +594,8 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     if (offset != UINT32_MAX) {
         sel_.Collapse({offset});
     }
-    UpdateCaretPosition();
+    // Only update caret position in edit mode; in view mode we have no caret.
+    if (editing_) UpdateCaretPosition();
     Repaint();
 }
 
@@ -614,7 +618,7 @@ void AppWindow::OnLButtonDblClk(HWND hwnd, int x, int y) {
 
     sel_.anchor = {start};
     sel_.active = {end};
-    UpdateCaretPosition();
+    if (editing_) UpdateCaretPosition();
     Repaint();
 }
 
@@ -626,7 +630,7 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
     if (offset != UINT32_MAX) {
         sel_.active = {offset};
     }
-    UpdateCaretPosition();
+    if (editing_) UpdateCaretPosition();
     Repaint();
 }
 
@@ -636,12 +640,15 @@ void AppWindow::OnLButtonUp(HWND hwnd) {
 
 void AppWindow::OnSetFocus(HWND hwnd) {
     has_focus_ = true;
+    // Only create and show caret in edit mode.
+    if (!editing_) return;
     float x, y, h;
     if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &x, &y, &h)) {
-        CreateCaret(hwnd, nullptr, 1, static_cast<int>(h));
+        CreateCaret(hwnd, nullptr, 2, static_cast<int>(h));
         SetCaretPos(static_cast<int>(x),
                     static_cast<int>(y - scrollY_));
         ShowCaret(hwnd);
+        caret_visible_ = true;
     }
 }
 
@@ -653,20 +660,9 @@ void AppWindow::OnKillFocus(HWND hwnd) {
 void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
     if (!has_focus_) return;
 
-    // Auto-enter edit mode on first printable character.
-    if (!editing_ && ch >= 0x20 && ch != 0x7F) {
-        editing_ = true;
-        if (!caret_visible_) {
-            float cx, cy, ch2;
-            if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &cx, &cy, &ch2))
-                CreateCaret(hwnd_content_, nullptr, 2, static_cast<int>(ch2));
-            else
-                CreateCaret(hwnd_content_, nullptr, 2, 16);
-            ShowCaret(hwnd_content_);
-            caret_visible_ = true;
-        }
-    }
-    if (!editing_) return;  // read-only: suppress input
+    // In view mode, no character input is accepted.
+    // Edit mode is entered explicitly via the Edit button or Ctrl+E.
+    if (!editing_) return;
 
     // Handle surrogate pairs: emoji and CJK arrive as two WM_CHAR messages.
     if (ch >= 0xD800 && ch <= 0xDBFF) {
@@ -726,26 +722,12 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
     OnBufferChanged();
 }
 
-// Debug log helper: writes to C:\\Users\\au19277\\MarkDownIt-debug.log
-static void mdi_log(const wchar_t* msg) {
-    HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-debug.log",
-        FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
-        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h != INVALID_HANDLE_VALUE) {
-        SetFilePointer(h, 0, nullptr, FILE_END);
-        DWORD written;
-        WriteFile(h, msg, (DWORD)(wcslen(msg) * sizeof(wchar_t)), &written, nullptr);
-        WriteFile(h, L"\r\n", 4, &written, nullptr);
-        CloseHandle(h);
-    }
-    OutputDebugStringW(msg);
-    OutputDebugStringW(L"\n");
-}
-
 void AppWindow::OpenFile(const std::wstring& path) {
-    mdi_log((std::wstring(L"[MDI] OpenFile: ") + path).c_str());
+    // Exit edit mode: destroy caret, invalidate ribbon state.
+    if (editing_) {
+        SetEdit(false);
+    }
     std::ifstream f(path.c_str(), std::ios::binary);
-    mdi_log(L"[MDI] OpenFile: step 1 - opening ifstream");
     if (!f.is_open()) {
         MessageBoxW(hwnd_, L"Could not open file", L"MarkDownIt", MB_ICONWARNING);
         return;
@@ -753,7 +735,6 @@ void AppWindow::OpenFile(const std::wstring& path) {
     std::stringstream ss;
     ss << f.rdbuf();
     std::string raw = ss.str();
-    mdi_log(L"[MDI] OpenFile: step 2 - reading file");
 
     // Detect BOM (UTF-8 BOM: EF BB BF)
     has_bom_ = (raw.size() >= 3 &&
@@ -761,17 +742,14 @@ void AppWindow::OpenFile(const std::wstring& path) {
         (unsigned char)raw[1] == 0xBB &&
         (unsigned char)raw[2] == 0xBF);
     std::string utf8 = has_bom_ ? raw.substr(3) : raw;
-    mdi_log(L"[MDI] OpenFile: step 3 - BOM/CRLF detect");
 
     // Detect line endings: check for CR LF (0x0D 0x0A)
     use_crlf_ = (utf8.find("\x0D\x0A") != std::string::npos);
 
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
-    mdi_log(L"[MDI] OpenFile: step 4 - ParseMarkdown");
     buffer_.SetText(utf8);
     undo_stack_.Clear();
-    mdi_log(L"[MDI] OpenFile: step 5 - ParseMarkdown done");
     file_path_ = path;
     ClearDirty();
     scrollY_ = 0.0f;
@@ -780,7 +758,6 @@ void AppWindow::OpenFile(const std::wstring& path) {
     layout_cache_.Clear();
 
     std::wstring title = L"MarkDownIt";
-    mdi_log(L"[MDI] OpenFile: step 6 - title bar");
     size_t slash = path.find_last_of(L"\\/");
     std::wstring base = (slash != std::wstring::npos)
         ? path.substr(slash + 1) : path;
@@ -789,17 +766,12 @@ void AppWindow::OpenFile(const std::wstring& path) {
 
     UpdateScrollInfo();
     // Force render target recreation — the D2D hwnd target can become
-    mdi_log(L"[MDI] OpenFile: step 7 - UpdateScrollInfo");
     // invalid after the GetOpenFileNameW modal dialog closes.
     SafeRelease(rt_);
-    mdi_log(L"[MDI] OpenFile: rt released, redrawing");
-    mdi_log(L"[MDI] OpenFile: step 8 - SafeRelease rt_");
     RedrawWindow(hwnd_content_, nullptr, nullptr,
         RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
-    mdi_log(L"[MDI] OpenFile: redraw done, starting watcher");
 
     watcher_.Start(hwnd_, path);
-    mdi_log(L"[MDI] OpenFile: complete");
 }
 
 void AppWindow::Reload() {
@@ -1032,13 +1004,10 @@ void AppWindow::RecreateRenderTarget() {
 }
 
 void AppWindow::OnContentPaint(HWND hwnd) {
-    mdi_log(L"[MDI] OnContentPaint: entered");
     if (!rt_) {
-        mdi_log(L"[MDI] OnContentPaint: rt_ null, recreating");
-        RecreateRenderTarget();
-        if (!rt_) { mdi_log(L"[MDI] OnContentPaint: recreate failed"); ValidateRect(hwnd, nullptr); return; }
+            RecreateRenderTarget();
+        if (!rt_) { ValidateRect(hwnd, nullptr); return; }
     }
-    mdi_log(L"[MDI] OnContentPaint: rt_ OK, measuring");
 
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
@@ -1068,34 +1037,11 @@ void AppWindow::OnContentPaint(HWND hwnd) {
 }
 
 
-// SEH wrapper: pass the std::wstring by reference, no C++ temporaries.
-// The function itself must not have any C++ objects with destructors.
-static void OpenFileSEHInner(AppWindow* app, const std::wstring& path) {
-    __try {
-        app->OpenFile(path);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        DWORD code = GetExceptionCode();
-        wchar_t buf[256];
-        swprintf_s(buf, 256, L"[MDI] CRASH in OpenFile: exception 0x%08X", code);
-        OutputDebugStringW(buf);
-        OutputDebugStringW(L"\n");
-        mdi_log(buf);
-    }
-}
-
-static void OpenFileSEH(AppWindow* app, const wchar_t* path) {
-    std::wstring ws(path);
-    OpenFileSEHInner(app, ws);
-}
-
 void AppWindow::ProcessPendingFile() {
-    mdi_log(L"[MDI] ProcessPendingFile: entered");
-    if (pending_file_.empty()) { mdi_log(L"[MDI] ProcessPendingFile: empty, returning"); return; }
+    if (pending_file_.empty()) return;
     std::wstring path;
     path.swap(pending_file_);
-    mdi_log((std::wstring(L"[MDI] ProcessPendingFile: calling OpenFile: ") + path).c_str());
-    OpenFileSEH(this, path.c_str());
-    mdi_log(L"[MDI] ProcessPendingFile: OpenFile returned");
+    OpenFile(path);
 }
 
 void AppWindow::MarkDirty() {
@@ -1743,10 +1689,8 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             } else if (wp == 3) {
                 // Open file from command line after init is complete.
                 KillTimer(hwnd_, 3);
-                mdi_log(L"[MDI] WM_TIMER 3: about to call ProcessPendingFile");
-                ProcessPendingFile();
-                mdi_log(L"[MDI] WM_TIMER 3: ProcessPendingFile returned");
-            }
+                            ProcessPendingFile();
+                        }
             return 0;
         case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
         case WM_ERASEBKGND: return 1;
