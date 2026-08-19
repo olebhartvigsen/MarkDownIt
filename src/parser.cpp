@@ -13,6 +13,8 @@
 #include <chrono>
 
 #include <cstring>
+#include <cstdio>
+#include <windows.h>
 #include <stack>
 #include <string>
 #include <vector>
