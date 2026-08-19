@@ -254,7 +254,7 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                         u16Start, u16End - u16Start,
                         origin2.x, origin2.y, htm, 64, &hitCount);
                     if (SUCCEEDED(hrHit)) {
-                        for (UINT32 h = 0; h < hitCount; ++h) {
+                        for (UINT32 h = 0; h < hitCount && h < 64; ++h) {
                             D2D1_RECT_F r = D2D1::RectF(
                                 htm[h].left, htm[h].top,
                                 htm[h].left + htm[h].width,
@@ -494,7 +494,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                 cellOrigin.x, cellOrigin.y,
                                 htm, 64, &hitCount);
                             if (SUCCEEDED(hrHit)) {
-                                for (UINT32 h = 0; h < hitCount; ++h) {
+                                for (UINT32 h = 0; h < hitCount && h < 64; ++h) {
                                     D2D1_RECT_F r = D2D1::RectF(
                                         htm[h].left, htm[h].top,
                                         htm[h].left + htm[h].width,
@@ -940,14 +940,16 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 if (s.code) {
                     UINT32 hitCount = 0;
                     DWRITE_HIT_TEST_METRICS htm[64];
-                    layout->HitTestTextRange(s.start, s.length,
+                    HRESULT hrHT = layout->HitTestTextRange(s.start, s.length,
                         textX, curY, htm, 64, &hitCount);
-                    for (UINT32 h = 0; h < hitCount; ++h) {
-                        D2D1_RECT_F r = D2D1::RectF(
-                            htm[h].left - 2.0f, htm[h].top,
-                            htm[h].left + htm[h].width + 2.0f,
-                            htm[h].top + htm[h].height);
-                        rt->FillRectangle(r, codeBg);
+                    if (SUCCEEDED(hrHT)) {
+                        for (UINT32 h = 0; h < hitCount && h < 64; ++h) {
+                            D2D1_RECT_F r = D2D1::RectF(
+                                htm[h].left - 2.0f, htm[h].top,
+                                htm[h].left + htm[h].width + 2.0f,
+                                htm[h].top + htm[h].height);
+                            rt->FillRectangle(r, codeBg);
+                        }
                     }
                 }
             }
@@ -1002,7 +1004,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                         u16Start, u16End - u16Start,
                         textX, curY, htm, 64, &hitCount);
                     if (SUCCEEDED(hrHit)) {
-                        for (UINT32 h = 0; h < hitCount; ++h) {
+                        for (UINT32 h = 0; h < hitCount && h < 64; ++h) {
                             D2D1_RECT_F r = D2D1::RectF(
                                 htm[h].left, htm[h].top,
                                 htm[h].left + htm[h].width,

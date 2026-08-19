@@ -1100,7 +1100,6 @@ void AppWindow::RecreateRenderTarget() {
 }
 
 void AppWindow::OnContentPaint(HWND hwnd) {
-    static int paint_count = 0; paint_count++;
     if (!rt_) {
             RecreateRenderTarget();
         if (!rt_) { ValidateRect(hwnd, nullptr); return; }
