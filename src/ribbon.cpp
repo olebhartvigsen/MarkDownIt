@@ -303,10 +303,11 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         if (nCmdID == IDC_CMD_ASSOC_MD)
         {
             bool on = (m_pApp && m_pApp->IsMdRegistered());
-            ppropvarNewValue->vt = VT_LPWSTR;
-            ppropvarNewValue->pwszVal = on
+            const wchar_t* lbl = on
                 ? L"Unassociate .md files"
                 : L"Associate .md files";
+            ppropvarNewValue->vt = VT_LPWSTR;
+            ppropvarNewValue->pwszVal = SysAllocString(lbl);
             return S_OK;
         }
         static const UINT widthCmds[4] = {
@@ -319,10 +320,17 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         for (int i = 0; i < 4; ++i) {
             if (nCmdID == widthCmds[i]) {
                 int mode = m_pApp ? m_pApp->GetContentWidthMode() : 0;
+                const wchar_t* lbl = widthLabels[i];
+                if (mode == i) {
+                    // Prefix with check mark for the active width.
+                    wchar_t buf[40];
+                    buf[0] = (wchar_t)0x2713;  // check mark
+                    buf[1] = L' ';
+                    wcsncpy_s(buf + 2, 38, lbl, _TRUNCATE);
+                    lbl = buf;
+                }
                 ppropvarNewValue->vt = VT_LPWSTR;
-                ppropvarNewValue->pwszVal = (mode == i)
-                    ? const_cast<wchar_t*>(L"\u2713")  // checkmark
-                    : widthLabels[i];
+                ppropvarNewValue->pwszVal = SysAllocString(lbl);
                 return S_OK;
             }
         }
