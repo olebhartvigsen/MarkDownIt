@@ -171,6 +171,19 @@ std::string attr_to_string(const MD_ATTRIBUTE& attr) {
 }
 
 // Find the start of the line containing the given byte offset.
+static void parser_dbg(const char* msg) {
+    HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-parser.log",
+        FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h != INVALID_HANDLE_VALUE) {
+        SetFilePointer(h, 0, nullptr, FILE_END);
+        DWORD written;
+        WriteFile(h, msg, (DWORD)strlen(msg), &written, nullptr);
+        WriteFile(h, "\r\n", 2, &written, nullptr);
+        CloseHandle(h);
+    }
+}
+
 uint32_t BlockLineStart(const char* input, uint32_t offset) {
     while (offset > 0 && input[offset - 1] != '\n') {
         offset--;
@@ -182,6 +195,7 @@ uint32_t BlockLineStart(const char* input, uint32_t offset) {
 
 int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
     auto* ctx = static_cast<ParserCtx*>(userdata);
+    { char buf[64]; snprintf(buf, 64, "enter_block type=%d", (int)type); parser_dbg(buf); }
 
     switch (type) {
         case MD_BLOCK_DOC:
@@ -349,6 +363,7 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
 
 int cb_enter_span(MD_SPANTYPE type, void* detail, void* userdata) {
     auto* ctx = static_cast<ParserCtx*>(userdata);
+    { char buf[64]; snprintf(buf, 64, "enter_span type=%d", (int)type); parser_dbg(buf); }
 
     SpanFrame frame{};
     frame.type = type;
@@ -394,6 +409,7 @@ int cb_leave_span(MD_SPANTYPE type, void* detail, void* userdata) {
 int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata) {
     auto* ctx = static_cast<ParserCtx*>(userdata);
     if (size == 0) return 0;
+    if (size < 200) { char buf[256]; snprintf(buf, 256, "cb_text type=%d size=%d", (int)type, (int)size); parser_dbg(buf); }
 
     int idx = current_node(*ctx);
     if (idx < 0) return 0;
