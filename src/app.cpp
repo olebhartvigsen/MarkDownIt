@@ -346,20 +346,14 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             float page = 0.0f;
             if (rt_) page = rt_->GetSize().height;
             else page = static_cast<float>(clientH_);
-            scrollY_ += page;
-            UpdateScrollInfo();
-            Repaint();
-            UpdateCaretPosition();
+            StartScrollAnimation(scrollY_ + page);
             break;
         }
         case VK_PRIOR: {  // Page Up
             float page = 0.0f;
             if (rt_) page = rt_->GetSize().height;
             else page = static_cast<float>(clientH_);
-            scrollY_ -= page;
-            UpdateScrollInfo();
-            Repaint();
-            UpdateCaretPosition();
+            StartScrollAnimation(scrollY_ - page);
             break;
         }
         case VK_F5:
@@ -753,6 +747,7 @@ void AppWindow::OpenFile(const std::wstring& path) {
     file_path_ = path;
     ClearDirty();
     scrollY_ = 0.0f;
+    StopScrollAnimation();
     totalH_ = 0.0f;
     sel_.Collapse({0});
     layout_cache_.Clear();
@@ -947,44 +942,106 @@ void AppWindow::OnContentSize(HWND hwnd, int width, int height) {
         RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
 }
 
+
+// Clamp a scroll position to valid range [0, maxScroll].
+float AppWindow::ClampScroll(float y) const {
+    float clientHDip = static_cast<float>(clientH_);
+    if (rt_) clientHDip = rt_->GetSize().height;
+    float maxScroll = 0.0f;
+    if (totalH_ > clientHDip) maxScroll = totalH_ - clientHDip;
+    if (y < 0.0f) y = 0.0f;
+    if (y > maxScroll) y = maxScroll;
+    return y;
+}
+
+// Start a smooth scroll animation from current scrollY_ to targetY.
+void AppWindow::StartScrollAnimation(float targetY) {
+    targetY = ClampScroll(targetY);
+    if (std::fabs(targetY - scrollY_) < 0.5f) {
+        scrollY_ = targetY;
+        UpdateScrollInfo();
+        return;
+    }
+    scroll_anim_start_ = scrollY_;
+    scroll_anim_target_ = targetY;
+    scroll_anim_start_time_ = GetTickCount();
+    if (!scroll_timer_) {
+        scroll_timer_ = SetTimer(hwnd_content_, 4, 16, nullptr);
+    }
+}
+
+// Stop the scroll animation timer.
+void AppWindow::StopScrollAnimation() {
+    if (scroll_timer_) {
+        KillTimer(hwnd_content_, scroll_timer_);
+        scroll_timer_ = 0;
+    }
+}
+
+// Called on each tick of the scroll animation timer.
+void AppWindow::OnScrollTimer() {
+    DWORD elapsed = GetTickCount() - scroll_anim_start_time_;
+    if (elapsed >= SCROLL_ANIM_MS) {
+        // Animation complete.
+        scrollY_ = scroll_anim_target_;
+        StopScrollAnimation();
+    } else {
+        // Ease-out cubic: t=0..1, value = 1 - (1-t)^3
+        float t = static_cast<float>(elapsed) / static_cast<float>(SCROLL_ANIM_MS);
+        float eased = 1.0f - std::pow(1.0f - t, 3.0f);
+        scrollY_ = scroll_anim_start_ +
+            (scroll_anim_target_ - scroll_anim_start_) * eased;
+    }
+    UpdateScrollInfo();
+    Repaint();
+    UpdateCaretPosition();
+}
+
 void AppWindow::OnContentVScroll(HWND hwnd, int code, int pos) {
-    float oldY = scrollY_;
     float page = static_cast<float>(clientH_ > 0 ? clientH_ : 1);
     if (rt_) {
         D2D1_SIZE_F rtSize = rt_->GetSize();
         page = rtSize.height;
     }
 
+    float targetY = scrollY_;
     switch (code) {
-        case SB_LINEUP:        scrollY_ -= 30.0f; break;
-        case SB_LINEDOWN:       scrollY_ += 30.0f; break;
-        case SB_PAGEUP:         scrollY_ -= page;  break;
-        case SB_PAGEDOWN:       scrollY_ += page;  break;
+        case SB_LINEUP:        targetY = scrollY_ - 30.0f; break;
+        case SB_LINEDOWN:       targetY = scrollY_ + 30.0f; break;
+        case SB_PAGEUP:         targetY = scrollY_ - page;  break;
+        case SB_PAGEDOWN:       targetY = scrollY_ + page;  break;
         case SB_THUMBTRACK:
         case SB_THUMBPOSITION: {
             SCROLLINFO si = {};
             si.cbSize = sizeof(si);
             si.fMask = SIF_TRACKPOS;
             GetScrollInfo(hwnd, SB_VERT, &si);
+            // Thumb tracking: jump immediately for responsive drag.
+            StopScrollAnimation();
             scrollY_ = static_cast<float>(si.nTrackPos);
-            break;
+            UpdateScrollInfo();
+            Repaint();
+            UpdateCaretPosition();
+            return;
         }
-        case SB_TOP:     scrollY_ = 0.0f; break;
-        case SB_BOTTOM:  scrollY_ = totalH_; break;
+        case SB_TOP:     targetY = 0.0f; break;
+        case SB_BOTTOM:  targetY = totalH_; break;
     }
 
-    UpdateScrollInfo();
-    if (std::fabs(scrollY_ - oldY) > 0.01f) Repaint();
-    UpdateCaretPosition();
+    StartScrollAnimation(targetY);
 }
 
 void AppWindow::OnContentMouseWheel(HWND hwnd, int delta) {
-    float oldY = scrollY_;
-    float step = 120.0f;
-    scrollY_ -= (delta / WHEEL_DELTA) * step * 3.0f;
-    UpdateScrollInfo();
-    if (std::fabs(scrollY_ - oldY) > 0.01f) Repaint();
-    UpdateCaretPosition();
+    // Smooth scroll: accumulate wheel input into the animation target.
+    // Each wheel notch scrolls 3 lines worth (same as before), but the
+    // motion is animated over SCROLL_ANIM_MS for a smooth glide.
+    float step = 120.0f * 3.0f;  // 3x line height per notch
+    float deltaScroll = -static_cast<float>(delta) / static_cast<float>(WHEEL_DELTA) * step;
+
+    // If an animation is running, continue from its target so rapid
+    // wheel spins build up momentum naturally.
+    float currentTarget = scroll_timer_ ? scroll_anim_target_ : scrollY_;
+    StartScrollAnimation(currentTarget + deltaScroll);
 }
 
 void AppWindow::RecreateRenderTarget() {
@@ -1578,6 +1635,7 @@ void AppWindow::Outdent() {
 }
 
 void AppWindow::OnDestroy() {
+    StopScrollAnimation();
     SaveWinPlacement(hwnd_);
     DestroyRibbon();
     watcher_.Stop();
@@ -1690,7 +1748,10 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 // Open file from command line after init is complete.
                 KillTimer(hwnd_, 3);
                             ProcessPendingFile();
-                        }
+                        } else if (wp == 4) {
+                // Smooth scroll animation tick.
+                OnScrollTimer();
+            }
             return 0;
         case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
         case WM_ERASEBKGND: return 1;

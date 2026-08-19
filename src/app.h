@@ -100,10 +100,20 @@ private:
     FileWatcher            watcher_;
 
     // Scroll state (in DIPs)
-    float  scrollY_    = 0.0f;
+    float  scrollY_    = 0.0f;  // current scroll position (animated)
+    float  targetY_   = 0.0f;  // target scroll position for animation
     float  totalH_     = 0.0f;
     int    clientW_    = 0;
     int    clientH_    = 0;
+
+    // Smooth scroll animation
+    UINT_PTR scroll_timer_ = 0;
+    float  scroll_vel_  = 0.0f;  // velocity for inertial scrolling
+    float  scroll_anim_start_ = 0.0f;  // start value for ease-out
+    float  scroll_anim_target_ = 0.0f;  // target value for ease-out
+    DWORD  scroll_anim_start_time_ = 0;  // GetTickCount at animation start
+    static const DWORD SCROLL_ANIM_MS = 220;  // animation duration
+    float  ClampScroll(float y) const;
 
     // Editor state
     TextBuffer   buffer_;
@@ -137,6 +147,9 @@ private:
     void OnContentPaint(HWND hwnd);
     void OnContentVScroll(HWND hwnd, int code, int pos);
     void OnContentMouseWheel(HWND hwnd, int delta);
+    void StartScrollAnimation(float targetY);
+    void OnScrollTimer();
+    void StopScrollAnimation();
     void OnContentSize(HWND hwnd, int width, int height);
     void OnDropFiles(HWND hwnd, HDROP hDrop);
     void OnReload();
