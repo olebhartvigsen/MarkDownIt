@@ -17,19 +17,6 @@
 #include <cmath>
 
 
-static void mdi_debug(const wchar_t* msg) {
-    HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-debug.log",
-        FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
-        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h != INVALID_HANDLE_VALUE) {
-        SetFilePointer(h, 0, nullptr, FILE_END);
-        DWORD written;
-        WriteFile(h, msg, (DWORD)(wcslen(msg) * sizeof(wchar_t)), &written, nullptr);
-        WriteFile(h, L"\r\n", 4, &written, nullptr);
-        CloseHandle(h);
-    }
-}
-
 const wchar_t* AppWindow::kClassName = L"MarkDownItWindow";
 const wchar_t* AppWindow::kContentClassName = L"MarkDownItContent";
 
@@ -50,7 +37,6 @@ static UINT GetWindowDpi(HWND hwnd) {
 
 AppWindow::AppWindow() {}
 AppWindow::~AppWindow() {
-    mdi_debug(L"[MDI] OpenFile: before SafeRelease rt_");
     SafeRelease(rt_);
     SafeRelease(d2d_factory_);
     SafeRelease(dw_factory_);
@@ -735,13 +721,11 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
 }
 
 void AppWindow::OpenFile(const std::wstring& path) {
-    mdi_debug(L"[MDI] OpenFile enter");
     // Exit edit mode: destroy caret, invalidate ribbon state.
     if (editing_) {
         SetEdit(false);
     }
     std::ifstream f(path.c_str(), std::ios::binary);
-    mdi_debug(L"[MDI] OpenFile: ifstream opened");
     if (!f.is_open()) {
         MessageBoxW(hwnd_, L"Could not open file", L"MarkDownIt", MB_ICONWARNING);
         return;
@@ -756,16 +740,13 @@ void AppWindow::OpenFile(const std::wstring& path) {
         (unsigned char)raw[1] == 0xBB &&
         (unsigned char)raw[2] == 0xBF);
     std::string utf8 = has_bom_ ? raw.substr(3) : raw;
-    mdi_debug(L"[MDI] OpenFile: BOM detected");
 
     // Detect line endings: check for CR LF (0x0D 0x0A)
     use_crlf_ = (utf8.find("\x0D\x0A") != std::string::npos);
 
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
-    mdi_debug(L"[MDI] OpenFile: ParseMarkdown done");
     buffer_.SetText(utf8);
-    mdi_debug(L"[MDI] OpenFile: SetText done");
     undo_stack_.Clear();
     file_path_ = path;
     ClearDirty();
@@ -785,12 +766,10 @@ void AppWindow::OpenFile(const std::wstring& path) {
     UpdateScrollInfo();
     // Force render target recreation — the D2D hwnd target can become
     // invalid after the GetOpenFileNameW modal dialog closes.
-    mdi_debug(L"[MDI] OpenFile: before SafeRelease rt_");
     SafeRelease(rt_);
     RedrawWindow(hwnd_content_, nullptr, nullptr,
         RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
 
-    mdi_debug(L"[MDI] OpenFile: before watcher_.Start");
     watcher_.Start(hwnd_, path);
 }
 
@@ -805,9 +784,7 @@ void AppWindow::Reload() {
     float savedY = scrollY_;
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
-    mdi_debug(L"[MDI] OpenFile: ParseMarkdown done");
     buffer_.SetText(utf8);
-    mdi_debug(L"[MDI] OpenFile: SetText done");
     undo_stack_.Clear();
     UpdateScrollInfo();
     if (scrollY_ > savedY) scrollY_ = savedY;
@@ -983,7 +960,6 @@ float AppWindow::ClampScroll(float y) const {
 
 // Start a smooth scroll animation from current scrollY_ to targetY.
 void AppWindow::StartScrollAnimation(float targetY) {
-    mdi_debug(L"[MDI] StartScrollAnimation enter");
     targetY = ClampScroll(targetY);
     if (std::fabs(targetY - scrollY_) < 0.5f) {
         scrollY_ = targetY;
@@ -1008,22 +984,22 @@ void AppWindow::StopScrollAnimation() {
 
 // Called on each tick of the scroll animation timer.
 void AppWindow::OnScrollTimer() {
-    mdi_debug(L"[MDI] OnScrollTimer tick");
     DWORD elapsed = GetTickCount() - scroll_anim_start_time_;
-    if (elapsed >= SCROLL_ANIM_MS) {
+    DWORD animMs = is_trackpad_ ? 80 : SCROLL_ANIM_MS;
+    if (elapsed >= animMs) {
         // Animation complete.
         scrollY_ = scroll_anim_target_;
         StopScrollAnimation();
     } else {
         // Ease-out cubic: t=0..1, value = 1 - (1-t)^3
-        float t = static_cast<float>(elapsed) / static_cast<float>(SCROLL_ANIM_MS);
+        float t = static_cast<float>(elapsed) / static_cast<float>(animMs);
         float eased = 1.0f - std::pow(1.0f - t, 3.0f);
         scrollY_ = scroll_anim_start_ +
             (scroll_anim_target_ - scroll_anim_start_) * eased;
     }
     UpdateScrollInfo();
     Repaint();
-    UpdateCaretPosition();
+    if (editing_) UpdateCaretPosition();
 }
 
 void AppWindow::OnContentVScroll(HWND hwnd, int code, int pos) {
@@ -1061,20 +1037,51 @@ void AppWindow::OnContentVScroll(HWND hwnd, int code, int pos) {
 }
 
 void AppWindow::OnContentMouseWheel(HWND hwnd, int delta) {
-    // Smooth scroll: accumulate wheel input into the animation target.
-    // Each wheel notch scrolls 3 lines worth (same as before), but the
-    // motion is animated over SCROLL_ANIM_MS for a smooth glide.
-    float step = 120.0f * 3.0f;  // 3x line height per notch
-    float deltaScroll = -static_cast<float>(delta) / static_cast<float>(WHEEL_DELTA) * step;
+    // Distinguish mouse wheel (delta=120 per notch, infrequent) from
+    // precision trackpad (small deltas like 1-30, high frequency).
+    DWORD now = GetTickCount();
+    DWORD timeSinceLast = now - last_wheel_time_;
+    last_wheel_time_ = now;
 
-    // If an animation is running, continue from its target so rapid
-    // wheel spins build up momentum naturally.
-    float currentTarget = scroll_timer_ ? scroll_anim_target_ : scrollY_;
-    StartScrollAnimation(currentTarget + deltaScroll);
+    bool isTrackpad = (std::abs(delta) < WHEEL_DELTA) || (timeSinceLast < 80);
+    is_trackpad_ = isTrackpad;
+
+    float deltaScroll;
+    if (isTrackpad) {
+        // Trackpad: 1:1 mapping, minimal animation for responsiveness.
+        // Scale to feel natural (trackpad deltas are small).
+        deltaScroll = -static_cast<float>(delta) * 0.5f;
+    } else {
+        // Mouse wheel: 3 lines per notch, smooth animation.
+        float step = 120.0f * 3.0f;
+        deltaScroll = -static_cast<float>(delta) / static_cast<float>(WHEEL_DELTA) * step;
+    }
+
+    if (isTrackpad) {
+        // Trackpad: near-instant response. Set scrollY_ directly for
+        // most of the delta, with a tiny residual animation for smoothness.
+        float newTarget = ClampScroll(scrollY_ + deltaScroll);
+        if (scroll_timer_) {
+            // Already animating: update target but don't restart.
+            scroll_anim_target_ = newTarget;
+        } else if (std::fabs(newTarget - scrollY_) > 0.5f) {
+            // Start a short animation (80ms for trackpad).
+            scroll_anim_start_ = scrollY_;
+            scroll_anim_target_ = newTarget;
+            scroll_anim_start_time_ = now;
+            scroll_timer_ = SetTimer(hwnd_content_, 4, 16, nullptr);
+        }
+    } else {
+        // Mouse wheel: full smooth animation.
+        if (scroll_timer_) {
+            scroll_anim_target_ = ClampScroll(scroll_anim_target_ + deltaScroll);
+        } else {
+            StartScrollAnimation(scrollY_ + deltaScroll);
+        }
+    }
 }
 
 void AppWindow::RecreateRenderTarget() {
-    mdi_debug(L"[MDI] OpenFile: before SafeRelease rt_");
     SafeRelease(rt_);
     if (d2d_factory_ && hwnd_content_) {
         RECT rc;
@@ -1092,7 +1099,6 @@ void AppWindow::RecreateRenderTarget() {
 
 void AppWindow::OnContentPaint(HWND hwnd) {
     static int paint_count = 0; paint_count++;
-    if (paint_count <= 3) { wchar_t b[32]; swprintf_s(b, 32, L"[MDI] OnContentPaint #%d", paint_count); mdi_debug(b); }
     if (!rt_) {
             RecreateRenderTarget();
         if (!rt_) { ValidateRect(hwnd, nullptr); return; }
@@ -1127,7 +1133,6 @@ void AppWindow::OnContentPaint(HWND hwnd) {
 
 
 void AppWindow::ProcessPendingFile() {
-    mdi_debug(L"[MDI] ProcessPendingFile enter");
     if (pending_file_.empty()) return;
     std::wstring path;
     path.swap(pending_file_);
@@ -1269,7 +1274,6 @@ void AppWindow::OnClose() {
 }
 
 void AppWindow::SetEdit(bool on) {
-    mdi_debug(L"[MDI] SetEdit called");
     editing_ = on;
     if (on && has_focus_ && !caret_visible_) {
         float cx, cy, ch;
@@ -1674,7 +1678,6 @@ void AppWindow::OnDestroy() {
     DestroyRibbon();
     watcher_.Stop();
     renderer_.Release();
-    mdi_debug(L"[MDI] OpenFile: before SafeRelease rt_");
     SafeRelease(rt_);
     SafeRelease(dw_factory_);
     SafeRelease(d2d_factory_);

@@ -122,6 +122,8 @@ private:
     float  scroll_anim_target_ = 0.0f;  // target value for ease-out
     DWORD  scroll_anim_start_time_ = 0;  // GetTickCount at animation start
     static const DWORD SCROLL_ANIM_MS = 220;  // animation duration
+    DWORD  last_wheel_time_ = 0;  // for trackpad vs mouse detection
+    bool   is_trackpad_ = false;  // true if recent input looks like trackpad
     float  ClampScroll(float y) const;
 
     // Editor state
