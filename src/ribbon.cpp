@@ -295,27 +295,34 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         }
     }
 
-    // Settings toggle buttons (Fil menu): file association + width modes.
-    if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
+    // Settings buttons (Fil menu): dynamic labels reflect current state.
+    // cmdAssocMd shows "Associate .md files" or "Unassociate .md files".
+    // Width buttons show a checkmark prefix when active.
+    if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_Label))
     {
         if (nCmdID == IDC_CMD_ASSOC_MD)
         {
-            ppropvarNewValue->vt = VT_BOOL;
-            ppropvarNewValue->boolVal =
-                (m_pApp && m_pApp->IsMdRegistered())
-                    ? VARIANT_TRUE : VARIANT_FALSE;
+            bool on = (m_pApp && m_pApp->IsMdRegistered());
+            ppropvarNewValue->vt = VT_LPWSTR;
+            ppropvarNewValue->pwszVal = on
+                ? L"Unassociate .md files"
+                : L"Associate .md files";
             return S_OK;
         }
         static const UINT widthCmds[4] = {
             IDC_CMD_WIDTH_STD, IDC_CMD_WIDTH_960,
             IDC_CMD_WIDTH_1600, IDC_CMD_WIDTH_FULL
         };
+        static const wchar_t* widthLabels[4] = {
+            L"Standard", L"960 px", L"1600 px", L"Full width"
+        };
         for (int i = 0; i < 4; ++i) {
             if (nCmdID == widthCmds[i]) {
-                ppropvarNewValue->vt = VT_BOOL;
-                ppropvarNewValue->boolVal =
-                    (m_pApp && m_pApp->GetContentWidthMode() == i)
-                        ? VARIANT_TRUE : VARIANT_FALSE;
+                int mode = m_pApp ? m_pApp->GetContentWidthMode() : 0;
+                ppropvarNewValue->vt = VT_LPWSTR;
+                ppropvarNewValue->pwszVal = (mode == i)
+                    ? const_cast<wchar_t*>(L"\u2713")  // checkmark
+                    : widthLabels[i];
                 return S_OK;
             }
         }

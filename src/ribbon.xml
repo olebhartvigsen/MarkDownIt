@@ -338,6 +338,11 @@
         <String>Full width</String>
       </Command.LabelTitle>
     </Command>
+    <Command Name="cmdWidthMenu" Symbol="IDC_CMD_WIDTH_MENU" Id="10605">
+      <Command.LabelTitle>
+        <String>Document Width</String>
+      </Command.LabelTitle>
+    </Command>
   </Application.Commands>
   <Application.Views>
     <Ribbon>
@@ -347,13 +352,17 @@
             <Button CommandName="cmdAbout" />
           </MenuGroup>
           <MenuGroup Class="MajorItems">
-            <ToggleButton CommandName="cmdAssocMd" />
+            <Button CommandName="cmdAssocMd" />
           </MenuGroup>
           <MenuGroup Class="MajorItems">
-            <ToggleButton CommandName="cmdWidthStandard" />
-            <ToggleButton CommandName="cmdWidth960" />
-            <ToggleButton CommandName="cmdWidth1600" />
-            <ToggleButton CommandName="cmdWidthFull" />
+            <DropDownButton CommandName="cmdWidthMenu">
+              <MenuGroup Class="MajorItems">
+                <Button CommandName="cmdWidthStandard" />
+                <Button CommandName="cmdWidth960" />
+                <Button CommandName="cmdWidth1600" />
+                <Button CommandName="cmdWidthFull" />
+              </MenuGroup>
+            </DropDownButton>
           </MenuGroup>
         </ApplicationMenu>
       </Ribbon.ApplicationMenu>
