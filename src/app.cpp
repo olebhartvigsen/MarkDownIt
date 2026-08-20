@@ -977,12 +977,13 @@ float AppWindow::ClampScroll(float y) const {
 // SB_THUMBTRACK (scrollbar drag) bypasses all physics — instant jump.
 // ─────────────────────────────────────────────────────────────────
 
-// Spring constants (tuned for ~350 ms settle with critical damping).
-static const float SPRING_STIFFNESS = 0.045f;   // per 16ms tick
-static const float SPRING_DAMPING   = 0.22f;     // per 16ms tick
-static const float SPRING_SETTLE    = 0.3f;      // settle threshold (px)
+// Spring constants (tuned for ~300 ms settle with critical damping).
+static const float SPRING_STIFFNESS = 0.12f;  // per 16ms tick (stiffer = faster settle)
+static const float SPRING_DAMPING   = 0.45f;   // per 16ms tick (higher = less oscillation)
+static const float SPRING_SETTLE    = 0.5f;    // stop when within 0.5px of target
+static const float SPRING_MIN_VEL   = 0.3f;    // stop when velocity below this
 
-// Mouse wheel: 3 lines × 26 px per notch = 78 px.
+// Mouse wheel: pixels per notch (WHEEL_DELTA = 120).
 static const float WHEEL_STEP_PX = 78.0f;
 
 // Trackpad: scale raw delta to screen DIPs.
@@ -1090,7 +1091,7 @@ void AppWindow::OnScrollTick() {
         Repaint();
         if (editing_) UpdateCaretPosition();
 
-        if (std::fabs(momentum_vel_) < 0.3f && std::fabs(diff) < SPRING_SETTLE) {
+        if (std::fabs(momentum_vel_) < SPRING_MIN_VEL && std::fabs(diff) < SPRING_SETTLE) {
             scrollY_ = spring_target_;
             StopScrollTimer();
             UpdateScrollInfo();
@@ -1167,12 +1168,12 @@ void AppWindow::OnContentVScroll(HWND hwnd, int code, int pos) {
 // ── Mouse wheel / trackpad ────────────────────────────────────────
 void AppWindow::OnContentMouseWheel(HWND hwnd, int delta) {
     DWORD now = GetTickCount();
-    DWORD timeSinceLast = now - last_wheel_time_;
     last_wheel_time_ = now;
 
-    // Distinguish mouse wheel (|delta| ≥ 120, ≥80 ms apart) from
-    // precision trackpad (small deltas, high frequency <80 ms).
-    bool isTrackpad = (std::abs(delta) < WHEEL_DELTA) || (timeSinceLast < 80);
+    // Distinguish trackpad (small deltas) from mouse wheel (WHEEL_DELTA=120).
+    // A precision trackpad sends small deltas (1-30) in rapid succession.
+    // Only use delta magnitude — timing alone catches fast mouse scrolling.
+    bool isTrackpad = (std::abs(delta) < WHEEL_DELTA);
     is_trackpad_ = isTrackpad;
 
     if (isTrackpad) {
