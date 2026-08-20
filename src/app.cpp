@@ -1858,9 +1858,38 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 // Content child window WndProc.
 // Handles WM_PAINT, WM_VSCROLL, WM_MOUSEWHEEL, WM_KEYDOWN, WM_SIZE.
 //
+
+// SEH crash handler for rendering.
+static DWORD g_crash_exception = 0;
+static void* g_crash_address = nullptr;
+
+static void RenderSEH(AppWindow* app, HWND hwnd) {
+    __try {
+        app->OnContentPaint(hwnd);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        g_crash_exception = GetExceptionCode();
+        g_crash_address = GetExceptionInformation()->ExceptionRecord->ExceptionAddress;
+        // Log to file
+        wchar_t buf[256];
+        swprintf_s(buf, 256, L"CRASH in OnContentPaint: 0x%08X at 0x%p",
+                   g_crash_exception, g_crash_address);
+        HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-crash.log",
+            FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
+            nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h != INVALID_HANDLE_VALUE) {
+            SetFilePointer(h, 0, nullptr, FILE_END);
+            DWORD written;
+            WriteFile(h, buf, (DWORD)(wcslen(buf) * sizeof(wchar_t)), &written, nullptr);
+            WriteFile(h, L"\r\n", 4, &written, nullptr);
+            CloseHandle(h);
+        }
+    }
+}
+
+
 LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
-        case WM_PAINT:     OnContentPaint(hwnd); return 0;
+        case WM_PAINT:     RenderSEH(this, hwnd); return 0;
         case WM_ERASEBKGND: return 1;  // D2D handles all painting
         case WM_LBUTTONDOWN: {
             int x = GET_X_LPARAM(lp);
