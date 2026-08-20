@@ -1111,11 +1111,7 @@ void AppWindow::OnContentPaint(HWND hwnd) {
 
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
-          }
-        }
         renderer_.Render(rt_, dw_factory_, doc_, size.width, scrollY_, 0.0f, &sel_);
-          }
-        }
     }
 
     HRESULT hr = rt_->EndDraw();
