@@ -280,6 +280,18 @@ HRESULT CRibbonCommandHandler::UpdatePropertyImpl(
     const PROPVARIANT* ppropvarCurrentValue,
     PROPVARIANT* ppropvarNewValue)
 {
+    // Debug logging
+    {
+        wchar_t buf2[128];
+        wsprintfW(buf2, L"UpdateProperty cmd=%d key=%d-%d\n", nCmdID, key.fmtid.Data1, key.pid);
+        HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-ribbon.log",
+            FILE_APPEND_DATA, FILE_SHARE_READ|FILE_SHARE_WRITE,
+            nullptr, OPEN_ALWAYS, 0, nullptr);
+        if (h != INVALID_HANDLE_VALUE) {
+            DWORD w; WriteFile(h, buf2, lstrlenW(buf2)*2, &w, nullptr);
+            CloseHandle(h);
+        }
+    }
     UNREFERENCED_PARAMETER(ppropvarCurrentValue);
 
     // The Ribbon framework queries the initial toggle state of the
@@ -405,6 +417,17 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     IUISimplePropertySet* pCommandExecutionProperties)
 {
     __try {
+    {
+        wchar_t buf2[128];
+        wsprintfW(buf2, L"Execute cmd=%d verb=%d\n", nCmdID, (int)verb);
+        HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-ribbon.log",
+            FILE_APPEND_DATA, FILE_SHARE_READ|FILE_SHARE_WRITE,
+            nullptr, OPEN_ALWAYS, 0, nullptr);
+        if (h != INVALID_HANDLE_VALUE) {
+            DWORD w; WriteFile(h, buf2, lstrlenW(buf2)*2, &w, nullptr);
+            CloseHandle(h);
+        }
+    }
     UNREFERENCED_PARAMETER(key);
     UNREFERENCED_PARAMETER(ppropvarValue);
     UNREFERENCED_PARAMETER(pCommandExecutionProperties);
