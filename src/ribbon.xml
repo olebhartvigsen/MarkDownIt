@@ -346,26 +346,6 @@
   </Application.Commands>
   <Application.Views>
     <Ribbon>
-      <Ribbon.ApplicationMenu>
-        <ApplicationMenu CommandName="cmdAppMenu">
-          <MenuGroup Class="MajorItems">
-            <Button CommandName="cmdAbout" />
-          </MenuGroup>
-          <MenuGroup Class="MajorItems">
-            <Button CommandName="cmdAssocMd" />
-          </MenuGroup>
-          <MenuGroup Class="MajorItems">
-            <DropDownButton CommandName="cmdWidthMenu">
-              <MenuGroup Class="MajorItems">
-                <Button CommandName="cmdWidthStandard" />
-                <Button CommandName="cmdWidth960" />
-                <Button CommandName="cmdWidth1600" />
-                <Button CommandName="cmdWidthFull" />
-              </MenuGroup>
-            </DropDownButton>
-          </MenuGroup>
-        </ApplicationMenu>
-      </Ribbon.ApplicationMenu>
       <Ribbon.Tabs>
         <Tab CommandName="cmdTabHome">
           <Group CommandName="cmdGroupFile" SizeDefinition="ThreeButtons">

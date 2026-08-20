@@ -178,11 +178,25 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow, const std::wstring& cmdLine)
     int w = 900, h = 640;
     int x = (sw - w) / 2, y = (sh - h) / 2;
 
+    // Build a standard Win32 menu bar (File menu) to replace the Ribbon
+    // ApplicationMenu popup, which looked non-standard.
+    HMENU hMenuBar  = CreateMenu();
+    HMENU hFileMenu = CreatePopupMenu();
+    AppendMenuW(hFileMenu, MF_STRING, IDC_CMD_ABOUT,    L"About MarkDownIt");
+    AppendMenuW(hFileMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(hFileMenu, MF_STRING, IDC_CMD_ASSOC_MD, L"Associate .md files");
+    AppendMenuW(hFileMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(hFileMenu, MF_STRING, IDC_CMD_WIDTH_STD,  L"Standard width");
+    AppendMenuW(hFileMenu, MF_STRING, IDC_CMD_WIDTH_960, L"960 px width");
+    AppendMenuW(hFileMenu, MF_STRING, IDC_CMD_WIDTH_1600,L"1600 px width");
+    AppendMenuW(hFileMenu, MF_STRING, IDC_CMD_WIDTH_FULL,L"Full width");
+    AppendMenuW(hMenuBar, MF_STRING | MF_POPUP, (UINT_PTR)hFileMenu, L"File");
+
     hwnd_ = CreateWindowExW(
         WS_EX_ACCEPTFILES, kClassName, L"MarkDownIt",
         WS_OVERLAPPEDWINDOW,
         x, y, w, h,
-        nullptr, nullptr, hInst, this);
+        nullptr, hMenuBar, hInst, this);
 
     if (!hwnd_) {
         MessageBoxW(nullptr, L"CreateWindow failed", L"MarkDownIt", MB_ICONERROR);
@@ -220,6 +234,9 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow, const std::wstring& cmdLine)
         // Apply content width setting to the renderer.
         renderer_.SetContentWidthMode(settings_.contentWidthMode);
     }
+
+    // Update the File menu checkmarks to reflect initial settings.
+    UpdateFileMenu();
 
     return true;
 }
@@ -907,7 +924,10 @@ void AppWindow::ResizeContentWindow() {
 
     RECT rc;
     GetClientRect(hwnd_, &rc);
-    int contentY = static_cast<int>(g_ribbonHeight);
+    // Account for the Win32 menu bar height (added when the File menu
+    // was moved from Ribbon ApplicationMenu to a standard menu bar).
+    int menuH = GetSystemMetrics(SM_CYMENU);
+    int contentY = static_cast<int>(g_ribbonHeight) + menuH;
     int contentH = rc.bottom - contentY;
     if (contentH < 1) contentH = 1;
 
@@ -1880,15 +1900,12 @@ bool AppWindow::IsMdRegistered() const {
 
 void AppWindow::ToggleMdAssociation() {
     settings_.fileAssoc = !settings_.fileAssoc;
-    if (settings_.fileAssoc) {
-        wchar_t exePath[MAX_PATH] = {};
-        GetModuleFileNameW(hinst_, exePath, MAX_PATH);
-        RegisterMdAssociation(exePath);
-    } else {
-        UnregisterMdAssociation();
+    // Defer all side effects (registry writes, SHChangeNotify,
+    // InvalidateUICommand) via PostMessage to avoid re-entrant calls
+    // inside the Ribbon's Execute callback, which causes a CTD.
+    if (hwnd_content_) {
+        PostMessage(hwnd_content_, WM_USER + 2, 0, 0);
     }
-    SaveSettings(settings_);
-    InvalidateSettingsButtons();
 }
 
 int AppWindow::GetContentWidthMode() const {
@@ -1923,6 +1940,35 @@ void AppWindow::InvalidateSettingsButtons() {
         g_pRibbonFramework->InvalidateUICommand(cmd,
             UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Label);
     }
+    // Also update the standard Win32 menu bar labels.
+    UpdateFileMenu();
+}
+
+void AppWindow::UpdateFileMenu() {
+    HMENU hBar = GetMenu(hwnd_);
+    if (!hBar) return;
+    HMENU hFile = GetSubMenu(hBar, 0);
+    if (!hFile) return;
+
+    // Associate .md files label
+    const wchar_t* assocLbl = settings_.fileAssoc
+        ? L"Unassociate .md files"
+        : L"Associate .md files";
+    ModifyMenuW(hFile, IDC_CMD_ASSOC_MD, MF_STRING, IDC_CMD_ASSOC_MD, assocLbl);
+
+    // Width items with checkmarks
+    struct { UINT id; const wchar_t* label; } items[] = {
+        { IDC_CMD_WIDTH_STD,  L"Standard width" },
+        { IDC_CMD_WIDTH_960,  L"960 px width" },
+        { IDC_CMD_WIDTH_1600, L"1600 px width" },
+        { IDC_CMD_WIDTH_FULL, L"Full width" },
+    };
+    for (int i = 0; i < 4; ++i) {
+        UINT flags = MF_STRING;
+        if (settings_.contentWidthMode == i) flags |= MF_CHECKED;
+        ModifyMenuW(hFile, items[i].id, flags, items[i].id, items[i].label);
+    }
+    DrawMenuBar(hwnd_);
 }
 
 //
@@ -1933,6 +1979,18 @@ void AppWindow::InvalidateSettingsButtons() {
 LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case WM_CREATE:    OnCreate(hwnd);    return 0;
+        case WM_COMMAND: {
+            // Menu bar commands (File menu).
+            switch (LOWORD(wp)) {
+            case IDC_CMD_ABOUT:      ShowAbout();           break;
+            case IDC_CMD_ASSOC_MD:   ToggleMdAssociation(); break;
+            case IDC_CMD_WIDTH_STD:  SetContentWidthMode(0); break;
+            case IDC_CMD_WIDTH_960:  SetContentWidthMode(1); break;
+            case IDC_CMD_WIDTH_1600: SetContentWidthMode(2); break;
+            case IDC_CMD_WIDTH_FULL: SetContentWidthMode(3); break;
+            }
+            return 0;
+        }
         case WM_DROPFILES: OnDropFiles(hwnd, (HDROP)wp); return 0;
         case WM_SIZE: {
             int w = LOWORD(lp), h = HIWORD(lp);
@@ -2028,6 +2086,18 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             UpdateScrollInfo();
             Repaint();
             return 0;
+        case WM_USER + 2: {  // Deferred .md association toggle
+            if (settings_.fileAssoc) {
+                wchar_t exePath[MAX_PATH] = {};
+                GetModuleFileNameW(hinst_, exePath, MAX_PATH);
+                RegisterMdAssociation(exePath);
+            } else {
+                UnregisterMdAssociation();
+            }
+            SaveSettings(settings_);
+            InvalidateSettingsButtons();
+            return 0;
+        }
         default: return DefWindowProcW(hwnd, msg, wp, lp);
     }
 }
