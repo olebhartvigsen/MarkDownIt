@@ -984,10 +984,10 @@ static const float SPRING_SETTLE    = 0.5f;    // stop when within 0.5px of targ
 static const float SPRING_MIN_VEL   = 0.3f;    // stop when velocity below this
 
 // Mouse wheel: pixels per notch (WHEEL_DELTA = 120).
-static const float WHEEL_STEP_PX = 78.0f;
+static const float WHEEL_STEP_PX = 120.0f;
 
 // Trackpad: scale raw delta to screen DIPs.
-static const float TRACKPAD_SCALE = 0.5f;
+static const float TRACKPAD_SCALE = 0.75f;
 
 // Momentum friction: vel *= FRICTION each 16ms tick.
 // 0.955 ≈ 3.5% velocity loss per tick ≈ ~2 s glide from 20 px/tick.
