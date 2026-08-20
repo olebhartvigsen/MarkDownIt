@@ -268,6 +268,18 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
     const PROPVARIANT* ppropvarCurrentValue,
     PROPVARIANT* ppropvarNewValue)
 {
+    __try {
+        return UpdatePropertyImpl(nCmdID, key, ppropvarCurrentValue, ppropvarNewValue);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        return E_NOTIMPL;
+    }
+}
+
+HRESULT CRibbonCommandHandler::UpdatePropertyImpl(
+    UINT nCmdID, REFPROPERTYKEY key,
+    const PROPVARIANT* ppropvarCurrentValue,
+    PROPVARIANT* ppropvarNewValue)
+{
     UNREFERENCED_PARAMETER(ppropvarCurrentValue);
 
     // The Ribbon framework queries the initial toggle state of the
@@ -392,6 +404,7 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     const PROPVARIANT* ppropvarValue,
     IUISimplePropertySet* pCommandExecutionProperties)
 {
+    __try {
     UNREFERENCED_PARAMETER(key);
     UNREFERENCED_PARAMETER(ppropvarValue);
     UNREFERENCED_PARAMETER(pCommandExecutionProperties);
@@ -432,4 +445,8 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_WIDTH_FULL:  m_pApp->SetContentWidthMode(3);        break;
     }
     return S_OK;
+    }
+    __except(EXCEPTION_EXECUTE_HANDLER) {
+        return S_OK;
+    }
 }

@@ -61,6 +61,7 @@ public:
     STDMETHOD_(ULONG, Release)();
     STDMETHOD(QueryInterface(REFIID iid, void** ppv));
     STDMETHOD(UpdateProperty)(UINT nCmdID, REFPROPERTYKEY key, const PROPVARIANT* ppropvarCurrentValue, PROPVARIANT* ppropvarNewValue);
+    HRESULT UpdatePropertyImpl(UINT nCmdID, REFPROPERTYKEY key, const PROPVARIANT* ppropvarCurrentValue, PROPVARIANT* ppropvarNewValue);
     STDMETHOD(Execute)(UINT nCmdID, UI_EXECUTIONVERB verb, const PROPERTYKEY* key, const PROPVARIANT* ppropvarValue, IUISimplePropertySet* pCommandExecutionProperties);
 private:
     CRibbonCommandHandler(AppWindow* app) : m_cRef(1), m_pApp(app) {}

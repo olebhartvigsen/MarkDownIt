@@ -1902,9 +1902,13 @@ void AppWindow::SetContentWidthMode(int mode) {
     SaveSettings(settings_);
     InvalidateSettingsButtons();
     // Force a repaint so the new width takes effect immediately.
+    // Defer the repaint via PostMessage so it runs after the Ribbon's
+    // Execute callback returns — avoiding re-entrant paint while the
+    // Application Menu popup is still on screen.
     layout_cache_.Clear();
-    UpdateScrollInfo();
-    Repaint();
+    if (hwnd_content_) {
+        PostMessage(hwnd_content_, WM_USER + 1, 0, 0);
+    }
 }
 
 void AppWindow::InvalidateSettingsButtons() {
@@ -2019,6 +2023,10 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (wp == 4) {
                 OnScrollTick();
             }
+            return 0;
+        case WM_USER + 1:  // Deferred repaint after settings change
+            UpdateScrollInfo();
+            Repaint();
             return 0;
         default: return DefWindowProcW(hwnd, msg, wp, lp);
     }
