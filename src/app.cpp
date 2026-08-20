@@ -1909,8 +1909,9 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 // Content child window WndProc.
 // Handles WM_PAINT, WM_VSCROLL, WM_MOUSEWHEEL, WM_KEYDOWN, WM_SIZE.
 //
-
-case WM_PAINT:     OnContentPaint(hwnd); return 0;
+LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+        case WM_PAINT:     OnContentPaint(hwnd); return 0;
         case WM_ERASEBKGND: return 1;  // D2D handles all painting
         case WM_LBUTTONDOWN: {
             int x = GET_X_LPARAM(lp);
