@@ -13,6 +13,7 @@
 #include <chrono>
 
 #include <cstring>
+#include <windows.h>
 #include <stack>
 #include <string>
 #include <vector>
@@ -508,7 +509,7 @@ ib.strike = strike;
 
 }  // namespace
 
-bool ParseMarkdown(const std::string& utf8, Document& out) {
+static int ParseMarkdownInner(const std::string& utf8, Document& out) {
     ParserCtx ctx;
     ctx.doc = &out;
     ctx.input = utf8.data();
@@ -524,7 +525,6 @@ bool ParseMarkdown(const std::string& utf8, Document& out) {
 
     MD_PARSER parser{};
     parser.abi_version = 0;
-    // Enable common extensions for good markdown coverage.
     parser.flags = MD_FLAG_TABLES | MD_FLAG_STRIKETHROUGH |
                    MD_FLAG_TASKLISTS | MD_FLAG_PERMISSIVEURLAUTOLINKS |
                    MD_FLAG_PERMISSIVEEMAILAUTOLINKS |
@@ -537,9 +537,26 @@ bool ParseMarkdown(const std::string& utf8, Document& out) {
     parser.debug_log = nullptr;
     parser.syntax = nullptr;
 
-    int rc = md_parse(utf8.data(), static_cast<MD_SIZE>(utf8.size()),
-                      &parser, &ctx);
-    return rc == 0;
+    return md_parse(utf8.data(), static_cast<MD_SIZE>(utf8.size()),
+                    &parser, &ctx);
+}
+
+bool ParseMarkdown(const std::string& utf8, Document& out) {
+    __try {
+        int rc = ParseMarkdownInner(utf8, out);
+        return rc == 0;
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        // Crash in parser — log and return false instead of CTD.
+        HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-crash.log",
+            FILE_APPEND_DATA, FILE_SHARE_READ|FILE_SHARE_WRITE,
+            nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h != INVALID_HANDLE_VALUE) {
+            const char* msg = "PARSE CRASH\r\n";
+            DWORD w; WriteFile(h, msg, (DWORD)strlen(msg), &w, nullptr);
+            CloseHandle(h);
+        }
+        return false;
+    }
 }
 
 
