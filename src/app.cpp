@@ -747,7 +747,25 @@ void AppWindow::OpenFile(const std::wstring& path) {
     use_crlf_ = (utf8.find("\x0D\x0A") != std::string::npos);
 
     doc_ = Document{};
+    // Debug: log before ParseMarkdown
+    { HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-crash.log",
+        FILE_APPEND_DATA, FILE_SHARE_READ|FILE_SHARE_WRITE,
+        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+      if (h != INVALID_HANDLE_VALUE) {
+          SetFilePointer(h, 0, nullptr, FILE_END);
+          DWORD w; WriteFile(h, L"BEFORE PARSE\r\n", 26, &w, nullptr); CloseHandle(h);
+      }
+    }
     ParseMarkdown(utf8, doc_);
+    // Debug: log after ParseMarkdown
+    { HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-crash.log",
+        FILE_APPEND_DATA, FILE_SHARE_READ|FILE_SHARE_WRITE,
+        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+      if (h != INVALID_HANDLE_VALUE) {
+          SetFilePointer(h, 0, nullptr, FILE_END);
+          DWORD w; WriteFile(h, L"AFTER PARSE\r\n", 24, &w, nullptr); CloseHandle(h);
+      }
+    }
     buffer_.SetText(utf8);
     undo_stack_.Clear();
     file_path_ = path;
@@ -1105,6 +1123,19 @@ void AppWindow::OnContentPaint(HWND hwnd) {
         if (!rt_) { ValidateRect(hwnd, nullptr); return; }
     }
 
+    // Debug: log paint entry with scroll position
+    { wchar_t buf[128]; swprintf_s(buf, 128, L"PAINT scrollY=%.1f totalH=%.1f nodes=%zu",
+        scrollY_, totalH_, doc_.nodes.size());
+      HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-crash.log",
+          FILE_APPEND_DATA, FILE_SHARE_READ|FILE_SHARE_WRITE,
+          nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+      if (h != INVALID_HANDLE_VALUE) {
+          SetFilePointer(h, 0, nullptr, FILE_END);
+          DWORD w; WriteFile(h, buf, (DWORD)(wcslen(buf)*sizeof(wchar_t)), &w, nullptr);
+          WriteFile(h, L"\r\n", 4, &w, nullptr); CloseHandle(h);
+      }
+    }
+
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
         totalH_ = renderer_.Measure(dw_factory_, doc_, size.width, 0.0f);
@@ -1118,7 +1149,27 @@ void AppWindow::OnContentPaint(HWND hwnd) {
 
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
+        // Debug: log before Render with node count
+        { wchar_t buf[64]; swprintf_s(buf, 64, L"BEFORE RENDER nodes=%zu", doc_.nodes.size());
+          HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-crash.log",
+              FILE_APPEND_DATA, FILE_SHARE_READ|FILE_SHARE_WRITE,
+              nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+          if (h != INVALID_HANDLE_VALUE) {
+              SetFilePointer(h, 0, nullptr, FILE_END);
+              DWORD w; WriteFile(h, buf, (DWORD)(wcslen(buf)*sizeof(wchar_t)), &w, nullptr);
+              WriteFile(h, L"\r\n", 4, &w, nullptr); CloseHandle(h);
+          }
+        }
         renderer_.Render(rt_, dw_factory_, doc_, size.width, scrollY_, 0.0f, &sel_);
+        // Debug: log after Render (should NOT appear if crash is in Render)
+        { HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-crash.log",
+              FILE_APPEND_DATA, FILE_SHARE_READ|FILE_SHARE_WRITE,
+              nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+          if (h != INVALID_HANDLE_VALUE) {
+              SetFilePointer(h, 0, nullptr, FILE_END);
+              DWORD w; WriteFile(h, L"AFTER RENDER\r\n", 28, &w, nullptr); CloseHandle(h);
+          }
+        }
     }
 
     HRESULT hr = rt_->EndDraw();
@@ -1859,37 +1910,7 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 // Handles WM_PAINT, WM_VSCROLL, WM_MOUSEWHEEL, WM_KEYDOWN, WM_SIZE.
 //
 
-// SEH crash handler for rendering.
-static DWORD g_crash_exception = 0;
-static void* g_crash_address = nullptr;
-
-static void RenderSEH(AppWindow* app, HWND hwnd) {
-    __try {
-        app->OnContentPaint(hwnd);
-    } __except(EXCEPTION_EXECUTE_HANDLER) {
-        g_crash_exception = GetExceptionCode();
-        g_crash_address = GetExceptionInformation()->ExceptionRecord->ExceptionAddress;
-        // Log to file
-        wchar_t buf[256];
-        swprintf_s(buf, 256, L"CRASH in OnContentPaint: 0x%08X at 0x%p",
-                   g_crash_exception, g_crash_address);
-        HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-crash.log",
-            FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
-            nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (h != INVALID_HANDLE_VALUE) {
-            SetFilePointer(h, 0, nullptr, FILE_END);
-            DWORD written;
-            WriteFile(h, buf, (DWORD)(wcslen(buf) * sizeof(wchar_t)), &written, nullptr);
-            WriteFile(h, L"\r\n", 4, &written, nullptr);
-            CloseHandle(h);
-        }
-    }
-}
-
-
-LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-    switch (msg) {
-        case WM_PAINT:     RenderSEH(this, hwnd); return 0;
+case WM_PAINT:     OnContentPaint(hwnd); return 0;
         case WM_ERASEBKGND: return 1;  // D2D handles all painting
         case WM_LBUTTONDOWN: {
             int x = GET_X_LPARAM(lp);
