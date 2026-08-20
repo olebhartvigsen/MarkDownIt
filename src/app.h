@@ -110,20 +110,38 @@ private:
 
     // Scroll state (in DIPs)
     float  scrollY_    = 0.0f;  // current scroll position (animated)
-    float  targetY_   = 0.0f;  // target scroll position for animation
     float  totalH_     = 0.0f;
     int    clientW_    = 0;
     int    clientH_    = 0;
 
-    // Smooth scroll animation
-    UINT_PTR scroll_timer_ = 0;
-    float  scroll_vel_  = 0.0f;  // velocity for inertial scrolling
-    float  scroll_anim_start_ = 0.0f;  // start value for ease-out
-    float  scroll_anim_target_ = 0.0f;  // target value for ease-out
-    DWORD  scroll_anim_start_time_ = 0;  // GetTickCount at animation start
-    static const DWORD SCROLL_ANIM_MS = 220;  // animation duration
-    DWORD  last_wheel_time_ = 0;  // for trackpad vs mouse detection
-    bool   is_trackpad_ = false;  // true if recent input looks like trackpad
+    // ── Smooth scroll physics engine ──────────────────────────────
+    // Trackpad and mouse wheel both feed into the same physics: a
+    // critically-damped spring that pulls scrollY_ toward targetY_.
+    // Trackpad also builds a velocity; when events stop (fingers
+    // lifted), momentum carries the scroll until friction drains it.
+    //
+    // Phases:
+    //   IDLE     – no animation, timer off
+    //   SPRING   – spring pulling scrollY_ → targetY_ (mouse wheel,
+    //              arrow keys, scrollbar line/page)
+    //   TRACKPAD – direct 1:1 follow of accumulated trackpad deltas;
+    //              momentum velocity is tracked from delta/time.
+    //   MOMENTUM – exponential velocity decay after trackpad release
+    //
+    UINT_PTR scroll_timer_ = 0;       // 16 ms tick timer (ID 4)
+
+    // Spring state (mouse wheel, keyboard, scrollbar)
+    float  spring_target_ = 0.0f;     // spring rest position
+
+    // Momentum state (trackpad flick)
+    float  momentum_vel_ = 0.0f;      // px per 16ms tick
+
+    // Input tracking
+    DWORD  last_wheel_time_ = 0;     // for trackpad vs mouse detection
+    float  last_trackpad_delta_ = 0; // most recent trackpad delta (px)
+    bool   is_trackpad_ = false;     // recent wheel looks like trackpad
+    int    scroll_phase_ = 0;        // 0=IDLE,1=SPRING,2=TRACKPAD,3=MOMENTUM
+
     float  ClampScroll(float y) const;
 
     // Editor state
@@ -161,8 +179,12 @@ private:
     void OnContentPaint(HWND hwnd);
     void OnContentVScroll(HWND hwnd, int code, int pos);
     void OnContentMouseWheel(HWND hwnd, int delta);
-    void StartScrollAnimation(float targetY);
-    void OnScrollTimer();
+    void StartSpring(float targetY);
+    void BeginTrackpadScroll(float delta, DWORD now);
+    void EnterMomentum();
+    void OnScrollTick();
+    void EnsureScrollTimer();
+    void StopScrollTimer();
     void StopScrollAnimation();
     void OnContentSize(HWND hwnd, int width, int height);
     void OnDropFiles(HWND hwnd, HDROP hDrop);

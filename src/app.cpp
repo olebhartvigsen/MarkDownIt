@@ -357,14 +357,14 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             float page = 0.0f;
             if (rt_) page = rt_->GetSize().height;
             else page = static_cast<float>(clientH_);
-            StartScrollAnimation(scrollY_ + page);
+            StartSpring(scrollY_ + page);
             break;
         }
         case VK_PRIOR: {  // Page Up
             float page = 0.0f;
             if (rt_) page = rt_->GetSize().height;
             else page = static_cast<float>(clientH_);
-            StartScrollAnimation(scrollY_ - page);
+            StartSpring(scrollY_ - page);
             break;
         }
         case VK_F5:
@@ -953,50 +953,182 @@ float AppWindow::ClampScroll(float y) const {
     return y;
 }
 
-// Start a smooth scroll animation from current scrollY_ to targetY.
-void AppWindow::StartScrollAnimation(float targetY) {
-    targetY = ClampScroll(targetY);
-    if (std::fabs(targetY - scrollY_) < 0.5f) {
-        scrollY_ = targetY;
-        UpdateScrollInfo();
-        return;
-    }
-    scroll_anim_start_ = scrollY_;
-    scroll_anim_target_ = targetY;
-    scroll_anim_start_time_ = GetTickCount();
+// ── Smooth scroll physics engine ─────────────────────────────────
+//
+// Three phases, all driven by a single 16 ms timer (ID 4):
+//
+// 1. SPRING – mouse wheel, arrow keys, scrollbar line/page clicks.
+//    spring_target_ is the rest position; each tick applies:
+//       force   = (target − pos) × stiffness
+//       vel    += force − damping × vel
+//       pos    += vel
+//    Critically damped → smooth ease-out, multi-notch accumulation.
+//
+// 2. TRACKPAD – precision touchpad / high-frequency wheel.
+//    Each WM_MOUSEWHEEL event applies its delta immediately (1:1)
+//    and records an exponential moving average of recent velocity.
+//    The timer runs but does nothing while events arrive.
+//    When events stop for >80 ms, → MOMENTUM.
+//
+// 3. MOMENTUM – fingers lifted, scroll glides with friction.
+//    pos += vel; vel *= friction (0.955 per 16 ms tick).
+//    Stops when |vel| < 0.5 or hit an edge.
+//
+// SB_THUMBTRACK (scrollbar drag) bypasses all physics — instant jump.
+// ─────────────────────────────────────────────────────────────────
+
+// Spring constants (tuned for ~350 ms settle with critical damping).
+static const float SPRING_STIFFNESS = 0.045f;   // per 16ms tick
+static const float SPRING_DAMPING   = 0.22f;     // per 16ms tick
+static const float SPRING_SETTLE    = 0.3f;      // settle threshold (px)
+
+// Mouse wheel: 3 lines × 26 px per notch = 78 px.
+static const float WHEEL_STEP_PX = 78.0f;
+
+// Trackpad: scale raw delta to screen DIPs.
+static const float TRACKPAD_SCALE = 0.5f;
+
+// Momentum friction: vel *= FRICTION each 16ms tick.
+// 0.955 ≈ 3.5% velocity loss per tick ≈ ~2 s glide from 20 px/tick.
+static const float MOMENTUM_FRICTION = 0.955f;
+static const float MOMENTUM_MIN_VEL  = 0.5f;     // stop threshold (px/tick)
+
+void AppWindow::EnsureScrollTimer() {
     if (!scroll_timer_) {
         scroll_timer_ = SetTimer(hwnd_content_, 4, 16, nullptr);
     }
 }
 
-// Stop the scroll animation timer.
-void AppWindow::StopScrollAnimation() {
+void AppWindow::StopScrollTimer() {
     if (scroll_timer_) {
         KillTimer(hwnd_content_, scroll_timer_);
         scroll_timer_ = 0;
     }
+    scroll_phase_ = 0;  // IDLE
+    momentum_vel_ = 0.0f;
 }
 
-// Called on each tick of the scroll animation timer.
-void AppWindow::OnScrollTimer() {
-    DWORD elapsed = GetTickCount() - scroll_anim_start_time_;
-    DWORD animMs = is_trackpad_ ? 80 : SCROLL_ANIM_MS;
-    if (elapsed >= animMs) {
-        // Animation complete.
-        scrollY_ = scroll_anim_target_;
-        StopScrollAnimation();
-    } else {
-        // Ease-out cubic: t=0..1, value = 1 - (1-t)^3
-        float t = static_cast<float>(elapsed) / static_cast<float>(animMs);
-        float eased = 1.0f - std::pow(1.0f - t, 3.0f);
-        scrollY_ = scroll_anim_start_ +
-            (scroll_anim_target_ - scroll_anim_start_) * eased;
+// Full stop (also called from OpenFile, OnDestroy).
+void AppWindow::StopScrollAnimation() {
+    StopScrollTimer();
+    spring_target_ = scrollY_;
+}
+
+// Start a spring animation toward targetY (mouse wheel, keyboard, scrollbar).
+void AppWindow::StartSpring(float targetY) {
+    spring_target_ = ClampScroll(targetY);
+    float diff = std::fabs(spring_target_ - scrollY_);
+    if (diff < SPRING_SETTLE) {
+        scrollY_ = spring_target_;
+        StopScrollTimer();
+        UpdateScrollInfo();
+        Repaint();
+        return;
     }
+    // If coming from momentum (trackpad release), preserve the velocity
+    // as initial spring velocity for a seamless hand-off.
+    if (scroll_phase_ == 3 && std::fabs(momentum_vel_) > 1.0f) {
+        // Already moving; spring will absorb it.
+    } else {
+        momentum_vel_ = 0.0f;
+    }
+    scroll_phase_ = 1;  // SPRING
+    EnsureScrollTimer();
+}
+
+// Trackpad scroll: apply delta immediately (1:1) and track velocity.
+void AppWindow::BeginTrackpadScroll(float delta, DWORD now) {
+    // Cancel any spring/momentum — trackpad takes over.
+    scroll_phase_ = 2;  // TRACKPAD
+    spring_target_ = scrollY_;  // no spring while trackpad is active
+
+    // Apply delta immediately (1:1, no animation latency).
+    float prev = scrollY_;
+    scrollY_ = ClampScroll(scrollY_ + delta);
+    float actual = scrollY_ - prev;
+
+    // Track velocity as exponential moving average of recent deltas.
+    // Use the actual (clamped) delta so hitting an edge zeroes velocity.
+    // If same direction, blend smoothly; if reversed, snap.
+    if ((momentum_vel_ > 0) != (delta > 0)) {
+        momentum_vel_ = actual;  // direction reversed → snap
+    } else {
+        momentum_vel_ = momentum_vel_ * 0.6f + actual * 0.4f;  // EMA
+    }
+    last_trackpad_delta_ = delta;
+
+    // Start the timer so it can detect when trackpad events stop
+    // (→ transition to momentum when idle for >80ms).
+    EnsureScrollTimer();
+
     UpdateScrollInfo();
     Repaint();
-    if (editing_) UpdateCaretPosition();
 }
 
+// Transition from TRACKPAD idle to MOMENTUM (fingers lifted after flick).
+void AppWindow::EnterMomentum() {
+    if (std::fabs(momentum_vel_) < MOMENTUM_MIN_VEL) {
+        scroll_phase_ = 0;  // IDLE
+        StopScrollTimer();
+        return;
+    }
+    scroll_phase_ = 3;  // MOMENTUM
+    EnsureScrollTimer();
+}
+
+// Called every 16 ms by the scroll timer.
+void AppWindow::OnScrollTick() {
+    if (scroll_phase_ == 1) {
+        // ── SPRING ──────────────────────────────────────────────
+        // Semi-implicit Euler: update velocity first, then position.
+        float diff = spring_target_ - scrollY_;
+        float force = diff * SPRING_STIFFNESS;
+        momentum_vel_ += force;
+        momentum_vel_ *= (1.0f - SPRING_DAMPING);
+        scrollY_ += momentum_vel_;
+        UpdateScrollInfo();
+        Repaint();
+        if (editing_) UpdateCaretPosition();
+
+        if (std::fabs(momentum_vel_) < 0.3f && std::fabs(diff) < SPRING_SETTLE) {
+            scrollY_ = spring_target_;
+            StopScrollTimer();
+            UpdateScrollInfo();
+            Repaint();
+        }
+
+    } else if (scroll_phase_ == 2) {
+        // ── TRACKPAD idle detection ────────────────────────────
+        // Timer runs during trackpad input to detect when events stop.
+        // If no wheel event for >80ms, fingers were lifted → momentum.
+        DWORD now = GetTickCount();
+        if (now - last_wheel_time_ > 80) {
+            EnterMomentum();
+        }
+
+    } else if (scroll_phase_ == 3) {
+        // ── MOMENTUM ───────────────────────────────────────────
+        scrollY_ += momentum_vel_;
+        momentum_vel_ *= MOMENTUM_FRICTION;
+
+        // Clamp at edges — stop dead (no bounce).
+        float prev = scrollY_;
+        scrollY_ = ClampScroll(scrollY_);
+        if (scrollY_ != prev) {
+            momentum_vel_ = 0.0f;  // hit edge
+        }
+
+        UpdateScrollInfo();
+        Repaint();
+        if (editing_) UpdateCaretPosition();
+
+        if (std::fabs(momentum_vel_) < MOMENTUM_MIN_VEL) {
+            StopScrollTimer();
+        }
+    }
+}
+
+// ── Scrollbar / keyboard ──────────────────────────────────────────
 void AppWindow::OnContentVScroll(HWND hwnd, int code, int pos) {
     float page = static_cast<float>(clientH_ > 0 ? clientH_ : 1);
     if (rt_) {
@@ -1007,18 +1139,19 @@ void AppWindow::OnContentVScroll(HWND hwnd, int code, int pos) {
     float targetY = scrollY_;
     switch (code) {
         case SB_LINEUP:        targetY = scrollY_ - 30.0f; break;
-        case SB_LINEDOWN:       targetY = scrollY_ + 30.0f; break;
-        case SB_PAGEUP:         targetY = scrollY_ - page;  break;
-        case SB_PAGEDOWN:       targetY = scrollY_ + page;  break;
+        case SB_LINEDOWN:      targetY = scrollY_ + 30.0f; break;
+        case SB_PAGEUP:        targetY = scrollY_ - page;  break;
+        case SB_PAGEDOWN:      targetY = scrollY_ + page;  break;
         case SB_THUMBTRACK:
         case SB_THUMBPOSITION: {
             SCROLLINFO si = {};
             si.cbSize = sizeof(si);
             si.fMask = SIF_TRACKPOS;
             GetScrollInfo(hwnd, SB_VERT, &si);
-            // Thumb tracking: jump immediately for responsive drag.
-            StopScrollAnimation();
+            // Thumb drag: instant jump, no physics.
+            StopScrollTimer();
             scrollY_ = static_cast<float>(si.nTrackPos);
+            spring_target_ = scrollY_;
             UpdateScrollInfo();
             Repaint();
             UpdateCaretPosition();
@@ -1028,51 +1161,41 @@ void AppWindow::OnContentVScroll(HWND hwnd, int code, int pos) {
         case SB_BOTTOM:  targetY = totalH_; break;
     }
 
-    StartScrollAnimation(targetY);
+    StartSpring(targetY);
 }
 
+// ── Mouse wheel / trackpad ────────────────────────────────────────
 void AppWindow::OnContentMouseWheel(HWND hwnd, int delta) {
-    // Distinguish mouse wheel (delta=120 per notch, infrequent) from
-    // precision trackpad (small deltas like 1-30, high frequency).
     DWORD now = GetTickCount();
     DWORD timeSinceLast = now - last_wheel_time_;
     last_wheel_time_ = now;
 
+    // Distinguish mouse wheel (|delta| ≥ 120, ≥80 ms apart) from
+    // precision trackpad (small deltas, high frequency <80 ms).
     bool isTrackpad = (std::abs(delta) < WHEEL_DELTA) || (timeSinceLast < 80);
     is_trackpad_ = isTrackpad;
 
-    float deltaScroll;
     if (isTrackpad) {
-        // Trackpad: 1:1 mapping, minimal animation for responsiveness.
-        // Scale to feel natural (trackpad deltas are small).
-        deltaScroll = -static_cast<float>(delta) * 0.5f;
-    } else {
-        // Mouse wheel: 3 lines per notch, smooth animation.
-        float step = 120.0f * 3.0f;
-        deltaScroll = -static_cast<float>(delta) / static_cast<float>(WHEEL_DELTA) * step;
+        // ── Trackpad: 1:1 direct follow with velocity tracking ──
+        float deltaScroll = -static_cast<float>(delta) * TRACKPAD_SCALE;
+        BeginTrackpadScroll(deltaScroll, now);
+        return;
     }
 
-    if (isTrackpad) {
-        // Trackpad: near-instant response. Set scrollY_ directly for
-        // most of the delta, with a tiny residual animation for smoothness.
-        float newTarget = ClampScroll(scrollY_ + deltaScroll);
-        if (scroll_timer_) {
-            // Already animating: update target but don't restart.
-            scroll_anim_target_ = newTarget;
-        } else if (std::fabs(newTarget - scrollY_) > 0.5f) {
-            // Start a short animation (80ms for trackpad).
-            scroll_anim_start_ = scrollY_;
-            scroll_anim_target_ = newTarget;
-            scroll_anim_start_time_ = now;
-            scroll_timer_ = SetTimer(hwnd_content_, 4, 16, nullptr);
-        }
+    // ── Mouse wheel: ratchet + spring ─────────────────────────
+    // If we were in momentum (fingers previously lifted), cancel it.
+    if (scroll_phase_ == 3) {
+        momentum_vel_ = 0.0f;
+        scroll_phase_ = 0;
+    }
+
+    float deltaScroll = -static_cast<float>(delta) / static_cast<float>(WHEEL_DELTA) * WHEEL_STEP_PX;
+
+    // Accumulate into the spring target — rapid notches build up speed.
+    if (scroll_phase_ == 1) {
+        spring_target_ = ClampScroll(spring_target_ + deltaScroll);
     } else {
-        // Mouse wheel: full smooth animation.
-        if (scroll_timer_) {
-            scroll_anim_target_ = ClampScroll(scroll_anim_target_ + deltaScroll);
-        } else {
-            StartScrollAnimation(scrollY_ + deltaScroll);
-        }
+        StartSpring(scrollY_ + deltaScroll);
     }
 }
 
@@ -1893,8 +2016,7 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_TIMER:
             if (wp == 4) {
-                // Smooth scroll animation tick.
-                OnScrollTimer();
+                OnScrollTick();
             }
             return 0;
         default: return DefWindowProcW(hwnd, msg, wp, lp);
