@@ -514,26 +514,10 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
 }
 
 void AppWindow::LoadSampleDoc() {
-    const char* sample =
-        "# MarkDownIt\n\n"
-        "A native Windows markdown viewer, built with C++, Direct2D, and "
-        "DirectWrite. No Electron, no .NET runtime.\n\n"
-        "## Open a file\n\n"
-        "Drag a .md file onto this window, or launch with a path:\n"
-        "    MarkDownIt.exe C:\\path\\to\\file.md\n\n"
-        "Code blocks, lists, blockquotes, and inline formatting arrive in "
-        "later tasks.\n\n"
-        "## Scroll\n\n"
-        "This is a long block of text so you can test the scrollbar. "
-        "Use the mouse wheel, the scrollbar, page down, or the arrow keys. "
-        "Resize the window and the text reflows. The scroll range updates "
-        "automatically when the content height changes.\n\n"
-        "Resize wider to see fewer lines. Resize narrower to see more lines "
-        "and more scrolling. The content stays readable at any width.\n\n"
-        "## End\n\n"
-        "This is the last block. You have scrolled to the bottom.\n";
-    ParseMarkdown(sample, doc_);
-    buffer_.SetText(sample);
+    const char* msg =
+        "Open or drag a .md file to get started.\n";
+    ParseMarkdown(msg, doc_);
+    buffer_.SetText(msg);
     undo_stack_.Clear();
 }
 
