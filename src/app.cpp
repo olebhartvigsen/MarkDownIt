@@ -19,6 +19,19 @@
 
 
 
+static void mdi_dbg(const wchar_t* msg) {
+    HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-debug.log",
+        FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h != INVALID_HANDLE_VALUE) {
+        SetFilePointer(h, 0, nullptr, FILE_END);
+        DWORD written;
+        WriteFile(h, msg, (DWORD)(wcslen(msg) * sizeof(wchar_t)), &written, nullptr);
+        WriteFile(h, L"\r\n", 4, &written, nullptr);
+        CloseHandle(h);
+    }
+}
+
 const wchar_t* AppWindow::kClassName = L"MarkDownItWindow";
 const wchar_t* AppWindow::kContentClassName = L"MarkDownItContent";
 
@@ -787,8 +800,12 @@ void AppWindow::Reload() {
 
     float savedY = scrollY_;
     doc_ = Document{};
+    mdi_dbg(L"DBG: before ParseMarkdown");
     ParseMarkdown(utf8, doc_);
+    mdi_dbg(L"DBG: after ParseMarkdown, nodes count check");
+    { wchar_t buf[64]; wsprintfW(buf, L"DBG: doc_.nodes.size()=%zu", doc_.nodes.size()); mdi_dbg(buf); }
     buffer_.SetText(utf8);
+    mdi_dbg(L"DBG: after SetText");
     undo_stack_.Clear();
     UpdateScrollInfo();
     if (scrollY_ > savedY) scrollY_ = savedY;
