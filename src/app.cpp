@@ -1098,9 +1098,6 @@ void AppWindow::OnContentPaint(HWND hwnd) {
         if (!rt_) { ValidateRect(hwnd, nullptr); return; }
     }
 
-      }
-    }
-
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
         totalH_ = renderer_.Measure(dw_factory_, doc_, size.width, 0.0f);
