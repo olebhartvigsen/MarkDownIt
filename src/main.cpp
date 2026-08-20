@@ -27,11 +27,12 @@ int APIENTRY wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR lpCmdLine, int nCmdShow
     OleInitialize(nullptr);
 
     AppWindow app;
-    if (!app.Init(hInst, nCmdShow)) {
+    std::wstring cmdLine = (lpCmdLine && *lpCmdLine) ? Unquote(lpCmdLine) : std::wstring();
+    if (!app.Init(hInst, nCmdShow, cmdLine)) {
         return 1;
     }
-    if (lpCmdLine && *lpCmdLine) {
-        app.OpenPendingFile(Unquote(lpCmdLine));
+    if (!cmdLine.empty()) {
+        app.OpenPendingFile(cmdLine);
     }
     return app.Run();
 }

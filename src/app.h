@@ -38,7 +38,7 @@ public:
     AppWindow();
     ~AppWindow();
 
-    bool Init(HINSTANCE hInst, int nCmdShow);
+    bool Init(HINSTANCE hInst, int nCmdShow, const std::wstring& cmdLine = {});
     int  Run();
 
     void OpenFile(const std::wstring& path);

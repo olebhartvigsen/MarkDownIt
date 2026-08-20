@@ -19,18 +19,7 @@
 
 
 
-static void mdi_dbg(const wchar_t* msg) {
-    HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-debug.log",
-        FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
-        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h != INVALID_HANDLE_VALUE) {
-        SetFilePointer(h, 0, nullptr, FILE_END);
-        DWORD written;
-        WriteFile(h, msg, (DWORD)(wcslen(msg) * sizeof(wchar_t)), &written, nullptr);
-        WriteFile(h, L"\r\n", 4, &written, nullptr);
-        CloseHandle(h);
-    }
-}
+
 
 const wchar_t* AppWindow::kClassName = L"MarkDownItWindow";
 const wchar_t* AppWindow::kContentClassName = L"MarkDownItContent";
@@ -150,8 +139,11 @@ static bool RestoreWinPlacement(HWND hwnd) {
 
 // Fil button hidden via COM API (OnCreateUICommand returns E_NOTIMPL for APPLICATIONMENU)
 
-bool AppWindow::Init(HINSTANCE hInst, int nCmdShow) {
+bool AppWindow::Init(HINSTANCE hInst, int nCmdShow, const std::wstring& cmdLine) {
     hinst_ = hInst;
+    if (!cmdLine.empty()) {
+        pending_file_ = cmdLine;
+    }
     EnableDpiAwareness();
 
     // Register the main window class.
@@ -744,25 +736,7 @@ void AppWindow::OpenFile(const std::wstring& path) {
     use_crlf_ = (utf8.find("\x0D\x0A") != std::string::npos);
 
     doc_ = Document{};
-    // Debug: log before ParseMarkdown
-    { HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-crash.log",
-        FILE_APPEND_DATA, FILE_SHARE_READ|FILE_SHARE_WRITE,
-        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-      if (h != INVALID_HANDLE_VALUE) {
-          SetFilePointer(h, 0, nullptr, FILE_END);
-          DWORD w; WriteFile(h, L"BEFORE PARSE\r\n", 26, &w, nullptr); CloseHandle(h);
-      }
-    }
     ParseMarkdown(utf8, doc_);
-    // Debug: log after ParseMarkdown
-    { HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-crash.log",
-        FILE_APPEND_DATA, FILE_SHARE_READ|FILE_SHARE_WRITE,
-        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-      if (h != INVALID_HANDLE_VALUE) {
-          SetFilePointer(h, 0, nullptr, FILE_END);
-          DWORD w; WriteFile(h, L"AFTER PARSE\r\n", 24, &w, nullptr); CloseHandle(h);
-      }
-    }
     buffer_.SetText(utf8);
     undo_stack_.Clear();
     file_path_ = path;
@@ -800,12 +774,8 @@ void AppWindow::Reload() {
 
     float savedY = scrollY_;
     doc_ = Document{};
-    mdi_dbg(L"DBG: before ParseMarkdown");
     ParseMarkdown(utf8, doc_);
-    mdi_dbg(L"DBG: after ParseMarkdown, nodes count check");
-    { wchar_t buf[64]; wsprintfW(buf, L"DBG: doc_.nodes.size()=%zu", doc_.nodes.size()); mdi_dbg(buf); }
     buffer_.SetText(utf8);
-    mdi_dbg(L"DBG: after SetText");
     undo_stack_.Clear();
     UpdateScrollInfo();
     if (scrollY_ > savedY) scrollY_ = savedY;
@@ -896,7 +866,11 @@ void AppWindow::OnCreate(HWND hwnd) {
     }
 
     EnsureRenderer();
-    LoadSampleDoc();
+    if (pending_file_.empty()) {
+        LoadSampleDoc();
+    }
+    // else: a file will be opened via timer 3 from OpenPendingFile.
+    // Show a blank document until then (no flash of sample text).
     InitEditor();
     UpdateScrollInfo();
 }
@@ -1124,16 +1098,6 @@ void AppWindow::OnContentPaint(HWND hwnd) {
         if (!rt_) { ValidateRect(hwnd, nullptr); return; }
     }
 
-    // Debug: log paint entry with scroll position
-    { wchar_t buf[128]; swprintf_s(buf, 128, L"PAINT scrollY=%.1f totalH=%.1f nodes=%zu",
-        scrollY_, totalH_, doc_.nodes.size());
-      HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-crash.log",
-          FILE_APPEND_DATA, FILE_SHARE_READ|FILE_SHARE_WRITE,
-          nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-      if (h != INVALID_HANDLE_VALUE) {
-          SetFilePointer(h, 0, nullptr, FILE_END);
-          DWORD w; WriteFile(h, buf, (DWORD)(wcslen(buf)*sizeof(wchar_t)), &w, nullptr);
-          WriteFile(h, L"\r\n", 4, &w, nullptr); CloseHandle(h);
       }
     }
 
@@ -1150,25 +1114,9 @@ void AppWindow::OnContentPaint(HWND hwnd) {
 
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
-        // Debug: log before Render with node count
-        { wchar_t buf[64]; swprintf_s(buf, 64, L"BEFORE RENDER nodes=%zu", doc_.nodes.size());
-          HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-crash.log",
-              FILE_APPEND_DATA, FILE_SHARE_READ|FILE_SHARE_WRITE,
-              nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-          if (h != INVALID_HANDLE_VALUE) {
-              SetFilePointer(h, 0, nullptr, FILE_END);
-              DWORD w; WriteFile(h, buf, (DWORD)(wcslen(buf)*sizeof(wchar_t)), &w, nullptr);
-              WriteFile(h, L"\r\n", 4, &w, nullptr); CloseHandle(h);
           }
         }
         renderer_.Render(rt_, dw_factory_, doc_, size.width, scrollY_, 0.0f, &sel_);
-        // Debug: log after Render (should NOT appear if crash is in Render)
-        { HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-crash.log",
-              FILE_APPEND_DATA, FILE_SHARE_READ|FILE_SHARE_WRITE,
-              nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-          if (h != INVALID_HANDLE_VALUE) {
-              SetFilePointer(h, 0, nullptr, FILE_END);
-              DWORD w; WriteFile(h, L"AFTER RENDER\r\n", 28, &w, nullptr); CloseHandle(h);
           }
         }
     }
