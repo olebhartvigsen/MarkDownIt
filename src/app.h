@@ -67,6 +67,9 @@ public:
     void SetContentWidthMode(int mode);
     void InvalidateSettingsButtons();
 
+    void ShowContextMenu(int x, int y);
+    void SelectAll();
+
     void OpenPendingFile(const std::wstring& path) {
         pending_file_ = path;
         if (hwnd_) SetTimer(hwnd_, 3, 50, nullptr);

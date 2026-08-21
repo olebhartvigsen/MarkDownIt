@@ -1926,6 +1926,124 @@ void AppWindow::ToggleWrap() {
     Repaint();
 }
 
+void AppWindow::SelectAll() {
+    sel_.anchor = {0};
+    sel_.active = {static_cast<uint32_t>(buffer_.Length())};
+    if (editing_) UpdateCaretPosition();
+    Repaint();
+}
+
+// Context menu command IDs (must not conflict with ribbon IDs 10000+).
+#define CM_UNDO     2001
+#define CM_REDO     2002
+#define CM_CUT      2003
+#define CM_COPY     2004
+#define CM_PASTE    2005
+#define CM_SELALL   2006
+#define CM_BOLD     2007
+#define CM_ITALIC   2008
+#define CM_CODE     2009
+#define CM_EDIT     2010
+#define CM_FIND     2011
+#define CM_WRAP     2012
+#define CM_ZOOMIN   2013
+#define CM_ZOOMOUT  2014
+
+void AppWindow::ShowContextMenu(int screenX, int screenY) {
+    HMENU hMenu = CreatePopupMenu();
+
+    if (editing_) {
+        // ── Edit mode menu ──
+        bool canUndo = undo_stack_.CanUndo();
+        bool canRedo = undo_stack_.CanRedo();
+        bool hasSel  = !sel_.Empty();
+
+        AppendMenuW(hMenu, MF_STRING | (canUndo ? 0 : MF_GRAYED),
+            CM_UNDO, L"Undo\tCtrl+Z");
+        AppendMenuW(hMenu, MF_STRING | (canRedo ? 0 : MF_GRAYED),
+            CM_REDO, L"Redo\tCtrl+Y");
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+
+        AppendMenuW(hMenu, MF_STRING | (hasSel ? 0 : MF_GRAYED),
+            CM_CUT, L"Cut\tCtrl+X");
+        AppendMenuW(hMenu, MF_STRING | (hasSel ? 0 : MF_GRAYED),
+            CM_COPY, L"Copy\tCtrl+C");
+        AppendMenuW(hMenu, MF_STRING,
+            CM_PASTE, L"Paste\tCtrl+V");
+        AppendMenuW(hMenu, MF_STRING, CM_SELALL, L"Select All\tCtrl+A");
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+
+        AppendMenuW(hMenu, MF_STRING, CM_BOLD,   L"Bold\tCtrl+B");
+        AppendMenuW(hMenu, MF_STRING, CM_ITALIC, L"Italic\tCtrl+I");
+        AppendMenuW(hMenu, MF_STRING, CM_CODE,   L"Code\tCtrl+`");
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+
+        AppendMenuW(hMenu, MF_STRING, CM_EDIT,
+            L"Switch to View Mode\tCtrl+E");
+    } else {
+        // ── View mode menu ──
+        bool hasSel = !sel_.Empty();
+
+        AppendMenuW(hMenu, MF_STRING | (hasSel ? 0 : MF_GRAYED),
+            CM_COPY, L"Copy\tCtrl+C");
+        AppendMenuW(hMenu, MF_STRING, CM_SELALL, L"Select All\tCtrl+A");
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(hMenu, MF_STRING,
+            CM_EDIT, L"Switch to Edit Mode\tCtrl+E");
+    }
+
+    // Common items for both modes.
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(hMenu, MF_STRING, CM_WRAP,    L"Toggle Word Wrap");
+    AppendMenuW(hMenu, MF_STRING, CM_ZOOMIN,  L"Zoom In\tCtrl++");
+    AppendMenuW(hMenu, MF_STRING, CM_ZOOMOUT, L"Zoom Out\tCtrl+-");
+
+    int cmd = TrackPopupMenu(hMenu,
+        TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_LEFTALIGN | TPM_TOPALIGN,
+        screenX, screenY, 0, hwnd_, nullptr);
+
+    DestroyMenu(hMenu);
+
+    // Dispatch the selected command.
+    switch (cmd) {
+    case CM_UNDO:    editor_.Undo();  OnBufferChanged(); break;
+    case CM_REDO:    editor_.Redo();  OnBufferChanged(); break;
+    case CM_CUT:
+        if (!sel_.Empty()) {
+            uint32_t s = sel_.Start(), len = sel_.Length();
+            std::string sel_text = buffer_.Text().substr(s, len);
+            ClipboardCut(hwnd_content_, sel_text);
+            editor_.DeleteSelection();
+            OnBufferChanged();
+        }
+        break;
+    case CM_COPY:
+        if (!sel_.Empty()) {
+            uint32_t s = sel_.Start(), len = sel_.Length();
+            std::string sel_text = buffer_.Text().substr(s, len);
+            if (!editing_) sel_text = CleanSelectionForCopy(sel_text);
+            ClipboardCopy(hwnd_content_, sel_text);
+        }
+        break;
+    case CM_PASTE: {
+        std::string text = ClipboardPaste(hwnd_content_);
+        if (!text.empty()) {
+            editor_.InsertText(text);
+            OnBufferChanged();
+        }
+        break;
+    }
+    case CM_SELALL:  SelectAll(); break;
+    case CM_BOLD:   ToggleBold();   break;
+    case CM_ITALIC: ToggleItalic(); break;
+    case CM_CODE:   ToggleCode();   break;
+    case CM_EDIT:   ToggleEdit();   break;
+    case CM_WRAP:   ToggleWrap();  break;
+    case CM_ZOOMIN: ZoomIn();  break;
+    case CM_ZOOMOUT: ZoomOut();   break;
+    }
+}
+
 void AppWindow::ShowAbout() {
     MessageBoxW(hwnd_,
         L"MarkDownIt - Native Windows Markdown Viewer\n"
@@ -2071,6 +2189,12 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         case WM_LBUTTONUP:   OnLButtonUp(hwnd);    return 0;
+        case WM_CONTEXTMENU: {
+            int x = GET_X_LPARAM(lp);
+            int y = GET_Y_LPARAM(lp);
+            ShowContextMenu(x, y);
+            return 0;
+        }
         case WM_CHAR:        OnChar(hwnd, static_cast<wchar_t>(wp)); return 0;
         case WM_SETFOCUS:  OnSetFocus(hwnd);   return 0;
         case WM_KILLFOCUS: OnKillFocus(hwnd);  return 0;
