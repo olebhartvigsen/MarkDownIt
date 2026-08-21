@@ -1926,6 +1926,40 @@ void AppWindow::ToggleWrap() {
     Repaint();
 }
 
+void AppWindow::ShowWidthMenu() {
+    // Show a standard Win32 popup menu with the 4 width options.
+    // A Win32 TrackPopupMenu has no height limit, unlike the Ribbon
+    // ApplicationMenu's DropDownButton submenu which clips and scrolls.
+    HMENU hMenu = CreatePopupMenu();
+
+    static const wchar_t* labels[4] = {
+        L"Standard", L"960 px", L"1600 px", L"Full width"
+    };
+    int cur = settings_.contentWidthMode;
+
+    for (int i = 0; i < 4; ++i) {
+        UINT flags = MF_STRING;
+        if (i == cur) flags |= MF_CHECKED;
+        AppendMenuW(hMenu, flags, 3001 + i, labels[i]);
+    }
+
+    // Position the menu below the Fil (ApplicationMenu) button.
+    RECT rc;
+    GetWindowRect(hwnd_, &rc);
+    int x = rc.left + 10;
+    int y = rc.top + static_cast<int>(g_ribbonHeight) + 5;
+
+    int cmd = TrackPopupMenu(hMenu,
+        TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_LEFTALIGN | TPM_TOPALIGN,
+        x, y, 0, hwnd_, nullptr);
+
+    DestroyMenu(hMenu);
+
+    if (cmd >= 3001 && cmd <= 3004) {
+        SetContentWidthMode(cmd - 3001);
+    }
+}
+
 void AppWindow::SelectAll() {
     sel_.anchor = {0};
     sel_.active = {static_cast<uint32_t>(buffer_.Length())};

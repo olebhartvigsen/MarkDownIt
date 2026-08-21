@@ -426,10 +426,7 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_OUTDENT: m_pApp->Outdent();           break;
     case IDC_CMD_EDIT:    m_pApp->ToggleEdit();        break;
     case IDC_CMD_ASSOC_MD:    m_pApp->ToggleMdAssociation();         break;
-    case IDC_CMD_WIDTH_STD:   m_pApp->SetContentWidthMode(0);        break;
-    case IDC_CMD_WIDTH_960:   m_pApp->SetContentWidthMode(1);        break;
-    case IDC_CMD_WIDTH_1600:  m_pApp->SetContentWidthMode(2);        break;
-    case IDC_CMD_WIDTH_FULL:  m_pApp->SetContentWidthMode(3);        break;
+    case IDC_CMD_WIDTH_MENU:  m_pApp->ShowWidthMenu();               break;
     }
     return S_OK;
 }
