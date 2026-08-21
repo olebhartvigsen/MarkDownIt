@@ -2023,7 +2023,8 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         case WM_USER + 1:  // Deferred repaint after settings change
             UpdateScrollInfo();
-            Repaint();
+            RedrawWindow(hwnd_content_, nullptr, nullptr,
+                RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
             return 0;
         case WM_USER + 2: {  // Deferred .md association toggle
             if (settings_.fileAssoc) {
