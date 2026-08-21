@@ -356,7 +356,7 @@
           </MenuGroup>
           <MenuGroup Class="MajorItems">
             <DropDownButton CommandName="cmdWidthMenu">
-              <MenuGroup Class="MajorItems">
+              <MenuGroup>
                 <Button CommandName="cmdWidthStandard" />
                 <Button CommandName="cmdWidth960" />
                 <Button CommandName="cmdWidth1600" />
