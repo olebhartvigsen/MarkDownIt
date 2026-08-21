@@ -353,14 +353,12 @@
           </MenuGroup>
           <MenuGroup Class="StandardItems">
             <Button CommandName="cmdAssocMd" />
-            <DropDownButton CommandName="cmdWidthMenu">
-              <MenuGroup>
-                <Button CommandName="cmdWidthStandard" />
-                <Button CommandName="cmdWidth960" />
-                <Button CommandName="cmdWidth1600" />
-                <Button CommandName="cmdWidthFull" />
-              </MenuGroup>
-            </DropDownButton>
+          </MenuGroup>
+          <MenuGroup Class="StandardItems">
+            <Button CommandName="cmdWidthStandard" />
+            <Button CommandName="cmdWidth960" />
+            <Button CommandName="cmdWidth1600" />
+            <Button CommandName="cmdWidthFull" />
           </MenuGroup>
         </ApplicationMenu>
       </Ribbon.ApplicationMenu>
