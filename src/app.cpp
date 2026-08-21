@@ -40,6 +40,41 @@ static UINT GetWindowDpi(HWND hwnd) {
 }
 
 AppWindow::AppWindow() {}
+
+// Process selected text for clipboard copy in view mode.
+// Converts soft line breaks (single \n within a paragraph) to spaces,
+// preserving:
+//   - Paragraph breaks: \n\n (double newline) stays as-is
+//   - Forced breaks: two trailing spaces + \n stays as-is
+//   - Single \n not part of the above becomes a space
+static std::string CleanSelectionForCopy(const std::string& src) {
+    std::string out;
+    out.reserve(src.size());
+    for (size_t i = 0; i < src.size(); ++i) {
+        char c = src[i];
+        if (c != '\n') {
+            out += c;
+            continue;
+        }
+        // Check for paragraph break (\n\n) or start-of-text \n
+        bool prevIsNL = (i > 0 && src[i - 1] == '\n');
+        bool nextIsNL = (i + 1 < src.size() && src[i + 1] == '\n');
+        // Check for forced break: two spaces before \n
+        bool forcedBreak = (i >= 2 && src[i - 1] == ' ' && src[i - 2] == ' ');
+
+        if (prevIsNL || nextIsNL || forcedBreak) {
+            // Keep paragraph breaks and forced breaks as-is
+            out += '\n';
+        } else {
+            // Soft break within a paragraph: replace with space.
+            // Avoid double spaces if the previous char is already a space.
+            if (out.empty() || out.back() == ' ' || out.back() == '\n')
+                continue;  // skip, already separated
+            out += ' ';
+        }
+    }
+    return out;
+}
 AppWindow::~AppWindow() {
     SafeRelease(rt_);
     SafeRelease(d2d_factory_);
@@ -499,6 +534,12 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                     uint32_t s = sel_.Start();
                     uint32_t len = sel_.Length();
                     std::string sel_text = buffer_.Text().substr(s, len);
+                    // In view mode, convert soft line breaks (single \n within
+                    // a paragraph) to spaces, preserving paragraph breaks
+                    // (\n\n) and forced breaks (two trailing spaces + \n).
+                    if (!editing_) {
+                        sel_text = CleanSelectionForCopy(sel_text);
+                    }
                     ClipboardCopy(hwnd_content_, sel_text);
                 }
             }
