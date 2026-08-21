@@ -336,6 +336,25 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         }
     }
 
+    // RecentItems: return an empty collection so the auxiliary panel
+    // in the ApplicationMenu renders (expanding the popup height, which
+    // gives the Document Width submenu enough room to show all items
+    // without scrolling).
+    if (nCmdID == IDC_CMD_RECENT_ITEMS && ppropvarNewValue)
+    {
+        if (IsEqualPropertyKey(key, UI_PKEY_RecentItems))
+        {
+            // Empty SAFEARRAY to render an empty auxiliary panel.
+            SAFEARRAY* psa = SafeArrayCreateVector(VT_UNKNOWN, 0, 0);
+            if (psa)
+            {
+                ppropvarNewValue->vt = VT_ARRAY | VT_UNKNOWN;
+                ppropvarNewValue->parray = psa;
+                return S_OK;
+            }
+        }
+    }
+
     // Enable/disable format buttons based on edit mode.
     if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_Enabled))
     {
@@ -426,7 +445,10 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_OUTDENT: m_pApp->Outdent();           break;
     case IDC_CMD_EDIT:    m_pApp->ToggleEdit();        break;
     case IDC_CMD_ASSOC_MD:    m_pApp->ToggleMdAssociation();         break;
-    case IDC_CMD_WIDTH_MENU:  m_pApp->ShowWidthMenu();               break;
+    case IDC_CMD_WIDTH_STD:   m_pApp->SetContentWidthMode(0);        break;
+    case IDC_CMD_WIDTH_960:   m_pApp->SetContentWidthMode(1);        break;
+    case IDC_CMD_WIDTH_1600:  m_pApp->SetContentWidthMode(2);        break;
+    case IDC_CMD_WIDTH_FULL:  m_pApp->SetContentWidthMode(3);        break;
     }
     return S_OK;
 }
