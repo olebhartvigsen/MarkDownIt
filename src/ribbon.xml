@@ -351,10 +351,8 @@
           <MenuGroup Class="MajorItems">
             <Button CommandName="cmdAbout" />
           </MenuGroup>
-          <MenuGroup Class="MajorItems">
+          <MenuGroup Class="StandardItems">
             <Button CommandName="cmdAssocMd" />
-          </MenuGroup>
-          <MenuGroup Class="MajorItems">
             <DropDownButton CommandName="cmdWidthMenu">
               <MenuGroup>
                 <Button CommandName="cmdWidthStandard" />
