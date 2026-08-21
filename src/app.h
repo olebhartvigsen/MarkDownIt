@@ -66,7 +66,6 @@ public:
     int  GetContentWidthMode() const;
     void SetContentWidthMode(int mode);
     void InvalidateSettingsButtons();
-    void UpdateFileMenu();
 
     void OpenPendingFile(const std::wstring& path) {
         pending_file_ = path;
