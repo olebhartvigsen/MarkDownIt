@@ -294,6 +294,17 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             break;
         }
         case VK_UP: {
+            if (!editing_) {
+                // View mode: scroll up by one line height.
+                float lineHeight = 20.0f;
+                if (rt_) {
+                    D2D1_SIZE_F sz = rt_->GetSize();
+                    lineHeight = sz.height / 40.0f;
+                    if (lineHeight < 16.0f) lineHeight = 16.0f;
+                }
+                StartSpring(scrollY_ - lineHeight);
+                break;
+            }
             float lineHeight = 20.0f;
             if (rt_) {
                 D2D1_SIZE_F sz = rt_->GetSize();
@@ -309,6 +320,17 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             break;
         }
         case VK_DOWN: {
+            if (!editing_) {
+                // View mode: scroll down by one line height.
+                float lineHeight = 20.0f;
+                if (rt_) {
+                    D2D1_SIZE_F sz = rt_->GetSize();
+                    lineHeight = sz.height / 40.0f;
+                    if (lineHeight < 16.0f) lineHeight = 16.0f;
+                }
+                StartSpring(scrollY_ + lineHeight);
+                break;
+            }
             float lineHeight = 20.0f;
             if (rt_) {
                 D2D1_SIZE_F sz = rt_->GetSize();
