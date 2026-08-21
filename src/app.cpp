@@ -919,6 +919,9 @@ void AppWindow::ResizeContentWindow() {
 
 void AppWindow::OnSize(HWND hwnd, int width, int height) {
     ResizeContentWindow();
+    // Debounce-save window placement so bounds persist even if the app
+    // crashes or is killed (not just on clean shutdown).
+    SetTimer(hwnd_, 5, 500, nullptr);
 }
 
 void AppWindow::OnContentSize(HWND hwnd, int width, int height) {
@@ -1928,6 +1931,11 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case WM_CREATE:    OnCreate(hwnd);    return 0;
         case WM_DROPFILES: OnDropFiles(hwnd, (HDROP)wp); return 0;
+        case WM_MOVE: {
+            // Debounce-save window placement when the window is moved.
+            SetTimer(hwnd_, 5, 500, nullptr);
+            return 0;
+        }
         case WM_SIZE: {
             int w = LOWORD(lp), h = HIWORD(lp);
             OnSize(hwnd, w, h);
@@ -1953,6 +1961,10 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 // Open file from command line after init is complete.
                 KillTimer(hwnd_, 3);
                 ProcessPendingFile();
+            } else if (wp == 5) {
+                // Debounced window placement save after resize.
+                KillTimer(hwnd_, 5);
+                SaveWinPlacement(hwnd_);
             }
             return 0;
         case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
