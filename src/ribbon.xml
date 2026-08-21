@@ -343,11 +343,6 @@
         <String>Document Width</String>
       </Command.LabelTitle>
     </Command>
-    <Command Name="cmdRecentItems" Symbol="IDC_CMD_RECENT_ITEMS" Id="10606">
-      <Command.LabelTitle>
-        <String>Recent Items</String>
-      </Command.LabelTitle>
-    </Command>
   </Application.Commands>
   <Application.Views>
     <Ribbon>
@@ -358,6 +353,8 @@
           </MenuGroup>
           <MenuGroup Class="StandardItems">
             <Button CommandName="cmdAssocMd" />
+          </MenuGroup>
+          <MenuGroup Class="StandardItems">
             <DropDownButton CommandName="cmdWidthMenu">
               <MenuGroup>
                 <Button CommandName="cmdWidthStandard" />
@@ -367,9 +364,6 @@
               </MenuGroup>
             </DropDownButton>
           </MenuGroup>
-          <ApplicationMenu.RecentItems>
-            <RecentItems CommandName="cmdRecentItems" />
-          </ApplicationMenu.RecentItems>
         </ApplicationMenu>
       </Ribbon.ApplicationMenu>
       <Ribbon.Tabs>

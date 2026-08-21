@@ -336,25 +336,6 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         }
     }
 
-    // RecentItems: return an empty collection so the auxiliary panel
-    // in the ApplicationMenu renders (expanding the popup height, which
-    // gives the Document Width submenu enough room to show all items
-    // without scrolling).
-    if (nCmdID == IDC_CMD_RECENT_ITEMS && ppropvarNewValue)
-    {
-        if (IsEqualPropertyKey(key, UI_PKEY_RecentItems))
-        {
-            // Empty SAFEARRAY to render an empty auxiliary panel.
-            SAFEARRAY* psa = SafeArrayCreateVector(VT_UNKNOWN, 0, 0);
-            if (psa)
-            {
-                ppropvarNewValue->vt = VT_ARRAY | VT_UNKNOWN;
-                ppropvarNewValue->parray = psa;
-                return S_OK;
-            }
-        }
-    }
-
     // Enable/disable format buttons based on edit mode.
     if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_Enabled))
     {
