@@ -1897,11 +1897,8 @@ void AppWindow::SetContentWidthMode(int mode) {
     settings_.contentWidthMode = mode;
     renderer_.SetContentWidthMode(mode);
     SaveSettings(settings_);
-    InvalidateSettingsButtons();
-    // Force a repaint so the new width takes effect immediately.
-    // Defer the repaint via PostMessage so it runs after the Ribbon's
-    // Execute callback returns — avoiding re-entrant paint while the
-    // Application Menu popup is still on screen.
+    // Defer ALL side effects (InvalidateUICommand, repaint) via PostMessage
+    // to avoid re-entrant calls inside the Ribbon Execute callback.
     layout_cache_.Clear();
     if (hwnd_content_) {
         PostMessage(hwnd_content_, WM_USER + 1, 0, 0);
@@ -2021,11 +2018,13 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 OnScrollTick();
             }
             return 0;
-        case WM_USER + 1:  // Deferred repaint after settings change
+        case WM_USER + 1: {  // Deferred settings change (width, etc.)
+            InvalidateSettingsButtons();
             UpdateScrollInfo();
             RedrawWindow(hwnd_content_, nullptr, nullptr,
                 RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
             return 0;
+        }
         case WM_USER + 2: {  // Deferred .md association toggle
             if (settings_.fileAssoc) {
                 wchar_t exePath[MAX_PATH] = {};
