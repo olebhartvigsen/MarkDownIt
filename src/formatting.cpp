@@ -65,19 +65,22 @@ void ToggleInlineMarker(TextBuffer* buf, Selection* sel, const std::string& mark
     // Second try: the selection is the inner content (markers are just
     // outside). This happens when the user selects rendered bold text —
     // the selection offsets point to the content, not the ** markers.
-    // Expand outward to include adjacent markers, then remove them.
-    if (start >= mlen && end + mlen <= text.size()) {
-        bool hasLeftMarker = true, hasRightMarker = true;
-        for (size_t i = 0; i < mlen; i++) {
-            if (text[start - mlen + i] != marker[i]) { hasLeftMarker = false; break; }
-        }
-        for (size_t i = 0; i < mlen; i++) {
-            if (text[end + i] != marker[i]) { hasRightMarker = false; break; }
-        }
-        if (hasLeftMarker && hasRightMarker) {
-            // Expand selection to include the markers, then remove them.
-            uint32_t fullStart = start - mlen;
-            uint32_t fullEnd = end + mlen;
+    // Expand outward to include ALL consecutive marker characters, then
+    // remove them. This handles ** as well as **** (double-bold) etc.
+    {
+        // Scan left from start for the longest run of the marker.
+        char mc = marker[0];
+        uint32_t leftRun = 0;
+        while (start > leftRun && text[start - leftRun - 1] == mc)
+            leftRun++;
+        // Scan right from end for the longest run.
+        uint32_t rightRun = 0;
+        while (end + rightRun < text.size() && text[end + rightRun] == mc)
+            rightRun++;
+        // Only act if there's at least one full marker pair (mlen chars each side).
+        if (leftRun >= mlen && rightRun >= mlen) {
+            uint32_t fullStart = start - leftRun;
+            uint32_t fullEnd = end + rightRun;
             std::string removed = text.substr(fullStart, fullEnd - fullStart);
             std::string kept = text.substr(start, end - start);
             buf->Splice(fullStart, fullEnd - fullStart, kept);
