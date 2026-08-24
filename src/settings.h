@@ -7,9 +7,6 @@
 // Persisted application settings, stored in HKCU\Software\MarkDownIt.
 // Loaded at startup, saved on change and shutdown.
 
-// Diagnostic log function (defined in settings.cpp)
-void diaglog(const char* fmt, ...);
-
 struct RecentFile {
     std::wstring path;
     std::string  preview;   // first ~300 chars of content for card preview

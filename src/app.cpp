@@ -585,14 +585,9 @@ void AppWindow::LoadSampleDoc() {
     // Instead of showing a placeholder text, show the welcome screen
     // with recent files cards.
     welcome_mode_ = true;
-    diaglog("LoadSampleDoc: welcome_mode_=true, recentFiles=%zu\n",
-        settings_.recentFiles.size());
     if (dw_factory_) {
         welcome_.Init(dw_factory_);
         welcome_.SetRecentFiles(settings_.recentFiles);
-        diaglog("LoadSampleDoc: SetRecentFiles called\n");
-    } else {
-        diaglog("LoadSampleDoc: dw_factory_ is NULL!\n");
     }
     if (rt_) {
         D2D1_SIZE_F sz = rt_->GetSize();
@@ -701,20 +696,12 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
         // Click missed all text blocks — in the left margin.
         // Find the block at this y and select the single visual line.
         int blkIdx = layout_cache_.FindBlockAtY(docY);
-        diaglog("OnLButtonDown margin: blkIdx=%d, docY=%.1f, blocks=%zu\n",
-            blkIdx, docY, layout_cache_.Blocks().size());
         if (blkIdx >= 0) {
             const auto& blocks0 = layout_cache_.Blocks();
-            diaglog("  block[%d]: y=%.1f h=%.1f x=%.1f w=%.1f srcOff=%u srcLen=%u\n",
-                blkIdx, blocks0[blkIdx].y, blocks0[blkIdx].height,
-                blocks0[blkIdx].x, blocks0[blkIdx].width,
-                blocks0[blkIdx].srcOffset, blocks0[blkIdx].srcLength);
             uint32_t lineStart = 0, lineEnd = 0;
             float lineTopRel = 0.0f;
             bool gotLine = layout_cache_.GetLineRangeAtY(blkIdx, docY,
                     &lineStart, &lineEnd, &lineTopRel);
-            diaglog("  GetLineRangeAtY: got=%d start=%u end=%u lineTopRel=%.1f\n",
-                gotLine, lineStart, lineEnd, lineTopRel);
             if (gotLine) {
                 sel_.anchor = {lineStart};
                 sel_.active = {lineEnd};
@@ -946,7 +933,7 @@ void AppWindow::OpenFile(const std::wstring& path) {
     // Track this file in the recent list.
     AddRecentFile(settings_, path);
     SaveSettings(settings_);
-    diaglog("OpenFile: added recent file, total=%zu\n", settings_.recentFiles.size());
+
 
     std::ifstream f(path.c_str(), std::ios::binary);
     if (!f.is_open()) {
@@ -1470,12 +1457,6 @@ void AppWindow::OnContentPaint(HWND hwnd) {
         welcome_.Init(dw_factory_);
         welcome_.Layout(size.width, size.height);
         welcome_.Render(rt_, size.width, size.height, welcome_hover_);
-        static int welcomePaintCount = 0;
-        if (welcomePaintCount < 3) {
-            diaglog("OnContentPaint: welcome mode render, cards=%d\n",
-                welcome_.GetCardCount());
-            welcomePaintCount++;
-        }
         HRESULT hr = rt_->EndDraw();
         if (hr == D2DERR_RECREATE_TARGET) {
             RecreateRenderTarget();
@@ -2021,36 +2002,10 @@ void AppWindow::SetHeading(int level) {
     // Toggle: if the caret is already in a heading of this level,
     // remove the heading (revert to paragraph).
     FormatState fs = GetFormatState();
-    diaglog("SetHeading(%d): editing=%d headingLevel=%d sel.active=%u sel.anchor=%u sel.empty=%d\n",
-        level, editing_, fs.headingLevel, sel_.active.offset, sel_.anchor.offset, sel_.Empty());
-    // Log the text around the cursor before the splice.
-    {
-        const std::string& txt = buffer_.Text();
-        uint32_t off = sel_.active.offset;
-        uint32_t ls = off;
-        while (ls > 0 && txt[ls-1] != '\n') ls--;
-        uint32_t le = off;
-        while (le < txt.size() && txt[le] != '\n') le++;
-        diaglog("SetHeading: BEFORE line at %u: '%.*s'\n", ls,
-            (int)(le - ls), txt.data() + ls);
-        diaglog("SetHeading: buffer size BEFORE=%zu\n", txt.size());
-    }
     if (fs.headingLevel == level) {
         SetHeadingLevel(&buffer_, &sel_, 0);
     } else {
         SetHeadingLevel(&buffer_, &sel_, level);
-    }
-    // Log the text at the same position after the splice.
-    {
-        const std::string& txt = buffer_.Text();
-        uint32_t off = sel_.active.offset;
-        uint32_t ls = off;
-        while (ls > 0 && txt[ls-1] != '\n') ls--;
-        uint32_t le = off;
-        while (le < txt.size() && txt[le] != '\n') le++;
-        diaglog("SetHeading: AFTER line at %u: '%.*s'\n", ls,
-            (int)(le - ls), txt.data() + ls);
-        diaglog("SetHeading: buffer size AFTER=%zu, sel.active=%u\n", txt.size(), sel_.active.offset);
     }
     editor_.BreakUndoCoalesce();
     OnBufferChanged();

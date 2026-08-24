@@ -63,7 +63,6 @@ void WelcomeScreen::Init(IDWriteFactory* dw) {
 
 void WelcomeScreen::SetRecentFiles(const std::vector<RecentFile>& files) {
     cards_.clear();
-    diaglog("SetRecentFiles: input files=%zu\n", files.size());
     for (const auto& rf : files) {
         if (rf.path.empty()) continue;
         WelcomeCard c;
@@ -87,7 +86,6 @@ void WelcomeScreen::SetRecentFiles(const std::vector<RecentFile>& files) {
         cards_.push_back(c);
     }
     if (cards_.size() > kMaxCards) cards_.resize(kMaxCards);
-    diaglog("SetRecentFiles: created %zu cards\n", cards_.size());
 }
 
 void WelcomeScreen::Layout(float viewW, float viewH) {
