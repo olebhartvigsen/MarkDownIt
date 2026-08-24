@@ -52,6 +52,92 @@ int LayoutCache::FindBlockAtY(float y) const {
     return best;
 }
 
+bool LayoutCache::GetLineRangeAtY(int blockIndex, float y,
+                                  uint32_t* outStart, uint32_t* outEnd,
+                                  float* outLineTop) const {
+    if (blockIndex < 0 || blockIndex >= static_cast<int>(blocks_.size()))
+        return false;
+    const auto& bl = blocks_[blockIndex];
+    if (!bl.layout) return false;
+
+    // Get line metrics from the DirectWrite layout.
+    DWRITE_LINE_METRICS metrics[64];
+    uint32_t lineCount = 0;
+    HRESULT hr = bl.layout->GetLineMetrics(metrics, 64, &lineCount);
+    if (FAILED(hr) || lineCount == 0) return false;
+
+    // Convert y to layout-local coordinate.
+    float localY = y - bl.y;
+
+    // Find which visual line contains localY.
+    float lineTop = 0.0f;
+    float lineBottom = 0.0f;
+    int lineIdx = 0;
+    for (uint32_t i = 0; i < lineCount; ++i) {
+        lineBottom = lineTop + metrics[i].height;
+        if (localY >= lineTop && localY < lineBottom) {
+            lineIdx = static_cast<int>(i);
+            break;
+        }
+        lineTop = lineBottom;
+    }
+    // If y is beyond the last line, clamp to last line.
+    if (localY >= lineBottom) {
+        lineIdx = static_cast<int>(lineCount) - 1;
+        // Recompute lineTop for the last line
+        lineTop = 0.0f;
+        for (uint32_t i = 0; i + 1 < lineCount; ++i)
+            lineTop += metrics[i].height;
+    }
+
+    if (outLineTop) *outLineTop = lineTop;
+
+    // Now find the text position range of this visual line.
+    // Use HitTestTextPosition on the first and last positions.
+    // The line's text range can be found using GetLineMetrics
+    // which unfortunately doesn't give us text positions directly.
+    // Instead, use HitTestPoint on left edge and right edge of the line.
+
+    // First, find the start position: hit-test the left edge of the line.
+    float lineY = lineTop + metrics[lineIdx].height * 0.5f;
+    float lineLocalY = lineY;
+
+    DWRITE_HIT_TEST_METRICS htmStart = {}, htmEnd = {};
+    BOOL isTrailing, isInside;
+
+    // Hit-test the left edge to get the start of the line.
+    bl.layout->HitTestPoint(0.0f, lineLocalY,
+        &isTrailing, &isInside, &htmStart);
+
+    // Hit-test the right edge (full width) to get the end of the line.
+    bl.layout->HitTestPoint(bl.width, lineLocalY,
+        &isTrailing, &isInside, &htmEnd);
+
+    uint32_t u16Start = htmStart.textPosition;
+    uint32_t u16End = htmEnd.textPosition + htmEnd.length;
+
+    // Convert UTF-16 positions to UTF-8 source offsets via u16ToSrc.
+    if (!bl.u16ToSrc.empty()) {
+        if (u16Start < bl.u16ToSrc.size())
+            *outStart = bl.u16ToSrc[u16Start];
+        else
+            *outStart = bl.srcOffset + bl.srcLength;
+
+        if (u16End < bl.u16ToSrc.size())
+            *outEnd = bl.u16ToSrc[u16End];
+        else if (u16End > 0 && u16End - 1 < bl.u16ToSrc.size())
+            *outEnd = bl.u16ToSrc[u16End - 1] + 1;
+        else
+            *outEnd = bl.srcOffset + bl.srcLength;
+    } else {
+        // Fallback: linear approximation.
+        *outStart = bl.textStartOffset + u16Start;
+        *outEnd = bl.textStartOffset + u16End;
+    }
+
+    return true;
+}
+
 int LayoutCache::BlockForOffset(uint32_t offset) const {
     int best = -1;
     uint32_t bestLen = 0xFFFFFFFF;

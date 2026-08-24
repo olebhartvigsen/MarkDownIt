@@ -181,6 +181,9 @@ private:
     // Margin drag selection: when true, mouse drag selects whole lines.
     bool           margin_selecting_ = false;
     int            margin_anchor_block_ = -1;  // block index where drag started
+    uint32_t       margin_anchor_start_ = 0;   // start of anchor visual line
+    uint32_t       margin_anchor_end_ = 0;     // end of anchor visual line
+    float          margin_anchor_y_ = 0.0f;    // doc-space y of anchor line top
 
     static const wchar_t* kClassName;
     static const wchar_t* kContentClassName;

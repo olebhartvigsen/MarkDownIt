@@ -678,19 +678,36 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     float docY = static_cast<float>(y) + scrollY_;
 
     // Check if the click is in the left margin (no text block hit at x).
-    // If so, select the entire line/paragraph at that y position.
+    // If so, select the visual line at that y position (like Word).
     uint32_t offset = layout_cache_.PointToOffset(docX, docY);
     if (offset == UINT32_MAX) {
-        // Click missed all text blocks — likely in the left margin.
-        // Find the block at this y coordinate and select its full range.
+        // Click missed all text blocks — in the left margin.
+        // Find the block at this y and select the single visual line.
         int blkIdx = layout_cache_.FindBlockAtY(docY);
         if (blkIdx >= 0) {
-            const auto& blocks = layout_cache_.Blocks();
-            const auto& bl = blocks[blkIdx];
-            sel_.anchor = {bl.srcOffset};
-            sel_.active = {bl.srcOffset + bl.srcLength};
+            uint32_t lineStart = 0, lineEnd = 0;
+            float lineTopRel = 0.0f;
+            if (layout_cache_.GetLineRangeAtY(blkIdx, docY,
+                    &lineStart, &lineEnd, &lineTopRel)) {
+                sel_.anchor = {lineStart};
+                sel_.active = {lineEnd};
+            } else {
+                const auto& blocks = layout_cache_.Blocks();
+                const auto& bl = blocks[blkIdx];
+                sel_.anchor = {bl.srcOffset};
+                sel_.active = {bl.srcOffset + bl.srcLength};
+                lineStart = bl.srcOffset;
+                lineEnd = bl.srcOffset + bl.srcLength;
+                lineTopRel = 0.0f;
+            }
             margin_selecting_ = true;
             margin_anchor_block_ = blkIdx;
+            margin_anchor_start_ = lineStart;
+            margin_anchor_end_ = lineEnd;
+            {
+                const auto& blocks = layout_cache_.Blocks();
+                margin_anchor_y_ = blocks[blkIdx].y + lineTopRel;
+            }
             if (editing_) UpdateCaretPosition();
             Repaint();
             return;
@@ -749,23 +766,39 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
     float docY = static_cast<float>(y) + scrollY_;
 
     if (margin_selecting_ && margin_anchor_block_ >= 0) {
-        // Extending a margin selection: select full blocks from the
-        // anchor block to the block at the current y position.
+        // Extending a margin selection by visual lines.
+        // Find the block and visual line at the current y position.
         int blkIdx = layout_cache_.FindBlockAtY(docY);
         if (blkIdx >= 0) {
+            uint32_t curStart = 0, curEnd = 0;
+            bool gotLine = layout_cache_.GetLineRangeAtY(
+                blkIdx, docY, &curStart, &curEnd);
+            if (!gotLine) {
+                const auto& blocks = layout_cache_.Blocks();
+                curStart = blocks[blkIdx].srcOffset;
+                curEnd = blocks[blkIdx].srcOffset + blocks[blkIdx].srcLength;
+            }
+
+            // Determine drag direction by comparing current y with anchor y.
             const auto& blocks = layout_cache_.Blocks();
-            const auto& anchorBl = blocks[margin_anchor_block_];
-            const auto& curBl = blocks[blkIdx];
-            if (blkIdx >= margin_anchor_block_) {
-                // Dragging down (or same block): anchor=start of anchor block,
-                // active=end of current block.
-                sel_.anchor = {anchorBl.srcOffset};
-                sel_.active = {curBl.srcOffset + curBl.srcLength};
+            bool draggingDown;
+            if (blkIdx > margin_anchor_block_) {
+                draggingDown = true;
+            } else if (blkIdx < margin_anchor_block_) {
+                draggingDown = false;
             } else {
-                // Dragging up: anchor=end of anchor block,
-                // active=start of current block.
-                sel_.anchor = {anchorBl.srcOffset + anchorBl.srcLength};
-                sel_.active = {curBl.srcOffset};
+                // Same block: compare current docY with anchor line's y.
+                draggingDown = (docY >= margin_anchor_y_);
+            }
+
+            if (draggingDown) {
+                // anchor = start of anchor line, active = end of current line
+                sel_.anchor = {margin_anchor_start_};
+                sel_.active = {curEnd};
+            } else {
+                // anchor = end of anchor line, active = start of current line
+                sel_.anchor = {margin_anchor_end_};
+                sel_.active = {curStart};
             }
         }
         if (editing_) UpdateCaretPosition();

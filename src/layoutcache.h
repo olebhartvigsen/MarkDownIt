@@ -38,6 +38,14 @@ public:
     // Used for margin-click line selection. Returns -1 if none.
     int FindBlockAtY(float y) const;
 
+    // Find the visual line within a block at the given y coordinate.
+    // Returns the source offset range [start, end) of the visual line.
+    // Also outputs the line's top y (relative to block top).
+    // Returns false if the block has no layout or y is out of range.
+    bool GetLineRangeAtY(int blockIndex, float y,
+                         uint32_t* outStart, uint32_t* outEnd,
+                         float* outLineTop = nullptr) const;
+
     // Find the block owning a source offset. Returns -1 if none.
     int BlockForOffset(uint32_t offset) const;
 
