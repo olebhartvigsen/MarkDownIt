@@ -2023,12 +2023,35 @@ void AppWindow::SetHeading(int level) {
     FormatState fs = GetFormatState();
     diaglog("SetHeading(%d): editing=%d headingLevel=%d sel.active=%u sel.anchor=%u sel.empty=%d\n",
         level, editing_, fs.headingLevel, sel_.active.offset, sel_.anchor.offset, sel_.Empty());
+    // Log the text around the cursor before the splice.
+    {
+        const std::string& txt = buffer_.Text();
+        uint32_t off = sel_.active.offset;
+        uint32_t ls = off;
+        while (ls > 0 && txt[ls-1] != '\n') ls--;
+        uint32_t le = off;
+        while (le < txt.size() && txt[le] != '\n') le++;
+        diaglog("SetHeading: BEFORE line at %u: '%.*s'\n", ls,
+            (int)(le - ls), txt.data() + ls);
+        diaglog("SetHeading: buffer size BEFORE=%zu\n", txt.size());
+    }
     if (fs.headingLevel == level) {
         SetHeadingLevel(&buffer_, &sel_, 0);
     } else {
         SetHeadingLevel(&buffer_, &sel_, level);
     }
-    diaglog("SetHeading: after splice, buffer size=%zu\n", buffer_.Text().size());
+    // Log the text at the same position after the splice.
+    {
+        const std::string& txt = buffer_.Text();
+        uint32_t off = sel_.active.offset;
+        uint32_t ls = off;
+        while (ls > 0 && txt[ls-1] != '\n') ls--;
+        uint32_t le = off;
+        while (le < txt.size() && txt[le] != '\n') le++;
+        diaglog("SetHeading: AFTER line at %u: '%.*s'\n", ls,
+            (int)(le - ls), txt.data() + ls);
+        diaglog("SetHeading: buffer size AFTER=%zu, sel.active=%u\n", txt.size(), sel_.active.offset);
+    }
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
     // The ribbon button click steals focus from the content window, so the
