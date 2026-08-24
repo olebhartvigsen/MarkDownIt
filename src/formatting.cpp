@@ -1,4 +1,5 @@
 #include "formatting.h"
+#include "undostack.h"
 #include <algorithm>
 #include <cstdlib>
 
@@ -14,33 +15,51 @@ bool IsWrappedIn(const std::string& text, uint32_t start, uint32_t end,
     return true;
 }
 
-void ToggleInlineMarker(TextBuffer* buf, Selection* sel, const std::string& marker) {
+// Helper: record a single contiguous splice as an undo entry.
+static void RecordUndo(UndoStack* undo, uint32_t offset,
+                       const std::string& removed, const std::string& inserted,
+                       const Selection& selBefore, const Selection& selAfter) {
+    if (!undo) return;
+    UndoEntry entry{};
+    entry.offset = offset;
+    entry.removed = removed;
+    entry.inserted = inserted;
+    entry.selBefore = selBefore;
+    entry.selAfter = selAfter;
+    entry.type = EditType::Other;
+    undo->Push(entry);
+}
+
+void ToggleInlineMarker(TextBuffer* buf, Selection* sel, const std::string& marker,
+                       UndoStack* undo) {
     if (sel->Empty()) {
         // Empty selection: insert marker pair and put caret between them.
         uint32_t at = sel->active.offset;
-        buf->Splice(at, 0, marker + marker);
-        // Caret goes to position after first marker.
+        std::string inserted = marker + marker;
+        Selection selBefore = *sel;
+        buf->Splice(at, 0, inserted);
         sel->Collapse({at + static_cast<uint32_t>(marker.size())});
+        RecordUndo(undo, at, "", inserted, selBefore, *sel);
         return;
     }
 
     uint32_t start = sel->Start();
     uint32_t end = start + sel->Length();
     const std::string& text = buf->Text();
+    Selection selBefore = *sel;
 
     if (IsWrappedIn(text, start, end, marker)) {
-        // Remove the markers.
+        // Remove the markers: single splice replacing "**content**" with "content".
         uint32_t mlen = static_cast<uint32_t>(marker.size());
-        // Remove end marker first (so offsets don't shift).
-        buf->Splice(end - mlen, mlen, "");
-        buf->Splice(start, mlen, "");
-        // Adjust selection: the inner text remains, markers removed.
+        std::string removed = text.substr(start, end - start);  // "**content**"
+        std::string kept = removed.substr(mlen, removed.size() - mlen * 2);  // "content"
+        buf->Splice(start, end - start, kept);
         sel->anchor = {start};
-        sel->active = {end - mlen * 2};
+        sel->active = {start + static_cast<uint32_t>(kept.size())};
+        RecordUndo(undo, start, removed, kept, selBefore, *sel);
     } else {
         // Add the markers around the selection, but place them inside
         // any surrounding whitespace so md4c recognizes the emphasis.
-        // E.g. " text " becomes " **text** " not "** text **".
         uint32_t contentStart = start;
         uint32_t contentEnd = end;
         while (contentStart < contentEnd &&
@@ -51,16 +70,19 @@ void ToggleInlineMarker(TextBuffer* buf, Selection* sel, const std::string& mark
                 text[contentEnd - 1] == '\n' || text[contentEnd - 1] == '\r'))
             contentEnd--;
 
-        // Insert end marker first (so start offset doesn't shift).
-        buf->Splice(contentEnd, 0, marker);
-        buf->Splice(contentStart, 0, marker);
-        // Selection covers the same text plus the markers.
+        // Single contiguous splice: replace "content" with "**content**".
+        std::string removed = text.substr(contentStart, contentEnd - contentStart);
+        std::string inserted = marker + removed + marker;
+        buf->Splice(contentStart, contentEnd - contentStart, inserted);
         sel->anchor = {contentStart};
-        sel->active = {contentEnd + static_cast<uint32_t>(marker.size() * 2)};
+        sel->active = {contentStart + static_cast<uint32_t>(inserted.size())};
+        RecordUndo(undo, contentStart, removed, inserted, selBefore, *sel);
     }
 }
 
-void InsertLink(TextBuffer* buf, Selection* sel, const std::string& url) {
+void InsertLink(TextBuffer* buf, Selection* sel, const std::string& url,
+                UndoStack* undo) {
+    Selection selBefore = *sel;
     if (sel->Empty()) {
         // Insert [](url) and place caret between [ and ].
         uint32_t at = sel->active.offset;
@@ -68,14 +90,18 @@ void InsertLink(TextBuffer* buf, Selection* sel, const std::string& url) {
         buf->Splice(at, 0, link);
         sel->anchor = {at + 1};
         sel->active = {at + 1};
+        RecordUndo(undo, at, "", link, selBefore, *sel);
     } else {
         uint32_t start = sel->Start();
         uint32_t end = start + sel->Length();
-        // Insert ](url) after end, then [ before start.
-        buf->Splice(end, 0, "](" + url + ")");
-        buf->Splice(start, 0, "[");
+        // Single contiguous splice: replace "text" with "[text](url)".
+        const std::string& text = buf->Text();
+        std::string removed = text.substr(start, end - start);
+        std::string inserted = "[" + removed + "](" + url + ")";
+        buf->Splice(start, end - start, inserted);
         sel->anchor = {start};
-        sel->active = {end + 1 + static_cast<uint32_t>(url.size()) + 3};
+        sel->active = {start + static_cast<uint32_t>(inserted.size())};
+        RecordUndo(undo, start, removed, inserted, selBefore, *sel);
     }
 }
 
@@ -198,7 +224,8 @@ static std::string GetLinePrefix(const std::string& line) {
     return "";
 }
 
-void SetHeadingLevel(TextBuffer* buf, Selection* sel, int level) {
+void SetHeadingLevel(TextBuffer* buf, Selection* sel, int level,
+                      UndoStack* undo) {
     const std::string& text = buf->Text();
 
     // A markdown heading is a single line: it must span the entire paragraph
@@ -268,6 +295,8 @@ void SetHeadingLevel(TextBuffer* buf, Selection* sel, int level) {
 
     // Splice: replace the whole paragraph block with the new single line.
     uint32_t oldLen = paraEnd - paraStart;
+    std::string removed = text.substr(paraStart, oldLen);
+    Selection selBefore = *sel;
     buf->Splice(paraStart, oldLen, replacement);
 
     // Place the caret at the end of the new content (content start if the
@@ -275,11 +304,12 @@ void SetHeadingLevel(TextBuffer* buf, Selection* sel, int level) {
     // the same relative position within the content.
     uint32_t newOffset = paraStart + static_cast<uint32_t>(replacement.size());
     sel->Collapse({newOffset});
+    RecordUndo(undo, paraStart, removed, replacement, selBefore, *sel);
 }
 
 // Fix: sel_ should be *sel
 
-void ToggleUnorderedList(TextBuffer* buf, Selection* sel) {
+void ToggleUnorderedList(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     const std::string& text = buf->Text();
     uint32_t lineStart = LineStartOf(text, sel->active.offset);
     std::string line = GetLine(text, lineStart);
@@ -294,20 +324,26 @@ void ToggleUnorderedList(TextBuffer* buf, Selection* sel) {
         i + 1 < prefix.size() && prefix[i + 1] == ' ')
         isUL = true;
 
+    Selection selBefore = *sel;
+    std::string removed = prefix;
     if (isUL) {
         // Remove the list marker.
-        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), "");
+        std::string replacement = "";
+        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), replacement);
         int32_t delta = -static_cast<int32_t>(prefix.size());
         sel->Collapse({static_cast<uint32_t>(std::max(0, static_cast<int32_t>(sel->active.offset) + delta))});
+        RecordUndo(undo, lineStart, removed, replacement, selBefore, *sel);
     } else {
         // Add "- " prefix.
-        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), "- ");
+        std::string replacement = "- ";
+        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), replacement);
         int32_t delta = 2 - static_cast<int32_t>(prefix.size());
         sel->Collapse({static_cast<uint32_t>(std::max(0, static_cast<int32_t>(sel->active.offset) + delta))});
+        RecordUndo(undo, lineStart, removed, replacement, selBefore, *sel);
     }
 }
 
-void ToggleOrderedList(TextBuffer* buf, Selection* sel) {
+void ToggleOrderedList(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     const std::string& text = buf->Text();
     uint32_t lineStart = LineStartOf(text, sel->active.offset);
     std::string line = GetLine(text, lineStart);
@@ -325,18 +361,24 @@ void ToggleOrderedList(TextBuffer* buf, Selection* sel) {
             isOL = true;
     }
 
+    Selection selBefore = *sel;
+    std::string removed = prefix;
     if (isOL) {
-        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), "");
+        std::string replacement = "";
+        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), replacement);
         int32_t delta = -static_cast<int32_t>(prefix.size());
         sel->Collapse({static_cast<uint32_t>(std::max(0, static_cast<int32_t>(sel->active.offset) + delta))});
+        RecordUndo(undo, lineStart, removed, replacement, selBefore, *sel);
     } else {
-        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), "1. ");
+        std::string replacement = "1. ";
+        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), replacement);
         int32_t delta = 3 - static_cast<int32_t>(prefix.size());
         sel->Collapse({static_cast<uint32_t>(std::max(0, static_cast<int32_t>(sel->active.offset) + delta))});
+        RecordUndo(undo, lineStart, removed, replacement, selBefore, *sel);
     }
 }
 
-void ToggleBlockquote(TextBuffer* buf, Selection* sel) {
+void ToggleBlockquote(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     const std::string& text = buf->Text();
     uint32_t lineStart = LineStartOf(text, sel->active.offset);
     std::string line = GetLine(text, lineStart);
@@ -349,26 +391,34 @@ void ToggleBlockquote(TextBuffer* buf, Selection* sel) {
     if (i < prefix.size() && prefix[i] == '>')
         isQuote = true;
 
+    Selection selBefore = *sel;
+    std::string removed = prefix;
     if (isQuote) {
-        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), "");
+        std::string replacement = "";
+        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), replacement);
         int32_t delta = -static_cast<int32_t>(prefix.size());
         sel->Collapse({static_cast<uint32_t>(std::max(0, static_cast<int32_t>(sel->active.offset) + delta))});
+        RecordUndo(undo, lineStart, removed, replacement, selBefore, *sel);
     } else {
-        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), "> ");
+        std::string replacement = "> ";
+        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), replacement);
         int32_t delta = 2 - static_cast<int32_t>(prefix.size());
         sel->Collapse({static_cast<uint32_t>(std::max(0, static_cast<int32_t>(sel->active.offset) + delta))});
+        RecordUndo(undo, lineStart, removed, replacement, selBefore, *sel);
     }
 }
 
-void IndentLine(TextBuffer* buf, Selection* sel) {
+void IndentLine(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     const std::string& text = buf->Text();
     uint32_t lineStart = LineStartOf(text, sel->active.offset);
     // Insert two spaces at the beginning of the line.
+    Selection selBefore = *sel;
     buf->Splice(lineStart, 0, "  ");
     sel->Collapse({sel->active.offset + 2});
+    RecordUndo(undo, lineStart, "", "  ", selBefore, *sel);
 }
 
-void OutdentLine(TextBuffer* buf, Selection* sel) {
+void OutdentLine(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     const std::string& text = buf->Text();
     uint32_t lineStart = LineStartOf(text, sel->active.offset);
     // Remove up to 2 leading spaces.
@@ -376,8 +426,11 @@ void OutdentLine(TextBuffer* buf, Selection* sel) {
     for (int i = 0; i < 2 && lineStart + i < text.size() && text[lineStart + i] == ' '; i++)
         removeCount++;
     if (removeCount > 0) {
+        Selection selBefore = *sel;
+        std::string removed = text.substr(lineStart, removeCount);
         buf->Splice(lineStart, removeCount, "");
         sel->Collapse({static_cast<uint32_t>(std::max(0, static_cast<int32_t>(sel->active.offset) - removeCount))});
+        RecordUndo(undo, lineStart, removed, "", selBefore, *sel);
     }
 }
 

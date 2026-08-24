@@ -440,53 +440,53 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             break;
         case 0x30:  // Ctrl+0 = remove heading
             if (ctrl && !shift) {
-                SetHeadingLevel(&buffer_, &sel_, 0);
+                SetHeadingLevel(&buffer_, &sel_, 0, &undo_stack_);
                 editor_.BreakUndoCoalesce();
                 OnBufferChanged();
             }
             break;
         case 0x37:  // Ctrl+7/Ctrl+Shift+7 = ordered list
             if (ctrl && shift) {
-                ToggleOrderedList(&buffer_, &sel_);
+                ToggleOrderedList(&buffer_, &sel_, &undo_stack_);
                 editor_.BreakUndoCoalesce();
                 OnBufferChanged();
             }
             break;
         case 0x38:  // Ctrl+8/Ctrl+Shift+8 = unordered list
             if (ctrl && shift) {
-                ToggleUnorderedList(&buffer_, &sel_);
+                ToggleUnorderedList(&buffer_, &sel_, &undo_stack_);
                 editor_.BreakUndoCoalesce();
                 OnBufferChanged();
             }
             break;
         case VK_OEM_PERIOD:  // Ctrl+Shift+. = blockquote
             if (ctrl && shift) {
-                ToggleBlockquote(&buffer_, &sel_);
+                ToggleBlockquote(&buffer_, &sel_, &undo_stack_);
                 editor_.BreakUndoCoalesce();
                 OnBufferChanged();
             }
             break;
         case VK_TAB:
             if (shift) {
-                OutdentLine(&buffer_, &sel_);
+                OutdentLine(&buffer_, &sel_, &undo_stack_);
                 editor_.BreakUndoCoalesce();
                 OnBufferChanged();
             } else {
-                IndentLine(&buffer_, &sel_);
+                IndentLine(&buffer_, &sel_, &undo_stack_);
                 editor_.BreakUndoCoalesce();
                 OnBufferChanged();
             }
             break;
         case 0x42:  // Ctrl+B = bold
             if (ctrl && !shift) {
-                ToggleInlineMarker(&buffer_, &sel_, "**");
+                ToggleInlineMarker(&buffer_, &sel_, "**", &undo_stack_);
                 editor_.BreakUndoCoalesce();
                 OnBufferChanged();
             }
             break;
         case 0x49:  // Ctrl+I = italic
             if (ctrl && !shift) {
-                ToggleInlineMarker(&buffer_, &sel_, "*");
+                ToggleInlineMarker(&buffer_, &sel_, "*", &undo_stack_);
                 editor_.BreakUndoCoalesce();
                 OnBufferChanged();
             }
@@ -500,7 +500,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             break;
         case 0x58:  // Ctrl+X = cut, Ctrl+Shift+X = strikethrough
             if (ctrl && shift) {
-                ToggleInlineMarker(&buffer_, &sel_, "~~");
+                ToggleInlineMarker(&buffer_, &sel_, "~~", &undo_stack_);
                 editor_.BreakUndoCoalesce();
                 OnBufferChanged();
             } else if (ctrl && !shift) {
@@ -516,7 +516,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             break;
         case VK_OEM_3:  // Ctrl+` = inline code (backtick key)
             if (ctrl && !shift) {
-                ToggleInlineMarker(&buffer_, &sel_, "`");
+                ToggleInlineMarker(&buffer_, &sel_, "`", &undo_stack_);
                 editor_.BreakUndoCoalesce();
                 OnBufferChanged();
             }
@@ -1744,7 +1744,7 @@ void AppWindow::InvalidateFormatButtons() {
 
 void AppWindow::ToggleBold() {
     if (!editing_) return;
-    ToggleInlineMarker(&buffer_, &sel_, "**");
+    ToggleInlineMarker(&buffer_, &sel_, "**", &undo_stack_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
     // The ribbon button click steals focus from the content window, so the
@@ -1755,7 +1755,7 @@ void AppWindow::ToggleBold() {
 
 void AppWindow::ToggleItalic() {
     if (!editing_) return;
-    ToggleInlineMarker(&buffer_, &sel_, "*");
+    ToggleInlineMarker(&buffer_, &sel_, "*", &undo_stack_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
     ForceRepaintNow();
@@ -1763,7 +1763,7 @@ void AppWindow::ToggleItalic() {
 
 void AppWindow::ToggleStrike() {
     if (!editing_) return;
-    ToggleInlineMarker(&buffer_, &sel_, "~~");
+    ToggleInlineMarker(&buffer_, &sel_, "~~", &undo_stack_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
     ForceRepaintNow();
@@ -1771,7 +1771,7 @@ void AppWindow::ToggleStrike() {
 
 void AppWindow::ToggleCode() {
     if (!editing_) return;
-    ToggleInlineMarker(&buffer_, &sel_, "`");
+    ToggleInlineMarker(&buffer_, &sel_, "`", &undo_stack_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
     ForceRepaintNow();
@@ -1984,7 +1984,7 @@ void AppWindow::InsertLinkCmd() {
         reinterpret_cast<LPARAM>(&url));
     if (result != IDOK || url.empty()) return;
     std::string urlUtf8 = WideToUtf8(url);
-    InsertLink(&buffer_, &sel_, urlUtf8);
+    InsertLink(&buffer_, &sel_, urlUtf8, &undo_stack_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
     ForceRepaintNow();
@@ -2001,11 +2001,9 @@ void AppWindow::ClearFormat() {
             uint32_t e = s + sel_.Length();
             const std::string& text = buffer_.Text();
             if (IsWrappedIn(text, s, e, m)) {
-                uint32_t mlen = static_cast<uint32_t>(strlen(m));
-                buffer_.Splice(e - mlen, mlen, "");
-                buffer_.Splice(s, mlen, "");
-                sel_.anchor = {s};
-                sel_.active = {e - mlen * 2};
+                // Use ToggleInlineMarker with undo recording.
+                // It will detect the wrapping and remove the markers.
+                ToggleInlineMarker(&buffer_, &sel_, m, &undo_stack_);
             }
         }
     }
@@ -2020,9 +2018,9 @@ void AppWindow::SetHeading(int level) {
     // remove the heading (revert to paragraph).
     FormatState fs = GetFormatState();
     if (fs.headingLevel == level) {
-        SetHeadingLevel(&buffer_, &sel_, 0);
+        SetHeadingLevel(&buffer_, &sel_, 0, &undo_stack_);
     } else {
-        SetHeadingLevel(&buffer_, &sel_, level);
+        SetHeadingLevel(&buffer_, &sel_, level, &undo_stack_);
     }
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
@@ -2034,7 +2032,7 @@ void AppWindow::SetHeading(int level) {
 
 void AppWindow::ToggleBullets() {
     if (!editing_) return;
-    ToggleUnorderedList(&buffer_, &sel_);
+    ToggleUnorderedList(&buffer_, &sel_, &undo_stack_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
     ForceRepaintNow();
@@ -2042,7 +2040,7 @@ void AppWindow::ToggleBullets() {
 
 void AppWindow::ToggleNumbering() {
     if (!editing_) return;
-    ToggleOrderedList(&buffer_, &sel_);
+    ToggleOrderedList(&buffer_, &sel_, &undo_stack_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
     ForceRepaintNow();
@@ -2050,7 +2048,7 @@ void AppWindow::ToggleNumbering() {
 
 void AppWindow::ToggleQuote() {
     if (!editing_) return;
-    ToggleBlockquote(&buffer_, &sel_);
+    ToggleBlockquote(&buffer_, &sel_, &undo_stack_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
     ForceRepaintNow();
@@ -2058,7 +2056,7 @@ void AppWindow::ToggleQuote() {
 
 void AppWindow::Indent() {
     if (!editing_) return;
-    IndentLine(&buffer_, &sel_);
+    IndentLine(&buffer_, &sel_, &undo_stack_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
     ForceRepaintNow();
@@ -2066,7 +2064,7 @@ void AppWindow::Indent() {
 
 void AppWindow::Outdent() {
     if (!editing_) return;
-    OutdentLine(&buffer_, &sel_);
+    OutdentLine(&buffer_, &sel_, &undo_stack_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
     ForceRepaintNow();
