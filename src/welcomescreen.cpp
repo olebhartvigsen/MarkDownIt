@@ -324,8 +324,101 @@ void WelcomeScreen::Render(ID2D1RenderTarget* rt, float viewW, float viewH,
             rt->PushAxisAlignedClip(clipRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 
             float curY = pvY;
-            for (const auto& line : lines) {
+            for (size_t li = 0; li < lines.size(); ++li) {
                 if (curY >= pvY + pvH) break;
+
+                const auto& line = lines[li];
+
+                // ── Table rendering ──
+                // A table row starts with '|'. A separator line looks like "|---|---|".
+                // We collapse the separator and render header row in bold.
+                bool isTableRow = (!line.empty() && line[0] == L'|');
+                bool isTableSep = isTableRow;
+                if (isTableSep) {
+                    for (wchar_t c : line) {
+                        if (c != L'|' && c != L'-' && c != L':' && c != L' ' && c != L'\t') {
+                            isTableSep = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (isTableSep) {
+                    // Skip the separator line entirely.
+                    continue;
+                }
+
+                if (isTableRow) {
+                    // Split the row by '|' and render as aligned columns.
+                    std::vector<std::wstring> cells;
+                    std::wstring cell;
+                    for (size_t ci = 0; ci < line.size(); ++ci) {
+                        if (line[ci] == L'|') {
+                            // Trim whitespace from cell.
+                            std::wstring trimmed;
+                            size_t s = 0, e = cell.size();
+                            while (s < e && (cell[s] == L' ' || cell[s] == L'\t')) s++;
+                            while (e > s && (cell[e-1] == L' ' || cell[e-1] == L'\t')) e--;
+                            trimmed = cell.substr(s, e - s);
+                            if (!trimmed.empty() || ci < line.size() - 1)
+                                cells.push_back(trimmed);
+                            cell.clear();
+                        } else {
+                            cell += line[ci];
+                        }
+                    }
+
+                    // The first table row (header) is bold.
+                    // Detect header by checking if previous non-separator line
+                    // was also a table row, or if this is the first table row.
+                    bool isHeader = (li == 0 || lines[li - 1].empty() ||
+                                    (li > 0 && lines[li - 1][0] != L'|'));
+                    // Actually: header is the first row before the separator.
+                    // Since we skip the separator, the first row is always header
+                    // if it's followed by (was followed by) a separator.
+                    // For simplicity, make the first table row bold.
+                    // Check: is the next line a separator?
+                    bool nextIsSep = false;
+                    if (li + 1 < lines.size()) {
+                        const auto& nl = lines[li + 1];
+                        if (!nl.empty() && nl[0] == L'|') {
+                            nextIsSep = true;
+                            for (wchar_t c : nl) {
+                                if (c != L'|' && c != L'-' && c != L':' && c != L' ' && c != L'\t') {
+                                    nextIsSep = false;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    isHeader = nextIsSep;
+
+                    // Render the row: join cells with " | " separator.
+                    std::wstring rowText;
+                    for (size_t ci = 0; ci < cells.size(); ++ci) {
+                        if (ci > 0) rowText += L"  \x2502  "; // │ box drawing char
+                        rowText += cells[ci];
+                    }
+
+                    IDWriteTextFormat* fmt = isHeader ? cardPreviewBold_fmt_ : cardPreview_fmt_;
+                    IDWriteTextLayout* tl = nullptr;
+                    dw_->CreateTextLayout(rowText.c_str(),
+                        static_cast<UINT32>(rowText.size()),
+                        fmt, pvW, 20.0f, &tl);
+                    if (tl) {
+                        tl->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+                        tl->SetTrimming(
+                            &(DWRITE_TRIMMING{DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+                                0, 0}), nullptr);
+                        DWRITE_TEXT_METRICS tm = {};
+                        tl->GetMetrics(&tm);
+                        rt->DrawTextLayout(D2D1::Point2F(textX, curY), tl,
+                            isHeader ? titleBrush : previewBrush);
+                        tl->Release();
+                        curY += tm.height + 2.0f;
+                    }
+                    continue;
+                }
 
                 // Check for headings.
                 bool isH1 = (line.size() >= 2 && line[0] == L'#' && line[1] == L' ' && line[2] != L'#');
