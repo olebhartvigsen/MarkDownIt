@@ -245,8 +245,8 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow, const std::wstring& cmdLine)
     SetTimer(hwnd_, 1, 300, nullptr);
 
     // Register .md/.markdown file association based on the saved setting.
+    // (settings_ was already loaded in OnCreate, before LoadSampleDoc.)
     {
-        settings_ = LoadSettings();
         if (settings_.fileAssoc) {
             wchar_t exePath[MAX_PATH] = {};
             GetModuleFileNameW(hInst, exePath, MAX_PATH);
@@ -986,6 +986,9 @@ void AppWindow::OnDropFiles(HWND hwnd, HDROP hDrop) {
 
 void AppWindow::OnCreate(HWND hwnd) {
     hwnd_ = hwnd;
+
+    // Load settings FIRST — LoadSampleDoc (below) needs recentFiles.
+    settings_ = LoadSettings();
 
     D2D1_FACTORY_OPTIONS opts = {};
     HRESULT hr = D2D1CreateFactory(
