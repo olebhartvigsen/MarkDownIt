@@ -132,6 +132,15 @@ void EditController::InsertParagraphBreak(const Document& doc) {
         return;
     }
 
+    // In a table cell, inserting "\n\n" would break the table syntax.
+    // Insert a soft line break instead (Markdown "  \n" = two spaces
+    // + newline), which creates a visual <br> in HTML rendering
+    // without breaking the table row.
+    if (ctx == BlockKind::Table) {
+        RecordAndApply(at, 0, "  \n", EditType::ParagraphBreak);
+        return;
+    }
+
     RecordAndApply(at, 0, "\n\n", EditType::ParagraphBreak);
 }
 

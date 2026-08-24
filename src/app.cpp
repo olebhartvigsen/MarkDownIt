@@ -576,6 +576,10 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         case VK_RETURN:
             editor_.InsertParagraphBreak(doc_);
             OnBufferChanged();
+            // Force immediate visual update after Enter — don't wait
+            // for the debounced reparse timer.
+            Repaint();
+            UpdateCaretPosition();
             break;
         default:
             DefWindowProcW(hwnd, WM_KEYDOWN, vk, lp);
