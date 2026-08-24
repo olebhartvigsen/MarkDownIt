@@ -82,6 +82,9 @@ static std::string GetLine(const std::string& text, uint32_t start) {
 
 // Find the start of the paragraph (block of consecutive non-blank lines)
 // containing offset. A blank line (only whitespace) ends a paragraph.
+// A heading line (starting with #) is always its own paragraph — the
+// following non-blank line starts a NEW paragraph, even without a blank
+// line between them.
 static uint32_t ParagraphStartOf(const std::string& text, uint32_t offset) {
     uint32_t lineStart = LineStartOf(text, offset);
     while (lineStart > 0) {
@@ -95,17 +98,33 @@ static uint32_t ParagraphStartOf(const std::string& text, uint32_t offset) {
             if (c != ' ' && c != '\t' && c != '\r') { blank = false; break; }
         }
         if (blank) break;
+        // A heading line is always its own paragraph. If the previous
+        // line is a heading, the current line starts a new paragraph.
+        {
+            size_t i = 0;
+            while (i < prevLine.size() && prevLine[i] == ' ') i++;
+            if (i < prevLine.size() && prevLine[i] == '#') break;
+        }
         lineStart = prevStart;
     }
     return lineStart;
 }
 
 // Find the end (one past last char, before the newline) of the paragraph
-// containing offset.
+// containing offset. A heading line ends the paragraph on its own line.
 static uint32_t ParagraphEndOf(const std::string& text, uint32_t offset) {
     uint32_t end = offset;
     // Advance to end of current line.
     while (end < text.size() && text[end] != '\n') end++;
+
+    // If the current line is a heading, the paragraph is just this line.
+    {
+        uint32_t ls = LineStartOf(text, offset);
+        size_t i = 0;
+        while (i < text.size() - ls && text[ls + i] == ' ') i++;
+        if (i < text.size() - ls && text[ls + i] == '#') return end;
+    }
+
     while (end < text.size()) {
         // Peek at the next line.
         uint32_t nextStart = end + 1;  // skip this '\n'
@@ -116,6 +135,12 @@ static uint32_t ParagraphEndOf(const std::string& text, uint32_t offset) {
             if (c != ' ' && c != '\t' && c != '\r') { blank = false; break; }
         }
         if (blank) break;
+        // A heading line starts a new paragraph.
+        {
+            size_t i = 0;
+            while (i < nextLine.size() && nextLine[i] == ' ') i++;
+            if (i < nextLine.size() && nextLine[i] == '#') break;
+        }
         // Advance end to the end of the next line.
         end = nextStart;
         while (end < text.size() && text[end] != '\n') end++;
