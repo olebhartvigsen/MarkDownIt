@@ -1741,44 +1741,81 @@ void AppWindow::SetEdit(bool on) {
 FormatState AppWindow::GetFormatState() const {
     FormatState fs;
     const auto& text = buffer_.Text();
+    if (text.empty()) return fs;
 
-    // Determine the range to check. For a collapsed caret, check the
-    // single character just before the caret. For a selection, check
-    // ALL inline blocks that overlap the selection range (so the
-    // toggle buttons accurately reflect the selection's formatting).
-    uint32_t checkStart, checkEnd;
+    uint32_t caret = sel_.active.offset;
+    if (caret > text.size()) caret = static_cast<uint32_t>(text.size());
+
+    // Collapsed caret: check any inline span whose [cs, ce) range
+    // contains the caret position, using CLOSED intervals (cs <= P
+    // AND P <= ce). This detects formatting at both the start and end
+    // of a span, matching how Word and VS Code behave. Also detect
+    // spans that end right before or start right after the caret
+    // (adjacent), so the button stays active at boundaries.
     if (sel_.Empty()) {
-        checkStart = sel_.active.offset;
-        if (checkStart > 0) checkStart--;
-        checkEnd = checkStart + 1;
-    } else {
-        checkStart = sel_.Start();
-        checkEnd = checkStart + sel_.Length();
-        // Trim leading/trailing whitespace from the check range so a
-        // preceding/trailing space doesn't mask the format detection.
-        while (checkStart < checkEnd &&
-               (text[checkStart] == ' ' || text[checkStart] == '\t' ||
-                text[checkStart] == '\n' || text[checkStart] == '\r'))
-            checkStart++;
-        while (checkEnd > checkStart &&
-               (text[checkEnd - 1] == ' ' || text[checkEnd - 1] == '\t' ||
-                text[checkEnd - 1] == '\n' || text[checkEnd - 1] == '\r'))
-            checkEnd--;
+        uint32_t lo = (caret > 0) ? caret - 1 : 0;
+        uint32_t hi = (caret < text.size()) ? caret + 1 : caret;
+
+        for (const auto& node : doc_.nodes) {
+            uint32_t bs = node.srcOffset;
+            uint32_t be = bs + node.srcLength;
+            if (caret < bs || caret > be) continue;
+
+            if (node.block == BlockKind::Heading) {
+                fs.headingLevel = node.level;
+            } else if (node.block == BlockKind::List) {
+                if (node.ordered) fs.inNumbering = true;
+                else fs.inBullets = true;
+            } else if (node.block == BlockKind::BlockQuote) {
+                fs.inQuote = true;
+            }
+
+            for (const auto& child : node.children) {
+                uint32_t cs = child.srcOffset;
+                uint32_t ce = cs + child.srcLength;
+                bool hit = (cs <= caret && caret <= ce);
+                if (!hit) {
+                    if (ce == lo) hit = true;       // span ends right before caret
+                    if (cs == hi) hit = true;       // span starts right after caret
+                }
+                if (hit) {
+                    if (child.strong) fs.bold = true;
+                    if (child.em)     fs.italic = true;
+                    if (child.code)   fs.code = true;
+                    if (child.strike) fs.strike = true;
+                }
+            }
+        }
+        return fs;
     }
 
-    if (checkStart >= text.size()) {
-        // Caret at end of document: check the LAST block's last inline.
-        checkStart = static_cast<uint32_t>(text.size());
-        if (checkStart > 0) checkStart--;
+    // Non-empty selection: trim whitespace, then check ALL blocks and
+    // ALL inline blocks that overlap the trimmed range. Do NOT stop
+    // after the first block, since the selection may span paragraphs.
+    uint32_t start = sel_.Start();
+    uint32_t end = start + sel_.Length();
+    if (end > text.size()) end = static_cast<uint32_t>(text.size());
+
+    while (start < end &&
+           (text[start] == ' ' || text[start] == '\t' ||
+            text[start] == '\n' || text[start] == '\r'))
+        start++;
+    while (end > start &&
+           (text[end - 1] == ' ' || text[end - 1] == '\t' ||
+            text[end - 1] == '\n' || text[end - 1] == '\r'))
+        end--;
+
+    if (start >= end) {
+        start = sel_.Start();
+        end = start + 1;
+        if (end > text.size()) end = static_cast<uint32_t>(text.size());
     }
 
-    // Find the block containing this range.
     for (const auto& node : doc_.nodes) {
-        uint32_t blockStart = node.srcOffset;
-        uint32_t blockEnd = blockStart + node.srcLength;
-        if (checkStart < blockStart || checkStart > blockEnd) continue;
+        uint32_t bs = node.srcOffset;
+        uint32_t be = bs + node.srcLength;
+        if (end <= bs || start >= be) continue;
 
-        // Block-level state.
         if (node.block == BlockKind::Heading) {
             fs.headingLevel = node.level;
         } else if (node.block == BlockKind::List) {
@@ -1788,22 +1825,15 @@ FormatState AppWindow::GetFormatState() const {
             fs.inQuote = true;
         }
 
-        // Inline-level state: check ALL inline blocks that overlap the
-        // check range. For a selection, this finds ALL formatted spans
-        // in the selection, not just one character.
         for (const auto& child : node.children) {
             uint32_t cs = child.srcOffset;
             uint32_t ce = cs + child.srcLength;
-            // Check if this inline block overlaps [checkStart, checkEnd).
-            // For a collapsed caret: checkStart = caret-1, checkEnd = checkStart+1
-            // For a selection: checkStart..checkEnd is the trimmed range
-            if (checkEnd <= cs || checkStart >= ce) continue;  // no overlap
+            if (cs >= end || ce <= start) continue;
             if (child.strong) fs.bold = true;
             if (child.em)     fs.italic = true;
             if (child.code)   fs.code = true;
             if (child.strike) fs.strike = true;
         }
-        break;
     }
     return fs;
 }
