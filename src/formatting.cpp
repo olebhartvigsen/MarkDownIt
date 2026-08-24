@@ -136,6 +136,154 @@ void InsertLink(TextBuffer* buf, Selection* sel, const std::string& url,
 }
 
 
+// --- Code block toggle ---
+
+// Check if a line starting at lineStart begins with the given prefix.
+static bool LineHasPrefix(const std::string& text, uint32_t lineStart,
+                          const std::string& prefix) {
+    if (lineStart + prefix.size() > text.size()) return false;
+    for (size_t i = 0; i < prefix.size(); i++) {
+        if (text[lineStart + i] != prefix[i]) return false;
+    }
+    return true;
+}
+
+void ToggleCodeBlock(TextBuffer* buf, Selection* sel, UndoStack* undo) {
+    const std::string& text = buf->Text();
+    uint32_t selStart = sel->Start();
+    uint32_t selEnd = selStart + sel->Length();
+    Selection selBefore = *sel;
+
+    // Find the start of the first line and the end (including newline) of
+    // the last line in the selection.
+    uint32_t firstLineStart = LineStartOf(text, selStart);
+    uint32_t lastLineEnd = selEnd;
+    while (lastLineEnd < text.size() && text[lastLineEnd] != '\n') lastLineEnd++;
+    // Include the trailing newline in the block content.
+    if (lastLineEnd < text.size() && text[lastLineEnd] == '\n') lastLineEnd++;
+
+    // Check if already inside a code block: look for a line with ```
+    // just before the first line, and a line with ``` just after the
+    // last line.
+    const std::string fence = "```";
+
+    // Look backwards from firstLineStart for an opening ``` fence.
+    uint32_t fenceLineStart = 0;
+    bool foundOpen = false;
+    if (firstLineStart >= fence.size() + 1) {
+        // The line before firstLineStart ends at firstLineStart - 1 (the \n).
+        // Walk back to find the start of that line.
+        uint32_t prevLineStart = firstLineStart - 1;
+        if (prevLineStart > 0) prevLineStart--;
+        while (prevLineStart > 0 && text[prevLineStart - 1] != '\n') prevLineStart--;
+        if (LineHasPrefix(text, prevLineStart, fence)) {
+            fenceLineStart = prevLineStart;
+            // Include the trailing newline after the opening fence.
+            uint32_t afterFence = prevLineStart + static_cast<uint32_t>(fence.size());
+            // Verify the fence line is just the fence (optionally followed by newline).
+            if (afterFence < text.size() && (text[afterFence] == '\n' || afterFence == text.size())) {
+                foundOpen = true;
+            }
+        }
+    }
+
+    // Look forwards from lastLineEnd for a closing ``` fence.
+    uint32_t closeFenceStart = 0;
+    bool foundClose = false;
+    if (foundOpen) {
+        if (LineHasPrefix(text, lastLineEnd, fence)) {
+            uint32_t afterClose = lastLineEnd + static_cast<uint32_t>(fence.size());
+            if (afterClose <= text.size() &&
+                (afterClose == text.size() || text[afterClose] == '\n')) {
+                closeFenceStart = lastLineEnd;
+                foundClose = true;
+            }
+        }
+    }
+
+    if (foundOpen && foundClose) {
+        // Remove the code block fences.
+        // Remove closing fence (+ newline after it if present).
+        uint32_t closeEnd = closeFenceStart + static_cast<uint32_t>(fence.size());
+        if (closeEnd < text.size() && text[closeEnd] == '\n') closeEnd++;
+        std::string closeRemoved = text.substr(closeFenceStart, closeEnd - closeFenceStart);
+
+        // Remove opening fence (+ newline after it if present).
+        uint32_t openEnd = fenceLineStart + static_cast<uint32_t>(fence.size());
+        if (openEnd < text.size() && text[openEnd] == '\n') openEnd++;
+        std::string openRemoved = text.substr(fenceLineStart, openEnd - fenceLineStart);
+
+        // Splice out closing fence first (so opening fence offset is unaffected).
+        buf->Splice(closeFenceStart, closeEnd - closeFenceStart, "");
+        // Now splice out opening fence.
+        buf->Splice(fenceLineStart, openEnd - fenceLineStart, "");
+
+        // Set selection to cover the content that was inside the fences.
+        uint32_t contentStart = fenceLineStart;
+        uint32_t contentEnd = closeFenceStart - (openEnd - fenceLineStart);
+        sel->anchor = {contentStart};
+        sel->active = {contentEnd};
+
+        // Record undo: the combined removed text is open + content + close.
+        // We do two splices, so record the net effect as one entry:
+        // removed = openRemoved + content + closeRemoved
+        // inserted = content (the same text, without fences)
+        // But the two splices are non-contiguous, so we record the opening
+        // fence removal as the undo entry (the larger one covers the net change).
+        // For simplicity, record as a single entry at the opening fence position.
+        if (undo) {
+            UndoEntry entry{};
+            entry.offset = fenceLineStart;
+            entry.removed = openRemoved + text.substr(openEnd, closeFenceStart - openEnd) + closeRemoved;
+            // Recompute inserted: the content remains, fences are removed.
+            // The content is text between openEnd and closeFenceStart.
+            entry.inserted = text.substr(openEnd, closeFenceStart - openEnd);
+            entry.selBefore = selBefore;
+            entry.selAfter = *sel;
+            entry.type = EditType::Other;
+            undo->Push(entry);
+        }
+        return;
+    }
+
+    // Add code block fences: insert ``` on its own line before and after.
+    // The fence line should be: "```\n" before the content, and "```\n" after.
+    // But we need to be careful about existing newlines.
+
+    // Build the replacement: ```
+    // + existing content (firstLineStart..lastLineEnd) +
+    // ```
+    // We wrap the content with fence lines.
+    std::string oldText = text.substr(firstLineStart, lastLineEnd - firstLineStart);
+    std::string newText;
+
+    // If there's content before us on the same line (shouldn't happen for
+    // paragraph-level selection, but handle gracefully), add a newline.
+    bool needLeadingNewline = (firstLineStart > 0 && text[firstLineStart - 1] != '\n');
+    if (needLeadingNewline) newText += "\n";
+
+    newText += fence + "\n";
+    // Ensure the content ends with a newline before the closing fence.
+    std::string content = oldText;
+    if (content.empty() || content.back() != '\n') content += '\n';
+    newText += content;
+    newText += fence;
+
+    // If the original text had a trailing newline after lastLineEnd, include it.
+    // Otherwise add one after the closing fence.
+    if (lastLineEnd < text.size() && text[lastLineEnd] == '\n') {
+        newText += "\n";
+    } else {
+        newText += "\n";
+    }
+
+    buf->Splice(firstLineStart, lastLineEnd - firstLineStart, newText);
+    sel->anchor = {firstLineStart};
+    sel->active = {firstLineStart + static_cast<uint32_t>(newText.size())};
+    RecordUndo(undo, firstLineStart, oldText, newText, selBefore, *sel);
+}
+
+
 // --- Block formatting ---
 
 static uint32_t LineStartOf(const std::string& text, uint32_t offset) {

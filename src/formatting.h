@@ -18,6 +18,12 @@ void ToggleInlineMarker(TextBuffer* buf, Selection* sel, const std::string& mark
 void InsertLink(TextBuffer* buf, Selection* sel, const std::string& url,
                 UndoStack* undo = nullptr);
 
+// Toggle a fenced code block (``` ``` ```) around the selected paragraphs.
+// If the selection spans one or more entire lines, wraps them in ```
+// fences. If already fenced, removes the fences.
+void ToggleCodeBlock(TextBuffer* buf, Selection* sel,
+                      UndoStack* undo = nullptr);
+
 // Check if the text at the given range is already wrapped in the marker.
 bool IsWrappedIn(const std::string& text, uint32_t start, uint32_t end,
                  const std::string& marker);

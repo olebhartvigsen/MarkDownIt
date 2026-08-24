@@ -1825,6 +1825,37 @@ void AppWindow::ToggleStrike() {
 
 void AppWindow::ToggleCode() {
     if (!editing_) return;
+    // If the selection spans one or more entire lines (paragraphs),
+    // toggle a fenced code block (``` ```). Otherwise, toggle inline code (`).
+    if (!sel_.Empty()) {
+        const std::string& text = buffer_.Text();
+        uint32_t start = sel_.Start();
+        uint32_t end = start + sel_.Length();
+        // Check if the selection starts at the beginning of a line and
+        // ends at the end of a line (or at a newline character).
+        bool startsAtLineStart = (start == 0 || text[start - 1] == '\n');
+        bool endsAtLineEnd = (end >= text.size() || text[end] == '\n');
+        // Also handle selections that end right before the newline
+        // (e.g. the last visible character, not including the newline).
+        if (end > 0 && end <= text.size() && end < text.size() && text[end] != '\n') {
+            // Check if the rest of the line is only whitespace
+            uint32_t check = end;
+            while (check < text.size() && text[check] != '\n') {
+                if (text[check] != ' ' && text[check] != '\t') break;
+                check++;
+            }
+            if (check >= text.size() || text[check] == '\n')
+                endsAtLineEnd = true;
+        }
+        if (startsAtLineStart && endsAtLineEnd) {
+            ToggleCodeBlock(&buffer_, &sel_, &undo_stack_);
+            editor_.BreakUndoCoalesce();
+            OnBufferChanged();
+            ForceRepaintNow();
+            return;
+        }
+    }
+    // Default: inline code (single backticks)
     ToggleInlineMarker(&buffer_, &sel_, "`", &undo_stack_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
