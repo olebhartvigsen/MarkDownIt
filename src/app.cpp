@@ -680,11 +680,17 @@ void AppWindow::UpdateCaretPosition() {
         if (newH < 1) newH = 1;
         if (caret_height_ != newH) {
             DestroyCaret();
+            caret_visible_ = false;  // caret destroyed — must re-show
             CreateCaret(hwnd_content_, nullptr, 2, newH);
             caret_height_ = newH;
         }
         SetCaretPos(cx, cy);
         if (!caret_visible_) { ShowCaret(hwnd_content_); caret_visible_ = true; }
+    } else {
+        // OffsetToCaretRect failed (offset not in any block or block has
+        // no layout). Hide the caret so it doesn't appear at a stale
+        // position from a previous click.
+        if (caret_visible_) { HideCaret(hwnd_content_); caret_visible_ = false; }
     }
 }
 
