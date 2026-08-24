@@ -541,12 +541,22 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                        (cp <= 0xFFFF) ? 3 : 4;
                     }
                     bl.srcLength = cellTextLen;
-                    // Compute extended cell end: scan past formatting
-                    // markers (* ` ~) after the cell content so the
-                    // caret can be placed at the end of formatted text.
+                    // Compute extended cell range: scan backward past
+                    // opening markers and forward past closing markers
+                    // so the caret works when placed between hidden
+                    // marker characters (* ` ~).
+                    bl.srcCellStart = bl.srcOffset;
                     bl.srcCellEnd = bl.srcOffset + cellTextLen;
                     if (srcText_) {
                         const auto& src = *srcText_;
+                        // Scan backward past opening markers.
+                        uint32_t st = bl.srcOffset;
+                        while (st > 0 &&
+                               (src[st - 1] == '*' || src[st - 1] == '`' ||
+                                src[st - 1] == '~'))
+                            st--;
+                        bl.srcCellStart = st;
+                        // Scan forward past closing markers.
                         uint32_t e = bl.srcOffset + cellTextLen;
                         while (e < src.size() &&
                                (src[e] == '*' || src[e] == '`' ||
