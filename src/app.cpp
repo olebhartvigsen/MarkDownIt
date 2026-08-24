@@ -1751,23 +1751,18 @@ FormatState AppWindow::GetFormatState() const {
     // Helper lambda: check table cell inline formatting.
     // For a table node, iterate all rows/cells and check if the caret
     // or selection overlaps any CellInlineSpan (converting u16 indices
-    // to source byte offsets via u16ToSrc).
+    // to source byte offsets via u16ToSrc). Also scan the raw source
+    // text for markdown markers as a fallback.
     auto checkTableCells = [&](const Node& node, uint32_t chkStart, uint32_t chkEnd) {
+        // Path 1: CellInlineSpan via u16ToSrc mapping.
         for (const auto& row : node.rows) {
             for (const auto& cell : row.cells) {
                 if (cell.u16ToSrc.empty() || cell.inlineSpans.empty()) continue;
-                // The cell's source range: [cell.srcOffset, cellEnd)
-                // cell.u16ToSrc.back() is the source offset of the last
-                // rendered character. Approximate cellEnd as that + 1.
                 uint32_t cellSrcStart = cell.srcOffset;
-                // Quick reject: cell doesn't overlap the check range.
-                // We need cellSrcEnd. u16ToSrc.last() gives last char source
-                // but cell could span more. Use u16ToSrc.back() + 1 as approx.
                 uint32_t cellSrcEnd = cell.u16ToSrc.back() + 1;
                 if (chkEnd <= cellSrcStart || chkStart >= cellSrcEnd) continue;
 
                 for (const auto& span : cell.inlineSpans) {
-                    // Convert u16 span boundaries to source byte offsets.
                     if (span.u16Start >= cell.u16ToSrc.size()) continue;
                     uint32_t spanSrcStart = cell.u16ToSrc[span.u16Start];
                     uint32_t spanSrcEnd;
@@ -1785,6 +1780,50 @@ FormatState AppWindow::GetFormatState() const {
                 }
             }
         }
+
+        // Path 2: raw source text marker scan (fallback).
+        // Scan the source text around chkStart for markdown markers.
+        // This catches formatting that u16ToSrc mapping might miss.
+        // Find cell boundaries (pipe chars or newlines).
+        uint32_t pos = (chkStart + chkEnd) / 2;  // use midpoint
+        if (pos >= text.size()) return;
+        uint32_t left = pos;
+        while (left > 0 && text[left - 1] != '|' && text[left - 1] != '\n')
+            left--;
+        uint32_t right = pos;
+        while (right < text.size() && text[right] != '|' && text[right] != '\n')
+            right++;
+        // For each marker type, scan left for opening, right for closing.
+        auto findFmt = [&](char ch, uint32_t mlen) -> bool {
+            // Scan left from `pos` for `mlen` consecutive `ch` chars.
+            for (uint32_t i = pos; i >= left + mlen; i--) {
+                bool match = true;
+                for (uint32_t k = 0; k < mlen; k++)
+                    if (text[i - 1 - k] != ch) { match = false; break; }
+                if (match) {
+                    // Check that these aren't part of a longer run (e.g.
+                    // *** is both bold+italic, not just bold).
+                    // Also check the char before the run to distinguish
+                    // ** (bold) from * (italic).
+                    if (mlen == 1 && i >= left + 2 && text[i - 2] == ch)
+                        continue;  // part of a longer ** run, skip for single-*
+                    // Found opening. Scan right for closing of same length.
+                    for (uint32_t j = pos; j + mlen <= right; j++) {
+                        bool match2 = true;
+                        for (uint32_t k = 0; k < mlen; k++)
+                            if (text[j + k] != ch) { match2 = false; break; }
+                        if (match2) return true;
+                    }
+                    return false;
+                }
+                if (i == 0) break;
+            }
+            return false;
+        };
+        if (findFmt('*', 2)) fs.bold = true;
+        if (findFmt('~', 2)) fs.strike = true;
+        if (findFmt('`', 1)) fs.code = true;
+        if (!fs.bold && findFmt('*', 1)) fs.italic = true;
     };
 
     // Collapsed caret: check any inline span whose [cs, ce) range
