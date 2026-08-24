@@ -44,6 +44,9 @@ private:
     IDWriteTextFormat* title_fmt_ = nullptr;
     IDWriteTextFormat* cardTitle_fmt_ = nullptr;
     IDWriteTextFormat* cardPreview_fmt_ = nullptr;
+    IDWriteTextFormat* cardPreviewBold_fmt_ = nullptr;
+    IDWriteTextFormat* cardPreviewHeading_fmt_ = nullptr;
+    IDWriteTextFormat* cardCode_fmt_ = nullptr;
     IDWriteTextFormat* cardFolder_fmt_ = nullptr;
 
     std::vector<WelcomeCard> cards_;

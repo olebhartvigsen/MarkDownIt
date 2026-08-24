@@ -15,6 +15,9 @@ WelcomeScreen::~WelcomeScreen() {
     if (title_fmt_) title_fmt_->Release();
     if (cardTitle_fmt_) cardTitle_fmt_->Release();
     if (cardPreview_fmt_) cardPreview_fmt_->Release();
+    if (cardPreviewBold_fmt_) cardPreviewBold_fmt_->Release();
+    if (cardPreviewHeading_fmt_) cardPreviewHeading_fmt_->Release();
+    if (cardCode_fmt_) cardCode_fmt_->Release();
     if (cardFolder_fmt_) cardFolder_fmt_->Release();
 }
 
@@ -33,9 +36,24 @@ void WelcomeScreen::Init(IDWriteFactory* dw) {
         DWRITE_FONT_STRETCH_NORMAL, 14.0f, L"en-US", &cardTitle_fmt_);
 
     // Card preview: 12pt regular
-    dw->CreateTextFormat(L"Consolas", nullptr,
+    dw->CreateTextFormat(L"Segoe UI", nullptr,
         DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL, 11.0f, L"en-US", &cardPreview_fmt_);
+
+    // Card preview bold: 11pt bold
+    dw->CreateTextFormat(L"Segoe UI", nullptr,
+        DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL, 11.0f, L"en-US", &cardPreviewBold_fmt_);
+
+    // Card preview heading: 12pt semi-bold (for H1/H2 in preview)
+    dw->CreateTextFormat(L"Segoe UI", nullptr,
+        DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL, 12.0f, L"en-US", &cardPreviewHeading_fmt_);
+
+    // Card inline code: 11pt monospace
+    dw->CreateTextFormat(L"Consolas", nullptr,
+        DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL, 11.0f, L"en-US", &cardCode_fmt_);
 
     // Card folder path: 11pt regular, lighter
     dw->CreateTextFormat(L"Segoe UI", nullptr,
@@ -255,37 +273,152 @@ void WelcomeScreen::Render(ID2D1RenderTarget* rt, float viewW, float viewH,
             }
         }
 
-        // ── Preview: first few lines of markdown ──
-        if (cardPreview_fmt_ && !c.preview.empty()) {
-            // Convert preview to wide string, limit to first ~5 lines
+        // ── Preview: first few lines rendered as markdown ──
+        if (!c.preview.empty()) {
             std::wstring preview16;
             int lineCount = 0;
-            for (size_t k = 0; k < c.preview.size() && lineCount < 5; ++k) {
+            for (size_t k = 0; k < c.preview.size() && lineCount < 6; ++k) {
                 unsigned char ch = static_cast<unsigned char>(c.preview[k]);
                 if (ch == '\n') {
                     preview16 += L'\n';
                     lineCount++;
-                    if (lineCount >= 5) break;
+                    if (lineCount >= 6) break;
                 } else if (ch < 0x80) {
                     if (ch == '\r' || ch == 0) continue;
                     preview16 += static_cast<wchar_t>(ch);
+                } else if (ch >= 0xC0 && k + 1 < c.preview.size()) {
+                    unsigned char ch2 = static_cast<unsigned char>(c.preview[k + 1]);
+                    if (ch < 0xE0) { // 2-byte
+                        preview16 += static_cast<wchar_t>(
+                            ((ch & 0x1F) << 6) | (ch2 & 0x3F));
+                        k++;
+                    } else if (k + 2 < c.preview.size()) { // 3-byte
+                        unsigned char ch3 = static_cast<unsigned char>(c.preview[k + 2]);
+                        preview16 += static_cast<wchar_t>(
+                            ((ch & 0x0F) << 12) | ((ch2 & 0x3F) << 6) | (ch3 & 0x3F));
+                        k += 2;
+                    }
                 }
-                // Skip multi-byte UTF-8 for simplicity in preview
             }
 
             float pvY = c.y + 56.0f;
             float pvH = c.h - 56.0f - 12.0f;
             float pvW = c.w - barW - 24.0f;
 
-            IDWriteTextLayout* tl = nullptr;
-            dw_->CreateTextLayout(preview16.c_str(),
-                static_cast<UINT32>(preview16.size()),
-                cardPreview_fmt_, pvW, pvH, &tl);
-            if (tl) {
-                tl->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
-                rt->DrawTextLayout(D2D1::Point2F(textX, pvY), tl, previewBrush);
-                tl->Release();
+            // Split into lines and render with inline formatting.
+            std::vector<std::wstring> lines;
+            std::wstring cur;
+            for (wchar_t wc : preview16) {
+                if (wc == L'\n') {
+                    lines.push_back(cur);
+                    cur.clear();
+                } else {
+                    cur += wc;
+                }
             }
+            if (!cur.empty()) lines.push_back(cur);
+
+            D2D1_RECT_F clipRect = D2D1::RectF(
+                textX, pvY, textX + pvW, pvY + pvH);
+            // Clip to card bounds so text doesn't overflow.
+            rt->PushAxisAlignedClip(clipRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+            float curY = pvY;
+            for (const auto& line : lines) {
+                if (curY >= pvY + pvH) break;
+
+                // Check for headings.
+                bool isH1 = (line.size() >= 2 && line[0] == L'#' && line[1] == L' ' && line[2] != L'#');
+                bool isH2 = (line.size() >= 3 && line[0] == L'#' && line[1] == L'#' && line[2] == L' ' && line[3] != L'#');
+                bool isBullet = (line.size() >= 2 && line[0] == L'-' && line[1] == L' ');
+                bool isNumbered = false;
+                for (size_t di = 0; di < line.size() && di < 4; ++di) {
+                    if (line[di] >= L'0' && line[di] <= L'9') {
+                        isNumbered = (di + 1 < line.size() && line[di + 1] == L'.');
+                    } else break;
+                }
+
+                // Determine text and format.
+                std::wstring text = line;
+                IDWriteTextFormat* fmt = cardPreview_fmt_;
+
+                if (isH1) {
+                    text = line.substr(2);
+                    fmt = cardPreviewHeading_fmt_;
+                } else if (isH2) {
+                    text = line.substr(3);
+                    fmt = cardPreviewHeading_fmt_;
+                } else if (isBullet) {
+                    text = L"\u2022 " + line.substr(2);
+                    fmt = cardPreview_fmt_;
+                } else if (isNumbered) {
+                    text = line;
+                    fmt = cardPreview_fmt_;
+                } else if (line.empty()) {
+                    curY += 6.0f;
+                    continue;
+                }
+
+                // Create layout for this line.
+                IDWriteTextLayout* tl = nullptr;
+                dw_->CreateTextLayout(text.c_str(),
+                    static_cast<UINT32>(text.size()),
+                    fmt, pvW, 20.0f, &tl);
+                if (tl) {
+                    tl->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+
+                    // Apply inline formatting: **bold**, *italic*, `code`.
+                    // Scan the text and apply font weight/style/family to ranges.
+                    for (size_t si = 0; si + 1 < text.size(); ) {
+                        if (text[si] == L'*' && text[si + 1] == L'*') {
+                            // Bold: find closing **
+                            size_t end = text.find(L"**", si + 2);
+                            if (end != std::wstring::npos) {
+                                DWRITE_TEXT_RANGE range = {
+                                    static_cast<UINT32>(si),
+                                    static_cast<UINT32>(end + 2 - si)
+                                };
+                                tl->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, range);
+                                si = end + 2;
+                            } else { si++; }
+                        } else if (text[si] == L'`') {
+                            // Code: find closing `
+                            size_t end = text.find(L'`', si + 1);
+                            if (end != std::wstring::npos) {
+                                DWRITE_TEXT_RANGE range = {
+                                    static_cast<UINT32>(si),
+                                    static_cast<UINT32>(end + 1 - si)
+                                };
+                                tl->SetFontFamilyName(L"Consolas", range);
+                                si = end + 1;
+                            } else { si++; }
+                        } else if (text[si] == L'*' || text[si] == L'_') {
+                            // Italic: find closing * or _
+                            wchar_t marker = text[si];
+                            size_t end = text.find(marker, si + 1);
+                            if (end != std::wstring::npos && end > si + 1) {
+                                DWRITE_TEXT_RANGE range = {
+                                    static_cast<UINT32>(si),
+                                    static_cast<UINT32>(end + 1 - si)
+                                };
+                                tl->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, range);
+                                si = end + 1;
+                            } else { si++; }
+                        } else {
+                            si++;
+                        }
+                    }
+
+                    DWRITE_TEXT_METRICS tm = {};
+                    tl->GetMetrics(&tm);
+                    rt->DrawTextLayout(D2D1::Point2F(textX, curY), tl,
+                        isH1 || isH2 ? titleBrush : previewBrush);
+                    tl->Release();
+                    curY += tm.height + 2.0f;
+                }
+            }
+
+            rt->PopAxisAlignedClip();
         }
     }
 
