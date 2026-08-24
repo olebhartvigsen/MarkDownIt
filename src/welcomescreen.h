@@ -37,6 +37,7 @@ public:
     const std::wstring& GetPath(int index) const;
 
     bool HasFiles() const { return !cards_.empty(); }
+    int GetCardCount() const { return static_cast<int>(cards_.size()); }
 
 private:
     IDWriteFactory* dw_ = nullptr;

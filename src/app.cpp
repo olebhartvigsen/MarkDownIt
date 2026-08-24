@@ -585,30 +585,14 @@ void AppWindow::LoadSampleDoc() {
     // Instead of showing a placeholder text, show the welcome screen
     // with recent files cards.
     welcome_mode_ = true;
-    // Diagnostic: log recent files count
-    {
-        char log[256];
-        snprintf(log, sizeof(log),
-            "[MarkDownIt] LoadSampleDoc: recentFiles=%zu\n",
-            settings_.recentFiles.size());
-        OutputDebugStringA(log);
-        for (size_t i = 0; i < settings_.recentFiles.size() && i < 3; ++i) {
-            char buf[512];
-            int n = WideCharToMultiByte(CP_UTF8, 0,
-                settings_.recentFiles[i].path.c_str(), -1,
-                buf, sizeof(buf), nullptr, nullptr);
-            if (n > 0) {
-                char log2[600];
-                snprintf(log2, sizeof(log2),
-                    "[MarkDownIt]   recent[%zu] = %s (preview %zu bytes)\n",
-                    i, buf, settings_.recentFiles[i].preview.size());
-                OutputDebugStringA(log2);
-            }
-        }
-    }
+    diaglog("LoadSampleDoc: welcome_mode_=true, recentFiles=%zu\n",
+        settings_.recentFiles.size());
     if (dw_factory_) {
         welcome_.Init(dw_factory_);
         welcome_.SetRecentFiles(settings_.recentFiles);
+        diaglog("LoadSampleDoc: SetRecentFiles called\n");
+    } else {
+        diaglog("LoadSampleDoc: dw_factory_ is NULL!\n");
     }
     if (rt_) {
         D2D1_SIZE_F sz = rt_->GetSize();
@@ -848,19 +832,7 @@ void AppWindow::OpenFile(const std::wstring& path) {
     // Track this file in the recent list.
     AddRecentFile(settings_, path);
     SaveSettings(settings_);
-    // Diagnostic: log recent file addition
-    {
-        char buf[512];
-        int n = WideCharToMultiByte(CP_UTF8, 0, path.c_str(), -1,
-            buf, sizeof(buf), nullptr, nullptr);
-        if (n > 0) {
-            char log[600];
-            snprintf(log, sizeof(log),
-                "[MarkDownIt] OpenFile: added recent file %s, total=%zu\n",
-                buf, settings_.recentFiles.size());
-            OutputDebugStringA(log);
-        }
-    }
+    diaglog("OpenFile: added recent file, total=%zu\n", settings_.recentFiles.size());
 
     std::ifstream f(path.c_str(), std::ios::binary);
     if (!f.is_open()) {
@@ -1381,6 +1353,12 @@ void AppWindow::OnContentPaint(HWND hwnd) {
         welcome_.Init(dw_factory_);
         welcome_.Layout(size.width, size.height);
         welcome_.Render(rt_, size.width, size.height, welcome_hover_);
+        static int welcomePaintCount = 0;
+        if (welcomePaintCount < 3) {
+            diaglog("OnContentPaint: welcome mode render, cards=%d\n",
+                welcome_.GetCardCount());
+            welcomePaintCount++;
+        }
         HRESULT hr = rt_->EndDraw();
         if (hr == D2DERR_RECREATE_TARGET) {
             RecreateRenderTarget();

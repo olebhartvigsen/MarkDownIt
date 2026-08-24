@@ -7,9 +7,10 @@ static const wchar_t* kKey = L"Software\\MarkDownIt";
 static const wchar_t* kRecentSubkey = L"Software\\MarkDownIt\\RecentFiles";
 static const int kMaxRecent = 12;
 
-// Diagnostic log
+// Diagnostic log (extern in settings.h)
 #include <stdio.h>
-static void diaglog(const char* fmt, ...) {
+#include <cstdarg>
+void diaglog(const char* fmt, ...) {
     char path[MAX_PATH];
     GetTempPathA(MAX_PATH, path);
     strcat_s(path, "markdownit_diag.log");
