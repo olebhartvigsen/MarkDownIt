@@ -15,6 +15,8 @@
 #include <string>
 #include <cstdio>
 #include <cmath>
+#include <algorithm>
+#include <vector>
 
 
 
@@ -1851,6 +1853,92 @@ void AppWindow::InvalidateFormatButtons() {
     }
 }
 
+// Remove ALL inline formatting of a specific type from the selection.
+// Used by ToggleBold/Italic/Strike/Code when the format is detected as
+// active — instead of removing just the first matching span, this
+// iterates all spans and removes all markers of that type.
+void AppWindow::RemoveAllFormattingInSelection(bool wantStrong, bool wantEm,
+                                                bool wantCode, bool wantStrike,
+                                                uint32_t mlen) {
+    if (doc_.nodes.empty()) return;
+    const std::string& text = buffer_.Text();
+    uint32_t selStart = sel_.Start();
+    uint32_t selEnd = selStart + sel_.Length();
+    if (selEnd > text.size()) selEnd = static_cast<uint32_t>(text.size());
+
+    // Collect all formatting spans of the requested type.
+    struct Removal {
+        uint32_t markerStart, markerEnd, contentStart, contentEnd;
+    };
+    std::vector<Removal> removals;
+
+    char mc = '*';
+    if (wantCode) mc = '`';
+    if (wantStrike) mc = '~';
+
+    for (const auto& node : doc_.nodes) {
+        uint32_t bs = node.srcOffset;
+        uint32_t be = bs + node.srcLength;
+        if (selEnd <= bs || selStart >= be) continue;
+
+        for (const auto& child : node.children) {
+            if (wantStrong  && !child.strong)  continue;
+            if (wantEm      && !child.em)      continue;
+            if (wantCode    && !child.code)    continue;
+            if (wantStrike  && !child.strike)  continue;
+
+            uint32_t cs = child.srcOffset;
+            uint32_t ce = cs + child.srcLength;
+            if (ce <= cs) continue;
+            if (ce <= selStart || cs >= selEnd) continue;
+
+            uint32_t leftRun = 0;
+            while (cs > leftRun && text[cs - leftRun - 1] == mc)
+                leftRun++;
+            uint32_t rightRun = 0;
+            while (ce + rightRun < text.size() && text[ce + rightRun] == mc)
+                rightRun++;
+
+            if (leftRun >= mlen && rightRun >= mlen) {
+                removals.push_back({cs - leftRun, ce + rightRun, cs, ce});
+            }
+        }
+    }
+
+    // Sort rightmost first and merge overlapping.
+    std::sort(removals.begin(), removals.end(),
+              [](const Removal& a, const Removal& b) {
+                  return a.markerStart > b.markerStart;
+              });
+    std::vector<Removal> merged;
+    for (const auto& r : removals) {
+        if (!merged.empty() && r.markerEnd >= merged.back().markerStart) {
+            merged.back().markerStart = std::min(merged.back().markerStart, r.markerStart);
+            merged.back().markerEnd = std::max(merged.back().markerEnd, r.markerEnd);
+            merged.back().contentStart = std::min(merged.back().contentStart, r.contentStart);
+            merged.back().contentEnd = std::max(merged.back().contentEnd, r.contentEnd);
+        } else {
+            merged.push_back(r);
+        }
+    }
+
+    Selection selBefore = sel_;
+    for (const auto& r : merged) {
+        std::string content = buffer_.Text().substr(r.contentStart, r.contentEnd - r.contentStart);
+        std::string removed = buffer_.Text().substr(r.markerStart, r.markerEnd - r.markerStart);
+        buffer_.Splice(r.markerStart, r.markerEnd - r.markerStart, content);
+        UndoEntry entry{};
+        entry.offset = r.markerStart;
+        entry.removed = removed;
+        entry.inserted = content;
+        entry.selBefore = selBefore;
+        entry.selAfter = sel_;
+        entry.type = EditType::Other;
+        undo_stack_.Push(entry);
+    }
+    sel_.Collapse({selStart});
+}
+
 // If the caret or selection is inside a formatted span (matching the
 // given flags), expand the selection to include the full span content
 // plus the surrounding markdown markers. After this, ToggleInlineMarker
@@ -1908,22 +1996,34 @@ bool AppWindow::ExpandSelectionToFormatSpan(bool wantStrong, bool wantEm,
 
 void AppWindow::ToggleBold() {
     if (!editing_) return;
-    if (ExpandSelectionToFormatSpan(true, false, false, false, 2))
-        ; // selection expanded to include ** markers — ToggleInlineMarker will remove them
-    ToggleInlineMarker(&buffer_, &sel_, "**", &undo_stack_);
+    FormatState fs = GetFormatState();
+    if (fs.bold && !sel_.Empty()) {
+        // Selection contains bold text: remove ALL bold markers.
+        RemoveAllFormattingInSelection(true, false, false, false, 2);
+    } else if (fs.bold) {
+        // Caret is in bold text: expand to span and remove.
+        ExpandSelectionToFormatSpan(true, false, false, false, 2);
+        ToggleInlineMarker(&buffer_, &sel_, "**", &undo_stack_);
+    } else {
+        // No bold: add markers.
+        ToggleInlineMarker(&buffer_, &sel_, "**", &undo_stack_);
+    }
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
-    // The ribbon button click steals focus from the content window, so the
-    // deferred InvalidateRect in Repaint() may not deliver a WM_PAINT until
-    // the user clicks back into the document. Force an immediate repaint.
     ForceRepaintNow();
 }
 
 void AppWindow::ToggleItalic() {
     if (!editing_) return;
-    if (ExpandSelectionToFormatSpan(false, true, false, false, 1))
-        ;
-    ToggleInlineMarker(&buffer_, &sel_, "*", &undo_stack_);
+    FormatState fs = GetFormatState();
+    if (fs.italic && !sel_.Empty()) {
+        RemoveAllFormattingInSelection(false, true, false, false, 1);
+    } else if (fs.italic) {
+        ExpandSelectionToFormatSpan(false, true, false, false, 1);
+        ToggleInlineMarker(&buffer_, &sel_, "*", &undo_stack_);
+    } else {
+        ToggleInlineMarker(&buffer_, &sel_, "*", &undo_stack_);
+    }
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
     ForceRepaintNow();
@@ -1931,9 +2031,15 @@ void AppWindow::ToggleItalic() {
 
 void AppWindow::ToggleStrike() {
     if (!editing_) return;
-    if (ExpandSelectionToFormatSpan(false, false, false, true, 2))
-        ;
-    ToggleInlineMarker(&buffer_, &sel_, "~~", &undo_stack_);
+    FormatState fs = GetFormatState();
+    if (fs.strike && !sel_.Empty()) {
+        RemoveAllFormattingInSelection(false, false, false, true, 2);
+    } else if (fs.strike) {
+        ExpandSelectionToFormatSpan(false, false, false, true, 2);
+        ToggleInlineMarker(&buffer_, &sel_, "~~", &undo_stack_);
+    } else {
+        ToggleInlineMarker(&buffer_, &sel_, "~~", &undo_stack_);
+    }
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
     ForceRepaintNow();
@@ -1972,9 +2078,17 @@ void AppWindow::ToggleCode() {
         }
     }
     // Default: inline code (single backticks)
-    if (ExpandSelectionToFormatSpan(false, false, true, false, 1))
-        ;
-    ToggleInlineMarker(&buffer_, &sel_, "`", &undo_stack_);
+    {
+        FormatState fs = GetFormatState();
+        if (fs.code && !sel_.Empty()) {
+            RemoveAllFormattingInSelection(false, false, true, false, 1);
+        } else if (fs.code) {
+            ExpandSelectionToFormatSpan(false, false, true, false, 1);
+            ToggleInlineMarker(&buffer_, &sel_, "`", &undo_stack_);
+        } else {
+            ToggleInlineMarker(&buffer_, &sel_, "`", &undo_stack_);
+        }
+    }
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
     ForceRepaintNow();
@@ -2197,29 +2311,105 @@ void AppWindow::ClearFormat() {
     if (!editing_) return;
     if (sel_.Empty()) return;  // Need a selection to clear formatting.
 
-    // Remove all INLINE formatting: bold, italic, strikethrough, code.
-    // Expand the selection to cover each formatting span + its markers,
-    // then ToggleInlineMarker detects them via IsWrappedIn and removes.
-    FormatState fs = GetFormatState();
-    if (fs.bold) {
-        ExpandSelectionToFormatSpan(true, false, false, false, 2);
-        ToggleInlineMarker(&buffer_, &sel_, "**", &undo_stack_);
-    }
-    if (fs.italic) {
-        ExpandSelectionToFormatSpan(false, true, false, false, 1);
-        ToggleInlineMarker(&buffer_, &sel_, "*", &undo_stack_);
-    }
-    if (fs.strike) {
-        ExpandSelectionToFormatSpan(false, false, false, true, 2);
-        ToggleInlineMarker(&buffer_, &sel_, "~~", &undo_stack_);
-    }
-    if (fs.code) {
-        ExpandSelectionToFormatSpan(false, false, true, false, 1);
-        ToggleInlineMarker(&buffer_, &sel_, "`", &undo_stack_);
+    uint32_t origStart = sel_.Start();
+    uint32_t origEnd = origStart + sel_.Length();
+    const std::string& text = buffer_.Text();
+    if (origEnd > text.size()) origEnd = static_cast<uint32_t>(text.size());
+
+    // ── Collect ALL inline formatting spans that overlap the selection ──
+    // For each span, record the marker region to remove. We'll splice
+    // in reverse order so earlier removals don't shift later offsets.
+    struct MarkerRemoval {
+        uint32_t markerStart;  // start of left markers
+        uint32_t markerEnd;    // end of right markers
+        uint32_t contentStart; // start of content (after left markers)
+        uint32_t contentEnd;   // end of content (before right markers)
+    };
+    std::vector<MarkerRemoval> removals;
+
+    for (const auto& node : doc_.nodes) {
+        // Only look at blocks overlapping the selection.
+        uint32_t bs = node.srcOffset;
+        uint32_t be = bs + node.srcLength;
+        if (origEnd <= bs || origStart >= be) continue;
+
+        for (const auto& child : node.children) {
+            // Only collect spans with formatting.
+            if (!child.strong && !child.em && !child.code && !child.strike)
+                continue;
+
+            uint32_t cs = child.srcOffset;
+            uint32_t ce = cs + child.srcLength;
+            if (ce <= cs) continue;  // skip empty spans
+
+            // Check overlap with the selection.
+            if (ce <= origStart || cs >= origEnd) continue;
+
+            // Determine the marker char and count the run.
+            // Bold and italic both use '*'. Strike uses '~'. Code uses '`'.
+            // For combined bold+italic (***), the marker run includes all *.
+            char mc = '*';
+            if (child.code)   mc = '`';
+            if (child.strike) mc = '~';
+
+            // Scan left for consecutive marker chars.
+            uint32_t leftRun = 0;
+            while (cs > leftRun && text[cs - leftRun - 1] == mc)
+                leftRun++;
+            // Scan right for consecutive marker chars.
+            uint32_t rightRun = 0;
+            while (ce + rightRun < text.size() && text[ce + rightRun] == mc)
+                rightRun++;
+
+            if (leftRun > 0 && rightRun > 0) {
+                removals.push_back({cs - leftRun, ce + rightRun, cs, ce});
+            }
+        }
     }
 
+    // Sort in REVERSE order (rightmost first) so splices don't shift offsets.
+    std::sort(removals.begin(), removals.end(),
+              [](const MarkerRemoval& a, const MarkerRemoval& b) {
+                  return a.markerStart > b.markerStart;
+              });
+
+    // Remove duplicate/overlapping removals (e.g. bold+italic share ***).
+    // If two removals overlap, keep only the wider one.
+    std::vector<MarkerRemoval> merged;
+    for (const auto& r : removals) {
+        if (!merged.empty() && r.markerEnd >= merged.back().markerStart) {
+            // Overlaps with previous — merge by taking the wider range.
+            merged.back().markerStart = std::min(merged.back().markerStart, r.markerStart);
+            merged.back().markerEnd = std::max(merged.back().markerEnd, r.markerEnd);
+            merged.back().contentStart = std::min(merged.back().contentStart, r.contentStart);
+            merged.back().contentEnd = std::max(merged.back().contentEnd, r.contentEnd);
+        } else {
+            merged.push_back(r);
+        }
+    }
+
+    // Splice: for each removal, replace the marker region with just content.
+    Selection selBefore = sel_;
+    for (const auto& r : merged) {
+        std::string content = buffer_.Text().substr(r.contentStart, r.contentEnd - r.contentStart);
+        std::string removed = buffer_.Text().substr(r.markerStart, r.markerEnd - r.markerStart);
+        buffer_.Splice(r.markerStart, r.markerEnd - r.markerStart, content);
+        UndoEntry entry{};
+        entry.offset = r.markerStart;
+        entry.removed = removed;
+        entry.inserted = content;
+        entry.selBefore = selBefore;
+        entry.selAfter = sel_;
+        entry.type = EditType::Other;
+        undo_stack_.Push(entry);
+    }
+
+    // Collapse selection to the original start (approximate).
+    sel_.Collapse({origStart});
+
+
     // Remove BLOCK-level formatting: headings, lists, blockquotes.
-    fs = GetFormatState();  // re-read after inline changes
+    FormatState fs = GetFormatState();  // re-read after inline changes
     if (fs.headingLevel > 0) {
         SetHeadingLevel(&buffer_, &sel_, 0, &undo_stack_);
     }

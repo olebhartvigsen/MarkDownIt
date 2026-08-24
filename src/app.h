@@ -60,6 +60,10 @@ public:
     bool CanUndo() const { return undo_stack_.CanUndo(); }
     bool CanRedo() const { return undo_stack_.CanRedo(); }
     FormatState GetFormatState() const;
+    // Remove ALL formatting of the given type from the current selection.
+    void RemoveAllFormattingInSelection(bool wantStrong, bool wantEm,
+                                        bool wantCode, bool wantStrike,
+                                        uint32_t mlen);
     // Expand selection to cover a formatting span + its markers, so
     // ToggleInlineMarker can detect and remove them. Returns true if
     // the selection was expanded.
