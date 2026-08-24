@@ -612,6 +612,13 @@ void AppWindow::Repaint() {
     if (hwnd_content_) InvalidateRect(hwnd_content_, nullptr, FALSE);
 }
 
+void AppWindow::ForceRepaintNow() {
+    if (!hwnd_content_) return;
+    RedrawWindow(hwnd_content_, nullptr, nullptr,
+        RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
+    UpdateCaretPosition();
+}
+
 void AppWindow::ScheduleReparse() {
     // For small documents (< 100 KB), reparse immediately.
     // For larger ones, debounce with a 150 ms timer.
@@ -684,11 +691,21 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
         // Click missed all text blocks — in the left margin.
         // Find the block at this y and select the single visual line.
         int blkIdx = layout_cache_.FindBlockAtY(docY);
+        diaglog("OnLButtonDown margin: blkIdx=%d, docY=%.1f, blocks=%zu\n",
+            blkIdx, docY, layout_cache_.Blocks().size());
         if (blkIdx >= 0) {
+            const auto& blocks0 = layout_cache_.Blocks();
+            diaglog("  block[%d]: y=%.1f h=%.1f x=%.1f w=%.1f srcOff=%u srcLen=%u\n",
+                blkIdx, blocks0[blkIdx].y, blocks0[blkIdx].height,
+                blocks0[blkIdx].x, blocks0[blkIdx].width,
+                blocks0[blkIdx].srcOffset, blocks0[blkIdx].srcLength);
             uint32_t lineStart = 0, lineEnd = 0;
             float lineTopRel = 0.0f;
-            if (layout_cache_.GetLineRangeAtY(blkIdx, docY,
-                    &lineStart, &lineEnd, &lineTopRel)) {
+            bool gotLine = layout_cache_.GetLineRangeAtY(blkIdx, docY,
+                    &lineStart, &lineEnd, &lineTopRel);
+            diaglog("  GetLineRangeAtY: got=%d start=%u end=%u lineTopRel=%.1f\n",
+                gotLine, lineStart, lineEnd, lineTopRel);
+            if (gotLine) {
                 sel_.anchor = {lineStart};
                 sel_.active = {lineEnd};
             } else {
@@ -1989,6 +2006,10 @@ void AppWindow::SetHeading(int level) {
     }
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
+    // The ribbon button click steals focus from the content window, so the
+    // deferred InvalidateRect in Repaint() may not deliver a WM_PAINT until
+    // the user clicks back into the document. Force an immediate repaint.
+    ForceRepaintNow();
 }
 
 void AppWindow::ToggleBullets() {
@@ -1996,6 +2017,7 @@ void AppWindow::ToggleBullets() {
     ToggleUnorderedList(&buffer_, &sel_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
+    ForceRepaintNow();
 }
 
 void AppWindow::ToggleNumbering() {
@@ -2003,6 +2025,7 @@ void AppWindow::ToggleNumbering() {
     ToggleOrderedList(&buffer_, &sel_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
+    ForceRepaintNow();
 }
 
 void AppWindow::ToggleQuote() {
@@ -2010,6 +2033,7 @@ void AppWindow::ToggleQuote() {
     ToggleBlockquote(&buffer_, &sel_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
+    ForceRepaintNow();
 }
 
 void AppWindow::Indent() {
@@ -2017,6 +2041,7 @@ void AppWindow::Indent() {
     IndentLine(&buffer_, &sel_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
+    ForceRepaintNow();
 }
 
 void AppWindow::Outdent() {
@@ -2024,6 +2049,7 @@ void AppWindow::Outdent() {
     OutdentLine(&buffer_, &sel_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
+    ForceRepaintNow();
 }
 
 void AppWindow::OnDestroy() {
