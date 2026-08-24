@@ -110,7 +110,7 @@ static void FillRoundedRect(ID2D1RenderTarget* rt, ID2D1SolidColorBrush* brush,
 
 void WelcomeScreen::Render(ID2D1RenderTarget* rt, float viewW, float viewH,
     int hoverIndex) {
-    if (cards_.empty() || !rt || !dw_) return;
+    if (!rt || !dw_) return;
 
     // ── Colors (light theme, clean and modern) ──
     D2D1_COLOR_F bgColor     = D2D1::ColorF(0xF7F7F8);
@@ -122,6 +122,7 @@ void WelcomeScreen::Render(ID2D1RenderTarget* rt, float viewW, float viewH,
     D2D1_COLOR_F previewColor = D2D1::ColorF(0x616161);
     D2D1_COLOR_F folderColor  = D2D1::ColorF(0x8A8A8A);
     D2D1_COLOR_F accentColor  = D2D1::ColorF(0x0078D4);
+    D2D1_COLOR_F hintColor    = D2D1::ColorF(0xA0A0A0);
 
     // Brushes
     ID2D1SolidColorBrush* bgBrush = nullptr;
@@ -142,11 +143,13 @@ void WelcomeScreen::Render(ID2D1RenderTarget* rt, float viewW, float viewH,
     rt->CreateSolidColorBrush(folderColor, &folderBrush);
     ID2D1SolidColorBrush* accentBrush = nullptr;
     rt->CreateSolidColorBrush(accentColor, &accentBrush);
+    ID2D1SolidColorBrush* hintBrush = nullptr;
+    rt->CreateSolidColorBrush(hintColor, &hintBrush);
 
     // Background fill
     rt->FillRectangle(D2D1::RectF(0, 0, viewW, viewH), bgBrush);
 
-    // ── Heading: "Recent Documents" ──
+    // ── Heading ──
     if (title_fmt_) {
         std::wstring heading = L"Recent Documents";
         IDWriteTextLayout* tl = nullptr;
@@ -154,13 +157,43 @@ void WelcomeScreen::Render(ID2D1RenderTarget* rt, float viewW, float viewH,
             static_cast<UINT32>(heading.size()),
             title_fmt_, viewW, 40.0f, &tl);
         if (tl) {
-            // Center horizontally
             DWRITE_TEXT_METRICS tm = {};
             tl->GetMetrics(&tm);
             float hx = (viewW - tm.width) * 0.5f;
             rt->DrawTextLayout(D2D1::Point2F(hx, 28.0f), tl, titleBrush);
             tl->Release();
         }
+    }
+
+    // ── No recent files: show a friendly hint ──
+    if (cards_.empty()) {
+        if (cardPreview_fmt_) {
+            std::wstring hint = L"Open or drag a .md file to get started.";
+            IDWriteTextLayout* tl = nullptr;
+            dw_->CreateTextLayout(hint.c_str(),
+                static_cast<UINT32>(hint.size()),
+                cardPreview_fmt_, viewW, 30.0f, &tl);
+            if (tl) {
+                DWRITE_TEXT_METRICS tm = {};
+                tl->GetMetrics(&tm);
+                float hx = (viewW - tm.width) * 0.5f;
+                float hy = viewH * 0.5f - 15.0f;
+                rt->DrawTextLayout(D2D1::Point2F(hx, hy), tl, hintBrush);
+                tl->Release();
+            }
+        }
+        // Cleanup and return early
+        if (bgBrush) bgBrush->Release();
+        if (cardBgBrush) cardBgBrush->Release();
+        if (borderBrush) borderBrush->Release();
+        if (hoverBorderBrush) hoverBorderBrush->Release();
+        if (hoverBgBrush) hoverBgBrush->Release();
+        if (titleBrush) titleBrush->Release();
+        if (previewBrush) previewBrush->Release();
+        if (folderBrush) folderBrush->Release();
+        if (accentBrush) accentBrush->Release();
+        if (hintBrush) hintBrush->Release();
+        return;
     }
 
     // ── Cards ──
@@ -264,6 +297,7 @@ void WelcomeScreen::Render(ID2D1RenderTarget* rt, float viewW, float viewH,
     if (previewBrush) previewBrush->Release();
     if (folderBrush) folderBrush->Release();
     if (accentBrush) accentBrush->Release();
+    if (hintBrush) hintBrush->Release();
 }
 
 int WelcomeScreen::HitTest(float x, float y) const {
