@@ -1851,8 +1851,65 @@ void AppWindow::InvalidateFormatButtons() {
     }
 }
 
+// If the caret or selection is inside a formatted span (matching the
+// given flags), expand the selection to include the full span content
+// plus the surrounding markdown markers. After this, ToggleInlineMarker
+// can detect the markers via IsWrappedIn and remove them.
+bool AppWindow::ExpandSelectionToFormatSpan(bool wantStrong, bool wantEm,
+                                             bool wantCode, bool wantStrike,
+                                             uint32_t mlen) {
+    if (doc_.nodes.empty()) return false;
+    const auto& text = buffer_.Text();
+    uint32_t caret = sel_.active.offset;
+    if (caret > text.size()) caret = static_cast<uint32_t>(text.size());
+    uint32_t selStart = sel_.Start();
+    uint32_t selEnd = selStart + sel_.Length();
+
+    for (const auto& node : doc_.nodes) {
+        for (const auto& child : node.children) {
+            if (wantStrong && !child.strong) continue;
+            if (wantEm    && !child.em)     continue;
+            if (wantCode   && !child.code)   continue;
+            if (wantStrike && !child.strike) continue;
+
+            uint32_t cs = child.srcOffset;
+            uint32_t ce = cs + child.srcLength;
+            if (ce <= cs) continue;  // skip empty spans
+
+            // Check if caret/selection overlaps this span.
+            bool hit = false;
+            if (sel_.Empty()) {
+                hit = (cs <= caret && caret <= ce);
+            } else {
+                hit = (cs < selEnd && ce > selStart);
+            }
+            if (!hit) continue;
+
+            // Verify markers exist outside the content.
+            if (cs < mlen || ce + mlen > text.size()) continue;
+            bool ok = true;
+            char mc = (wantCode) ? '`' : '*';
+            if (wantStrike) mc = '~';
+            if (wantEm && !wantStrong) mc = '*';
+            for (uint32_t i = 0; i < mlen && ok; i++) {
+                if (text[cs - mlen + i] != mc) ok = false;
+                if (text[ce + i] != mc)       ok = false;
+            }
+            if (!ok) continue;
+
+            // Expand selection to include the markers.
+            sel_.anchor = {cs - mlen};
+            sel_.active = {ce + mlen};
+            return true;
+        }
+    }
+    return false;
+}
+
 void AppWindow::ToggleBold() {
     if (!editing_) return;
+    if (ExpandSelectionToFormatSpan(true, false, false, false, 2))
+        ; // selection expanded to include ** markers — ToggleInlineMarker will remove them
     ToggleInlineMarker(&buffer_, &sel_, "**", &undo_stack_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
@@ -1864,6 +1921,8 @@ void AppWindow::ToggleBold() {
 
 void AppWindow::ToggleItalic() {
     if (!editing_) return;
+    if (ExpandSelectionToFormatSpan(false, true, false, false, 1))
+        ;
     ToggleInlineMarker(&buffer_, &sel_, "*", &undo_stack_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
@@ -1872,6 +1931,8 @@ void AppWindow::ToggleItalic() {
 
 void AppWindow::ToggleStrike() {
     if (!editing_) return;
+    if (ExpandSelectionToFormatSpan(false, false, false, true, 2))
+        ;
     ToggleInlineMarker(&buffer_, &sel_, "~~", &undo_stack_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
@@ -1911,6 +1972,8 @@ void AppWindow::ToggleCode() {
         }
     }
     // Default: inline code (single backticks)
+    if (ExpandSelectionToFormatSpan(false, false, true, false, 1))
+        ;
     ToggleInlineMarker(&buffer_, &sel_, "`", &undo_stack_);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
@@ -2135,14 +2198,25 @@ void AppWindow::ClearFormat() {
     if (sel_.Empty()) return;  // Need a selection to clear formatting.
 
     // Remove all INLINE formatting: bold, italic, strikethrough, code.
-    // Use GetFormatState to detect which formats are active, then call
-    // ToggleInlineMarker for each active one. ToggleInlineMarker now
-    // detects markers both inside AND just outside the selection.
+    // Expand the selection to cover each formatting span + its markers,
+    // then ToggleInlineMarker detects them via IsWrappedIn and removes.
     FormatState fs = GetFormatState();
-    if (fs.bold)      ToggleInlineMarker(&buffer_, &sel_, "**", &undo_stack_);
-    if (fs.italic)    ToggleInlineMarker(&buffer_, &sel_, "*",  &undo_stack_);
-    if (fs.strike)    ToggleInlineMarker(&buffer_, &sel_, "~~", &undo_stack_);
-    if (fs.code)      ToggleInlineMarker(&buffer_, &sel_, "`",  &undo_stack_);
+    if (fs.bold) {
+        ExpandSelectionToFormatSpan(true, false, false, false, 2);
+        ToggleInlineMarker(&buffer_, &sel_, "**", &undo_stack_);
+    }
+    if (fs.italic) {
+        ExpandSelectionToFormatSpan(false, true, false, false, 1);
+        ToggleInlineMarker(&buffer_, &sel_, "*", &undo_stack_);
+    }
+    if (fs.strike) {
+        ExpandSelectionToFormatSpan(false, false, false, true, 2);
+        ToggleInlineMarker(&buffer_, &sel_, "~~", &undo_stack_);
+    }
+    if (fs.code) {
+        ExpandSelectionToFormatSpan(false, false, true, false, 1);
+        ToggleInlineMarker(&buffer_, &sel_, "`", &undo_stack_);
+    }
 
     // Remove BLOCK-level formatting: headings, lists, blockquotes.
     fs = GetFormatState();  // re-read after inline changes

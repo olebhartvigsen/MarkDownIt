@@ -60,6 +60,12 @@ public:
     bool CanUndo() const { return undo_stack_.CanUndo(); }
     bool CanRedo() const { return undo_stack_.CanRedo(); }
     FormatState GetFormatState() const;
+    // Expand selection to cover a formatting span + its markers, so
+    // ToggleInlineMarker can detect and remove them. Returns true if
+    // the selection was expanded.
+    bool ExpandSelectionToFormatSpan(bool wantStrong, bool wantEm,
+                                      bool wantCode, bool wantStrike,
+                                      uint32_t mlen);
     void InvalidateFormatButtons();
     void ToggleEdit() { SetEdit(!editing_); }
 
