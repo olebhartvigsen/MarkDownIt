@@ -377,10 +377,8 @@
     <Ribbon>
       <Ribbon.ApplicationMenu>
         <ApplicationMenu CommandName="cmdAppMenu">
-          <MenuGroup Class="MajorItems">
-            <Button CommandName="cmdAbout" />
-          </MenuGroup>
           <MenuGroup Class="StandardItems">
+            <Button CommandName="cmdAbout" />
             <Button CommandName="cmdAssocMd" />
           </MenuGroup>
           <MenuGroup Class="StandardItems">

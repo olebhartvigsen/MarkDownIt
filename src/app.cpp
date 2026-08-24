@@ -752,11 +752,19 @@ void AppWindow::OnLButtonDblClk(HWND hwnd, int x, int y) {
     const std::string& text = buffer_.Text();
     if (offset >= text.size()) return;
 
+    // Word boundary: stop at whitespace OR punctuation, so e.g. a colon
+    // is not included when double-clicking a word in "Key: Value" text
+    // (common in markdown table cells).
+    auto isWordChar = [](unsigned char c) {
+        return (c >= 0x80 ||  // non-ASCII (UTF-8 continuation bytes, accented chars)
+                isalnum(c) ||
+                c == '_' || c == '-');
+    };
     uint32_t start = offset;
-    while (start > 0 && !isspace(static_cast<unsigned char>(text[start - 1])))
+    while (start > 0 && isWordChar(static_cast<unsigned char>(text[start - 1])))
         start--;
     uint32_t end = offset;
-    while (end < text.size() && !isspace(static_cast<unsigned char>(text[end])))
+    while (end < text.size() && isWordChar(static_cast<unsigned char>(text[end])))
         end++;
 
     sel_.anchor = {start};
@@ -2137,40 +2145,6 @@ void AppWindow::ToggleWrap() {
     UpdateRibbonWrapState(renderer_.Wrap());
     UpdateScrollInfo();
     Repaint();
-}
-
-void AppWindow::ShowWidthMenu() {
-    // Show a standard Win32 popup menu with the 4 width options.
-    // A Win32 TrackPopupMenu has no height limit, unlike the Ribbon
-    // ApplicationMenu's DropDownButton submenu which clips and scrolls.
-    HMENU hMenu = CreatePopupMenu();
-
-    static const wchar_t* labels[4] = {
-        L"Standard", L"960 px", L"1600 px", L"Full width"
-    };
-    int cur = settings_.contentWidthMode;
-
-    for (int i = 0; i < 4; ++i) {
-        UINT flags = MF_STRING;
-        if (i == cur) flags |= MF_CHECKED;
-        AppendMenuW(hMenu, flags, 3001 + i, labels[i]);
-    }
-
-    // Position the menu below the Fil (ApplicationMenu) button.
-    RECT rc;
-    GetWindowRect(hwnd_, &rc);
-    int x = rc.left + 10;
-    int y = rc.top + static_cast<int>(g_ribbonHeight) + 5;
-
-    int cmd = TrackPopupMenu(hMenu,
-        TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_LEFTALIGN | TPM_TOPALIGN,
-        x, y, 0, hwnd_, nullptr);
-
-    DestroyMenu(hMenu);
-
-    if (cmd >= 3001 && cmd <= 3004) {
-        SetContentWidthMode(cmd - 3001);
-    }
 }
 
 void AppWindow::SelectAll() {

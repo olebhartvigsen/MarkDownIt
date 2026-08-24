@@ -69,7 +69,6 @@ public:
     void InvalidateSettingsButtons();
 
     void ShowContextMenu(int x, int y);
-    void ShowWidthMenu();
     void SelectAll();
 
     void OpenPendingFile(const std::wstring& path) {
