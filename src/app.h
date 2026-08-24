@@ -232,6 +232,7 @@ private:
     void UpdateScrollInfo();
     void LoadSampleDoc();
     void Repaint();
+    void ForceRepaintNow();  // Immediate repaint (for ribbon-triggered edits).
     void RecreateRenderer();
 
     static LRESULT CALLBACK WndProcThunk(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);

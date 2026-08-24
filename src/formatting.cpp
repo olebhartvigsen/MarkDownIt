@@ -80,6 +80,57 @@ static std::string GetLine(const std::string& text, uint32_t start) {
     return text.substr(start, end - start);
 }
 
+// Find the start of the paragraph (block of consecutive non-blank lines)
+// containing offset. A blank line (only whitespace) ends a paragraph.
+static uint32_t ParagraphStartOf(const std::string& text, uint32_t offset) {
+    uint32_t lineStart = LineStartOf(text, offset);
+    while (lineStart > 0) {
+        // Move to the previous line.
+        uint32_t prevEnd = lineStart - 1;  // skip the '\n'
+        uint32_t prevStart = LineStartOf(text, prevEnd);
+        std::string prevLine = GetLine(text, prevStart);
+        // Check if the previous line is blank (only whitespace).
+        bool blank = true;
+        for (char c : prevLine) {
+            if (c != ' ' && c != '\t' && c != '\r') { blank = false; break; }
+        }
+        if (blank) break;
+        lineStart = prevStart;
+    }
+    return lineStart;
+}
+
+// Find the end (one past last char, before the newline) of the paragraph
+// containing offset.
+static uint32_t ParagraphEndOf(const std::string& text, uint32_t offset) {
+    uint32_t end = offset;
+    // Advance to end of current line.
+    while (end < text.size() && text[end] != '\n') end++;
+    while (end < text.size()) {
+        // Peek at the next line.
+        uint32_t nextStart = end + 1;  // skip this '\n'
+        if (nextStart >= text.size()) break;
+        std::string nextLine = GetLine(text, nextStart);
+        bool blank = true;
+        for (char c : nextLine) {
+            if (c != ' ' && c != '\t' && c != '\r') { blank = false; break; }
+        }
+        if (blank) break;
+        // Advance end to the end of the next line.
+        end = nextStart;
+        while (end < text.size() && text[end] != '\n') end++;
+    }
+    return end;
+}
+
+// Check if a line is blank (only whitespace or empty).
+static bool IsBlankLine(const std::string& line) {
+    for (char c : line) {
+        if (c != ' ' && c != '\t' && c != '\r') return false;
+    }
+    return true;
+}
+
 static std::string GetLinePrefix(const std::string& line) {
     // Return the existing prefix: #'s, - , * , 1. , > , or spaces.
     size_t i = 0;
@@ -111,26 +162,80 @@ static std::string GetLinePrefix(const std::string& line) {
 
 void SetHeadingLevel(TextBuffer* buf, Selection* sel, int level) {
     const std::string& text = buf->Text();
-    uint32_t lineStart = LineStartOf(text, sel->active.offset);
 
-    std::string line = GetLine(text, lineStart);
-    std::string prefix = GetLinePrefix(line);
-    std::string content = line.substr(prefix.size());
+    // A markdown heading is a single line: it must span the entire paragraph
+    // block containing the cursor, not just the wrapping (source) line at the
+    // cursor position. So we find the full paragraph boundaries and join all
+    // wrapping lines into one before applying the heading prefix.
+    //
+    // Special case: if the first line of the paragraph already has a heading
+    // prefix, the heading is just that one line (markdown headings are always
+    // single-line). Continuation lines form a separate paragraph, so we only
+    // operate on the heading line itself.
+    uint32_t paraStart = ParagraphStartOf(text, sel->active.offset);
 
-    // Remove old prefix (if it was a heading), then add new.
+    std::string firstLine = GetLine(text, paraStart);
+    std::string prefix = GetLinePrefix(firstLine);
+
+    // Check if the first line is already a heading.
+    bool firstIsHeading = false;
+    {
+        size_t i = 0;
+        while (i < prefix.size() && prefix[i] == ' ') i++;
+        firstIsHeading = (i < prefix.size() && prefix[i] == '#');
+    }
+
+    uint32_t paraEnd;
+    if (firstIsHeading) {
+        // Heading is single-line: paragraph is just the first line.
+        paraEnd = paraStart + static_cast<uint32_t>(firstLine.size());
+    } else {
+        paraEnd = ParagraphEndOf(text, sel->active.offset);
+    }
+
+    // Extract the paragraph content, removing any existing block prefix from
+    // the first line and collapsing soft line breaks into single spaces.
+    std::string firstContent = firstLine.substr(prefix.size());
+
+    // Gather remaining lines of the paragraph as plain content.
+    std::string content = firstContent;
+    {
+        uint32_t cur = paraStart;
+        // Advance past the first line.
+        while (cur < text.size() && text[cur] != '\n') cur++;
+        while (cur < paraEnd) {
+            // cur is at '\n'; move to next line.
+            cur++;  // skip '\n'
+            std::string line = GetLine(text, cur);
+            // Skip any indent on continuation lines.
+            size_t i = 0;
+            while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
+            std::string rest = line.substr(i);
+            if (!rest.empty()) {
+                if (!content.empty()) content += ' ';
+                content += rest;
+            }
+            // Advance cur to end of this line.
+            while (cur < text.size() && text[cur] != '\n') cur++;
+        }
+    }
+
+    // Build the new text: heading prefix + content (or just content if level 0).
     std::string newPrefix;
     if (level > 0) {
         for (int i = 0; i < level; i++) newPrefix += "#";
         newPrefix += " ";
     }
+    std::string replacement = newPrefix + content;
 
-    // Splice: replace old prefix with new prefix.
-    buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), newPrefix);
+    // Splice: replace the whole paragraph block with the new single line.
+    uint32_t oldLen = paraEnd - paraStart;
+    buf->Splice(paraStart, oldLen, replacement);
 
-    // Adjust caret: keep it in the same relative position in the content.
-    int32_t delta = static_cast<int32_t>(newPrefix.size()) - static_cast<int32_t>(prefix.size());
-    uint32_t newOffset = static_cast<uint32_t>(
-        std::max(0, static_cast<int32_t>(sel->active.offset) + delta));
+    // Place the caret at the end of the new content (content start if the
+    // line was empty). This mirrors the old behaviour of keeping the caret in
+    // the same relative position within the content.
+    uint32_t newOffset = paraStart + static_cast<uint32_t>(replacement.size());
     sel->Collapse({newOffset});
 }
 
