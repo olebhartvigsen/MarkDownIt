@@ -1747,6 +1747,10 @@ void AppWindow::ToggleBold() {
     ToggleInlineMarker(&buffer_, &sel_, "**");
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
+    // The ribbon button click steals focus from the content window, so the
+    // deferred InvalidateRect in Repaint() may not deliver a WM_PAINT until
+    // the user clicks back into the document. Force an immediate repaint.
+    ForceRepaintNow();
 }
 
 void AppWindow::ToggleItalic() {
@@ -1754,6 +1758,7 @@ void AppWindow::ToggleItalic() {
     ToggleInlineMarker(&buffer_, &sel_, "*");
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
+    ForceRepaintNow();
 }
 
 void AppWindow::ToggleStrike() {
@@ -1761,6 +1766,7 @@ void AppWindow::ToggleStrike() {
     ToggleInlineMarker(&buffer_, &sel_, "~~");
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
+    ForceRepaintNow();
 }
 
 void AppWindow::ToggleCode() {
@@ -1768,6 +1774,7 @@ void AppWindow::ToggleCode() {
     ToggleInlineMarker(&buffer_, &sel_, "`");
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
+    ForceRepaintNow();
 }
 
 // Build an in-memory dialog template for the Insert Link dialog.
@@ -1980,6 +1987,7 @@ void AppWindow::InsertLinkCmd() {
     InsertLink(&buffer_, &sel_, urlUtf8);
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
+    ForceRepaintNow();
 }
 
 void AppWindow::ClearFormat() {
@@ -2003,6 +2011,7 @@ void AppWindow::ClearFormat() {
     }
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
+    ForceRepaintNow();
 }
 
 void AppWindow::SetHeading(int level) {
