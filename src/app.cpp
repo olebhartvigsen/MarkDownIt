@@ -717,6 +717,10 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     margin_selecting_ = false;
     if (offset != UINT32_MAX) {
         sel_.Collapse({offset});
+    } else {
+        // Click landed on empty space (no text block, no margin line).
+        // Clear any active selection.
+        sel_.Collapse({sel_.active.offset});
     }
     // Only update caret position in edit mode; in view mode we have no caret.
     if (editing_) UpdateCaretPosition();
