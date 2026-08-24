@@ -1,10 +1,27 @@
 #include "settings.h"
 #include <fstream>
 #include <sstream>
+#include <cstdarg>
 
 static const wchar_t* kKey = L"Software\\MarkDownIt";
 static const wchar_t* kRecentSubkey = L"Software\\MarkDownIt\\RecentFiles";
 static const int kMaxRecent = 12;
+
+// Diagnostic log
+#include <stdio.h>
+static void diaglog(const char* fmt, ...) {
+    char path[MAX_PATH];
+    GetTempPathA(MAX_PATH, path);
+    strcat_s(path, "markdownit_diag.log");
+    FILE* f = nullptr;
+    fopen_s(&f, path, "a");
+    if (!f) return;
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(f, fmt, ap);
+    va_end(ap);
+    fclose(f);
+}
 
 AppSettings LoadSettings() {
     AppSettings s;
@@ -34,8 +51,10 @@ AppSettings LoadSettings() {
 
     // Load recent files from HKCU\Software\MarkDownIt\RecentFiles
     HKEY hRecent = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, kRecentSubkey, 0,
-            KEY_QUERY_VALUE, &hRecent) == ERROR_SUCCESS) {
+    LONG rc2 = RegOpenKeyExW(HKEY_CURRENT_USER, kRecentSubkey, 0,
+            KEY_QUERY_VALUE, &hRecent);
+    diaglog("LoadSettings: RegOpenKeyEx RecentFiles rc=%d\n", rc2);
+    if (rc2 == ERROR_SUCCESS) {
         for (int i = 0; i < kMaxRecent; ++i) {
             wchar_t name[16];
             wsprintfW(name, L"File%d", i);
@@ -43,15 +62,27 @@ AppSettings LoadSettings() {
             // First query: get size
             LONG rc = RegQueryValueExW(hRecent, name, nullptr, &pathType,
                 nullptr, &pathSz);
-            if (rc != ERROR_SUCCESS || pathType != REG_SZ) continue;
+            if (rc != ERROR_SUCCESS) {
+                diaglog("LoadSettings: File%d not found (rc=%d)\n", i, rc);
+                continue;
+            }
+            if (pathType != REG_SZ) {
+                diaglog("LoadSettings: File%d wrong type=%d\n", i, pathType);
+                continue;
+            }
+            diaglog("LoadSettings: File%d pathSz=%d\n", i, pathSz);
             // Allocate and read
             std::wstring path(pathSz / 2, L'\0');
             pathSz = static_cast<DWORD>(path.size() * 2);
             rc = RegQueryValueExW(hRecent, name, nullptr, &pathType,
                 reinterpret_cast<BYTE*>(path.data()), &pathSz);
-            if (rc != ERROR_SUCCESS) continue;
+            if (rc != ERROR_SUCCESS) {
+                diaglog("LoadSettings: File%d read failed rc=%d\n", i, rc);
+                continue;
+            }
             // Trim trailing null
             if (!path.empty() && path.back() == L'\0') path.pop_back();
+            diaglog("LoadSettings: File%d loaded %zu chars\n", i, path.size());
 
             // Load preview
             wchar_t prevName[16];
@@ -70,6 +101,7 @@ AppSettings LoadSettings() {
         }
         RegCloseKey(hRecent);
     }
+    diaglog("LoadSettings: total recentFiles=%zu\n", s.recentFiles.size());
 
     return s;
 }
