@@ -2,6 +2,7 @@
 #include "undostack.h"
 #include <algorithm>
 #include <cstdlib>
+#include <vector>
 
 bool IsWrappedIn(const std::string& text, uint32_t start, uint32_t end,
                  const std::string& marker) {
@@ -490,103 +491,193 @@ void SetHeadingLevel(TextBuffer* buf, Selection* sel, int level,
 
 // Fix: sel_ should be *sel
 
+// Helper: collect all line-start offsets within a [start, end) range.
+static std::vector<uint32_t> LinesInRange(const std::string& text,
+                                           uint32_t start, uint32_t end) {
+    std::vector<uint32_t> lines;
+    if (end > text.size()) end = static_cast<uint32_t>(text.size());
+    uint32_t pos = LineStartOf(text, start);
+    while (pos < end) {
+        lines.push_back(pos);
+        // Advance to next line.
+        while (pos < text.size() && text[pos] != '\n') pos++;
+        if (pos < text.size()) pos++;  // skip the \n
+    }
+    return lines;
+}
+
 void ToggleUnorderedList(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     const std::string& text = buf->Text();
-    uint32_t lineStart = LineStartOf(text, sel->active.offset);
-    std::string line = GetLine(text, lineStart);
-    std::string prefix = GetLinePrefix(line);
-    std::string content = line.substr(prefix.size());
 
-    // Check if already an unordered list.
+    // Collect all lines in the selection range (or just the caret line).
+    std::vector<uint32_t> lineStarts;
+    if (sel->Empty()) {
+        lineStarts.push_back(LineStartOf(text, sel->active.offset));
+    } else {
+        lineStarts = LinesInRange(text, sel->Start(), sel->Start() + sel->Length());
+    }
+
+    // Determine action from the FIRST line: if it's already a bullet, remove;
+    // otherwise, add.
+    std::string firstLine = GetLine(text, lineStarts[0]);
+    std::string firstPrefix = GetLinePrefix(firstLine);
     bool isUL = false;
-    size_t i = 0;
-    while (i < prefix.size() && prefix[i] == ' ') i++;
-    if (i < prefix.size() && (prefix[i] == '-' || prefix[i] == '*' || prefix[i] == '+') &&
-        i + 1 < prefix.size() && prefix[i + 1] == ' ')
-        isUL = true;
+    {
+        size_t i = 0;
+        while (i < firstPrefix.size() && firstPrefix[i] == ' ') i++;
+        if (i < firstPrefix.size() && (firstPrefix[i] == '-' || firstPrefix[i] == '*' || firstPrefix[i] == '+') &&
+            i + 1 < firstPrefix.size() && firstPrefix[i + 1] == ' ')
+            isUL = true;
+    }
 
     Selection selBefore = *sel;
-    std::string removed = prefix;
-    if (isUL) {
-        // Remove the list marker.
-        std::string replacement = "";
-        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), replacement);
-        int32_t delta = -static_cast<int32_t>(prefix.size());
-        sel->Collapse({static_cast<uint32_t>(std::max(0, static_cast<int32_t>(sel->active.offset) + delta))});
-        RecordUndo(undo, lineStart, removed, replacement, selBefore, *sel);
-    } else {
-        // Add "- " prefix.
-        std::string replacement = "- ";
-        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), replacement);
-        int32_t delta = 2 - static_cast<int32_t>(prefix.size());
-        sel->Collapse({static_cast<uint32_t>(std::max(0, static_cast<int32_t>(sel->active.offset) + delta))});
-        RecordUndo(undo, lineStart, removed, replacement, selBefore, *sel);
+    // Process lines in REVERSE order so earlier splices don't shift later offsets.
+    for (int li = static_cast<int>(lineStarts.size()) - 1; li >= 0; --li) {
+        uint32_t ls = lineStarts[li];
+        // Re-read line each time (buffer may have changed by earlier splices).
+        const std::string& cur = buf->Text();
+        std::string line = GetLine(cur, ls);
+        std::string prefix = GetLinePrefix(line);
+        if (isUL) {
+            // Remove bullet marker (only if this line actually has one).
+            size_t i = 0;
+            while (i < prefix.size() && prefix[i] == ' ') i++;
+            bool hasBullet = (i < prefix.size() &&
+                (prefix[i] == '-' || prefix[i] == '*' || prefix[i] == '+') &&
+                i + 1 < prefix.size() && prefix[i + 1] == ' ');
+            if (hasBullet) {
+                std::string removed = prefix;
+                buf->Splice(ls, static_cast<uint32_t>(prefix.size()), "");
+                // Record undo as a separate entry per line.
+                Selection dummySel = *sel;
+                dummySel.Collapse({ls});
+                RecordUndo(undo, ls, removed, "", selBefore, dummySel);
+            }
+        } else {
+            // Add "- " prefix (replace existing indent prefix).
+            std::string removed = prefix;
+            buf->Splice(ls, static_cast<uint32_t>(prefix.size()), "- ");
+            Selection dummySel = *sel;
+            dummySel.Collapse({ls});
+            RecordUndo(undo, ls, removed, "- ", selBefore, dummySel);
+        }
     }
+    // Collapse caret to start of selection.
+    sel->Collapse({selBefore.Start()});
 }
 
 void ToggleOrderedList(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     const std::string& text = buf->Text();
-    uint32_t lineStart = LineStartOf(text, sel->active.offset);
-    std::string line = GetLine(text, lineStart);
-    std::string prefix = GetLinePrefix(line);
-    std::string content = line.substr(prefix.size());
 
-    // Check if already an ordered list.
+    std::vector<uint32_t> lineStarts;
+    if (sel->Empty()) {
+        lineStarts.push_back(LineStartOf(text, sel->active.offset));
+    } else {
+        lineStarts = LinesInRange(text, sel->Start(), sel->Start() + sel->Length());
+    }
+
+    // Determine action from the FIRST line.
+    std::string firstLine = GetLine(text, lineStarts[0]);
+    std::string firstPrefix = GetLinePrefix(firstLine);
     bool isOL = false;
-    size_t i = 0;
-    while (i < prefix.size() && prefix[i] == ' ') i++;
-    if (i < prefix.size() && prefix[i] >= '0' && prefix[i] <= '9') {
-        size_t j = i;
-        while (j < prefix.size() && prefix[j] >= '0' && prefix[j] <= '9') j++;
-        if (j < prefix.size() && prefix[j] == '.' && j + 1 < prefix.size() && prefix[j + 1] == ' ')
-            isOL = true;
+    {
+        size_t i = 0;
+        while (i < firstPrefix.size() && firstPrefix[i] == ' ') i++;
+        if (i < firstPrefix.size() && firstPrefix[i] >= '0' && firstPrefix[i] <= '9') {
+            size_t j = i;
+            while (j < firstPrefix.size() && firstPrefix[j] >= '0' && firstPrefix[j] <= '9') j++;
+            if (j < firstPrefix.size() && firstPrefix[j] == '.' && j + 1 < firstPrefix.size() && firstPrefix[j + 1] == ' ')
+                isOL = true;
+        }
     }
 
     Selection selBefore = *sel;
-    std::string removed = prefix;
-    if (isOL) {
-        std::string replacement = "";
-        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), replacement);
-        int32_t delta = -static_cast<int32_t>(prefix.size());
-        sel->Collapse({static_cast<uint32_t>(std::max(0, static_cast<int32_t>(sel->active.offset) + delta))});
-        RecordUndo(undo, lineStart, removed, replacement, selBefore, *sel);
-    } else {
-        std::string replacement = "1. ";
-        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), replacement);
-        int32_t delta = 3 - static_cast<int32_t>(prefix.size());
-        sel->Collapse({static_cast<uint32_t>(std::max(0, static_cast<int32_t>(sel->active.offset) + delta))});
-        RecordUndo(undo, lineStart, removed, replacement, selBefore, *sel);
+    int itemNumber = 1;
+    // Process lines in REVERSE order.
+    for (int li = static_cast<int>(lineStarts.size()) - 1; li >= 0; --li) {
+        uint32_t ls = lineStarts[li];
+        const std::string& cur = buf->Text();
+        std::string line = GetLine(cur, ls);
+        std::string prefix = GetLinePrefix(line);
+        if (isOL) {
+            // Check if this line has an ordered list prefix.
+            size_t i = 0;
+            while (i < prefix.size() && prefix[i] == ' ') i++;
+            bool hasOL = false;
+            if (i < prefix.size() && prefix[i] >= '0' && prefix[i] <= '9') {
+                size_t j = i;
+                while (j < prefix.size() && prefix[j] >= '0' && prefix[j] <= '9') j++;
+                if (j < prefix.size() && prefix[j] == '.' && j + 1 < prefix.size() && prefix[j + 1] == ' ')
+                    hasOL = true;
+            }
+            if (hasOL) {
+                std::string removed = prefix;
+                buf->Splice(ls, static_cast<uint32_t>(prefix.size()), "");
+                Selection dummySel = *sel;
+                dummySel.Collapse({ls});
+                RecordUndo(undo, ls, removed, "", selBefore, dummySel);
+            }
+        } else {
+            // Add "N. " prefix.
+            std::string numPrefix = std::to_string(itemNumber) + ". ";
+            std::string removed = prefix;
+            buf->Splice(ls, static_cast<uint32_t>(prefix.size()), numPrefix);
+            Selection dummySel = *sel;
+            dummySel.Collapse({ls});
+            RecordUndo(undo, ls, removed, numPrefix, selBefore, dummySel);
+        }
+        itemNumber++;
     }
+    sel->Collapse({selBefore.Start()});
 }
 
 void ToggleBlockquote(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     const std::string& text = buf->Text();
-    uint32_t lineStart = LineStartOf(text, sel->active.offset);
-    std::string line = GetLine(text, lineStart);
-    std::string prefix = GetLinePrefix(line);
 
-    // Check if already a blockquote.
+    std::vector<uint32_t> lineStarts;
+    if (sel->Empty()) {
+        lineStarts.push_back(LineStartOf(text, sel->active.offset));
+    } else {
+        lineStarts = LinesInRange(text, sel->Start(), sel->Start() + sel->Length());
+    }
+
+    // Determine action from the FIRST line.
+    std::string firstLine = GetLine(text, lineStarts[0]);
+    std::string firstPrefix = GetLinePrefix(firstLine);
     bool isQuote = false;
-    size_t i = 0;
-    while (i < prefix.size() && prefix[i] == ' ') i++;
-    if (i < prefix.size() && prefix[i] == '>')
-        isQuote = true;
+    {
+        size_t i = 0;
+        while (i < firstPrefix.size() && firstPrefix[i] == ' ') i++;
+        if (i < firstPrefix.size() && firstPrefix[i] == '>')
+            isQuote = true;
+    }
 
     Selection selBefore = *sel;
-    std::string removed = prefix;
-    if (isQuote) {
-        std::string replacement = "";
-        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), replacement);
-        int32_t delta = -static_cast<int32_t>(prefix.size());
-        sel->Collapse({static_cast<uint32_t>(std::max(0, static_cast<int32_t>(sel->active.offset) + delta))});
-        RecordUndo(undo, lineStart, removed, replacement, selBefore, *sel);
-    } else {
-        std::string replacement = "> ";
-        buf->Splice(lineStart, static_cast<uint32_t>(prefix.size()), replacement);
-        int32_t delta = 2 - static_cast<int32_t>(prefix.size());
-        sel->Collapse({static_cast<uint32_t>(std::max(0, static_cast<int32_t>(sel->active.offset) + delta))});
-        RecordUndo(undo, lineStart, removed, replacement, selBefore, *sel);
+    for (int li = static_cast<int>(lineStarts.size()) - 1; li >= 0; --li) {
+        uint32_t ls = lineStarts[li];
+        const std::string& cur = buf->Text();
+        std::string line = GetLine(cur, ls);
+        std::string prefix = GetLinePrefix(line);
+        if (isQuote) {
+            // Check if this line has a > prefix.
+            size_t i = 0;
+            while (i < prefix.size() && prefix[i] == ' ') i++;
+            if (i < prefix.size() && prefix[i] == '>') {
+                std::string removed = prefix;
+                buf->Splice(ls, static_cast<uint32_t>(prefix.size()), "");
+                Selection dummySel = *sel;
+                dummySel.Collapse({ls});
+                RecordUndo(undo, ls, removed, "", selBefore, dummySel);
+            }
+        } else {
+            std::string removed = prefix;
+            buf->Splice(ls, static_cast<uint32_t>(prefix.size()), "> ");
+            Selection dummySel = *sel;
+            dummySel.Collapse({ls});
+            RecordUndo(undo, ls, removed, "> ", selBefore, dummySel);
+        }
     }
+    sel->Collapse({selBefore.Start()});
 }
 
 void IndentLine(TextBuffer* buf, Selection* sel, UndoStack* undo) {
