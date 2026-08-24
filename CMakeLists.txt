@@ -104,6 +104,7 @@ add_executable(MarkDownIt WIN32
     src/inputfilter.cpp
     src/fileassoc.cpp
     src/settings.cpp
+    src/welcomescreen.cpp
 )
 
 if(MSVC AND RIBBON_AVAILABLE)

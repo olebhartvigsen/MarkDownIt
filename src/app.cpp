@@ -582,11 +582,25 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
 }
 
 void AppWindow::LoadSampleDoc() {
-    const char* msg =
-        "Open or drag a .md file to get started.\n";
-    ParseMarkdown(msg, doc_);
-    buffer_.SetText(msg);
-    undo_stack_.Clear();
+    // Instead of showing a placeholder text, show the welcome screen
+    // with recent files cards.
+    welcome_mode_ = true;
+    if (dw_factory_) {
+        welcome_.Init(dw_factory_);
+        welcome_.SetRecentFiles(settings_.recentFiles);
+    }
+    if (rt_) {
+        D2D1_SIZE_F sz = rt_->GetSize();
+        welcome_.Layout(sz.width, sz.height);
+    }
+    // Clear any document content
+    doc_ = Document{};
+    buffer_.SetText("");
+    layout_cache_.Clear();
+    scrollY_ = 0.0f;
+    totalH_ = 0.0f;
+    UpdateScrollInfo();
+    Repaint();
 }
 
 void AppWindow::Repaint() {
@@ -639,6 +653,21 @@ void AppWindow::UpdateCaretPosition() {
 
 void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     SetFocus(hwnd);
+
+    // Welcome screen: clicking a card opens that file.
+    if (welcome_mode_) {
+        D2D1_SIZE_F sz = rt_ ? rt_->GetSize() : D2D1::SizeF(800, 600);
+        welcome_.Layout(sz.width, sz.height);
+        int idx = welcome_.HitTest(static_cast<float>(x), static_cast<float>(y));
+        if (idx >= 0) {
+            std::wstring path = welcome_.GetPath(idx);
+            if (!path.empty()) {
+                OpenFile(path);
+            }
+        }
+        return;
+    }
+
     SetCapture(hwnd);
     float docX = static_cast<float>(x);
     float docY = static_cast<float>(y) + scrollY_;
@@ -653,6 +682,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
 
 void AppWindow::OnLButtonDblClk(HWND hwnd, int x, int y) {
     SetFocus(hwnd);
+    if (welcome_mode_) return;  // single-click handles welcome screen clicks
     float docX = static_cast<float>(x);
     float docY = static_cast<float>(y) + scrollY_;
     uint32_t offset = layout_cache_.PointToOffset(docX, docY);
@@ -675,6 +705,19 @@ void AppWindow::OnLButtonDblClk(HWND hwnd, int x, int y) {
 }
 
 void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
+    // Welcome screen: track hover for card highlight.
+    if (welcome_mode_) {
+        D2D1_SIZE_F sz = rt_ ? rt_->GetSize() : D2D1::SizeF(800, 600);
+        welcome_.Layout(sz.width, sz.height);
+        int newHover = welcome_.HitTest(static_cast<float>(x),
+            static_cast<float>(y));
+        if (newHover != welcome_hover_) {
+            welcome_hover_ = newHover;
+            Repaint();
+        }
+        return;
+    }
+
     if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) return;
     float docX = static_cast<float>(x);
     float docY = static_cast<float>(y) + scrollY_;
@@ -779,6 +822,12 @@ void AppWindow::OpenFile(const std::wstring& path) {
     if (editing_) {
         SetEdit(false);
     }
+    welcome_mode_ = false;  // leaving welcome screen
+
+    // Track this file in the recent list.
+    AddRecentFile(settings_, path);
+    SaveSettings(settings_);
+
     std::ifstream f(path.c_str(), std::ios::binary);
     if (!f.is_open()) {
         MessageBoxW(hwnd_, L"Could not open file", L"MarkDownIt", MB_ICONWARNING);
@@ -1286,6 +1335,26 @@ void AppWindow::OnContentPaint(HWND hwnd) {
     if (!rt_) {
             RecreateRenderTarget();
         if (!rt_) { ValidateRect(hwnd, nullptr); return; }
+    }
+
+    // Welcome screen: no document to measure/render.
+    if (welcome_mode_) {
+        PAINTSTRUCT ps;
+        BeginPaint(hwnd, &ps);
+        rt_->BeginDraw();
+        D2D1_SIZE_F size = rt_->GetSize();
+        rt_->Clear(D2D1::ColorF(D2D1::ColorF::White));
+        welcome_.Init(dw_factory_);
+        welcome_.Layout(size.width, size.height);
+        welcome_.Render(rt_, size.width, size.height, welcome_hover_);
+        HRESULT hr = rt_->EndDraw();
+        if (hr == D2DERR_RECREATE_TARGET) {
+            RecreateRenderTarget();
+            RedrawWindow(hwnd, nullptr, nullptr,
+                RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
+        }
+        EndPaint(hwnd, &ps);
+        return;
     }
 
     if (renderer_inited_ && dw_factory_) {

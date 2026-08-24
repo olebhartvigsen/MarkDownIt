@@ -19,6 +19,7 @@
 #include "autoformat.h"
 #include "inputfilter.h"
 #include "settings.h"
+#include "welcomescreen.h"
 
 // Active formatting state at the caret position, used to set
 // the pressed/unpressed state of ribbon toggle buttons.
@@ -171,6 +172,11 @@ private:
 
     // Persisted settings
     AppSettings    settings_;
+
+    // Welcome screen (shown when no file is open)
+    WelcomeScreen  welcome_;
+    bool           welcome_mode_ = false;
+    int            welcome_hover_ = -1;
 
     static const wchar_t* kClassName;
     static const wchar_t* kContentClassName;
