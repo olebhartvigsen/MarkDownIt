@@ -541,6 +541,19 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                        (cp <= 0xFFFF) ? 3 : 4;
                     }
                     bl.srcLength = cellTextLen;
+                    // Compute extended cell end: scan past formatting
+                    // markers (* ` ~) after the cell content so the
+                    // caret can be placed at the end of formatted text.
+                    bl.srcCellEnd = bl.srcOffset + cellTextLen;
+                    if (srcText_) {
+                        const auto& src = *srcText_;
+                        uint32_t e = bl.srcOffset + cellTextLen;
+                        while (e < src.size() &&
+                               (src[e] == '*' || src[e] == '`' ||
+                                src[e] == '~'))
+                            e++;
+                        bl.srcCellEnd = e;
+                    }
                     bl.textStartOffset = row.cells[c].srcOffset;
                     bl.nodeIndex = 0;
                     bl.u16ToSrc = row.cells[c].u16ToSrc;  // copy parser's mapping

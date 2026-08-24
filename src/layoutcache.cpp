@@ -134,8 +134,10 @@ int LayoutCache::BlockForOffset(uint32_t offset) const {
     uint32_t bestLen = 0xFFFFFFFF;
     for (size_t i = 0; i < blocks_.size(); ++i) {
         const auto& bl = blocks_[i];
-        if (offset >= bl.srcOffset && offset <= bl.srcOffset + bl.srcLength) {
-            uint32_t len = bl.srcLength;
+        uint32_t endOff = (bl.srcCellEnd > bl.srcOffset + bl.srcLength)
+            ? bl.srcCellEnd : bl.srcOffset + bl.srcLength;
+        if (offset >= bl.srcOffset && offset <= endOff) {
+            uint32_t len = endOff - bl.srcOffset;
             if (len < bestLen) {
                 bestLen = len;
                 best = static_cast<int>(i);

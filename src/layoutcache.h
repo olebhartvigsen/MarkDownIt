@@ -15,6 +15,7 @@ struct BlockLayout {
     float height = 0.0f;
     uint32_t srcOffset = 0;    // copied from Node
     uint32_t srcLength = 0;
+    uint32_t srcCellEnd = 0;    // extended end (past markers) for table cells
     uint32_t textStartOffset = 0;  // source offset of layout char 0
     size_t nodeIndex = 0;
     // Maps each UTF-16 code-unit position in the layout to its

@@ -275,6 +275,7 @@ void AppWindow::EnsureRenderer() {
     renderer_inited_ = renderer_.Init(dw_factory_);
     renderer_.SetLayoutCache(&layout_cache_);
     layout_cache_.SetSourceText(&buffer_.Text());
+    renderer_.SetSourceText(&buffer_.Text());
 }
 
 void AppWindow::InitEditor() {
@@ -1001,6 +1002,9 @@ void AppWindow::OpenFile(const std::wstring& path) {
     totalH_ = 0.0f;
     sel_.Collapse({0});
     layout_cache_.Clear();
+    // Update source text pointers (buffer may have been reallocated).
+    layout_cache_.SetSourceText(&buffer_.Text());
+    renderer_.SetSourceText(&buffer_.Text());
 
     std::wstring title = L"MarkDownIt";
     size_t slash = path.find_last_of(L"\\/");
