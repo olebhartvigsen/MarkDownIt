@@ -579,8 +579,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             OnBufferChanged();
             // Force immediate visual update after Enter — don't wait
             // for the debounced reparse timer.
-            Repaint();
-            UpdateCaretPosition();
+            ForceRepaintNow();
             break;
         default:
             DefWindowProcW(hwnd, WM_KEYDOWN, vk, lp);
@@ -642,8 +641,11 @@ void AppWindow::OnReparseTimer() {
     ParseMarkdown(buffer_.Text(), doc_);
     layout_cache_.Clear();
     UpdateScrollInfo();
-    Repaint();
-    UpdateCaretPosition();
+    // Force synchronous repaint so the layout cache is rebuilt before
+    // UpdateCaretPosition runs. Repaint() is async (InvalidateRect) and
+    // would leave the cache empty, causing OffsetToCaretRect to fail
+    // and the caret to disappear.
+    ForceRepaintNow();
 }
 
 void AppWindow::OnBufferChanged() {
