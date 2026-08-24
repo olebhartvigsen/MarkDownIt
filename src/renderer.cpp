@@ -507,7 +507,42 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 }
                 rt->DrawTextLayout(cellOrigin, layout, textBrush,
                     D2D1_DRAW_TEXT_OPTIONS_CLIP);
-                layout->Release();
+                if (cache_) {
+                    // Add cell layout to cache for hit-testing (double-click,
+                    // selection, caret placement in edit mode).
+                    std::vector<uint32_t> cu16ToSrc;
+                    uint32_t srcByte = row.cells[c].srcOffset;
+                    for (char32_t cp : row.cells[c].text) {
+                        int utf8Len = (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
+                                      (cp <= 0xFFFF) ? 3 : 4;
+                        int utf16Len = (cp <= 0xFFFF) ? 1 : 2;
+                        for (int u = 0; u < utf16Len; u++)
+                            cu16ToSrc.push_back(srcByte);
+                        srcByte += utf8Len;
+                    }
+                    BlockLayout bl;
+                    bl.layout = layout;
+                    bl.x = cellOrigin.x;
+                    bl.y = cellOrigin.y;
+                    bl.width = colW - 2.0f * m.cellPadX;
+                    bl.height = rowH - 2.0f * m.cellPadY;
+                    bl.srcOffset = row.cells[c].srcOffset;
+                    uint32_t cellTextLen = 0;
+                    for (char32_t cp : row.cells[c].text) {
+                        cellTextLen += (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
+                                       (cp <= 0xFFFF) ? 3 : 4;
+                    }
+                    bl.srcLength = cellTextLen;
+                    bl.textStartOffset = row.cells[c].srcOffset;
+                    bl.nodeIndex = 0;
+                    bl.u16ToSrc = std::move(cu16ToSrc);
+                    if (body_fmt_) {
+                        bl.fontHeight = body_fmt_->GetFontSize();
+                    }
+                    cache_->Add(bl);
+                } else {
+                    layout->Release();
+                }
             }
         }
         if (borderBrush) {
