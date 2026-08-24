@@ -444,6 +444,21 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                         static_cast<UINT32>(text16.size())};
                     layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, r);
                 }
+                // Apply inline formatting spans (bold, italic, code, strike).
+                for (const auto& sp : row.cells[c].inlineSpans) {
+                    DWRITE_TEXT_RANGE r = {sp.u16Start,
+                        sp.u16End - sp.u16Start};
+                    if (sp.bold)
+                        layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, r);
+                    if (sp.italic)
+                        layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, r);
+                    if (sp.code) {
+                        // Use a monospace font for inline code spans.
+                        layout->SetFontFamilyName(L"Consolas", r);
+                    }
+                    if (sp.strike)
+                        layout->SetStrikethrough(true, r);
+                }
                 D2D1_POINT_2F cellOrigin = D2D1::Point2F(
                     cellX + m.cellPadX, curY + m.cellPadY);
                 // Draw selection highlight for this cell.

@@ -50,7 +50,18 @@ struct InlineBlock {
     uint32_t        srcLength = 0;   // byte length of this span
 };
 
-// A table cell: plain text (no inline spans in cells for now).
+// Inline formatting span within a table cell.
+// u16Start/u16End are UTF-16 code-unit indices into the cell's rendered text.
+struct CellInlineSpan {
+    uint32_t u16Start = 0;
+    uint32_t u16End = 0;
+    bool bold = false;
+    bool italic = false;
+    bool code = false;
+    bool strike = false;
+};
+
+// A table cell: text plus inline formatting spans.
 struct TableCell {
     std::u32string text;
     bool isHeader = false;
@@ -61,6 +72,8 @@ struct TableCell {
     // autolinks), creating gaps in the source that the renderer's
     // contiguity assumption cannot handle.
     std::vector<uint32_t> u16ToSrc;
+    // Inline formatting spans (bold, italic, code) within this cell.
+    std::vector<CellInlineSpan> inlineSpans;
 };
 
 // A table row: list of cells.

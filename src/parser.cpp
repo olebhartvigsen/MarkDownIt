@@ -63,6 +63,16 @@ struct ParserCtx {
     std::u32string* cur_cell;  // current cell text, nullptr if none
     TableCell* cur_cell_obj;   // current TableCell object, nullptr if none
     uint32_t cur_cell_last_end; // end source offset of last text chunk for gap detection
+    // Stack of open inline spans within a table cell.
+    // Each entry: {u16 start position in cell text, span type flags}
+    struct CellSpanOpen {
+        uint32_t u16Start;
+        bool strong;
+        bool em;
+        bool code;
+        bool del;
+    };
+    std::vector<CellSpanOpen> cell_span_stack;
     const char* input;        // pointer to start of input (for offset calculation)
     MD_SIZE inputSize;        // size of input
     std::vector<NodeOffsetInfo> nodeOffsets;  // per-node offset tracking
@@ -342,6 +352,7 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
     if (type == MD_BLOCK_TH || type == MD_BLOCK_TD) {
         ctx->cur_cell = nullptr;
         ctx->cur_cell_obj = nullptr;
+        ctx->cell_span_stack.clear();
     }
     if (type == MD_BLOCK_TR) {
         ctx->cur_row = nullptr;
@@ -388,6 +399,21 @@ int cb_enter_span(MD_SPANTYPE type, void* detail, void* userdata) {
     }
 
     ctx->span_stack.push_back(std::move(frame));
+
+    // If inside a table cell, record the start position of this inline span.
+    if (ctx->cur_cell_obj) {
+        uint32_t u16Pos = 0;
+        for (char32_t cp : ctx->cur_cell_obj->text)
+            u16Pos += (cp <= 0xFFFF) ? 1 : 2;
+        ctx->cell_span_stack.push_back({
+            u16Pos,
+            type == MD_SPAN_STRONG,
+            type == MD_SPAN_EM,
+            type == MD_SPAN_CODE,
+            type == MD_SPAN_DEL
+        });
+    }
+
     return 0;
 }
 
@@ -396,6 +422,28 @@ int cb_leave_span(MD_SPANTYPE type, void* detail, void* userdata) {
     if (!ctx->span_stack.empty()) {
         ctx->span_stack.pop_back();
     }
+
+    // If inside a table cell, finalize the inline span.
+    if (ctx->cur_cell_obj && !ctx->cell_span_stack.empty()) {
+        auto open = ctx->cell_span_stack.back();
+        ctx->cell_span_stack.pop_back();
+
+        uint32_t u16End = 0;
+        for (char32_t cp : ctx->cur_cell_obj->text)
+            u16End += (cp <= 0xFFFF) ? 1 : 2;
+
+        if (u16End > open.u16Start) {
+            CellInlineSpan span;
+            span.u16Start = open.u16Start;
+            span.u16End = u16End;
+            span.bold = open.strong;
+            span.italic = open.em;
+            span.code = open.code;
+            span.strike = open.del;
+            ctx->cur_cell_obj->inlineSpans.push_back(span);
+        }
+    }
+
     return 0;
 }
 
