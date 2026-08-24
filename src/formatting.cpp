@@ -38,12 +38,25 @@ void ToggleInlineMarker(TextBuffer* buf, Selection* sel, const std::string& mark
         sel->anchor = {start};
         sel->active = {end - mlen * 2};
     } else {
-        // Add the markers around the selection.
-        buf->Splice(end, 0, marker);     // insert after end first
-        buf->Splice(start, 0, marker);   // then insert before start
-        // Selection now covers the same text plus the markers.
-        sel->anchor = {start};
-        sel->active = {end + static_cast<uint32_t>(marker.size() * 2)};
+        // Add the markers around the selection, but place them inside
+        // any surrounding whitespace so md4c recognizes the emphasis.
+        // E.g. " text " becomes " **text** " not "** text **".
+        uint32_t contentStart = start;
+        uint32_t contentEnd = end;
+        while (contentStart < contentEnd &&
+               (text[contentStart] == ' ' || text[contentStart] == '\t'))
+            contentStart++;
+        while (contentEnd > contentStart &&
+               (text[contentEnd - 1] == ' ' || text[contentEnd - 1] == '\t' ||
+                text[contentEnd - 1] == '\n' || text[contentEnd - 1] == '\r'))
+            contentEnd--;
+
+        // Insert end marker first (so start offset doesn't shift).
+        buf->Splice(contentEnd, 0, marker);
+        buf->Splice(contentStart, 0, marker);
+        // Selection covers the same text plus the markers.
+        sel->anchor = {contentStart};
+        sel->active = {contentEnd + static_cast<uint32_t>(marker.size() * 2)};
     }
 }
 
