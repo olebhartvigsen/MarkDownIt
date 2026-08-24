@@ -1970,6 +1970,7 @@ void AppWindow::RemoveAllFormattingInSelection(bool wantStrong, bool wantEm,
         uint32_t be = bs + node.srcLength;
         if (selEnd <= bs || selStart >= be) continue;
 
+        // Path 1: regular inline spans (node.children).
         for (const auto& child : node.children) {
             if (wantStrong  && !child.strong)  continue;
             if (wantEm      && !child.em)      continue;
@@ -1990,6 +1991,83 @@ void AppWindow::RemoveAllFormattingInSelection(bool wantStrong, bool wantEm,
 
             if (leftRun >= mlen && rightRun >= mlen) {
                 removals.push_back({cs - leftRun, ce + rightRun, cs, ce});
+            }
+        }
+
+        // Path 2: table cells — scan raw source text for markers.
+        // Table cells don't create node.children (parser returns early),
+        // so we must scan the source text directly.
+        if (node.block == BlockKind::Table) {
+            // For each cell, find marker pairs overlapping the selection.
+            // Scan the source text within each cell for the requested marker.
+            auto scanCellMarkers = [&](uint32_t cellLeft, uint32_t cellRight) {
+                // Find all marker pairs of type `mc` with length `mlen`
+                // within [cellLeft, cellRight) that overlap [selStart, selEnd).
+                uint32_t i = cellLeft;
+                while (i + mlen <= cellRight) {
+                    // Check for `mlen` consecutive `mc` chars at position i.
+                    bool isMarker = true;
+                    for (uint32_t k = 0; k < mlen; k++) {
+                        if (text[i + k] != mc) { isMarker = false; break; }
+                    }
+                    if (!isMarker) { i++; continue; }
+                    // Skip if this is part of a longer run (e.g. ** is also
+                    // two * chars). For bold (mlen=2), skip if the char before
+                    // is also * (would be *** or more).
+                    if (i > cellLeft && text[i - 1] == mc) {
+                        i++; continue;
+                    }
+                    uint32_t openStart = i;
+                    uint32_t contentStart = i + mlen;
+                    // Find closing marker of same length.
+                    uint32_t j = contentStart;
+                    uint32_t closePos = UINT32_MAX;
+                    while (j + mlen <= cellRight) {
+                        bool isClose = true;
+                        for (uint32_t k = 0; k < mlen; k++) {
+                            if (text[j + k] != mc) { isClose = false; break; }
+                        }
+                        if (isClose) {
+                            // Skip if this close is part of a longer run
+                            if (j + mlen < cellRight && text[j + mlen] == mc) {
+                                j++; continue;
+                            }
+                            closePos = j;
+                            break;
+                        }
+                        j++;
+                    }
+                    if (closePos == UINT32_MAX) { i = contentStart; continue; }
+                    uint32_t contentEnd = closePos;
+                    uint32_t markerEnd = closePos + mlen;
+                    // Check if this marker pair overlaps the selection.
+                    if (markerEnd > selStart && openStart < selEnd) {
+                        removals.push_back({openStart, markerEnd,
+                                           contentStart, contentEnd});
+                    }
+                    i = markerEnd;
+                }
+            };
+            // Iterate cells to find their boundaries.
+            for (const auto& row : node.rows) {
+                for (const auto& cell : row.cells) {
+                    if (cell.srcOffset == 0) continue;
+                    // Cell content range in source text.
+                    uint32_t cellLeft = cell.srcOffset;
+                    uint32_t cellRight = cellLeft;
+                    for (char32_t cp : cell.text) {
+                        cellRight += (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
+                                     (cp <= 0xFFFF) ? 3 : 4;
+                    }
+                    // Extend cellRight to include gap characters (markers
+                    // after content like ** that were gap-filled).
+                    // Use u16ToSrc if available.
+                    if (!cell.u16ToSrc.empty()) {
+                        cellRight = cell.u16ToSrc.back() + 1;
+                    }
+                    if (selEnd <= cellLeft || selStart >= cellRight) continue;
+                    scanCellMarkers(cellLeft, cellRight);
+                }
             }
         }
     }
