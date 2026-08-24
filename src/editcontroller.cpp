@@ -93,6 +93,7 @@ void EditController::InsertParagraphBreak(const Document& doc) {
     bool inCode = false;
     bool ordered = false;
     bool emptyListItem = false;
+    bool inTable = false;
 
     for (const auto& n : doc.nodes) {
         if (at >= n.srcOffset && at <= n.srcOffset + n.srcLength) {
@@ -109,8 +110,45 @@ void EditController::InsertParagraphBreak(const Document& doc) {
             if (n.block == BlockKind::CodeBlock) {
                 inCode = true;
             }
+            if (n.block == BlockKind::Table) {
+                inTable = true;
+            }
             break;
         }
+    }
+
+    // Second pass: the table node's srcLength may not cover the full
+    // cell content (e.g., closing ** markers after bold text are past
+    // the last cb_text offset). Check each cell's source range directly.
+    if (!inTable) {
+        for (const auto& n : doc.nodes) {
+            if (n.block != BlockKind::Table) continue;
+            for (const auto& row : n.rows) {
+                for (const auto& cell : row.cells) {
+                    if (cell.srcOffset == 0) continue;
+                    uint32_t cellLen = 0;
+                    for (char32_t cp : cell.text) {
+                        cellLen += (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
+                                   (cp <= 0xFFFF) ? 3 : 4;
+                    }
+                    uint32_t cellEnd = cell.srcOffset + cellLen;
+                    if (!cell.u16ToSrc.empty())
+                        cellEnd = cell.u16ToSrc.back() + 1;
+                    if (at >= cell.srcOffset && at <= cellEnd) {
+                        inTable = true;
+                        break;
+                    }
+                }
+                if (inTable) break;
+            }
+            if (inTable) break;
+        }
+    }
+
+    // In a table cell, inserting any newline breaks the table syntax —
+    // markdown tables require single-line rows. Do nothing instead.
+    if (inTable || ctx == BlockKind::Table) {
+        return;
     }
 
     if (inCode) {
@@ -129,13 +167,6 @@ void EditController::InsertParagraphBreak(const Document& doc) {
         }
         std::string marker = ordered ? "\n1. " : "\n- ";
         RecordAndApply(at, 0, marker, EditType::ParagraphBreak);
-        return;
-    }
-
-    // In a table cell, inserting any newline breaks the table syntax —
-    // markdown tables require single-line rows. Do nothing instead.
-    // The user can click below the table to start a new paragraph.
-    if (ctx == BlockKind::Table) {
         return;
     }
 
