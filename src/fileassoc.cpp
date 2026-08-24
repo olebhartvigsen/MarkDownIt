@@ -55,9 +55,12 @@ void RegisterMdAssociation(const wchar_t* exePath) {
     openCmd += exePath;
     openCmd += L"\" \"%1\"";
 
+    // Use negative resource ID to reference the icon by its ID (IDI_DOCICON=2)
+    // rather than by 0-based index, which can shift if other icon resources are
+    // added to the binary. Windows DefaultIcon syntax: "path,-resourceID".
     std::wstring iconPath = L"\"";
     iconPath += exePath;
-    iconPath += L"\",1";
+    iconPath += L"\",-2";
 
     // --- Register the ProgID: MarkDownIt.md ---
     SetStr(HKEY_CURRENT_USER,
