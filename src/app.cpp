@@ -2102,21 +2102,27 @@ void AppWindow::InsertLinkCmd() {
 
 void AppWindow::ClearFormat() {
     if (!editing_) return;
-    // Remove all inline markers from the selection.
-    // For each marker type, toggle it off if present.
-    const char* markers[] = {"**", "*", "~~", "`"};
-    for (auto m : markers) {
-        if (!sel_.Empty()) {
-            uint32_t s = sel_.Start();
-            uint32_t e = s + sel_.Length();
-            const std::string& text = buffer_.Text();
-            if (IsWrappedIn(text, s, e, m)) {
-                // Use ToggleInlineMarker with undo recording.
-                // It will detect the wrapping and remove the markers.
-                ToggleInlineMarker(&buffer_, &sel_, m, &undo_stack_);
-            }
-        }
+    if (sel_.Empty()) return;  // Need a selection to clear formatting.
+
+    // Remove all INLINE formatting: bold, italic, strikethrough, code.
+    // Use GetFormatState to detect which formats are active, then call
+    // ToggleInlineMarker for each active one. ToggleInlineMarker now
+    // detects markers both inside AND just outside the selection.
+    FormatState fs = GetFormatState();
+    if (fs.bold)      ToggleInlineMarker(&buffer_, &sel_, "**", &undo_stack_);
+    if (fs.italic)    ToggleInlineMarker(&buffer_, &sel_, "*",  &undo_stack_);
+    if (fs.strike)    ToggleInlineMarker(&buffer_, &sel_, "~~", &undo_stack_);
+    if (fs.code)      ToggleInlineMarker(&buffer_, &sel_, "`",  &undo_stack_);
+
+    // Remove BLOCK-level formatting: headings, lists, blockquotes.
+    fs = GetFormatState();  // re-read after inline changes
+    if (fs.headingLevel > 0) {
+        SetHeadingLevel(&buffer_, &sel_, 0, &undo_stack_);
     }
+    if (fs.inBullets)  ToggleUnorderedList(&buffer_, &sel_, &undo_stack_);
+    if (fs.inNumbering) ToggleOrderedList(&buffer_, &sel_, &undo_stack_);
+    if (fs.inQuote)    ToggleBlockquote(&buffer_, &sel_, &undo_stack_);
+
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
     ForceRepaintNow();
