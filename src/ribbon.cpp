@@ -344,7 +344,8 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
             IDC_CMD_H1, IDC_CMD_H2, IDC_CMD_H3,
             IDC_CMD_BULLETS, IDC_CMD_NUMBERING, IDC_CMD_QUOTE,
             IDC_CMD_LINK, IDC_CMD_CLEARFORMAT,
-            IDC_CMD_INDENT, IDC_CMD_OUTDENT
+            IDC_CMD_INDENT, IDC_CMD_OUTDENT,
+            IDC_CMD_UNDO, IDC_CMD_REDO
         };
         for (auto cmd : fmtCmds) {
             if (nCmdID == cmd) {

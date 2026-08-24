@@ -11,6 +11,11 @@
         <String>File</String>
       </Command.LabelTitle>
     </Command>
+    <Command Name="cmdGroupEdit" Symbol="IDC_GROUP_EDIT" Id="10011">
+      <Command.LabelTitle>
+        <String>Edit</String>
+      </Command.LabelTitle>
+    </Command>
     <Command Name="cmdGroupView" Symbol="IDC_GROUP_VIEW" Id="10020">
       <Command.LabelTitle>
         <String>View</String>
@@ -392,12 +397,14 @@
       </Ribbon.ApplicationMenu>
       <Ribbon.Tabs>
         <Tab CommandName="cmdTabHome">
-          <Group CommandName="cmdGroupFile" SizeDefinition="FiveButtons">
-            <Button CommandName="cmdUndo" />
-            <Button CommandName="cmdRedo" />
+          <Group CommandName="cmdGroupFile" SizeDefinition="ThreeButtons">
             <Button CommandName="cmdOpen" />
             <Button CommandName="cmdReload" />
             <Button CommandName="cmdSave" />
+          </Group>
+          <Group CommandName="cmdGroupEdit" SizeDefinition="TwoButtons">
+            <Button CommandName="cmdUndo" />
+            <Button CommandName="cmdRedo" />
           </Group>
           <Group CommandName="cmdGroupFormat" SizeDefinition="SixButtons">
             <ToggleButton CommandName="cmdBold" />

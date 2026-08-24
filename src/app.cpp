@@ -1664,18 +1664,25 @@ void AppWindow::SetEdit(bool on) {
     if (g_pRibbonFramework) {
         g_pRibbonFramework->InvalidateUICommand(IDC_CMD_EDIT,
             UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
-        static const UINT fmtCmds[] = {
+        static const UINT toggleCmds[] = {
             IDC_CMD_BOLD, IDC_CMD_ITALIC, IDC_CMD_CODE, IDC_CMD_STRIKE,
             IDC_CMD_H1, IDC_CMD_H2, IDC_CMD_H3,
             IDC_CMD_BULLETS, IDC_CMD_NUMBERING, IDC_CMD_QUOTE,
             IDC_CMD_LINK, IDC_CMD_CLEARFORMAT,
             IDC_CMD_INDENT, IDC_CMD_OUTDENT
         };
-        for (auto cmd : fmtCmds) {
+        static const UINT enableOnlyCmds[] = {
+            IDC_CMD_UNDO, IDC_CMD_REDO
+        };
+        for (auto cmd : toggleCmds) {
             g_pRibbonFramework->InvalidateUICommand(cmd,
                 UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
             g_pRibbonFramework->InvalidateUICommand(cmd,
                 UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
+        }
+        for (auto cmd : enableOnlyCmds) {
+            g_pRibbonFramework->InvalidateUICommand(cmd,
+                UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
         }
     }
     Repaint();
