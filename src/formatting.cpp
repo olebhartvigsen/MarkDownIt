@@ -138,6 +138,9 @@ void InsertLink(TextBuffer* buf, Selection* sel, const std::string& url,
 
 // --- Code block toggle ---
 
+// Forward declaration — LineStartOf is defined later in this file.
+static uint32_t LineStartOf(const std::string& text, uint32_t offset);
+
 // Check if a line starting at lineStart begins with the given prefix.
 static bool LineHasPrefix(const std::string& text, uint32_t lineStart,
                           const std::string& prefix) {
