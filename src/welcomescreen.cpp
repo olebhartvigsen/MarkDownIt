@@ -23,7 +23,6 @@ void WelcomeScreen::Init(IDWriteFactory* dw) {
     dw_ = dw;
 
     // Heading: "Recent Documents" — 24pt semi-bold
-    DWRITE_FONT_COLLECTION fc{};
     dw->CreateTextFormat(L"Segoe UI", nullptr,
         DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL, 24.0f, L"en-US", &title_fmt_);
