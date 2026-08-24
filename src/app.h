@@ -178,6 +178,10 @@ private:
     bool           welcome_mode_ = false;
     int            welcome_hover_ = -1;
 
+    // Margin drag selection: when true, mouse drag selects whole lines.
+    bool           margin_selecting_ = false;
+    int            margin_anchor_block_ = -1;  // block index where drag started
+
     static const wchar_t* kClassName;
     static const wchar_t* kContentClassName;
 

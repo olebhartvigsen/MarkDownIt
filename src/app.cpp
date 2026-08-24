@@ -676,7 +676,28 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     SetCapture(hwnd);
     float docX = static_cast<float>(x);
     float docY = static_cast<float>(y) + scrollY_;
+
+    // Check if the click is in the left margin (no text block hit at x).
+    // If so, select the entire line/paragraph at that y position.
     uint32_t offset = layout_cache_.PointToOffset(docX, docY);
+    if (offset == UINT32_MAX) {
+        // Click missed all text blocks — likely in the left margin.
+        // Find the block at this y coordinate and select its full range.
+        int blkIdx = layout_cache_.FindBlockAtY(docY);
+        if (blkIdx >= 0) {
+            const auto& blocks = layout_cache_.Blocks();
+            const auto& bl = blocks[blkIdx];
+            sel_.anchor = {bl.srcOffset};
+            sel_.active = {bl.srcOffset + bl.srcLength};
+            margin_selecting_ = true;
+            margin_anchor_block_ = blkIdx;
+            if (editing_) UpdateCaretPosition();
+            Repaint();
+            return;
+        }
+    }
+
+    margin_selecting_ = false;
     if (offset != UINT32_MAX) {
         sel_.Collapse({offset});
     }
@@ -726,6 +747,32 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
     if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) return;
     float docX = static_cast<float>(x);
     float docY = static_cast<float>(y) + scrollY_;
+
+    if (margin_selecting_ && margin_anchor_block_ >= 0) {
+        // Extending a margin selection: select full blocks from the
+        // anchor block to the block at the current y position.
+        int blkIdx = layout_cache_.FindBlockAtY(docY);
+        if (blkIdx >= 0) {
+            const auto& blocks = layout_cache_.Blocks();
+            const auto& anchorBl = blocks[margin_anchor_block_];
+            const auto& curBl = blocks[blkIdx];
+            if (blkIdx >= margin_anchor_block_) {
+                // Dragging down (or same block): anchor=start of anchor block,
+                // active=end of current block.
+                sel_.anchor = {anchorBl.srcOffset};
+                sel_.active = {curBl.srcOffset + curBl.srcLength};
+            } else {
+                // Dragging up: anchor=end of anchor block,
+                // active=start of current block.
+                sel_.anchor = {anchorBl.srcOffset + anchorBl.srcLength};
+                sel_.active = {curBl.srcOffset};
+            }
+        }
+        if (editing_) UpdateCaretPosition();
+        Repaint();
+        return;
+    }
+
     uint32_t offset = layout_cache_.PointToOffset(docX, docY);
     if (offset != UINT32_MAX) {
         sel_.active = {offset};
@@ -736,6 +783,8 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
 
 void AppWindow::OnLButtonUp(HWND hwnd) {
     ReleaseCapture();
+    margin_selecting_ = false;
+    margin_anchor_block_ = -1;
 }
 
 void AppWindow::OnSetFocus(HWND hwnd) {

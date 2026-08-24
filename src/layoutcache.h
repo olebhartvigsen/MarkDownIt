@@ -34,6 +34,10 @@ public:
     // Find the block whose rect contains (x, y). Returns -1 if none.
     int HitTestBlock(float x, float y) const;
 
+    // Find the topmost block whose y-range contains y, ignoring x.
+    // Used for margin-click line selection. Returns -1 if none.
+    int FindBlockAtY(float y) const;
+
     // Find the block owning a source offset. Returns -1 if none.
     int BlockForOffset(uint32_t offset) const;
 
