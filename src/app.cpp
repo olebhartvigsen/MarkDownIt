@@ -1973,6 +1973,7 @@ void AppWindow::RemoveAllFormattingInSelection(bool wantStrong, bool wantEm,
     }
 
     Selection selBefore = sel_;
+    int32_t totalDelta = 0;  // net chars removed (markers removed - content kept)
     for (const auto& r : merged) {
         std::string content = buffer_.Text().substr(r.contentStart, r.contentEnd - r.contentStart);
         std::string removed = buffer_.Text().substr(r.markerStart, r.markerEnd - r.markerStart);
@@ -1985,8 +1986,14 @@ void AppWindow::RemoveAllFormattingInSelection(bool wantStrong, bool wantEm,
         entry.selAfter = sel_;
         entry.type = EditType::Other;
         undo_stack_.Push(entry);
+        totalDelta += static_cast<int32_t>(removed.size()) - static_cast<int32_t>(content.size());
     }
-    sel_.Collapse({selStart});
+    // Keep the selection covering the same text (now without markers).
+    // Adjust the end by the net delta of removed marker chars.
+    uint32_t newEnd = (selEnd > static_cast<uint32_t>(totalDelta))
+                      ? selEnd - static_cast<uint32_t>(totalDelta) : selStart;
+    sel_.anchor = {selStart};
+    sel_.active = {newEnd};
 }
 
 // If the caret or selection is inside a formatted span (matching the
@@ -2440,6 +2447,7 @@ void AppWindow::ClearFormat() {
 
     // Splice: for each removal, replace the marker region with just content.
     Selection selBefore = sel_;
+    int32_t totalDelta = 0;
     for (const auto& r : merged) {
         std::string content = buffer_.Text().substr(r.contentStart, r.contentEnd - r.contentStart);
         std::string removed = buffer_.Text().substr(r.markerStart, r.markerEnd - r.markerStart);
@@ -2452,10 +2460,13 @@ void AppWindow::ClearFormat() {
         entry.selAfter = sel_;
         entry.type = EditType::Other;
         undo_stack_.Push(entry);
+        totalDelta += static_cast<int32_t>(removed.size()) - static_cast<int32_t>(content.size());
     }
-
-    // Collapse selection to the original start (approximate).
-    sel_.Collapse({origStart});
+    // Keep selection covering the same text (now without markers).
+    uint32_t newEnd = (origEnd > static_cast<uint32_t>(totalDelta))
+                      ? origEnd - static_cast<uint32_t>(totalDelta) : origStart;
+    sel_.anchor = {origStart};
+    sel_.active = {newEnd};
 
 
     // Remove BLOCK-level formatting: headings, lists, blockquotes.
