@@ -26,6 +26,9 @@ public:
 
     void SetLayoutCache(LayoutCache* cache) { cache_ = cache; }
 
+    // Set pointer to the source text for offset calculations.
+    void SetSourceText(const std::string* src) { srcText_ = src; }
+    const std::string* SourceText() const { return srcText_; }
     // Draw the document. scrollY is the vertical offset in DIPs.
     // widthDip is the client width in DIPs.
     // Returns the total rendered height in DIPs (unscrolled).
@@ -47,6 +50,7 @@ private:
     bool wrapEnabled_ = true;
     int  contentWidthMode_ = 0;  // 0=Standard(800), 1=960, 2=1600, 3=Full
     LayoutCache* cache_ = nullptr;
+    const std::string* srcText_ = nullptr;  // source text for offset calc
 
     LayoutMetrics ComputeMetrics() const;
     static float GapForTransition(BlockKind prev, BlockKind cur,

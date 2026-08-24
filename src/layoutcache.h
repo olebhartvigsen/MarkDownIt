@@ -49,6 +49,9 @@ public:
     // Find the block owning a source offset. Returns -1 if none.
     int BlockForOffset(uint32_t offset) const;
 
+    // Set the source text for marker-aware offset calculations.
+    void SetSourceText(const std::string* src) { srcText_ = src; }
+
     // Screen point to source offset. Used for mouse clicks.
     // Returns UINT32_MAX on failure.
     uint32_t PointToOffset(float x, float y) const;
@@ -61,6 +64,7 @@ public:
 
 private:
     std::vector<BlockLayout> blocks_;
+    const std::string* srcText_ = nullptr;  // source text for offset calc
 };
 
 // UTF-8 / UTF-16 offset conversion helpers.

@@ -173,7 +173,21 @@ uint32_t LayoutCache::PointToOffset(float x, float y) const {
                 if (nextOff > srcOff) return nextOff;
             } else {
                 // Trailing hit on the last character: return end of block.
-                return bl.srcOffset + bl.srcLength;
+                uint32_t endOff = bl.srcOffset + bl.srcLength;
+                // For table cells, bl.srcLength covers only the rendered
+                // content (e.g., "bold"), not the surrounding markdown
+                // markers (e.g., **bold**). The returned offset would
+                // land on the closing ** markers, so typing there
+                // breaks the formatting. Skip past any marker chars
+                // (* ` ~) to find the pipe or end of cell.
+                if (srcText_) {
+                    const auto& src = *srcText_;
+                    while (endOff < src.size() &&
+                           (src[endOff] == '*' || src[endOff] == '`' ||
+                            src[endOff] == '~'))
+                        endOff++;
+                }
+                return endOff;
             }
         }
         return srcOff;
