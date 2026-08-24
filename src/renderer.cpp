@@ -510,16 +510,9 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 if (cache_) {
                     // Add cell layout to cache for hit-testing (double-click,
                     // selection, caret placement in edit mode).
-                    std::vector<uint32_t> cu16ToSrc;
-                    uint32_t srcByte = row.cells[c].srcOffset;
-                    for (char32_t cp : row.cells[c].text) {
-                        int utf8Len = (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
-                                      (cp <= 0xFFFF) ? 3 : 4;
-                        int utf16Len = (cp <= 0xFFFF) ? 1 : 2;
-                        for (int u = 0; u < utf16Len; u++)
-                            cu16ToSrc.push_back(srcByte);
-                        srcByte += utf8Len;
-                    }
+                    // Use the u16ToSrc mapping from the parser, which correctly
+                    // handles gaps from md4c mark splits (e.g., ':' as a
+                    // permissive URL autolink mark).
                     BlockLayout bl;
                     bl.layout = layout;
                     bl.x = cellOrigin.x;
@@ -535,7 +528,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     bl.srcLength = cellTextLen;
                     bl.textStartOffset = row.cells[c].srcOffset;
                     bl.nodeIndex = 0;
-                    bl.u16ToSrc = std::move(cu16ToSrc);
+                    bl.u16ToSrc = row.cells[c].u16ToSrc;  // copy parser's mapping
                     if (body_fmt_) {
                         bl.fontHeight = body_fmt_->GetFontSize();
                     }

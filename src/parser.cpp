@@ -62,6 +62,7 @@ struct ParserCtx {
     TableRow* cur_row;   // current row being filled, nullptr if none
     std::u32string* cur_cell;  // current cell text, nullptr if none
     TableCell* cur_cell_obj;   // current TableCell object, nullptr if none
+    uint32_t cur_cell_last_end; // end source offset of last text chunk for gap detection
     const char* input;        // pointer to start of input (for offset calculation)
     MD_SIZE inputSize;        // size of input
     std::vector<NodeOffsetInfo> nodeOffsets;  // per-node offset tracking
@@ -299,6 +300,7 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
                 ctx->cur_row->cells.back().isHeader = ctx->in_header;
                 ctx->cur_cell = &ctx->cur_row->cells.back().text;
                 ctx->cur_cell_obj = &ctx->cur_row->cells.back();
+                ctx->cur_cell_last_end = 0;  // will be set on first text
             }
             ctx->block_stack.push_back({type, -1, false, false});
             break;
@@ -420,12 +422,65 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
 
     // Table cells: raw text goes to cur_cell (UTF-32).
     if (ctx->cur_cell) {
+        uint32_t thisOff = static_cast<uint32_t>(text - ctx->input);
         // Set srcOffset on first text for this cell.
         if (ctx->cur_cell_obj && ctx->cur_cell_obj->text.empty()) {
-            ctx->cur_cell_obj->srcOffset = static_cast<uint32_t>(text - ctx->input);
+            ctx->cur_cell_obj->srcOffset = thisOff;
+            ctx->cur_cell_last_end = thisOff;
+        }
+        // Fill gap: if md4c skipped mark characters (e.g., ':' for
+        // permissive URL autolinks), emit them into the cell text and
+        // the u16ToSrc mapping so the rendered text matches the source.
+        if (ctx->cur_cell_obj && thisOff > ctx->cur_cell_last_end) {
+            for (uint32_t g = ctx->cur_cell_last_end; g < thisOff; ++g) {
+                if (g < ctx->inputSize) {
+                    unsigned char gb = static_cast<unsigned char>(ctx->input[g]);
+                    int gUtf8Len, gUtf16Len;
+                    if (gb < 0x80) { gUtf8Len = 1; gUtf16Len = 1; }
+                    else if ((gb & 0xE0) == 0xC0) { gUtf8Len = 2; gUtf16Len = 1; }
+                    else if ((gb & 0xF0) == 0xE0) { gUtf8Len = 3; gUtf16Len = 1; }
+                    else if ((gb & 0xF8) == 0xF0) { gUtf8Len = 4; gUtf16Len = 2; }
+                    else { gUtf8Len = 1; gUtf16Len = 1; }
+                    for (int u = 0; u < gUtf16Len; u++)
+                        ctx->cur_cell_obj->u16ToSrc.push_back(g);
+                    // Decode the gap character(s) into cell.text too.
+                    std::u32string gap32;
+                    Utf8Decoder gd;
+                    gd.decode(ctx->input + g, gUtf8Len, gap32);
+                    *ctx->cur_cell += gap32;
+                }
+            }
+        }
+        // Build u16ToSrc mapping: for each decoded codepoint, record
+        // its source byte offset. We walk the UTF-8 bytes in parallel
+        // with the Utf8Decoder so we know the exact source offset of
+        // each codepoint, even when md4c splits text at marks.
+        if (ctx->cur_cell_obj) {
+            uint32_t srcByte = thisOff;
+            for (MD_SIZE i = 0; i < size; ) {
+                unsigned char b = static_cast<unsigned char>(text[i]);
+                int utf8Len;
+                int utf16Len;
+                if (b < 0x80) {
+                    utf8Len = 1; utf16Len = 1;
+                } else if ((b & 0xE0) == 0xC0) {
+                    utf8Len = 2; utf16Len = 1;
+                } else if ((b & 0xF0) == 0xE0) {
+                    utf8Len = 3; utf16Len = 1;
+                } else if ((b & 0xF8) == 0xF0) {
+                    utf8Len = 4; utf16Len = 2;
+                } else {
+                    utf8Len = 1; utf16Len = 1;
+                }
+                for (int u = 0; u < utf16Len; u++)
+                    ctx->cur_cell_obj->u16ToSrc.push_back(srcByte);
+                srcByte += utf8Len;
+                i += utf8Len;
+            }
         }
         Utf8Decoder d;
         d.decode(text, size, *ctx->cur_cell);
+        ctx->cur_cell_last_end = thisOff + size;
         return 0;
     }
 
