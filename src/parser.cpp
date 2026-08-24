@@ -580,6 +580,7 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
         if (sf.em) em = true;
         if (sf.strong) strong = true;
         if (sf.code) code = true;
+        if (sf.type == MD_SPAN_DEL) strike = true;
         if (sf.type == MD_SPAN_A) { kind = InlineKind::Link; url = sf.url; }
         if (sf.type == MD_SPAN_IMG) { kind = InlineKind::Image; url = sf.url; }
     }
