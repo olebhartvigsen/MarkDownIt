@@ -2006,11 +2006,14 @@ void AppWindow::SetHeading(int level) {
     // Toggle: if the caret is already in a heading of this level,
     // remove the heading (revert to paragraph).
     FormatState fs = GetFormatState();
+    diaglog("SetHeading(%d): editing=%d headingLevel=%d sel.active=%u sel.anchor=%u sel.empty=%d\n",
+        level, editing_, fs.headingLevel, sel_.active.offset, sel_.anchor.offset, sel_.Empty());
     if (fs.headingLevel == level) {
         SetHeadingLevel(&buffer_, &sel_, 0);
     } else {
         SetHeadingLevel(&buffer_, &sel_, level);
     }
+    diaglog("SetHeading: after splice, buffer size=%zu\n", buffer_.Text().size());
     editor_.BreakUndoCoalesce();
     OnBufferChanged();
     // The ribbon button click steals focus from the content window, so the
