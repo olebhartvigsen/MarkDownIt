@@ -47,19 +47,49 @@ void ToggleInlineMarker(TextBuffer* buf, Selection* sel, const std::string& mark
     uint32_t end = start + sel->Length();
     const std::string& text = buf->Text();
     Selection selBefore = *sel;
+    uint32_t mlen = static_cast<uint32_t>(marker.size());
 
+    // First try: selection already includes the markers.
     if (IsWrappedIn(text, start, end, marker)) {
         // Remove the markers: single splice replacing "**content**" with "content".
-        uint32_t mlen = static_cast<uint32_t>(marker.size());
         std::string removed = text.substr(start, end - start);  // "**content**"
         std::string kept = removed.substr(mlen, removed.size() - mlen * 2);  // "content"
         buf->Splice(start, end - start, kept);
         sel->anchor = {start};
         sel->active = {start + static_cast<uint32_t>(kept.size())};
         RecordUndo(undo, start, removed, kept, selBefore, *sel);
-    } else {
-        // Add the markers around the selection, but place them inside
-        // any surrounding whitespace so md4c recognizes the emphasis.
+        return;
+    }
+
+    // Second try: the selection is the inner content (markers are just
+    // outside). This happens when the user selects rendered bold text —
+    // the selection offsets point to the content, not the ** markers.
+    // Expand outward to include adjacent markers, then remove them.
+    if (start >= mlen && end + mlen <= text.size()) {
+        bool hasLeftMarker = true, hasRightMarker = true;
+        for (size_t i = 0; i < mlen; i++) {
+            if (text[start - mlen + i] != marker[i]) { hasLeftMarker = false; break; }
+        }
+        for (size_t i = 0; i < mlen; i++) {
+            if (text[end + i] != marker[i]) { hasRightMarker = false; break; }
+        }
+        if (hasLeftMarker && hasRightMarker) {
+            // Expand selection to include the markers, then remove them.
+            uint32_t fullStart = start - mlen;
+            uint32_t fullEnd = end + mlen;
+            std::string removed = text.substr(fullStart, fullEnd - fullStart);
+            std::string kept = text.substr(start, end - start);
+            buf->Splice(fullStart, fullEnd - fullStart, kept);
+            sel->anchor = {fullStart};
+            sel->active = {fullStart + static_cast<uint32_t>(kept.size())};
+            RecordUndo(undo, fullStart, removed, kept, selBefore, *sel);
+            return;
+        }
+    }
+
+    // Otherwise: add the markers around the selection, but place them inside
+    // any surrounding whitespace so md4c recognizes the emphasis.
+    {
         uint32_t contentStart = start;
         uint32_t contentEnd = end;
         while (contentStart < contentEnd &&
