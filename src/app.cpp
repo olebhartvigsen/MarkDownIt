@@ -659,6 +659,16 @@ void AppWindow::UpdateCaretPosition() {
     if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &x, &y, &h)) {
         int cx = static_cast<int>(x);
         int cy = static_cast<int>(y - scrollY_);
+        // Recreate the caret if its height changed (e.g. cursor moved
+        // from body text to a heading or vice versa).
+        int newH = static_cast<int>(h);
+        if (newH < 1) newH = 1;
+        if (caret_height_ != newH) {
+            DestroyCaret();
+            CreateCaret(hwnd_content_, nullptr, 2, newH);
+            ShowCaret(hwnd_content_);
+            caret_height_ = newH;
+        }
         SetCaretPos(cx, cy);
     }
 }
@@ -848,6 +858,7 @@ void AppWindow::OnSetFocus(HWND hwnd) {
     float x, y, h;
     if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &x, &y, &h)) {
         CreateCaret(hwnd, nullptr, 2, static_cast<int>(h));
+        caret_height_ = static_cast<int>(h);
         SetCaretPos(static_cast<int>(x),
                     static_cast<int>(y - scrollY_));
         ShowCaret(hwnd);
@@ -1648,16 +1659,20 @@ void AppWindow::SetEdit(bool on) {
     editing_ = on;
     if (on && has_focus_ && !caret_visible_) {
         float cx, cy, ch;
-        if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &cx, &cy, &ch))
+        if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &cx, &cy, &ch)) {
             CreateCaret(hwnd_content_, nullptr, 2, static_cast<int>(ch));
-        else
+            caret_height_ = static_cast<int>(ch);
+        } else {
             CreateCaret(hwnd_content_, nullptr, 2, 16);
+            caret_height_ = 16;
+        }
         ShowCaret(hwnd_content_);
         caret_visible_ = true;
     }
     if (!on && caret_visible_) {
         DestroyCaret();
         caret_visible_ = false;
+        caret_height_ = 0;
     }
     // Invalidate the Edit toggle and all format buttons so the ribbon
     // re-queries their pressed and enabled state.

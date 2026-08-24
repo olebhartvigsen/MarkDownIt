@@ -156,6 +156,7 @@ private:
     LayoutCache  layout_cache_;
     Selection    sel_;
     bool         caret_visible_ = false;
+    int          caret_height_ = 0;   // current caret height in px (for resize on font change)
     bool         editing_ = false;
     bool         has_focus_ = false;
     EditController  editor_;
