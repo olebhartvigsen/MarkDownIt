@@ -650,6 +650,14 @@ void AppWindow::UpdateCaretPosition() {
     if (!has_focus_ || !hwnd_content_) return;
     if (!editing_) return;  // No caret in view mode.
     InvalidateFormatButtons();
+
+    // Hide the caret when text is selected — only show it when the
+    // selection is collapsed to a single point (no active selection).
+    if (!sel_.Empty()) {
+        if (caret_visible_) { HideCaret(hwnd_content_); caret_visible_ = false; }
+        return;
+    }
+
     float x, y, h;
     if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &x, &y, &h)) {
         // Convert DIPs to physical pixels for the caret.
@@ -663,10 +671,10 @@ void AppWindow::UpdateCaretPosition() {
         if (caret_height_ != newH) {
             DestroyCaret();
             CreateCaret(hwnd_content_, nullptr, 2, newH);
-            ShowCaret(hwnd_content_);
             caret_height_ = newH;
         }
         SetCaretPos(cx, cy);
+        if (!caret_visible_) { ShowCaret(hwnd_content_); caret_visible_ = true; }
     }
 }
 
