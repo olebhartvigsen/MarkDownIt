@@ -652,11 +652,13 @@ void AppWindow::UpdateCaretPosition() {
     InvalidateFormatButtons();
     float x, y, h;
     if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &x, &y, &h)) {
-        int cx = static_cast<int>(x);
-        int cy = static_cast<int>(y - scrollY_);
+        // Convert DIPs to physical pixels for the caret.
+        float dpix = static_cast<float>(dpi_) / 96.0f;
+        int cx = static_cast<int>(x * dpix);
+        int cy = static_cast<int>((y - scrollY_) * dpix);
         // Recreate the caret if its height changed (e.g. cursor moved
         // from body text to a heading or vice versa).
-        int newH = static_cast<int>(h);
+        int newH = static_cast<int>(h * dpix);
         if (newH < 1) newH = 1;
         if (caret_height_ != newH) {
             DestroyCaret();
@@ -675,7 +677,9 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     if (welcome_mode_) {
         D2D1_SIZE_F sz = rt_ ? rt_->GetSize() : D2D1::SizeF(800, 600);
         welcome_.Layout(sz.width, sz.height);
-        int idx = welcome_.HitTest(static_cast<float>(x), static_cast<float>(y));
+        float scale = 96.0f / static_cast<float>(dpi_);
+        int idx = welcome_.HitTest(static_cast<float>(x) * scale,
+                                    static_cast<float>(y) * scale);
         if (idx >= 0) {
             std::wstring path = welcome_.GetPath(idx);
             if (!path.empty()) {
@@ -686,8 +690,9 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     }
 
     SetCapture(hwnd);
-    float docX = static_cast<float>(x);
-    float docY = static_cast<float>(y) + scrollY_;
+    float scale = 96.0f / static_cast<float>(dpi_);
+    float docX = static_cast<float>(x) * scale;
+    float docY = static_cast<float>(y) * scale + scrollY_;
 
     // Check if the click is in the left margin (no text block hit at x).
     // If so, select the visual line at that y position (like Word).
@@ -744,8 +749,9 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
 void AppWindow::OnLButtonDblClk(HWND hwnd, int x, int y) {
     SetFocus(hwnd);
     if (welcome_mode_) return;  // single-click handles welcome screen clicks
-    float docX = static_cast<float>(x);
-    float docY = static_cast<float>(y) + scrollY_;
+    float scale = 96.0f / static_cast<float>(dpi_);
+    float docX = static_cast<float>(x) * scale;
+    float docY = static_cast<float>(y) * scale + scrollY_;
     uint32_t offset = layout_cache_.PointToOffset(docX, docY);
     if (offset == UINT32_MAX) return;
 
@@ -778,8 +784,9 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
     if (welcome_mode_) {
         D2D1_SIZE_F sz = rt_ ? rt_->GetSize() : D2D1::SizeF(800, 600);
         welcome_.Layout(sz.width, sz.height);
-        int newHover = welcome_.HitTest(static_cast<float>(x),
-            static_cast<float>(y));
+        float scale = 96.0f / static_cast<float>(dpi_);
+        int newHover = welcome_.HitTest(static_cast<float>(x) * scale,
+            static_cast<float>(y) * scale);
         if (newHover != welcome_hover_) {
             welcome_hover_ = newHover;
             Repaint();
@@ -788,8 +795,9 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
     }
 
     if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) return;
-    float docX = static_cast<float>(x);
-    float docY = static_cast<float>(y) + scrollY_;
+    float scale = 96.0f / static_cast<float>(dpi_);
+    float docX = static_cast<float>(x) * scale;
+    float docY = static_cast<float>(y) * scale + scrollY_;
 
     if (margin_selecting_ && margin_anchor_block_ >= 0) {
         // Extending a margin selection by visual lines.
@@ -852,10 +860,13 @@ void AppWindow::OnSetFocus(HWND hwnd) {
     if (!editing_) return;
     float x, y, h;
     if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &x, &y, &h)) {
-        CreateCaret(hwnd, nullptr, 2, static_cast<int>(h));
-        caret_height_ = static_cast<int>(h);
-        SetCaretPos(static_cast<int>(x),
-                    static_cast<int>(y - scrollY_));
+        float dpix = static_cast<float>(dpi_) / 96.0f;
+        int ch = static_cast<int>(h * dpix);
+        if (ch < 1) ch = 1;
+        CreateCaret(hwnd, nullptr, 2, ch);
+        caret_height_ = ch;
+        SetCaretPos(static_cast<int>(x * dpix),
+                    static_cast<int>((y - scrollY_) * dpix));
         ShowCaret(hwnd);
         caret_visible_ = true;
     }
@@ -1094,6 +1105,8 @@ void AppWindow::OnCreate(HWND hwnd) {
         MessageBoxW(hwnd, L"CreateHwndRenderTarget failed", L"MarkDownIt", MB_ICONERROR);
         return;
     }
+    dpi_ = GetWindowDpi(hwnd_);
+    rt_->SetDpi(static_cast<float>(dpi_), static_cast<float>(dpi_));
 
     EnsureRenderer();
     if (pending_file_.empty()) {
@@ -1446,7 +1459,29 @@ void AppWindow::RecreateRenderTarget() {
             DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED);
         d2d_factory_->CreateHwndRenderTarget(
             rtProps, D2D1::HwndRenderTargetProperties(hwnd_content_, size), &rt_);
+        if (rt_) {
+            rt_->SetDpi(static_cast<float>(dpi_), static_cast<float>(dpi_));
+        }
     }
+}
+
+void AppWindow::UpdateDpi() {
+    UINT newDpi = GetWindowDpi(hwnd_);
+    if (newDpi == dpi_ && rt_) return;
+    dpi_ = newDpi;
+    if (rt_) {
+        rt_->SetDpi(static_cast<float>(dpi_), static_cast<float>(dpi_));
+    }
+}
+
+float AppWindow::DpW() const {
+    if (dpi_ == 0) return static_cast<float>(clientW_);
+    return static_cast<float>(clientW_) * 96.0f / static_cast<float>(dpi_);
+}
+
+float AppWindow::DpH() const {
+    if (dpi_ == 0) return static_cast<float>(clientH_);
+    return static_cast<float>(clientH_) * 96.0f / static_cast<float>(dpi_);
 }
 
 void AppWindow::OnContentPaint(HWND hwnd) {
@@ -1648,9 +1683,12 @@ void AppWindow::SetEdit(bool on) {
     editing_ = on;
     if (on && has_focus_ && !caret_visible_) {
         float cx, cy, ch;
+        float dpix = static_cast<float>(dpi_) / 96.0f;
         if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &cx, &cy, &ch)) {
-            CreateCaret(hwnd_content_, nullptr, 2, static_cast<int>(ch));
-            caret_height_ = static_cast<int>(ch);
+            int h = static_cast<int>(ch * dpix);
+            if (h < 1) h = 1;
+            CreateCaret(hwnd_content_, nullptr, 2, h);
+            caret_height_ = h;
         } else {
             CreateCaret(hwnd_content_, nullptr, 2, 16);
             caret_height_ = 16;
@@ -2351,6 +2389,7 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         case WM_DPICHANGED: {
+            UpdateDpi();
             renderer_.Release();
             EnsureRenderer();
             RECT* rc = (RECT*)lp;
