@@ -1748,6 +1748,45 @@ FormatState AppWindow::GetFormatState() const {
     uint32_t caret = sel_.active.offset;
     if (caret > text.size()) caret = static_cast<uint32_t>(text.size());
 
+    // Helper lambda: check table cell inline formatting.
+    // For a table node, iterate all rows/cells and check if the caret
+    // or selection overlaps any CellInlineSpan (converting u16 indices
+    // to source byte offsets via u16ToSrc).
+    auto checkTableCells = [&](const Node& node, uint32_t chkStart, uint32_t chkEnd) {
+        for (const auto& row : node.rows) {
+            for (const auto& cell : row.cells) {
+                if (cell.u16ToSrc.empty() || cell.inlineSpans.empty()) continue;
+                // The cell's source range: [cell.srcOffset, cellEnd)
+                // cell.u16ToSrc.back() is the source offset of the last
+                // rendered character. Approximate cellEnd as that + 1.
+                uint32_t cellSrcStart = cell.srcOffset;
+                // Quick reject: cell doesn't overlap the check range.
+                // We need cellSrcEnd. u16ToSrc.last() gives last char source
+                // but cell could span more. Use u16ToSrc.back() + 1 as approx.
+                uint32_t cellSrcEnd = cell.u16ToSrc.back() + 1;
+                if (chkEnd <= cellSrcStart || chkStart >= cellSrcEnd) continue;
+
+                for (const auto& span : cell.inlineSpans) {
+                    // Convert u16 span boundaries to source byte offsets.
+                    if (span.u16Start >= cell.u16ToSrc.size()) continue;
+                    uint32_t spanSrcStart = cell.u16ToSrc[span.u16Start];
+                    uint32_t spanSrcEnd;
+                    if (span.u16End < cell.u16ToSrc.size())
+                        spanSrcEnd = cell.u16ToSrc[span.u16End];
+                    else
+                        spanSrcEnd = cellSrcEnd;
+
+                    // Check overlap with [chkStart, chkEnd).
+                    if (spanSrcEnd <= chkStart || spanSrcStart >= chkEnd) continue;
+                    if (span.bold)   fs.bold = true;
+                    if (span.italic) fs.italic = true;
+                    if (span.code)   fs.code = true;
+                    if (span.strike) fs.strike = true;
+                }
+            }
+        }
+    };
+
     // Collapsed caret: check any inline span whose [cs, ce) range
     // contains the caret position, using CLOSED intervals (cs <= P
     // AND P <= ce). This detects formatting at both the start and end
@@ -1772,6 +1811,7 @@ FormatState AppWindow::GetFormatState() const {
                 fs.inQuote = true;
             }
 
+            // Regular inline spans.
             for (const auto& child : node.children) {
                 uint32_t cs = child.srcOffset;
                 uint32_t ce = cs + child.srcLength;
@@ -1786,6 +1826,11 @@ FormatState AppWindow::GetFormatState() const {
                     if (child.code)   fs.code = true;
                     if (child.strike) fs.strike = true;
                 }
+            }
+
+            // Table cell spans.
+            if (node.block == BlockKind::Table) {
+                checkTableCells(node, caret, caret + 1);
             }
         }
         return fs;
@@ -1835,6 +1880,11 @@ FormatState AppWindow::GetFormatState() const {
             if (child.em)     fs.italic = true;
             if (child.code)   fs.code = true;
             if (child.strike) fs.strike = true;
+        }
+
+        // Table cell spans.
+        if (node.block == BlockKind::Table) {
+            checkTableCells(node, start, end);
         }
     }
     return fs;
