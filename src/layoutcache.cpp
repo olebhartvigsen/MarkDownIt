@@ -175,12 +175,15 @@ uint32_t LayoutCache::PointToOffset(float x, float y) const {
     // Use the u16ToSrc mapping to convert to a UTF-8 source offset.
     if (!bl.u16ToSrc.empty() && htm.textPosition < bl.u16ToSrc.size()) {
         uint32_t srcOff = bl.u16ToSrc[htm.textPosition];
-        if (isTrailingHit && htm.textPosition + 1 < bl.u16ToSrc.size()) {
-            // For trailing hits, advance to the next source position.
-            // But only if the next position is within the same inline block.
-            // Use the next mapped position if it's > current.
-            uint32_t nextOff = bl.u16ToSrc[htm.textPosition + 1];
-            if (nextOff > srcOff) return nextOff;
+        if (isTrailingHit) {
+            if (htm.textPosition + 1 < bl.u16ToSrc.size()) {
+                // For trailing hits, advance to the next source position.
+                uint32_t nextOff = bl.u16ToSrc[htm.textPosition + 1];
+                if (nextOff > srcOff) return nextOff;
+            } else {
+                // Trailing hit on the last character: return end of block.
+                return bl.srcOffset + bl.srcLength;
+            }
         }
         return srcOff;
     }
