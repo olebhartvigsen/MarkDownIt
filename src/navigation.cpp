@@ -1,12 +1,66 @@
 #include "navigation.h"
 #include "editcontroller.h"
 
-uint32_t MoveLeft(const TextBuffer& buf, uint32_t offset) {
-    return PrevGraphemeBoundary(buf.Text(), offset);
+// Check if a source offset is a hidden markdown marker character
+// (not part of the rendered text) using the layout cache's u16ToSrc
+// mapping. If the offset is not in any block's u16ToSrc, it's hidden.
+static bool isHiddenMarker(const std::string& s, uint32_t offset,
+                           const LayoutCache* cache) {
+    if (!cache) return false;
+    // Quick check: is the char a markdown marker?
+    if (offset >= s.size()) return false;
+    char c = s[offset];
+    if (c != '*' && c != '`' && c != '~') return false;
+    // Check if this offset is in the rendered text of any block.
+    // The u16ToSrc vector maps rendered UTF-16 positions to source
+    // byte offsets. If offset appears in any block's u16ToSrc, it's
+    // rendered (visible). Otherwise it's a hidden marker.
+    const auto& blocks = cache->Blocks();
+    for (const auto& bl : blocks) {
+        for (uint32_t srcOff : bl.u16ToSrc) {
+            if (srcOff == offset) return false;  // rendered → not hidden
+            if (srcOff > offset) break;          // sorted, no point
+        }
+    }
+    return true;  // marker char not found in any rendered text
 }
 
-uint32_t MoveRight(const TextBuffer& buf, uint32_t offset) {
-    return NextGraphemeBoundary(buf.Text(), offset);
+// Skip forward past hidden marker characters starting at offset.
+static uint32_t skipMarkersRight(const std::string& s, uint32_t offset,
+                                 const LayoutCache* cache) {
+    while (offset < s.size() && isHiddenMarker(s, offset, cache))
+        offset = NextGraphemeBoundary(s, offset);
+    return offset;
+}
+
+// Skip backward past hidden marker characters before offset.
+static uint32_t skipMarkersLeft(const std::string& s, uint32_t offset,
+                                const LayoutCache* cache) {
+    while (offset > 0) {
+        uint32_t prev = PrevGraphemeBoundary(s, offset);
+        if (prev == offset) break;
+        if (!isHiddenMarker(s, prev, cache)) break;
+        offset = prev;
+    }
+    return offset;
+}
+
+uint32_t MoveLeft(const TextBuffer& buf, uint32_t offset,
+                  const LayoutCache* layoutCache) {
+    uint32_t prev = PrevGraphemeBoundary(buf.Text(), offset);
+    // If we landed on a hidden marker, keep skipping left past markers.
+    if (layoutCache)
+        prev = skipMarkersLeft(buf.Text(), prev, layoutCache);
+    return prev;
+}
+
+uint32_t MoveRight(const TextBuffer& buf, uint32_t offset,
+                   const LayoutCache* layoutCache) {
+    uint32_t next = NextGraphemeBoundary(buf.Text(), offset);
+    // If we landed on a hidden marker, keep skipping right past markers.
+    if (layoutCache)
+        next = skipMarkersRight(buf.Text(), next, layoutCache);
+    return next;
 }
 
 static bool isWordChar(unsigned char c) {

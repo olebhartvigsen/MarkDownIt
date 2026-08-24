@@ -3,11 +3,15 @@
 #include "textbuffer.h"
 #include <cstdint>
 
-// Move left by one grapheme cluster.
-uint32_t MoveLeft(const TextBuffer& buf, uint32_t offset);
+// Move left by one grapheme cluster, skipping hidden markdown markers.
+// layoutCache gives access to u16ToSrc mapping to know which source
+// offsets are rendered vs. hidden markers. May be null (raw move).
+uint32_t MoveLeft(const TextBuffer& buf, uint32_t offset,
+                  const LayoutCache* layoutCache = nullptr);
 
-// Move right by one grapheme cluster.
-uint32_t MoveRight(const TextBuffer& buf, uint32_t offset);
+// Move right by one grapheme cluster, skipping hidden markdown markers.
+uint32_t MoveRight(const TextBuffer& buf, uint32_t offset,
+                   const LayoutCache* layoutCache = nullptr);
 
 // Move left by one word (Ctrl+Left).
 uint32_t MoveWordLeft(const TextBuffer& buf, uint32_t offset);

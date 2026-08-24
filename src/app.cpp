@@ -311,7 +311,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         case VK_LEFT: {
             uint32_t newOffset = ctrl
                 ? MoveWordLeft(buffer_, sel_.active.offset)
-                : MoveLeft(buffer_, sel_.active.offset);
+                : MoveLeft(buffer_, sel_.active.offset, &layout_cache_);
             desiredX_ = -1.0f;
             if (!shift) editor_.BreakUndoCoalesce();
             if (shift) sel_.active = {newOffset};
@@ -323,7 +323,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         case VK_RIGHT: {
             uint32_t newOffset = ctrl
                 ? MoveWordRight(buffer_, sel_.active.offset)
-                : MoveRight(buffer_, sel_.active.offset);
+                : MoveRight(buffer_, sel_.active.offset, &layout_cache_);
             desiredX_ = -1.0f;
             if (!shift) editor_.BreakUndoCoalesce();
             if (shift) sel_.active = {newOffset};
