@@ -32,24 +32,15 @@ int LayoutCache::HitTestBlock(float x, float y) const {
 
 int LayoutCache::FindBlockAtY(float y) const {
     // Find the topmost block whose y-range contains y.
-    // If y is between two blocks, snap to the nearest one.
-    int best = -1;
-    float bestDist = 1e30f;
+    // Do NOT snap to nearest block — if y is in a gap between blocks,
+    // return -1 so the caller can clear the selection.
     for (size_t i = 0; i < blocks_.size(); ++i) {
         const auto& bl = blocks_[i];
         if (y >= bl.y && y < bl.y + bl.height) {
-            return static_cast<int>(i);  // exact hit
-        }
-        // Distance to nearest edge
-        float dTop = std::abs(y - bl.y);
-        float dBot = std::abs(y - (bl.y + bl.height));
-        float d = dTop < dBot ? dTop : dBot;
-        if (d < bestDist) {
-            bestDist = d;
-            best = static_cast<int>(i);
+            return static_cast<int>(i);
         }
     }
-    return best;
+    return -1;
 }
 
 bool LayoutCache::GetLineRangeAtY(int blockIndex, float y,
