@@ -57,6 +57,8 @@ public:
     bool IsDirty() const { return dirty_; }
     void SetEdit(bool on);
     bool IsEditing() const { return editing_; }
+    bool CanUndo() const { return undo_stack_.CanUndo(); }
+    bool CanRedo() const { return undo_stack_.CanRedo(); }
     FormatState GetFormatState() const;
     void InvalidateFormatButtons();
     void ToggleEdit() { SetEdit(!editing_); }

@@ -1786,6 +1786,14 @@ FormatState AppWindow::GetFormatState() const {
 void AppWindow::InvalidateFormatButtons() {
     FormatState fs = GetFormatState();
     UpdateRibbonFormatState(fs);
+    // Invalidate Undo/Redo enabled state so the buttons reflect whether
+    // there is undo/redo history available.
+    if (g_pRibbonFramework) {
+        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_UNDO,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
+        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_REDO,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
+    }
 }
 
 void AppWindow::ToggleBold() {

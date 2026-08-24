@@ -350,8 +350,13 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         for (auto cmd : fmtCmds) {
             if (nCmdID == cmd) {
                 ppropvarNewValue->vt = VT_BOOL;
-                ppropvarNewValue->boolVal =
-                    (m_pApp && m_pApp->IsEditing()) ? VARIANT_TRUE : VARIANT_FALSE;
+                bool editing = (m_pApp && m_pApp->IsEditing());
+                if (cmd == IDC_CMD_UNDO)
+                    ppropvarNewValue->boolVal = (editing && m_pApp && m_pApp->CanUndo()) ? VARIANT_TRUE : VARIANT_FALSE;
+                else if (cmd == IDC_CMD_REDO)
+                    ppropvarNewValue->boolVal = (editing && m_pApp && m_pApp->CanRedo()) ? VARIANT_TRUE : VARIANT_FALSE;
+                else
+                    ppropvarNewValue->boolVal = editing ? VARIANT_TRUE : VARIANT_FALSE;
                 return S_OK;
             }
         }
