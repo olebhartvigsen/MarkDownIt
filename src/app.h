@@ -89,6 +89,8 @@ public:
     void ToggleQuote();
     void Indent();
     void Outdent();
+    void UndoAction();
+    void RedoAction();
 
     // Called by CRibbonApplication::OnViewChanged when ribbon height changes.
     void OnRibbonHeightChanged();

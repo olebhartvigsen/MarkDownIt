@@ -343,6 +343,30 @@
         <String>Document Width</String>
       </Command.LabelTitle>
     </Command>
+    <Command Name="cmdUndo" Symbol="IDC_CMD_UNDO" Id="10700">
+      <Command.LabelTitle>
+        <String>Undo</String>
+      </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/undo_32.png" MinDPI="96"/>
+        <Image Source="icons/undo_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/undo_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
+    <Command Name="cmdRedo" Symbol="IDC_CMD_REDO" Id="10701">
+      <Command.LabelTitle>
+        <String>Redo</String>
+      </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/redo_32.png" MinDPI="96"/>
+        <Image Source="icons/redo_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/redo_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
   </Application.Commands>
   <Application.Views>
     <Ribbon>
@@ -368,7 +392,9 @@
       </Ribbon.ApplicationMenu>
       <Ribbon.Tabs>
         <Tab CommandName="cmdTabHome">
-          <Group CommandName="cmdGroupFile" SizeDefinition="ThreeButtons">
+          <Group CommandName="cmdGroupFile" SizeDefinition="FiveButtons">
+            <Button CommandName="cmdUndo" />
+            <Button CommandName="cmdRedo" />
             <Button CommandName="cmdOpen" />
             <Button CommandName="cmdReload" />
             <Button CommandName="cmdSave" />

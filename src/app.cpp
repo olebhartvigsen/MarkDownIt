@@ -2052,6 +2052,20 @@ void AppWindow::Outdent() {
     ForceRepaintNow();
 }
 
+void AppWindow::UndoAction() {
+    if (!editing_) return;
+    editor_.Undo();
+    OnBufferChanged();
+    ForceRepaintNow();
+}
+
+void AppWindow::RedoAction() {
+    if (!editing_) return;
+    editor_.Redo();
+    OnBufferChanged();
+    ForceRepaintNow();
+}
+
 void AppWindow::OnDestroy() {
     StopScrollAnimation();
     SaveWinPlacement(hwnd_);
