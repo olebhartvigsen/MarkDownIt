@@ -1740,15 +1740,43 @@ void AppWindow::SetEdit(bool on) {
 
 FormatState AppWindow::GetFormatState() const {
     FormatState fs;
-    uint32_t offset = sel_.active.offset;
     const auto& text = buffer_.Text();
-    if (offset > text.size()) offset = static_cast<uint32_t>(text.size());
 
-    // Find the block containing this offset.
+    // Determine the range to check. For a collapsed caret, check the
+    // single character just before the caret. For a selection, check
+    // ALL inline blocks that overlap the selection range (so the
+    // toggle buttons accurately reflect the selection's formatting).
+    uint32_t checkStart, checkEnd;
+    if (sel_.Empty()) {
+        checkStart = sel_.active.offset;
+        if (checkStart > 0) checkStart--;
+        checkEnd = checkStart + 1;
+    } else {
+        checkStart = sel_.Start();
+        checkEnd = checkStart + sel_.Length();
+        // Trim leading/trailing whitespace from the check range so a
+        // preceding/trailing space doesn't mask the format detection.
+        while (checkStart < checkEnd &&
+               (text[checkStart] == ' ' || text[checkStart] == '\t' ||
+                text[checkStart] == '\n' || text[checkStart] == '\r'))
+            checkStart++;
+        while (checkEnd > checkStart &&
+               (text[checkEnd - 1] == ' ' || text[checkEnd - 1] == '\t' ||
+                text[checkEnd - 1] == '\n' || text[checkEnd - 1] == '\r'))
+            checkEnd--;
+    }
+
+    if (checkStart >= text.size()) {
+        // Caret at end of document: check the LAST block's last inline.
+        checkStart = static_cast<uint32_t>(text.size());
+        if (checkStart > 0) checkStart--;
+    }
+
+    // Find the block containing this range.
     for (const auto& node : doc_.nodes) {
         uint32_t blockStart = node.srcOffset;
         uint32_t blockEnd = blockStart + node.srcLength;
-        if (offset < blockStart || offset > blockEnd) continue;
+        if (checkStart < blockStart || checkStart > blockEnd) continue;
 
         // Block-level state.
         if (node.block == BlockKind::Heading) {
@@ -1760,23 +1788,20 @@ FormatState AppWindow::GetFormatState() const {
             fs.inQuote = true;
         }
 
-        // Inline-level state: find the InlineBlock containing the offset.
-        // The caret sits between two characters. We check the span that
-        // contains the character just before the caret (if any), since
-        // that is the formatting context the caret is "inside".
-        uint32_t checkOffset = offset;
-        if (checkOffset > blockStart && checkOffset > 0) checkOffset--;
-
+        // Inline-level state: check ALL inline blocks that overlap the
+        // check range. For a selection, this finds ALL formatted spans
+        // in the selection, not just one character.
         for (const auto& child : node.children) {
             uint32_t cs = child.srcOffset;
             uint32_t ce = cs + child.srcLength;
-            if (checkOffset >= cs && checkOffset < ce) {
-                if (child.strong) fs.bold = true;
-                if (child.em)     fs.italic = true;
-                if (child.code)   fs.code = true;
-                if (child.strike) fs.strike = true;
-                break;
-            }
+            // Check if this inline block overlaps [checkStart, checkEnd).
+            // For a collapsed caret: checkStart = caret-1, checkEnd = checkStart+1
+            // For a selection: checkStart..checkEnd is the trimmed range
+            if (checkEnd <= cs || checkStart >= ce) continue;  // no overlap
+            if (child.strong) fs.bold = true;
+            if (child.em)     fs.italic = true;
+            if (child.code)   fs.code = true;
+            if (child.strike) fs.strike = true;
         }
         break;
     }
