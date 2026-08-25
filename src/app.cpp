@@ -696,13 +696,21 @@ void AppWindow::UpdateCaretPosition() {
 
 std::string AppWindow::FindLinkAtOffset(uint32_t offset) const {
     // Search all nodes for an InlineBlock with kind == Link whose source
-    // range [srcOffset, srcOffset + srcLength) contains the offset.
+    // range contains the offset. We check the text range [srcOffset,
+    // srcOffset + srcLength) AND a slightly wider range that includes
+    // the surrounding [ and ] markers, since PointToOffset may return
+    // an offset on those hidden characters.
     for (const auto& n : doc_.nodes) {
         for (const auto& ib : n.children) {
             if (ib.kind != InlineKind::Link) continue;
             uint32_t start = ib.srcOffset;
             uint32_t end = ib.srcOffset + ib.srcLength;
-            if (offset >= start && offset < end) {
+            // Extend range to include the [ before and ] after the text,
+            // which are hidden markup characters that PointToOffset may
+            // land on (especially trailing hits).
+            if (start > 0) start -= 1;  // include '['
+            end += 1;                    // include ']'
+            if (offset >= start && offset <= end) {
                 return ib.url;
             }
         }
@@ -823,11 +831,10 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     float docX = static_cast<float>(x) * scale;
     float docY = static_cast<float>(y) * scale + scrollY_;
 
-    // Link click handling: in view mode, clicking a link opens it.
-    // In edit mode, Ctrl+click opens a link (plain click places the
-    // caret for editing).
-    bool tryLink = !editing_ || (GetKeyState(VK_CONTROL) & 0x8000);
-    if (tryLink) {
+    // Link click handling: clicking a link opens it in both view and
+    // edit mode. In edit mode, if the click is NOT on a link, the
+    // caret is placed as usual.
+    {
         uint32_t linkOffset = layout_cache_.PointToOffset(docX, docY);
         if (linkOffset != UINT32_MAX) {
             std::string url = FindLinkAtOffset(linkOffset);
