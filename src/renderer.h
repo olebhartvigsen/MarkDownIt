@@ -42,6 +42,16 @@ public:
     float Measure(IDWriteFactory* dw, const Document& doc, float widthDip,
                      float topOffsetDip);
 
+    // Draw the raw markdown source with monospace font and word wrap.
+    // Returns the total rendered height in DIPs.
+    float RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+                           const std::string& src, float widthDip,
+                           float scrollY, float topOffsetDip,
+                           const Selection* sel);
+    // Measure the source view height without drawing.
+    float MeasureSourceView(IDWriteFactory* dw, const std::string& src,
+                            float widthDip, float topOffsetDip);
+
 private:
     IDWriteTextFormat* body_fmt_ = nullptr;
     IDWriteTextFormat* code_fmt_ = nullptr;      // monospace for code blocks

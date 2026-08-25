@@ -635,9 +635,34 @@ void AppWindow::ScheduleReparse() {
     reparse_timer_ = SetTimer(hwnd_content_, 2, 150, nullptr);
 }
 
+void AppWindow::ToggleSourceView() {
+    source_view_ = !source_view_;
+    // Source view implies edit mode (editable source).
+    if (source_view_ && !editing_) {
+        SetEdit(true);
+    }
+    // Invalidate the ribbon toggle state.
+    if (g_pRibbonFramework) {
+        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_SOURCE,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
+    }
+    scrollY_ = 0.0f;
+    StopScrollAnimation();
+    layout_cache_.Clear();
+    ForceRepaintNow();
+}
+
 void AppWindow::OnReparseTimer() {
     reparse_pending_ = false;
     if (reparse_timer_) { KillTimer(hwnd_content_, reparse_timer_); reparse_timer_ = 0; }
+    // In source view, we don't need to reparse the markdown — the
+    // raw text is displayed directly. Just rebuild the layout cache.
+    if (source_view_) {
+        layout_cache_.Clear();
+        UpdateScrollInfo();
+        ForceRepaintNow();
+        return;
+    }
     doc_ = Document{};
     ParseMarkdown(buffer_.Text(), doc_);
     layout_cache_.Clear();
@@ -1666,7 +1691,12 @@ void AppWindow::OnContentPaint(HWND hwnd) {
 
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
-        totalH_ = renderer_.Measure(dw_factory_, doc_, size.width, 0.0f);
+        if (source_view_) {
+            totalH_ = renderer_.MeasureSourceView(
+                dw_factory_, buffer_.Text(), size.width, 0.0f);
+        } else {
+            totalH_ = renderer_.Measure(dw_factory_, doc_, size.width, 0.0f);
+        }
         UpdateScrollInfo();
     }
 
@@ -1677,7 +1707,14 @@ void AppWindow::OnContentPaint(HWND hwnd) {
 
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
-        renderer_.Render(rt_, dw_factory_, doc_, size.width, scrollY_, 0.0f, &sel_);
+        if (source_view_) {
+            // RenderSourceView doesn't clear the cache itself.
+            layout_cache_.Clear();
+            renderer_.RenderSourceView(rt_, dw_factory_, buffer_.Text(),
+                size.width, scrollY_, 0.0f, &sel_);
+        } else {
+            renderer_.Render(rt_, dw_factory_, doc_, size.width, scrollY_, 0.0f, &sel_);
+        }
     }
 
     HRESULT hr = rt_->EndDraw();

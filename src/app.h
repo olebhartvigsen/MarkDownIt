@@ -57,6 +57,8 @@ public:
     bool IsDirty() const { return dirty_; }
     void SetEdit(bool on);
     bool IsEditing() const { return editing_; }
+    void ToggleSourceView();
+    bool IsSourceView() const { return source_view_; }
     bool CanUndo() const { return undo_stack_.CanUndo(); }
     bool CanRedo() const { return undo_stack_.CanRedo(); }
     FormatState GetFormatState() const;
@@ -170,6 +172,7 @@ private:
     bool         caret_visible_ = false;
     int          caret_height_ = 0;   // current caret height in px (for resize on font change)
     bool         editing_ = false;
+    bool         source_view_ = false;  // raw markdown source view
     bool         has_focus_ = false;
     EditController  editor_;
     UndoStack       undo_stack_;

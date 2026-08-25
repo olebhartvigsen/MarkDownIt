@@ -1191,3 +1191,225 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (selBrush) selBrush->Release();
     return curY;
 }
+
+// --- Source view: render raw markdown as monospace text with word wrap ---
+
+static std::u16string Utf8ToUtf16(const std::string& s) {
+    std::u16string out;
+    size_t i = 0;
+    while (i < s.size()) {
+        unsigned char c = static_cast<unsigned char>(s[i]);
+        if (c < 0x80) {
+            out += static_cast<char16_t>(c);
+            i += 1;
+        } else if (c < 0xC0) {
+            i += 1;  // skip continuation byte
+        } else if (c < 0xE0) {
+            if (i + 1 < s.size()) {
+                char16_t ch = ((c & 0x1F) << 6) |
+                    (static_cast<unsigned char>(s[i+1]) & 0x3F);
+                out += ch;
+                i += 2;
+            } else { i += 1; }
+        } else if (c < 0xF0) {
+            if (i + 2 < s.size()) {
+                char16_t ch = ((c & 0x0F) << 12) |
+                    ((static_cast<unsigned char>(s[i+1]) & 0x3F) << 6) |
+                    (static_cast<unsigned char>(s[i+2]) & 0x3F);
+                out += ch;
+                i += 3;
+            } else { i += 1; }
+        } else {
+            if (i + 3 < s.size()) {
+                uint32_t cp = ((c & 0x07) << 18) |
+                    ((static_cast<unsigned char>(s[i+1]) & 0x3F) << 12) |
+                    ((static_cast<unsigned char>(s[i+2]) & 0x3F) << 6) |
+                    (static_cast<unsigned char>(s[i+3]) & 0x3F);
+                cp -= 0x10000;
+                out += static_cast<char16_t>(0xD800 + (cp >> 10));
+                out += static_cast<char16_t>(0xDC00 + (cp & 0x3FF));
+                i += 4;
+            } else { i += 1; }
+        }
+    }
+    return out;
+}
+
+float Renderer::MeasureSourceView(IDWriteFactory* dw, const std::string& src,
+                                   float widthDip, float topOffsetDip) {
+    if (!dw || !code_fmt_) return 0.0f;
+
+    LayoutMetrics m = ComputeMetrics();
+    float avail = widthDip - 2.0f * m.padX;
+    float contentWidth = wrapEnabled_ ? avail : 10000.0f;
+    if (wrapEnabled_ && contentWidth > m.maxContentWidth)
+        contentWidth = m.maxContentWidth;
+    if (contentWidth <= 0.0f) contentWidth = 1.0f;
+    float originX = wrapEnabled_
+        ? (widthDip - contentWidth) * 0.5f
+        : m.padX;
+    float textW = contentWidth - 2.0f * m.cellPadX;
+
+    std::u16string text16 = Utf8ToUtf16(src);
+    if (text16.empty()) return topOffsetDip + 20.0f;
+
+    IDWriteTextLayout* layout = nullptr;
+    HRESULT hr = dw->CreateTextLayout(
+        reinterpret_cast<const WCHAR*>(text16.data()),
+        static_cast<UINT32>(text16.size()),
+        code_fmt_, textW > 0 ? textW : contentWidth, 1.0e9f, &layout);
+    if (FAILED(hr) || !layout) return topOffsetDip + 20.0f;
+
+    layout->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+
+    DWRITE_TEXT_METRICS tm = {};
+    layout->GetMetrics(&tm);
+    float totalH = m.padTop + topOffsetDip + tm.height;
+    layout->Release();
+    return totalH;
+}
+
+float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+                                  const std::string& src, float widthDip,
+                                  float scrollY, float topOffsetDip,
+                                  const Selection* sel) {
+    if (!rt || !dw || !code_fmt_) return topOffsetDip;
+
+    Palette pal = BasePalette();
+    LayoutMetrics m = ComputeMetrics();
+    float avail = widthDip - 2.0f * m.padX;
+    float contentWidth = wrapEnabled_ ? avail : 10000.0f;
+    if (wrapEnabled_ && contentWidth > m.maxContentWidth)
+        contentWidth = m.maxContentWidth;
+    if (contentWidth <= 0.0f) contentWidth = 1.0f;
+    float originX = wrapEnabled_
+        ? (widthDip - contentWidth) * 0.5f
+        : m.padX;
+    float textW = contentWidth - 2.0f * m.cellPadX;
+    float textX = originX + m.cellPadX;
+    float textY = m.padTop + topOffsetDip;
+
+    std::u16string text16 = Utf8ToUtf16(src);
+    if (text16.empty()) return topOffsetDip + 20.0f;
+
+    IDWriteTextLayout* layout = nullptr;
+    HRESULT hr = dw->CreateTextLayout(
+        reinterpret_cast<const WCHAR*>(text16.data()),
+        static_cast<UINT32>(text16.size()),
+        code_fmt_, textW > 0 ? textW : contentWidth, 1.0e9f, &layout);
+    if (FAILED(hr) || !layout) return m.padTop + topOffsetDip + 20.0f;
+
+    layout->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+
+    DWRITE_TEXT_METRICS tm = {};
+    layout->GetMetrics(&tm);
+
+    // Clip to the content area.
+    D2D1_RECT_F clipRect = D2D1::RectF(
+        originX, textY, originX + contentWidth, textY + tm.height + 50.0f);
+    rt->PushAxisAlignedClip(clipRect, D2D1_ANTIALIAS_MODE_ALIASED);
+
+    // Translate for scrolling.
+    rt->SetTransform(D2D1::Matrix3x2F::Translation(0, -scrollY));
+
+    // Draw text.
+    ID2D1SolidColorBrush* textBrush = nullptr;
+    rt->CreateSolidColorBrush(pal.textPrimary, &textBrush);
+    ID2D1SolidColorBrush* selBrush = nullptr;
+    rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
+
+    float drawStartY = textY - scrollY;
+
+    // Draw selection highlight.
+    if (selBrush && sel && !sel->Empty()) {
+        uint32_t selStart = sel->Start();
+        uint32_t selEnd = selStart + sel->Length();
+        // Convert UTF-8 offsets to UTF-16 positions.
+        UINT32 u16Start = 0, u16End = 0;
+        uint32_t byteIdx = 0;
+        size_t u16Idx = 0;
+        size_t srcIdx = 0;
+        while (srcIdx < src.size() && u16Idx < text16.size()) {
+            unsigned char c = static_cast<unsigned char>(src[srcIdx]);
+            int utf8Len = (c < 0x80) ? 1 : (c < 0xC0) ? 1 :
+                          (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
+            int utf16Len = (c < 0x80) ? 1 : (c < 0xE0) ? 1 :
+                           (c < 0xF0) ? 1 : 2;
+            if (byteIdx >= selStart && u16Start == 0 && byteIdx >= selStart) {
+                // Found selection start
+            }
+            if (byteIdx >= selStart && u16Start == 0) {
+                u16Start = static_cast<UINT32>(u16Idx);
+            }
+            byteIdx += utf8Len;
+            srcIdx += utf8Len;
+            u16Idx += utf16Len;
+            if (byteIdx >= selEnd && u16End == 0) {
+                u16End = static_cast<UINT32>(u16Idx);
+            }
+        }
+        if (u16End == 0) u16End = static_cast<UINT32>(text16.size());
+        if (u16End > u16Start) {
+            DWRITE_HIT_TEST_METRICS htm[64];
+            UINT32 hitCount = 0;
+            HRESULT hrHit = layout->HitTestTextRange(
+                u16Start, u16End - u16Start,
+                textX, drawStartY,
+                htm, 64, &hitCount);
+            if (SUCCEEDED(hrHit)) {
+                for (UINT32 h = 0; h < hitCount && h < 64; ++h) {
+                    D2D1_RECT_F r = D2D1::RectF(
+                        htm[h].left, htm[h].top,
+                        htm[h].left + htm[h].width,
+                        htm[h].top + htm[h].height);
+                    rt->FillRectangle(r, selBrush);
+                }
+            }
+        }
+    }
+
+    rt->DrawTextLayout(D2D1::Point2F(textX, drawStartY),
+                       layout, textBrush,
+                       D2D1_DRAW_TEXT_OPTIONS_CLIP);
+
+    // Add block layout to cache for hit-testing and caret placement.
+    if (cache_) {
+        BlockLayout bl;
+        bl.layout = layout;
+        bl.x = textX;
+        bl.y = textY;
+        bl.width = textW > 0 ? textW : contentWidth;
+        bl.height = tm.height;
+        bl.srcOffset = 0;
+        bl.srcLength = static_cast<uint32_t>(src.size());
+        bl.textStartOffset = 0;
+        bl.nodeIndex = 0;
+        bl.fontHeight = code_fmt_->GetFontSize();
+        // Build u16ToSrc mapping: each UTF-16 code unit maps to its
+        // source byte offset.
+        uint32_t bi = 0;
+        for (size_t si = 0; si < src.size(); ) {
+            unsigned char c = static_cast<unsigned char>(src[si]);
+            int utf8Len = (c < 0x80) ? 1 : (c < 0xC0) ? 1 :
+                          (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
+            int utf16Len = (c < 0x80) ? 1 : (c < 0xE0) ? 1 :
+                           (c < 0xF0) ? 1 : 2;
+            for (int u = 0; u < utf16Len; ++u) {
+                bl.u16ToSrc.push_back(bi);
+            }
+            bi += utf8Len;
+            si += utf8Len;
+        }
+        // layout is owned by the cache (don't Release it here).
+        cache_->Add(bl);
+    } else {
+        layout->Release();
+    }
+
+    rt->SetTransform(D2D1::Matrix3x2F::Identity());
+    rt->PopAxisAlignedClip();
+
+    if (textBrush) textBrush->Release();
+    if (selBrush) selBrush->Release();
+    return textY + tm.height;
+}

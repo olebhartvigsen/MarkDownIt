@@ -295,6 +295,17 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         }
     }
 
+    if (nCmdID == IDC_CMD_SOURCE && ppropvarNewValue)
+    {
+        if (IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
+        {
+            ppropvarNewValue->vt = VT_BOOL;
+            ppropvarNewValue->boolVal =
+                (m_pApp && m_pApp->IsSourceView()) ? VARIANT_TRUE : VARIANT_FALSE;
+            return S_OK;
+        }
+    }
+
     // Settings buttons (Fil menu): dynamic labels reflect current state.
     // cmdAssocMd shows "Associate .md files" or "Unassociate .md files".
     // Width buttons show a checkmark prefix when active.
@@ -431,6 +442,7 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_INDENT:  m_pApp->Indent();            break;
     case IDC_CMD_OUTDENT: m_pApp->Outdent();           break;
     case IDC_CMD_EDIT:    m_pApp->ToggleEdit();        break;
+    case IDC_CMD_SOURCE: m_pApp->ToggleSourceView();  break;
     case IDC_CMD_UNDO:    m_pApp->UndoAction();       break;
     case IDC_CMD_REDO:    m_pApp->RedoAction();       break;
     case IDC_CMD_ASSOC_MD:    m_pApp->ToggleMdAssociation();         break;

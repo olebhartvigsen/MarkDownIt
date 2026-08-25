@@ -372,6 +372,18 @@
         <Image Source="icons/redo_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
+    <Command Name="cmdViewSource" Symbol="IDC_CMD_SOURCE" Id="10702">
+      <Command.LabelTitle>
+        <String>View Source</String>
+      </Command.LabelTitle>
+      <Command.LargeImages>
+        <Image Source="icons/code_32.png" MinDPI="96"/>
+        <Image Source="icons/code_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/code_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
   </Application.Commands>
   <Application.Views>
     <Ribbon>
@@ -400,10 +412,11 @@
             <Button CommandName="cmdReload" />
             <Button CommandName="cmdSave" />
           </Group>
-          <Group CommandName="cmdGroupEdit" SizeDefinition="ThreeButtons">
+          <Group CommandName="cmdGroupEdit" SizeDefinition="FourButtons">
             <Button CommandName="cmdUndo" />
             <Button CommandName="cmdRedo" />
             <ToggleButton CommandName="cmdEditToggle" />
+            <ToggleButton CommandName="cmdViewSource" />
           </Group>
           <Group CommandName="cmdGroupFormat" SizeDefinition="SixButtons">
             <ToggleButton CommandName="cmdBold" />
