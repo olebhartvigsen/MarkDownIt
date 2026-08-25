@@ -1387,6 +1387,16 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         bl.y = textY;
         bl.width = textW > 0 ? textW : contentWidth;
         bl.height = tm.height;
+        // Extend the block's y range to cover the full viewport so
+        // that margin clicks at any visible y find this block even
+        // when the text is shorter than the viewport.
+        D2D1_SIZE_F rtSize = rt->GetSize();
+        float viewportH = rtSize.height;
+        if (bl.height < viewportH) bl.height = viewportH + m.padTop;
+        // Extend x range to cover from the content area origin so
+        // that clicks in the cellPadX gutter also hit the block.
+        bl.x = originX;
+        bl.width = contentWidth;
         bl.srcOffset = 0;
         bl.srcLength = static_cast<uint32_t>(src.size());
         bl.textStartOffset = 0;
