@@ -905,6 +905,46 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
         return;
     }
 
+    // Triple-click detection: if this click follows a double-click
+    // within the system double-click time and at roughly the same
+    // y position, treat it as a triple-click that selects the full
+    // paragraph/block containing the clicked position.
+    DWORD now = GetTickCount();
+    DWORD dblClickTime = GetDoubleClickTime();
+    if (click_count_ >= 2 &&
+        (now - last_click_time_) <= dblClickTime &&
+        abs(y - last_click_y_) < 5) {
+        click_count_ = 0;  // reset
+        // Triple-click: select the full block/paragraph.
+        int blkIdx = layout_cache_.FindBlockAtY(docY);
+        if (blkIdx < 0) {
+            // Try via the offset.
+            uint32_t off = layout_cache_.PointToOffset(docX, docY);
+            if (off != UINT32_MAX)
+                blkIdx = layout_cache_.BlockForOffset(off);
+        }
+        if (blkIdx >= 0) {
+            const auto& blocks = layout_cache_.Blocks();
+            const auto& bl = blocks[blkIdx];
+            sel_.anchor = {bl.srcOffset};
+            sel_.active = {bl.srcOffset + bl.srcLength};
+            margin_selecting_ = false;
+            if (editing_) UpdateCaretPosition();
+            Repaint();
+            return;
+        }
+    }
+    // Track click count for triple-click detection.
+    if (click_count_ >= 2 ||
+        (now - last_click_time_) > dblClickTime ||
+        abs(y - last_click_y_) >= 5) {
+        click_count_ = 1;
+    } else {
+        click_count_++;
+    }
+    last_click_time_ = now;
+    last_click_y_ = y;
+
     // Link click handling: clicking a link opens it in both view and
     // edit mode. In edit mode, if the click is NOT on a link, the
     // caret is placed as usual.
@@ -974,6 +1014,10 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
 void AppWindow::OnLButtonDblClk(HWND hwnd, int x, int y) {
     SetFocus(hwnd);
     if (welcome_mode_) return;  // single-click handles welcome screen clicks
+    // Track for triple-click: double-click counts as the 2nd click.
+    click_count_ = std::max(click_count_, 2);
+    last_click_time_ = GetTickCount();
+    last_click_y_ = y;
     float scale = 96.0f / static_cast<float>(dpi_);
     float docX = static_cast<float>(x) * scale;
     float docY = static_cast<float>(y) * scale + scrollY_;

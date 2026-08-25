@@ -173,6 +173,10 @@ private:
     int          caret_height_ = 0;   // current caret height in px (for resize on font change)
     bool         editing_ = false;
     bool         source_view_ = false;  // raw markdown source view
+    // Triple-click detection: last click time and y position.
+    DWORD        last_click_time_ = 0;
+    int          last_click_y_ = -1;
+    int          click_count_ = 0;
     bool         has_focus_ = false;
     EditController  editor_;
     UndoStack       undo_stack_;
