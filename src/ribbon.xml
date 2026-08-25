@@ -400,9 +400,10 @@
             <Button CommandName="cmdReload" />
             <Button CommandName="cmdSave" />
           </Group>
-          <Group CommandName="cmdGroupEdit" SizeDefinition="TwoButtons">
+          <Group CommandName="cmdGroupEdit" SizeDefinition="ThreeButtons">
             <Button CommandName="cmdUndo" />
             <Button CommandName="cmdRedo" />
+            <ToggleButton CommandName="cmdEditToggle" />
           </Group>
           <Group CommandName="cmdGroupFormat" SizeDefinition="SixButtons">
             <ToggleButton CommandName="cmdBold" />
@@ -412,14 +413,13 @@
             <Button CommandName="cmdLink" />
             <Button CommandName="cmdClearFormat" />
           </Group>
-          <Group CommandName="cmdGroupParagraph" SizeDefinition="SevenButtons">
+          <Group CommandName="cmdGroupParagraph" SizeDefinition="SixButtons">
             <ToggleButton CommandName="cmdHeading1" />
             <ToggleButton CommandName="cmdHeading2" />
             <ToggleButton CommandName="cmdHeading3" />
             <ToggleButton CommandName="cmdBullets" />
             <ToggleButton CommandName="cmdNumbering" />
             <ToggleButton CommandName="cmdQuote" />
-            <ToggleButton CommandName="cmdEditToggle" />
           </Group>
           <Group CommandName="cmdGroupView" SizeDefinition="ThreeButtons">
             <ToggleButton CommandName="cmdWrap" />
