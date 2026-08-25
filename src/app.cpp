@@ -694,6 +694,111 @@ void AppWindow::UpdateCaretPosition() {
     }
 }
 
+std::string AppWindow::FindLinkAtOffset(uint32_t offset) const {
+    // Search all nodes for an InlineBlock with kind == Link whose source
+    // range [srcOffset, srcOffset + srcLength) contains the offset.
+    for (const auto& n : doc_.nodes) {
+        for (const auto& ib : n.children) {
+            if (ib.kind != InlineKind::Link) continue;
+            uint32_t start = ib.srcOffset;
+            uint32_t end = ib.srcOffset + ib.srcLength;
+            if (offset >= start && offset < end) {
+                return ib.url;
+            }
+        }
+    }
+    return {};
+}
+
+void AppWindow::OpenLink(const std::string& url) {
+    if (url.empty()) return;
+
+    // Internal anchor link: #section or #heading-text
+    if (url[0] == '#') {
+        std::string anchor = url.substr(1);
+        // Convert anchor to lowercase and replace spaces with hyphens
+        // (GitHub-style heading anchors).
+        for (char& c : anchor) {
+            if (c >= 'A' && c <= 'Z') c = c - 'A' + 'a';
+            if (c == ' ') c = '-';
+        }
+        // Search all heading nodes for a matching anchor.
+        for (const auto& n : doc_.nodes) {
+            if (n.block != BlockKind::Heading) continue;
+            // Build the heading's anchor from its text.
+            std::string text8;
+            for (const auto& ib : n.children) {
+                for (char32_t cp : ib.text) {
+                    if (cp <= 0x7F) {
+                        text8 += static_cast<char>(cp);
+                    } else {
+                        // Skip non-ASCII for simple matching.
+                    }
+                }
+            }
+            // Normalize heading text: lowercase, replace spaces with -.
+            std::string headingAnchor;
+            for (char c : text8) {
+                if (c >= 'A' && c <= 'Z') headingAnchor += c - 'A' + 'a';
+                else if (c == ' ') headingAnchor += '-';
+                else headingAnchor += c;
+            }
+            if (headingAnchor == anchor) {
+                // Scroll to this heading's position.
+                int blkIdx = layout_cache_.BlockForOffset(n.srcOffset);
+                if (blkIdx >= 0) {
+                    const auto& blocks = layout_cache_.Blocks();
+                    float targetY = blocks[blkIdx].y;
+                    StartSpring(targetY - 50.0f);
+                }
+                return;
+            }
+        }
+        return;
+    }
+
+    // External link: open in default browser via ShellExecuteW.
+    // Convert UTF-8 URL to UTF-16.
+    std::wstring wideUrl;
+    for (size_t i = 0; i < url.size(); ) {
+        unsigned char c = static_cast<unsigned char>(url[i]);
+        if (c < 0x80) {
+            wideUrl += static_cast<wchar_t>(c);
+            i += 1;
+        } else if (c < 0xC0) {
+            i += 1;  // continuation byte, skip
+        } else if (c < 0xE0) {
+            if (i + 1 < url.size()) {
+                wchar_t ch = ((c & 0x1F) << 6) |
+                    (static_cast<unsigned char>(url[i+1]) & 0x3F);
+                wideUrl += ch;
+                i += 2;
+            } else { i += 1; }
+        } else if (c < 0xF0) {
+            if (i + 2 < url.size()) {
+                uint32_t cp = ((c & 0x0F) << 12) |
+                    ((static_cast<unsigned char>(url[i+1]) & 0x3F) << 6) |
+                    (static_cast<unsigned char>(url[i+2]) & 0x3F);
+                wideUrl += static_cast<wchar_t>(cp);
+                i += 3;
+            } else { i += 1; }
+        } else {
+            if (i + 3 < url.size()) {
+                uint32_t cp = ((c & 0x07) << 18) |
+                    ((static_cast<unsigned char>(url[i+1]) & 0x3F) << 12) |
+                    ((static_cast<unsigned char>(url[i+2]) & 0x3F) << 6) |
+                    (static_cast<unsigned char>(url[i+3]) & 0x3F);
+                // Surrogate pair
+                cp -= 0x10000;
+                wideUrl += static_cast<wchar_t>(0xD800 + (cp >> 10));
+                wideUrl += static_cast<wchar_t>(0xDC00 + (cp & 0x3FF));
+                i += 4;
+            } else { i += 1; }
+        }
+    }
+    ShellExecuteW(hwnd_, L"open", wideUrl.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
 void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     SetFocus(hwnd);
 
@@ -717,6 +822,21 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     float scale = 96.0f / static_cast<float>(dpi_);
     float docX = static_cast<float>(x) * scale;
     float docY = static_cast<float>(y) * scale + scrollY_;
+
+    // Link click handling: in view mode, clicking a link opens it.
+    // In edit mode, Ctrl+click opens a link (plain click places the
+    // caret for editing).
+    bool tryLink = !editing_ || (GetKeyState(VK_CONTROL) & 0x8000);
+    if (tryLink) {
+        uint32_t linkOffset = layout_cache_.PointToOffset(docX, docY);
+        if (linkOffset != UINT32_MAX) {
+            std::string url = FindLinkAtOffset(linkOffset);
+            if (!url.empty()) {
+                OpenLink(url);
+                return;
+            }
+        }
+    }
 
     // Check if the click is in the left margin (no text block hit at x).
     // If so, select the visual line at that y position (like Word).

@@ -229,6 +229,14 @@ private:
     void OnLButtonUp(HWND hwnd);
     void OnSetFocus(HWND hwnd);
     void OnKillFocus(HWND hwnd);
+
+    // Find the URL of a link at the given source offset, if any.
+    // Returns empty string if no link is at that offset.
+    std::string FindLinkAtOffset(uint32_t offset) const;
+    // Open a URL in the default browser (external links) or scroll
+    // to an internal anchor (#section).
+    void OpenLink(const std::string& url);
+
     void OnChar(HWND hwnd, wchar_t ch);
     void InitEditor();
     void OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp);
