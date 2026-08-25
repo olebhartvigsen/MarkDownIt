@@ -346,6 +346,25 @@ float Renderer::MeasureTable(IDWriteFactory* dw, const Node& n,
                 static_cast<UINT32>(text16.size()),
                 body_fmt_, colW - 2.0f * m.cellPadX, 1.0e9f, &layout);
             if (SUCCEEDED(hr) && layout) {
+                // Apply inline formatting for accurate height (code
+                // spans use a wider monospace font that wraps more).
+                if (row.cells[c].isHeader) {
+                    DWRITE_TEXT_RANGE r = {0,
+                        static_cast<UINT32>(text16.size())};
+                    layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, r);
+                }
+                for (const auto& sp : row.cells[c].inlineSpans) {
+                    DWRITE_TEXT_RANGE r = {sp.u16Start,
+                        sp.u16End - sp.u16Start};
+                    if (sp.bold)
+                        layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, r);
+                    if (sp.italic)
+                        layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, r);
+                    if (sp.code)
+                        layout->SetFontFamilyName(L"Consolas", r);
+                    if (sp.strike)
+                        layout->SetStrikethrough(true, r);
+                }
                 DWRITE_TEXT_METRICS tm = {};
                 layout->GetMetrics(&tm);
                 if (tm.height > rowH) rowH = tm.height;
@@ -406,6 +425,26 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 static_cast<UINT32>(text16.size()),
                 body_fmt_, colW - 2.0f * m.cellPadX, 1.0e9f, &layout);
             if (SUCCEEDED(hr) && layout) {
+                // Apply the same inline formatting as the draw pass,
+                // because code spans use a wider monospace font that
+                // may wrap differently and need more vertical space.
+                if (row.cells[c].isHeader) {
+                    DWRITE_TEXT_RANGE r = {0,
+                        static_cast<UINT32>(text16.size())};
+                    layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, r);
+                }
+                for (const auto& sp : row.cells[c].inlineSpans) {
+                    DWRITE_TEXT_RANGE r = {sp.u16Start,
+                        sp.u16End - sp.u16Start};
+                    if (sp.bold)
+                        layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, r);
+                    if (sp.italic)
+                        layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, r);
+                    if (sp.code)
+                        layout->SetFontFamilyName(L"Consolas", r);
+                    if (sp.strike)
+                        layout->SetStrikethrough(true, r);
+                }
                 DWRITE_TEXT_METRICS tm = {};
                 layout->GetMetrics(&tm);
                 if (tm.height > rowH) rowH = tm.height;
