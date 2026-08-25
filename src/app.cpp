@@ -303,8 +303,9 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             vk == VK_HOME || vk == VK_END ||
             vk == VK_PRIOR || vk == VK_NEXT);
         bool isCopy = (ctrl && vk == 0x43);  // Ctrl+C
+        bool isSelectAll = (ctrl && vk == 0x41);  // Ctrl+A
         // Shift+navigation is allowed (extends selection for copy).
-        if (!isNavigation && !isCopy && !shift) return;
+        if (!isNavigation && !isCopy && !isSelectAll && !shift) return;
     }
 
     switch (vk) {
@@ -486,6 +487,11 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 ToggleInlineMarker(&buffer_, &sel_, "**", &undo_stack_);
                 editor_.BreakUndoCoalesce();
                 OnBufferChanged();
+            }
+            break;
+        case 0x41:  // Ctrl+A = select all
+            if (ctrl && !shift) {
+                SelectAll();
             }
             break;
         case 0x49:  // Ctrl+I = italic
