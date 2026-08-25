@@ -56,7 +56,7 @@ private:
     IDWriteTextFormat* body_fmt_ = nullptr;
     IDWriteTextFormat* code_fmt_ = nullptr;      // monospace for code blocks
     IDWriteTextFormat* heading_fmt_[7] = {};
-    float zoom_ = 1.0f;
+    float zoom_ = 0.8f;  // default: one zoom-out step smaller
     bool wrapEnabled_ = true;
     int  contentWidthMode_ = 0;  // 0=Standard(800), 1=960, 2=1600, 3=Full
     LayoutCache* cache_ = nullptr;
