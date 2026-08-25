@@ -637,10 +637,7 @@ void AppWindow::ScheduleReparse() {
 
 void AppWindow::ToggleSourceView() {
     source_view_ = !source_view_;
-    // Source view implies edit mode (editable source).
-    if (source_view_ && !editing_) {
-        SetEdit(true);
-    }
+    // Keep the current edit state — source view does not force edit mode.
     // Invalidate the ribbon toggle state.
     if (g_pRibbonFramework) {
         g_pRibbonFramework->InvalidateUICommand(IDC_CMD_SOURCE,
