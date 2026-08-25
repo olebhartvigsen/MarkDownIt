@@ -859,6 +859,12 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     float docX = static_cast<float>(x) * scale;
     float docY = static_cast<float>(y) * scale + scrollY_;
 
+    // Ensure the layout cache is populated. The cache may be empty
+    // if OnBufferChanged cleared it and WM_PAINT hasn't fired yet.
+    if (layout_cache_.Blocks().empty()) {
+        ForceRepaintNow();
+    }
+
     bool shiftDown = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
 
     // Shift+click: extend the current selection to the clicked position.
@@ -1073,6 +1079,11 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
     float scale = 96.0f / static_cast<float>(dpi_);
     float docX = static_cast<float>(x) * scale;
     float docY = static_cast<float>(y) * scale + scrollY_;
+
+    // Ensure the layout cache is populated during drag operations.
+    if (layout_cache_.Blocks().empty()) {
+        ForceRepaintNow();
+    }
 
     if (margin_selecting_ && margin_anchor_block_ >= 0) {
         // Extending a margin selection by visual lines.
