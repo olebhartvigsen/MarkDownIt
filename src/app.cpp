@@ -853,6 +853,58 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     float docX = static_cast<float>(x) * scale;
     float docY = static_cast<float>(y) * scale + scrollY_;
 
+    bool shiftDown = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+
+    // Shift+click: extend the current selection to the clicked position.
+    // The anchor stays where it is; only the active end moves. This
+    // works for text clicks, margin clicks, and empty-space clicks.
+    // Link-click behavior is suppressed when Shift is held.
+    if (shiftDown) {
+        // First, try to get a text offset at the click position.
+        uint32_t offset = layout_cache_.PointToOffset(docX, docY);
+        if (offset != UINT32_MAX) {
+            // Shift+click on text: extend selection to this offset.
+            margin_selecting_ = false;
+            sel_.active = {offset};
+        } else {
+            // Shift+click in the margin: extend selection to the
+            // entire visual line at this y position.
+            int blkIdx = layout_cache_.FindBlockAtY(docY);
+            if (blkIdx >= 0) {
+                uint32_t lineStart = 0, lineEnd = 0;
+                float lineTopRel = 0.0f;
+                bool gotLine = layout_cache_.GetLineRangeAtY(
+                    blkIdx, docY, &lineStart, &lineEnd, &lineTopRel);
+                if (gotLine) {
+                    // Extend the selection to include this line.
+                    // If the anchor is before the line, extend active
+                    // to lineEnd; if after, extend to lineStart.
+                    uint32_t anchorOff = sel_.anchor.offset;
+                    if (anchorOff <= lineStart) {
+                        sel_.active = {lineEnd};
+                    } else {
+                        sel_.active = {lineStart};
+                    }
+                } else {
+                    const auto& blocks = layout_cache_.Blocks();
+                    const auto& bl = blocks[blkIdx];
+                    uint32_t anchorOff = sel_.anchor.offset;
+                    if (anchorOff <= bl.srcOffset) {
+                        sel_.active = {bl.srcOffset + bl.srcLength};
+                    } else {
+                        sel_.active = {bl.srcOffset};
+                    }
+                }
+            } else {
+                // Shift+click in empty space: snap to nearest end.
+                sel_.active = {sel_.active.offset};
+            }
+        }
+        if (editing_) UpdateCaretPosition();
+        Repaint();
+        return;
+    }
+
     // Link click handling: clicking a link opens it in both view and
     // edit mode. In edit mode, if the click is NOT on a link, the
     // caret is placed as usual.
