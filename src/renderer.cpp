@@ -1304,7 +1304,7 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     DWRITE_TEXT_METRICS tm = {};
     layout->GetMetrics(&tm);
 
-    // Clip to the content area.
+    // Clip to the content area (document coordinates; transform handles scrollY).
     D2D1_RECT_F clipRect = D2D1::RectF(
         originX, textY, originX + contentWidth, textY + tm.height + 50.0f);
     rt->PushAxisAlignedClip(clipRect, D2D1_ANTIALIAS_MODE_ALIASED);
@@ -1318,43 +1318,49 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     ID2D1SolidColorBrush* selBrush = nullptr;
     rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
 
-    float drawStartY = textY - scrollY;
-
-    // Draw selection highlight.
-    if (selBrush && sel && !sel->Empty()) {
-        uint32_t selStart = sel->Start();
-        uint32_t selEnd = selStart + sel->Length();
-        // Convert UTF-8 offsets to UTF-16 positions.
-        UINT32 u16Start = 0, u16End = 0;
-        uint32_t byteIdx = 0;
-        size_t u16Idx = 0;
-        size_t srcIdx = 0;
-        while (srcIdx < src.size() && u16Idx < text16.size()) {
-            unsigned char c = static_cast<unsigned char>(src[srcIdx]);
+    // Draw selection highlight behind the text.
+    // Build u16ToSrc mapping first (needed for binary search).
+    std::vector<uint32_t> u16ToSrcMap;
+    {
+        uint32_t bi = 0;
+        for (size_t si = 0; si < src.size(); ) {
+            unsigned char c = static_cast<unsigned char>(src[si]);
             int utf8Len = (c < 0x80) ? 1 : (c < 0xC0) ? 1 :
                           (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
             int utf16Len = (c < 0x80) ? 1 : (c < 0xE0) ? 1 :
                            (c < 0xF0) ? 1 : 2;
-            if (byteIdx >= selStart && u16Start == 0 && byteIdx >= selStart) {
-                // Found selection start
+            for (int u = 0; u < utf16Len; ++u) {
+                u16ToSrcMap.push_back(bi);
             }
-            if (byteIdx >= selStart && u16Start == 0) {
-                u16Start = static_cast<UINT32>(u16Idx);
-            }
-            byteIdx += utf8Len;
-            srcIdx += utf8Len;
-            u16Idx += utf16Len;
-            if (byteIdx >= selEnd && u16End == 0) {
-                u16End = static_cast<UINT32>(u16Idx);
-            }
+            bi += utf8Len;
+            si += utf8Len;
         }
-        if (u16End == 0) u16End = static_cast<UINT32>(text16.size());
+    }
+    if (selBrush && sel && !sel->Empty() && !u16ToSrcMap.empty()) {
+        uint32_t selStart = sel->Start();
+        uint32_t selEnd = selStart + sel->Length();
+        // Binary search: find first u16 index where u16ToSrc[idx] >= srcOff.
+        auto findU16 = [&](uint32_t srcOff) -> UINT32 {
+            if (srcOff <= u16ToSrcMap[0]) return 0;
+            size_t lo = 0, hi = u16ToSrcMap.size();
+            while (lo < hi) {
+                size_t mid = (lo + hi) / 2;
+                if (u16ToSrcMap[mid] < srcOff) lo = mid + 1;
+                else hi = mid;
+            }
+            return (lo < u16ToSrcMap.size()) ?
+                static_cast<UINT32>(lo) :
+                static_cast<UINT32>(text16.size());
+        };
+        UINT32 u16Start = findU16(selStart);
+        UINT32 u16End = (selEnd >= static_cast<uint32_t>(src.size())) ?
+            static_cast<UINT32>(text16.size()) : findU16(selEnd);
         if (u16End > u16Start) {
-            DWRITE_HIT_TEST_METRICS htm[64];
             UINT32 hitCount = 0;
+            DWRITE_HIT_TEST_METRICS htm[64];
             HRESULT hrHit = layout->HitTestTextRange(
                 u16Start, u16End - u16Start,
-                textX, drawStartY,
+                textX, textY,
                 htm, 64, &hitCount);
             if (SUCCEEDED(hrHit)) {
                 for (UINT32 h = 0; h < hitCount && h < 64; ++h) {
@@ -1368,7 +1374,8 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
     }
 
-    rt->DrawTextLayout(D2D1::Point2F(textX, drawStartY),
+    // Draw the text in document coordinates (transform handles scrollY).
+    rt->DrawTextLayout(D2D1::Point2F(textX, textY),
                        layout, textBrush,
                        D2D1_DRAW_TEXT_OPTIONS_CLIP);
 
