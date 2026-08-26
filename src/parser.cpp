@@ -483,7 +483,7 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
         // permissive URL autolinks), emit them into the cell text and
         // the u16ToSrc mapping so the rendered text matches the source.
         if (ctx->cur_cell_obj && thisOff > ctx->cur_cell_last_end) {
-            for (uint32_t g = ctx->cur_cell_last_end; g < thisOff; ++g) {
+            for (uint32_t g = ctx->cur_cell_last_end; g < thisOff; ) {
                 if (g < ctx->inputSize) {
                     unsigned char gb = static_cast<unsigned char>(ctx->input[g]);
                     int gUtf8Len, gUtf16Len;
@@ -494,12 +494,16 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
                     else { gUtf8Len = 1; gUtf16Len = 1; }
                     for (int u = 0; u < gUtf16Len; u++)
                         ctx->cur_cell_obj->u16ToSrc.push_back(g);
-                    // Decode the gap character(s) into cell.text too.
+                    // Decode the gap character(s) into cell text too.
                     std::u32string gap32;
                     Utf8Decoder gd;
                     gd.decode(ctx->input + g, gUtf8Len, gap32);
                     *ctx->cur_cell += gap32;
                 }
+                // Advance by the full sequence length. Stepping one byte
+                // at a time turned continuation bytes into bogus code
+                // points and desynced u16ToSrc from inlineSpans.
+                g += static_cast<uint32_t>(gUtf8Len);
             }
         }
         // Build u16ToSrc mapping: for each decoded codepoint, record

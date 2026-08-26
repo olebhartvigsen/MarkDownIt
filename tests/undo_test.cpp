@@ -157,3 +157,20 @@ TEST(UndoStack, CoalesceConsecutiveBackwardDeletes) {
     ASSERT_TRUE(s.Undo(out));
     EXPECT_EQ(out.removed, "abc");
 }
+TEST(UndoStack, CoalesceConsecutiveForwardDeletes) {
+    UndoStack s;
+    // Forward deletes at the same offset: delete "a", then "b", then "c".
+    for (int i = 0; i < 3; i++) {
+        UndoEntry e{};
+        e.offset = 0;
+        e.removed = std::string(1, 'a' + i);
+        e.timestamp = T(100 + i * 10);
+        e.type = EditType::Delete;
+        e.selAfter = {CaretPos{0}};
+        s.Push(e);
+    }
+
+    UndoEntry out;
+    ASSERT_TRUE(s.Undo(out));
+    EXPECT_EQ(out.removed, "abc");
+}

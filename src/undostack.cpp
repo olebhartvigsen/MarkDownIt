@@ -16,9 +16,16 @@ void UndoStack::Push(const UndoEntry& entry) {
             if (entry.type == EditType::Insert) {
                 prev.inserted += entry.inserted;
             } else if (entry.type == EditType::Delete) {
-                // For backward deletes, prepend the removed text.
-                prev.removed = entry.removed + prev.removed;
-                prev.offset = entry.offset;
+                // Backward deletes: removed text extends to the left,
+                // so prepend and move the entry start backward.
+                if (entry.offset < prev.offset) {
+                    prev.removed = entry.removed + prev.removed;
+                    prev.offset = entry.offset;
+                } else {
+                    // Forward deletes: caret stationary, removed text
+                    // extends to the right, so append.
+                    prev.removed = prev.removed + entry.removed;
+                }
             }
             prev.selAfter = entry.selAfter;
             prev.timestamp = entry.timestamp;
@@ -49,10 +56,14 @@ bool UndoStack::ShouldCoalesce(const UndoEntry& prev, const UndoEntry& next) con
         return true;
     }
     if (prev.type == EditType::Delete) {
-        // Contiguous backward deletes: next offset is before prev offset.
-        if (next.offset + static_cast<uint32_t>(next.removed.size()) != prev.offset)
-            return false;
-        return true;
+        // Backward deletes: next offset is before prev offset.
+        if (next.offset + static_cast<uint32_t>(next.removed.size()) == prev.offset)
+            return true;
+        // Forward deletes: caret stationary, removed text extends the
+        // previous entry (Delete key runs should group like typing).
+        if (next.offset == prev.offset)
+            return true;
+        return false;
     }
     return false;
 }
