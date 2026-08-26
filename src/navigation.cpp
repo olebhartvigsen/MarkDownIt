@@ -142,8 +142,20 @@ uint32_t MoveVertical(const LayoutCache& lc, uint32_t offset,
     float targetY = y;
     for (int step = 1; step <= 12; ++step) {
         targetY += static_cast<float>(direction) * lineHeight;
-        newOffset = lc.PointToOffset(*desiredX, targetY);
-        if (newOffset != UINT32_MAX) break;
+        uint32_t cand = lc.PointToOffset(*desiredX, targetY);
+        if (cand == UINT32_MAX) continue;
+        // Reject hits that are still on the current visual line. A
+        // tall block (H1-H3 use much larger fonts than body text)
+        // makes one generic lineHeight step land back inside the
+        // same block; moving must actually leave the current line.
+        float cx, cy, ch;
+        if (!lc.OffsetToCaretRect(cand, &cx, &cy, &ch)) continue;
+        bool movedPast = (direction < 0)
+            ? (cy < y - h * 0.5f)
+            : (cy > y + h * 0.5f);
+        if (!movedPast) continue;
+        newOffset = cand;
+        break;
     }
     // No block found in that direction: clamp to doc start/end so the
     // caret still moves to the first/last line of the document.
