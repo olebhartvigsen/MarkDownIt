@@ -147,13 +147,6 @@
       <Command.TooltipDescription>
         <String>Insert a markdown table with chosen rows and columns</String>
       </Command.TooltipDescription>
-      <Command.LargeImages>
-        <Image Source="icons/table_32.png" MinDPI="96"/>
-        <Image Source="icons/table_64.png" MinDPI="192"/>
-      </Command.LargeImages>
-      <Command.SmallImages>
-        <Image Source="icons/table_16.png" MinDPI="96"/>
-      </Command.SmallImages>
     </Command>
     <Command Name="cmdTableTools" Symbol="IDC_CMD_TABLE_TOOLS" Id="10211">
       <Command.LabelTitle>
