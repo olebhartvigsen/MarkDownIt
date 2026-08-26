@@ -420,6 +420,19 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             if (rt_) page = rt_->GetSize().height;
             else page = static_cast<float>(clientH_);
             StartSpring(scrollY_ + page);
+            if (editing_) {
+                // Move the caret to the top of the newly visible area,
+                // like standard editors do.
+                uint32_t newOff = layout_cache_.PointToOffset(
+                    desiredX_ >= 0 ? desiredX_ : 100.0f, scrollY_ + 20.0f);
+                if (newOff == UINT32_MAX)
+                    newOff = layout_cache_.PointToOffset(100.0f, scrollY_ + 20.0f);
+                if (newOff != UINT32_MAX) {
+                    if (shift) sel_.active = {newOff};
+                    else sel_.Collapse({newOff});
+                    UpdateCaretPosition();
+                }
+            }
             break;
         }
         case VK_PRIOR: {  // Page Up
@@ -427,6 +440,18 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             if (rt_) page = rt_->GetSize().height;
             else page = static_cast<float>(clientH_);
             StartSpring(scrollY_ - page);
+            if (editing_) {
+                // Caret to the bottom of the newly visible area.
+                uint32_t newOff = layout_cache_.PointToOffset(
+                    desiredX_ >= 0 ? desiredX_ : 100.0f, scrollY_ - 20.0f);
+                if (newOff == UINT32_MAX)
+                    newOff = layout_cache_.PointToOffset(100.0f, scrollY_ - 20.0f);
+                if (newOff != UINT32_MAX) {
+                    if (shift) sel_.active = {newOff};
+                    else sel_.Collapse({newOff});
+                    UpdateCaretPosition();
+                }
+            }
             break;
         }
         case VK_F5:
@@ -659,6 +684,7 @@ void AppWindow::ToggleSourceView() {
     StopScrollAnimation();
     layout_cache_.Clear();
     ForceRepaintNow();
+    if (hwnd_content_) SetFocus(hwnd_content_);
 }
 
 void AppWindow::OnReparseTimer() {
@@ -2058,6 +2084,10 @@ void AppWindow::SetEdit(bool on) {
         caret_visible_ = false;
         caret_height_ = 0;
     }
+    // A ribbon button click steals focus to the ribbon; keyboard input
+    // (arrows, PgUp/PgDn, typing) would then go to the ribbon instead
+    // of the document. Always return focus to the content window.
+    if (hwnd_content_) SetFocus(hwnd_content_);
     // Invalidate the Edit toggle and all format buttons so the ribbon
     // re-queries their pressed and enabled state.
     if (g_pRibbonFramework) {
