@@ -2885,23 +2885,24 @@ void AppWindow::SpliceWithUndo(uint32_t offset, uint32_t length,
 // Build an in-memory dialog template for the Insert Table dialog.
 // Two edit controls: rows and columns, plus OK/Cancel buttons.
 static std::vector<BYTE> BuildTableDialogTemplate() {
-    auto align = [](std::vector<BYTE>& buf) {
-        while (buf.size() % 4 != 0) buf.push_back(0);
+    std::vector<BYTE> buf;
+    auto align = [&buf](std::vector<BYTE>& b) {
+        while (b.size() % 4 != 0) b.push_back(0);
     };
-    auto pushStr = [](std::vector<BYTE>& buf, const wchar_t* s) {
+    auto pushStr = [&buf](std::vector<BYTE>& b, const wchar_t* s) {
         while (*s) {
-            buf.push_back(static_cast<BYTE>(*s & 0xFF));
-            buf.push_back(static_cast<BYTE>(*s >> 8));
+            b.push_back(static_cast<BYTE>(*s & 0xFF));
+            b.push_back(static_cast<BYTE>(*s >> 8));
             s++;
         }
-        buf.push_back(0); buf.push_back(0);
+        b.push_back(0); b.push_back(0);
     };
-    auto pushDWORD = [](std::vector<BYTE>& buf, DWORD v) {
-        buf.push_back(v & 0xFF); buf.push_back((v>>8)&0xFF);
-        buf.push_back((v>>16)&0xFF); buf.push_back((v>>24)&0xFF);
+    auto pushDWORD = [&buf](std::vector<BYTE>& b, DWORD v) {
+        b.push_back(v & 0xFF); b.push_back((v>>8)&0xFF);
+        b.push_back((v>>16)&0xFF); b.push_back((v>>24)&0xFF);
     };
-    auto pushWORD = [](std::vector<BYTE>& buf, WORD v) {
-        buf.push_back(v & 0xFF); buf.push_back(v >> 8);
+    auto pushWORD = [&buf](std::vector<BYTE>& b, WORD v) {
+        b.push_back(v & 0xFF); b.push_back(v >> 8);
     };
     auto pushItem = [&](DWORD style, short x, short y, short cx, short cy,
                         WORD id, WORD atom, const wchar_t* title) {
@@ -2919,7 +2920,6 @@ static std::vector<BYTE> BuildTableDialogTemplate() {
         align(buf);
     };
 
-    std::vector<BYTE> buf;
     DWORD style = WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
                 | DS_MODALFRAME | DS_SETFONT;
     pushDWORD(buf, style);
