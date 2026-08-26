@@ -220,6 +220,11 @@ void ToggleCodeBlock(TextBuffer* buf, Selection* sel, UndoStack* undo) {
         if (openEnd < text.size() && text[openEnd] == '\n') openEnd++;
         std::string openRemoved = text.substr(fenceLineStart, openEnd - fenceLineStart);
 
+        // Snapshot the content between the fences BEFORE any splice:
+        // `text` is a live reference to the buffer and both splices
+        // below mutate it, making the old offsets read garbage.
+        std::string contentBetween = text.substr(openEnd, closeFenceStart - openEnd);
+
         // Splice out closing fence first (so opening fence offset is unaffected).
         buf->Splice(closeFenceStart, closeEnd - closeFenceStart, "");
         // Now splice out opening fence.
@@ -241,10 +246,9 @@ void ToggleCodeBlock(TextBuffer* buf, Selection* sel, UndoStack* undo) {
         if (undo) {
             UndoEntry entry{};
             entry.offset = fenceLineStart;
-            entry.removed = openRemoved + text.substr(openEnd, closeFenceStart - openEnd) + closeRemoved;
+            entry.removed = openRemoved + contentBetween + closeRemoved;
             // Recompute inserted: the content remains, fences are removed.
-            // The content is text between openEnd and closeFenceStart.
-            entry.inserted = text.substr(openEnd, closeFenceStart - openEnd);
+            entry.inserted = contentBetween;
             entry.selBefore = selBefore;
             entry.selAfter = *sel;
             entry.type = EditType::Other;
@@ -596,8 +600,11 @@ void ToggleOrderedList(TextBuffer* buf, Selection* sel, UndoStack* undo) {
 
     Selection selBefore = *sel;
     int itemNumber = 1;
-    // Process lines in REVERSE order.
-    for (int li = static_cast<int>(lineStarts.size()) - 1; li >= 0; --li) {
+    // Process lines in FORWARD order so item numbers ascend with the
+    // document. Splice offsets are absolute line starts, and since each
+    // splice only changes bytes at or after its own line start, later
+    // (larger) offsets remain valid as we walk forward.
+    for (size_t li = 0; li < lineStarts.size(); ++li) {
         uint32_t ls = lineStarts[li];
         const std::string& cur = buf->Text();
         std::string line = GetLine(cur, ls);

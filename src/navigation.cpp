@@ -65,7 +65,11 @@ uint32_t MoveRight(const TextBuffer& buf, uint32_t offset,
 
 static bool isWordChar(unsigned char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-           (c >= '0' && c <= '9') || c == '_';
+           (c >= '0' && c <= '9') || c == '_' ||
+           // Multi-byte UTF-8 sequences (æøå, CJK, etc.): treat the lead
+           // byte and all continuation bytes as word characters so
+           // word motion does not stop inside accented words.
+           c >= 0x80;
 }
 
 uint32_t MoveWordLeft(const TextBuffer& buf, uint32_t offset) {

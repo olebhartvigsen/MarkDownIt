@@ -564,11 +564,17 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 }
             }
             break;
-        case 0x5A:  // Ctrl+Z = undo, Ctrl+Y = redo
+        case 0x5A:  // Ctrl+Z = undo
             if (ctrl && !shift) {
                 editor_.Undo();
                 OnBufferChanged();
-            } else if ((ctrl && shift) || (ctrl && vk == 0x59)) {
+            } else if (ctrl && shift) {
+                editor_.Redo();
+                OnBufferChanged();
+            }
+            break;
+        case 0x59:  // Ctrl+Y = redo
+            if (ctrl) {
                 editor_.Redo();
                 OnBufferChanged();
             }
@@ -794,6 +800,16 @@ void AppWindow::OpenLink(const std::string& url) {
     }
 
     // External link: open in default browser via ShellExecuteW.
+    // Only allow http/https/mailto schemes; a crafted document could
+    // otherwise invoke arbitrary URI handlers (file:, search-ms:, ...).
+    std::string lowerUrl;
+    for (char c : url) lowerUrl += (c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c;
+    bool safeScheme =
+        lowerUrl.rfind("http://", 0) == 0 ||
+        lowerUrl.rfind("https://", 0) == 0 ||
+        lowerUrl.rfind("mailto:", 0) == 0;
+    if (!safeScheme) return;
+
     // Convert UTF-8 URL to UTF-16.
     std::wstring wideUrl;
     for (size_t i = 0; i < url.size(); ) {
@@ -1297,7 +1313,16 @@ void AppWindow::Reload() {
     if (!f.is_open()) return;
     std::stringstream ss;
     ss << f.rdbuf();
-    std::string utf8 = ss.str();
+    std::string raw = ss.str();
+
+    // Same load path as OpenFile: strip BOM and detect line endings,
+    // otherwise a saved reload writes a double BOM.
+    has_bom_ = (raw.size() >= 3 &&
+        (unsigned char)raw[0] == 0xEF &&
+        (unsigned char)raw[1] == 0xBB &&
+        (unsigned char)raw[2] == 0xBF);
+    std::string utf8 = has_bom_ ? raw.substr(3) : raw;
+    use_crlf_ = (utf8.find("\x0D\x0A") != std::string::npos);
 
     float savedY = scrollY_;
     doc_ = Document{};
@@ -1457,7 +1482,6 @@ void AppWindow::OnSize(HWND hwnd, int width, int height) {
 }
 
 void AppWindow::OnContentSize(HWND hwnd, int width, int height) {
-    clientW_ = width;
     clientH_ = height;
     if (rt_) {
         D2D1_SIZE_U size = D2D1::SizeU(
@@ -1591,7 +1615,6 @@ void AppWindow::BeginTrackpadScroll(float delta, DWORD now) {
     } else {
         momentum_vel_ = momentum_vel_ * 0.6f + actual * 0.4f;  // EMA
     }
-    last_trackpad_delta_ = delta;
 
     // Start the timer so it can detect when trackpad events stop
     // (→ transition to momentum when idle for >80ms).
@@ -1709,7 +1732,6 @@ void AppWindow::OnContentMouseWheel(HWND hwnd, int delta) {
     // A precision trackpad sends small deltas (1-30) in rapid succession.
     // Only use delta magnitude — timing alone catches fast mouse scrolling.
     bool isTrackpad = (std::abs(delta) < WHEEL_DELTA);
-    is_trackpad_ = isTrackpad;
 
     if (isTrackpad) {
         // ── Trackpad: 1:1 direct follow with velocity tracking ──
@@ -1762,15 +1784,6 @@ void AppWindow::UpdateDpi() {
         rt_->SetDpi(static_cast<float>(dpi_), static_cast<float>(dpi_));
     }
 }
-
-float AppWindow::DpW() const {
-    if (dpi_ == 0) return static_cast<float>(clientW_);
-    return static_cast<float>(clientW_) * 96.0f / static_cast<float>(dpi_);
-}
-
-float AppWindow::DpH() const {
-    if (dpi_ == 0) return static_cast<float>(clientH_);
-    return static_cast<float>(clientH_) * 96.0f / static_cast<float>(dpi_);
 }
 
 void AppWindow::OnContentPaint(HWND hwnd) {
@@ -1906,7 +1919,13 @@ bool AppWindow::DoSave(const std::wstring& path) {
         watcher_.Start(hwnd_, file_path_);
         return false;
     }
-    fwrite(out.data(), 1, out.size(), fp);
+    if (fwrite(out.data(), 1, out.size(), fp) != out.size()) {
+        // Partial write (disk full etc.): do not rename over the target.
+        fclose(fp);
+        DeleteFileW(tempPath.c_str());
+        watcher_.Start(hwnd_, file_path_);
+        return false;
+    }
     fflush(fp);
     fclose(fp);
 
@@ -2591,8 +2610,8 @@ static std::vector<BYTE> BuildLinkDialogTemplate() {
     buf.push_back((style>>16) & 0xFF); buf.push_back((style>>24) & 0xFF);
     // exStyle
     buf.push_back(0); buf.push_back(0); buf.push_back(0); buf.push_back(0);
-    // cdit = 4 (label + edit + OK + Cancel buttons)
-    buf.push_back(4); buf.push_back(0); buf.push_back(0); buf.push_back(0);
+    // cdit = 4 (label + edit + OK + Cancel buttons). WORD field.
+    buf.push_back(4); buf.push_back(0);
     // x, y, cx, cy (in dialog units)
     // cx=200, cy=80
     WORD cx = 200, cy = 80;
@@ -3008,6 +3027,9 @@ void AppWindow::ZoomIn() {
     if (z > 4.0f) z = 4.0f;
     renderer_.SetZoom(z);
     RecreateRenderer();
+    // Cached line metrics and hit-test rects were measured at the old
+    // zoom; clear them so caret/selection stay accurate.
+    layout_cache_.Clear();
     UpdateScrollInfo();
     Repaint();
 }
@@ -3018,6 +3040,7 @@ void AppWindow::ZoomOut() {
     if (z < 0.5f) z = 0.5f;
     renderer_.SetZoom(z);
     RecreateRenderer();
+    layout_cache_.Clear();
     UpdateScrollInfo();
     Repaint();
 }
@@ -3231,8 +3254,10 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_DPICHANGED: {
             UpdateDpi();
-            renderer_.Release();
-            EnsureRenderer();
+            // RecreateRenderer resets renderer_inited_ before re-init;
+            // EnsureRenderer alone would early-return and leave the
+            // renderer destroyed (blank content until a zoom change).
+            RecreateRenderer();
             RECT* rc = (RECT*)lp;
             SetWindowPos(hwnd, nullptr, rc->left, rc->top,
                 rc->right - rc->left, rc->bottom - rc->top,
@@ -3323,6 +3348,12 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_TIMER:
             if (wp == 4) {
                 OnScrollTick();
+            } else if (wp == 2) {
+                // Reparse debounce timer for large documents
+                // (armed by ScheduleReparse at >= 100 KB).
+                KillTimer(hwnd_content_, 2);
+                reparse_timer_ = 0;
+                OnReparseTimer();
             }
             return 0;
         case WM_USER + 1: {  // Deferred settings change (width, etc.)

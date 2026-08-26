@@ -408,6 +408,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (headerBg) headerBg->Release();
         if (altBg) altBg->Release();
         if (borderBrush) borderBrush->Release();
+        if (selBrush) selBrush->Release();
         return;
     }
 
@@ -1032,6 +1033,10 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             }
         }
         if (drewImages) {
+            // Images advance curY; draw the paragraph text below them
+            // instead of dropping it (the old code released the layout
+            // and skipped the text entirely).
+            rt->DrawTextLayout(D2D1::Point2F(textX, curY), layout, textBrush);
             layout->Release();
             prevBlock = n.block;
             prevDepth = n.depth;
@@ -1274,6 +1279,10 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                   float scrollY, float topOffsetDip,
                                   const Selection* sel) {
     if (!rt || !dw || !code_fmt_) return topOffsetDip;
+
+    // Own the cache lifecycle like Render() does: clear stale blocks so
+    // repeated calls never accumulate layout-owned entries.
+    if (cache_) cache_->Clear();
 
     Palette pal = BasePalette();
     LayoutMetrics m = ComputeMetrics();

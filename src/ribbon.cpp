@@ -23,12 +23,27 @@ bool InitRibbon(HWND hWnd, AppWindow* app)
 
     hr = g_pRibbonFramework->Initialize(hWnd, g_pRibbonApplication);
     if (FAILED(hr))
+    {
+        // Release both COM objects so no zombie framework keeps
+        // receiving state pushes from UpdateRibbon* helpers.
+        g_pRibbonFramework->Release();
+        g_pRibbonFramework = NULL;
+        g_pRibbonApplication->Release();
+        g_pRibbonApplication = NULL;
         return false;
+    }
 
     // MARKDOWNIT_RIBBON is the resource name in the .rc file.
     hr = g_pRibbonFramework->LoadUI(GetModuleHandle(NULL), L"MARKDOWNIT_RIBBON");
     if (FAILED(hr))
+    {
+        g_pRibbonFramework->Destroy();
+        g_pRibbonFramework->Release();
+        g_pRibbonFramework = NULL;
+        g_pRibbonApplication->Release();
+        g_pRibbonApplication = NULL;
         return false;
+    }
 
     return true;
 }

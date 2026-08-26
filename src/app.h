@@ -131,7 +131,6 @@ private:
     // Scroll state (in DIPs)
     float  scrollY_    = 0.0f;  // current scroll position (animated)
     float  totalH_     = 0.0f;
-    int    clientW_    = 0;   // content window size in physical pixels
     int    clientH_    = 0;
     UINT   dpi_        = 96;   // current monitor DPI (for DIP↔pixel conversion)
 
@@ -159,8 +158,6 @@ private:
 
     // Input tracking
     DWORD  last_wheel_time_ = 0;     // for trackpad vs mouse detection
-    float  last_trackpad_delta_ = 0; // most recent trackpad delta (px)
-    bool   is_trackpad_ = false;     // recent wheel looks like trackpad
     int    scroll_phase_ = 0;        // 0=IDLE,1=SPRING,2=TRACKPAD,3=MOMENTUM
 
     float  ClampScroll(float y) const;
@@ -260,8 +257,6 @@ private:
     void RecreateRenderTarget();
     void EnsureRenderer();
     void UpdateDpi();         // Query monitor DPI and apply to render target.
-    float DpW() const;         // client width in DIPs (= px * 96 / dpi)
-    float DpH() const;         // client height in DIPs
     void UpdateScrollInfo();
     void LoadSampleDoc();
     void Repaint();

@@ -138,9 +138,12 @@ struct Utf8Decoder {
 
 // Decode common HTML entities to UTF-32.
 void decode_entity(const char* text, MD_SIZE size, std::u32string& out) {
-    // Known named entities (v1 set; md4c passes entity text including the & and ;).
-    // md4c gives the entity WITHOUT & and ;? Check: MD_TEXT_ENTITY provides the
-    // full entity text. We handle the common ones.
+    // md4c passes entity text INCLUDING the & and ; (e.g. "&amp;", "&#39;").
+    // Strip the wrapper before matching names / parsing numeric values.
+    if (size >= 2 && text[0] == '&' && text[size - 1] == ';') {
+        text += 1;
+        size -= 2;
+    }
     std::string ent(text, size);
     if (ent == "amp") out.push_back(U'&');
     else if (ent == "lt") out.push_back(U'<');
@@ -151,7 +154,7 @@ void decode_entity(const char* text, MD_SIZE size, std::u32string& out) {
     else if (ent == "mdash") out.push_back(U'\u2014');
     else if (ent == "ndash") out.push_back(U'\u2013');
     else if (size > 1 && text[0] == '#') {
-        // Numeric entity: &#39; or &#x27;
+        // Numeric entity: #39 or #x27
         if (size > 2 && (text[1] == 'x' || text[1] == 'X')) {
             uint32_t cp = 0;
             for (MD_SIZE i = 2; i < size; ++i) {

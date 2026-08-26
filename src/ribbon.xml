@@ -407,10 +407,11 @@
       </Ribbon.ApplicationMenu>
       <Ribbon.Tabs>
         <Tab CommandName="cmdTabHome">
-          <Group CommandName="cmdGroupFile" SizeDefinition="ThreeButtons">
+          <Group CommandName="cmdGroupFile" SizeDefinition="FourButtons">
             <Button CommandName="cmdOpen" />
             <Button CommandName="cmdReload" />
             <Button CommandName="cmdSave" />
+            <Button CommandName="cmdSaveAs" />
           </Group>
           <Group CommandName="cmdGroupEdit" SizeDefinition="FourButtons">
             <Button CommandName="cmdUndo" />

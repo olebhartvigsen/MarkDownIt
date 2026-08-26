@@ -33,6 +33,13 @@ uint32_t NextGraphemeBoundary(const std::string& s, uint32_t offset) {
 void EditController::RecordAndApply(uint32_t offset, uint32_t length,
                                     const std::string& replacement,
                                     EditType type) {
+    // Clamp to the buffer before substr: after an external buffer change
+    // (file reload, watcher) a stale selection can exceed the text and
+    // std::string::substr would throw std::out_of_range.
+    uint32_t bufLen = static_cast<uint32_t>(buf_->Text().size());
+    if (offset > bufLen) offset = bufLen;
+    if (length > bufLen - offset) length = bufLen - offset;
+
     // Record what we are about to remove.
     std::string removed = buf_->Text().substr(offset, length);
 
