@@ -484,9 +484,10 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
         // the u16ToSrc mapping so the rendered text matches the source.
         if (ctx->cur_cell_obj && thisOff > ctx->cur_cell_last_end) {
             for (uint32_t g = ctx->cur_cell_last_end; g < thisOff; ) {
+                int gUtf8Len = 1;
                 if (g < ctx->inputSize) {
                     unsigned char gb = static_cast<unsigned char>(ctx->input[g]);
-                    int gUtf8Len, gUtf16Len;
+                    int gUtf16Len;
                     if (gb < 0x80) { gUtf8Len = 1; gUtf16Len = 1; }
                     else if ((gb & 0xE0) == 0xC0) { gUtf8Len = 2; gUtf16Len = 1; }
                     else if ((gb & 0xF0) == 0xE0) { gUtf8Len = 3; gUtf16Len = 1; }
