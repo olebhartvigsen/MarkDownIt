@@ -143,7 +143,20 @@ uint32_t MoveVertical(const LayoutCache& lc, uint32_t offset,
     for (int step = 1; step <= 12; ++step) {
         targetY += static_cast<float>(direction) * lineHeight;
         uint32_t cand = lc.PointToOffset(*desiredX, targetY);
-        if (cand == UINT32_MAX) continue;
+        if (cand == UINT32_MAX) {
+            // The x may fall outside narrower blocks (list items start
+            // after their marker gutter, code blocks are inset). Find
+            // the block by y alone and hit-test with x clamped inside.
+            int blkIdx = lc.FindBlockAtY(targetY);
+            if (blkIdx < 0) continue;
+            const auto& blocks = lc.Blocks();
+            const auto& bl = blocks[blkIdx];
+            float cx = *desiredX;
+            if (cx < bl.x) cx = bl.x;
+            if (cx >= bl.x + bl.width) cx = bl.x + bl.width - 1.0f;
+            cand = lc.PointToOffset(cx, targetY);
+            if (cand == UINT32_MAX) continue;
+        }
         // Reject hits that are still on the current visual line. A
         // tall block (H1-H3 use much larger fonts than body text)
         // makes one generic lineHeight step land back inside the
