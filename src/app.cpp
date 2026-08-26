@@ -2858,6 +2858,508 @@ void AppWindow::InsertLinkCmd() {
     ForceRepaintNow();
 }
 
+void AppWindow::SpliceWithUndo(uint32_t offset, uint32_t length,
+                                   const std::string& replacement) {
+    std::string removed = buffer_.Text().substr(
+        std::min(offset, static_cast<uint32_t>(buffer_.Text().size())),
+        std::min(length, static_cast<uint32_t>(
+            buffer_.Text().size() - std::min(offset,
+                static_cast<uint32_t>(buffer_.Text().size())))));
+    Selection selBefore = sel_;
+    buffer_.Splice(offset, length, replacement);
+    Selection selAfter = sel_;
+    UndoEntry entry{};
+    entry.offset = offset;
+    entry.removed = removed;
+    entry.inserted = replacement;
+    entry.selBefore = selBefore;
+    entry.selAfter = selAfter;
+    entry.timestamp = GetTickCount64();
+    entry.type = EditType::Insert;
+    undo_stack_.Push(entry);
+}
+
+// Table support: insert table, add/remove row/column
+// ---------------------------------------------------------------------------
+
+// Build an in-memory dialog template for the Insert Table dialog.
+// Two edit controls: rows and columns, plus OK/Cancel buttons.
+static std::vector<BYTE> BuildTableDialogTemplate() {
+    auto align = [](std::vector<BYTE>& buf) {
+        while (buf.size() % 4 != 0) buf.push_back(0);
+    };
+    auto pushStr = [](std::vector<BYTE>& buf, const wchar_t* s) {
+        while (*s) {
+            buf.push_back(static_cast<BYTE>(*s & 0xFF));
+            buf.push_back(static_cast<BYTE>(*s >> 8));
+            s++;
+        }
+        buf.push_back(0); buf.push_back(0);
+    };
+    auto pushDWORD = [](std::vector<BYTE>& buf, DWORD v) {
+        buf.push_back(v & 0xFF); buf.push_back((v>>8)&0xFF);
+        buf.push_back((v>>16)&0xFF); buf.push_back((v>>24)&0xFF);
+    };
+    auto pushWORD = [](std::vector<BYTE>& buf, WORD v) {
+        buf.push_back(v & 0xFF); buf.push_back(v >> 8);
+    };
+    auto pushItem = [&](DWORD style, short x, short y, short cx, short cy,
+                        WORD id, WORD atom, const wchar_t* title) {
+        pushDWORD(buf, style);       // style
+        pushDWORD(buf, 0);           // exStyle
+        pushWORD(buf, x);
+        pushWORD(buf, y);
+        pushWORD(buf, cx);
+        pushWORD(buf, cy);
+        pushWORD(buf, id);
+        pushWORD(buf, 0xFFFF);       // class = atom
+        pushWORD(buf, atom);
+        pushStr(buf, title);
+        pushWORD(buf, 0);            // creation data
+        align(buf);
+    };
+
+    std::vector<BYTE> buf;
+    DWORD style = WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+                | DS_MODALFRAME | DS_SETFONT;
+    pushDWORD(buf, style);
+    pushDWORD(buf, 0);  // exStyle
+    pushWORD(buf, 6);   // 6 items: 2 labels + 2 edits + 2 buttons
+    pushWORD(buf, 10);  // x
+    pushWORD(buf, 10);  // y
+    pushWORD(buf, 200); // cx
+    pushWORD(buf, 80);  // cy
+    // menu: none
+    pushWORD(buf, 0);
+    // class: none
+    pushWORD(buf, 0);
+    // title
+    pushStr(buf, L"Insert Table");
+    // font (DS_SETFONT)
+    pushWORD(buf, 9);   // point size
+    pushStr(buf, L"Segoe UI");
+    align(buf);
+
+    // Item 1: "Rows:" label
+    pushItem(WS_CHILD | WS_VISIBLE | SS_LEFT,
+             10, 10, 50, 12, 1000, 0x0082, L"Rows:");
+    // Item 2: rows edit (numeric)
+    pushItem(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_NUMBER,
+             60, 10, 40, 14, 1001, 0x0081, L"3");
+    // Item 3: "Cols:" label
+    pushItem(WS_CHILD | WS_VISIBLE | SS_LEFT,
+             120, 10, 50, 12, 1003, 0x0082, L"Cols:");
+    // Item 5: cols edit (numeric)
+    pushItem(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_NUMBER,
+             170, 10, 40, 14, 1004, 0x0081, L"3");
+    // Item 6: OK button
+    pushItem(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON | BS_DEFPUSHBUTTON,
+             60, 40, 50, 14, IDOK, 0x0080, L"OK");
+    // Item 7: Cancel button
+    pushItem(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+             120, 40, 50, 14, IDCANCEL, 0x0080, L"Cancel");
+
+    return buf;
+}
+
+// Dialog procedure for the Insert Table dialog.
+struct TableDialogData {
+    int rows;
+    int cols;
+};
+
+static INT_PTR CALLBACK TableDialogProc(HWND hDlg, UINT msg,
+                                         WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_INITDIALOG: {
+        // Set initial values
+        SetDlgItemInt(hDlg, 1001, 3, FALSE);
+        SetDlgItemInt(hDlg, 1004, 3, FALSE);
+        return TRUE;
+    }
+    case WM_COMMAND: {
+        if (LOWORD(wp) == IDOK) {
+            BOOL ok1 = FALSE, ok2 = FALSE;
+            UINT r = GetDlgItemInt(hDlg, 1001, &ok1, FALSE);
+            UINT c = GetDlgItemInt(hDlg, 1004, &ok2, FALSE);
+            if (!ok1 || !ok2 || r < 1 || c < 1) {
+                MessageBoxW(hDlg, L"Rows and columns must be at least 1.",
+                            L"Insert Table", MB_OK | MB_ICONWARNING);
+                return TRUE;
+            }
+            if (r > 50) r = 50;
+            if (c > 20) c = 20;
+            TableDialogData* data =
+                reinterpret_cast<TableDialogData*>(GetWindowLongPtr(hDlg, GWLP_USERDATA));
+            if (data) {
+                data->rows = static_cast<int>(r);
+                data->cols = static_cast<int>(c);
+            }
+            EndDialog(hDlg, IDOK);
+            return TRUE;
+        }
+        if (LOWORD(wp) == IDCANCEL) {
+            EndDialog(hDlg, IDCANCEL);
+            return TRUE;
+        }
+        break;
+    }
+
+    }
+    return FALSE;
+}
+
+void AppWindow::InsertTableCmd() {
+    if (!editing_) return;
+
+    auto tmpl = BuildTableDialogTemplate();
+    TableDialogData data{3, 3};
+    INT_PTR result = DialogBoxIndirectParamW(
+        GetModuleHandle(NULL),
+        reinterpret_cast<DLGTEMPLATE*>(tmpl.data()),
+        hwnd_,
+        TableDialogProc,
+        reinterpret_cast<LPARAM>(&data));
+    if (result != IDOK) return;
+
+    // Build markdown table text.
+    // Header row, separator row, then data rows.
+    int rows = data.rows;
+    int cols = data.cols;
+
+    std::string table;
+    // Header
+    for (int c = 0; c < cols; ++c) {
+        table += "| ";
+        table += (c == 0 ? "Header" : "");
+        table += (c > 0 && c < cols) ? "   " : "";
+    }
+    // Fix: build header properly
+    table.clear();
+    for (int c = 0; c < cols; ++c) {
+        table += "| Column ";
+        table += std::to_string(c + 1);
+        table += " ";
+    }
+    table += "|\n";
+    // Separator
+    for (int c = 0; c < cols; ++c) {
+        table += "|--------";
+    }
+    table += "|\n";
+    // Data rows
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c) {
+            table += "|        ";
+        }
+        table += "|\n";
+    }
+
+    // Insert at cursor position. If there is a selection, replace it.
+    uint32_t insertPos = sel_.active.offset;
+    if (!sel_.Empty()) {
+        insertPos = sel_.Start();
+        // Delete selected text first.
+        uint32_t endPos = insertPos + sel_.Length();
+        SpliceWithUndo(insertPos, sel_.Length(), "");
+        sel_.Collapse({insertPos});
+    }
+
+    // Ensure table starts on a new line.
+    const std::string& txt = buffer_.Text();
+    if (insertPos > 0 && txt[insertPos - 1] != '\n') {
+        // Insert a newline before the table.
+        SpliceWithUndo(insertPos, 0, "\n");
+        insertPos += 1;
+    }
+    // Also add a newline after the table if needed.
+    std::string insertText = table;
+    if (insertPos + table.size() < txt.size() &&
+        txt[insertPos + table.size()] != '\n') {
+        insertText += "\n";
+    }
+
+    // Record the insertion
+    SpliceWithUndo(insertPos, 0, insertText);
+    editor_.BreakUndoCoalesce();
+
+    // Place cursor after the table
+    uint32_t newOffset = insertPos + static_cast<uint32_t>(insertText.size());
+    sel_.Collapse({newOffset});
+
+    OnBufferChanged();
+    ForceRepaintNow();
+}
+
+// Find the table node containing the cursor offset.
+// Returns nullptr if cursor is not inside a table.
+static const Node* FindContainingTable(const Document& doc, uint32_t offset) {
+    for (const auto& n : doc.nodes) {
+        if (n.block != BlockKind::Table) continue;
+        uint32_t start = n.srcOffset;
+        uint32_t end = start + n.srcLength;
+        if (offset >= start && offset <= end)
+            return &n;
+    }
+    return nullptr;
+}
+
+// Find the source range of a specific row in the table's source text.
+// A row is one line within the table block. Also return the column
+// index that the cursor is in.
+struct TableLocation {
+    uint32_t rowStart;   // source offset of row's first character
+    uint32_t rowEnd;     // source offset past the row's newline (or end of table)
+    int columnIndex;     // 0-based column the cursor is in
+    int rowIndex;        // 0-based row index
+    int numCols;          // number of columns
+    int numRows;          // number of rows
+};
+
+static bool LocateInTable(const std::string& text, const Node* node,
+                          uint32_t offset, TableLocation& loc) {
+    if (!node) return false;
+    uint32_t tblStart = node->srcOffset;
+    uint32_t tblEnd = tblStart + node->srcLength;
+    if (offset < tblStart || offset > tblEnd) return false;
+
+    // Walk lines within the table source.
+    int rowIdx = 0;
+    uint32_t lineStart = tblStart;
+    int numCols = 0;
+    for (const auto& r : node->rows) {
+        if (static_cast<int>(r.cells.size()) > numCols)
+            numCols = static_cast<int>(r.cells.size());
+    }
+
+    for (uint32_t i = tblStart; i <= tblEnd; ++i) {
+        if (i == tblEnd || text[i] == '\n') {
+            uint32_t lineEnd = i;  // not including newline
+            if (offset >= lineStart && offset <= (i == tblEnd ? i : i + 1)) {
+                // Found the row. Count pipes to determine column.
+                int col = 0;
+                for (uint32_t j = lineStart; j < offset && j < lineEnd; ++j) {
+                    if (text[j] == '|') ++col;
+                }
+                // Adjust: first | is col 0 start
+                col = col > 0 ? col - 1 : 0;
+                if (col >= numCols) col = numCols - 1;
+
+                loc.rowStart = lineStart;
+                loc.rowEnd = (i == tblEnd) ? i : i + 1;
+                loc.columnIndex = col;
+                loc.rowIndex = rowIdx;
+                loc.numCols = numCols;
+                loc.numRows = static_cast<int>(node->rows.size());
+                return true;
+            }
+            if (i < tblEnd) lineStart = i + 1;
+            ++rowIdx;
+        }
+    }
+    return false;
+}
+
+bool AppWindow::AddTableRow() {
+    if (!editing_) return false;
+    const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
+    if (!tbl) return false;
+
+    const std::string& text = buffer_.Text();
+    TableLocation loc;
+    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
+
+    // Build a new row string with the same number of columns.
+    std::string newRow = "|";
+    for (int c = 0; c < loc.numCols; ++c) {
+        newRow += "        |";
+    }
+    newRow += "\n";
+
+    // Insert right after the current row's end.
+    uint32_t insertPos = loc.rowEnd;
+    // Move past newline if present
+    if (insertPos < text.size() && text[insertPos] == '\n')
+        insertPos += 1;
+
+    SpliceWithUndo(insertPos, 0, newRow);
+    editor_.BreakUndoCoalesce();
+
+    sel_.Collapse({insertPos + static_cast<uint32_t>(newRow.size())});
+    OnBufferChanged();
+    ForceRepaintNow();
+    return true;
+}
+
+bool AppWindow::RemoveTableRow() {
+    if (!editing_) return false;
+    const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
+    if (!tbl) return false;
+
+    const std::string& text = buffer_.Text();
+    TableLocation loc;
+    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
+
+    // Don't remove the separator row (row 1 in a standard table).
+    // Row 0 = headers, row 1 = |---| separator, row 2+ = data.
+    if (loc.rowIndex <= 1 && loc.numRows <= 2) {
+        // Would remove header or separator from a minimal table.
+        return false;
+    }
+
+    // Remove the row's source text (from lineStart to rowEnd).
+    uint32_t start = loc.rowStart;
+    uint32_t end = loc.rowEnd;
+    SpliceWithUndo(start, end - start, "");
+    editor_.BreakUndoCoalesce();
+
+    sel_.Collapse({start});
+    OnBufferChanged();
+    ForceRepaintNow();
+    return true;
+}
+
+bool AppWindow::AddTableColumn() {
+    if (!editing_) return false;
+    const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
+    if (!tbl) return false;
+
+    const std::string& text = buffer_.Text();
+    TableLocation loc;
+    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
+
+    // Insert " |        " (or "|        " for first column) after the
+    // column-th pipe in each line of the table.
+    // We process lines from bottom to top so offsets don't shift.
+    uint32_t tblStart = tbl->srcOffset;
+    uint32_t tblEnd = tblStart + tbl->srcLength;
+
+    // Collect line boundaries (start offsets).
+    std::vector<uint32_t> lineStarts;
+    lineStarts.push_back(tblStart);
+    for (uint32_t i = tblStart; i < tblEnd; ++i) {
+        if (text[i] == '\n' && i + 1 < tblEnd)
+            lineStarts.push_back(i + 1);
+    }
+
+    // Process from bottom to top.
+
+    for (int li = static_cast<int>(lineStarts.size()) - 1; li >= 0; --li) {
+        uint32_t lineS = lineStarts[li];
+        // Find end of this line
+        uint32_t lineE = lineStarts[li];
+        for (uint32_t j = lineS; j <= tblEnd; ++j) {
+            if (j == tblEnd || text[j] == '\n') {
+                lineE = j;
+                break;
+            }
+        }
+        // Count pipes in the line to find insertion point for column.
+        // Insert after the (columnIndex+1)-th pipe. For the separator
+        // line, insert "|--------" instead of "|        ".
+        int pipeSeen = 0;
+        uint32_t insertAfter = lineS;
+        for (uint32_t j = lineS; j < lineE; ++j) {
+            if (text[j] == '|') {
+                ++pipeSeen;
+                if (pipeSeen == loc.columnIndex + 1) {
+                    insertAfter = j + 1;
+                    break;
+                }
+            }
+        }
+        if (pipeSeen == 0) continue;  // not a table line
+
+        // Determine if this is the separator line (all dashes).
+        bool isSep = true;
+        for (uint32_t j = lineS; j < lineE; ++j) {
+            if (text[j] != '|' && text[j] != '-' && text[j] != ' ' &&
+                text[j] != '\n' && text[j] != ':' && text[j] != '\r') {
+                isSep = false;
+                break;
+            }
+        }
+        std::string cell;
+        if (isSep)
+            cell = "--------";
+        else
+            cell = "        ";
+
+        // Insert at insertAfter.
+        SpliceWithUndo(insertAfter, 0, cell);
+    }
+
+    editor_.BreakUndoCoalesce();
+    sel_.Collapse({sel_.active.offset});
+    OnBufferChanged();
+    ForceRepaintNow();
+    return true;
+}
+
+bool AppWindow::RemoveTableColumn() {
+    if (!editing_) return false;
+    const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
+    if (!tbl) return false;
+
+    const std::string& text = buffer_.Text();
+    TableLocation loc;
+    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
+
+    if (loc.numCols <= 1) return false;  // don't remove the last column
+
+    uint32_t tblStart = tbl->srcOffset;
+    uint32_t tblEnd = tblStart + tbl->srcLength;
+
+    // Collect line boundaries.
+    std::vector<uint32_t> lineStarts;
+    lineStarts.push_back(tblStart);
+    for (uint32_t i = tblStart; i < tblEnd; ++i) {
+        if (text[i] == '\n' && i + 1 < tblEnd)
+            lineStarts.push_back(i + 1);
+    }
+
+    // Process from bottom to top, removing the columnIndex-th column
+    // from each line. The column's text spans from after pipe #col to
+    // including pipe #(col+1).
+    for (int li = static_cast<int>(lineStarts.size()) - 1; li >= 0; --li) {
+        uint32_t lineS = lineStarts[li];
+        uint32_t lineE = lineS;
+        for (uint32_t j = lineS; j <= tblEnd; ++j) {
+            if (j == tblEnd || text[j] == '\n') {
+                lineE = j;
+                break;
+            }
+        }
+        // Find the columnIndex-th and (columnIndex+1)-th pipe.
+        int pipeSeen = 0;
+        uint32_t colStart = 0, colEnd = 0;
+        bool found = false;
+        for (uint32_t j = lineS; j < lineE; ++j) {
+            if (text[j] == '|') {
+                ++pipeSeen;
+                if (pipeSeen == loc.columnIndex + 1) {
+                    colStart = j;  // the pipe before this column
+                }
+                if (pipeSeen == loc.columnIndex + 2) {
+                    colEnd = j + 1;  // include the pipe after this column
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if (!found) continue;
+
+        // Remove from colStart to colEnd (the pipe + cell + trailing pipe).
+        SpliceWithUndo(colStart, colEnd - colStart, "");
+    }
+
+    editor_.BreakUndoCoalesce();
+    sel_.Collapse({sel_.active.offset});
+    OnBufferChanged();
+    ForceRepaintNow();
+    return true;
+}
+
 void AppWindow::ClearFormat() {
     if (!editing_) return;
     if (sel_.Empty()) return;  // Need a selection to clear formatting.

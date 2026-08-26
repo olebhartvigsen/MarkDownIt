@@ -31,6 +31,11 @@
         <String>Paragraph</String>
       </Command.LabelTitle>
     </Command>
+    <Command Name="cmdGroupTable" Symbol="IDC_GROUP_TABLE" Id="10050">
+      <Command.LabelTitle>
+        <String>Table</String>
+      </Command.LabelTitle>
+    </Command>
     <Command Name="cmdOpen" Symbol="IDC_CMD_OPEN" Id="10100">
       <Command.LabelTitle>
         <String>Open</String>
@@ -131,6 +136,73 @@
       <Command.SmallImages>
         <Image Source="icons/zoom-out_16.png" MinDPI="96"/>
       </Command.SmallImages>
+    </Command>
+    <Command Name="cmdInsertTable" Symbol="IDC_CMD_INSERT_TABLE" Id="10210">
+      <Command.LabelTitle>
+        <String>Table</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Insert Table</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Insert a markdown table with chosen rows and columns</String>
+      </Command.TooltipDescription>
+      <Command.LargeImages>
+        <Image Source="icons/table_32.png" MinDPI="96"/>
+        <Image Source="icons/table_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/table_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
+    <Command Name="cmdTableTools" Symbol="IDC_CMD_TABLE_TOOLS" Id="10211">
+      <Command.LabelTitle>
+        <String>Table Tools</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdAddRow" Symbol="IDC_CMD_ADD_ROW" Id="10212">
+      <Command.LabelTitle>
+        <String>Add Row</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Add Row Below</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Add a new row below the cursor in the current table</String>
+      </Command.TooltipDescription>
+    </Command>
+    <Command Name="cmdRemoveRow" Symbol="IDC_CMD_REMOVE_ROW" Id="10213">
+      <Command.LabelTitle>
+        <String>Remove Row</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Remove Row</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Remove the row containing the cursor from the current table</String>
+      </Command.TooltipDescription>
+    </Command>
+    <Command Name="cmdAddColumn" Symbol="IDC_CMD_ADD_COLUMN" Id="10214">
+      <Command.LabelTitle>
+        <String>Add Column</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Add Column Right</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Add a new column to the right of the cursor in the current table</String>
+      </Command.TooltipDescription>
+    </Command>
+    <Command Name="cmdRemoveColumn" Symbol="IDC_CMD_REMOVE_COLUMN" Id="10215">
+      <Command.LabelTitle>
+        <String>Remove Column</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Remove Column</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Remove the column containing the cursor from the current table</String>
+      </Command.TooltipDescription>
     </Command>
     <Command Name="cmdBold" Symbol="IDC_CMD_BOLD" Id="10300">
       <Command.LabelTitle>
@@ -434,6 +506,17 @@
             <ToggleButton CommandName="cmdBullets" />
             <ToggleButton CommandName="cmdNumbering" />
             <ToggleButton CommandName="cmdQuote" />
+          </Group>
+          <Group CommandName="cmdGroupTable" SizeDefinition="TwoButtons">
+            <Button CommandName="cmdInsertTable" />
+            <DropDownButton CommandName="cmdTableTools">
+              <MenuGroup>
+                <Button CommandName="cmdAddRow" />
+                <Button CommandName="cmdRemoveRow" />
+                <Button CommandName="cmdAddColumn" />
+                <Button CommandName="cmdRemoveColumn" />
+              </MenuGroup>
+            </DropDownButton>
           </Group>
           <Group CommandName="cmdGroupView" SizeDefinition="ThreeButtons">
             <ToggleButton CommandName="cmdWrap" />

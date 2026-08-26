@@ -95,6 +95,14 @@ public:
     void ToggleStrike();
     void ToggleCode();
     void InsertLinkCmd();
+    void InsertTableCmd();
+    bool AddTableRow();
+    bool RemoveTableRow();
+    bool AddTableColumn();
+    bool RemoveTableColumn();
+    // Splice the buffer and record an undo entry in one step.
+    void SpliceWithUndo(uint32_t offset, uint32_t length,
+                        const std::string& replacement);
     void ClearFormat();
     void SetHeading(int level);
     void ToggleBullets();
