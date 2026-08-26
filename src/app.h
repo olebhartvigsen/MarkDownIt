@@ -230,6 +230,10 @@ private:
     // Scroll the viewport so the caret stays visible after keyboard
     // navigation. Direct jump (no spring animation).
     void ScrollCaretIntoView(float caretY, float caretH);
+    // Offset the caret had at the last scroll-follow. Equal offsets
+    // skip scrolling so wheel/trackpad scrolling is never fought by
+    // caret-follow (the caret doc position did not change).
+    uint32_t last_scroll_offset_ = UINT32_MAX;
     void OnLButtonDown(HWND hwnd, int x, int y);
     void OnLButtonDblClk(HWND hwnd, int x, int y);
     void OnMouseMove(HWND hwnd, int x, int y);

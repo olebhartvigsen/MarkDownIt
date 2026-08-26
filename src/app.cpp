@@ -720,17 +720,28 @@ void AppWindow::UpdateCaretPosition() {
     if (!sel_.Empty()) {
         if (caret_visible_) { HideCaret(hwnd_content_); caret_visible_ = false; }
         // Still scroll to follow the moving (active) end of a
-        // shift-extended selection.
+        // shift-extended selection — but only when the offset actually
+        // changed since the last follow, so wheel scrolling is never
+        // fought by caret-follow.
         float sx, sy, sh;
-        if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &sx, &sy, &sh))
+        if (sel_.active.offset != last_scroll_offset_ &&
+            layout_cache_.OffsetToCaretRect(sel_.active.offset, &sx, &sy, &sh)) {
+            last_scroll_offset_ = sel_.active.offset;
             ScrollCaretIntoView(sy, sh);
+        }
         return;
     }
 
     float x, y, h;
     if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &x, &y, &h)) {
         // Keep the caret inside the viewport after keyboard navigation.
-        ScrollCaretIntoView(y, h);
+        // Only when the offset changed since the last follow: wheel and
+        // trackpad scrolling move scrollY_ under a stationary caret,
+        // and re-scrolling here would fight the user's scroll.
+        if (sel_.active.offset != last_scroll_offset_) {
+            last_scroll_offset_ = sel_.active.offset;
+            ScrollCaretIntoView(y, h);
+        }
         // Convert DIPs to physical pixels for the caret.
         float dpix = static_cast<float>(dpi_) / 96.0f;
         int cx = static_cast<int>(x * dpix);
