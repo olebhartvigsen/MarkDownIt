@@ -757,8 +757,10 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
         prevBlock = n.block;
         prevDepth = n.depth;
     }
-    // Add bottom padding so the last block is not cut off at maximum scroll.
-    return curY + m.padTop;
+    // Bottom padding so the last block is not glued to the viewport
+    // edge at maximum scroll. Double the top margin reads better at
+    // the end of a document.
+    return curY + m.padTop * 2.0f;
 }
 
 float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
@@ -1269,7 +1271,7 @@ float Renderer::MeasureSourceView(IDWriteFactory* dw, const std::string& src,
 
     DWRITE_TEXT_METRICS tm = {};
     layout->GetMetrics(&tm);
-    float totalH = m.padTop + topOffsetDip + tm.height;
+    float totalH = m.padTop + topOffsetDip + tm.height + m.padTop;
     layout->Release();
     return totalH;
 }
