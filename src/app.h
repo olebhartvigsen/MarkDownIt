@@ -227,6 +227,9 @@ private:
     void OnReload();
     void OnBufferChanged();
     void UpdateCaretPosition();
+    // Scroll the viewport so the caret stays visible after keyboard
+    // navigation. Direct jump (no spring animation).
+    void ScrollCaretIntoView(float caretY, float caretH);
     void OnLButtonDown(HWND hwnd, int x, int y);
     void OnLButtonDblClk(HWND hwnd, int x, int y);
     void OnMouseMove(HWND hwnd, int x, int y);

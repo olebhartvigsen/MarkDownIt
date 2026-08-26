@@ -690,6 +690,26 @@ void AppWindow::OnBufferChanged() {
     ScheduleReparse();
 }
 
+void AppWindow::ScrollCaretIntoView(float caretY, float caretH) {
+    if (!rt_) return;
+    float viewH = rt_->GetSize().height;
+    // Margin so the caret never sits glued to the very edge.
+    float margin = 8.0f;
+    if (caretY - margin < scrollY_) {
+        // Caret above the viewport: scroll up.
+        scrollY_ = ClampScroll(caretY - margin);
+        StopScrollAnimation();
+        UpdateScrollInfo();
+        Repaint();
+    } else if (caretY + caretH + margin > scrollY_ + viewH) {
+        // Caret below the viewport: scroll down.
+        scrollY_ = ClampScroll(caretY + caretH + margin - viewH);
+        StopScrollAnimation();
+        UpdateScrollInfo();
+        Repaint();
+    }
+}
+
 void AppWindow::UpdateCaretPosition() {
     if (!has_focus_ || !hwnd_content_) return;
     if (!editing_) return;  // No caret in view mode.
@@ -699,11 +719,18 @@ void AppWindow::UpdateCaretPosition() {
     // selection is collapsed to a single point (no active selection).
     if (!sel_.Empty()) {
         if (caret_visible_) { HideCaret(hwnd_content_); caret_visible_ = false; }
+        // Still scroll to follow the moving (active) end of a
+        // shift-extended selection.
+        float sx, sy, sh;
+        if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &sx, &sy, &sh))
+            ScrollCaretIntoView(sy, sh);
         return;
     }
 
     float x, y, h;
     if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &x, &y, &h)) {
+        // Keep the caret inside the viewport after keyboard navigation.
+        ScrollCaretIntoView(y, h);
         // Convert DIPs to physical pixels for the caret.
         float dpix = static_cast<float>(dpi_) / 96.0f;
         int cx = static_cast<int>(x * dpix);
