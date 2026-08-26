@@ -226,3 +226,4 @@ if(BUILD_TESTS)
     )
     set_target_properties(MarkDownIt.tests PROPERTIES WIN32_EXECUTABLE OFF)
 endif()
+
