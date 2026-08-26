@@ -1784,7 +1784,6 @@ void AppWindow::UpdateDpi() {
         rt_->SetDpi(static_cast<float>(dpi_), static_cast<float>(dpi_));
     }
 }
-}
 
 void AppWindow::OnContentPaint(HWND hwnd) {
     if (!rt_) {
