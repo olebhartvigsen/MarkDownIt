@@ -51,15 +51,34 @@ uint32_t MoveLeft(const TextBuffer& buf, uint32_t offset,
     // If we landed on a hidden marker, keep skipping left past markers.
     if (layoutCache)
         prev = skipMarkersLeft(buf.Text(), prev, layoutCache);
+    // Skip over unrendered gap bytes (blank lines between blocks,
+    // code-fence lines) so the caret always lands on visible text.
+    if (layoutCache) {
+        while (prev > 0 && !layoutCache->OffsetIsRendered(prev)) {
+            uint32_t p = PrevGraphemeBoundary(buf.Text(), prev);
+            if (p == prev) break;
+            prev = skipMarkersLeft(buf.Text(), p, layoutCache);
+        }
+    }
     return prev;
 }
 
 uint32_t MoveRight(const TextBuffer& buf, uint32_t offset,
                    const LayoutCache* layoutCache) {
-    uint32_t next = NextGraphemeBoundary(buf.Text(), offset);
+    const std::string& s = buf.Text();
+    uint32_t next = NextGraphemeBoundary(s, offset);
     // If we landed on a hidden marker, keep skipping right past markers.
     if (layoutCache)
-        next = skipMarkersRight(buf.Text(), next, layoutCache);
+        next = skipMarkersRight(s, next, layoutCache);
+    // Skip over unrendered gap bytes (blank lines between blocks,
+    // code-fence lines) so the caret always lands on visible text.
+    if (layoutCache) {
+        while (next < s.size() && !layoutCache->OffsetIsRendered(next)) {
+            uint32_t n = NextGraphemeBoundary(s, next);
+            if (n == next) break;
+            next = skipMarkersRight(s, n, layoutCache);
+        }
+    }
     return next;
 }
 
@@ -115,9 +134,33 @@ uint32_t MoveVertical(const LayoutCache& lc, uint32_t offset,
 
     if (*desiredX < 0) *desiredX = x;
 
-    float targetY = y + direction * lineHeight;
-    uint32_t newOffset = lc.PointToOffset(*desiredX, targetY);
-    if (newOffset == UINT32_MAX) return offset;
+    // Blocks can be separated by large vertical gaps (blank lines,
+    // heading spacing). One lineHeight step may land between blocks
+    // where PointToOffset fails; progressively scan further in the
+    // move direction until we hit rendered text or run out of doc.
+    uint32_t newOffset = UINT32_MAX;
+    float targetY = y;
+    for (int step = 1; step <= 12; ++step) {
+        targetY += static_cast<float>(direction) * lineHeight;
+        newOffset = lc.PointToOffset(*desiredX, targetY);
+        if (newOffset != UINT32_MAX) break;
+    }
+    // No block found in that direction: clamp to doc start/end so the
+    // caret still moves to the first/last line of the document.
+    if (newOffset == UINT32_MAX) {
+        const auto& blocks = lc.Blocks();
+        if (blocks.empty()) return offset;
+        if (direction < 0) {
+            newOffset = blocks.front().srcOffset;
+        } else {
+            const auto& last = blocks.back();
+            // Prefer the end of the last rendered character; fall back
+            // to the block's source end when there is no mapping.
+            newOffset = last.u16ToSrc.empty()
+                ? last.srcOffset + last.srcLength
+                : last.u16ToSrc.back() + 1;
+        }
+    }
     return newOffset;
 }
 

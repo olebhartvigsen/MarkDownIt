@@ -369,6 +369,24 @@ static uint32_t ParagraphEndOf(const std::string& text, uint32_t offset) {
             while (i < nextLine.size() && nextLine[i] == ' ') i++;
             if (i < nextLine.size() && nextLine[i] == '#') break;
         }
+        // List and blockquote markers interrupt the paragraph too;
+        // otherwise SetHeadingLevel would swallow them as heading text.
+        {
+            size_t i = 0;
+            while (i < nextLine.size() && nextLine[i] == ' ') i++;
+            if (i >= nextLine.size()) break;
+            char c = nextLine[i];
+            bool isMarker = c == '-' || c == '+' || c == '*' || c == '>';
+            if (!isMarker && c >= '0' && c <= '9') {
+                // Ordered marker: digits followed by '.' or ')'.
+                size_t j = i;
+                while (j < nextLine.size() && nextLine[j] >= '0' && nextLine[j] <= '9') j++;
+                isMarker = j < nextLine.size() &&
+                    (nextLine[j] == '.' || nextLine[j] == ')') &&
+                    j + 1 < nextLine.size() && nextLine[j + 1] == ' ';
+            }
+            if (isMarker) break;
+        }
         // Advance end to the end of the next line.
         end = nextStart;
         while (end < text.size() && text[end] != '\n') end++;
@@ -716,59 +734,3 @@ void OutdentLine(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     }
 }
 
-void RenumberOrderedList(TextBuffer* buf, uint32_t lineStart) {
-    // Walk backwards to find the first list item in this run.
-    // Then walk forward, renumbering each "N. " prefix.
-    const std::string& text = buf->Text();
-
-    // Find the start of the list run (walk back to first non-list line).
-    uint32_t pos = lineStart;
-    int itemNumber = 1;
-
-    // Walk backwards to find the first ordered list item.
-    while (pos > 0) {
-        uint32_t prevLineStart = pos;
-        if (prevLineStart > 0) prevLineStart--;
-        while (prevLineStart > 0 && text[prevLineStart - 1] != '\n') prevLineStart--;
-        std::string prevLine = GetLine(text, prevLineStart);
-        std::string prevPrefix = GetLinePrefix(prevLine);
-        // Check if it's an ordered list item.
-        size_t i = 0;
-        while (i < prevPrefix.size() && prevPrefix[i] == ' ') i++;
-        if (i < prevPrefix.size() && prevPrefix[i] >= '0' && prevPrefix[i] <= '9') {
-            pos = prevLineStart;
-            itemNumber++;
-        } else {
-            break;
-        }
-    }
-
-    // Walk forward, renumbering.
-    uint32_t cur = pos;
-    while (cur < text.size()) {
-        uint32_t curLineEnd = cur;
-        while (curLineEnd < text.size() && text[curLineEnd] != '\n') curLineEnd++;
-        std::string curLine = text.substr(cur, curLineEnd - cur);
-        std::string curPrefix = GetLinePrefix(curLine);
-
-        // Check if it's an ordered list item.
-        size_t i = 0;
-        while (i < curPrefix.size() && curPrefix[i] == ' ') i++;
-        if (i < curPrefix.size() && curPrefix[i] >= '0' && curPrefix[i] <= '9') {
-            // Find the number in the prefix.
-            size_t numStart = i;
-            size_t numEnd = i;
-            while (numEnd < curPrefix.size() && curPrefix[numEnd] >= '0' && curPrefix[numEnd] <= '9') numEnd++;
-            // Replace the number.
-            std::string newNum = std::to_string(itemNumber);
-            buf->Splice(cur + numStart, static_cast<uint32_t>(numEnd - numStart), newNum);
-            // Adjust cur for the splice delta.
-            int32_t delta = static_cast<int32_t>(newNum.size()) - static_cast<int32_t>(numEnd - numStart);
-            curLineEnd += delta;
-            itemNumber++;
-        } else {
-            break;
-        }
-        cur = curLineEnd + 1; // skip \n
-    }
-}

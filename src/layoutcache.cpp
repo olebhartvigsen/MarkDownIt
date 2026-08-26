@@ -149,6 +149,21 @@ int LayoutCache::BlockForOffset(uint32_t offset) const {
     return best;
 }
 
+bool LayoutCache::OffsetIsRendered(uint32_t offset) const {
+    // A source offset is "rendered" when it maps to visible text:
+    // either inside a block's [start,end] range, or present in some
+    // block's u16ToSrc mapping. Offsets between blocks (blank lines,
+    // fence markers, list/quote prefixes) are NOT rendered.
+    if (BlockForOffset(offset) >= 0) return true;
+    for (const auto& bl : blocks_) {
+        for (uint32_t srcOff : bl.u16ToSrc) {
+            if (srcOff == offset) return true;
+            if (srcOff > offset) break;
+        }
+    }
+    return false;
+}
+
 uint32_t LayoutCache::PointToOffset(float x, float y) const {
     int idx = HitTestBlock(x, y);
     if (idx < 0) return UINT32_MAX;

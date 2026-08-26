@@ -51,6 +51,11 @@ public:
     // Find the block owning a source offset. Returns -1 if none.
     int BlockForOffset(uint32_t offset) const;
 
+    // True when the source offset maps to rendered (visible) text.
+    // Offsets between blocks (blank lines, fence markers) are not
+    // rendered; caret navigation should skip past them.
+    bool OffsetIsRendered(uint32_t offset) const;
+
     // Set the source text for marker-aware offset calculations.
     void SetSourceText(const std::string* src) { srcText_ = src; }
 

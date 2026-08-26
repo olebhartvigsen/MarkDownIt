@@ -31,6 +31,23 @@ static void ClearDefault(HKEY root, const wchar_t* sub) {
     }
 }
 
+// Read the default (unnamed) string value of a key. Returns false when
+// the key or value is missing.
+static bool GetStr(HKEY root, const wchar_t* sub, std::wstring& out) {
+    HKEY hKey = nullptr;
+    if (RegOpenKeyExW(root, sub, 0, KEY_QUERY_VALUE, &hKey) != ERROR_SUCCESS)
+        return false;
+    wchar_t buf[256] = {};
+    DWORD sz = sizeof(buf);
+    DWORD type = 0;
+    bool ok = RegQueryValueExW(hKey, nullptr, nullptr, &type,
+        reinterpret_cast<BYTE*>(buf), &sz) == ERROR_SUCCESS &&
+        type == REG_SZ;
+    RegCloseKey(hKey);
+    if (ok) out.assign(buf);
+    return ok;
+}
+
 // Write a DWORD value to a registry key (used for OpenWithProgids).
 static bool SetDword(HKEY root, const wchar_t* sub, const wchar_t* val,
                      DWORD data) {
@@ -85,6 +102,15 @@ void RegisterMdAssociation(const wchar_t* exePath) {
         // Build "\\Software\\Classes\\<ext>" path
         std::wstring extKey = L"Software\\Classes\\";
         extKey += ext;
+        // Save any existing default association so unregister can
+        // restore it instead of leaving the extension unassociated.
+        std::wstring prevKey = L"Software\\Classes\\MarkDownIt.md\\PreviousDefault";
+        std::wstring prevDefault;
+        bool hadPrev = GetStr(HKEY_CURRENT_USER, extKey.c_str(), prevDefault);
+        if (hadPrev && prevDefault != kProgId) {
+            SetStr(HKEY_CURRENT_USER, prevKey.c_str(), ext, prevDefault.c_str());
+        }
+
         // Point the extension's default to our ProgID.
         SetStr(HKEY_CURRENT_USER, extKey.c_str(), nullptr, kProgId);
 
@@ -115,10 +141,21 @@ void UnregisterMdAssociation() {
             RegCloseKey(hKey);
         }
 
-        // Clear the default value of the extension so Windows falls back.
         std::wstring extKey = L"Software\\Classes\\";
         extKey += ext;
-        ClearDefault(HKEY_CURRENT_USER, extKey.c_str());
+
+        // Restore the association that existed before registration,
+        // if we saved one; otherwise clear so Windows falls back.
+        std::wstring prevKey = L"Software\\Classes\\MarkDownIt.md\\PreviousDefault\\";
+        prevKey += ext;
+        std::wstring prevDefault;
+        if (GetStr(HKEY_CURRENT_USER, prevKey.c_str(), prevDefault)) {
+            SetStr(HKEY_CURRENT_USER, extKey.c_str(), nullptr, prevDefault.c_str());
+            DeleteTree(HKEY_CURRENT_USER,
+                L"Software\\Classes\\MarkDownIt.md\\PreviousDefault");
+        } else {
+            ClearDefault(HKEY_CURRENT_USER, extKey.c_str());
+        }
     }
 
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);

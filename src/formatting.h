@@ -56,5 +56,3 @@ void OutdentLine(TextBuffer* buf, Selection* sel,
                  UndoStack* undo = nullptr);
 
 // Renumber an ordered list run starting at the given line.
-// Called after structural changes to fix numbering.
-void RenumberOrderedList(TextBuffer* buf, uint32_t lineStart);

@@ -72,8 +72,11 @@ void WelcomeScreen::SetRecentFiles(const std::vector<RecentFile>& files) {
         size_t slash = rf.path.find_last_of(L"\\/");
         if (slash != std::wstring::npos) {
             c.fileName = rf.path.substr(slash + 1);
-            // Folder: parent directory name
-            size_t prevSlash = rf.path.find_last_of(L"\\/", slash - 1);
+            // Folder: parent directory name. Guard the underflow when
+            // the path starts with a separator (slash == 0).
+            size_t prevSlash = (slash > 0)
+                ? rf.path.find_last_of(L"\\/", slash - 1)
+                : std::wstring::npos;
             if (prevSlash != std::wstring::npos) {
                 c.folder = rf.path.substr(prevSlash + 1, slash - prevSlash - 1);
             } else {
@@ -284,18 +287,31 @@ void WelcomeScreen::Render(ID2D1RenderTarget* rt, float viewW, float viewH,
                 } else if (ch < 0x80) {
                     if (ch == '\r' || ch == 0) continue;
                     preview16 += static_cast<wchar_t>(ch);
-                } else if (ch >= 0xC0 && k + 1 < c.preview.size()) {
+                } else if (ch >= 0xC0 && ch < 0xE0 && k + 1 < c.preview.size()) {
+                    // 2-byte sequence (accented Latin etc.)
                     unsigned char ch2 = static_cast<unsigned char>(c.preview[k + 1]);
-                    if (ch < 0xE0) { // 2-byte
-                        preview16 += static_cast<wchar_t>(
-                            ((ch & 0x1F) << 6) | (ch2 & 0x3F));
-                        k++;
-                    } else if (k + 2 < c.preview.size()) { // 3-byte
-                        unsigned char ch3 = static_cast<unsigned char>(c.preview[k + 2]);
-                        preview16 += static_cast<wchar_t>(
-                            ((ch & 0x0F) << 12) | ((ch2 & 0x3F) << 6) | (ch3 & 0x3F));
-                        k += 2;
-                    }
+                    preview16 += static_cast<wchar_t>(
+                        ((ch & 0x1F) << 6) | (ch2 & 0x3F));
+                    k++;
+                } else if (ch >= 0xE0 && ch < 0xF0 && k + 2 < c.preview.size()) {
+                    // 3-byte sequence (CJK, symbols)
+                    unsigned char ch2 = static_cast<unsigned char>(c.preview[k + 1]);
+                    unsigned char ch3 = static_cast<unsigned char>(c.preview[k + 2]);
+                    preview16 += static_cast<wchar_t>(
+                        ((ch & 0x0F) << 12) | ((ch2 & 0x3F) << 6) | (ch3 & 0x3F));
+                    k += 2;
+                } else if (ch >= 0xF0 && k + 3 < c.preview.size()) {
+                    // 4-byte sequence (emoji/astral): UTF-16 surrogate pair.
+                    unsigned char ch2 = static_cast<unsigned char>(c.preview[k + 1]);
+                    unsigned char ch3 = static_cast<unsigned char>(c.preview[k + 2]);
+                    unsigned char ch4 = static_cast<unsigned char>(c.preview[k + 3]);
+                    uint32_t cp = ((ch & 0x07u) << 18) |
+                        ((ch2 & 0x3Fu) << 12) |
+                        ((ch3 & 0x3Fu) << 6) | (ch4 & 0x3Fu);
+                    cp -= 0x10000;
+                    preview16 += static_cast<wchar_t>(0xD800 + (cp >> 10));
+                    preview16 += static_cast<wchar_t>(0xDC00 + (cp & 0x3FF));
+                    k += 3;
                 }
             }
 
@@ -366,16 +382,9 @@ void WelcomeScreen::Render(ID2D1RenderTarget* rt, float viewW, float viewH,
                         }
                     }
 
-                    // The first table row (header) is bold.
-                    // Detect header by checking if previous non-separator line
-                    // was also a table row, or if this is the first table row.
-                    bool isHeader = (li == 0 || lines[li - 1].empty() ||
-                                    (li > 0 && lines[li - 1][0] != L'|'));
-                    // Actually: header is the first row before the separator.
-                    // Since we skip the separator, the first row is always header
-                    // if it's followed by (was followed by) a separator.
-                    // For simplicity, make the first table row bold.
-                    // Check: is the next line a separator?
+                    // The row is a header when the following preview
+                    // line is a separator (dashes). Header rows render bold.
+                    bool isHeader = false;
                     bool nextIsSep = false;
                     if (li + 1 < lines.size()) {
                         const auto& nl = lines[li + 1];

@@ -89,22 +89,6 @@ void SetRibbonToggle(UINT cmdId, bool on)
     PropVariantClear(&var);
 }
 
-void InvalidateRibbonFormatCommands()
-{
-    if (!g_pRibbonFramework) return;
-    // Invalidate so the framework re-queries UpdateProperty for each.
-    static const UINT fmtCmds[] = {
-        IDC_CMD_BOLD, IDC_CMD_ITALIC, IDC_CMD_CODE, IDC_CMD_STRIKE,
-        IDC_CMD_H1, IDC_CMD_H2, IDC_CMD_H3,
-        IDC_CMD_BULLETS, IDC_CMD_NUMBERING, IDC_CMD_QUOTE
-    };
-    for (auto cmd : fmtCmds)
-    {
-        g_pRibbonFramework->InvalidateUICommand(cmd,
-            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
-    }
-}
-
 void UpdateRibbonFormatState(const FormatState& state)
 {
     if (!g_pRibbonFramework) return;
