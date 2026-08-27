@@ -6,6 +6,11 @@
         <String>Home</String>
       </Command.LabelTitle>
     </Command>
+    <Command Name="cmdTabInsert" Symbol="IDC_TAB_INSERT" Id="10002">
+      <Command.LabelTitle>
+        <String>Insert</String>
+      </Command.LabelTitle>
+    </Command>
     <Command Name="cmdGroupFile" Symbol="IDC_GROUP_FILE" Id="10010">
       <Command.LabelTitle>
         <String>File</String>
@@ -503,6 +508,13 @@
             <ToggleButton CommandName="cmdEditToggle" />
             <ToggleButton CommandName="cmdViewSource" />
           </Group>
+          <Group CommandName="cmdGroupView" SizeDefinition="ThreeButtons">
+            <ToggleButton CommandName="cmdWrap" />
+            <Button CommandName="cmdZoomIn" />
+            <Button CommandName="cmdZoomOut" />
+          </Group>
+        </Tab>
+        <Tab CommandName="cmdTabInsert">
           <Group CommandName="cmdGroupFormat" SizeDefinition="SixButtons">
             <ToggleButton CommandName="cmdBold" />
             <ToggleButton CommandName="cmdItalic" />
@@ -529,11 +541,6 @@
                 <Button CommandName="cmdRemoveColumn" />
               </MenuGroup>
             </DropDownButton>
-          </Group>
-          <Group CommandName="cmdGroupView" SizeDefinition="ThreeButtons">
-            <ToggleButton CommandName="cmdWrap" />
-            <Button CommandName="cmdZoomIn" />
-            <Button CommandName="cmdZoomOut" />
           </Group>
         </Tab>
       </Ribbon.Tabs>
