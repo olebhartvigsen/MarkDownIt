@@ -2882,160 +2882,227 @@ void AppWindow::SpliceWithUndo(uint32_t offset, uint32_t length,
 // Table support: insert table, add/remove row/column
 // ---------------------------------------------------------------------------
 
-// Build an in-memory dialog template for the Insert Table dialog.
-// Two edit controls: rows and columns, plus OK/Cancel buttons.
-static std::vector<BYTE> BuildTableDialogTemplate() {
-    std::vector<BYTE> buf;
-    auto align = [&buf](std::vector<BYTE>& b) {
-        while (b.size() % 4 != 0) b.push_back(0);
-    };
-    auto pushStr = [&buf](std::vector<BYTE>& b, const wchar_t* s) {
-        while (*s) {
-            b.push_back(static_cast<BYTE>(*s & 0xFF));
-            b.push_back(static_cast<BYTE>(*s >> 8));
-            s++;
-        }
-        b.push_back(0); b.push_back(0);
-    };
-    auto pushDWORD = [&buf](std::vector<BYTE>& b, DWORD v) {
-        b.push_back(v & 0xFF); b.push_back((v>>8)&0xFF);
-        b.push_back((v>>16)&0xFF); b.push_back((v>>24)&0xFF);
-    };
-    auto pushWORD = [&buf](std::vector<BYTE>& b, WORD v) {
-        b.push_back(v & 0xFF); b.push_back(v >> 8);
-    };
-    auto pushItem = [&](DWORD style, short x, short y, short cx, short cy,
-                        WORD id, WORD atom, const wchar_t* title) {
-        pushDWORD(buf, style);       // style
-        pushDWORD(buf, 0);           // exStyle
-        pushWORD(buf, x);
-        pushWORD(buf, y);
-        pushWORD(buf, cx);
-        pushWORD(buf, cy);
-        pushWORD(buf, id);
-        pushWORD(buf, 0xFFFF);       // class = atom
-        pushWORD(buf, atom);
-        pushStr(buf, title);
-        pushWORD(buf, 0);            // creation data
-        align(buf);
-    };
+// ---------------------------------------------------------------------------
+// Word-style grid table picker: a popup showing cells you hover to select
+// the table size, then click to insert.
+// ---------------------------------------------------------------------------
 
-    DWORD style = WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
-                | DS_MODALFRAME | DS_SETFONT;
-    pushDWORD(buf, style);
-    pushDWORD(buf, 0);  // exStyle
-    pushWORD(buf, 6);   // 6 items: 2 labels + 2 edits + 2 buttons
-    pushWORD(buf, 10);  // x
-    pushWORD(buf, 10);  // y
-    pushWORD(buf, 200); // cx
-    pushWORD(buf, 80);  // cy
-    // menu: none
-    pushWORD(buf, 0);
-    // class: none
-    pushWORD(buf, 0);
-    // title
-    pushStr(buf, L"Insert Table");
-    // font (DS_SETFONT)
-    pushWORD(buf, 9);   // point size
-    pushStr(buf, L"Segoe UI");
-    align(buf);
+struct TableGridPicker {
+    static constexpr int kMaxCols = 10;
+    static constexpr int kMaxRows = 8;
+    static constexpr int kCellSize = 16;    // pixels per cell
+    static constexpr int kMargin = 6;       // padding around grid
+    static constexpr int kLabelH = 22;      // bottom label "3 x 3 Table"
 
-    // Item 1: "Rows:" label
-    pushItem(WS_CHILD | WS_VISIBLE | SS_LEFT,
-             10, 10, 50, 12, 1000, 0x0082, L"Rows:");
-    // Item 2: rows edit (numeric)
-    pushItem(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_NUMBER,
-             60, 10, 40, 14, 1001, 0x0081, L"3");
-    // Item 3: "Cols:" label
-    pushItem(WS_CHILD | WS_VISIBLE | SS_LEFT,
-             120, 10, 50, 12, 1003, 0x0082, L"Cols:");
-    // Item 5: cols edit (numeric)
-    pushItem(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_NUMBER,
-             170, 10, 40, 14, 1004, 0x0081, L"3");
-    // Item 6: OK button
-    pushItem(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON | BS_DEFPUSHBUTTON,
-             60, 40, 50, 14, IDOK, 0x0080, L"OK");
-    // Item 7: Cancel button
-    pushItem(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-             120, 40, 50, 14, IDCANCEL, 0x0080, L"Cancel");
-
-    return buf;
-}
-
-// Dialog procedure for the Insert Table dialog.
-struct TableDialogData {
-    int rows;
-    int cols;
+    int selCols = 3;
+    int selRows = 3;
+    HWND hPopup = nullptr;
+    HWND hParent = nullptr;
+    bool tracking = false;
 };
 
-static INT_PTR CALLBACK TableDialogProc(HWND hDlg, UINT msg,
-                                         WPARAM wp, LPARAM lp) {
-    switch (msg) {
-    case WM_INITDIALOG: {
-        // Set initial values
-        SetDlgItemInt(hDlg, 1001, 3, FALSE);
-        SetDlgItemInt(hDlg, 1004, 3, FALSE);
-        return TRUE;
-    }
-    case WM_COMMAND: {
-        if (LOWORD(wp) == IDOK) {
-            BOOL ok1 = FALSE, ok2 = FALSE;
-            UINT r = GetDlgItemInt(hDlg, 1001, &ok1, FALSE);
-            UINT c = GetDlgItemInt(hDlg, 1004, &ok2, FALSE);
-            if (!ok1 || !ok2 || r < 1 || c < 1) {
-                MessageBoxW(hDlg, L"Rows and columns must be at least 1.",
-                            L"Insert Table", MB_OK | MB_ICONWARNING);
-                return TRUE;
-            }
-            if (r > 50) r = 50;
-            if (c > 20) c = 20;
-            TableDialogData* data =
-                reinterpret_cast<TableDialogData*>(GetWindowLongPtr(hDlg, GWLP_USERDATA));
-            if (data) {
-                data->rows = static_cast<int>(r);
-                data->cols = static_cast<int>(c);
-            }
-            EndDialog(hDlg, IDOK);
-            return TRUE;
-        }
-        if (LOWORD(wp) == IDCANCEL) {
-            EndDialog(hDlg, IDCANCEL);
-            return TRUE;
-        }
-        break;
-    }
+static TableGridPicker g_gridPicker;
 
+static LRESULT CALLBACK GridPickerProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(h, &ps);
+
+        int n = TableGridPicker::kMaxCols;
+        int m = TableGridPicker::kMaxRows;
+        int cs = TableGridPicker::kCellSize;
+        int margin = TableGridPicker::kMargin;
+        int labelH = TableGridPicker::kLabelH;
+
+        // Draw background
+        RECT rc;
+        GetClientRect(h, &rc);
+        FillRect(hdc, &rc, GetSysColorBrush(COLOR_BTNFACE));
+
+        // Draw grid cells
+        for (int row = 0; row < m; ++row) {
+            for (int col = 0; col < n; ++col) {
+                int x = margin + col * cs;
+                int y = margin + row * cs;
+                RECT cell = {x, y, x + cs - 1, y + cs - 1};
+
+                if (col < g_gridPicker.selCols && row < g_gridPicker.selRows) {
+                    // Selected cell: blue fill + white border
+                    FillRect(hdc, &cell, GetSysColorBrush(COLOR_HIGHLIGHT));
+                } else {
+                    // Unselected: light border only
+                    FrameRect(hdc, &cell, GetSysColorBrush(COLOR_BTNSHADOW));
+                }
+            }
+        }
+
+        // Draw label at bottom: "Rx C Table"
+        RECT labelRc = {
+            0,
+            margin + m * cs + 4,
+            rc.right,
+            margin + m * cs + 4 + labelH
+        };
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, GetSysColor(COLOR_BTNTEXT));
+        wchar_t label[64];
+        // +1 to rows because Word counts header as part of the visible rows;
+        // but for markdown, selRows = data rows (header is extra). Show
+        // total rows including header.
+        int totalRows = g_gridPicker.selRows + 1;
+        swprintf_s(label, 64, L"%d x %d Table", totalRows, g_gridPicker.selCols);
+        DrawTextW(hdc, label, -1, &labelRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        EndPaint(h, &ps);
+        return 0;
     }
-    return FALSE;
+    case WM_MOUSEMOVE: {
+        int x = GET_X_LPARAM(lp);
+        int y = GET_Y_LPARAM(lp);
+        int cs = TableGridPicker::kCellSize;
+        int margin = TableGridPicker::kMargin;
+        int col = (x - margin) / cs + 1;
+        int row = (y - margin) / cs + 1;
+        if (col < 1) col = 1;
+        if (row < 1) row = 1;
+        if (col > TableGridPicker::kMaxCols) col = TableGridPicker::kMaxCols;
+        if (row > TableGridPicker::kMaxRows) row = TableGridPicker::kMaxRows;
+
+        // For markdown, row 0 is the header which is always included.
+        // The grid shows data rows (excluding header). So the visual
+        // selection maps: selRows = row (data rows), selCols = col.
+        if (col != g_gridPicker.selCols || row != g_gridPicker.selRows) {
+            g_gridPicker.selCols = col;
+            g_gridPicker.selRows = row;
+            InvalidateRect(h, nullptr, TRUE);
+            UpdateWindow(h);
+        }
+
+        // Track mouse leave
+        if (!g_gridPicker.tracking) {
+            TRACKMOUSEEVENT tme = {};
+            tme.cbSize = sizeof(tme);
+            tme.dwFlags = TME_LEAVE;
+            tme.hwndTrack = h;
+            TrackMouseEvent(&tme);
+            g_gridPicker.tracking = true;
+        }
+        return 0;
+    }
+    case WM_MOUSELEAVE: {
+        g_gridPicker.tracking = false;
+        // Close the popup when the mouse leaves
+        DestroyWindow(h);
+        g_gridPicker.hPopup = nullptr;
+        return 0;
+    }
+    case WM_LBUTTONDOWN: {
+        // User clicked: insert this table size
+        int x = GET_X_LPARAM(lp);
+        int y = GET_Y_LPARAM(lp);
+        int cs = TableGridPicker::kCellSize;
+        int margin = TableGridPicker::kMargin;
+        int col = (x - margin) / cs + 1;
+        int row = (y - margin) / cs + 1;
+        if (col < 1) col = 1;
+        if (row < 1) row = 1;
+        if (col > TableGridPicker::kMaxCols) col = TableGridPicker::kMaxCols;
+        if (row > TableGridPicker::kMaxRows) row = TableGridPicker::kMaxRows;
+        g_gridPicker.selCols = col;
+        g_gridPicker.selRows = row;
+        DestroyWindow(h);
+        g_gridPicker.hPopup = nullptr;
+
+        // Post a message to the parent to insert the table
+        PostMessage(g_gridPicker.hParent, WM_APP + 1,
+                    static_cast<WPARAM>(col),
+                    static_cast<LPARAM>(row));
+        return 0;
+    }
+    case WM_KILLFOCUS: {
+        // Close if focus is lost (user clicked elsewhere or pressed Escape)
+        if (g_gridPicker.hPopup) {
+            DestroyWindow(h);
+            g_gridPicker.hPopup = nullptr;
+        }
+        return 0;
+    }
+    case WM_KEYDOWN: {
+        if (wp == VK_ESCAPE) {
+            DestroyWindow(h);
+            g_gridPicker.hPopup = nullptr;
+        }
+        return 0;
+    }
+    }
+    return DefWindowProc(h, msg, wp, lp);
+}
+
+static void RegisterGridPickerClass() {
+    static bool registered = false;
+    if (registered) return;
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = GridPickerProc;
+    wc.hInstance = GetModuleHandle(NULL);
+    wc.lpszClassName = L"MarkDownItGridPicker";
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    RegisterClassW(&wc);
+    registered = true;
 }
 
 void AppWindow::InsertTableCmd() {
     if (!editing_) return;
 
-    auto tmpl = BuildTableDialogTemplate();
-    TableDialogData data{3, 3};
-    INT_PTR result = DialogBoxIndirectParamW(
-        GetModuleHandle(NULL),
-        reinterpret_cast<DLGTEMPLATE*>(tmpl.data()),
-        hwnd_,
-        TableDialogProc,
-        reinterpret_cast<LPARAM>(&data));
-    if (result != IDOK) return;
+    // Show the Word-style grid picker popup.
+    RegisterGridPickerClass();
+    g_gridPicker.hParent = hwnd_content_ ? hwnd_content_ : hwnd_;
+    g_gridPicker.selCols = 3;
+    g_gridPicker.selRows = 3;
+    g_gridPicker.tracking = false;
 
-    // Build markdown table text.
-    // Header row, separator row, then data rows.
-    int rows = data.rows;
-    int cols = data.cols;
+    // Position the popup at the top of the content window.
+    POINT pt = {0, 0};
+    if (hwnd_content_) {
+        RECT rc;
+        GetWindowRect(hwnd_content_, &rc);
+        pt.x = rc.left + 20;
+        pt.y = rc.top + 10;
+    } else {
+        RECT rc;
+        GetWindowRect(hwnd_, &rc);
+        pt.x = rc.left + 60;
+        pt.y = rc.top + 120;
+    }
+
+    int w = TableGridPicker::kMargin * 2 +
+            TableGridPicker::kMaxCols * TableGridPicker::kCellSize;
+    int h = TableGridPicker::kMargin * 2 +
+            TableGridPicker::kMaxRows * TableGridPicker::kCellSize +
+            TableGridPicker::kLabelH;
+
+    g_gridPicker.hPopup = CreateWindowExW(
+        WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+        L"MarkDownItGridPicker", L"",
+        WS_POPUP | WS_VISIBLE,
+        pt.x, pt.y, w, h,
+        hwnd_, nullptr, GetModuleHandle(NULL), nullptr);
+
+    SetFocus(g_gridPicker.hPopup);
+    SetCapture(g_gridPicker.hPopup);
+}
+
+// Called from ContentWndProc when WM_APP+1 is received (grid picker
+// sent the selected rows x cols).
+void AppWindow::InsertTableFromGrid(int cols, int rows) {
+    if (!editing_) return;
+
+    int dataRows = rows;
 
     std::string table;
     // Header
-    for (int c = 0; c < cols; ++c) {
-        table += "| ";
-        table += (c == 0 ? "Header" : "");
-        table += (c > 0 && c < cols) ? "   " : "";
-    }
-    // Fix: build header properly
-    table.clear();
     for (int c = 0; c < cols; ++c) {
         table += "| Column ";
         table += std::to_string(c + 1);
@@ -3048,7 +3115,7 @@ void AppWindow::InsertTableCmd() {
     }
     table += "|\n";
     // Data rows
-    for (int r = 0; r < rows; ++r) {
+    for (int r = 0; r < dataRows; ++r) {
         for (int c = 0; c < cols; ++c) {
             table += "|        ";
         }
@@ -3059,8 +3126,6 @@ void AppWindow::InsertTableCmd() {
     uint32_t insertPos = sel_.active.offset;
     if (!sel_.Empty()) {
         insertPos = sel_.Start();
-        // Delete selected text first.
-        uint32_t endPos = insertPos + sel_.Length();
         SpliceWithUndo(insertPos, sel_.Length(), "");
         sel_.Collapse({insertPos});
     }
@@ -3068,22 +3133,18 @@ void AppWindow::InsertTableCmd() {
     // Ensure table starts on a new line.
     const std::string& txt = buffer_.Text();
     if (insertPos > 0 && txt[insertPos - 1] != '\n') {
-        // Insert a newline before the table.
         SpliceWithUndo(insertPos, 0, "\n");
         insertPos += 1;
     }
-    // Also add a newline after the table if needed.
     std::string insertText = table;
     if (insertPos + table.size() < txt.size() &&
         txt[insertPos + table.size()] != '\n') {
         insertText += "\n";
     }
 
-    // Record the insertion
     SpliceWithUndo(insertPos, 0, insertText);
     editor_.BreakUndoCoalesce();
 
-    // Place cursor after the table
     uint32_t newOffset = insertPos + static_cast<uint32_t>(insertText.size());
     sel_.Collapse({newOffset});
 
@@ -3870,6 +3931,13 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 //
 LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
+        case WM_APP + 1: {
+            // Grid table picker sent col (wParam) and row (lParam).
+            ReleaseCapture();
+            InsertTableFromGrid(static_cast<int>(wp),
+                                static_cast<int>(lp));
+            return 0;
+        }
         case WM_PAINT:     OnContentPaint(hwnd); return 0;
         case WM_ERASEBKGND: return 1;  // D2D handles all painting
         case WM_LBUTTONDOWN: {

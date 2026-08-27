@@ -96,6 +96,7 @@ public:
     void ToggleCode();
     void InsertLinkCmd();
     void InsertTableCmd();
+    void InsertTableFromGrid(int cols, int rows);
     bool AddTableRow();
     bool RemoveTableRow();
     bool AddTableColumn();

@@ -147,6 +147,13 @@
       <Command.TooltipDescription>
         <String>Insert a markdown table with chosen rows and columns</String>
       </Command.TooltipDescription>
+      <Command.LargeImages>
+        <Image Source="icons/table_32.png" MinDPI="96"/>
+        <Image Source="icons/table_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/table_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdTableTools" Symbol="IDC_CMD_TABLE_TOOLS" Id="10211">
       <Command.LabelTitle>
@@ -163,6 +170,9 @@
       <Command.TooltipDescription>
         <String>Add a new row below the cursor in the current table</String>
       </Command.TooltipDescription>
+      <Command.SmallImages>
+        <Image Source="icons/table-add-row_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdRemoveRow" Symbol="IDC_CMD_REMOVE_ROW" Id="10213">
       <Command.LabelTitle>
@@ -174,6 +184,9 @@
       <Command.TooltipDescription>
         <String>Remove the row containing the cursor from the current table</String>
       </Command.TooltipDescription>
+      <Command.SmallImages>
+        <Image Source="icons/table-remove-row_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdAddColumn" Symbol="IDC_CMD_ADD_COLUMN" Id="10214">
       <Command.LabelTitle>
@@ -185,6 +198,9 @@
       <Command.TooltipDescription>
         <String>Add a new column to the right of the cursor in the current table</String>
       </Command.TooltipDescription>
+      <Command.SmallImages>
+        <Image Source="icons/table-add-column_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdRemoveColumn" Symbol="IDC_CMD_REMOVE_COLUMN" Id="10215">
       <Command.LabelTitle>
@@ -196,6 +212,9 @@
       <Command.TooltipDescription>
         <String>Remove the column containing the cursor from the current table</String>
       </Command.TooltipDescription>
+      <Command.SmallImages>
+        <Image Source="icons/table-remove-column_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdBold" Symbol="IDC_CMD_BOLD" Id="10300">
       <Command.LabelTitle>
