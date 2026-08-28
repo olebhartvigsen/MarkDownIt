@@ -15,6 +15,8 @@
 
 using namespace Microsoft::WRL;
 
+namespace mermaid {
+
 // Read mermaid.min.js from RCDATA resource.
 static std::string LoadMermaidJs() {
     HMODULE hMod = GetModuleHandleW(nullptr);
@@ -367,7 +369,11 @@ void MermaidRenderer::Shutdown() {
     available_ = false;
 }
 
+} // namespace mermaid
+
 #else // !HAS_WEBVIEW2
+
+namespace mermaid {
 
 MermaidRenderer::MermaidRenderer() = default;
 MermaidRenderer::~MermaidRenderer() = default;
@@ -379,5 +385,7 @@ void MermaidRenderer::Request(uint32_t srcOffset, const std::string&,
     if (cb) cb(srcOffset, {});
 }
 void MermaidRenderer::Shutdown() {}
+
+} // namespace mermaid
 
 #endif // HAS_WEBVIEW2
