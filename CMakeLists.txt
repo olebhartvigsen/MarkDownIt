@@ -182,9 +182,19 @@ target_link_libraries(MarkDownIt PRIVATE
     ${PROPSYS_LINK_LIB}
 )
 
+set(WEBVIEW2_LIB_DIR "" CACHE PATH "Path to WebView2 SDK lib directory")
 if(WEBVIEW2_INCLUDE_DIR)
     target_include_directories(MarkDownIt PRIVATE ${WEBVIEW2_INCLUDE_DIR})
     target_compile_definitions(MarkDownIt PRIVATE HAS_WEBVIEW2=1)
+    # Link against WebView2Loader.lib if available
+    if(WEBVIEW2_LIB_DIR)
+        find_library(WEBVIEW2_LOADER_LIB NAMES WebView2Loader_dll
+            HINTS ${WEBVIEW2_LIB_DIR})
+        if(WEBVIEW2_LOADER_LIB)
+            target_link_libraries(MarkDownIt PRIVATE ${WEBVIEW2_LOADER_LIB})
+            message(STATUS "WebView2Loader lib: ${WEBVIEW2_LOADER_LIB}")
+        endif()
+    endif()
 endif()
 
 target_compile_definitions(MarkDownIt PRIVATE

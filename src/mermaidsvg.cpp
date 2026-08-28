@@ -2,11 +2,16 @@
 
 #ifdef HAS_WEBVIEW2
 
-#include <WebView2.h>
+// WebView2 requires these headers in a specific order.
+// windows.h and unknwn.h must come before WebView2.h.
+#include <windows.h>
+#include <unknwn.h>
 #include <wrl.h>
 #include <wil/com.h>
+#include <WebView2.h>
 #include <sstream>
 #include <queue>
+#include <map>
 #include <mutex>
 
 using namespace Microsoft::WRL;

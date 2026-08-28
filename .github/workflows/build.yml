@@ -78,7 +78,8 @@ jobs:
             -DUICC_EXE="${{ steps.find-sdk.outputs.uicc_path }}" `
             -DUIRIBBON_LIB="${{ steps.find-sdk.outputs.uiribbon_lib }}" `
             -DPROPSYS_LIB="${{ steps.find-sdk.outputs.propsys_lib }}" `
-            -DWEBVIEW2_INCLUDE_DIR="${{ github.workspace }}/packages/Microsoft.Web.WebView2/build/native/include"
+            -DWEBVIEW2_INCLUDE_DIR="${{ github.workspace }}/packages/Microsoft.Web.WebView2/build/native/include" `
+            -DWEBVIEW2_LIB_DIR="${{ github.workspace }}/packages/Microsoft.Web.WebView2/build/native/x64"
 
       - name: Build Release exe
         run: cmake --build build --config Release
