@@ -279,6 +279,9 @@ void AppWindow::EnsureRenderer() {
     renderer_.SetD2DDeviceContext5(d2d_ctx5_);
     layout_cache_.SetSourceText(&buffer_.Text());
     renderer_.SetSourceText(&buffer_.Text());
+
+    // Initialize mermaid renderer (may fail if WebView2 is missing).
+    mermaid_renderer_.Init(hwnd_content_);
 }
 
 void AppWindow::InitEditor() {
@@ -692,6 +695,51 @@ void AppWindow::ToggleSourceView() {
     if (hwnd_content_) SetFocus(hwnd_content_);
 }
 
+// Request async SVG rendering for all mermaid code blocks in the document.
+// When SVGs are ready, they are stored in the renderer's SVG cache and
+// the content window is repainted.
+void AppWindow::RequestMermaidRenders() {
+    if (!mermaid_renderer_.Available()) return;
+
+    for (const auto& n : doc_.nodes) {
+        if (n.block == BlockKind::CodeBlock && n.lang == "mermaid") {
+            // Skip if already cached.
+            if (renderer_.HasMermaidSvg(n.srcOffset)) continue;
+
+            // Convert raw text (UTF-32) to UTF-8 for mermaid.js.
+            std::string code;
+            for (char32_t c : n.raw) {
+                if (c < 0x80) code.push_back(static_cast<char>(c));
+                else if (c < 0x800) {
+                    code.push_back(static_cast<char>(0xC0 | (c >> 6)));
+                    code.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+                } else if (c < 0x10000) {
+                    code.push_back(static_cast<char>(0xE0 | (c >> 12)));
+                    code.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+                    code.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+                } else {
+                    code.push_back(static_cast<char>(0xF0 | (c >> 18)));
+                    code.push_back(static_cast<char>(0x80 | ((c >> 12) & 0x3F)));
+                    code.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+                    code.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+                }
+            }
+
+            uint32_t offset = n.srcOffset;
+            mermaid_renderer_.Request(offset, code,
+                [this](uint32_t srcOffset, const std::string& svg) {
+                    if (!svg.empty()) {
+                        renderer_.SetMermaidSvg(srcOffset, svg);
+                        // Trigger repaint on the UI thread.
+                        if (hwnd_content_) {
+                            InvalidateRect(hwnd_content_, nullptr, FALSE);
+                        }
+                    }
+                });
+        }
+    }
+}
+
 void AppWindow::OnReparseTimer() {
     reparse_pending_ = false;
     if (reparse_timer_) { KillTimer(hwnd_content_, reparse_timer_); reparse_timer_ = 0; }
@@ -708,6 +756,7 @@ void AppWindow::OnReparseTimer() {
     ParseMarkdown(buffer_.Text(), doc_);
     layout_cache_.Clear();
     renderer_.ClearSvgCache();
+    RequestMermaidRenders();
     UpdateScrollInfo();
     // Force synchronous repaint so the layout cache is rebuilt before
     // UpdateCaretPosition runs. Repaint() is async (InvalidateRect) and

@@ -83,6 +83,13 @@ if(MSVC)
     endif()
 endif()
 
+
+# WebView2 SDK (optional, for mermaid rendering)
+set(WEBVIEW2_INCLUDE_DIR "" CACHE PATH "Path to WebView2 SDK include directory")
+if(WEBVIEW2_INCLUDE_DIR)
+    message(STATUS "WebView2 SDK include: ${WEBVIEW2_INCLUDE_DIR}")
+endif()
+
 # Main application
 add_executable(MarkDownIt WIN32
     src/main.cpp
@@ -107,6 +114,7 @@ add_executable(MarkDownIt WIN32
     src/welcomescreen.cpp
     src/svgtext.cpp
     src/svgdoc.cpp
+    src/mermaidsvg.cpp
 )
 
 if(MSVC AND RIBBON_AVAILABLE)
@@ -173,6 +181,11 @@ target_link_libraries(MarkDownIt PRIVATE
     ${UIRIBBON_LINK_LIB}
     ${PROPSYS_LINK_LIB}
 )
+
+if(WEBVIEW2_INCLUDE_DIR)
+    target_include_directories(MarkDownIt PRIVATE ${WEBVIEW2_INCLUDE_DIR})
+    target_compile_definitions(MarkDownIt PRIVATE HAS_WEBVIEW2=1)
+endif()
 
 target_compile_definitions(MarkDownIt PRIVATE
     UNICODE

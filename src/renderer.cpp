@@ -676,8 +676,16 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
             drawW -= listIndent;
         }
 
-        if (n.block == BlockKind::CodeBlock && n.lang == "svg") {
-            float svgH = MeasureSvgBlock(dw, n, drawX, drawW);
+        if (n.block == BlockKind::CodeBlock &&
+            (n.lang == "svg" || n.lang == "mermaid")) {
+            // For mermaid, check if we have a cached SVG.
+            bool hasSvg = (n.lang == "mermaid")
+                ? HasMermaidSvg(n.srcOffset)
+                : false;
+            float svgH = 0.0f;
+            if (n.lang == "svg" || hasSvg) {
+                svgH = MeasureSvgBlock(dw, n, drawX, drawW);
+            }
             if (svgH > 0.0f) {
                 blockH = svgH;
             } else {
@@ -852,13 +860,23 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
         curY += gap;
 
-        if (n.block == BlockKind::CodeBlock && n.lang == "svg") {
+        if (n.block == BlockKind::CodeBlock &&
+            (n.lang == "svg" ||
+             (n.lang == "mermaid" && HasMermaidSvg(n.srcOffset)))) {
             float blockH = 0.0f;
             DrawSvgBlock(rt, dw, n, drawX, curY, drawW, blockH, sel);
             curY += blockH;
             prevBlock = n.block;
             prevDepth = n.depth;
             continue;
+        }
+
+        // Mermaid block without cached SVG: request async render,
+        // fall through to code block display for now.
+        if (n.block == BlockKind::CodeBlock && n.lang == "mermaid") {
+            // Request async SVG render if MermaidRenderer is available.
+            // The callback will store the SVG and trigger a repaint.
+            // This is handled in app.cpp via a bridge function.
         }
 
         if (n.block == BlockKind::CodeBlock) {
@@ -1539,6 +1557,32 @@ svg::SvgDoc* Renderer::GetSvgDoc(const Node& n, float availW) {
     }
     svg_cache_.push_back(std::move(entry));
     return &svg_cache_.back().doc;
+}
+
+void Renderer::SetMermaidSvg(uint32_t srcOffset, const std::string& svgText) {
+    if (!d2d_ctx5_ || svgText.empty()) return;
+
+    // Check if we already have an entry for this offset
+    for (auto& e : svg_cache_) {
+        if (e.srcOffset == srcOffset) {
+            e.doc.Release();
+            e.doc.Load(d2d_ctx5_, svgText);
+            return;
+        }
+    }
+
+    SvgCacheEntry entry;
+    entry.srcOffset = srcOffset;
+    if (entry.doc.Load(d2d_ctx5_, svgText)) {
+        svg_cache_.push_back(std::move(entry));
+    }
+}
+
+bool Renderer::HasMermaidSvg(uint32_t srcOffset) const {
+    for (const auto& e : svg_cache_) {
+        if (e.srcOffset == srcOffset && e.doc.Width() > 0) return true;
+    }
+    return false;
 }
 
 float Renderer::MeasureSvgBlock(IDWriteFactory* dw, const Node& n,

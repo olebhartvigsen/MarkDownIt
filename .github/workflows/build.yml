@@ -66,12 +66,19 @@ jobs:
             exit 1
           }
 
+      - name: Install WebView2 SDK
+        shell: powershell
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.2792.45 -ExcludeVersion -OutputDirectory ${{ github.workspace }}/packages
+          Write-Host "WebView2 SDK installed"
+
       - name: Configure CMake
         run: |
           cmake -B build -G "Visual Studio 17 2022" -A x64 `
             -DUICC_EXE="${{ steps.find-sdk.outputs.uicc_path }}" `
             -DUIRIBBON_LIB="${{ steps.find-sdk.outputs.uiribbon_lib }}" `
-            -DPROPSYS_LIB="${{ steps.find-sdk.outputs.propsys_lib }}"
+            -DPROPSYS_LIB="${{ steps.find-sdk.outputs.propsys_lib }}" `
+            -DWEBVIEW2_INCLUDE_DIR="${{ github.workspace }}/packages/Microsoft.Web.WebView2/build/native/include"
 
       - name: Build Release exe
         run: cmake --build build --config Release

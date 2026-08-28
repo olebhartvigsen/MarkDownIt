@@ -6,4 +6,8 @@ IDI_APPICON ICON "markdownit.ico"
 // Document icon: shown for .md files associated with MarkDownIt.
 IDI_DOCICON ICON "markdownit-doc.ico"
 
+// Mermaid.js library embedded as RCDATA resource (resource ID 101).
+// Used by MermaidRenderer to render diagrams offline.
+101 RCDATA "..\\third_party\\mermaid\\mermaid.min.js"
+
 #include "ribbonUI.rc2"
