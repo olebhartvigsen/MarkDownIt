@@ -7,6 +7,7 @@
 #include "theme.h"
 #include "layoutcache.h"
 #include "caret.h"
+#include "mermaidlayout.h"
 
 class Renderer {
 public:
@@ -25,6 +26,9 @@ public:
     int  ContentWidthMode() const { return contentWidthMode_; }
 
     void SetLayoutCache(LayoutCache* cache) { cache_ = cache; }
+
+    // D2D factory for path geometry creation (diamonds, arrows).
+    void SetD2DFactory(ID2D1Factory* f) { d2d_factory_ = f; }
 
     // Set pointer to the source text for offset calculations.
     void SetSourceText(const std::string* src) { srcText_ = src; }
@@ -60,6 +64,7 @@ private:
     bool wrapEnabled_ = true;
     int  contentWidthMode_ = 0;  // 0=Standard(800), 1=960, 2=1600, 3=Full
     LayoutCache* cache_ = nullptr;
+    ID2D1Factory* d2d_factory_ = nullptr;
     const std::string* srcText_ = nullptr;  // source text for offset calc
 
     LayoutMetrics ComputeMetrics() const;
@@ -77,4 +82,12 @@ private:
                    const Selection* sel = nullptr);
     float MeasureTable(IDWriteFactory* dw, const Node& n,
                        float x, float width);
+
+    // Draw a mermaid diagram layout.
+    void DrawDiagram(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+                     const mermaid::Layout& layout,
+                     float x, float y, float width, float& outH);
+    // Measure a mermaid diagram layout (no drawing).
+    float MeasureDiagram(const mermaid::Layout& layout,
+                          float x, float width);
 };

@@ -274,6 +274,7 @@ void AppWindow::EnsureRenderer() {
     if (renderer_inited_ || !dw_factory_) return;
     renderer_inited_ = renderer_.Init(dw_factory_);
     renderer_.SetLayoutCache(&layout_cache_);
+    renderer_.SetD2DFactory(d2d_factory_);
     layout_cache_.SetSourceText(&buffer_.Text());
     renderer_.SetSourceText(&buffer_.Text());
 }

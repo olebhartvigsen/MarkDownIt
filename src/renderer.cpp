@@ -4,8 +4,11 @@
 #include <dwrite.h>
 #include <string>
 #include <vector>
+#include <cmath>
 #include "colortext.h"
 #include "imagehelper.h"
+#include "mermaid.h"
+#include "mermaidlayout.h"
 
 static const float kPtToDip = 96.0f / 72.0f;
 
@@ -676,7 +679,51 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
             drawW -= listIndent;
         }
 
-        if (n.block == BlockKind::CodeBlock) {
+        if (n.block == BlockKind::CodeBlock && n.lang == "mermaid") {
+            // Parse and layout mermaid diagram for height measurement.
+            std::string src;
+            for (char32_t c : n.raw) {
+                if (c < 0x80) src.push_back(static_cast<char>(c));
+                else if (c < 0x800) {
+                    src.push_back(static_cast<char>(0xC0 | (c >> 6)));
+                    src.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+                } else if (c < 0x10000) {
+                    src.push_back(static_cast<char>(0xE0 | (c >> 12)));
+                    src.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+                    src.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+                } else {
+                    src.push_back(static_cast<char>(0xF0 | (c >> 18)));
+                    src.push_back(static_cast<char>(0x80 | ((c >> 12) & 0x3F)));
+                    src.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+                    src.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+                }
+            }
+            mermaid::Diagram diag = mermaid::Parse(src);
+            if (diag.type != mermaid::DiagramType::Unknown && diag.error.empty()) {
+                mermaid::Layout lay = mermaid::ComputeLayout(
+                    diag, drawW - 2.0f * m.codePad, nullptr, nullptr);
+                blockH = MeasureDiagram(lay, drawX, drawW);
+            } else {
+                // Fall back to code block measurement.
+                std::u32string raw = n.raw;
+                while (!raw.empty() &&
+                       (raw.back() == 0x0A || raw.back() == 0x0D)) {
+                    raw.pop_back();
+                }
+                std::u16string text16 = ToUtf16(raw);
+                IDWriteTextLayout* layout = nullptr;
+                HRESULT hr = dw->CreateTextLayout(
+                    reinterpret_cast<const WCHAR*>(text16.data()),
+                    static_cast<UINT32>(text16.size()),
+                    code_fmt_, drawW - 2.0f * m.codePad, 1.0e9f, &layout);
+                if (SUCCEEDED(hr) && layout) {
+                    DWRITE_TEXT_METRICS tm = {};
+                    layout->GetMetrics(&tm);
+                    blockH = tm.height + 2.0f * m.codePad;
+                    layout->Release();
+                }
+            }
+        } else if (n.block == BlockKind::CodeBlock) {
             std::u32string raw = n.raw;
             while (!raw.empty() &&
                    (raw.back() == 0x0A || raw.back() == 0x0D)) {
@@ -845,6 +892,39 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                    n.depth, prevDepth, m);
         }
         curY += gap;
+
+        if (n.block == BlockKind::CodeBlock && n.lang == "mermaid") {
+            // Parse, layout, and draw mermaid diagram.
+            std::string src;
+            for (char32_t c : n.raw) {
+                if (c < 0x80) src.push_back(static_cast<char>(c));
+                else if (c < 0x800) {
+                    src.push_back(static_cast<char>(0xC0 | (c >> 6)));
+                    src.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+                } else if (c < 0x10000) {
+                    src.push_back(static_cast<char>(0xE0 | (c >> 12)));
+                    src.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+                    src.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+                } else {
+                    src.push_back(static_cast<char>(0xF0 | (c >> 18)));
+                    src.push_back(static_cast<char>(0x80 | ((c >> 12) & 0x3F)));
+                    src.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+                    src.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+                }
+            }
+            mermaid::Diagram diag = mermaid::Parse(src);
+            if (diag.type != mermaid::DiagramType::Unknown && diag.error.empty()) {
+                mermaid::Layout lay = mermaid::ComputeLayout(
+                    diag, drawW - 2.0f * m.codePad, nullptr, nullptr);
+                float blockH = 0.0f;
+                DrawDiagram(rt, dw, lay, drawX, curY, drawW, blockH);
+                curY += blockH;
+                prevBlock = n.block;
+                prevDepth = n.depth;
+                continue;
+            }
+            // Fall through to code block rendering if parse failed.
+        }
 
         if (n.block == BlockKind::CodeBlock) {
             float blockH = 0.0f;
@@ -1437,3 +1517,261 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (selBrush) selBrush->Release();
     return textY + tm.height;
 }
+
+// --- Mermaid diagram rendering ---
+
+// RAII brush wrapper to avoid COM leaks on any exit path.
+struct BrushGuard {
+    ID2D1SolidColorBrush* p = nullptr;
+    ~BrushGuard() { if (p) p->Release(); }
+};
+
+// Draw a filled arrowhead triangle at (tipX, tipY) pointing in direction (dx, dy).
+static void DrawArrowHead(ID2D1RenderTarget* rt, ID2D1SolidColorBrush* br,
+                           float tipX, float tipY, float dx, float dy) {
+    // Normal perpendicular
+    float len = std::sqrt(dx * dx + dy * dy);
+    if (len < 0.001f) return;
+    dx /= len; dy /= len;
+    float nx = -dy, ny = dx;
+    float sz = 7.0f;  // arrow size
+    float bw = 4.0f;  // base half-width
+
+    D2D1_POINT_2F pts[3] = {
+        {tipX, tipY},
+        {tipX - dx * sz + nx * bw, tipY - dy * sz + ny * bw},
+        {tipX - dx * sz - nx * bw, tipY - dy * sz - ny * bw},
+    };
+    // Use a path geometry for the filled triangle
+    // Simpler: draw two lines. Actually for a filled triangle we need
+    // ID2D1PathGeometry. But that requires a factory.
+    // Fallback: draw as two thick lines forming a V.
+    rt->DrawLine(pts[0], pts[1], br, 1.5f);
+    rt->DrawLine(pts[0], pts[2], br, 1.5f);
+    // Fill triangle if we have a geometry factory
+    // For now, the V shape is sufficient for arrowheads.
+}
+
+// Convert mermaid NodeShape to rendering.
+static void DrawNodeShape(ID2D1RenderTarget* rt, ID2D1Factory* factory,
+                           ID2D1SolidColorBrush* fillBr,
+                           ID2D1SolidColorBrush* borderBr,
+                           const mermaid::LaidOutNode& n) {
+    D2D1_RECT_F r = D2D1::RectF(n.x, n.y, n.x + n.w, n.y + n.h);
+
+    switch (n.shape) {
+        case mermaid::NodeShape::Rect:
+            rt->FillRectangle(r, fillBr);
+            rt->DrawRectangle(r, borderBr, 1.0f);
+            break;
+        case mermaid::NodeShape::RoundRect: {
+            float rad = std::min(n.w, n.h) * 0.25f;
+            D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(r, rad, rad);
+            rt->FillRoundedRectangle(rr, fillBr);
+            rt->DrawRoundedRectangle(rr, borderBr, 1.0f);
+            break;
+        }
+        case mermaid::NodeShape::Stadium: {
+            // Rounded rect with very round corners (radius = h/2)
+            float rad = n.h / 2.0f;
+            D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(r, rad, rad);
+            rt->FillRoundedRectangle(rr, fillBr);
+            rt->DrawRoundedRectangle(rr, borderBr, 1.0f);
+            break;
+        }
+        case mermaid::NodeShape::Circle: {
+            D2D1_ELLIPSE el = D2D1::Ellipse(
+                D2D1::Point2F(n.x + n.w / 2.0f, n.y + n.h / 2.0f),
+                n.w / 2.0f, n.h / 2.0f);
+            rt->FillEllipse(el, fillBr);
+            rt->DrawEllipse(el, borderBr, 1.0f);
+            break;
+        }
+        case mermaid::NodeShape::Diamond: {
+            float cx = n.x + n.w / 2.0f;
+            float cy = n.y + n.h / 2.0f;
+            // Draw as four lines (V shape for outline + fill)
+            // Without path geometry, we draw four lines:
+            D2D1_POINT_2F top    = {cx, n.y};
+            D2D1_POINT_2F right  = {n.x + n.w, cy};
+            D2D1_POINT_2F bottom = {cx, n.y + n.h};
+            D2D1_POINT_2F left   = {n.x, cy};
+            // Fill: use a small rectangle approximation if no factory
+            if (factory) {
+                ID2D1PathGeometry* path = nullptr;
+                if (SUCCEEDED(factory->CreatePathGeometry(&path)) && path) {
+                    ID2D1GeometrySink* sink = nullptr;
+                    if (SUCCEEDED(path->Open(&sink)) && sink) {
+                        sink->BeginFigure(top, D2D1_FIGURE_BEGIN_FILLED);
+                        sink->AddLine(right);
+                        sink->AddLine(bottom);
+                        sink->AddLine(left);
+                        sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+                        sink->Close();
+                        sink->Release();
+                        rt->FillGeometry(path, fillBr);
+                        rt->DrawGeometry(path, borderBr, 1.0f);
+                    }
+                    path->Release();
+                }
+            } else {
+                // Fallback: outline only
+                rt->DrawLine(top, right, borderBr, 1.0f);
+                rt->DrawLine(right, bottom, borderBr, 1.0f);
+                rt->DrawLine(bottom, left, borderBr, 1.0f);
+                rt->DrawLine(left, top, borderBr, 1.0f);
+            }
+            break;
+        }
+    }
+}
+
+// Draw text centered in a node.
+static void DrawNodeText(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+                          IDWriteTextFormat* fmt,
+                          ID2D1SolidColorBrush* textBr,
+                          const mermaid::LaidOutNode& n) {
+    if (n.label.empty()) return;
+    std::u16string u16;
+    for (char c : n.label) u16.push_back(static_cast<char16_t>(c));
+
+    IDWriteTextLayout* tl = nullptr;
+    float maxW = n.w - 8.0f;
+    if (maxW < 10.0f) maxW = 10.0f;
+    HRESULT hr = dw->CreateTextLayout(
+        reinterpret_cast<const WCHAR*>(u16.data()),
+        static_cast<UINT32>(u16.size()),
+        fmt, maxW, n.h, &tl);
+    if (FAILED(hr) || !tl) return;
+
+    // Center text horizontally and vertically
+    tl->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+    tl->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+
+    DWRITE_TEXT_METRICS tm = {};
+    tl->GetMetrics(&tm);
+    float tx = n.x + (n.w - tm.width) / 2.0f;
+    float ty = n.y + (n.h - tm.height) / 2.0f;
+
+    rt->DrawTextLayout(D2D1::Point2F(tx, ty), tl, textBr);
+    tl->Release();
+}
+
+// Draw an edge as a polyline with optional arrowhead and optional label.
+static void DrawEdge(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+                      IDWriteTextFormat* fmt,
+                      ID2D1SolidColorBrush* edgeBr,
+                      ID2D1SolidColorBrush* textBr,
+                      const mermaid::LaidOutEdge& e) {
+    if (e.points.size() < 2) return;
+
+    float strokeWidth = 1.0f;
+    if (e.style == mermaid::EdgeStyle::Thick) strokeWidth = 2.5f;
+
+    // Draw polyline segments
+    for (size_t i = 0; i + 1 < e.points.size(); i++) {
+        D2D1_POINT_2F p0 = {e.points[i].first, e.points[i].second};
+        D2D1_POINT_2F p1 = {e.points[i + 1].first, e.points[i + 1].second};
+        rt->DrawLine(p0, p1, edgeBr, strokeWidth);
+    }
+
+    // Arrowhead at last point, direction = last segment direction
+    if (e.head == mermaid::ArrowHead::Arrow) {
+        size_t n = e.points.size();
+        float dx = e.points[n - 1].first - e.points[n - 2].first;
+        float dy = e.points[n - 1].second - e.points[n - 2].second;
+        DrawArrowHead(rt, edgeBr, e.points[n - 1].first, e.points[n - 1].second,
+                      dx, dy);
+    }
+
+    // Edge label
+    if (!e.label.empty() && fmt) {
+        std::u16string u16;
+        for (char c : e.label) u16.push_back(static_cast<char16_t>(c));
+        IDWriteTextLayout* tl = nullptr;
+        float maxW = 200.0f;
+        HRESULT hr = dw->CreateTextLayout(
+            reinterpret_cast<const WCHAR*>(u16.data()),
+            static_cast<UINT32>(u16.size()),
+            fmt, maxW, 20.0f, &tl);
+        if (SUCCEEDED(hr) && tl) {
+            tl->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+            DWRITE_TEXT_METRICS tm = {};
+            tl->GetMetrics(&tm);
+            float lx = e.labelX - tm.width / 2.0f;
+            float ly = e.labelY;
+            // Small background for readability
+            D2D1_RECT_F bg = D2D1::RectF(lx - 2, ly, lx + tm.width + 2, ly + tm.height);
+            // No bg brush here; just draw text
+            rt->DrawTextLayout(D2D1::Point2F(lx, ly), tl, textBr);
+            tl->Release();
+        }
+    }
+}
+
+float Renderer::MeasureDiagram(const mermaid::Layout& layout,
+                                 float /*x*/, float /*width*/) {
+    if (layout.nodes.empty() && layout.edges.empty()) return 40.0f;
+    return layout.height + 2.0f * ComputeMetrics().codePad;
+}
+
+void Renderer::DrawDiagram(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+                             const mermaid::Layout& layout,
+                             float x, float y, float /*width*/, float& outH) {
+    outH = 0.0f;
+    if (!rt || !dw) return;
+
+    LayoutMetrics m = ComputeMetrics();
+    Palette pal = BasePalette();
+    float pad = m.codePad;
+    float diagramH = layout.height + 2.0f * pad;
+
+    // Background card
+    BrushGuard bgBr, borderBr, nodeFillBr, edgeBr, textBr;
+    rt->CreateSolidColorBrush(pal.codeBg, &bgBr.p);
+    rt->CreateSolidColorBrush(pal.codeBorder, &borderBr.p);
+    rt->CreateSolidColorBrush(pal.diagramNodeBg, &nodeFillBr.p);
+    rt->CreateSolidColorBrush(pal.diagramEdge, &edgeBr.p);
+    rt->CreateSolidColorBrush(pal.diagramText, &textBr.p);
+
+    D2D1_RECT_F bgRect = D2D1::RectF(x, y, x + layout.width + 2.0f * pad, y + diagramH);
+    if (bgBr.p) rt->FillRectangle(bgRect, bgBr.p);
+    if (borderBr.p) rt->DrawRectangle(bgRect, borderBr.p, 1.0f);
+
+    // Everything is offset by (x + pad, y + pad)
+    float ox = x + pad;
+    float oy = y + pad;
+
+    // Use body_fmt_ for node and edge text (smaller, like code blocks)
+    IDWriteTextFormat* fmt = code_fmt_;
+    if (!fmt) fmt = body_fmt_;
+    if (!fmt) return;
+
+    // Translate rendering by (ox, oy) using a layer or transform
+    rt->PushLayer(
+        D2D1::LayerParameters(
+            D2D1::InfiniteRect(),
+            nullptr,
+            D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+            D2D1::IdentityMatrix()),
+        nullptr);
+    rt->SetTransform(D2D1::Matrix3x2F::Translation(ox, oy));
+
+    // 1. Draw edges under nodes
+    for (const auto& e : layout.edges) {
+        DrawEdge(rt, dw, fmt, edgeBr.p, textBr.p, e);
+    }
+
+    // 2. Draw nodes
+    for (const auto& n : layout.nodes) {
+        DrawNodeShape(rt, d2d_factory_, nodeFillBr.p, borderBr.p, n);
+        DrawNodeText(rt, dw, fmt, textBr.p, n);
+    }
+
+    // Restore transform
+    rt->SetTransform(D2D1::IdentityMatrix());
+    rt->PopLayer();
+
+    outH = diagramH;
+}
+

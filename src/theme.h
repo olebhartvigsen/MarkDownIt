@@ -73,6 +73,10 @@ struct Palette {
     D2D1_COLOR_F tableRowAlt;
     D2D1_COLOR_F selectionBg;
     D2D1_COLOR_F selectionText;
+    D2D1_COLOR_F diagramNodeBg;
+    D2D1_COLOR_F diagramNodeBorder;
+    D2D1_COLOR_F diagramEdge;
+    D2D1_COLOR_F diagramText;
 };
 
 inline LayoutMetrics BaseMetrics() {
@@ -159,5 +163,10 @@ inline Palette BasePalette() {
     p.tableRowAlt = D2D1::ColorF(0xFAFBFC);
     p.selectionBg = D2D1::ColorF(0xB4D5FE);
     p.selectionText = D2D1::ColorF(0x000000);
+    // Diagram colors: code-block-like palette for visual consistency.
+    p.diagramNodeBg = D2D1::ColorF(0xF6F8FA);
+    p.diagramNodeBorder = D2D1::ColorF(0xD0D7DE);
+    p.diagramEdge = D2D1::ColorF(0x656D76);
+    p.diagramText = D2D1::ColorF(0x24292F);
     return p;
 }
