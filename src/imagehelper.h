@@ -12,4 +12,8 @@ public:
     // Returns nullptr on failure. Caller must Release the bitmap.
     static ID2D1Bitmap* LoadBitmapFromUrl(ID2D1RenderTarget* rt,
         const std::string& url, float maxWidth);
+
+    // Load an SVG file as a UTF-8 text string from a local path or HTTP/HTTPS URL.
+    // Returns empty string on failure.
+    static std::string LoadSvgText(const std::string& url8);
 };

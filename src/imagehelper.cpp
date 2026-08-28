@@ -187,3 +187,96 @@ ID2D1Bitmap* ImageHelper::LoadBitmapFromUrl(ID2D1RenderTarget* rt,
     wicFactory->Release();
     return bitmap;
 }
+
+std::string ImageHelper::LoadSvgText(const std::string& url8) {
+    if (url8.empty()) return {};
+
+    // Check if HTTP(S) URL.
+    std::string lower = url8;
+    for (auto& c : lower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+    bool isHttp = (lower.find("http://") == 0 || lower.find("https://") == 0);
+
+    if (isHttp) {
+        // Convert to wide for WinHTTP
+        std::wstring url;
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, url8.c_str(),
+            static_cast<int>(url8.size()), nullptr, 0);
+        if (wlen > 0) {
+            url.resize(wlen);
+            MultiByteToWideChar(CP_UTF8, 0, url8.c_str(),
+                static_cast<int>(url8.size()), &url[0], wlen);
+        }
+        std::vector<BYTE> data;
+        if (!DownloadImage(url, data) || data.empty()) return {};
+        return std::string(reinterpret_cast<const char*>(data.data()), data.size());
+    }
+
+    // Local file: also handle data:image/svg+xml;base64,...
+    if (lower.find("data:image/svg+xml") == 0) {
+        // Base64 decode after the comma
+        size_t comma = url8.find(',');
+        if (comma == std::string::npos) return {};
+        std::string b64 = url8.substr(comma + 1);
+        // Decode base64
+        static const int8_t b64tab[256] = {
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63,
+            52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1,
+            -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,
+            15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,
+            -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+            41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        };
+        std::string out;
+        int val = 0, bits = 0;
+        for (char ch : b64) {
+            if (ch == '=' || ch == '\n' || ch == '\r' || ch == ' ') continue;
+            int d = b64tab[static_cast<unsigned char>(ch)];
+            if (d < 0) continue;
+            val = (val << 6) | d;
+            bits += 6;
+            if (bits >= 8) {
+                bits -= 8;
+                out.push_back(static_cast<char>((val >> bits) & 0xFF));
+            }
+        }
+        return out;
+    }
+
+    // Local file path: convert to wide and read.
+    std::wstring path;
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, url8.c_str(),
+        static_cast<int>(url8.size()), nullptr, 0);
+    if (wlen > 0) {
+        path.resize(wlen);
+        MultiByteToWideChar(CP_UTF8, 0, url8.c_str(),
+            static_cast<int>(url8.size()), &path[0], wlen);
+    }
+
+    HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
+        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) return {};
+
+    DWORD fileSize = GetFileSize(hFile, nullptr);
+    if (fileSize == 0 || fileSize > 10 * 1024 * 1024) {
+        CloseHandle(hFile);
+        return {};
+    }
+
+    std::string content(fileSize, '\0');
+    DWORD bytesRead = 0;
+    BOOL ok = ReadFile(hFile, &content[0], fileSize, &bytesRead, nullptr);
+    CloseHandle(hFile);
+    if (!ok || bytesRead == 0) return {};
+    content.resize(bytesRead);
+    return content;
+}

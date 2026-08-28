@@ -1025,27 +1025,59 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         bool drewImages = false;
         for (const auto& ib : n.children) {
             if (ib.kind == InlineKind::Image && !ib.url.empty()) {
-                ID2D1Bitmap* bmp = ImageHelper::LoadBitmapFromUrl(
-                    rt, ib.url, drawW);
-                if (bmp) {
-                    D2D1_SIZE_F bmpSize = bmp->GetSize();
-                    float drawW2 = drawW;
-                    float drawH2 = drawW2 *
-                        (bmpSize.height / bmpSize.width);
-                    if (drawH2 > 400.0f) {
-                        drawH2 = 400.0f;
-                        drawW2 = drawH2 *
-                            (bmpSize.width / bmpSize.height);
+                // Check if this is an SVG image.
+                std::string urlLower = ib.url;
+                for (auto& ch : urlLower)
+                    ch = static_cast<char>(tolower(static_cast<unsigned char>(ch)));
+                bool isSvg = (urlLower.size() > 4 &&
+                    urlLower.substr(urlLower.size() - 4) == ".svg") ||
+                    (urlLower.find("data:image/svg+xml") == 0);
+
+                if (isSvg && d2d_ctx5_) {
+                    // Load SVG text and render via SvgDoc.
+                    std::string svgText = ImageHelper::LoadSvgText(ib.url);
+                    if (!svgText.empty()) {
+                        svg::SvgDoc svgDoc;
+                        if (svgDoc.Load(d2d_ctx5_, svgText)) {
+                            float drawW2 = drawW;
+                            float drawH2 = (svgDoc.Width() > 0)
+                                ? drawW2 * (svgDoc.Height() / svgDoc.Width())
+                                : 100.0f;
+                            if (drawH2 > 400.0f) {
+                                drawH2 = 400.0f;
+                                drawW2 = (svgDoc.Height() > 0)
+                                    ? drawH2 * (svgDoc.Width() / svgDoc.Height())
+                                    : drawW2;
+                            }
+                            svgDoc.Draw(d2d_ctx5_, dw, drawX, curY,
+                                        drawW2, drawH2);
+                            curY += drawH2 + m.paraGap;
+                            drewImages = true;
+                        }
                     }
-                    D2D1_RECT_F dest = D2D1::RectF(
-                        drawX, curY, drawX + drawW2, curY + drawH2);
-                    D2D1_RECT_F src = D2D1::RectF(
-                        0, 0, bmpSize.width, bmpSize.height);
-                    rt->DrawBitmap(bmp, dest, 1.0f,
-                        D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, src);
-                    bmp->Release();
-                    curY += drawH2 + m.paraGap;
-                    drewImages = true;
+                } else {
+                    ID2D1Bitmap* bmp = ImageHelper::LoadBitmapFromUrl(
+                        rt, ib.url, drawW);
+                    if (bmp) {
+                        D2D1_SIZE_F bmpSize = bmp->GetSize();
+                        float drawW2 = drawW;
+                        float drawH2 = drawW2 *
+                            (bmpSize.height / bmpSize.width);
+                        if (drawH2 > 400.0f) {
+                            drawH2 = 400.0f;
+                            drawW2 = drawH2 *
+                                (bmpSize.width / bmpSize.height);
+                        }
+                        D2D1_RECT_F dest = D2D1::RectF(
+                            drawX, curY, drawX + drawW2, curY + drawH2);
+                        D2D1_RECT_F src = D2D1::RectF(
+                            0, 0, bmpSize.width, bmpSize.height);
+                        rt->DrawBitmap(bmp, dest, 1.0f,
+                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, src);
+                        bmp->Release();
+                        curY += drawH2 + m.paraGap;
+                        drewImages = true;
+                    }
                 }
             }
         }
