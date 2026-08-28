@@ -68,6 +68,8 @@ private:
 
 public:
     void SetD2DDeviceContext5(ID2D1DeviceContext5* ctx) { d2d_ctx5_ = ctx; }
+    void ClearSvgCache();
+    svg::SvgDoc* GetSvgDoc(const Node& n, float availW);
 
 private:
     // SVG document cache: keyed by srcOffset.
@@ -78,8 +80,6 @@ private:
         float lastHeight = 0;
     };
     std::vector<SvgCacheEntry> svg_cache_;
-    svg::SvgDoc* GetSvgDoc(const Node& n, float availW);
-    void ClearSvgCache();
 
     void DrawSvgBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                       const Node& n, float x, float y, float width,
