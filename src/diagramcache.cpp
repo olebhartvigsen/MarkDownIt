@@ -42,7 +42,9 @@ std::string DiagramCache::HashText(const std::u32string& raw) {
 
 const Layout* DiagramCache::Get(uint32_t srcOffset,
                                   const std::u32string& raw,
-                                  float width) {
+                                  float width,
+                                  MeasureFn measure,
+                                  void* measureCtx) {
     DiagramCacheKey key;
     key.srcOffset = srcOffset;
     key.srcHash = HashText(raw);
@@ -78,7 +80,7 @@ const Layout* DiagramCache::Get(uint32_t srcOffset,
         return nullptr;  // not cacheable, caller falls back to code block
     }
 
-    Layout lay = ComputeLayout(diag, width, nullptr, nullptr);
+    Layout lay = ComputeLayout(diag, width, measure, measureCtx);
     if (lay.nodes.empty() && lay.edges.empty()) {
         return nullptr;  // empty diagram, fall back
     }

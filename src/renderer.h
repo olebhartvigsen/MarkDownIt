@@ -70,6 +70,7 @@ private:
     LayoutCache* cache_ = nullptr;
     ID2D1Factory* d2d_factory_ = nullptr;
     mermaid::DiagramCache* diagram_cache_ = nullptr;
+    IDWriteFactory* dw_factory_ = nullptr;  // for text measurement in layout
     const std::string* srcText_ = nullptr;  // source text for offset calc
 
     LayoutMetrics ComputeMetrics() const;

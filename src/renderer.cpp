@@ -64,6 +64,7 @@ float Renderer::GapForTransition(BlockKind prev, BlockKind cur,
 
 bool Renderer::Init(IDWriteFactory* dw) {
     if (!dw) return false;
+    dw_factory_ = dw;
 
     LayoutMetrics base = BaseMetrics();
 
@@ -683,7 +684,8 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
             const mermaid::Layout* lay = nullptr;
             if (diagram_cache_) {
                 lay = diagram_cache_->Get(n.srcOffset, n.raw,
-                                          drawW - 2.0f * m.codePad);
+                                          drawW - 2.0f * m.codePad,
+                                          DWriteMeasure, this);
             }
             if (lay) {
                 blockH = MeasureDiagram(*lay, drawX, drawW);
@@ -891,7 +893,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             const mermaid::Layout* lay = nullptr;
             if (!caretInBlock && diagram_cache_) {
                 lay = diagram_cache_->Get(n.srcOffset, n.raw,
-                                          drawW - 2.0f * m.codePad);
+                                          drawW - 2.0f * m.codePad,
+                                          DWriteMeasure, this);
             }
             if (lay) {
                 float blockH = 0.0f;
@@ -1685,6 +1688,30 @@ static void DrawEdge(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             tl->Release();
         }
     }
+}
+
+
+// DirectWrite-backed text measurement for mermaid layout.
+// ctx is a Renderer* so we can access code_fmt_.
+static float DWriteMeasure(const std::string& text, void* ctx) {
+    auto* r = static_cast<Renderer*>(ctx);
+    if (!r || !r->dw_factory_ || !r->code_fmt_) {
+        return static_cast<float>(text.size()) * 8.0f;
+    }
+    std::u16string u16;
+    for (char c : text) u16.push_back(static_cast<char16_t>(static_cast<unsigned char>(c)));
+    IDWriteTextLayout* tl = nullptr;
+    HRESULT hr = r->dw_factory_->CreateTextLayout(
+        reinterpret_cast<const WCHAR*>(u16.data()),
+        static_cast<UINT32>(u16.size()),
+        r->code_fmt_, 10000.0f, 100.0f, &tl);
+    if (FAILED(hr) || !tl) {
+        return static_cast<float>(text.size()) * 8.0f;
+    }
+    DWRITE_TEXT_METRICS tm = {};
+    tl->GetMetrics(&tm);
+    tl->Release();
+    return tm.width;
 }
 
 float Renderer::MeasureDiagram(const mermaid::Layout& layout,

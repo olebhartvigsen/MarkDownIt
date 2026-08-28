@@ -36,8 +36,10 @@ class DiagramCache {
 public:
     // Get or compute a layout. Returns nullptr if parse/layout fails.
     // On success, the pointer remains valid until Clear() is called.
+    // Pass a DirectWrite-backed measure function for accurate node sizing.
     const Layout* Get(uint32_t srcOffset, const std::u32string& raw,
-                      float width);
+                      float width, MeasureFn measure = nullptr,
+                      void* measureCtx = nullptr);
 
     // Clear all cached entries.
     void Clear() { entries_.clear(); }
