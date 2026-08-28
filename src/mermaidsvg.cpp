@@ -1,6 +1,6 @@
 #include "mermaidsvg.h"
 
-#ifdef HAS_WEBVIEW2
+#if HAS_WEBVIEW2
 
 // WebView2 requires these headers in a specific order.
 // windows.h and unknwn.h must come before WebView2.h.
