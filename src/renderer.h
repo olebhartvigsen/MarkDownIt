@@ -8,6 +8,7 @@
 #include "layoutcache.h"
 #include "caret.h"
 #include "mermaidlayout.h"
+#include "diagramcache.h"
 
 class Renderer {
 public:
@@ -29,6 +30,9 @@ public:
 
     // D2D factory for path geometry creation (diamonds, arrows).
     void SetD2DFactory(ID2D1Factory* f) { d2d_factory_ = f; }
+
+    // Diagram cache for parsed/laid-out mermaid diagrams.
+    void SetDiagramCache(mermaid::DiagramCache* c) { diagram_cache_ = c; }
 
     // Set pointer to the source text for offset calculations.
     void SetSourceText(const std::string* src) { srcText_ = src; }
@@ -65,6 +69,7 @@ private:
     int  contentWidthMode_ = 0;  // 0=Standard(800), 1=960, 2=1600, 3=Full
     LayoutCache* cache_ = nullptr;
     ID2D1Factory* d2d_factory_ = nullptr;
+    mermaid::DiagramCache* diagram_cache_ = nullptr;
     const std::string* srcText_ = nullptr;  // source text for offset calc
 
     LayoutMetrics ComputeMetrics() const;

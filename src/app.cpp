@@ -275,6 +275,7 @@ void AppWindow::EnsureRenderer() {
     renderer_inited_ = renderer_.Init(dw_factory_);
     renderer_.SetLayoutCache(&layout_cache_);
     renderer_.SetD2DFactory(d2d_factory_);
+    renderer_.SetDiagramCache(&diagram_cache_);
     layout_cache_.SetSourceText(&buffer_.Text());
     renderer_.SetSourceText(&buffer_.Text());
 }
@@ -642,6 +643,7 @@ void AppWindow::LoadSampleDoc() {
     doc_ = Document{};
     buffer_.SetText("");
     layout_cache_.Clear();
+    diagram_cache_.Clear();
     scrollY_ = 0.0f;
     totalH_ = 0.0f;
     UpdateScrollInfo();
@@ -684,6 +686,7 @@ void AppWindow::ToggleSourceView() {
     scrollY_ = 0.0f;
     StopScrollAnimation();
     layout_cache_.Clear();
+    diagram_cache_.Clear();
     ForceRepaintNow();
     if (hwnd_content_) SetFocus(hwnd_content_);
 }
@@ -695,6 +698,7 @@ void AppWindow::OnReparseTimer() {
     // raw text is displayed directly. Just rebuild the layout cache.
     if (source_view_) {
         layout_cache_.Clear();
+    diagram_cache_.Clear();
         UpdateScrollInfo();
         ForceRepaintNow();
         return;
@@ -702,6 +706,7 @@ void AppWindow::OnReparseTimer() {
     doc_ = Document{};
     ParseMarkdown(buffer_.Text(), doc_);
     layout_cache_.Clear();
+    diagram_cache_.Clear();
     UpdateScrollInfo();
     // Force synchronous repaint so the layout cache is rebuilt before
     // UpdateCaretPosition runs. Repaint() is async (InvalidateRect) and
@@ -714,6 +719,7 @@ void AppWindow::OnBufferChanged() {
     MarkDirty();
     InvalidateFormatButtons();
     layout_cache_.Clear();
+    diagram_cache_.Clear();
     ScheduleReparse();
 }
 
@@ -1351,6 +1357,7 @@ void AppWindow::OpenFile(const std::wstring& path) {
     totalH_ = 0.0f;
     sel_.Collapse({0});
     layout_cache_.Clear();
+    diagram_cache_.Clear();
     // Update source text pointers (buffer may have been reallocated).
     layout_cache_.SetSourceText(&buffer_.Text());
     renderer_.SetSourceText(&buffer_.Text());
@@ -1897,6 +1904,7 @@ void AppWindow::OnContentPaint(HWND hwnd) {
         if (source_view_) {
             // RenderSourceView doesn't clear the cache itself.
             layout_cache_.Clear();
+    diagram_cache_.Clear();
             renderer_.RenderSourceView(rt_, dw_factory_, buffer_.Text(),
                 size.width, scrollY_, 0.0f, &sel_);
         } else {
@@ -3661,6 +3669,7 @@ void AppWindow::ZoomIn() {
     // Cached line metrics and hit-test rects were measured at the old
     // zoom; clear them so caret/selection stay accurate.
     layout_cache_.Clear();
+    diagram_cache_.Clear();
     UpdateScrollInfo();
     Repaint();
 }
@@ -3672,6 +3681,7 @@ void AppWindow::ZoomOut() {
     renderer_.SetZoom(z);
     RecreateRenderer();
     layout_cache_.Clear();
+    diagram_cache_.Clear();
     UpdateScrollInfo();
     Repaint();
 }
@@ -3845,6 +3855,7 @@ void AppWindow::SetContentWidthMode(int mode) {
     // Defer ALL side effects (InvalidateUICommand, repaint) via PostMessage
     // to avoid re-entrant calls inside the Ribbon Execute callback.
     layout_cache_.Clear();
+    diagram_cache_.Clear();
     if (hwnd_content_) {
         PostMessage(hwnd_content_, WM_USER + 1, 0, 0);
     }

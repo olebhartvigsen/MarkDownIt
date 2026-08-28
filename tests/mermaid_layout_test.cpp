@@ -125,3 +125,11 @@ TEST(MermaidLayout, SequenceHasPositiveHeight) {
     EXPECT_TRUE(l.height > 0);
     EXPECT_TRUE(l.width > 0);
 }
+
+// Layout does not throw on garbage diagram input.
+TEST(MermaidLayout, GarbageDoesNotThrowInLayout) {
+    auto d = Parse("graph TD\n  ]]][\n  \x01\x02\n");
+    // Even if parse produced something weird, layout should not throw.
+    auto l = ComputeLayout(d, 800.0f, StubMeasure, nullptr);
+    // Reaching here means no throw.
+}

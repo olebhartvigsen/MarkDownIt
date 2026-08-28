@@ -7,6 +7,7 @@
 #include <string>
 #include "dom.h"
 #include "renderer.h"
+#include "diagramcache.h"
 #include "filewatch.h"
 #include "textbuffer.h"
 #include "layoutcache.h"
@@ -174,6 +175,7 @@ private:
     // Editor state
     TextBuffer   buffer_;
     LayoutCache  layout_cache_;
+    mermaid::DiagramCache diagram_cache_;
     Selection    sel_;
     bool         caret_visible_ = false;
     int          caret_height_ = 0;   // current caret height in px (for resize on font change)

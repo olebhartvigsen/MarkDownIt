@@ -680,29 +680,13 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
         }
 
         if (n.block == BlockKind::CodeBlock && n.lang == "mermaid") {
-            // Parse and layout mermaid diagram for height measurement.
-            std::string src;
-            for (char32_t c : n.raw) {
-                if (c < 0x80) src.push_back(static_cast<char>(c));
-                else if (c < 0x800) {
-                    src.push_back(static_cast<char>(0xC0 | (c >> 6)));
-                    src.push_back(static_cast<char>(0x80 | (c & 0x3F)));
-                } else if (c < 0x10000) {
-                    src.push_back(static_cast<char>(0xE0 | (c >> 12)));
-                    src.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
-                    src.push_back(static_cast<char>(0x80 | (c & 0x3F)));
-                } else {
-                    src.push_back(static_cast<char>(0xF0 | (c >> 18)));
-                    src.push_back(static_cast<char>(0x80 | ((c >> 12) & 0x3F)));
-                    src.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
-                    src.push_back(static_cast<char>(0x80 | (c & 0x3F)));
-                }
+            const mermaid::Layout* lay = nullptr;
+            if (diagram_cache_) {
+                lay = diagram_cache_->Get(n.srcOffset, n.raw,
+                                          drawW - 2.0f * m.codePad);
             }
-            mermaid::Diagram diag = mermaid::Parse(src);
-            if (diag.type != mermaid::DiagramType::Unknown && diag.error.empty()) {
-                mermaid::Layout lay = mermaid::ComputeLayout(
-                    diag, drawW - 2.0f * m.codePad, nullptr, nullptr);
-                blockH = MeasureDiagram(lay, drawX, drawW);
+            if (lay) {
+                blockH = MeasureDiagram(*lay, drawX, drawW);
             } else {
                 // Fall back to code block measurement.
                 std::u32string raw = n.raw;
@@ -894,30 +878,24 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         curY += gap;
 
         if (n.block == BlockKind::CodeBlock && n.lang == "mermaid") {
-            // Parse, layout, and draw mermaid diagram.
-            std::string src;
-            for (char32_t c : n.raw) {
-                if (c < 0x80) src.push_back(static_cast<char>(c));
-                else if (c < 0x800) {
-                    src.push_back(static_cast<char>(0xC0 | (c >> 6)));
-                    src.push_back(static_cast<char>(0x80 | (c & 0x3F)));
-                } else if (c < 0x10000) {
-                    src.push_back(static_cast<char>(0xE0 | (c >> 12)));
-                    src.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
-                    src.push_back(static_cast<char>(0x80 | (c & 0x3F)));
-                } else {
-                    src.push_back(static_cast<char>(0xF0 | (c >> 18)));
-                    src.push_back(static_cast<char>(0x80 | ((c >> 12) & 0x3F)));
-                    src.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
-                    src.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+            // In edit mode, show source text when the caret is inside
+            // this block so the user can edit the diagram source.
+            bool caretInBlock = false;
+            if (sel) {
+                uint32_t off = sel->active.offset;
+                if (off >= n.srcOffset &&
+                    off < n.srcOffset + n.srcLength) {
+                    caretInBlock = true;
                 }
             }
-            mermaid::Diagram diag = mermaid::Parse(src);
-            if (diag.type != mermaid::DiagramType::Unknown && diag.error.empty()) {
-                mermaid::Layout lay = mermaid::ComputeLayout(
-                    diag, drawW - 2.0f * m.codePad, nullptr, nullptr);
+            const mermaid::Layout* lay = nullptr;
+            if (!caretInBlock && diagram_cache_) {
+                lay = diagram_cache_->Get(n.srcOffset, n.raw,
+                                          drawW - 2.0f * m.codePad);
+            }
+            if (lay) {
                 float blockH = 0.0f;
-                DrawDiagram(rt, dw, lay, drawX, curY, drawW, blockH);
+                DrawDiagram(rt, dw, *lay, drawX, curY, drawW, blockH);
                 curY += blockH;
                 prevBlock = n.block;
                 prevDepth = n.depth;
