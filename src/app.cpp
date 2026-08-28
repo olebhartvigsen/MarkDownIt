@@ -1904,7 +1904,6 @@ void AppWindow::OnContentPaint(HWND hwnd) {
         if (source_view_) {
             // RenderSourceView doesn't clear the cache itself.
             layout_cache_.Clear();
-    diagram_cache_.Clear();
             renderer_.RenderSourceView(rt_, dw_factory_, buffer_.Text(),
                 size.width, scrollY_, 0.0f, &sel_);
         } else {

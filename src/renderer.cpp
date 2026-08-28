@@ -1725,15 +1725,13 @@ void Renderer::DrawDiagram(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (!fmt) fmt = body_fmt_;
     if (!fmt) return;
 
-    // Translate rendering by (ox, oy) using a layer or transform
-    rt->PushLayer(
-        D2D1::LayerParameters(
-            D2D1::InfiniteRect(),
-            nullptr,
-            D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-            D2D1::IdentityMatrix()),
-        nullptr);
-    rt->SetTransform(D2D1::Matrix3x2F::Translation(ox, oy));
+    // Compose our offset with the existing scroll transform.
+    // The render loop sets Translation(0, -scrollY) before calling us.
+    // We must multiply, not replace, so scroll still applies to the diagram.
+    D2D1_MATRIX_3X2_F curTransform;
+    rt->GetTransform(&curTransform);
+    D2D1::Matrix3x2F ourOffset = D2D1::Matrix3x2F::Translation(ox, oy);
+    rt->SetTransform(curTransform * ourOffset);
 
     // 1. Draw edges under nodes
     for (const auto& e : layout.edges) {
@@ -1746,9 +1744,8 @@ void Renderer::DrawDiagram(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         DrawNodeText(rt, dw, fmt, textBr.p, n);
     }
 
-    // Restore transform
-    rt->SetTransform(D2D1::IdentityMatrix());
-    rt->PopLayer();
+    // Restore the scroll transform for subsequent content.
+    rt->SetTransform(curTransform);
 
     outH = diagramH;
 }
