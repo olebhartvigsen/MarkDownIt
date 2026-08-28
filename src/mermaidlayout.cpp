@@ -10,15 +10,15 @@ namespace mermaid {
 
 // --- Constants (DIPs) ---
 
-static constexpr float kNodePadX     = 12.0f;   // inner horizontal padding
-static constexpr float kNodePadY     = 8.0f;    // inner vertical padding
-static constexpr float kNodeMinW     = 40.0f;   // minimum node width
+static constexpr float kNodePadX     = 20.0f;   // inner horizontal padding
+static constexpr float kNodePadY     = 10.0f;   // inner vertical padding
+static constexpr float kNodeMinW     = 60.0f;   // minimum node width
 static constexpr float kLayerGap    = 50.0f;   // gap between layers
 static constexpr float kColGap      = 30.0f;   // gap between columns in a layer
 static constexpr float kSeqHeaderH   = 40.0f;   // sequence header height
 static constexpr float kSeqRowH      = 32.0f;   // sequence message row height
 static constexpr float kSeqColGap    = 80.0f;   // sequence column gap
-static constexpr float kFontSize     = 14.0f;   // diagram font height
+static constexpr float kFontSize     = 16.0f;   // diagram font height (matches code_fmt_ 11.5pt ~15.3px + leading)
 
 // --- Helpers ---
 

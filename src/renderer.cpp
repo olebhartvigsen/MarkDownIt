@@ -1644,6 +1644,7 @@ static void DrawNodeText(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     std::u16string u16;
     for (char c : n.label) u16.push_back(static_cast<char16_t>(static_cast<unsigned char>(c)));
 
+    // Use almost the full node width for the layout box.
     float maxW = n.w - 4.0f;
     if (maxW < 10.0f) maxW = 10.0f;
     IDWriteTextLayout* tl = nullptr;
@@ -1659,12 +1660,27 @@ static void DrawNodeText(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
     DWRITE_TEXT_METRICS tm = {};
     tl->GetMetrics(&tm);
+
+    // If the text is wider than the node, clip it to the node rect.
+    bool needClip = (tm.width > maxW);
+
+    D2D1_RECT_F nodeRect = D2D1::RectF(n.x, n.y, n.x + n.w, n.y + n.h);
+
+    if (needClip) {
+        // Push a clip aligned to the node rect (in current transform space).
+        rt->PushAxisAlignedClip(nodeRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    }
+
     float tx = n.x + (n.w - tm.width) / 2.0f;
     float ty = n.y + (n.h - tm.height) / 2.0f;
     if (tx < n.x) tx = n.x;
 
     rt->DrawTextLayout(D2D1::Point2F(tx, ty), tl, textBr);
     tl->Release();
+
+    if (needClip) {
+        rt->PopAxisAlignedClip();
+    }
 }
 
 static void DrawEdge(ID2D1RenderTarget* rt, IDWriteFactory* dw,
