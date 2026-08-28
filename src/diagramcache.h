@@ -39,7 +39,7 @@ public:
     // Pass a DirectWrite-backed measure function for accurate node sizing.
     const Layout* Get(uint32_t srcOffset, const std::u32string& raw,
                       float width, MeasureFn measure = nullptr,
-                      void* measureCtx = nullptr);
+                      void* measureCtx = nullptr, float scale = 1.0f);
 
     // Clear all cached entries.
     void Clear() { entries_.clear(); }

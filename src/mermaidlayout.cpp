@@ -13,8 +13,8 @@ namespace mermaid {
 static constexpr float kNodePadX     = 12.0f;   // inner horizontal padding
 static constexpr float kNodePadY     = 8.0f;    // inner vertical padding
 static constexpr float kNodeMinW     = 40.0f;   // minimum node width
-static constexpr float kLayerGap     = 50.0f;   // gap between layers
-static constexpr float kColGap       = 30.0f;   // gap between columns in a layer
+static constexpr float kLayerGap    = 50.0f;   // gap between layers
+static constexpr float kColGap      = 30.0f;   // gap between columns in a layer
 static constexpr float kSeqHeaderH   = 40.0f;   // sequence header height
 static constexpr float kSeqRowH      = 32.0f;   // sequence message row height
 static constexpr float kSeqColGap    = 80.0f;   // sequence column gap
@@ -28,20 +28,23 @@ static float MeasureText(const std::string& text, MeasureFn measure, void* ctx) 
 }
 
 static void ComputeNodeSize(const GraphNode& gn, MeasureFn measure, void* mctx,
-                             float& w, float& h) {
+                             float scale, float& w, float& h) {
     float textW = MeasureText(gn.label, measure, mctx);
-    w = std::max(kNodeMinW, textW + 2.0f * kNodePadX);
-    h = kFontSize + 2.0f * kNodePadY;
+    float padX = kNodePadX * scale;
+    float padY = kNodePadY * scale;
+    float fontH = kFontSize * scale;
+    w = std::max(kNodeMinW * scale, textW + 2.0f * padX);
+    h = fontH + 2.0f * padY;
     // Diamond and circle need extra room
     if (gn.shape == NodeShape::Diamond) {
-        w += 16.0f;
-        h += 12.0f;
+        w += 16.0f * scale;
+        h += 12.0f * scale;
     } else if (gn.shape == NodeShape::Circle) {
         float d = std::max(w, h);
         w = d;
         h = d;
     } else if (gn.shape == NodeShape::Stadium) {
-        h += 6.0f;
+        h += 6.0f * scale;
     }
 }
 
@@ -120,9 +123,13 @@ static void AssignLayers(const Diagram& d, std::vector<int>& layer,
 }
 
 static void LayoutFlowchart(const Diagram& d, Layout& layout,
-                             MeasureFn measure, void* mctx, float maxWidth) {
+                             MeasureFn measure, void* mctx, float maxWidth,
+                             float scale) {
     int n = static_cast<int>(d.nodes.size());
     if (n == 0) return;
+
+    float layerGap = kLayerGap * scale;
+    float colGap = kColGap * scale;
 
     // 1. Assign layers
     std::vector<int> layer;
@@ -140,7 +147,7 @@ static void LayoutFlowchart(const Diagram& d, Layout& layout,
     for (int i = 0; i < n; i++) {
         layout.nodes[i].label = d.nodes[i].label;
         layout.nodes[i].shape = d.nodes[i].shape;
-        ComputeNodeSize(d.nodes[i], measure, mctx,
+        ComputeNodeSize(d.nodes[i], measure, mctx, scale,
                          layout.nodes[i].w, layout.nodes[i].h);
     }
 
@@ -160,9 +167,9 @@ static void LayoutFlowchart(const Diagram& d, Layout& layout,
                 crossSpan += layout.nodes[idx].h;
             else
                 crossSpan += layout.nodes[idx].w;
-            crossSpan += kColGap;
+            crossSpan += colGap;
         }
-        crossSpan -= kColGap;  // remove trailing gap
+        crossSpan -= colGap;  // remove trailing gap
 
         float crossStart = 0;  // centered later
 
@@ -174,7 +181,7 @@ static void LayoutFlowchart(const Diagram& d, Layout& layout,
 
             mainPos = mainAxis;
             crossPos = crossStart;
-            crossStart += crossSize + kColGap;
+            crossStart += crossSize + colGap;
         }
 
         // Advance main axis by max node size in this layer
@@ -183,7 +190,7 @@ static void LayoutFlowchart(const Diagram& d, Layout& layout,
             float sz = horizontal ? layout.nodes[idx].w : layout.nodes[idx].h;
             layerThickness = std::max(layerThickness, sz);
         }
-        mainAxis += layerThickness + kLayerGap;
+        mainAxis += layerThickness + layerGap;
     }
 
     // 5. Center each layer relative to the widest layer
@@ -194,9 +201,9 @@ static void LayoutFlowchart(const Diagram& d, Layout& layout,
         if (ln.empty()) continue;
         float span = 0;
         for (int idx : ln) {
-            span += (horizontal ? layout.nodes[idx].h : layout.nodes[idx].w) + kColGap;
+            span += (horizontal ? layout.nodes[idx].h : layout.nodes[idx].w) + colGap;
         }
-        span -= kColGap;
+        span -= colGap;
         maxCrossSpan = std::max(maxCrossSpan, span);
     }
 
@@ -206,9 +213,9 @@ static void LayoutFlowchart(const Diagram& d, Layout& layout,
         if (ln.empty()) continue;
         float span = 0;
         for (int idx : ln) {
-            span += (horizontal ? layout.nodes[idx].h : layout.nodes[idx].w) + kColGap;
+            span += (horizontal ? layout.nodes[idx].h : layout.nodes[idx].w) + colGap;
         }
-        span -= kColGap;
+        span -= colGap;
         float offset = (maxCrossSpan - span) / 2.0f;
         for (int idx : ln) {
             if (horizontal)
@@ -288,7 +295,7 @@ static void LayoutFlowchart(const Diagram& d, Layout& layout,
         if (!e.label.empty()) {
             size_t mid = le.points.size() / 2;
             le.labelX = le.points[mid].first;
-            le.labelY = le.points[mid].second - kFontSize - 2.0f;
+            le.labelY = le.points[mid].second - kFontSize * scale - 2.0f * scale;
         }
 
         layout.edges.push_back(std::move(le));
@@ -298,9 +305,16 @@ static void LayoutFlowchart(const Diagram& d, Layout& layout,
 // --- Sequence diagram layout ---
 
 static void LayoutSequence(const Diagram& d, Layout& layout,
-                            MeasureFn measure, void* mctx, float maxWidth) {
+                            MeasureFn measure, void* mctx, float maxWidth,
+                            float scale) {
     int n = static_cast<int>(d.nodes.size());
     if (n == 0) return;
+
+    float headerH = kSeqHeaderH * scale;
+    float rowH = kSeqRowH * scale;
+    float colGap = kSeqColGap * scale;
+    float padX = kNodePadX * scale;
+    float fontH = kFontSize * scale;
 
     layout.nodes.resize(n);
 
@@ -310,19 +324,19 @@ static void LayoutSequence(const Diagram& d, Layout& layout,
         layout.nodes[i].label = d.nodes[i].label;
         layout.nodes[i].shape = NodeShape::Rect;
         float textW = MeasureText(d.nodes[i].label, measure, mctx);
-        layout.nodes[i].w = std::max(kNodeMinW, textW + 2.0f * kNodePadX);
-        layout.nodes[i].h = kSeqHeaderH;
+        layout.nodes[i].w = std::max(kNodeMinW * scale, textW + 2.0f * padX);
+        layout.nodes[i].h = headerH;
         layout.nodes[i].x = x;
         layout.nodes[i].y = 0;
-        x += layout.nodes[i].w + kSeqColGap;
+        x += layout.nodes[i].w + colGap;
     }
-    x -= kSeqColGap;  // remove trailing gap
+    x -= colGap;  // remove trailing gap
 
     layout.width = x;
 
     // Place messages as horizontal edges
     layout.edges.reserve(d.messages.size());
-    float msgY = kSeqHeaderH + 10.0f;
+    float msgY = headerH + 10.0f;
     for (const auto& msg : d.messages) {
         if (msg.from < 0 || msg.from >= n || msg.to < 0 || msg.to >= n) continue;
 
@@ -339,28 +353,29 @@ static void LayoutSequence(const Diagram& d, Layout& layout,
         le.points.push_back({toX, y});
 
         le.labelX = (fromX + toX) / 2.0f;
-        le.labelY = y - kFontSize - 2.0f;
+        le.labelY = y - fontH - 2.0f;
 
         layout.edges.push_back(std::move(le));
-        msgY += kSeqRowH;
+        msgY += rowH;
     }
 
     layout.height = msgY + 10.0f;
-    if (layout.height < kSeqHeaderH + 20.0f) {
-        layout.height = kSeqHeaderH + 20.0f;
+    if (layout.height < headerH + 20.0f) {
+        layout.height = headerH + 20.0f;
     }
 }
 
 // --- Main entry point ---
 
 Layout ComputeLayout(const Diagram& d, float maxWidth,
-                     MeasureFn measure, void* measureCtx) {
+                     MeasureFn measure, void* measureCtx,
+                     float scale) {
     Layout layout;
 
     if (d.type == DiagramType::Flowchart) {
-        LayoutFlowchart(d, layout, measure, measureCtx, maxWidth);
+        LayoutFlowchart(d, layout, measure, measureCtx, maxWidth, scale);
     } else if (d.type == DiagramType::Sequence) {
-        LayoutSequence(d, layout, measure, measureCtx, maxWidth);
+        LayoutSequence(d, layout, measure, measureCtx, maxWidth, scale);
     }
 
     // Clamp to maxWidth

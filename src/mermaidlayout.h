@@ -35,6 +35,7 @@ struct Layout {
 using MeasureFn = float (*)(const std::string& text, void* ctx);
 
 Layout ComputeLayout(const Diagram& d, float maxWidth,
-                     MeasureFn measure, void* measureCtx);
+                     MeasureFn measure, void* measureCtx,
+                     float scale = 1.0f);
 
 }  // namespace mermaid
