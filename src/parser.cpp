@@ -14,6 +14,7 @@
 
 #include <cstring>
 #include <windows.h>
+#include <cctype>
 #include <stack>
 #include <string>
 #include <vector>
@@ -237,6 +238,18 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
         case MD_BLOCK_CODE: {
             int idx = push_node(*ctx, Node{});
             ctx->doc->nodes[idx].block = BlockKind::CodeBlock;
+            auto* d = static_cast<MD_BLOCK_CODE_DETAIL*>(detail);
+            if (d && d->lang.text && d->lang.size > 0) {
+                ctx->doc->nodes[idx].lang.assign(d->lang.text, d->lang.size);
+                // Info string may carry extra words: "mermaid theme=dark".
+                size_t sp = ctx->doc->nodes[idx].lang.find(' ');
+                if (sp != std::string::npos) {
+                    ctx->doc->nodes[idx].lang.resize(sp);
+                }
+                for (auto& c : ctx->doc->nodes[idx].lang) {
+                    c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+                }
+            }
             ctx->block_stack.push_back({type, idx, false, true});
             break;
         }

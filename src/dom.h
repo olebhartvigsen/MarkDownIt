@@ -93,6 +93,7 @@ struct Node {
     uint32_t                   contentOffset = 0; // where editable text starts, after markers
     uint32_t                   contentLength = 0; // byte length of editable text
     std::u32string             raw;          // code block raw text (UTF-32)
+    std::string                lang;         // fence info string, e.g. "mermaid"
     std::vector<TableRow>     rows;         // table rows (for BlockKind::Table)
 };
 

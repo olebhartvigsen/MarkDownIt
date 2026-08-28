@@ -115,3 +115,30 @@ TEST(ParserOffsets, InlineSpanHasOffset) {
     EXPECT_EQ(doc.nodes[0].children[0].srcLength, 5u);
 }
 
+// Fence info string (lang) captured into Node::lang.
+TEST(ParserSmoke, FenceLang) {
+    Document doc;
+    bool ok = ParseMarkdown("```mermaid\ngraph TD\n```\n", doc);
+    ASSERT_TRUE(ok);
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    EXPECT_EQ(doc.nodes[0].lang, std::string("mermaid"));
+}
+
+// Fence info string with extra options: "mermaid theme=dark".
+TEST(ParserSmoke, FenceLangTruncated) {
+    Document doc;
+    bool ok = ParseMarkdown("```mermaid theme=dark\nA --> B\n```\n", doc);
+    ASSERT_TRUE(ok);
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    EXPECT_EQ(doc.nodes[0].lang, std::string("mermaid"));
+}
+
+// No info string: lang stays empty.
+TEST(ParserSmoke, FenceLangEmpty) {
+    Document doc;
+    bool ok = ParseMarkdown("```\nplain code\n```\n", doc);
+    ASSERT_TRUE(ok);
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    EXPECT_EQ(doc.nodes[0].lang, std::string(""));
+}
+
