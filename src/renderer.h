@@ -34,6 +34,9 @@ public:
     // Diagram cache for parsed/laid-out mermaid diagrams.
     void SetDiagramCache(mermaid::DiagramCache* c) { diagram_cache_ = c; }
 
+    // Measure text width using the code font, for mermaid layout sizing.
+    static float MeasureTextWidth(const std::string& text, void* ctx);
+
     // Set pointer to the source text for offset calculations.
     void SetSourceText(const std::string* src) { srcText_ = src; }
     const std::string* SourceText() const { return srcText_; }
