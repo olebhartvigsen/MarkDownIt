@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <d2d1.h>
+#include <d2d1_3.h>
 #include <dwrite.h>
 #include <string>
 #include "dom.h"
@@ -125,7 +126,8 @@ private:
     HWND    hwnd_content_ = nullptr;
     HINSTANCE hinst_ = nullptr;
 
-    ID2D1Factory*          d2d_factory_ = nullptr;
+    ID2D1Factory1*         d2d_factory_ = nullptr;
+    ID2D1DeviceContext5*   d2d_ctx5_ = nullptr;   // for SVG, may be null
     ID2D1HwndRenderTarget* rt_ = nullptr;
     IDWriteFactory*        dw_factory_ = nullptr;
 

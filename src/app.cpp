@@ -9,6 +9,7 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <d2d1.h>
+#include <d2d1_3.h>
 #include <dwrite.h>
 #include <fstream>
 #include <sstream>
@@ -78,6 +79,7 @@ static std::string CleanSelectionForCopy(const std::string& src) {
     return out;
 }
 AppWindow::~AppWindow() {
+    SafeRelease(d2d_ctx5_);
     SafeRelease(rt_);
     SafeRelease(d2d_factory_);
     SafeRelease(dw_factory_);
@@ -1441,7 +1443,10 @@ void AppWindow::OnCreate(HWND hwnd) {
 
     D2D1_FACTORY_OPTIONS opts = {};
     HRESULT hr = D2D1CreateFactory(
-        D2D1_FACTORY_TYPE_SINGLE_THREADED, opts, &d2d_factory_);
+        D2D1_FACTORY_TYPE_SINGLE_THREADED,
+        __uuidof(ID2D1Factory1),
+        &opts,
+        reinterpret_cast<void**>(&d2d_factory_));
     if (FAILED(hr) || !d2d_factory_) {
         MessageBoxW(hwnd, L"D2D1CreateFactory failed", L"MarkDownIt", MB_ICONERROR);
         return;
@@ -1485,6 +1490,17 @@ void AppWindow::OnCreate(HWND hwnd) {
     }
     dpi_ = GetWindowDpi(hwnd_);
     rt_->SetDpi(static_cast<float>(dpi_), static_cast<float>(dpi_));
+
+    // Try to get ID2D1DeviceContext5 for SVG support (Windows 10 Creators Update+).
+    // If QI fails, the app runs without SVG; diagrams fall back to code blocks.
+    if (rt_) {
+        HRESULT qi = rt_->QueryInterface(
+            __uuidof(ID2D1DeviceContext5),
+            reinterpret_cast<void**>(&d2d_ctx5_));
+        if (FAILED(qi)) {
+            d2d_ctx5_ = nullptr;
+        }
+    }
 
     EnsureRenderer();
     if (pending_file_.empty()) {
@@ -1822,6 +1838,7 @@ void AppWindow::OnContentMouseWheel(HWND hwnd, int delta) {
 }
 
 void AppWindow::RecreateRenderTarget() {
+    SafeRelease(d2d_ctx5_);
     SafeRelease(rt_);
     if (d2d_factory_ && hwnd_content_) {
         RECT rc;
@@ -1836,6 +1853,12 @@ void AppWindow::RecreateRenderTarget() {
             rtProps, D2D1::HwndRenderTargetProperties(hwnd_content_, size), &rt_);
         if (rt_) {
             rt_->SetDpi(static_cast<float>(dpi_), static_cast<float>(dpi_));
+            HRESULT qi = rt_->QueryInterface(
+                __uuidof(ID2D1DeviceContext5),
+                reinterpret_cast<void**>(&d2d_ctx5_));
+            if (FAILED(qi)) {
+                d2d_ctx5_ = nullptr;
+            }
         }
     }
 }
@@ -3618,6 +3641,7 @@ void AppWindow::OnDestroy() {
     DestroyRibbon();
     watcher_.Stop();
     renderer_.Release();
+    SafeRelease(d2d_ctx5_);
     SafeRelease(rt_);
     SafeRelease(dw_factory_);
     SafeRelease(d2d_factory_);
