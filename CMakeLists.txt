@@ -105,6 +105,8 @@ add_executable(MarkDownIt WIN32
     src/fileassoc.cpp
     src/settings.cpp
     src/welcomescreen.cpp
+    src/svgtext.cpp
+    src/svgdoc.cpp
 )
 
 if(MSVC AND RIBBON_AVAILABLE)
@@ -201,6 +203,7 @@ if(BUILD_TESTS)
         tests/inputfilter_test.cpp
         tests/perf_harness.cpp
         tests/test_main.cpp
+        tests/svgtext_test.cpp
         src/parser.cpp
         src/textbuffer.cpp
         src/layoutcache.cpp
@@ -211,6 +214,7 @@ if(BUILD_TESTS)
         src/formatting.cpp
         src/autoformat.cpp
         src/inputfilter.cpp
+        src/svgtext.cpp
     )
     target_link_libraries(MarkDownIt.tests PRIVATE md4c)
     target_include_directories(MarkDownIt.tests PRIVATE
