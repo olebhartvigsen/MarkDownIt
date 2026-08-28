@@ -92,6 +92,7 @@ add_executable(MarkDownIt WIN32
     src/imagehelper.cpp
     src/filewatch.cpp
     src/parser.cpp
+    src/mermaid.cpp
     src/ribbon.cpp
     src/textbuffer.cpp
     src/layoutcache.cpp
@@ -188,6 +189,7 @@ option(BUILD_TESTS "Build test binary" OFF)
 if(BUILD_TESTS)
     add_executable(MarkDownIt.tests
         tests/parser_smoke.cpp
+        tests/mermaid_test.cpp
         tests/textbuffer_test.cpp
         tests/caret_test.cpp
         tests/hittest_test.cpp
@@ -202,6 +204,7 @@ if(BUILD_TESTS)
         tests/perf_harness.cpp
         tests/test_main.cpp
         src/parser.cpp
+        src/mermaid.cpp
         src/textbuffer.cpp
         src/layoutcache.cpp
         src/editcontroller.cpp
