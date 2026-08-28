@@ -676,8 +676,13 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
             drawW -= listIndent;
         }
 
-        if (n.block == BlockKind::CodeBlock) {
-            std::u32string raw = n.raw;
+        if (n.block == BlockKind::CodeBlock && n.lang == "svg") {
+            float svgH = MeasureSvgBlock(dw, n, drawX, drawW);
+            if (svgH > 0.0f) {
+                blockH = svgH;
+            } else {
+                // Fall back to code block measurement.
+                std::u32string raw = n.raw;
             while (!raw.empty() &&
                    (raw.back() == 0x0A || raw.back() == 0x0D)) {
                 raw.pop_back();
@@ -693,6 +698,7 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
                 layout->GetMetrics(&tm);
                 blockH = tm.height + 2.0f * m.codePad;
                 layout->Release();
+            }
             }
         } else if (n.block == BlockKind::ThematicBreak) {
             blockH = 12.0f;
@@ -845,6 +851,15 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                    n.depth, prevDepth, m);
         }
         curY += gap;
+
+        if (n.block == BlockKind::CodeBlock && n.lang == "svg") {
+            float blockH = 0.0f;
+            DrawSvgBlock(rt, dw, n, drawX, curY, drawW, blockH, sel);
+            curY += blockH;
+            prevBlock = n.block;
+            prevDepth = n.depth;
+            continue;
+        }
 
         if (n.block == BlockKind::CodeBlock) {
             float blockH = 0.0f;
@@ -1437,3 +1452,139 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (selBrush) selBrush->Release();
     return textY + tm.height;
 }
+
+
+// --- SVG block rendering ---
+
+// Convert a UTF-32 string (from Node::raw) to UTF-8.
+static std::string U32ToUtf8(const std::u32string& s) {
+    std::string out;
+    for (char32_t cp : s) {
+        if (cp < 0x80) {
+            out.push_back(static_cast<char>(cp));
+        } else if (cp < 0x800) {
+            out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        } else if (cp < 0x10000) {
+            out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        } else {
+            out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        }
+    }
+    return out;
+}
+
+void Renderer::ClearSvgCache() {
+    for (auto& e : svg_cache_) {
+        e.doc.Release();
+    }
+    svg_cache_.clear();
+}
+
+svg::SvgDoc* Renderer::GetSvgDoc(const Node& n, float availW) {
+    if (!d2d_ctx5_) return nullptr;
+
+    // Check cache by srcOffset
+    for (auto& e : svg_cache_) {
+        if (e.srcOffset == n.srcOffset) {
+            return &e.doc;
+        }
+    }
+
+    // Cache miss: parse the SVG
+    std::string utf8 = U32ToUtf8(n.raw);
+    if (utf8.empty()) return nullptr;
+
+    SvgCacheEntry entry;
+    entry.srcOffset = n.srcOffset;
+    if (!entry.doc.Load(d2d_ctx5_, utf8)) {
+        return nullptr;
+    }
+    svg_cache_.push_back(std::move(entry));
+    return &svg_cache_.back().doc;
+}
+
+float Renderer::MeasureSvgBlock(IDWriteFactory* dw, const Node& n,
+                                  float x, float width) {
+    if (!d2d_ctx5_) return 0.0f;
+
+    LayoutMetrics m = ComputeMetrics();
+    float availW = width - 2.0f * m.codePad;
+
+    svg::SvgDoc* doc = GetSvgDoc(n, availW);
+    if (!doc || doc->Width() <= 0 || doc->Height() <= 0) return 0.0f;
+
+    // Scale to fit available width, preserving aspect ratio.
+    float scale = availW / doc->Width();
+    float renderedH = doc->Height() * scale;
+    return renderedH + 2.0f * m.codePad;
+}
+
+void Renderer::DrawSvgBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+                             const Node& n, float x, float y, float width,
+                             float& outH, const Selection* sel) {
+    outH = 0.0f;
+    if (!rt || !d2d_ctx5_) { outH = 0.0f; return; }
+
+    LayoutMetrics m = ComputeMetrics();
+    Palette pal = BasePalette();
+    float availW = width - 2.0f * m.codePad;
+
+    // Edit mode: if caret is inside this block, show raw code.
+    bool caretInBlock = false;
+    if (sel) {
+        uint32_t off = sel->active.offset;
+        if (off >= n.srcOffset &&
+            off < n.srcOffset + n.srcLength) {
+            caretInBlock = true;
+        }
+    }
+
+    if (caretInBlock) {
+        // Fall back to code block rendering.
+        DrawCodeBlock(rt, dw, n, x, y, width, outH, sel);
+        return;
+    }
+
+    svg::SvgDoc* doc = GetSvgDoc(n, availW);
+    if (!doc || doc->Width() <= 0 || doc->Height() <= 0) {
+        // Parse failed, fall back to code block.
+        DrawCodeBlock(rt, dw, n, x, y, width, outH, sel);
+        return;
+    }
+
+    // Compute scaled dimensions.
+    float scale = availW / doc->Width();
+    float renderedW = doc->Width() * scale;
+    float renderedH = doc->Height() * scale;
+    outH = renderedH + 2.0f * m.codePad;
+
+    // Draw background card.
+    ID2D1SolidColorBrush* bgBrush = nullptr;
+    rt->CreateSolidColorBrush(pal.codeBg, &bgBrush);
+    ID2D1SolidColorBrush* borderBrush = nullptr;
+    rt->CreateSolidColorBrush(pal.codeBorder, &borderBrush);
+
+    D2D1_RECT_F bgRect = D2D1::RectF(x, y, x + width, y + outH);
+    if (m.codeRadius > 0.5f) {
+        D2D1_ROUNDED_RECT rrect = D2D1::RoundedRect(bgRect,
+            m.codeRadius, m.codeRadius);
+        if (bgBrush) rt->FillRoundedRectangle(rrect, bgBrush);
+        if (borderBrush) rt->DrawRoundedRectangle(rrect, borderBrush, 1.0f);
+    } else {
+        if (bgBrush) rt->FillRectangle(bgRect, bgBrush);
+        if (borderBrush) rt->DrawRectangle(bgRect, borderBrush, 1.0f);
+    }
+    if (bgBrush) bgBrush->Release();
+    if (borderBrush) borderBrush->Release();
+
+    // Draw the SVG document.
+    doc->Draw(d2d_ctx5_, dw, x + m.codePad, y + m.codePad,
+              renderedW, renderedH);
+}
+

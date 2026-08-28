@@ -1,11 +1,14 @@
 #pragma once
 
 #include <d2d1.h>
+#include <d2d1_3.h>
 #include <dwrite.h>
 #include <string>
+#include <vector>
 #include "dom.h"
 #include "theme.h"
 #include "layoutcache.h"
+#include "svgdoc.h"
 #include "caret.h"
 
 class Renderer {
@@ -61,6 +64,28 @@ private:
     int  contentWidthMode_ = 0;  // 0=Standard(800), 1=960, 2=1600, 3=Full
     LayoutCache* cache_ = nullptr;
     const std::string* srcText_ = nullptr;  // source text for offset calc
+    ID2D1DeviceContext5* d2d_ctx5_ = nullptr;  // may be null
+
+public:
+    void SetD2DDeviceContext5(ID2D1DeviceContext5* ctx) { d2d_ctx5_ = ctx; }
+
+private:
+    // SVG document cache: keyed by srcOffset.
+    struct SvgCacheEntry {
+        uint32_t srcOffset = 0;
+        svg::SvgDoc doc;
+        float lastWidth = 0;
+        float lastHeight = 0;
+    };
+    std::vector<SvgCacheEntry> svg_cache_;
+    svg::SvgDoc* GetSvgDoc(const Node& n, float availW);
+    void ClearSvgCache();
+
+    void DrawSvgBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+                      const Node& n, float x, float y, float width,
+                      float& outH, const Selection* sel);
+    float MeasureSvgBlock(IDWriteFactory* dw, const Node& n,
+                          float x, float width);
 
     LayoutMetrics ComputeMetrics() const;
     static float GapForTransition(BlockKind prev, BlockKind cur,

@@ -276,6 +276,7 @@ void AppWindow::EnsureRenderer() {
     if (renderer_inited_ || !dw_factory_) return;
     renderer_inited_ = renderer_.Init(dw_factory_);
     renderer_.SetLayoutCache(&layout_cache_);
+    renderer_.SetD2DDeviceContext5(d2d_ctx5_);
     layout_cache_.SetSourceText(&buffer_.Text());
     renderer_.SetSourceText(&buffer_.Text());
 }
@@ -643,6 +644,7 @@ void AppWindow::LoadSampleDoc() {
     doc_ = Document{};
     buffer_.SetText("");
     layout_cache_.Clear();
+    renderer_.ClearSvgCache();
     scrollY_ = 0.0f;
     totalH_ = 0.0f;
     UpdateScrollInfo();
@@ -685,6 +687,7 @@ void AppWindow::ToggleSourceView() {
     scrollY_ = 0.0f;
     StopScrollAnimation();
     layout_cache_.Clear();
+    renderer_.ClearSvgCache();
     ForceRepaintNow();
     if (hwnd_content_) SetFocus(hwnd_content_);
 }
@@ -696,6 +699,7 @@ void AppWindow::OnReparseTimer() {
     // raw text is displayed directly. Just rebuild the layout cache.
     if (source_view_) {
         layout_cache_.Clear();
+    renderer_.ClearSvgCache();
         UpdateScrollInfo();
         ForceRepaintNow();
         return;
@@ -703,6 +707,7 @@ void AppWindow::OnReparseTimer() {
     doc_ = Document{};
     ParseMarkdown(buffer_.Text(), doc_);
     layout_cache_.Clear();
+    renderer_.ClearSvgCache();
     UpdateScrollInfo();
     // Force synchronous repaint so the layout cache is rebuilt before
     // UpdateCaretPosition runs. Repaint() is async (InvalidateRect) and
@@ -715,6 +720,7 @@ void AppWindow::OnBufferChanged() {
     MarkDirty();
     InvalidateFormatButtons();
     layout_cache_.Clear();
+    renderer_.ClearSvgCache();
     ScheduleReparse();
 }
 
@@ -1352,6 +1358,7 @@ void AppWindow::OpenFile(const std::wstring& path) {
     totalH_ = 0.0f;
     sel_.Collapse({0});
     layout_cache_.Clear();
+    renderer_.ClearSvgCache();
     // Update source text pointers (buffer may have been reallocated).
     layout_cache_.SetSourceText(&buffer_.Text());
     renderer_.SetSourceText(&buffer_.Text());
@@ -3684,6 +3691,7 @@ void AppWindow::ZoomIn() {
     // Cached line metrics and hit-test rects were measured at the old
     // zoom; clear them so caret/selection stay accurate.
     layout_cache_.Clear();
+    renderer_.ClearSvgCache();
     UpdateScrollInfo();
     Repaint();
 }
@@ -3695,6 +3703,7 @@ void AppWindow::ZoomOut() {
     renderer_.SetZoom(z);
     RecreateRenderer();
     layout_cache_.Clear();
+    renderer_.ClearSvgCache();
     UpdateScrollInfo();
     Repaint();
 }
@@ -3868,6 +3877,7 @@ void AppWindow::SetContentWidthMode(int mode) {
     // Defer ALL side effects (InvalidateUICommand, repaint) via PostMessage
     // to avoid re-entrant calls inside the Ribbon Execute callback.
     layout_cache_.Clear();
+    renderer_.ClearSvgCache();
     if (hwnd_content_) {
         PostMessage(hwnd_content_, WM_USER + 1, 0, 0);
     }
