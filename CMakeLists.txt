@@ -93,6 +93,7 @@ add_executable(MarkDownIt WIN32
     src/filewatch.cpp
     src/parser.cpp
     src/mermaid.cpp
+    src/mermaidlayout.cpp
     src/ribbon.cpp
     src/textbuffer.cpp
     src/layoutcache.cpp
@@ -190,6 +191,7 @@ if(BUILD_TESTS)
     add_executable(MarkDownIt.tests
         tests/parser_smoke.cpp
         tests/mermaid_test.cpp
+        tests/mermaid_layout_test.cpp
         tests/textbuffer_test.cpp
         tests/caret_test.cpp
         tests/hittest_test.cpp
@@ -205,6 +207,7 @@ if(BUILD_TESTS)
         tests/test_main.cpp
         src/parser.cpp
         src/mermaid.cpp
+        src/mermaidlayout.cpp
         src/textbuffer.cpp
         src/layoutcache.cpp
         src/editcontroller.cpp
