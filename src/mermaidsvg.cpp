@@ -2,8 +2,6 @@
 
 #if HAS_WEBVIEW2
 
-// WebView2 requires these headers in a specific order.
-// windows.h and unknwn.h must come before WebView2.h.
 #include <windows.h>
 #include <unknwn.h>
 #include <wrl.h>
@@ -15,8 +13,26 @@
 #include <utility>
 
 // ---------------------------------------------------------------------------
-// Dynamic loading of WebView2Loader.dll — the NuGet package ships the DLL
-// but no import library, so we LoadLibrary + GetProcAddress at runtime.
+// Debug logging
+// ---------------------------------------------------------------------------
+static void DebugLog(const char* msg) {
+    char path[MAX_PATH];
+    DWORD len = GetTempPathA(MAX_PATH, path);
+    if (len == 0) return;
+    strcat_s(path, MAX_PATH, "markdownit-mermaid-debug.log");
+    FILE* f = nullptr;
+    fopen_s(&f, path, "a");
+    if (!f) return;
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    fprintf(f, "[%04d-%02d-%02d %02d:%02d:%02d.%03d] %s\n",
+            st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
+            st.wMilliseconds, msg);
+    fclose(f);
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic loading of WebView2Loader.dll
 // ---------------------------------------------------------------------------
 
 typedef HRESULT (WINAPI *PFN_CreateCoreWebView2EnvironmentWithOptions)(
@@ -31,67 +47,70 @@ static HMODULE g_webview2LoaderDll = nullptr;
 static bool LoadWebView2Loader() {
     if (g_pfnCreateEnv) return true;
     g_webview2LoaderDll = LoadLibraryW(L"WebView2Loader.dll");
-    if (!g_webview2LoaderDll) return false;
+    if (!g_webview2LoaderDll) {
+        DebugLog("LoadWebView2Loader: LoadLibraryW failed");
+        return false;
+    }
     g_pfnCreateEnv = reinterpret_cast<PFN_CreateCoreWebView2EnvironmentWithOptions>(
         GetProcAddress(g_webview2LoaderDll, "CreateCoreWebView2EnvironmentWithOptions"));
     if (!g_pfnCreateEnv) {
+        DebugLog("LoadWebView2Loader: GetProcAddress failed");
         FreeLibrary(g_webview2LoaderDll);
         g_webview2LoaderDll = nullptr;
         return false;
     }
+    DebugLog("LoadWebView2Loader: OK");
     return true;
 }
 
-// Read mermaid.min.js from RCDATA resource.
+// Read mermaid.min.js from RCDATA resource 101.
 static std::string LoadMermaidJs() {
     HMODULE hMod = GetModuleHandleW(nullptr);
     HRSRC hRes = FindResourceW(hMod, MAKEINTRESOURCEW(101), RT_RCDATA);
-    if (!hRes) return {};
+    if (!hRes) { DebugLog("LoadMermaidJs: FindResourceW failed"); return {}; }
     HGLOBAL hMem = LoadResource(hMod, hRes);
-    if (!hMem) return {};
+    if (!hMem) { DebugLog("LoadMermaidJs: LoadResource failed"); return {}; }
     DWORD size = SizeofResource(hMod, hRes);
     const char* data = static_cast<const char*>(LockResource(hMem));
-    if (!data || size == 0) return {};
+    if (!data || size == 0) { DebugLog("LoadMermaidJs: LockResource/size failed"); return {}; }
+    char buf[64];
+    sprintf_s(buf, "LoadMermaidJs: %lu bytes", (unsigned long)size);
+    DebugLog(buf);
     return std::string(data, size);
 }
 
-// HTML page that loads mermaid.js and provides a render function.
-static std::string BuildMermaidHtml(const std::string& mermaidJs) {
-    std::ostringstream html;
-    html << "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
-         << "<style>body{margin:0;padding:0;}"
-         << "#container{position:absolute;left:-9999px;top:-9999px;}"
-         << "</style></head><body>"
-         << "<div id=\"container\"></div>"
-         << "<script>" << mermaidJs << "</script>"
-         << "<script>"
-         << "let mermaidReady = false;"
-         << "try {"
-         << "  mermaid.initialize({"
-         << "    startOnLoad: false,"
-         << "    htmlLabels: false,"
-         << "    securityLevel: 'loose',"
-         << "    theme: 'default'"
-         << "  });"
-         << "  mermaidReady = true;"
-         << "} catch(e) {"
-         << "  console.error('mermaid initialize failed:', e);"
-         << "}"
-         << "window.chrome.webview.addEventListener('message', async (e) => {"
-         << "  const {id, code} = e.data;"
-         << "  if (!mermaidReady) {"
-         << "    window.chrome.webview.postMessage({id: id, svg: ''});"
-         << "    return;"
-         << "  }"
-         << "  try {"
-         << "    const {svg} = await mermaid.render('m' + id, code);"
-         << "    window.chrome.webview.postMessage({id: id, svg: svg});"
-         << "  } catch(err) {"
-         << "    window.chrome.webview.postMessage({id: id, svg: ''});"
-         << "  }"
-         << "});"
-         << "</script></body></html>";
-    return html.str();
+// Minimal HTML page — mermaid.js is injected separately via
+// AddScriptToExecuteOnDocumentLoaded to avoid the ~2MB NavigateToString limit.
+static std::string BuildMermaidHtml() {
+    return "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+           "<style>body{margin:0;padding:0;}"
+           "#container{position:absolute;left:-9999px;top:-9999px;}"
+           "</style></head><body>"
+           "<div id=\"container\"></div>"
+           "<script>"
+           "let mermaidReady = false;"
+           "window.chrome.webview.addEventListener('message', async (e) => {"
+           "  const {id, code} = e.data;"
+           "  if (typeof mermaid === 'undefined' || !mermaidReady) {"
+           "    window.chrome.webview.postMessage({id: id, svg: ''});"
+           "    return;"
+           "  }"
+           "  try {"
+           "    const {svg} = await mermaid.render('m' + id, code);"
+           "    window.chrome.webview.postMessage({id: id, svg: svg});"
+           "  } catch(err) {"
+           "    window.chrome.webview.postMessage({id: id, svg: ''});"
+           "  }"
+           "});"
+           "</script></body></html>";
+}
+
+// Script that initializes mermaid after it's loaded.
+static std::string BuildMermaidInitScript(const std::string& mermaidJs) {
+    return mermaidJs +
+           "\ntry{mermaid.initialize({startOnLoad:false,htmlLabels:false,"
+           "securityLevel:'loose',theme:'default'});mermaidReady=true;"
+           "}catch(e){console.error('mermaid init failed:',e);}";
 }
 
 namespace mermaid {
@@ -182,7 +201,10 @@ struct MermaidRenderer::Impl {
             }
         }
 
-        // Invoke callback
+        char buf[80];
+        sprintf_s(buf, "OnMessageReceived: id=%d svgLen=%zu", id, svg.size());
+        DebugLog(buf);
+
         {
             std::lock_guard<std::mutex> lock(outstandingMutex);
             auto it = outstanding.find(id);
@@ -196,6 +218,7 @@ struct MermaidRenderer::Impl {
 
     void ProcessPending() {
         std::lock_guard<std::mutex> lock(pendingMutex);
+        DebugLog("ProcessPending: queue size + sending");
         while (!pending.empty() && webviewReady) {
             auto req = std::move(pending.front());
             pending.pop();
@@ -240,9 +263,8 @@ MermaidRenderer::MermaidRenderer() = default;
 MermaidRenderer::~MermaidRenderer() { Shutdown(); }
 
 bool MermaidRenderer::Init(HWND parent) {
-    if (!parent) return false;
+    if (!parent) { DebugLog("Init: null parent"); return false; }
 
-    // Dynamically load WebView2Loader.dll
     if (!LoadWebView2Loader()) return false;
 
     impl_ = new Impl();
@@ -253,10 +275,12 @@ bool MermaidRenderer::Init(HWND parent) {
         WS_CHILD | SS_LEFT, 0, 0, 1, 1,
         parent, nullptr, GetModuleHandleW(nullptr), nullptr);
     if (!impl_->hidden_wnd) {
+        DebugLog("Init: CreateWindowExW failed");
         delete impl_;
         impl_ = nullptr;
         return false;
     }
+    DebugLog("Init: hidden window created");
 
     // Load mermaid.js from resource
     std::string mermaidJs = LoadMermaidJs();
@@ -267,22 +291,57 @@ bool MermaidRenderer::Init(HWND parent) {
         return false;
     }
 
-    // Create WebView2 environment via dynamically loaded function
+    // Build the mermaid init script (mermaid.js + initialize call)
+    std::string initScript = BuildMermaidInitScript(mermaidJs);
+
+    // Build minimal HTML (no inline mermaid.js)
+    std::string html = BuildMermaidHtml();
+
+    // Convert HTML to wide string for NavigateToString
+    std::wstring htmlW;
+    {
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, html.c_str(),
+            static_cast<int>(html.size()), nullptr, 0);
+        htmlW.resize(wlen);
+        MultiByteToWideChar(CP_UTF8, 0, html.c_str(),
+            static_cast<int>(html.size()), &htmlW[0], wlen);
+    }
+
+    // Convert init script to wide string for AddScriptToExecuteOnDocumentLoaded
+    std::wstring initScriptW;
+    {
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, initScript.c_str(),
+            static_cast<int>(initScript.size()), nullptr, 0);
+        initScriptW.resize(wlen);
+        MultiByteToWideChar(CP_UTF8, 0, initScript.c_str(),
+            static_cast<int>(initScript.size()), &initScriptW[0], wlen);
+    }
+
+    DebugLog("Init: calling CreateCoreWebView2EnvironmentWithOptions");
+
     HRESULT hr = g_pfnCreateEnv(
         nullptr, nullptr, nullptr,
         Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-            [this](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
+            [this, htmlW, initScriptW](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
+                char buf[80];
+                sprintf_s(buf, "Env completed: hr=0x%08lX", (unsigned long)result);
+                DebugLog(buf);
                 if (FAILED(result) || !env) return S_OK;
                 impl_->env = env;
 
                 env->CreateCoreWebView2Controller(impl_->hidden_wnd,
                     Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                        [this](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
+                        [this, htmlW, initScriptW](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
+                            char buf2[80];
+                            sprintf_s(buf2, "Controller completed: hr=0x%08lX", (unsigned long)result);
+                            DebugLog(buf2);
                             if (FAILED(result) || !controller) return S_OK;
                             impl_->controller = controller;
                             controller->get_CoreWebView2(&impl_->webview);
 
                             if (impl_->webview) {
+                                DebugLog("Got ICoreWebView2");
+
                                 // Set up message handler
                                 auto handler = Microsoft::WRL::Callback<
                                     ICoreWebView2WebMessageReceivedEventHandler>(
@@ -294,24 +353,33 @@ bool MermaidRenderer::Init(HWND parent) {
                                 impl_->webview->add_WebMessageReceived(
                                     handler.Get(), &impl_->messageToken);
 
-                                // Navigate to mermaid HTML
-                                std::string html = BuildMermaidHtml(LoadMermaidJs());
-                                std::wstring htmlW;
-                                int wlen = MultiByteToWideChar(CP_UTF8, 0,
-                                    html.c_str(), static_cast<int>(html.size()),
-                                    nullptr, 0);
-                                htmlW.resize(wlen);
-                                MultiByteToWideChar(CP_UTF8, 0,
-                                    html.c_str(), static_cast<int>(html.size()),
-                                    &htmlW[0], wlen);
+                                // Inject mermaid.js as a script
+                                DebugLog("Adding mermaid.js script");
+                                impl_->webview->AddScriptToExecuteOnDocumentLoaded(
+                                    initScriptW.c_str(),
+                                    Microsoft::WRL::Callback<
+                                        ICoreWebView2AddScriptToExecuteOnDocumentLoadedCompletedHandler>(
+                                        [this](HRESULT error, PCWSTR id) -> HRESULT {
+                                            char sb[80];
+                                            sprintf_s(sb, "AddScript completed: hr=0x%08lX", (unsigned long)error);
+                                            DebugLog(sb);
+                                            return S_OK;
+                                        }).Get());
 
+                                // Navigate to minimal HTML
+                                DebugLog("NavigateToString");
                                 impl_->webview->NavigateToString(htmlW.c_str());
 
                                 // NavigationCompleted -> mark ready
                                 auto navHandler = Microsoft::WRL::Callback<
                                     ICoreWebView2NavigationCompletedEventHandler>(
                                         [this](ICoreWebView2*,
-                                            ICoreWebView2NavigationCompletedEventArgs*) -> HRESULT {
+                                            ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT {
+                                            BOOL success = FALSE;
+                                            if (args) args->get_IsSuccess(&success);
+                                            char sb[80];
+                                            sprintf_s(sb, "NavigationCompleted: success=%d", (int)success);
+                                            DebugLog(sb);
                                             impl_->webviewReady = true;
                                             impl_->ProcessPending();
                                             return S_OK;
@@ -319,13 +387,20 @@ bool MermaidRenderer::Init(HWND parent) {
                                 impl_->webview->add_NavigationCompleted(
                                     navHandler.Get(),
                                     &impl_->navToken);
+                            } else {
+                                DebugLog("get_CoreWebView2 returned null");
                             }
                             return S_OK;
                         }).Get());
                 return S_OK;
             }).Get());
 
+    char hbuf[80];
+    sprintf_s(hbuf, "CreateEnv returned: hr=0x%08lX", (unsigned long)hr);
+    DebugLog(hbuf);
+
     if (FAILED(hr)) {
+        DebugLog("Init: CreateEnv FAILED");
         DestroyWindow(impl_->hidden_wnd);
         delete impl_;
         impl_ = nullptr;
@@ -333,6 +408,7 @@ bool MermaidRenderer::Init(HWND parent) {
     }
 
     available_ = true;
+    DebugLog("Init: returning true (async init pending)");
     return true;
 }
 
@@ -355,6 +431,9 @@ void MermaidRenderer::Request(uint32_t srcOffset, const std::string& code,
         impl_->SendRenderRequest(srcOffset, code, std::move(cb));
     } else {
         std::lock_guard<std::mutex> lock(impl_->pendingMutex);
+        char buf[80];
+        sprintf_s(buf, "Request: queueing (offset=%u)", srcOffset);
+        DebugLog(buf);
         impl_->pending.push({srcOffset, code, std::move(cb)});
     }
 }
@@ -375,6 +454,7 @@ void MermaidRenderer::Shutdown() {
         impl_ = nullptr;
     }
     available_ = false;
+    DebugLog("Shutdown");
 }
 
 } // namespace mermaid
