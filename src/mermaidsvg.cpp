@@ -355,10 +355,10 @@ bool MermaidRenderer::Init(HWND parent) {
 
                                 // Inject mermaid.js as a script
                                 DebugLog("Adding mermaid.js script");
-                                impl_->webview->AddScriptToExecuteOnDocumentLoaded(
+                                impl_->webview->AddScriptToExecuteOnDocumentCreated(
                                     initScriptW.c_str(),
                                     Microsoft::WRL::Callback<
-                                        ICoreWebView2AddScriptToExecuteOnDocumentLoadedCompletedHandler>(
+                                        ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
                                         [this](HRESULT error, PCWSTR id) -> HRESULT {
                                             char sb[80];
                                             sprintf_s(sb, "AddScript completed: hr=0x%08lX", (unsigned long)error);
