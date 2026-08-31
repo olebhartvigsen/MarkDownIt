@@ -764,7 +764,7 @@ void AppWindow::RequestMermaidRenders() {
                         // Post SVG to UI thread — Direct2D is single-threaded
                         // and the WebView2 callback may run on a different thread.
                         std::string* heapSvg = new std::string(svg);
-                        PostMessageW(hwnd_content_, WM_APP + 1,
+                        PostMessageW(hwnd_content_, WM_APP + 2,
                             static_cast<WPARAM>(srcOffset),
                             reinterpret_cast<LPARAM>(heapSvg));
                     }
@@ -4068,8 +4068,7 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                                 static_cast<int>(lp));
             return 0;
         }
-        case WM_APP + 1: {
-            // Mermaid SVG result from WebView2 (posted from callback thread)
+        case WM_APP + 2: {
             uint32_t srcOffset = static_cast<uint32_t>(wp);
             std::string* heapSvg = reinterpret_cast<std::string*>(lp);
             if (heapSvg) {
