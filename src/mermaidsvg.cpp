@@ -340,6 +340,10 @@ bool MermaidRenderer::Available() const {
     return available_ && impl_ && impl_->webviewReady;
 }
 
+bool MermaidRenderer::IsInitialized() const {
+    return available_;
+}
+
 void MermaidRenderer::Request(uint32_t srcOffset, const std::string& code,
                                RenderCallback cb) {
     if (!impl_ || !available_) {
@@ -384,6 +388,7 @@ MermaidRenderer::~MermaidRenderer() = default;
 
 bool MermaidRenderer::Init(HWND) { return false; }
 bool MermaidRenderer::Available() const { return false; }
+bool MermaidRenderer::IsInitialized() const { return false; }
 void MermaidRenderer::Request(uint32_t srcOffset, const std::string&,
                                RenderCallback cb) {
     if (cb) cb(srcOffset, {});

@@ -699,7 +699,7 @@ void AppWindow::ToggleSourceView() {
 // When SVGs are ready, they are stored in the renderer's SVG cache and
 // the content window is repainted.
 void AppWindow::RequestMermaidRenders() {
-    if (!mermaid_renderer_.Available()) return;
+    if (!mermaid_renderer_.IsInitialized()) return;
 
     for (const auto& n : doc_.nodes) {
         if (n.block == BlockKind::CodeBlock && n.lang == "mermaid") {

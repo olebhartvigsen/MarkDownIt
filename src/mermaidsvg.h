@@ -33,6 +33,10 @@ public:
     // True if WebView2 is ready and mermaid.js is loaded.
     bool Available() const;
 
+    // True if Init succeeded (WebView2 loaded). Requests will be
+    // queued until WebView2 navigation completes.
+    bool IsInitialized() const;
+
     // Request an SVG render. The callback is called asynchronously
     // when the SVG is ready. Empty SVG string means rendering failed.
     void Request(uint32_t srcOffset, const std::string& code,
