@@ -100,19 +100,22 @@ static std::string BuildInjectedScript(const std::string& mermaidJs) {
          "  window.__mermaidReady = false;\n"
          "  console.error('mermaid init failed:', e);\n"
          "}\n"
-         // Set up message handler
+         // Set up message handler — use JSON.parse since PostWebMessageAsString
+         // sends a string, not an object
          "window.chrome.webview.addEventListener('message', async (e) => {\n"
-         "  const {id, code} = e.data;\n"
+         "  let data;\n"
+         "  try { data = JSON.parse(e.data); } catch(ex) { return; }\n"
+         "  const id = data.id, code = data.code;\n"
          "  if (typeof mermaid === 'undefined' || !window.__mermaidReady) {\n"
-         "    window.chrome.webview.postMessage({id: id, svg: ''});\n"
+         "    window.chrome.webview.postMessage(JSON.stringify({id: id, svg: ''}));\n"
          "    return;\n"
          "  }\n"
          "  try {\n"
          "    const {svg} = await mermaid.render('m' + id, code);\n"
-         "    window.chrome.webview.postMessage({id: id, svg: svg});\n"
+         "    window.chrome.webview.postMessage(JSON.stringify({id: id, svg: svg}));\n"
          "  } catch(err) {\n"
          "    console.error('mermaid render failed:', err);\n"
-         "    window.chrome.webview.postMessage({id: id, svg: ''});\n"
+         "    window.chrome.webview.postMessage(JSON.stringify({id: id, svg: ''}));\n"
          "  }\n"
          "});\n"
          "window.__mermaidHandlerReady = true;\n";
