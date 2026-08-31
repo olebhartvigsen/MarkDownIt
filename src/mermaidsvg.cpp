@@ -14,6 +14,34 @@
 #include <mutex>
 #include <utility>
 
+// ---------------------------------------------------------------------------
+// Dynamic loading of WebView2Loader.dll — the NuGet package ships the DLL
+// but no import library, so we LoadLibrary + GetProcAddress at runtime.
+// ---------------------------------------------------------------------------
+
+typedef HRESULT (WINAPI *PFN_CreateCoreWebView2EnvironmentWithOptions)(
+    PCWSTR browserExecutableFolder,
+    PCWSTR userDataFolder,
+    ICoreWebView2EnvironmentOptions* options,
+    ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler* handler);
+
+static PFN_CreateCoreWebView2EnvironmentWithOptions g_pfnCreateEnv = nullptr;
+static HMODULE g_webview2LoaderDll = nullptr;
+
+static bool LoadWebView2Loader() {
+    if (g_pfnCreateEnv) return true;
+    g_webview2LoaderDll = LoadLibraryW(L"WebView2Loader.dll");
+    if (!g_webview2LoaderDll) return false;
+    g_pfnCreateEnv = reinterpret_cast<PFN_CreateCoreWebView2EnvironmentWithOptions>(
+        GetProcAddress(g_webview2LoaderDll, "CreateCoreWebView2EnvironmentWithOptions"));
+    if (!g_pfnCreateEnv) {
+        FreeLibrary(g_webview2LoaderDll);
+        g_webview2LoaderDll = nullptr;
+        return false;
+    }
+    return true;
+}
+
 // Read mermaid.min.js from RCDATA resource.
 static std::string LoadMermaidJs() {
     HMODULE hMod = GetModuleHandleW(nullptr);
@@ -42,7 +70,7 @@ static std::string BuildMermaidHtml(const std::string& mermaidJs) {
          << "  mermaid.initialize({"
          << "    startOnLoad: false,"
          << "    htmlLabels: false,"
-         << "    securityLevel: 'strict',"
+         << "    securityLevel: 'loose',"
          << "    theme: 'default'"
          << "  });"
          << "  mermaidReady = true;"
@@ -69,7 +97,6 @@ static std::string BuildMermaidHtml(const std::string& mermaidJs) {
 namespace mermaid {
 
 struct MermaidRenderer::Impl {
-    // COM interfaces (WRL ComPtr, fully qualified to avoid confusion)
     Microsoft::WRL::ComPtr<ICoreWebView2Environment> env;
     Microsoft::WRL::ComPtr<ICoreWebView2Controller> controller;
     Microsoft::WRL::ComPtr<ICoreWebView2> webview;
@@ -95,16 +122,17 @@ struct MermaidRenderer::Impl {
     std::mutex outstandingMutex;
 
     EventRegistrationToken messageToken = {};
+    EventRegistrationToken navToken = {};
 
     bool webviewReady = false;
 
     HRESULT OnMessageReceived(ICoreWebView2WebMessageReceivedEventArgs* args) {
-        LPWSTR jsonMsg = nullptr;
-        args->TryGetWebMessageAsString(&jsonMsg);
-        if (!jsonMsg) return S_OK;
+        LPWSTR rawMsg = nullptr;
+        args->TryGetWebMessageAsString(&rawMsg);
+        if (!rawMsg) return S_OK;
 
-        std::wstring wmsg(jsonMsg);
-        CoTaskMemFree(jsonMsg);
+        std::wstring wmsg(rawMsg);
+        CoTaskMemFree(rawMsg);
 
         // Extract id from JSON
         int id = 0;
@@ -169,9 +197,9 @@ struct MermaidRenderer::Impl {
     void ProcessPending() {
         std::lock_guard<std::mutex> lock(pendingMutex);
         while (!pending.empty() && webviewReady) {
-            auto& req = pending.front();
-            SendRenderRequest(req.srcOffset, req.code, std::move(req.cb));
+            auto req = std::move(pending.front());
             pending.pop();
+            SendRenderRequest(req.srcOffset, req.code, std::move(req.cb));
         }
     }
 
@@ -213,6 +241,10 @@ MermaidRenderer::~MermaidRenderer() { Shutdown(); }
 
 bool MermaidRenderer::Init(HWND parent) {
     if (!parent) return false;
+
+    // Dynamically load WebView2Loader.dll
+    if (!LoadWebView2Loader()) return false;
+
     impl_ = new Impl();
     impl_->parent = parent;
 
@@ -235,15 +267,14 @@ bool MermaidRenderer::Init(HWND parent) {
         return false;
     }
 
-    // Create WebView2 environment
-    HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
+    // Create WebView2 environment via dynamically loaded function
+    HRESULT hr = g_pfnCreateEnv(
         nullptr, nullptr, nullptr,
         Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
             [this](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
                 if (FAILED(result) || !env) return S_OK;
                 impl_->env = env;
 
-                // Create controller
                 env->CreateCoreWebView2Controller(impl_->hidden_wnd,
                     Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
                         [this](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
@@ -274,9 +305,7 @@ bool MermaidRenderer::Init(HWND parent) {
                                     html.c_str(), static_cast<int>(html.size()),
                                     &htmlW[0], wlen);
 
-                                std::wstring dataUri = L"data:text/html;charset=utf-8,"
-                                    + htmlW;
-                                impl_->webview->Navigate(dataUri.c_str());
+                                impl_->webview->NavigateToString(htmlW.c_str());
 
                                 // NavigationCompleted -> mark ready
                                 auto navHandler = Microsoft::WRL::Callback<
@@ -289,7 +318,7 @@ bool MermaidRenderer::Init(HWND parent) {
                                         });
                                 impl_->webview->add_NavigationCompleted(
                                     navHandler.Get(),
-                                    &impl_->messageToken);
+                                    &impl_->navToken);
                             }
                             return S_OK;
                         }).Get());
@@ -330,6 +359,7 @@ void MermaidRenderer::Shutdown() {
     if (impl_) {
         if (impl_->webview) {
             impl_->webview->remove_WebMessageReceived(impl_->messageToken);
+            impl_->webview->remove_NavigationCompleted(impl_->navToken);
         }
         impl_->controller.Reset();
         impl_->webview.Reset();

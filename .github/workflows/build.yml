@@ -92,7 +92,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MarkDownIt-x64
-          path: build/Release/MarkDownIt.exe
+          path: |
+            build/Release/MarkDownIt.exe
+            build/Release/WebView2Loader.dll
 
       - name: Build and run tests
         shell: bash
