@@ -19,6 +19,24 @@
 #include <algorithm>
 #include <vector>
 
+// ---- mermaid debug logging ----
+static void AppDebugLog(const char* msg) {
+    char path[MAX_PATH];
+    DWORD len = GetTempPathA(MAX_PATH, path);
+    if (len == 0) return;
+    strcat_s(path, MAX_PATH, "markdownit-mermaid-debug.log");
+    FILE* f = nullptr;
+    fopen_s(&f, path, "a");
+    if (!f) return;
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    fprintf(f, "[%04d-%02d-%02d %02d:%02d:%02d.%03d] [APP] %s\n",
+            st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
+            st.wMilliseconds, msg);
+    fclose(f);
+}
+
+
 
 
 
@@ -281,7 +299,11 @@ void AppWindow::EnsureRenderer() {
     renderer_.SetSourceText(&buffer_.Text());
 
     // Initialize mermaid renderer (may fail if WebView2 is missing).
-    mermaid_renderer_.Init(hwnd_content_);
+    AppDebugLog("EnsureRenderer: calling mermaid_renderer_.Init");
+    bool initResult = mermaid_renderer_.Init(hwnd_content_);
+    char ibuf[80];
+    sprintf_s(ibuf, "EnsureRenderer: mermaid_renderer_.Init returned %d", (int)initResult);
+    AppDebugLog(ibuf);
 }
 
 void AppWindow::InitEditor() {
@@ -699,10 +721,20 @@ void AppWindow::ToggleSourceView() {
 // When SVGs are ready, they are stored in the renderer's SVG cache and
 // the content window is repainted.
 void AppWindow::RequestMermaidRenders() {
-    if (!mermaid_renderer_.IsInitialized()) return;
+    AppDebugLog("RequestMermaidRenders called");
+    if (!mermaid_renderer_.IsInitialized()) {
+        AppDebugLog("RequestMermaidRenders: not initialized, returning");
+        return;
+    }
 
+    int mermaidCount = 0;
     for (const auto& n : doc_.nodes) {
         if (n.block == BlockKind::CodeBlock && n.lang == "mermaid") {
+            mermaidCount++;
+            if (renderer_.HasMermaidSvg(n.srcOffset)) {
+                AppDebugLog("RequestMermaidRenders: already cached, skipping");
+                continue;
+            }
             // Skip if already cached.
             if (renderer_.HasMermaidSvg(n.srcOffset)) continue;
 
@@ -738,9 +770,15 @@ void AppWindow::RequestMermaidRenders() {
                 });
         }
     }
+
+    char buf[80];
+    sprintf_s(buf, "RequestMermaidRenders: found %d mermaid blocks, total nodes=%zu",
+              mermaidCount, doc_.nodes.size());
+    AppDebugLog(buf);
 }
 
 void AppWindow::OnReparseTimer() {
+    AppDebugLog("OnReparseTimer fired");
     reparse_pending_ = false;
     if (reparse_timer_) { KillTimer(hwnd_content_, reparse_timer_); reparse_timer_ = 0; }
     // In source view, we don't need to reparse the markdown — the
