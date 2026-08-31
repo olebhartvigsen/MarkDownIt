@@ -1450,6 +1450,10 @@ void AppWindow::OpenFile(const std::wstring& path) {
     layout_cache_.SetSourceText(&buffer_.Text());
     renderer_.SetSourceText(&buffer_.Text());
 
+    // Request async mermaid rendering for any mermaid code blocks.
+    EnsureRenderer();
+    RequestMermaidRenders();
+
     std::wstring title = L"MarkDownIt";
     size_t slash = path.find_last_of(L"\\/");
     std::wstring base = (slash != std::wstring::npos)
@@ -1492,6 +1496,10 @@ void AppWindow::Reload() {
     UpdateScrollInfo();
     if (scrollY_ > savedY) scrollY_ = savedY;
     UpdateScrollInfo();
+    
+    EnsureRenderer();
+    RequestMermaidRenders();
+    
     Repaint();
 }
 
