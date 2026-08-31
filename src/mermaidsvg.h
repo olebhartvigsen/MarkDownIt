@@ -20,7 +20,7 @@ namespace mermaid {
 
 class MermaidRenderer {
 public:
-    using Callback = std::function<void(uint32_t srcOffset,
+    using RenderCallback = std::function<void(uint32_t srcOffset,
                                         const std::string& svg)>;
 
     MermaidRenderer();
@@ -36,7 +36,7 @@ public:
     // Request an SVG render. The callback is called asynchronously
     // when the SVG is ready. Empty SVG string means rendering failed.
     void Request(uint32_t srcOffset, const std::string& code,
-                 Callback cb);
+                 RenderCallback cb);
 
     // Shut down WebView2 and release resources.
     void Shutdown();

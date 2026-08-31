@@ -12,10 +12,7 @@
 #include <queue>
 #include <map>
 #include <mutex>
-
-using namespace Microsoft::WRL;
-
-namespace mermaid {
+#include <utility>
 
 // Read mermaid.min.js from RCDATA resource.
 static std::string LoadMermaidJs() {
@@ -31,8 +28,6 @@ static std::string LoadMermaidJs() {
 }
 
 // HTML page that loads mermaid.js and provides a render function.
-// Receives render requests via window.chrome.webview.postMessage,
-// renders with mermaid.render(), and posts the SVG back.
 static std::string BuildMermaidHtml(const std::string& mermaidJs) {
     std::ostringstream html;
     html << "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
@@ -71,53 +66,47 @@ static std::string BuildMermaidHtml(const std::string& mermaidJs) {
     return html.str();
 }
 
+namespace mermaid {
+
 struct MermaidRenderer::Impl {
-    // COM interfaces
-    ComPtr<ICoreWebView2Environment> env;
-    ComPtr<ICoreWebView2Controller> controller;
-    ComPtr<ICoreWebView2> webview;
+    // COM interfaces (WRL ComPtr, fully qualified to avoid confusion)
+    Microsoft::WRL::ComPtr<ICoreWebView2Environment> env;
+    Microsoft::WRL::ComPtr<ICoreWebView2Controller> controller;
+    Microsoft::WRL::ComPtr<ICoreWebView2> webview;
 
     HWND parent = nullptr;
     HWND hidden_wnd = nullptr;
 
-    // Pending requests waiting for WebView2 to be ready.
     struct PendingReq {
         uint32_t srcOffset = 0;
         std::string code;
-        MermaidRenderer::Callback cb;
+        MermaidRenderer::RenderCallback cb;
     };
     std::queue<PendingReq> pending;
     std::mutex pendingMutex;
 
-    // Next render request ID
     int nextId = 1;
 
-    // Callbacks waiting for SVG from JS
     struct OutstandingCb {
-        uint32_t srcOffset;
-        MermaidRenderer::Callback cb;
+        uint32_t srcOffset = 0;
+        MermaidRenderer::RenderCallback cb;
     };
     std::map<int, OutstandingCb> outstanding;
     std::mutex outstandingMutex;
 
-    // Event to signal when WebView2 is ready
-    bool webviewReady = false;
-
-    // WebMessageReceived handler
     EventRegistrationToken messageToken = {};
 
-    HRESULT OnMessageReceived(ICoreWebView2* sender,
-                              ICoreWebView2WebMessageReceivedEventArgs* args) {
+    bool webviewReady = false;
+
+    HRESULT OnMessageReceived(ICoreWebView2WebMessageReceivedEventArgs* args) {
         LPWSTR jsonMsg = nullptr;
         args->TryGetWebMessageAsString(&jsonMsg);
         if (!jsonMsg) return S_OK;
 
-        // Parse JSON: {"id": N, "svg": "..."}
-        // Simple parse since we control the format.
         std::wstring wmsg(jsonMsg);
         CoTaskMemFree(jsonMsg);
 
-        // Extract id
+        // Extract id from JSON
         int id = 0;
         {
             std::wstring idKey = L"\"id\":";
@@ -126,7 +115,7 @@ struct MermaidRenderer::Impl {
                 p += idKey.size();
                 while (p < wmsg.size() && (wmsg[p] == ' ' || wmsg[p] == '\t')) p++;
                 std::wstring numStr;
-                while (p < wmsg.size() && wmsg[p] >= '0' && wmsg[p] <= '9') {
+                while (p < wmsg.size() && wmsg[p] >= L'0' && wmsg[p] <= L'9') {
                     numStr += wmsg[p];
                     p++;
                 }
@@ -134,16 +123,15 @@ struct MermaidRenderer::Impl {
             }
         }
 
-        // Extract svg (empty or actual SVG)
+        // Extract svg
         std::string svg;
         {
             std::wstring svgKey = L"\"svg\":\"";
             size_t p = wmsg.find(svgKey);
             if (p != std::wstring::npos) {
                 p += svgKey.size();
-                // Read until closing quote, handling escapes
                 std::wstring svgW;
-                while (p < wmsg.size() && wmsg[p] != '"') {
+                while (p < wmsg.size() && wmsg[p] != L'"') {
                     if (wmsg[p] == L'\\' && p + 1 < wmsg.size()) {
                         p++;
                         if (wmsg[p] == L'n') svgW += L'\n';
@@ -158,7 +146,6 @@ struct MermaidRenderer::Impl {
                     }
                     p++;
                 }
-                // Convert to UTF-8
                 int len = WideCharToMultiByte(CP_UTF8, 0, svgW.c_str(),
                     static_cast<int>(svgW.size()), nullptr, 0, nullptr, nullptr);
                 svg.resize(len);
@@ -167,16 +154,15 @@ struct MermaidRenderer::Impl {
             }
         }
 
-        // Call the callback
+        // Invoke callback
         {
             std::lock_guard<std::mutex> lock(outstandingMutex);
             auto it = outstanding.find(id);
             if (it != outstanding.end()) {
-                it->second.cb(it->second.srcOffset, svg);
+                if (it->second.cb) it->second.cb(it->second.srcOffset, svg);
                 outstanding.erase(it);
             }
         }
-
         return S_OK;
     }
 
@@ -190,15 +176,14 @@ struct MermaidRenderer::Impl {
     }
 
     void SendRenderRequest(uint32_t srcOffset, const std::string& code,
-                           MermaidRenderer::Callback cb) {
+                           MermaidRenderer::RenderCallback cb) {
         int id = nextId++;
         {
             std::lock_guard<std::mutex> lock(outstandingMutex);
             outstanding[id] = {srcOffset, std::move(cb)};
         }
 
-        // Send code to JS via postMessage
-        // We need to escape the code for JSON
+        // Escape code for JSON
         std::string escaped;
         for (char c : code) {
             if (c == '\\') escaped += "\\\\";
@@ -212,7 +197,6 @@ struct MermaidRenderer::Impl {
         std::string msg = "{\"id\":" + std::to_string(id)
             + ",\"code\":\"" + escaped + "\"}";
 
-        // Convert to wide
         std::wstring wmsg;
         int wlen = MultiByteToWideChar(CP_UTF8, 0, msg.c_str(),
             static_cast<int>(msg.size()), nullptr, 0);
@@ -223,16 +207,6 @@ struct MermaidRenderer::Impl {
         webview->PostWebMessageAsString(wmsg.c_str());
     }
 };
-
-// Static callback thunks for COM
-static HRESULT STDMETHODCALLTYPE WebMessageReceivedThunk(
-    ICoreWebView2WebMessageReceivedEventHandler* This,
-    ICoreWebView2* sender,
-    ICoreWebView2WebMessageReceivedEventArgs* args) {
-    auto* impl = reinterpret_cast<MermaidRenderer::Impl*>(This);
-    // Actually we need a proper COM object. Let's use Callback<>.
-    return S_OK;
-}
 
 MermaidRenderer::MermaidRenderer() = default;
 MermaidRenderer::~MermaidRenderer() { Shutdown(); }
@@ -262,16 +236,16 @@ bool MermaidRenderer::Init(HWND parent) {
     }
 
     // Create WebView2 environment
-    auto hr = CreateCoreWebView2EnvironmentWithOptions(
+    HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
         nullptr, nullptr, nullptr,
-        Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+        Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
             [this](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
                 if (FAILED(result) || !env) return S_OK;
                 impl_->env = env;
 
                 // Create controller
                 env->CreateCoreWebView2Controller(impl_->hidden_wnd,
-                    Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                    Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
                         [this](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
                             if (FAILED(result) || !controller) return S_OK;
                             impl_->controller = controller;
@@ -279,12 +253,12 @@ bool MermaidRenderer::Init(HWND parent) {
 
                             if (impl_->webview) {
                                 // Set up message handler
-                                auto handler = Callback<
+                                auto handler = Microsoft::WRL::Callback<
                                     ICoreWebView2WebMessageReceivedEventHandler>(
                                     [this](ICoreWebView2*,
                                         ICoreWebView2WebMessageReceivedEventArgs* args)
                                     -> HRESULT {
-                                        return impl_->OnMessageReceived(nullptr, args);
+                                        return impl_->OnMessageReceived(args);
                                     });
                                 impl_->webview->add_WebMessageReceived(
                                     handler.Get(), &impl_->messageToken);
@@ -300,21 +274,21 @@ bool MermaidRenderer::Init(HWND parent) {
                                     html.c_str(), static_cast<int>(html.size()),
                                     &htmlW[0], wlen);
 
-                                // Navigate to data URI
                                 std::wstring dataUri = L"data:text/html;charset=utf-8,"
                                     + htmlW;
                                 impl_->webview->Navigate(dataUri.c_str());
 
-                                // Wait for navigation to complete
-                                // We'll mark ready on NavigationCompleted
-                                impl_->webview->add_NavigationCompleted(
-                                    Callback<ICoreWebView2NavigationCompletedEventHandler>(
+                                // NavigationCompleted -> mark ready
+                                auto navHandler = Microsoft::WRL::Callback<
+                                    ICoreWebView2NavigationCompletedEventHandler>(
                                         [this](ICoreWebView2*,
                                             ICoreWebView2NavigationCompletedEventArgs*) -> HRESULT {
                                             impl_->webviewReady = true;
                                             impl_->ProcessPending();
                                             return S_OK;
-                                        }).Get(),
+                                        });
+                                impl_->webview->add_NavigationCompleted(
+                                    navHandler.Get(),
                                     &impl_->messageToken);
                             }
                             return S_OK;
@@ -338,7 +312,7 @@ bool MermaidRenderer::Available() const {
 }
 
 void MermaidRenderer::Request(uint32_t srcOffset, const std::string& code,
-                               Callback cb) {
+                               RenderCallback cb) {
     if (!impl_ || !available_) {
         if (cb) cb(srcOffset, {});
         return;
@@ -381,7 +355,7 @@ MermaidRenderer::~MermaidRenderer() = default;
 bool MermaidRenderer::Init(HWND) { return false; }
 bool MermaidRenderer::Available() const { return false; }
 void MermaidRenderer::Request(uint32_t srcOffset, const std::string&,
-                               Callback cb) {
+                               RenderCallback cb) {
     if (cb) cb(srcOffset, {});
 }
 void MermaidRenderer::Shutdown() {}
