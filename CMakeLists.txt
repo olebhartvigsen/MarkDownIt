@@ -174,9 +174,6 @@ target_link_libraries(MarkDownIt PRIVATE
     ${PROPSYS_LINK_LIB}
 )
 
-
-endif()
-
 target_compile_definitions(MarkDownIt PRIVATE
     UNICODE
     _UNICODE
