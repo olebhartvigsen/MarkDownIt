@@ -676,13 +676,18 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
             drawW -= listIndent;
         }
 
-        if (n.block == BlockKind::CodeBlock &&
-            n.lang == "svg") {
-            float svgH = MeasureSvgBlock(dw, n, drawX, drawW);
+        if (n.block == BlockKind::CodeBlock) {
+            // SVG blocks (and only those) measure via the SVG document.
+            float svgH = 0.0f;
+            if (n.lang == "svg") {
+                svgH = MeasureSvgBlock(dw, n, drawX, drawW);
+            }
             if (svgH > 0.0f) {
                 blockH = svgH;
             } else {
-                // Fall back to code block measurement.
+                // All other code blocks (including mermaid source shown as
+                // code) are measured as text. Without this, blockH stays 0
+                // and totalH_ underestimates the document, breaking scroll.
                 std::u32string raw = n.raw;
             while (!raw.empty() &&
                    (raw.back() == 0x0A || raw.back() == 0x0D)) {
