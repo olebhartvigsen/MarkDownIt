@@ -71,13 +71,6 @@ public:
     void ClearSvgCache();
     svg::SvgDoc* GetSvgDoc(const Node& n, float availW);
 
-    // Store a pre-rendered SVG (from mermaid) at a given srcOffset.
-    // The SVG string will be parsed and cached for rendering.
-    void SetMermaidSvg(uint32_t srcOffset, const std::string& svgText);
-
-    // Check if we have a mermaid SVG cached for this offset.
-    bool HasMermaidSvg(uint32_t srcOffset) const;
-
 private:
     // SVG document cache: keyed by srcOffset.
     struct SvgCacheEntry {

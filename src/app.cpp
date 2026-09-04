@@ -19,23 +19,6 @@
 #include <algorithm>
 #include <vector>
 
-// ---- mermaid debug logging ----
-static void AppDebugLog(const char* msg) {
-    char path[MAX_PATH];
-    DWORD len = GetTempPathA(MAX_PATH, path);
-    if (len == 0) return;
-    strcat_s(path, MAX_PATH, "markdownit-mermaid-debug.log");
-    FILE* f = nullptr;
-    fopen_s(&f, path, "a");
-    if (!f) return;
-    SYSTEMTIME st;
-    GetLocalTime(&st);
-    fprintf(f, "[%04d-%02d-%02d %02d:%02d:%02d.%03d] [APP] %s\n",
-            st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
-            st.wMilliseconds, msg);
-    fclose(f);
-}
-
 
 
 
@@ -297,13 +280,6 @@ void AppWindow::EnsureRenderer() {
     renderer_.SetD2DDeviceContext5(d2d_ctx5_);
     layout_cache_.SetSourceText(&buffer_.Text());
     renderer_.SetSourceText(&buffer_.Text());
-
-    // Initialize mermaid renderer (may fail if WebView2 is missing).
-    AppDebugLog("EnsureRenderer: calling mermaid_renderer_.Init");
-    bool initResult = mermaid_renderer_.Init(hwnd_content_);
-    char ibuf[80];
-    sprintf_s(ibuf, "EnsureRenderer: mermaid_renderer_.Init returned %d", (int)initResult);
-    AppDebugLog(ibuf);
 }
 
 void AppWindow::InitEditor() {
@@ -717,69 +693,7 @@ void AppWindow::ToggleSourceView() {
     if (hwnd_content_) SetFocus(hwnd_content_);
 }
 
-// Request async SVG rendering for all mermaid code blocks in the document.
-// When SVGs are ready, they are stored in the renderer's SVG cache and
-// the content window is repainted.
-void AppWindow::RequestMermaidRenders() {
-    AppDebugLog("RequestMermaidRenders called");
-    if (!mermaid_renderer_.IsInitialized()) {
-        AppDebugLog("RequestMermaidRenders: not initialized, returning");
-        return;
-    }
-
-    int mermaidCount = 0;
-    for (const auto& n : doc_.nodes) {
-        if (n.block == BlockKind::CodeBlock && n.lang == "mermaid") {
-            mermaidCount++;
-            if (renderer_.HasMermaidSvg(n.srcOffset)) {
-                AppDebugLog("RequestMermaidRenders: already cached, skipping");
-                continue;
-            }
-            // Skip if already cached.
-            if (renderer_.HasMermaidSvg(n.srcOffset)) continue;
-
-            // Convert raw text (UTF-32) to UTF-8 for mermaid.js.
-            std::string code;
-            for (char32_t c : n.raw) {
-                if (c < 0x80) code.push_back(static_cast<char>(c));
-                else if (c < 0x800) {
-                    code.push_back(static_cast<char>(0xC0 | (c >> 6)));
-                    code.push_back(static_cast<char>(0x80 | (c & 0x3F)));
-                } else if (c < 0x10000) {
-                    code.push_back(static_cast<char>(0xE0 | (c >> 12)));
-                    code.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
-                    code.push_back(static_cast<char>(0x80 | (c & 0x3F)));
-                } else {
-                    code.push_back(static_cast<char>(0xF0 | (c >> 18)));
-                    code.push_back(static_cast<char>(0x80 | ((c >> 12) & 0x3F)));
-                    code.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
-                    code.push_back(static_cast<char>(0x80 | (c & 0x3F)));
-                }
-            }
-
-            uint32_t offset = n.srcOffset;
-            mermaid_renderer_.Request(offset, code,
-                [this](uint32_t srcOffset, const std::string& svg) {
-                    if (!svg.empty()) {
-                        // Post SVG to UI thread — Direct2D is single-threaded
-                        // and the WebView2 callback may run on a different thread.
-                        std::string* heapSvg = new std::string(svg);
-                        PostMessageW(hwnd_content_, WM_APP + 2,
-                            static_cast<WPARAM>(srcOffset),
-                            reinterpret_cast<LPARAM>(heapSvg));
-                    }
-                });
-        }
-    }
-
-    char buf[80];
-    sprintf_s(buf, "RequestMermaidRenders: found %d mermaid blocks, total nodes=%zu",
-              mermaidCount, doc_.nodes.size());
-    AppDebugLog(buf);
-}
-
 void AppWindow::OnReparseTimer() {
-    AppDebugLog("OnReparseTimer fired");
     reparse_pending_ = false;
     if (reparse_timer_) { KillTimer(hwnd_content_, reparse_timer_); reparse_timer_ = 0; }
     // In source view, we don't need to reparse the markdown — the
@@ -795,7 +709,6 @@ void AppWindow::OnReparseTimer() {
     ParseMarkdown(buffer_.Text(), doc_);
     layout_cache_.Clear();
     renderer_.ClearSvgCache();
-    RequestMermaidRenders();
     UpdateScrollInfo();
     // Force synchronous repaint so the layout cache is rebuilt before
     // UpdateCaretPosition runs. Repaint() is async (InvalidateRect) and
@@ -1451,10 +1364,6 @@ void AppWindow::OpenFile(const std::wstring& path) {
     layout_cache_.SetSourceText(&buffer_.Text());
     renderer_.SetSourceText(&buffer_.Text());
 
-    // Request async mermaid rendering for any mermaid code blocks.
-    EnsureRenderer();
-    RequestMermaidRenders();
-
     std::wstring title = L"MarkDownIt";
     size_t slash = path.find_last_of(L"\\/");
     std::wstring base = (slash != std::wstring::npos)
@@ -1497,9 +1406,6 @@ void AppWindow::Reload() {
     UpdateScrollInfo();
     if (scrollY_ > savedY) scrollY_ = savedY;
     UpdateScrollInfo();
-    
-    EnsureRenderer();
-    RequestMermaidRenders();
     
     Repaint();
 }
@@ -4066,18 +3972,6 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             ReleaseCapture();
             InsertTableFromGrid(static_cast<int>(wp),
                                 static_cast<int>(lp));
-            return 0;
-        }
-        case WM_APP + 2: {
-            uint32_t srcOffset = static_cast<uint32_t>(wp);
-            std::string* heapSvg = reinterpret_cast<std::string*>(lp);
-            if (heapSvg) {
-                if (!heapSvg->empty()) {
-                    renderer_.SetMermaidSvg(srcOffset, *heapSvg);
-                    InvalidateRect(hwnd, nullptr, FALSE);
-                }
-                delete heapSvg;
-            }
             return 0;
         }
         case WM_PAINT:     OnContentPaint(hwnd); return 0;

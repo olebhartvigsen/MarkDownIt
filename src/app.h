@@ -21,7 +21,6 @@
 #include "inputfilter.h"
 #include "settings.h"
 #include "welcomescreen.h"
-#include "mermaidsvg.h"
 
 // Active formatting state at the caret position, used to set
 // the pressed/unpressed state of ribbon toggle buttons.
@@ -134,7 +133,6 @@ private:
 
     Renderer               renderer_;
     bool                   renderer_inited_ = false;
-    mermaid::MermaidRenderer mermaid_renderer_;
 
     Document               doc_;
     std::wstring           file_path_;
@@ -266,7 +264,6 @@ private:
     void OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp);
     void OnReparseTimer();
     void ScheduleReparse();
-    void RequestMermaidRenders();
     void OnDestroy();
     void OnClose();
     bool DoSave(const std::wstring& path);

@@ -83,13 +83,6 @@ if(MSVC)
     endif()
 endif()
 
-
-# WebView2 SDK (optional, for mermaid rendering)
-set(WEBVIEW2_INCLUDE_DIR "" CACHE PATH "Path to WebView2 SDK include directory")
-if(WEBVIEW2_INCLUDE_DIR)
-    message(STATUS "WebView2 SDK include: ${WEBVIEW2_INCLUDE_DIR}")
-endif()
-
 # Main application
 add_executable(MarkDownIt WIN32
     src/main.cpp
@@ -114,7 +107,6 @@ add_executable(MarkDownIt WIN32
     src/welcomescreen.cpp
     src/svgtext.cpp
     src/svgdoc.cpp
-    src/mermaidsvg.cpp
 )
 
 if(MSVC AND RIBBON_AVAILABLE)
@@ -182,24 +174,7 @@ target_link_libraries(MarkDownIt PRIVATE
     ${PROPSYS_LINK_LIB}
 )
 
-set(WEBVIEW2_LIB_DIR "" CACHE PATH "Path to WebView2 SDK lib directory")
-if(WEBVIEW2_INCLUDE_DIR)
-    target_include_directories(MarkDownIt PRIVATE ${WEBVIEW2_INCLUDE_DIR})
-    target_compile_definitions(MarkDownIt PRIVATE HAS_WEBVIEW2=1)
-    # Copy WebView2Loader.dll next to the exe (needed for LoadLibrary)
-    set(WEBVIEW2_DLL_DIR "${WEBVIEW2_LIB_DIR}")
-    find_file(WEBVIEW2_LOADER_DLL NAMES WebView2Loader.dll
-        HINTS ${WEBVIEW2_DLL_DIR} NO_DEFAULT_PATH)
-    if(WEBVIEW2_LOADER_DLL)
-        add_custom_command(TARGET MarkDownIt POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${WEBVIEW2_LOADER_DLL}"
-                "$<TARGET_FILE_DIR:MarkDownIt>/WebView2Loader.dll"
-            COMMENT "Copying WebView2Loader.dll to output directory")
-        message(STATUS "WebView2Loader DLL: ${WEBVIEW2_LOADER_DLL}")
-    else()
-        message(WARNING "WebView2Loader.dll not found in ${WEBVIEW2_DLL_DIR}")
-    endif()
+
 endif()
 
 target_compile_definitions(MarkDownIt PRIVATE
