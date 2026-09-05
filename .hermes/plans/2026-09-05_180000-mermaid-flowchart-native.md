@@ -1,5 +1,10 @@
 # Mermaid Flowchart Support (Native C++) Implementation Plan
 
+> **Status: PLANNING COMPLETE (2026-09-05).** All open questions are resolved
+> (see "Decisions" below). Ready to execute with subagent-driven-development.
+> The compile gate is CI (windows-2022); the gateway toolchain story is documented
+> under "Environment / toolchain reality".
+
 > **For Hermes:** Use subagent-driven-development to implement this plan task-by-task.
 > Every task ends with a green oracle-comparison run. Do not advance on a red gate.
 
@@ -33,8 +38,37 @@ click handlers, and all other diagram types are explicitly **out of scope** (fol
 | Existing prior art | `origin/feat/mermaid-phase1` has a hand-rolled parser + ad-hoc layered layout (`src/mermaid.cpp`, `src/mermaidlayout.cpp`). **Decision: lift the parser**, replace the layout wholesale. The parser is decent; the homegrown layout is not what mermaid.js does and was never validated against it. |
 | Fence info already parsed | `Node::lang` on `main` already carries the fence info string (commit `6a9c1d3`), so `lang == "mermaid"` is detectable in the renderer today |
 | SVG engine on main | `src/svgdoc.*`, `src/svgtext.*` exist. We do **not** route mermaid through SVG; we draw geometry directly with Direct2D primitives. |
-| Local toolchain gap | This container has **no node, npm, g++, or cmake**. Verified. Therefore the oracle and the C++ compile both run in **CI**, not locally. This is the single biggest constraint on the test loop. |
+| Local toolchain gap | The WebUI gateway container has **no g++, cmake, or node** by default. Verified. The **compile gate is CI** (windows-2022) regardless: the plan's tests run in the GitHub Actions test job. Local g++ is a convenience for fast parser/layout iteration, not a requirement. Gateway toolchain resolution is documented below ("Environment / toolchain reality"). |
 | CI | `.github/workflows/build.yml`, `windows-2022`, has a test job gated on `-DBUILD_TESTS=ON` running `MarkDownIt.tests.exe` |
+
+### Environment / toolchain reality (2026-09-05)
+
+The plan does not depend on local tooling for its gates, but local iteration is
+the difference between 30+ CI rounds and a handful. Current state:
+
+- **Compile + test gate:** GitHub Actions CI. This is the authoritative gate.
+  Local `g++` compiles of the portable `src/mermaid/*` + tests are a fast
+  pre-check, nothing more (AGENTS.md: "the real compile gate is always CI").
+- **hermes-agent container** (`docker.io/nousresearch/hermes-agent:latest`):
+  `g++ 14.2.0`, `cmake 3.31.6`, `node v26.5.1`, `npm 11.17.0` installed manually
+  as root. This is a viable place to run local parser/layout compiles via
+  `podman exec`, mounting the checkout.
+- **WebUI gateway container** where this session runs: has `git`, `python3`
+  (3.12), and `gh` (v2.81.0, at `~/.local/bin/gh`). Missing `g++`, `cmake`,
+  `node`, `npm`.
+- **Runtime-install solution chosen:** `system-requirements.txt` (g++, cmake,
+  make, nodejs, npm, gh) added to the WebUI source at
+  `~/Downloads/hermes-webui/`, plus a sentinel-gated block in `docker_init.bash`
+  (`HERMES_SKIP_MDIT_TOOLCHAIN=1` to disable). Applies on next container
+  recreate; sentinel `/var/lib/hermes-mdit-toolchain` makes it a one-time
+  install. **Limitation:** a `podman compose pull` of a fresh upstream image
+  resets it (installs again on next start). The patch and file are applied on
+  the host; the running WebUI container does not have them until recreated.
+- **Practical implication for execution:** run Task 0-13 with CI as the only
+  hard gate. If local g++ is available (agent container or after the WebUI
+  recreate), use it between pushes to catch syntax errors before burning a CI
+  round. Do not let the missing local toolchain stall the work; it is a
+  convenience, not a precondition, for the plan itself.
 
 ### Mermaid's authoritative layout defaults
 
