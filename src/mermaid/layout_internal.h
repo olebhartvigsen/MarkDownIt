@@ -49,6 +49,8 @@ void AssignRanks(LayoutGraph& g);
 void Normalize(LayoutGraph& g);
 void Denormalize(LayoutGraph& g);
 bool AllEdgesUnitLength(const LayoutGraph& g);
+void Order(LayoutGraph& g);
+int CountCrossings(const LayoutGraph& g);
 
 inline LayoutGraph MakeGraph(int node_count,
                              std::initializer_list<std::pair<int,int>> edges) {

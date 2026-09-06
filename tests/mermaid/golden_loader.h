@@ -8,6 +8,8 @@
 // Enough for tests, nothing more.
 
 #include "../../src/mermaid/layout_internal.h"
+#include "../../src/mermaid/parse.h"
+#include "../../src/mermaid/model.h"
 
 #include <cmath>
 #include <cstddef>
@@ -316,6 +318,38 @@ inline float XOf(const LayoutGraph& g, const std::string& id) {
 inline float YOf(const LayoutGraph& g, const std::string& id) {
     for (const auto& n : g.nodes) if (n.label == id) return n.y;
     return 0;
+}
+
+
+// Read a fixture .mmd file and build a LayoutGraph directly from our parser,
+// bypassing the oracle. Used by ordering / layout tests that need a real
+// diagram without loading the golden.
+inline LayoutGraph BuildFixtureGraph(const std::string& name) {
+    std::string path = "tests/mermaid/fixtures/" + name + ".mmd";
+    std::ifstream f(path);
+    if (!f) throw std::runtime_error("fixture: cannot open " + path);
+    std::stringstream ss; ss << f.rdbuf();
+    std::string src = ss.str();
+    Flowchart flow = ParseFlowchart(src);
+    LayoutGraph g;
+    for (const auto& n : flow.nodes) {
+        LayoutNode ln;
+        ln.id = static_cast<int>(g.nodes.size());
+        ln.label = n.label.empty() ? n.id : n.label;
+        ln.width = 80;
+        ln.height = 40;
+        g.nodes.push_back(ln);
+    }
+    for (const auto& e : flow.edges) {
+        LayoutEdge le;
+        le.from = e.from;
+        le.to = e.to;
+        le.minlen = 1;
+        le.weight = 1;
+        le.label = e.label;
+        g.edges.push_back(le);
+    }
+    return g;
 }
 
 }  // namespace mermaid

@@ -57,3 +57,19 @@ TEST(MermaidNormalize, DenormalizeRestoresEdgeCount) {
     mermaid::AssignRanks(g); mermaid::Normalize(g); mermaid::Denormalize(g);
     EXPECT_EQ(g.edges.size(), 3u);
 }
+
+TEST(MermaidOrder, ResolvesObviousCrossing) {
+    // A->D, B->C with A,B on rank 0 and C,D on rank 1 : one crossing if
+    // order is (A,B),(C,D); zero if ordering swaps.
+    auto g = MakeGraph(4, {{0,3},{1,2}});
+    mermaid::AssignRanks(g); mermaid::Normalize(g); mermaid::Order(g);
+    EXPECT_EQ(mermaid::CountCrossings(g), 0);
+}
+TEST(MermaidOrder, CrossingCountIsMonotone) {
+    // Same shape as 03-diamond: A->B, A->C, B->D, C->D.
+    auto g = MakeGraph(4, {{0,1},{0,2},{1,3},{2,3}});
+    mermaid::AssignRanks(g); mermaid::Normalize(g);
+    int before = mermaid::CountCrossings(g);
+    mermaid::Order(g);
+    EXPECT_TRUE(mermaid::CountCrossings(g) <= before);
+}
