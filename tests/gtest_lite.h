@@ -35,6 +35,7 @@ struct Registrar {
 #define TEST(suite, name) static void run_##suite##_##name(); static testlite::Registrar reg_##suite##_##name(#suite "." #name, run_##suite##_##name); static void run_##suite##_##name()
 
 #define EXPECT_EQ(a, b) do { testlite::checks()++; auto _va = (a); auto _vb = (b); if (!(_va == _vb)) { testlite::failures()++; std::cerr << "  FAIL " << __FILE__ << ":" << __LINE__ << " EXPECT_EQ(" #a ", " #b ")\n"; } } while(0)
+#define EXPECT_NE(a, b) do { testlite::checks()++; auto _va = (a); auto _vb = (b); if (!(_va != _vb)) { testlite::failures()++; std::cerr << "  FAIL " << __FILE__ << ":" << __LINE__ << " EXPECT_NE(" #a ", " #b ")\n"; } } while(0)
 
 #define EXPECT_TRUE(a) do { testlite::checks()++; if (!(a)) { testlite::failures()++; std::cerr << "  FAIL " << __FILE__ << ":" << __LINE__ << " EXPECT_TRUE(" #a ")\n"; } } while(0)
 
