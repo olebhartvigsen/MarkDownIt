@@ -27,3 +27,20 @@ TEST(MermaidParse, NodeShapes) {
     EXPECT_EQ((int)f.nodes[5].shape, (int)mermaid::Shape::Rect);   // bare id
     EXPECT_EQ(f.nodes[5].label, "F");                              // label defaults to id
 }
+
+TEST(MermaidParse, EdgeStyles) {
+    auto f = mermaid::ParseFlowchart(
+        "flowchart TD\n  A --> B\n  B -.-> C\n  C ==> D\n  D --- E\n");
+    ASSERT_EQ(f.edges.size(), 4u);
+    EXPECT_EQ((int)f.edges[0].style, (int)mermaid::LineStyle::Solid);
+    EXPECT_EQ((int)f.edges[1].style, (int)mermaid::LineStyle::Dotted);
+    EXPECT_EQ((int)f.edges[2].style, (int)mermaid::LineStyle::Thick);
+    EXPECT_EQ((int)f.edges[3].head,  (int)mermaid::Head::None);   // --- is open
+}
+TEST(MermaidParse, EdgeLabelAndChain) {
+    auto f = mermaid::ParseFlowchart("flowchart TD\n  A -->|yes| B --> C\n");
+    ASSERT_EQ(f.nodes.size(), 3u);
+    ASSERT_EQ(f.edges.size(), 2u);
+    EXPECT_EQ(f.edges[0].label, "yes");
+    EXPECT_EQ(f.edges[1].label, "");
+}

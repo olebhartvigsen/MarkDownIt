@@ -16,7 +16,6 @@ std::string Trim(std::string_view s) {
     return std::string(s.substr(b, e - b));
 }
 
-// Split `s` on whitespace runs.
 std::vector<std::string> Split(const std::string& s) {
     std::vector<std::string> out;
     size_t i = 0, n = s.size();
@@ -37,54 +36,29 @@ bool IsIdCont(char c) {
     return IsIdStart(c) || (c >= '0' && c <= '9');
 }
 
-// If `line` looks like an edge (contains `--` or `==`), return true.
-// Task 4 will replace this with real edge parsing.
-bool LooksLikeEdge(const std::string& line) {
-    for (size_t i = 0; i + 1 < line.size(); ++i) {
-        char a = line[i], b = line[i + 1];
-        if ((a == '-' && b == '-') || (a == '=' && b == '=')) return true;
-        if (a == '-' && b == '.') return true;  // -.-> dotted
-        if (a == '.' && b == '-') return true;
-    }
-    return false;
+void SkipWs(const std::string& line, size_t& pos) {
+    while (pos < line.size() && IsSpace(line[pos])) ++pos;
 }
 
-// Try to parse a node declaration at the start of `line`.
-// Returns true and fills `out` on success; false otherwise.
-bool TryParseNode(const std::string& line, FlowNode& out) {
+// Try to parse a node token starting at `pos`. On success, advance `pos`
+// past the node (id + optional shape brackets) and fill `out`.
+bool TryParseNodeAt(const std::string& line, size_t& pos, FlowNode& out) {
     size_t n = line.size();
-    if (n == 0 || !IsIdStart(line[0])) return false;
-    size_t i = 1;
+    if (pos >= n || !IsIdStart(line[pos])) return false;
+    size_t s = pos;
+    size_t i = pos + 1;
     while (i < n && IsIdCont(line[i])) ++i;
-    std::string id = line.substr(0, i);
-
-    // Skip whitespace between id and optional bracket.
-    while (i < n && IsSpace(line[i])) ++i;
+    std::string id = line.substr(s, i - s);
 
     out.id = id;
     out.label = id;
     out.shape = Shape::Rect;
 
-    if (i >= n) return true;  // bare id
-
-    // Longest-first bracket detection.
-    auto starts = [&](const char* p) {
-        size_t k = 0;
-        while (p[k]) {
-            if (i + k >= n || line[i + k] != p[k]) return false;
-            ++k;
-        }
-        return true;
-    };
-    auto endsWith = [&](const std::string& s, const char* p) {
-        size_t k = 0; while (p[k]) ++k;
-        if (s.size() < k) return false;
-        for (size_t x = 0; x < k; ++x) if (s[s.size() - k + x] != p[x]) return false;
-        return true;
-    };
+    // Optional shape bracket immediately after id (no whitespace).
+    if (i >= n) { pos = i; return true; }
 
     struct Form { const char* open; const char* close; Shape shape; };
-    // Order matters: longest opener first.
+    // Longest opener first.
     const Form forms[] = {
         {"([", "])", Shape::Stadium},
         {"((", "))", Shape::Circle},
@@ -93,20 +67,195 @@ bool TryParseNode(const std::string& line, FlowNode& out) {
         {"{",  "}",  Shape::Diamond},
     };
 
+    auto startsAt = [&](size_t p, const char* q) {
+        size_t k = 0;
+        while (q[k]) {
+            if (p + k >= n || line[p + k] != q[k]) return false;
+            ++k;
+        }
+        return true;
+    };
+
     for (const auto& f : forms) {
-        if (!starts(f.open)) continue;
+        if (!startsAt(i, f.open)) continue;
         size_t open_len = 0; while (f.open[open_len]) ++open_len;
         size_t close_len = 0; while (f.close[close_len]) ++close_len;
-        // Find matching close: last occurrence of close on the line.
-        std::string rest = line.substr(i + open_len);
-        if (!endsWith(rest, f.close)) return false;
-        std::string inner = rest.substr(0, rest.size() - close_len);
-        out.label = inner;
+        // Find matching close: search forward for the close sequence.
+        size_t j = i + open_len;
+        size_t close_pos = std::string::npos;
+        while (j + close_len <= n) {
+            bool match = true;
+            for (size_t k = 0; k < close_len; ++k) {
+                if (line[j + k] != f.close[k]) { match = false; break; }
+            }
+            if (match) { close_pos = j; break; }
+            ++j;
+        }
+        if (close_pos == std::string::npos) return false;
+        out.label = line.substr(i + open_len, close_pos - (i + open_len));
         out.shape = f.shape;
+        pos = close_pos + close_len;
         return true;
     }
-    // Starts with something else after id: not a node we understand.
+
+    // Bare id, no bracket.
+    pos = i;
+    return true;
+}
+
+struct EdgeOp {
+    LineStyle style = LineStyle::Solid;
+    Head head = Head::Arrow;
+    std::string label;
+};
+
+// Try to match an edge operator starting at `pos`. On success, advance `pos`
+// past the operator (including any label) and fill `op`.
+bool MatchEdgeOp(const std::string& line, size_t& pos, EdgeOp& op) {
+    size_t n = line.size();
+    if (pos >= n) return false;
+
+    auto startsAt = [&](size_t p, const char* q) {
+        size_t k = 0;
+        while (q[k]) {
+            if (p + k >= n || line[p + k] != q[k]) return false;
+            ++k;
+        }
+        return true;
+    };
+
+    // Thick: ==>
+    if (startsAt(pos, "==>")) {
+        op.style = LineStyle::Thick;
+        op.head = Head::Arrow;
+        op.label.clear();
+        pos += 3;
+        return true;
+    }
+
+    // Dotted: -.->
+    if (startsAt(pos, "-.->")) {
+        op.style = LineStyle::Dotted;
+        op.head = Head::Arrow;
+        op.label.clear();
+        pos += 4;
+        return true;
+    }
+
+    // Solid variants starting with `--`.
+    if (startsAt(pos, "--")) {
+        // -->|label|
+        if (startsAt(pos, "-->|")) {
+            size_t start = pos + 4;
+            size_t end = line.find('|', start);
+            if (end == std::string::npos) return false;
+            op.style = LineStyle::Solid;
+            op.head = Head::Arrow;
+            op.label = line.substr(start, end - start);
+            pos = end + 1;
+            return true;
+        }
+        // -->
+        if (startsAt(pos, "-->")) {
+            op.style = LineStyle::Solid;
+            op.head = Head::Arrow;
+            op.label.clear();
+            pos += 3;
+            return true;
+        }
+        // -- label --> or -- label ---
+        // After `--`, if next char is a space and the following non-space is not
+        // another dash or `>`, treat as a middle-label form.
+        if (pos + 2 < n && line[pos + 2] == ' ') {
+            size_t p = pos + 2;
+            while (p < n && line[p] == ' ') ++p;
+            // Scan forward for " -->" or " ---".
+            size_t label_start = p;
+            size_t tail = std::string::npos;
+            bool tail_arrow = true;
+            for (size_t q = p; q + 3 < n; ++q) {
+                if (line[q] == ' ' && line[q + 1] == '-' && line[q + 2] == '-') {
+                    if (line[q + 3] == '>') { tail = q; tail_arrow = true; break; }
+                    if (line[q + 3] == '-') { tail = q; tail_arrow = false; break; }
+                }
+            }
+            if (tail != std::string::npos) {
+                std::string label = line.substr(label_start, tail - label_start);
+                // Trim trailing spaces in label (shouldn't exist since we matched ` --`).
+                while (!label.empty() && label.back() == ' ') label.pop_back();
+                op.style = LineStyle::Solid;
+                op.head = tail_arrow ? Head::Arrow : Head::None;
+                op.label = label;
+                pos = tail + 4;
+                return true;
+            }
+        }
+        // ---
+        if (startsAt(pos, "---")) {
+            op.style = LineStyle::Solid;
+            op.head = Head::None;
+            op.label.clear();
+            pos += 3;
+            return true;
+        }
+    }
+
     return false;
+}
+
+// Return the index of the node with `id` in `fc.nodes`, or -1 if not found.
+int FindNodeIndex(const Flowchart& fc, const std::string& id) {
+    for (size_t k = 0; k < fc.nodes.size(); ++k) {
+        if (fc.nodes[k].id == id) return (int)k;
+    }
+    return -1;
+}
+
+// Ensure a node with the given declaration exists. Returns its index.
+// If a node with that id already exists, keep the first declaration.
+int UpsertNode(Flowchart& fc, const FlowNode& decl) {
+    int idx = FindNodeIndex(fc, decl.id);
+    if (idx >= 0) return idx;
+    fc.nodes.push_back(decl);
+    return (int)fc.nodes.size() - 1;
+}
+
+// Parse one body line: node, optionally followed by (edge-op node)+.
+void ParseBodyLine(const std::string& line, Flowchart& fc) {
+    size_t pos = 0;
+    SkipWs(line, pos);
+
+    FlowNode from_decl;
+    if (!TryParseNodeAt(line, pos, from_decl)) return;
+    int from_idx = UpsertNode(fc, from_decl);
+
+    while (pos < line.size()) {
+        SkipWs(line, pos);
+        if (pos >= line.size()) break;
+
+        EdgeOp op;
+        size_t saved = pos;
+        if (!MatchEdgeOp(line, pos, op)) {
+            // No edge operator: stray tail, ignore.
+            (void)saved;
+            return;
+        }
+        SkipWs(line, pos);
+
+        FlowNode to_decl;
+        if (!TryParseNodeAt(line, pos, to_decl)) return;
+        int to_idx = UpsertNode(fc, to_decl);
+
+        FlowEdge e;
+        e.from = from_idx;
+        e.to = to_idx;
+        e.style = op.style;
+        e.head = op.head;
+        e.label = op.label;
+        fc.edges.push_back(std::move(e));
+
+        from_idx = to_idx;
+    }
 }
 
 }  // namespace
@@ -125,7 +274,6 @@ Flowchart ParseFlowchart(std::string_view src) {
         return true;
     };
 
-    // Find the first non-empty, non-comment line for the header.
     std::string header;
     std::string line;
     while (next_line(line)) {
@@ -147,7 +295,7 @@ Flowchart ParseFlowchart(std::string_view src) {
     }
 
     if (tokens.size() == 1) {
-        fc.dir = Dir::TB;  // default
+        fc.dir = Dir::TB;
     } else if (tokens.size() == 2) {
         const std::string& d = tokens[1];
         if (d == "TB" || d == "TD") fc.dir = Dir::TB;
@@ -160,22 +308,10 @@ Flowchart ParseFlowchart(std::string_view src) {
         return fc;
     }
 
-    // Body: node declarations. Edges handled in Task 4.
     while (next_line(line)) {
         if (line.empty()) continue;
         if (line.size() >= 2 && line[0] == '%' && line[1] == '%') continue;
-        if (LooksLikeEdge(line)) continue;  // Task 4
-
-        FlowNode node;
-        if (!TryParseNode(line, node)) continue;
-
-        // Skip duplicate ids: keep the first declaration.
-        bool dup = false;
-        for (const auto& existing : fc.nodes) {
-            if (existing.id == node.id) { dup = true; break; }
-        }
-        if (dup) continue;
-        fc.nodes.push_back(std::move(node));
+        ParseBodyLine(line, fc);
     }
 
     return fc;
