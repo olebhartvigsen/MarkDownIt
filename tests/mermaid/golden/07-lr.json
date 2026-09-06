@@ -1,0 +1,83 @@
+{
+  "source": "07-lr.mmd",
+  "config": {
+    "rankdir": "LR",
+    "nodesep": 50,
+    "ranksep": 50,
+    "edgesep": 10,
+    "padding": 15
+  },
+  "graph": {
+    "width": 307.6,
+    "height": 49
+  },
+  "nodes": [
+    {
+      "id": "A",
+      "label": "Start",
+      "x": 36,
+      "y": 24.5,
+      "width": 72,
+      "height": 49,
+      "rank": 0
+    },
+    {
+      "id": "B",
+      "label": "Middle",
+      "x": 162.2,
+      "y": 24.5,
+      "width": 80.4,
+      "height": 49,
+      "rank": 1
+    },
+    {
+      "id": "C",
+      "label": "End",
+      "x": 280,
+      "y": 24.5,
+      "width": 55.2,
+      "height": 49,
+      "rank": 2
+    }
+  ],
+  "edges": [
+    {
+      "from": "A",
+      "to": "B",
+      "label": "",
+      "points": [
+        {
+          "x": 72,
+          "y": 24.5
+        },
+        {
+          "x": 97,
+          "y": 24.5
+        },
+        {
+          "x": 121.99999999999999,
+          "y": 24.5
+        }
+      ]
+    },
+    {
+      "from": "B",
+      "to": "C",
+      "label": "",
+      "points": [
+        {
+          "x": 202.39999999999998,
+          "y": 24.5
+        },
+        {
+          "x": 227.4,
+          "y": 24.5
+        },
+        {
+          "x": 252.4,
+          "y": 24.5
+        }
+      ]
+    }
+  ]
+}

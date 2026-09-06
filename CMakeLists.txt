@@ -214,6 +214,7 @@ if(BUILD_TESTS)
         tests/mermaid_model_test.cpp
         tests/mermaid_parse_test.cpp
         tests/mermaid_layout_test.cpp
+        tests/mermaid_golden_test.cpp
         tests/mermaid_measure_test.cpp
         tests/dom_mermaid_test.cpp
         tests/mermaid_cache_test.cpp

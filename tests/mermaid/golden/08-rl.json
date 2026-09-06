@@ -1,0 +1,83 @@
+{
+  "source": "08-rl.mmd",
+  "config": {
+    "rankdir": "RL",
+    "nodesep": 50,
+    "ranksep": 50,
+    "edgesep": 10,
+    "padding": 15
+  },
+  "graph": {
+    "width": 232,
+    "height": 49
+  },
+  "nodes": [
+    {
+      "id": "A",
+      "label": "A",
+      "x": 210,
+      "y": 24.5,
+      "width": 44,
+      "height": 49,
+      "rank": 2
+    },
+    {
+      "id": "B",
+      "label": "B",
+      "x": 116,
+      "y": 24.5,
+      "width": 44,
+      "height": 49,
+      "rank": 1
+    },
+    {
+      "id": "C",
+      "label": "C",
+      "x": 22,
+      "y": 24.5,
+      "width": 44,
+      "height": 49,
+      "rank": 0
+    }
+  ],
+  "edges": [
+    {
+      "from": "A",
+      "to": "B",
+      "label": "",
+      "points": [
+        {
+          "x": 188,
+          "y": 24.5
+        },
+        {
+          "x": 163,
+          "y": 24.5
+        },
+        {
+          "x": 138,
+          "y": 24.5
+        }
+      ]
+    },
+    {
+      "from": "B",
+      "to": "C",
+      "label": "",
+      "points": [
+        {
+          "x": 94,
+          "y": 24.5
+        },
+        {
+          "x": 69,
+          "y": 24.5
+        },
+        {
+          "x": 44,
+          "y": 24.5
+        }
+      ]
+    }
+  ]
+}
