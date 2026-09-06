@@ -73,7 +73,8 @@ static void ApplyRankdir(LayoutGraph& g, Dir dir) {
         return;
     }
 
-    // LR / RL: swap axes.
+    // LR / RL: swap axes. Node widths/heights were already pre-swapped
+    // before layout so the coordinates transpose cleanly here.
     for (auto& n : g.nodes) {
         std::swap(n.x, n.y);
         std::swap(n.width, n.height);
@@ -95,6 +96,15 @@ LaidOutFlowchart LayoutFlowchart(const Flowchart& flow, const LayoutParams& p) {
     LaidOutFlowchart out;
     LayoutGraph g = FlowchartToLayoutGraph(flow);
     if (g.nodes.empty()) return out;
+
+    // For LR/RL, pre-swap node dimensions so the TB pipeline lays them out
+    // along what will become the horizontal rank axis after the post-layout
+    // axis swap. Without this, TB row heights (49) leak into LR column
+    // widths and the geometry does not match dagre.
+    const bool axis_swap = (flow.dir == Dir::LR || flow.dir == Dir::RL);
+    if (axis_swap) {
+        for (auto& n : g.nodes) std::swap(n.width, n.height);
+    }
 
     MakeAcyclic(g);
     AssignRanks(g);
