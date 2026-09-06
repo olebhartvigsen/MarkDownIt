@@ -43,3 +43,17 @@ TEST(MermaidGolden, RanksMatchDagre_01Linear) {
     for (const auto& gn : gold.nodes)
         EXPECT_EQ(mermaid::RankOf(ours, gn.id), gn.rank);
 }
+
+TEST(MermaidNormalize, SplitsLongEdge) {
+    auto g = MakeGraph(3, {{0,1},{1,2},{0,2}});   // 0->2 spans two ranks
+    mermaid::AssignRanks(g);
+    size_t before = g.nodes.size();
+    mermaid::Normalize(g);
+    EXPECT_EQ(g.nodes.size(), before + 1);        // exactly one dummy
+    EXPECT_TRUE(mermaid::AllEdgesUnitLength(g));
+}
+TEST(MermaidNormalize, DenormalizeRestoresEdgeCount) {
+    auto g = MakeGraph(3, {{0,1},{1,2},{0,2}});
+    mermaid::AssignRanks(g); mermaid::Normalize(g); mermaid::Denormalize(g);
+    EXPECT_EQ(g.edges.size(), 3u);
+}

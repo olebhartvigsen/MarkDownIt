@@ -93,6 +93,7 @@ add_executable(MarkDownIt WIN32
     src/filewatch.cpp
     src/parser.cpp
     src/mermaid/layout_acyclic.cpp
+    src/mermaid/layout_normalize.cpp
     src/mermaid/layout_rank.cpp
     src/mermaid/parse.cpp
     src/ribbon.cpp
@@ -221,6 +222,7 @@ if(BUILD_TESTS)
         src/autoformat.cpp
         src/inputfilter.cpp
         src/mermaid/layout_acyclic.cpp
+        src/mermaid/layout_normalize.cpp
         src/mermaid/layout_rank.cpp
         src/mermaid/parse.cpp
         src/svgtext.cpp

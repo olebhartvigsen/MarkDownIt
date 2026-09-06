@@ -27,17 +27,28 @@ struct LayoutEdge {
     int minlen = 1;
     int weight = 1;
     std::string label;
+    int original_edge_index = -1;  // index into original_edges (dummies restored by Denormalize)
+};
+
+struct DummyChain {
+    int original_edge_index = -1;      // index in the original edges list (pre-normalize)
+    std::vector<int> dummy_nodes;      // node ids of dummies in order from u to v
 };
 
 struct LayoutGraph {
     std::vector<LayoutNode> nodes;
     std::vector<LayoutEdge> edges;
     std::vector<std::pair<int,int>> self_loops;
+    std::vector<DummyChain> dummy_chains;
+    std::vector<LayoutEdge> original_edges;   // populated by Normalize; empty before that
 };
 
 std::vector<int> MakeAcyclic(LayoutGraph& g);
 bool IsAcyclic(const LayoutGraph& g);
 void AssignRanks(LayoutGraph& g);
+void Normalize(LayoutGraph& g);
+void Denormalize(LayoutGraph& g);
+bool AllEdgesUnitLength(const LayoutGraph& g);
 
 inline LayoutGraph MakeGraph(int node_count,
                              std::initializer_list<std::pair<int,int>> edges) {
