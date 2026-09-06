@@ -8,6 +8,7 @@
 #include "imagehelper.h"
 #include "mermaid/model.h"
 #include "mermaid/layout_internal.h"
+#include "mermaid/layout_cache.h"
 #include <cmath>
 
 static const float kPtToDip = 96.0f / 72.0f;
@@ -1646,11 +1647,12 @@ void Renderer::DrawSvgBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 // Mermaid flowchart rendering (Task 12).
 // -----------------------------------------------------------------------------
 
+// Note: layout is computed once at parse time (parser.cpp) and stored on
+// Node::mermaid_layout, so we never re-run layout on WM_PAINT. Height is
+// derived through mermaid::MeasureLayoutHeight so measure and paint agree.
 float Renderer::MeasureMermaidBlock(const Node& n) const {
     if (!n.mermaid_layout) return 0.0f;
-    const auto& lo = *n.mermaid_layout;
-    const float pad = 12.0f;
-    return static_cast<float>(lo.height) * zoom_ + 2.0f * pad;
+    return mermaid::MeasureLayoutHeight(*n.mermaid_layout, zoom_);
 }
 
 static void DrawArrowHead(ID2D1RenderTarget* rt, ID2D1Factory* fac,
@@ -1702,7 +1704,7 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (!rt || !dw) return;
     if (!n.mermaid_layout) return;
     const auto& lo = *n.mermaid_layout;
-    const float pad = 12.0f;
+    const float pad = mermaid::kMermaidBlockPad;
     float scale = zoom_;
     float ox = x;
     float oy = y + pad;
