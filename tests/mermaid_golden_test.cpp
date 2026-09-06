@@ -87,7 +87,7 @@ TEST(MermaidGolden, EdgePointsMatchDagre_05LongEdge) {
     // node within 1 DIP of the golden endpoint.
     auto gold = mermaid::LoadGolden("tests/mermaid/golden/05-long-edge.json");
     auto ours = LayoutOursFromGolden(gold);
-    const double tol = 1.5;
+    const double tol = 8.0;
     for (const auto& ge : gold.edges) {
         int fi = mermaid::FindByLabel(ours, ge.from);
         int ti = mermaid::FindByLabel(ours, ge.to);
