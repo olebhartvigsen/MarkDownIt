@@ -92,6 +92,7 @@ add_executable(MarkDownIt WIN32
     src/imagehelper.cpp
     src/filewatch.cpp
     src/parser.cpp
+    src/mermaid/parse.cpp
     src/ribbon.cpp
     src/textbuffer.cpp
     src/layoutcache.cpp
@@ -202,6 +203,7 @@ if(BUILD_TESTS)
         tests/autoformat_test.cpp
         tests/inputfilter_test.cpp
         tests/mermaid_model_test.cpp
+        tests/mermaid_parse_test.cpp
         tests/perf_harness.cpp
         tests/test_main.cpp
         tests/svgtext_test.cpp
@@ -215,6 +217,7 @@ if(BUILD_TESTS)
         src/formatting.cpp
         src/autoformat.cpp
         src/inputfilter.cpp
+        src/mermaid/parse.cpp
         src/svgtext.cpp
     )
     target_link_libraries(MarkDownIt.tests PRIVATE md4c)
