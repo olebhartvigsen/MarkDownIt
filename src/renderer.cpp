@@ -1722,6 +1722,44 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     ID2D1Factory* fac = nullptr;
     rt->GetFactory(&fac);
 
+    // Swimlane bands first, so nodes/edges overlay.
+    if (!lo.lanes.empty()) {
+        ID2D1SolidColorBrush* laneFill = nullptr;
+        ID2D1SolidColorBrush* laneBorder = nullptr;
+        ID2D1SolidColorBrush* laneTitle = nullptr;
+        rt->CreateSolidColorBrush(D2D1::ColorF(0.96f, 0.96f, 0.96f, 1.0f), &laneFill);
+        rt->CreateSolidColorBrush(D2D1::ColorF(0.60f, 0.60f, 0.60f, 1.0f), &laneBorder);
+        rt->CreateSolidColorBrush(pal.textPrimary, &laneTitle);
+        for (const auto& lb : lo.lanes) {
+            float lx = ox + static_cast<float>(lb.x * scale);
+            float ly = oy + static_cast<float>(lb.y * scale);
+            float lw = static_cast<float>(lb.width  * scale);
+            float lh = static_cast<float>(lb.height * scale);
+            D2D1_RECT_F r = D2D1::RectF(lx, ly, lx + lw, ly + lh);
+            D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(r, 6.0f * scale, 6.0f * scale);
+            if (laneFill)   rt->FillRoundedRectangle(rr, laneFill);
+            if (laneBorder) rt->DrawRoundedRectangle(rr, laneBorder, 1.0f);
+
+            if (!lb.title.empty() && body_fmt_ && laneTitle) {
+                std::u16string t16;
+                for (unsigned char c : lb.title) t16.push_back(static_cast<char16_t>(c));
+                IDWriteTextLayout* tl = nullptr;
+                if (SUCCEEDED(dw->CreateTextLayout(
+                        reinterpret_cast<const WCHAR*>(t16.data()),
+                        static_cast<UINT32>(t16.size()),
+                        body_fmt_, lw, 20.0f * scale, &tl)) && tl) {
+                    rt->DrawTextLayout(D2D1::Point2F(lx + 6.0f * scale, ly + 2.0f * scale),
+                                       tl, laneTitle,
+                                       D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                    tl->Release();
+                }
+            }
+        }
+        if (laneFill)   laneFill->Release();
+        if (laneBorder) laneBorder->Release();
+        if (laneTitle)  laneTitle->Release();
+    }
+
     // Edges first.
     if (fac && edgeBrush) {
         for (const auto& e : lo.edges) {

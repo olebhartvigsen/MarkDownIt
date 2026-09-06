@@ -68,6 +68,13 @@ LaidOutFlowchart LayoutFlowchartWith(const Flowchart& flow,
     out.height = max_y + margin;
     out.nodes = std::move(g.nodes);
     out.edges = std::move(g.edges);
+    out.lanes = ComputeLaneBoxes(flow, out.nodes);
+    for (const auto& lb : out.lanes) {
+        double r = static_cast<double>(lb.x) + static_cast<double>(lb.width);
+        double b = static_cast<double>(lb.y) + static_cast<double>(lb.height);
+        if (r + margin > out.width)  out.width  = r + margin;
+        if (b + margin > out.height) out.height = b + margin;
+    }
     return out;
 }
 

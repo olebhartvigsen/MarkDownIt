@@ -22,6 +22,12 @@ LaidOutFlowchart LayoutFlowchart(const Flowchart& flow, const LayoutParams& p);
 struct LabelSize { float width; float height; };
 using MeasureFn = LabelSize (*)(const std::string& utf8, float maxWidth, void* ctx);
 
+// Compute lane bounding boxes for each Subgraph declared in `flow`, using
+// the laid-out node positions. Called by LayoutFlowchart after positions
+// stabilise; exposed for tests.
+std::vector<LaneBox> ComputeLaneBoxes(const Flowchart& flow,
+                                      const std::vector<LayoutNode>& laid);
+
 LaidOutFlowchart LayoutFlowchartWith(const Flowchart& flow,
                                      MeasureFn measure,
                                      void* ctx,

@@ -1,0 +1,133 @@
+{
+  "source": "11-swimlanes-cross.mmd",
+  "config": {
+    "rankdir": "LR",
+    "nodesep": 50,
+    "ranksep": 50,
+    "edgesep": 10,
+    "padding": 15,
+    "lanePadding": 20,
+    "laneTitleBand": 20
+  },
+  "graph": {
+    "width": 379.19999999999993,
+    "height": 49
+  },
+  "nodes": [
+    {
+      "id": "A",
+      "label": "UI",
+      "x": 23.4,
+      "y": 24.5,
+      "width": 46.8,
+      "height": 49,
+      "rank": 0
+    },
+    {
+      "id": "B",
+      "label": "Router",
+      "x": 137,
+      "y": 24.5,
+      "width": 80.4,
+      "height": 49,
+      "rank": 1
+    },
+    {
+      "id": "C",
+      "label": "API",
+      "x": 254.79999999999998,
+      "y": 24.5,
+      "width": 55.2,
+      "height": 49,
+      "rank": 2
+    },
+    {
+      "id": "D",
+      "label": "DB",
+      "x": 355.79999999999995,
+      "y": 24.5,
+      "width": 46.8,
+      "height": 49,
+      "rank": 3
+    }
+  ],
+  "edges": [
+    {
+      "from": "A",
+      "to": "B",
+      "label": "",
+      "points": [
+        {
+          "x": 46.8,
+          "y": 24.5
+        },
+        {
+          "x": 71.8,
+          "y": 24.5
+        },
+        {
+          "x": 96.8,
+          "y": 24.5
+        }
+      ]
+    },
+    {
+      "from": "C",
+      "to": "D",
+      "label": "",
+      "points": [
+        {
+          "x": 282.4,
+          "y": 24.5
+        },
+        {
+          "x": 307.4,
+          "y": 24.5
+        },
+        {
+          "x": 332.4,
+          "y": 24.5
+        }
+      ]
+    },
+    {
+      "from": "B",
+      "to": "C",
+      "label": "",
+      "points": [
+        {
+          "x": 177.2,
+          "y": 24.5
+        },
+        {
+          "x": 202.2,
+          "y": 24.5
+        },
+        {
+          "x": 227.2,
+          "y": 24.5
+        }
+      ]
+    }
+  ],
+  "subgraphs": [
+    {
+      "id": "Frontend",
+      "title": "Frontend",
+      "x": -20,
+      "y": -40,
+      "width": 217.2,
+      "height": 109,
+      "children": []
+    },
+    {
+      "id": "Backend",
+      "title": "Backend",
+      "x": 207.2,
+      "y": -40,
+      "width": 191.99999999999994,
+      "height": 109,
+      "children": []
+    }
+  ]
+}

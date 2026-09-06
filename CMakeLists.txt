@@ -102,6 +102,7 @@ add_executable(MarkDownIt WIN32
     src/mermaid/layout_measure.cpp
     src/mermaid/measure_dwrite.cpp
     src/mermaid/parse.cpp
+    src/mermaid/swimlanes.cpp
     src/ribbon.cpp
     src/textbuffer.cpp
     src/layoutcache.cpp
@@ -215,6 +216,7 @@ if(BUILD_TESTS)
         tests/mermaid_parse_test.cpp
         tests/mermaid_layout_test.cpp
         tests/mermaid_golden_test.cpp
+        tests/mermaid_swimlanes_test.cpp
         tests/mermaid_measure_test.cpp
         tests/dom_mermaid_test.cpp
         tests/mermaid_cache_test.cpp
@@ -240,6 +242,7 @@ if(BUILD_TESTS)
         src/mermaid/layout.cpp
         src/mermaid/layout_measure.cpp
         src/mermaid/parse.cpp
+        src/mermaid/swimlanes.cpp
         src/svgtext.cpp
     )
     target_link_libraries(MarkDownIt.tests PRIVATE md4c)

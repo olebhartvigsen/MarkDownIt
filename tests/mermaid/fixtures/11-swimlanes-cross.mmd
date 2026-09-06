@@ -1,0 +1,8 @@
+flowchart LR
+    subgraph Frontend
+        A[UI] --> B[Router]
+    end
+    subgraph Backend
+        C[API] --> D[DB]
+    end
+    B --> C

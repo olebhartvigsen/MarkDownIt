@@ -38,6 +38,12 @@ struct GoldenEdge {
     std::vector<std::pair<float, float>> points;
 };
 
+struct GoldenSubgraph {
+    std::string id;
+    std::string title;
+    float x = 0, y = 0, width = 0, height = 0;
+};
+
 struct Golden {
     std::string source;
     std::string rankdir;
@@ -45,6 +51,7 @@ struct Golden {
     float width = 0, height = 0;
     std::vector<GoldenNode> nodes;
     std::vector<GoldenEdge> edges;
+    std::vector<GoldenSubgraph> subgraphs;
 };
 
 namespace goldendetail {
@@ -203,6 +210,27 @@ inline GoldenEdge parse_edge(Cursor& c) {
     return e;
 }
 
+inline GoldenSubgraph parse_subgraph(Cursor& c) {
+    GoldenSubgraph s;
+    c.expect('{');
+    while (true) {
+        std::string k = c.parse_string();
+        c.expect(':');
+        if (k == "id") s.id = c.parse_string();
+        else if (k == "title") s.title = c.parse_string();
+        else if (k == "x") s.x = to_float(c.parse_number_or_null());
+        else if (k == "y") s.y = to_float(c.parse_number_or_null());
+        else if (k == "width") s.width = to_float(c.parse_number_or_null());
+        else if (k == "height") s.height = to_float(c.parse_number_or_null());
+        else c.skip_value();
+        c.skip_ws();
+        if (c.peek() == ',') { c.get(); continue; }
+        break;
+    }
+    c.expect('}');
+    return s;
+}
+
 }  // namespace goldendetail
 
 inline Golden LoadGolden(const std::string& path) {
@@ -264,6 +292,18 @@ inline Golden LoadGolden(const std::string& path) {
             if (c.peek() != ']') {
                 while (true) {
                     gold.edges.push_back(goldendetail::parse_edge(c));
+                    c.skip_ws();
+                    if (c.peek() == ',') { c.get(); continue; }
+                    break;
+                }
+            }
+            c.expect(']');
+        } else if (k == "subgraphs") {
+            c.expect('[');
+            c.skip_ws();
+            if (c.peek() != ']') {
+                while (true) {
+                    gold.subgraphs.push_back(goldendetail::parse_subgraph(c));
                     c.skip_ws();
                     if (c.peek() == ',') { c.get(); continue; }
                     break;

@@ -40,8 +40,6 @@ void SkipWs(const std::string& line, size_t& pos) {
     while (pos < line.size() && IsSpace(line[pos])) ++pos;
 }
 
-// Try to parse a node token starting at `pos`. On success, advance `pos`
-// past the node (id + optional shape brackets) and fill `out`.
 bool TryParseNodeAt(const std::string& line, size_t& pos, FlowNode& out) {
     size_t n = line.size();
     if (pos >= n || !IsIdStart(line[pos])) return false;
@@ -54,11 +52,9 @@ bool TryParseNodeAt(const std::string& line, size_t& pos, FlowNode& out) {
     out.label = id;
     out.shape = Shape::Rect;
 
-    // Optional shape bracket immediately after id (no whitespace).
     if (i >= n) { pos = i; return true; }
 
     struct Form { const char* open; const char* close; Shape shape; };
-    // Longest opener first.
     const Form forms[] = {
         {"([", "])", Shape::Stadium},
         {"((", "))", Shape::Circle},
@@ -80,7 +76,6 @@ bool TryParseNodeAt(const std::string& line, size_t& pos, FlowNode& out) {
         if (!startsAt(i, f.open)) continue;
         size_t open_len = 0; while (f.open[open_len]) ++open_len;
         size_t close_len = 0; while (f.close[close_len]) ++close_len;
-        // Find matching close: search forward for the close sequence.
         size_t j = i + open_len;
         size_t close_pos = std::string::npos;
         while (j + close_len <= n) {
@@ -98,7 +93,6 @@ bool TryParseNodeAt(const std::string& line, size_t& pos, FlowNode& out) {
         return true;
     }
 
-    // Bare id, no bracket.
     pos = i;
     return true;
 }
@@ -109,8 +103,6 @@ struct EdgeOp {
     std::string label;
 };
 
-// Try to match an edge operator starting at `pos`. On success, advance `pos`
-// past the operator (including any label) and fill `op`.
 bool MatchEdgeOp(const std::string& line, size_t& pos, EdgeOp& op) {
     size_t n = line.size();
     if (pos >= n) return false;
@@ -124,7 +116,6 @@ bool MatchEdgeOp(const std::string& line, size_t& pos, EdgeOp& op) {
         return true;
     };
 
-    // Thick: ==>
     if (startsAt(pos, "==>")) {
         op.style = LineStyle::Thick;
         op.head = Head::Arrow;
@@ -133,7 +124,6 @@ bool MatchEdgeOp(const std::string& line, size_t& pos, EdgeOp& op) {
         return true;
     }
 
-    // Dotted: -.->
     if (startsAt(pos, "-.->")) {
         op.style = LineStyle::Dotted;
         op.head = Head::Arrow;
@@ -142,9 +132,7 @@ bool MatchEdgeOp(const std::string& line, size_t& pos, EdgeOp& op) {
         return true;
     }
 
-    // Solid variants starting with `--`.
     if (startsAt(pos, "--")) {
-        // -->|label|
         if (startsAt(pos, "-->|")) {
             size_t start = pos + 4;
             size_t end = line.find('|', start);
@@ -155,7 +143,6 @@ bool MatchEdgeOp(const std::string& line, size_t& pos, EdgeOp& op) {
             pos = end + 1;
             return true;
         }
-        // -->
         if (startsAt(pos, "-->")) {
             op.style = LineStyle::Solid;
             op.head = Head::Arrow;
@@ -163,13 +150,9 @@ bool MatchEdgeOp(const std::string& line, size_t& pos, EdgeOp& op) {
             pos += 3;
             return true;
         }
-        // -- label --> or -- label ---
-        // After `--`, if next char is a space and the following non-space is not
-        // another dash or `>`, treat as a middle-label form.
         if (pos + 2 < n && line[pos + 2] == ' ') {
             size_t p = pos + 2;
             while (p < n && line[p] == ' ') ++p;
-            // Scan forward for " -->" or " ---".
             size_t label_start = p;
             size_t tail = std::string::npos;
             bool tail_arrow = true;
@@ -181,7 +164,6 @@ bool MatchEdgeOp(const std::string& line, size_t& pos, EdgeOp& op) {
             }
             if (tail != std::string::npos) {
                 std::string label = line.substr(label_start, tail - label_start);
-                // Trim trailing spaces in label (shouldn't exist since we matched ` --`).
                 while (!label.empty() && label.back() == ' ') label.pop_back();
                 op.style = LineStyle::Solid;
                 op.head = tail_arrow ? Head::Arrow : Head::None;
@@ -190,7 +172,6 @@ bool MatchEdgeOp(const std::string& line, size_t& pos, EdgeOp& op) {
                 return true;
             }
         }
-        // ---
         if (startsAt(pos, "---")) {
             op.style = LineStyle::Solid;
             op.head = Head::None;
@@ -203,7 +184,6 @@ bool MatchEdgeOp(const std::string& line, size_t& pos, EdgeOp& op) {
     return false;
 }
 
-// Return the index of the node with `id` in `fc.nodes`, or -1 if not found.
 int FindNodeIndex(const Flowchart& fc, const std::string& id) {
     for (size_t k = 0; k < fc.nodes.size(); ++k) {
         if (fc.nodes[k].id == id) return (int)k;
@@ -211,40 +191,44 @@ int FindNodeIndex(const Flowchart& fc, const std::string& id) {
     return -1;
 }
 
-// Ensure a node with the given declaration exists. Returns its index.
-// If a node with that id already exists, keep the first declaration.
-int UpsertNode(Flowchart& fc, const FlowNode& decl) {
+// Insert node if new; then register the (possibly-existing) node with every
+// currently-open subgraph on the stack, deduping.
+int UpsertNode(Flowchart& fc, const FlowNode& decl,
+               const std::vector<int>& sg_stack) {
     int idx = FindNodeIndex(fc, decl.id);
-    if (idx >= 0) return idx;
-    fc.nodes.push_back(decl);
-    return (int)fc.nodes.size() - 1;
+    if (idx < 0) {
+        fc.nodes.push_back(decl);
+        idx = (int)fc.nodes.size() - 1;
+    }
+    for (int sgi : sg_stack) {
+        auto& v = fc.subgraphs[sgi].node_indices;
+        bool seen = false;
+        for (int k : v) if (k == idx) { seen = true; break; }
+        if (!seen) v.push_back(idx);
+    }
+    return idx;
 }
 
-// Parse one body line: node, optionally followed by (edge-op node)+.
-void ParseBodyLine(const std::string& line, Flowchart& fc) {
+void ParseBodyLine(const std::string& line, Flowchart& fc,
+                   const std::vector<int>& sg_stack) {
     size_t pos = 0;
     SkipWs(line, pos);
 
     FlowNode from_decl;
     if (!TryParseNodeAt(line, pos, from_decl)) return;
-    int from_idx = UpsertNode(fc, from_decl);
+    int from_idx = UpsertNode(fc, from_decl, sg_stack);
 
     while (pos < line.size()) {
         SkipWs(line, pos);
         if (pos >= line.size()) break;
 
         EdgeOp op;
-        size_t saved = pos;
-        if (!MatchEdgeOp(line, pos, op)) {
-            // No edge operator: stray tail, ignore.
-            (void)saved;
-            return;
-        }
+        if (!MatchEdgeOp(line, pos, op)) return;
         SkipWs(line, pos);
 
         FlowNode to_decl;
         if (!TryParseNodeAt(line, pos, to_decl)) return;
-        int to_idx = UpsertNode(fc, to_decl);
+        int to_idx = UpsertNode(fc, to_decl, sg_stack);
 
         FlowEdge e;
         e.from = from_idx;
@@ -256,6 +240,66 @@ void ParseBodyLine(const std::string& line, Flowchart& fc) {
 
         from_idx = to_idx;
     }
+}
+
+// Try to match `subgraph <id>[ <title>]` on a trimmed line. Title may be
+// bracketed [Title] or plain text after the id. Returns true and fills sg.
+bool TryParseSubgraphHeader(const std::string& line, Subgraph& sg) {
+    // line already trimmed; must begin with keyword "subgraph"
+    const char* kw = "subgraph";
+    size_t klen = 8;
+    if (line.size() < klen) return false;
+    for (size_t i = 0; i < klen; ++i) if (line[i] != kw[i]) return false;
+    if (line.size() > klen && !IsSpace(line[klen])) return false;
+    size_t pos = klen;
+    SkipWs(line, pos);
+    if (pos >= line.size()) return false;
+    // id: identifier
+    size_t s = pos;
+    if (!IsIdStart(line[pos])) {
+        // Allow a title-only subgraph: "subgraph MyTitle" where MyTitle is
+        // both id and title (single token).
+        return false;
+    }
+    size_t i = pos + 1;
+    while (i < line.size() && IsIdCont(line[i])) ++i;
+    sg.id = line.substr(s, i - s);
+    sg.title = sg.id;
+    pos = i;
+    SkipWs(line, pos);
+    if (pos < line.size()) {
+        // Optional [Title] or bare rest-of-line as title.
+        if (line[pos] == '[') {
+            size_t end = line.find(']', pos + 1);
+            if (end != std::string::npos) {
+                sg.title = line.substr(pos + 1, end - pos - 1);
+            }
+        } else {
+            sg.title = line.substr(pos);
+        }
+    }
+    return true;
+}
+
+bool IsEndKeyword(const std::string& line) {
+    return line == "end" || line == "END" || line == "End";
+}
+
+bool TryParseDirection(const std::string& line, Dir& out) {
+    // "direction TB|BT|LR|RL"
+    const char* kw = "direction";
+    size_t klen = 9;
+    if (line.size() < klen + 2) return false;
+    for (size_t i = 0; i < klen; ++i) if (line[i] != kw[i]) return false;
+    if (!IsSpace(line[klen])) return false;
+    size_t pos = klen;
+    SkipWs(line, pos);
+    std::string d = line.substr(pos);
+    if (d == "TB" || d == "TD") { out = Dir::TB; return true; }
+    if (d == "BT") { out = Dir::BT; return true; }
+    if (d == "LR") { out = Dir::LR; return true; }
+    if (d == "RL") { out = Dir::RL; return true; }
+    return false;
 }
 
 }  // namespace
@@ -308,10 +352,35 @@ Flowchart ParseFlowchart(std::string_view src) {
         return fc;
     }
 
+    // Stack of open subgraph indices (into fc.subgraphs).
+    std::vector<int> sg_stack;
+
     while (next_line(line)) {
         if (line.empty()) continue;
         if (line.size() >= 2 && line[0] == '%' && line[1] == '%') continue;
-        ParseBodyLine(line, fc);
+
+        Subgraph sg_hdr;
+        if (TryParseSubgraphHeader(line, sg_hdr)) {
+            sg_hdr.direction = fc.dir;
+            fc.subgraphs.push_back(sg_hdr);
+            int new_idx = (int)fc.subgraphs.size() - 1;
+            if (!sg_stack.empty()) {
+                fc.subgraphs[sg_stack.back()].child_subgraphs.push_back(new_idx);
+            }
+            sg_stack.push_back(new_idx);
+            continue;
+        }
+        if (IsEndKeyword(line)) {
+            if (!sg_stack.empty()) sg_stack.pop_back();
+            continue;
+        }
+        Dir dir_override;
+        if (!sg_stack.empty() && TryParseDirection(line, dir_override)) {
+            fc.subgraphs[sg_stack.back()].direction = dir_override;
+            fc.subgraphs[sg_stack.back()].has_direction = true;
+            continue;
+        }
+        ParseBodyLine(line, fc, sg_stack);
     }
 
     return fc;

@@ -1,0 +1,96 @@
+{
+  "source": "10-swimlanes-simple.mmd",
+  "config": {
+    "rankdir": "TD",
+    "nodesep": 50,
+    "ranksep": 50,
+    "edgesep": 10,
+    "padding": 15,
+    "lanePadding": 20,
+    "laneTitleBand": 20
+  },
+  "graph": {
+    "width": 80.4,
+    "height": 247
+  },
+  "nodes": [
+    {
+      "id": "A",
+      "label": "Start",
+      "x": 40.2,
+      "y": 24.5,
+      "width": 72,
+      "height": 49,
+      "rank": 0
+    },
+    {
+      "id": "B",
+      "label": "Middle",
+      "x": 40.2,
+      "y": 123.5,
+      "width": 80.4,
+      "height": 49,
+      "rank": 1
+    },
+    {
+      "id": "C",
+      "label": "End",
+      "x": 40.2,
+      "y": 222.5,
+      "width": 55.2,
+      "height": 49,
+      "rank": 2
+    }
+  ],
+  "edges": [
+    {
+      "from": "A",
+      "to": "B",
+      "label": "",
+      "points": [
+        {
+          "x": 40.2,
+          "y": 49
+        },
+        {
+          "x": 40.2,
+          "y": 74
+        },
+        {
+          "x": 40.2,
+          "y": 99
+        }
+      ]
+    },
+    {
+      "from": "B",
+      "to": "C",
+      "label": "",
+      "points": [
+        {
+          "x": 40.2,
+          "y": 148
+        },
+        {
+          "x": 40.2,
+          "y": 173
+        },
+        {
+          "x": 40.2,
+          "y": 198
+        }
+      ]
+    }
+  ],
+  "subgraphs": [
+    {
+      "id": "Group1",
+      "title": "Group1",
+      "x": -20,
+      "y": -40,
+      "width": 120.4,
+      "height": 208,
+      "children": []
+    }
+  ]
+}
