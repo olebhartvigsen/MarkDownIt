@@ -2,6 +2,7 @@
 // Portable flowchart model. No Windows, no Direct2D: unit tested on any host.
 #include <string>
 #include <vector>
+#include "layout_internal.h"
 
 namespace mermaid {
 
@@ -31,6 +32,13 @@ struct Flowchart {
     std::vector<FlowNode> nodes;
     std::vector<FlowEdge> edges;
     std::string error;      // non-empty => parse failed, caller falls back to code block
+};
+
+struct LaidOutFlowchart {
+    std::vector<LayoutNode> nodes;
+    std::vector<LayoutEdge> edges;
+    double width = 0.0;
+    double height = 0.0;
 };
 
 }  // namespace mermaid

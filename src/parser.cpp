@@ -10,7 +10,10 @@
 // images). Tables are parsed but stored as paragraphs (Task 10+).
 
 #include "parser.h"
+#include "mermaid/parse.h"
+#include "mermaid/layout.h"
 #include <chrono>
+#include <memory>
 
 #include <cstring>
 #include <windows.h>
@@ -355,6 +358,45 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
             }
         }
         ctx->block_stack.pop_back();
+    }
+    if (type == MD_BLOCK_CODE) {
+        // Promote ```mermaid fences to MermaidFlowchart with laid-out graph.
+        if (!ctx->doc->nodes.empty()) {
+            Node& n = ctx->doc->nodes.back();
+            if (n.block == BlockKind::CodeBlock && n.lang == "mermaid") {
+                // UTF-32 raw -> UTF-8 (ASCII-safe fallback; mermaid source is ASCII).
+                std::string utf8;
+                utf8.reserve(n.raw.size());
+                for (char32_t c : n.raw) {
+                    if (c < 0x80) utf8.push_back(static_cast<char>(c));
+                    else if (c < 0x800) {
+                        utf8.push_back(static_cast<char>(0xC0 | (c >> 6)));
+                        utf8.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+                    } else if (c < 0x10000) {
+                        utf8.push_back(static_cast<char>(0xE0 | (c >> 12)));
+                        utf8.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+                        utf8.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+                    } else {
+                        utf8.push_back(static_cast<char>(0xF0 | (c >> 18)));
+                        utf8.push_back(static_cast<char>(0x80 | ((c >> 12) & 0x3F)));
+                        utf8.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+                        utf8.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+                    }
+                }
+                mermaid::Flowchart flow = mermaid::ParseFlowchart(utf8);
+                if (flow.error.empty() && !flow.nodes.empty()) {
+                    try {
+                        mermaid::LayoutParams p;
+                        auto laid = std::make_shared<mermaid::LaidOutFlowchart>(
+                            mermaid::LayoutFlowchart(flow, p));
+                        n.mermaid_layout = laid;
+                        n.block = BlockKind::MermaidFlowchart;
+                    } catch (...) {
+                        // Keep as CodeBlock on layout failure.
+                    }
+                }
+            }
+        }
     }
     if (type == MD_BLOCK_H) {
         ctx->capture_title = false;

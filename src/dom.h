@@ -9,6 +9,9 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <memory>
+
+namespace mermaid { struct LaidOutFlowchart; }
 
 // Block-level elements (one per markdown block: heading, paragraph, etc.)
 enum class BlockKind {
@@ -19,6 +22,7 @@ enum class BlockKind {
     BlockQuote,
     ThematicBreak,
     Table,          // not rendered in v1
+    MermaidFlowchart, // fenced ```mermaid block, laid out at parse time
 };
 
 // Inline-level elements (within a block's children)
@@ -95,6 +99,7 @@ struct Node {
     std::u32string             raw;          // code block raw text (UTF-32)
     std::string                lang;         // fence info string, e.g. "mermaid"
     std::vector<TableRow>     rows;         // table rows (for BlockKind::Table)
+    std::shared_ptr<mermaid::LaidOutFlowchart> mermaid_layout;  // populated when block == MermaidFlowchart
 };
 
 // The full parsed document: a flat list of blocks plus an optional title

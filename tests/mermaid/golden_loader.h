@@ -8,6 +8,7 @@
 // Enough for tests, nothing more.
 
 #include "../../src/mermaid/layout_internal.h"
+#include "../../src/mermaid/layout.h"
 #include "../../src/mermaid/parse.h"
 #include "../../src/mermaid/model.h"
 
@@ -338,30 +339,7 @@ inline LayoutGraph BuildFixtureGraph(const std::string& name) {
     std::stringstream ss; ss << f.rdbuf();
     std::string src = ss.str();
     Flowchart flow = ParseFlowchart(src);
-    LayoutGraph g;
-    for (const auto& n : flow.nodes) {
-        LayoutNode ln;
-        ln.id = static_cast<int>(g.nodes.size());
-        ln.label = n.label.empty() ? n.id : n.label;
-        // Match the oracle's sizing (dump.mjs): CHAR_W=8.4, LINE_H=19, PADDING=15.
-        const double CHAR_W = 8.4, LINE_H = 19.0, PADDING = 15.0;
-        double len = static_cast<double>(ln.label.size());
-        double raw_w = len * CHAR_W;
-        if (raw_w < 14.0) raw_w = 14.0;
-        ln.width  = static_cast<float>(raw_w + PADDING * 2.0);
-        ln.height = static_cast<float>(LINE_H + PADDING * 2.0);
-        g.nodes.push_back(ln);
-    }
-    for (const auto& e : flow.edges) {
-        LayoutEdge le;
-        le.from = e.from;
-        le.to = e.to;
-        le.minlen = 1;
-        le.weight = 1;
-        le.label = e.label;
-        g.edges.push_back(le);
-    }
-    return g;
+    return FlowchartToLayoutGraph(flow);
 }
 
 

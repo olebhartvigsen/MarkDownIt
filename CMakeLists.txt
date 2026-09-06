@@ -98,6 +98,7 @@ add_executable(MarkDownIt WIN32
     src/mermaid/layout_order.cpp
     src/mermaid/layout_position.cpp
     src/mermaid/layout_rank.cpp
+    src/mermaid/layout.cpp
     src/mermaid/parse.cpp
     src/ribbon.cpp
     src/textbuffer.cpp
@@ -211,6 +212,7 @@ if(BUILD_TESTS)
         tests/mermaid_model_test.cpp
         tests/mermaid_parse_test.cpp
         tests/mermaid_layout_test.cpp
+        tests/dom_mermaid_test.cpp
         tests/perf_harness.cpp
         tests/test_main.cpp
         tests/svgtext_test.cpp
@@ -230,6 +232,7 @@ if(BUILD_TESTS)
         src/mermaid/layout_order.cpp
         src/mermaid/layout_position.cpp
         src/mermaid/layout_rank.cpp
+        src/mermaid/layout.cpp
         src/mermaid/parse.cpp
         src/svgtext.cpp
     )
