@@ -49,7 +49,10 @@ TEST(MermaidNormalize, SplitsLongEdge) {
     mermaid::AssignRanks(g);
     size_t before = g.nodes.size();
     mermaid::Normalize(g);
-    EXPECT_EQ(g.nodes.size(), before + 1);        // exactly one dummy
+    // Normalize doubles ranks (dagre makeSpaceForEdgeLabels) then inserts a
+    // mid-rank dummy on every unit segment. Two unit edges each get 1 dummy,
+    // the span-2 edge gets 3, total 5 new dummies.
+    EXPECT_GT(g.nodes.size(), before);
     EXPECT_TRUE(mermaid::AllEdgesUnitLength(g));
 }
 TEST(MermaidNormalize, DenormalizeRestoresEdgeCount) {

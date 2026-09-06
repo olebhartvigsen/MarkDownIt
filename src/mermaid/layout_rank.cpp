@@ -111,10 +111,6 @@ void AssignRanks(LayoutGraph& g) {
     for (auto& n : g.nodes) n.rank = 0;
     longest_path(g);
     tighten(g);
-    // Emulate dagre's makeSpaceForEdgeLabels: double the ranks so a mid-rank
-    // dummy can be inserted between every consecutive pair. Real nodes end
-    // up on even ranks; Normalize will fill in odd-rank dummies.
-    for (auto& n : g.nodes) n.rank *= 2;
 }
 
 }  // namespace mermaid

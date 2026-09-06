@@ -25,6 +25,10 @@ void Normalize(LayoutGraph& g) {
     if (!g.original_edges.empty()) return;  // idempotent
     g.original_edges = g.edges;
 
+    // Emulate dagre's makeSpaceForEdgeLabels: double every rank so we can
+    // insert a mid-rank dummy on every unit-length edge.
+    for (auto& n : g.nodes) n.rank *= 2;
+
     std::vector<LayoutEdge> new_edges;
     new_edges.reserve(g.edges.size() * 2);
     g.dummy_chains.clear();
@@ -92,6 +96,9 @@ void Denormalize(LayoutGraph& g) {
         if (g.nodes[i].is_dummy) { first_dummy = i; break; }
     }
     g.nodes.resize(first_dummy);
+    // Undo the rank doubling from Normalize so external callers see the
+    // logical rank (0, 1, 2, ...) rather than the internal even ranks.
+    for (auto& n : g.nodes) n.rank /= 2;
     g.edges = std::move(g.original_edges);
     g.original_edges.clear();
     g.dummy_chains.clear();
