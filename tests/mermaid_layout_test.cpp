@@ -1,4 +1,5 @@
 #include "../src/mermaid/layout_internal.h"
+#include "mermaid/golden_loader.h"
 #include "gtest_lite.h"
 
 using mermaid::MakeGraph;
@@ -18,4 +19,27 @@ TEST(MermaidAcyclic, HandlesSelfLoop) {
     auto g = MakeGraph(1, {{0,0}});
     mermaid::MakeAcyclic(g);            // self-loop removed from ranking, drawn separately
     EXPECT_TRUE(mermaid::IsAcyclic(g));
+}
+
+TEST(MermaidRank, LongestPathChain) {
+    auto g = MakeGraph(3, {{0,1},{1,2}});
+    mermaid::AssignRanks(g);
+    EXPECT_EQ(g.nodes[0].rank, 0);
+    EXPECT_EQ(g.nodes[1].rank, 1);
+    EXPECT_EQ(g.nodes[2].rank, 2);
+}
+TEST(MermaidRank, NetworkSimplexTightensLongEdge) {
+    // A->B, A->C, B->D, C->D : D must be rank 2, not 3
+    auto g = MakeGraph(4, {{0,1},{0,2},{1,3},{2,3}});
+    mermaid::AssignRanks(g);
+    EXPECT_EQ(g.nodes[3].rank, 2);
+}
+
+TEST(MermaidGolden, RanksMatchDagre_01Linear) {
+    auto gold = mermaid::LoadGolden("tests/mermaid/golden/01-linear.json");
+    auto ours = mermaid::LayoutFromGolden(gold);
+    mermaid::MakeAcyclic(ours);
+    mermaid::AssignRanks(ours);
+    for (const auto& gn : gold.nodes)
+        EXPECT_EQ(mermaid::RankOf(ours, gn.id), gn.rank);
 }

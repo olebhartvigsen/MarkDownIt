@@ -37,6 +37,17 @@ function parseFlow(src) {
   return { dir, nodes: [...nodes.values()], edges };
 }
 
+// Compute integer ranks from node coordinates. For TB/BT layouts, rank
+// tracks y; for LR/RL it tracks x. Dagre exposes node.rank only when the
+// full simplex phase is preserved, so we recover it from geometry: group
+// nodes by their axis coordinate and assign 0, 1, 2, ... in ascending
+// order. This gives the same integer ranks the ranker computed.
+function computeRanks(nodeObjs, rankdir) {
+  const key = (rankdir === 'LR' || rankdir === 'RL') ? 'x' : 'y';
+  const uniq = [...new Set(nodeObjs.map(n => n[key]))].sort((a, b) => a - b);
+  return nodeObjs.map(n => uniq.indexOf(n[key]));
+}
+
 const file = process.argv[2];
 const { dir, nodes, edges } = parseFlow(fs.readFileSync(file, 'utf8'));
 
@@ -48,13 +59,16 @@ for (const e of edges) g.setEdge(e.from, e.to, { weight: 1, minlen: 1, labelpos:
 
 layout(g);
 
+const nodeObjs = g.nodes().map(id => g.node(id));
+const ranks = computeRanks(nodeObjs, dir);
+
 const out = {
   source: path.basename(file),
   config: { rankdir: dir, nodesep: NODE_SPACING, ranksep: RANK_SPACING, edgesep: EDGE_SEP, padding: PADDING },
   graph: { width: g.graph().width, height: g.graph().height },
-  nodes: g.nodes().map(id => {
+  nodes: g.nodes().map((id, i) => {
     const n = g.node(id);
-    return { id, label: n.label, x: n.x, y: n.y, width: n.width, height: n.height, rank: n.rank ?? null };
+    return { id, label: n.label, x: n.x, y: n.y, width: n.width, height: n.height, rank: ranks[i] };
   }),
   edges: g.edges().map(e => {
     const d = g.edge(e);

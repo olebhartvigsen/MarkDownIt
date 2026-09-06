@@ -37,6 +37,7 @@ struct LayoutGraph {
 
 std::vector<int> MakeAcyclic(LayoutGraph& g);
 bool IsAcyclic(const LayoutGraph& g);
+void AssignRanks(LayoutGraph& g);
 
 inline LayoutGraph MakeGraph(int node_count,
                              std::initializer_list<std::pair<int,int>> edges) {

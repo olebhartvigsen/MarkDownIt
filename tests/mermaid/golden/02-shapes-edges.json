@@ -19,7 +19,7 @@
       "y": 420.5,
       "width": 63.6,
       "height": 49,
-      "rank": null
+      "rank": 4
     },
     {
       "id": "B",
@@ -28,7 +28,7 @@
       "y": 519.5,
       "width": 72,
       "height": 49,
-      "rank": null
+      "rank": 5
     },
     {
       "id": "C",
@@ -37,7 +37,7 @@
       "y": 24.5,
       "width": 44,
       "height": 49,
-      "rank": null
+      "rank": 0
     },
     {
       "id": "D",
@@ -46,7 +46,7 @@
       "y": 123.5,
       "width": 88.80000000000001,
       "height": 49,
-      "rank": null
+      "rank": 1
     },
     {
       "id": "E",
@@ -55,7 +55,7 @@
       "y": 222.5,
       "width": 80.4,
       "height": 49,
-      "rank": null
+      "rank": 2
     },
     {
       "id": "F",
@@ -64,7 +64,7 @@
       "y": 321.5,
       "width": 44,
       "height": 49,
-      "rank": null
+      "rank": 3
     }
   ],
   "edges": [

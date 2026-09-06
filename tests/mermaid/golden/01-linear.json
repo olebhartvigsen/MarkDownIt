@@ -19,7 +19,7 @@
       "y": 24.5,
       "width": 72,
       "height": 49,
-      "rank": null
+      "rank": 0
     },
     {
       "id": "B",
@@ -28,7 +28,7 @@
       "y": 123.5,
       "width": 80.4,
       "height": 49,
-      "rank": null
+      "rank": 1
     },
     {
       "id": "C",
@@ -37,7 +37,7 @@
       "y": 222.5,
       "width": 55.2,
       "height": 49,
-      "rank": null
+      "rank": 2
     }
   ],
   "edges": [
