@@ -52,10 +52,19 @@ function parseFlow(src) {
       subgraphs[stack[stack.length - 1]].direction = dm[1] === 'TD' ? 'TB' : dm[1];
       continue;
     }
-    const m = line.match(/^(.*?)\s*(-{2,3}>|-\.-+>|={2,}>)\s*(?:\|([^|]*)\|)?\s*(.*)$/);
+    // Form 1: inline label between dashes: `A -- text --> B` / `A -- text --- B`.
+    const mi = line.match(/^(.+?)\s*--\s+([^->].*?)\s*--+>?\s*(.+)$/);
+    if (mi) {
+      const from = decl(mi[1]), to = decl(mi[3]);
+      edges.push({ from, to, label: mi[2].trim(), head: 'arrow' });
+      continue;
+    }
+    // Form 2: plain op with optional |label|: -->, ---, -.->, ==>, -. - .
+    const m = line.match(/^(.*?)\s*(-{2,3}>?|-\.->|={2,}>|-\.+-)\s*(?:\|([^|]*)\|)?\s*(.*)$/);
     if (m) {
       const from = decl(m[1]), to = decl(m[4]);
-      edges.push({ from, to, label: m[3] || '' });
+      const head = m[2].endsWith('>') ? 'arrow' : 'none';
+      edges.push({ from, to, label: m[3] || '', head });
     } else {
       decl(line);
     }
