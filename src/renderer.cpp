@@ -6,6 +6,9 @@
 #include <vector>
 #include "colortext.h"
 #include "imagehelper.h"
+#include "mermaid/model.h"
+#include "mermaid/layout_internal.h"
+#include <cmath>
 
 static const float kPtToDip = 96.0f / 72.0f;
 
@@ -708,6 +711,8 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
             }
         } else if (n.block == BlockKind::ThematicBreak) {
             blockH = 12.0f;
+        } else if (n.block == BlockKind::MermaidFlowchart) {
+            blockH = MeasureMermaidBlock(n);
         } else if (n.block == BlockKind::Table) {
             blockH = MeasureTable(dw, n, drawX, drawW);
         } else {
@@ -889,6 +894,14 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (n.block == BlockKind::ThematicBreak) {
             DrawThematicBreak(rt, drawX, curY + 6.0f, drawW);
             curY += 12.0f;
+            prevBlock = n.block;
+            prevDepth = n.depth;
+            continue;
+        }
+
+        if (n.block == BlockKind::MermaidFlowchart) {
+            DrawMermaidBlock(rt, dw, n, drawX, curY);
+            curY += MeasureMermaidBlock(n);
             prevBlock = n.block;
             prevDepth = n.depth;
             continue;
@@ -1627,3 +1640,229 @@ void Renderer::DrawSvgBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
               renderedW, renderedH);
 }
 
+
+
+// -----------------------------------------------------------------------------
+// Mermaid flowchart rendering (Task 12).
+// -----------------------------------------------------------------------------
+
+float Renderer::MeasureMermaidBlock(const Node& n) const {
+    if (!n.mermaid_layout) return 0.0f;
+    const auto& lo = *n.mermaid_layout;
+    const float pad = 12.0f;
+    return static_cast<float>(lo.height) * zoom_ + 2.0f * pad;
+}
+
+static void DrawArrowHead(ID2D1RenderTarget* rt, ID2D1Factory* fac,
+                          ID2D1SolidColorBrush* brush,
+                          const mermaid::Point& a, const mermaid::Point& b,
+                          float ox, float oy, float scale) {
+    if (!rt || !fac || !brush) return;
+    double dx = b.x - a.x;
+    double dy = b.y - a.y;
+    double len = std::sqrt(dx * dx + dy * dy);
+    if (len < 1e-6) return;
+    dx /= len; dy /= len;
+    const float head_len = 10.0f;
+    const float head_w = 6.0f;
+    D2D1_POINT_2F tip = {
+        ox + static_cast<float>(b.x * scale),
+        oy + static_cast<float>(b.y * scale)
+    };
+    double bx = b.x - dx * (head_len / (scale > 1e-6 ? scale : 1.0f));
+    double by = b.y - dy * (head_len / (scale > 1e-6 ? scale : 1.0f));
+    // Perpendicular in world units.
+    double px = -dy;
+    double py = dx;
+    double half = head_w / (scale > 1e-6 ? scale : 1.0f);
+    D2D1_POINT_2F left = {
+        ox + static_cast<float>((bx + px * half) * scale),
+        oy + static_cast<float>((by + py * half) * scale)
+    };
+    D2D1_POINT_2F right = {
+        ox + static_cast<float>((bx - px * half) * scale),
+        oy + static_cast<float>((by - py * half) * scale)
+    };
+    ID2D1PathGeometry* geom = nullptr;
+    if (FAILED(fac->CreatePathGeometry(&geom)) || !geom) return;
+    ID2D1GeometrySink* sink = nullptr;
+    if (FAILED(geom->Open(&sink)) || !sink) { geom->Release(); return; }
+    sink->BeginFigure(tip, D2D1_FIGURE_BEGIN_FILLED);
+    D2D1_POINT_2F pts[2] = { left, right };
+    sink->AddLines(pts, 2);
+    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+    sink->Close();
+    sink->Release();
+    rt->FillGeometry(geom, brush);
+    geom->Release();
+}
+
+void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+                                 const Node& n, float x, float y) {
+    if (!rt || !dw) return;
+    if (!n.mermaid_layout) return;
+    const auto& lo = *n.mermaid_layout;
+    const float pad = 12.0f;
+    float scale = zoom_;
+    float ox = x;
+    float oy = y + pad;
+
+    Palette pal = BasePalette();
+    ID2D1SolidColorBrush* edgeBrush = nullptr;
+    rt->CreateSolidColorBrush(pal.textPrimary, &edgeBrush);
+    ID2D1SolidColorBrush* nodeFill = nullptr;
+    rt->CreateSolidColorBrush(pal.codeBg, &nodeFill);
+    ID2D1SolidColorBrush* nodeBorder = nullptr;
+    rt->CreateSolidColorBrush(pal.codeBorder, &nodeBorder);
+    ID2D1SolidColorBrush* textBrush = nullptr;
+    rt->CreateSolidColorBrush(pal.textPrimary, &textBrush);
+
+    ID2D1Factory* fac = nullptr;
+    rt->GetFactory(&fac);
+
+    // Edges first.
+    if (fac && edgeBrush) {
+        for (const auto& e : lo.edges) {
+            if (e.route.size() < 2) continue;
+            ID2D1PathGeometry* path = nullptr;
+            if (FAILED(fac->CreatePathGeometry(&path)) || !path) continue;
+            ID2D1GeometrySink* sink = nullptr;
+            if (FAILED(path->Open(&sink)) || !sink) { path->Release(); continue; }
+            D2D1_POINT_2F p0 = {
+                ox + static_cast<float>(e.route[0].x * scale),
+                oy + static_cast<float>(e.route[0].y * scale)
+            };
+            sink->BeginFigure(p0, D2D1_FIGURE_BEGIN_HOLLOW);
+            for (size_t i = 1; i < e.route.size(); ++i) {
+                D2D1_POINT_2F pi = {
+                    ox + static_cast<float>(e.route[i].x * scale),
+                    oy + static_cast<float>(e.route[i].y * scale)
+                };
+                sink->AddLine(pi);
+            }
+            sink->EndFigure(D2D1_FIGURE_END_OPEN);
+            sink->Close();
+            sink->Release();
+            rt->DrawGeometry(path, edgeBrush, 1.5f);
+            path->Release();
+            DrawArrowHead(rt, fac, edgeBrush,
+                          e.route[e.route.size() - 2], e.route.back(),
+                          ox, oy, scale);
+        }
+    }
+
+    // Nodes.
+    for (const auto& nd : lo.nodes) {
+        if (nd.is_dummy) continue;
+        float nx = ox + static_cast<float>((nd.x - nd.width / 2.0f) * scale);
+        float ny = oy + static_cast<float>((nd.y - nd.height / 2.0f) * scale);
+        float nw = static_cast<float>(nd.width * scale);
+        float nh = static_cast<float>(nd.height * scale);
+        D2D1_RECT_F rect = D2D1::RectF(nx, ny, nx + nw, ny + nh);
+
+        switch (nd.shape) {
+            case mermaid::NodeShape::Round: {
+                D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(rect, 6.0f * scale, 6.0f * scale);
+                if (nodeFill) rt->FillRoundedRectangle(rr, nodeFill);
+                if (nodeBorder) rt->DrawRoundedRectangle(rr, nodeBorder, 1.0f);
+                break;
+            }
+            case mermaid::NodeShape::Stadium: {
+                float r = nh * 0.5f;
+                D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(rect, r, r);
+                if (nodeFill) rt->FillRoundedRectangle(rr, nodeFill);
+                if (nodeBorder) rt->DrawRoundedRectangle(rr, nodeBorder, 1.0f);
+                break;
+            }
+            case mermaid::NodeShape::Circle: {
+                D2D1_ELLIPSE el = D2D1::Ellipse(
+                    D2D1::Point2F(nx + nw * 0.5f, ny + nh * 0.5f),
+                    nw * 0.5f, nh * 0.5f);
+                if (nodeFill) rt->FillEllipse(el, nodeFill);
+                if (nodeBorder) rt->DrawEllipse(el, nodeBorder, 1.0f);
+                break;
+            }
+            case mermaid::NodeShape::Diamond: {
+                if (fac) {
+                    ID2D1PathGeometry* geom = nullptr;
+                    if (SUCCEEDED(fac->CreatePathGeometry(&geom)) && geom) {
+                        ID2D1GeometrySink* sink = nullptr;
+                        if (SUCCEEDED(geom->Open(&sink)) && sink) {
+                            D2D1_POINT_2F top = D2D1::Point2F(nx + nw * 0.5f, ny);
+                            D2D1_POINT_2F right = D2D1::Point2F(nx + nw, ny + nh * 0.5f);
+                            D2D1_POINT_2F bot = D2D1::Point2F(nx + nw * 0.5f, ny + nh);
+                            D2D1_POINT_2F left = D2D1::Point2F(nx, ny + nh * 0.5f);
+                            sink->BeginFigure(top, D2D1_FIGURE_BEGIN_FILLED);
+                            D2D1_POINT_2F pts[3] = { right, bot, left };
+                            sink->AddLines(pts, 3);
+                            sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+                            sink->Close();
+                            sink->Release();
+                            if (nodeFill) rt->FillGeometry(geom, nodeFill);
+                            if (nodeBorder) rt->DrawGeometry(geom, nodeBorder, 1.0f);
+                        }
+                        geom->Release();
+                    }
+                }
+                break;
+            }
+            case mermaid::NodeShape::Rect:
+            default: {
+                if (nodeFill) rt->FillRectangle(rect, nodeFill);
+                if (nodeBorder) rt->DrawRectangle(rect, nodeBorder, 1.0f);
+                break;
+            }
+        }
+
+        // Label text, centered.
+        if (!nd.label.empty() && body_fmt_ && textBrush) {
+            // Convert UTF-8 label to UTF-16.
+            std::u16string text16;
+            const std::string& s = nd.label;
+            for (size_t i = 0; i < s.size(); ) {
+                unsigned char c = static_cast<unsigned char>(s[i]);
+                uint32_t cp = 0;
+                int n_bytes = 1;
+                if (c < 0x80) { cp = c; n_bytes = 1; }
+                else if ((c & 0xE0) == 0xC0 && i + 1 < s.size()) {
+                    cp = ((c & 0x1F) << 6) | (s[i+1] & 0x3F);
+                    n_bytes = 2;
+                } else if ((c & 0xF0) == 0xE0 && i + 2 < s.size()) {
+                    cp = ((c & 0x0F) << 12) | ((s[i+1] & 0x3F) << 6) |
+                         (s[i+2] & 0x3F);
+                    n_bytes = 3;
+                } else if ((c & 0xF8) == 0xF0 && i + 3 < s.size()) {
+                    cp = ((c & 0x07) << 18) | ((s[i+1] & 0x3F) << 12) |
+                         ((s[i+2] & 0x3F) << 6) | (s[i+3] & 0x3F);
+                    n_bytes = 4;
+                } else { cp = '?'; n_bytes = 1; }
+                if (cp <= 0xFFFF) {
+                    text16.push_back(static_cast<char16_t>(cp));
+                } else {
+                    cp -= 0x10000;
+                    text16.push_back(static_cast<char16_t>(0xD800 + (cp >> 10)));
+                    text16.push_back(static_cast<char16_t>(0xDC00 + (cp & 0x3FF)));
+                }
+                i += n_bytes;
+            }
+            IDWriteTextLayout* layout = nullptr;
+            HRESULT hr = dw->CreateTextLayout(
+                reinterpret_cast<const WCHAR*>(text16.data()),
+                static_cast<UINT32>(text16.size()),
+                body_fmt_, nw, nh, &layout);
+            if (SUCCEEDED(hr) && layout) {
+                layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+                layout->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                rt->DrawTextLayout(D2D1::Point2F(nx, ny), layout, textBrush,
+                                   D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                layout->Release();
+            }
+        }
+    }
+
+    if (fac) fac->Release();
+    if (edgeBrush) edgeBrush->Release();
+    if (nodeFill) nodeFill->Release();
+    if (nodeBorder) nodeBorder->Release();
+    if (textBrush) textBrush->Release();
+}

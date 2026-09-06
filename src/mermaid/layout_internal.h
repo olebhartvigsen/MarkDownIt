@@ -8,6 +8,8 @@
 
 namespace mermaid {
 
+enum class NodeShape { Rect, Round, Stadium, Diamond, Circle };
+
 struct Point {
     double x = 0;
     double y = 0;
@@ -23,6 +25,7 @@ struct LayoutNode {
     float x = 0, y = 0;
     bool is_dummy = false;
     bool is_self_loop_host = false;
+    NodeShape shape = NodeShape::Rect;
 };
 
 struct LayoutEdge {

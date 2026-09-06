@@ -22,6 +22,13 @@ LayoutGraph FlowchartToLayoutGraph(const Flowchart& flow) {
         if (raw_w < 14.0) raw_w = 14.0;
         ln.width  = static_cast<float>(raw_w + PADDING * 2.0);
         ln.height = static_cast<float>(LINE_H + PADDING * 2.0);
+        switch (n.shape) {
+            case Shape::Rect:    ln.shape = NodeShape::Rect; break;
+            case Shape::Round:   ln.shape = NodeShape::Round; break;
+            case Shape::Stadium: ln.shape = NodeShape::Stadium; break;
+            case Shape::Diamond: ln.shape = NodeShape::Diamond; break;
+            case Shape::Circle:  ln.shape = NodeShape::Circle; break;
+        }
         g.nodes.push_back(ln);
     }
     g.edges.reserve(flow.edges.size());
