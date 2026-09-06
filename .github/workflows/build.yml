@@ -2,7 +2,9 @@ name: Build MarkDownIt
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - feat/mermaid-flowchart
   workflow_dispatch:
 
 jobs:
@@ -92,3 +94,36 @@ jobs:
           cmake -B build-tests -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTS=ON
           cmake --build build-tests --config Release
           build-tests/Release/MarkDownIt.tests.exe
+
+  oracle:
+    name: Mermaid oracle (golden geometry)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install oracle deps
+        working-directory: tools/mermaid-oracle
+        run: npm install --no-audit --no-fund
+      - name: Regenerate golden geometry
+        run: |
+          mkdir -p /tmp/golden
+          for f in tests/mermaid/fixtures/*.mmd; do
+            name=$(basename "$f" .mmd)
+            node tools/mermaid-oracle/dump.mjs "$f" > "/tmp/golden/$name.json"
+          done
+      - name: Fail if committed goldens drift from the oracle
+        run: |
+          for f in /tmp/golden/*.json; do
+            name=$(basename "$f")
+            if ! diff -u "tests/mermaid/golden/$name" "$f"; then
+              echo "::error::Golden $name is stale. Commit the regenerated file."
+              exit 1
+            fi
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mermaid-golden
+          path: /tmp/golden/

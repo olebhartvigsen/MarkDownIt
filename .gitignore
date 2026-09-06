@@ -25,3 +25,7 @@ cmake_install.cmake
 Thumbs.db
 desktop.ini
 a.out
+
+# Node (oracle harness)
+node_modules/
+package-lock.json
