@@ -1,29 +1,13 @@
 // Golden gate tests for the mermaid layout pipeline. Compares our C++
 // output against dagre-d3-es JSON goldens produced by tools/mermaid-oracle.
-//
-// Tolerance is 0.5 DIP per the plan's Definition of Done. Tests here
-// cover only the fixtures where our positioner reproduces dagre exactly
-// at that tolerance. The following are TODO and intentionally NOT
-// asserted at 0.5 rather than loosening the gate:
-//
-//   * 04-crossing node centres. dagre picks a Brandes-Koepf alignment
-//     that shifts nodes ~5-10 DIP asymmetrically. Our damped relaxation
-//     produces the symmetric layout and would need the full 4-alignment
-//     BK compaction to match. Enable once ported.
-//
-//   * 05-long-edge edge polylines. dagre inserts midline control points
-//     using an internal edge-label-placement heuristic we have not
-//     ported to layout_edges.cpp. Endpoints currently differ ~6 DIP.
-//     Enable once RouteEdges emits the dagre midline points.
-//
-//   * 08-rl and 09-bt rankdir transforms. Not exercised until 07-lr
-//     passes and RL/BT mirroring is verified against goldens.
+// Tolerance is 0.5 DIP per the plan's Definition of Done.
 #include "../src/mermaid/layout.h"
 #include "../src/mermaid/layout_internal.h"
 #include "../src/mermaid/parse.h"
 #include "mermaid/golden_loader.h"
 #include "gtest_lite.h"
 
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -31,81 +15,98 @@
 
 namespace {
 
-std::string ReadFile(const std::string& path) {
-    std::ifstream f(path);
+std::string ReadFixture(const char* name) {
+    std::ifstream f(std::string("tests/mermaid/fixtures/") + name + ".mmd");
     std::stringstream ss; ss << f.rdbuf();
     return ss.str();
 }
 
-mermaid::LayoutGraph LayoutOursFromGolden(const mermaid::Golden& gold) {
-    mermaid::LayoutGraph g = mermaid::LayoutFromGolden(gold);
+mermaid::LaidOutFlowchart LayoutFromFixture(const char* name) {
+    mermaid::Flowchart flow = mermaid::ParseFlowchart(ReadFixture(name));
     mermaid::LayoutParams p;
-    mermaid::MakeAcyclic(g);
-    mermaid::AssignRanks(g);
-    mermaid::Normalize(g);
-    mermaid::Order(g);
-    mermaid::AssignCoordinates(g, p);
-    mermaid::RouteEdges(g, p);
-    mermaid::Denormalize(g);
-    return g;
+    p.margin = 0.0;
+    return mermaid::LayoutFlowchart(flow, p);
 }
 
-}  // namespace
-
-TEST(MermaidGolden, NodeCentersMatchDagre) {
-    // Fixtures verified to pass at 0.5 DIP. 02-shapes-edges and
-    // 04-crossing are excluded; see file header.
-    const char* fixtures[] = {
-        "01-linear",
-        "03-diamond",
-        "05-long-edge",
-        "06-siblings",
-    };
-    const double tol = 0.5;
-    for (const char* name : fixtures) {
-        std::string path = std::string("tests/mermaid/golden/") + name + ".json";
-        auto gold = mermaid::LoadGolden(path);
-        auto ours = LayoutOursFromGolden(gold);
-        for (const auto& gn : gold.nodes) {
-            int idx = mermaid::FindByLabel(ours, gn.id);
-            ASSERT_GE(idx, 0);
-            if (std::abs(ours.nodes[idx].x - gn.x) > tol ||
-                std::abs(ours.nodes[idx].y - gn.y) > tol) {
-                std::fprintf(stderr,
-                             "[%s] node %s: ours=(%.3f,%.3f) golden=(%.3f,%.3f)\n",
-                             name, gn.id.c_str(),
-                             ours.nodes[idx].x, ours.nodes[idx].y, gn.x, gn.y);
+void CheckNodes(const char* name, const mermaid::Golden& gold,
+                const std::vector<mermaid::LayoutNode>& nodes, double tol) {
+    for (const auto& gn : gold.nodes) {
+        int idx = -1;
+        for (size_t i = 0; i < nodes.size(); ++i) {
+            if (nodes[i].label == gn.label || nodes[i].label == gn.id) {
+                idx = static_cast<int>(i); break;
             }
-            EXPECT_NEAR(ours.nodes[idx].x, gn.x, tol);
-            EXPECT_NEAR(ours.nodes[idx].y, gn.y, tol);
+        }
+        ASSERT_GE(idx, 0);
+        double dx = static_cast<double>(nodes[idx].x) - static_cast<double>(gn.x);
+        double dy = static_cast<double>(nodes[idx].y) - static_cast<double>(gn.y);
+        if (std::abs(dx) > tol || std::abs(dy) > tol) {
+            std::fprintf(stderr,
+                "[%s] node %s: ours=(%.3f,%.3f) golden=(%.3f,%.3f) diff=(%.3f,%.3f)\n",
+                name, gn.id.c_str(),
+                nodes[idx].x, nodes[idx].y, gn.x, gn.y, dx, dy);
+        }
+        EXPECT_NEAR(nodes[idx].x, gn.x, tol);
+        EXPECT_NEAR(nodes[idx].y, gn.y, tol);
+    }
+}
+
+void CheckEdges(const char* name, const mermaid::Golden& gold,
+                const std::vector<mermaid::LayoutEdge>& edges,
+                const std::vector<mermaid::LayoutNode>& nodes,
+                double tol) {
+    for (const auto& ge : gold.edges) {
+        int from = -1, to = -1;
+        for (size_t i = 0; i < nodes.size(); ++i) {
+            if (nodes[i].label == ge.from) from = static_cast<int>(i);
+            if (nodes[i].label == ge.to)   to   = static_cast<int>(i);
+        }
+        if (from < 0 || to < 0) continue;
+        int ei = -1;
+        for (size_t i = 0; i < edges.size(); ++i) {
+            if (edges[i].from == from && edges[i].to == to) { ei = static_cast<int>(i); break; }
+        }
+        ASSERT_GE(ei, 0);
+        const auto& route = edges[ei].route;
+        if (route.size() != ge.points.size()) {
+            std::fprintf(stderr, "[%s] edge %s->%s: route %zu pts, golden %zu\n",
+                name, ge.from.c_str(), ge.to.c_str(), route.size(), ge.points.size());
+        }
+        ASSERT_EQ(route.size(), ge.points.size());
+        for (size_t k = 0; k < route.size(); ++k) {
+            double dx = route[k].x - static_cast<double>(ge.points[k].first);
+            double dy = route[k].y - static_cast<double>(ge.points[k].second);
+            if (std::abs(dx) > tol || std::abs(dy) > tol) {
+                std::fprintf(stderr,
+                    "[%s] edge %s->%s pt[%zu]: ours=(%.3f,%.3f) golden=(%.3f,%.3f) diff=(%.3f,%.3f)\n",
+                    name, ge.from.c_str(), ge.to.c_str(), k,
+                    route[k].x, route[k].y, ge.points[k].first, ge.points[k].second, dx, dy);
+            }
+            EXPECT_NEAR(route[k].x, ge.points[k].first,  tol);
+            EXPECT_NEAR(route[k].y, ge.points[k].second, tol);
         }
     }
 }
 
-TEST(MermaidGolden, RankdirLR_07) {
-    auto gold = mermaid::LoadGolden("tests/mermaid/golden/07-lr.json");
-    std::string src = ReadFile("tests/mermaid/fixtures/07-lr.mmd");
-    mermaid::Flowchart flow = mermaid::ParseFlowchart(src);
-    mermaid::LayoutParams p;
-    p.margin = 0.0;
-    auto out = mermaid::LayoutFlowchart(flow, p);
+}  // namespace
+
+TEST(MermaidGolden, AllFixtures) {
+    const char* fixtures[] = {
+        "01-linear",
+        "02-shapes-edges",
+        "03-diamond",
+        "04-crossing",
+        "05-long-edge",
+        "06-siblings",
+        "07-lr",
+        "08-rl",
+        "09-bt",
+    };
     const double tol = 0.5;
-    for (const auto& gn : gold.nodes) {
-        int found = -1;
-        for (size_t i = 0; i < out.nodes.size(); ++i) {
-            if (out.nodes[i].label == gn.label || out.nodes[i].label == gn.id) {
-                found = static_cast<int>(i); break;
-            }
-        }
-        ASSERT_GE(found, 0);
-        if (std::abs(out.nodes[found].x - gn.x) > tol ||
-            std::abs(out.nodes[found].y - gn.y) > tol) {
-            std::fprintf(stderr,
-                         "[07-lr] node %s: ours=(%.3f,%.3f) golden=(%.3f,%.3f)\n",
-                         gn.id.c_str(),
-                         out.nodes[found].x, out.nodes[found].y, gn.x, gn.y);
-        }
-        EXPECT_NEAR(out.nodes[found].x, gn.x, tol);
-        EXPECT_NEAR(out.nodes[found].y, gn.y, tol);
+    for (const char* name : fixtures) {
+        auto gold = mermaid::LoadGolden(std::string("tests/mermaid/golden/") + name + ".json");
+        auto out = LayoutFromFixture(name);
+        CheckNodes(name, gold, out.nodes, tol);
+        CheckEdges(name, gold, out.edges, out.nodes, tol);
     }
 }

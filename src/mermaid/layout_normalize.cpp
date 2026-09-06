@@ -1,7 +1,10 @@
 // Layout phase 3: normalize long edges via dummy nodes.
-// Task 7: split any edge that spans more than one rank into unit-length
-// segments, chained through zero-size dummy nodes. Those dummies become
-// the bend points during routing (Task 10).
+// Emulates dagre's makeSpaceForEdgeLabels: every original rank gap of 1 is
+// doubled to 2 (via mid-rank dummy), a span-k edge becomes 2k unit segments
+// through (2k-1) dummies. Pre-condition: rank ints are pre-doubled by
+// AssignRanks (see layout_rank.cpp) so real nodes sit on even ranks and
+// dummies on odd ranks. This gives every polyline a mid-rank control point
+// and matches dagre's coordinate output at 0.5 DIP.
 #include "layout_internal.h"
 
 #include <cstdlib>
@@ -23,7 +26,7 @@ void Normalize(LayoutGraph& g) {
     g.original_edges = g.edges;
 
     std::vector<LayoutEdge> new_edges;
-    new_edges.reserve(g.edges.size());
+    new_edges.reserve(g.edges.size() * 2);
     g.dummy_chains.clear();
 
     for (size_t i = 0; i < g.original_edges.size(); ++i) {
@@ -33,12 +36,12 @@ void Normalize(LayoutGraph& g) {
         int span = rv - ru;
         int abs_span = span < 0 ? -span : span;
         if (abs_span <= 1) {
+            // Should not happen once ranks are doubled, but keep safe.
             LayoutEdge kept = e;
             kept.original_edge_index = static_cast<int>(i);
             new_edges.push_back(kept);
             continue;
         }
-        // Multi-rank edge: create dummies at each intermediate rank.
         int step = span > 0 ? 1 : -1;
         DummyChain chain;
         chain.original_edge_index = static_cast<int>(i);
@@ -84,8 +87,6 @@ void Normalize(LayoutGraph& g) {
 
 void Denormalize(LayoutGraph& g) {
     if (g.original_edges.empty()) return;
-    // Drop dummies from the node list. Dummy ids were appended after the
-    // real nodes, so we can just truncate down to the first dummy.
     size_t first_dummy = g.nodes.size();
     for (size_t i = 0; i < g.nodes.size(); ++i) {
         if (g.nodes[i].is_dummy) { first_dummy = i; break; }
