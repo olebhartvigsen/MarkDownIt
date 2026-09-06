@@ -46,4 +46,14 @@ struct Registrar {
 
 #define ASSERT_GE(a, b) do { testlite::checks()++; auto _va = (a); auto _vb = (b); if (!(_va >= _vb)) { testlite::failures()++; std::cerr << "  FAIL " << __FILE__ << ":" << __LINE__ << " ASSERT_GE(" #a ", " #b ")\n"; return; } } while(0)
 
+#define EXPECT_LT(a, b) do { testlite::checks()++; auto _va = (a); auto _vb = (b); if (!(_va < _vb)) { testlite::failures()++; std::cerr << "  FAIL " << __FILE__ << ":" << __LINE__ << " EXPECT_LT(" #a ", " #b ")\n"; } } while(0)
+
+#define EXPECT_LE(a, b) do { testlite::checks()++; auto _va = (a); auto _vb = (b); if (!(_va <= _vb)) { testlite::failures()++; std::cerr << "  FAIL " << __FILE__ << ":" << __LINE__ << " EXPECT_LE(" #a ", " #b ")\n"; } } while(0)
+
+#define EXPECT_GT(a, b) do { testlite::checks()++; auto _va = (a); auto _vb = (b); if (!(_va > _vb)) { testlite::failures()++; std::cerr << "  FAIL " << __FILE__ << ":" << __LINE__ << " EXPECT_GT(" #a ", " #b ")\n"; } } while(0)
+
+#define EXPECT_GE(a, b) do { testlite::checks()++; auto _va = (a); auto _vb = (b); if (!(_va >= _vb)) { testlite::failures()++; std::cerr << "  FAIL " << __FILE__ << ":" << __LINE__ << " EXPECT_GE(" #a ", " #b ")\n"; } } while(0)
+
+#define EXPECT_NEAR(a, b, tol) do { testlite::checks()++; double _va = static_cast<double>(a); double _vb = static_cast<double>(b); double _vt = static_cast<double>(tol); double _diff = _va - _vb; if (_diff < 0) _diff = -_diff; if (!(_diff <= _vt)) { testlite::failures()++; std::cerr << "  FAIL " << __FILE__ << ":" << __LINE__ << " EXPECT_NEAR(" #a ", " #b ", " #tol ") diff=" << _diff << "\n"; } } while(0)
+
 #define RUN_ALL_TESTS() int main() { int passed = 0; for (auto& t : testlite::registry()) { size_t before = testlite::failures(); std::cout << "[ RUN ] " << t.name << "\n"; t.fn(); if (testlite::failures() == before) { std::cout << "[ OK ] " << t.name << "\n"; passed++; } else { std::cout << "[ FAIL ] " << t.name << "\n"; } } std::cout << "\n" << testlite::checks() << " checks, " << testlite::failures() << " failures, " << passed << " passed\n"; return testlite::failures() ? 1 : 0; }
