@@ -201,6 +201,7 @@ if(BUILD_TESTS)
         tests/formatting_test.cpp
         tests/autoformat_test.cpp
         tests/inputfilter_test.cpp
+        tests/mermaid_model_test.cpp
         tests/perf_harness.cpp
         tests/test_main.cpp
         tests/svgtext_test.cpp
