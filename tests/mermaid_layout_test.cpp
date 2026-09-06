@@ -73,3 +73,25 @@ TEST(MermaidOrder, CrossingCountIsMonotone) {
     mermaid::Order(g);
     EXPECT_TRUE(mermaid::CountCrossings(g) <= before);
 }
+
+TEST(MermaidPosition, YComesFromRank) {
+    auto g = MakeGraph(3, {{0,1},{1,2}});
+    for (auto& n : g.nodes) { n.width = 80; n.height = 40; }
+    mermaid::AssignRanks(g); mermaid::Normalize(g); mermaid::Order(g);
+    mermaid::AssignCoordinates(g, mermaid::LayoutParams{});
+    EXPECT_LT(g.nodes[0].y, g.nodes[1].y);
+    EXPECT_LT(g.nodes[1].y, g.nodes[2].y);
+}
+
+TEST(MermaidPosition, GoldenAgreesWith_01Linear) {
+    auto g = mermaid::BuildFixtureGraph("01-linear");
+    mermaid::AssignRanks(g); mermaid::Normalize(g); mermaid::Order(g);
+    mermaid::AssignCoordinates(g, mermaid::LayoutParams{});
+    auto golden = mermaid::LoadGolden("tests/mermaid/golden/01-linear.json");
+    for (const auto& gn : golden.nodes) {
+        int idx = mermaid::FindByLabel(g, gn.label);
+        ASSERT_GE(idx, 0);
+        EXPECT_NEAR(g.nodes[idx].x, gn.x, 2.0);
+        EXPECT_NEAR(g.nodes[idx].y, gn.y, 2.0);
+    }
+}

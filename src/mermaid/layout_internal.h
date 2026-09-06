@@ -52,6 +52,15 @@ bool AllEdgesUnitLength(const LayoutGraph& g);
 void Order(LayoutGraph& g);
 int CountCrossings(const LayoutGraph& g);
 
+struct LayoutParams {
+    double rank_sep = 50.0;
+    double node_sep = 50.0;
+    double edge_sep = 10.0;
+    double margin = 20.0;
+};
+
+void AssignCoordinates(LayoutGraph& g, const LayoutParams& p);
+
 inline LayoutGraph MakeGraph(int node_count,
                              std::initializer_list<std::pair<int,int>> edges) {
     LayoutGraph g;

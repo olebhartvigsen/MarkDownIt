@@ -320,6 +320,13 @@ inline float YOf(const LayoutGraph& g, const std::string& id) {
     return 0;
 }
 
+// Look up a node by its label (or id string). Returns -1 if absent.
+inline int FindByLabel(const LayoutGraph& g, const std::string& label) {
+    for (size_t i = 0; i < g.nodes.size(); ++i)
+        if (g.nodes[i].label == label) return static_cast<int>(i);
+    return -1;
+}
+
 
 // Read a fixture .mmd file and build a LayoutGraph directly from our parser,
 // bypassing the oracle. Used by ordering / layout tests that need a real
@@ -336,8 +343,13 @@ inline LayoutGraph BuildFixtureGraph(const std::string& name) {
         LayoutNode ln;
         ln.id = static_cast<int>(g.nodes.size());
         ln.label = n.label.empty() ? n.id : n.label;
-        ln.width = 80;
-        ln.height = 40;
+        // Match the oracle's sizing (dump.mjs): CHAR_W=8.4, LINE_H=19, PADDING=15.
+        const double CHAR_W = 8.4, LINE_H = 19.0, PADDING = 15.0;
+        double len = static_cast<double>(ln.label.size());
+        double raw_w = len * CHAR_W;
+        if (raw_w < 14.0) raw_w = 14.0;
+        ln.width  = static_cast<float>(raw_w + PADDING * 2.0);
+        ln.height = static_cast<float>(LINE_H + PADDING * 2.0);
         g.nodes.push_back(ln);
     }
     for (const auto& e : flow.edges) {

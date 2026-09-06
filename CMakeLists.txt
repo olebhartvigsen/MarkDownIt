@@ -95,6 +95,7 @@ add_executable(MarkDownIt WIN32
     src/mermaid/layout_acyclic.cpp
     src/mermaid/layout_normalize.cpp
     src/mermaid/layout_order.cpp
+    src/mermaid/layout_position.cpp
     src/mermaid/layout_rank.cpp
     src/mermaid/parse.cpp
     src/ribbon.cpp
@@ -225,6 +226,7 @@ if(BUILD_TESTS)
         src/mermaid/layout_acyclic.cpp
         src/mermaid/layout_normalize.cpp
         src/mermaid/layout_order.cpp
+        src/mermaid/layout_position.cpp
         src/mermaid/layout_rank.cpp
         src/mermaid/parse.cpp
         src/svgtext.cpp
