@@ -93,6 +93,7 @@ add_executable(MarkDownIt WIN32
     src/filewatch.cpp
     src/parser.cpp
     src/mermaid/layout_acyclic.cpp
+    src/mermaid/layout_edges.cpp
     src/mermaid/layout_normalize.cpp
     src/mermaid/layout_order.cpp
     src/mermaid/layout_position.cpp
@@ -224,6 +225,7 @@ if(BUILD_TESTS)
         src/autoformat.cpp
         src/inputfilter.cpp
         src/mermaid/layout_acyclic.cpp
+        src/mermaid/layout_edges.cpp
         src/mermaid/layout_normalize.cpp
         src/mermaid/layout_order.cpp
         src/mermaid/layout_position.cpp

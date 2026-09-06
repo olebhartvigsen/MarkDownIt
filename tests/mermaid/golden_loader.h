@@ -364,4 +364,27 @@ inline LayoutGraph BuildFixtureGraph(const std::string& name) {
     return g;
 }
 
+
+// Find edge by (from,to) indices. Returns -1 if not present.
+inline int FindEdge(const LayoutGraph& g, int from, int to) {
+    for (size_t i = 0; i < g.edges.size(); ++i)
+        if (g.edges[i].from == from && g.edges[i].to == to) return static_cast<int>(i);
+    return -1;
+}
+
+// Run all layout phases through Task 10 in order.
+inline void RunLayoutPipeline(LayoutGraph& g, LayoutParams p) {
+    // Assign default sizes if unset (tests using MakeGraph leave them 0).
+    for (auto& n : g.nodes) {
+        if (n.width  <= 0) n.width  = 80;
+        if (n.height <= 0) n.height = 40;
+    }
+    AssignRanks(g);
+    Normalize(g);
+    Order(g);
+    AssignCoordinates(g, p);
+    RouteEdges(g, p);
+    Denormalize(g);
+}
+
 }  // namespace mermaid

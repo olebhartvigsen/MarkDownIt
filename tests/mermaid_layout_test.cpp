@@ -95,3 +95,20 @@ TEST(MermaidPosition, GoldenAgreesWith_01Linear) {
         EXPECT_NEAR(g.nodes[idx].y, gn.y, 2.0);
     }
 }
+
+TEST(MermaidEdgeRoute, EndpointsOnNodeBorders) {
+    auto g = MakeGraph(2, {{0,1}});
+    RunLayoutPipeline(g, mermaid::LayoutParams{});
+    ASSERT_EQ(g.edges.size(), 1u);
+    const auto& e = g.edges[0];
+    EXPECT_NEAR(e.route.front().y, g.nodes[0].y + g.nodes[0].height/2.0, 1.0);
+    EXPECT_NEAR(e.route.back().y,  g.nodes[1].y - g.nodes[1].height/2.0, 1.0);
+}
+
+TEST(MermaidEdgeRoute, LongEdgeHasBends) {
+    auto g = MakeGraph(3, {{0,1},{1,2},{0,2}});
+    RunLayoutPipeline(g, mermaid::LayoutParams{});
+    int idx = mermaid::FindEdge(g, 0, 2);
+    ASSERT_GE(idx, 0);
+    EXPECT_GE(g.edges[idx].route.size(), 3u);
+}

@@ -8,6 +8,11 @@
 
 namespace mermaid {
 
+struct Point {
+    double x = 0;
+    double y = 0;
+};
+
 struct LayoutNode {
     int id = -1;
     std::string label;
@@ -28,6 +33,7 @@ struct LayoutEdge {
     int weight = 1;
     std::string label;
     int original_edge_index = -1;  // index into original_edges (dummies restored by Denormalize)
+    std::vector<Point> route;      // populated by RouteEdges (Task 10)
 };
 
 struct DummyChain {
@@ -60,6 +66,7 @@ struct LayoutParams {
 };
 
 void AssignCoordinates(LayoutGraph& g, const LayoutParams& p);
+void RouteEdges(LayoutGraph& g, const LayoutParams& p);
 
 inline LayoutGraph MakeGraph(int node_count,
                              std::initializer_list<std::pair<int,int>> edges) {
