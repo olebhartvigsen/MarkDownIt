@@ -5,7 +5,9 @@
     "nodesep": 50,
     "ranksep": 50,
     "edgesep": 10,
-    "padding": 15
+    "padding": 15,
+    "lanePadding": 20,
+    "laneTitleBand": 20
   },
   "graph": {
     "width": 70,
@@ -134,5 +136,6 @@
         }
       ]
     }
-  ]
+  ],
+  "subgraphs": []
 }
