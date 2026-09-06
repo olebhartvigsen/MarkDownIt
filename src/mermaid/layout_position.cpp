@@ -5,11 +5,16 @@
 // Y coordinates: pure function of rank. Row height is max node height on
 // that rank. Node y is the center of its row.
 //
-// X coordinates: median based approximation of Brandes-Koepf. Two passes
-// (top-down using parent medians, bottom-up using child medians), each
-// pass taking a monotonic max against the current value, the node's own
-// half-width (left margin), and the left-sibling boundary. Finally shift
-// all x so that the leftmost node's left edge sits at zero.
+// X coordinates: damped relaxation with dagre-style asymmetric sep.
+// Real nodes get node_sep/2 own margin, dummies get edge_sep/2, so gaps
+// between two reals sum to node_sep, gap between two dummies to edge_sep,
+// gap between real and dummy to (node_sep + edge_sep) / 2. Each iteration:
+//  1. compute ideal x per node = mean of parent+child x
+//  2. tight-pack each rank in Order sequence using the asymmetric sep
+//  3. shift the tight-packed row so its mean matches the mean of ideals
+//  4. blend toward the shifted target with damping factor 0.5
+// The result approximates dagre's Brandes-Koepf output within a few DIP
+// on balanced graphs and is exact on chains and sibling fans.
 
 #include "layout_internal.h"
 
@@ -28,7 +33,6 @@ int MaxRank(const LayoutGraph& g) {
     return r;
 }
 
-// Nodes at each rank, sorted by order (falls back to id when unset).
 std::vector<std::vector<int>> NodesByRank(const LayoutGraph& g) {
     int rmax = MaxRank(g);
     std::vector<std::vector<int>> rows(rmax < 0 ? 0 : rmax + 1);
@@ -47,95 +51,27 @@ std::vector<std::vector<int>> NodesByRank(const LayoutGraph& g) {
     return rows;
 }
 
-double Median(std::vector<double>& v) {
-    std::sort(v.begin(), v.end());
-    size_t n = v.size();
-    if (n == 0) return 0.0;
-    if (n % 2 == 1) return v[n / 2];
-    return 0.5 * (v[n / 2 - 1] + v[n / 2]);
+// Half-margin dagre uses on either side of a node: node_sep/2 for a real
+// node, edge_sep/2 for a dummy. Two adjacent margins summed = gap between
+// the pair.
+static inline double HalfSep(const LayoutNode& n, double node_sep, double edge_sep) {
+    return 0.5 * (n.is_dummy ? edge_sep : node_sep);
 }
 
-// Compute a single monotonic left-to-right pass where each node's target
-// x is the median of the neighbors passed in. Row order comes from
-// LayoutNode.order (set by Order()); tie-broken by id. Non-overlapping.
-// Returns per-node x for THIS pass; other node.x fields are left alone.
-static std::vector<double> PassCenter(const LayoutGraph& g,
-                                      const std::vector<std::vector<int>>& rows,
-                                      const std::vector<std::vector<int>>& neigh,
-                                      const std::vector<double>& seed_x,
-                                      double node_sep,
-                                      bool top_down) {
-    std::vector<double> x(g.nodes.size(), 0.0);
-    int r_start, r_end, r_step;
-    if (top_down) { r_start = 0; r_end = static_cast<int>(rows.size()); r_step = 1; }
-    else { r_start = static_cast<int>(rows.size()) - 1; r_end = -1; r_step = -1; }
-    for (int r = r_start; r != r_end; r += r_step) {
-        const auto& row = rows[static_cast<size_t>(r)];
-        double left_bound = -std::numeric_limits<double>::infinity();
-        for (size_t k = 0; k < row.size(); ++k) {
-            int u = row[k];
-            double w = g.nodes[u].width;
-            std::vector<double> nx;
-            nx.reserve(neigh[u].size());
-            for (int v : neigh[u]) nx.push_back(seed_x[v]);
-            double ideal = nx.empty() ? seed_x[u] : Median(nx);
-            double cand_left = (k == 0)
-                ? -std::numeric_limits<double>::infinity()
-                : (left_bound + node_sep + w * 0.5);
-            double xu = ideal;
-            if (cand_left > xu) xu = cand_left;
-            x[u] = xu;
-            left_bound = xu + w * 0.5;
-        }
+// Compute rank-relative tight-pack centres starting the row at x=0.
+static std::vector<double> TightPack(const LayoutGraph& g,
+                                     const std::vector<int>& row,
+                                     double node_sep, double edge_sep) {
+    std::vector<double> c(row.size(), 0.0);
+    if (row.empty()) return c;
+    c[0] = g.nodes[row[0]].width * 0.5;
+    for (size_t k = 1; k < row.size(); ++k) {
+        const auto& a = g.nodes[row[k - 1]];
+        const auto& b = g.nodes[row[k]];
+        double gap = HalfSep(a, node_sep, edge_sep) + HalfSep(b, node_sep, edge_sep);
+        c[k] = c[k - 1] + a.width * 0.5 + gap + b.width * 0.5;
     }
-    return x;
-}
-
-// One iteration of "ideal + tight-pack + rank-center" positioning:
-//  1. For every node, take the mean of parent+child centers from prev_x.
-//  2. For each rank, tight-pack nodes in their order slot.
-//  3. Shift the tight-packed row so its mean matches the mean of ideals.
-// This converges quickly on symmetric layouts like diamond/crossing and
-// leaves single-node rows at their exact ideal x.
-static std::vector<double> IdealPackShift(const LayoutGraph& g,
-                                          const std::vector<std::vector<int>>& rows,
-                                          const std::vector<std::vector<int>>& parents,
-                                          const std::vector<std::vector<int>>& children,
-                                          const std::vector<double>& prev_x,
-                                          double node_sep) {
-    std::vector<double> ideal(g.nodes.size(), 0.0);
-    for (size_t u = 0; u < g.nodes.size(); ++u) {
-        double s = 0.0; int c = 0;
-        for (int v : parents[u])  { s += prev_x[v]; ++c; }
-        for (int v : children[u]) { s += prev_x[v]; ++c; }
-        ideal[u] = (c > 0) ? (s / c) : prev_x[u];
-    }
-
-    std::vector<double> out(g.nodes.size(), 0.0);
-    for (const auto& row : rows) {
-        // Tight pack row in Order-defined sequence.
-        std::vector<double> tight(row.size(), 0.0);
-        double cursor = 0.0;
-        for (size_t k = 0; k < row.size(); ++k) {
-            double w = g.nodes[row[k]].width;
-            tight[k] = cursor + w * 0.5;
-            cursor += w + node_sep;
-        }
-        double mean_tight = 0.0, mean_ideal = 0.0;
-        for (size_t k = 0; k < row.size(); ++k) {
-            mean_tight += tight[k];
-            mean_ideal += ideal[row[k]];
-        }
-        if (!row.empty()) {
-            mean_tight /= static_cast<double>(row.size());
-            mean_ideal /= static_cast<double>(row.size());
-        }
-        double shift = mean_ideal - mean_tight;
-        for (size_t k = 0; k < row.size(); ++k) {
-            out[row[k]] = tight[k] + shift;
-        }
-    }
-    return out;
+    return c;
 }
 
 }  // namespace
@@ -162,11 +98,7 @@ void AssignCoordinates(LayoutGraph& g, const LayoutParams& p) {
         for (int u : rows[r]) g.nodes[u].y = static_cast<float>(row_center[r]);
     }
 
-    // ---- X: seed from row order, then alternate parent-median and
-    // child-median passes until stable. Each pass respects rank-order
-    // spacing to keep nodes non-overlapping. Final x is the mean of the
-    // two candidate alignments (top-down using parents, bottom-up using
-    // children), a common Brandes-Koepf simplification.
+    // ---- X: build neighbour lists ----
     std::vector<std::vector<int>> parents(g.nodes.size());
     std::vector<std::vector<int>> children(g.nodes.size());
     for (const auto& e : g.edges) {
@@ -175,30 +107,51 @@ void AssignCoordinates(LayoutGraph& g, const LayoutParams& p) {
         parents [static_cast<size_t>(e.to)  ].push_back(e.from);
     }
 
-    // Seed: tight-pack each row from x=0 in Order sequence.
+    // Seed: tight-pack every rank from 0.
     std::vector<double> x(g.nodes.size(), 0.0);
     for (const auto& row : rows) {
-        double cursor = 0.0;
-        for (int u : row) {
-            double w = g.nodes[u].width;
-            x[u] = cursor + w * 0.5;
-            cursor += w + p.node_sep;
-        }
+        auto tight = TightPack(g, row, p.node_sep, p.edge_sep);
+        for (size_t k = 0; k < row.size(); ++k) x[row[k]] = tight[k];
     }
 
-    // Relax: pull each node toward its neighbors' mean, then re-tight-pack
-    // each rank and shift the row so its mean matches the neighbors' mean.
-    for (int iter = 0; iter < 24; ++iter) {
-        x = IdealPackShift(g, rows, parents, children, x, p.node_sep);
+    // Damped relaxation. 0.5 damping avoids oscillation; ~120 iterations
+    // is more than enough for typical flowcharts.
+    const double damp = 0.5;
+    for (int iter = 0; iter < 128; ++iter) {
+        std::vector<double> ideal(g.nodes.size(), 0.0);
+        for (size_t u = 0; u < g.nodes.size(); ++u) {
+            double s = 0.0; int c = 0;
+            for (int v : parents[u])  { s += x[v]; ++c; }
+            for (int v : children[u]) { s += x[v]; ++c; }
+            ideal[u] = (c > 0) ? (s / c) : x[u];
+        }
+        for (const auto& row : rows) {
+            if (row.empty()) continue;
+            auto tight = TightPack(g, row, p.node_sep, p.edge_sep);
+            double mean_ideal = 0.0, mean_tight = 0.0;
+            for (size_t k = 0; k < row.size(); ++k) {
+                mean_ideal += ideal[row[k]];
+                mean_tight += tight[k];
+            }
+            mean_ideal /= static_cast<double>(row.size());
+            mean_tight /= static_cast<double>(row.size());
+            double shift = mean_ideal - mean_tight;
+            for (size_t k = 0; k < row.size(); ++k) {
+                double target = tight[k] + shift;
+                x[row[k]] = x[row[k]] + damp * (target - x[row[k]]);
+            }
+        }
     }
 
     for (size_t i = 0; i < g.nodes.size(); ++i) {
         g.nodes[i].x = static_cast<float>(x[i]);
     }
 
-    // Left-align: shift so leftmost node's left edge sits at 0.
+    // Left-align: shift so leftmost real node's left edge sits at 0. Dummies
+    // are ignored in the min so dummy positioning does not skew the bbox.
     double min_left = std::numeric_limits<double>::infinity();
     for (const auto& n : g.nodes) {
+        if (n.is_dummy) continue;
         double left = static_cast<double>(n.x) - static_cast<double>(n.width) * 0.5;
         if (left < min_left) min_left = left;
     }
