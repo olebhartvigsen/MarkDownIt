@@ -13,3 +13,17 @@ TEST(MermaidParse, HeaderDirection) {
 TEST(MermaidParse, RejectsNonFlowchart) {
     EXPECT_TRUE(!mermaid::ParseFlowchart("sequenceDiagram").error.empty());
 }
+
+TEST(MermaidParse, NodeShapes) {
+    auto f = mermaid::ParseFlowchart(
+        "flowchart TD\n"
+        "  A[Rect]\n  B(Round)\n  C([Stadium])\n  D{Diamond}\n  E((Circle))\n  F\n");
+    ASSERT_EQ(f.nodes.size(), 6u);
+    EXPECT_EQ((int)f.nodes[0].shape, (int)mermaid::Shape::Rect);
+    EXPECT_EQ((int)f.nodes[1].shape, (int)mermaid::Shape::Round);
+    EXPECT_EQ((int)f.nodes[2].shape, (int)mermaid::Shape::Stadium);
+    EXPECT_EQ((int)f.nodes[3].shape, (int)mermaid::Shape::Diamond);
+    EXPECT_EQ((int)f.nodes[4].shape, (int)mermaid::Shape::Circle);
+    EXPECT_EQ((int)f.nodes[5].shape, (int)mermaid::Shape::Rect);   // bare id
+    EXPECT_EQ(f.nodes[5].label, "F");                              // label defaults to id
+}
