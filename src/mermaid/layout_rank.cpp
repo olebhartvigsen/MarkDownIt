@@ -75,8 +75,11 @@ void tighten(LayoutGraph& g) {
         if (e.from < 0 || e.to < 0 || e.from >= n || e.to >= n) continue;
         in_edges[e.to].push_back(static_cast<int>(i));
     }
-    // Iteratively pull each non-source node up to min(pred + minlen).
-    // Ranks only decrease, so the loop converges within n rounds.
+    // Enforce rank(v) >= max(rank(pred) + minlen) for every non-source
+    // node. longest_path already produces this in topo order, but we
+    // re-run it as a fixed point so future edits (edge insertions,
+    // minlen changes) stay safe. Using min here would violate the
+    // constraint and collapse multi-rank edges to unit length.
     for (int iter = 0; iter < n + 1; ++iter) {
         bool changed = false;
         for (int u = 0; u < n; ++u) {
@@ -84,7 +87,7 @@ void tighten(LayoutGraph& g) {
             int best = g.nodes[u].rank;
             for (int ei : in_edges[u]) {
                 const auto& e = g.edges[ei];
-                best = std::min(best, g.nodes[e.from].rank + e.minlen);
+                best = std::max(best, g.nodes[e.from].rank + e.minlen);
             }
             if (best != g.nodes[u].rank) {
                 g.nodes[u].rank = best;
