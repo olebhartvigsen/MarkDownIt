@@ -765,6 +765,68 @@ Run the `humanizer` skill over the README text (mandatory per AGENTS.md).
 
 ---
 
+## Follow-up roadmap: full Mermaid diagram-type coverage
+
+The tasks above ship `flowchart` / `graph` only. The longer goal is native
+rendering for every Mermaid diagram type below, each authored against its page
+under `https://mermaid.ai/open-source/syntax/`. Read that namespace as the
+authoritative grammar for each type.
+
+Be honest about the size of this: flowchart is the hardest layout problem
+(dagre) but it is one engine. Most of the other types do NOT use dagre. They
+have their own layout rules, so this roadmap is a sequence of separate
+sub-projects, not a quick extension of Tasks 0-13. Group them by how much new
+layout machinery each one needs.
+
+| # | Diagram type | Syntax page (`.../syntax/<file>`) | Layout model | Reuses flowchart work? |
+|---|--------------|-----------------------------------|--------------|------------------------|
+| 1 | Flowchart | `flowchart.html` | dagre (Sugiyama layers) | this plan |
+| 2 | Swimlanes | `flowchart.html` (subgraphs + `direction`) | flowchart plus lane bands | yes, extends dagre |
+| 3 | Sequence Diagram | `sequenceDiagram.html` | lifelines + ordered messages, no dagre | no, own engine |
+| 4 | Class Diagram | `classDiagram.html` | dagre on boxes + relation routing | partial (dagre core) |
+| 5 | State Diagram | `stateDiagram.html` | dagre + nested composite states | partial (dagre core) |
+| 6 | Entity Relationship | `entityRelationshipDiagram.html` | dagre on entity boxes | partial (dagre core) |
+| 7 | User Journey | `userJourney.html` | fixed left-to-right task band | no, simple grid |
+| 8 | Gantt | `gantt.html` | time axis + row stacking | no, date scale |
+| 9 | Pie Chart | `pie.html` | arc geometry from percentages | no, trig only |
+| 10 | Quadrant Chart | `quadrantChart.html` | 2-axis scatter in four quadrants | no, scatter |
+| 11 | Requirement Diagram | `requirementDiagram.html` | dagre on requirement boxes | partial (dagre core) |
+| 12 | GitGraph (Git) | `gitgraph.html` | commit lanes along branch tracks | no, custom |
+| 13 | C4 Diagram | `c4.html` | nested boundary boxes (draft in Mermaid) | partial |
+| 14 | Mindmaps | `mindmap.html` | radial / balanced tree | no, tree layout |
+| 15 | Timeline | `timeline.html` | single time axis with sections | no, axis |
+| 16 | ZenUML | `zenuml.html` | sequence variant via ZenUML engine | no, external grammar |
+
+Suggested execution order (cheapest and highest-reuse first):
+
+1. **dagre-core group** (2, 4, 5, 6, 11): each reuses the parser seam and the
+   layout engine from this plan. New work is per-type parsing plus shape and
+   relation drawing. Start here so the dagre investment pays off more than once.
+2. **standalone-geometry group** (7, 8, 9, 10, 15): no graph layout at all, just
+   axes, bands, and arcs. Each is small and independent, good parallel work.
+3. **own-engine group** (3, 14, 12, 16): sequence lifelines, radial mindmap
+   trees, git commit lanes, and the ZenUML grammar each need a dedicated layout
+   pass. Largest and riskiest.
+4. **C4 (13)** last: still marked experimental upstream (the safety-vest and
+   warning markers in the request reflect that), so its grammar can move under
+   us. Pin the Mermaid version and treat the golden oracle as provisional.
+
+Each type keeps the same three-layer test discipline from this plan: portable
+unit tests, a golden oracle diff against real Mermaid output where a geometry
+oracle is feasible, and one human visual check on the Windows box per type. For
+the standalone-geometry and own-engine types, the dagre oracle in Task 0 does
+not apply. Extend `tools/mermaid-oracle/dump.mjs` (or add a sibling dumper) to
+call Mermaid's own renderer for that type and emit its coordinates, or, where a
+type has no stable coordinate output, fall back to committed SVG snapshots
+reviewed by eye and state plainly that the gate is visual, not numeric.
+
+Scope discipline still holds: pick one type, land it end to end behind a green
+gate, then start the next. Do not open five half-finished diagram engines at
+once. Any unparsed or unsupported type falls back to a plain code block, same as
+the flowchart error path, so an unknown fence never blanks the document.
+
+---
+
 ## Files Likely to Change
 
 | Path | Action | Portable? |

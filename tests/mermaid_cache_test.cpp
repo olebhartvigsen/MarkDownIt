@@ -15,12 +15,12 @@ TEST(MermaidCache, HashEqualForSameSource) {
 TEST(MermaidCache, HashDiffersForDifferentSource) {
     std::string a = "flowchart TD\nA --> B\n";
     std::string b = "flowchart TD\nA --> C\n";
-    EXPECT_NE(HashFenceSource(a, 1.0f), HashFenceSource(b, 1.0f));
+    EXPECT_FALSE(HashFenceSource(a, 1.0f) == HashFenceSource(b, 1.0f));
 }
 
 TEST(MermaidCache, HashDiffersForDifferentZoom) {
     std::string src = "flowchart TD\nA --> B\n";
-    EXPECT_NE(HashFenceSource(src, 1.0f), HashFenceSource(src, 1.5f));
+    EXPECT_FALSE(HashFenceSource(src, 1.0f) == HashFenceSource(src, 1.5f));
 }
 
 TEST(MermaidCache, MeasureHeightIsIdempotent) {
