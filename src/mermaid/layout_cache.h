@@ -22,10 +22,11 @@
 
 #include "mermaid/pie_parse.h"
 #include "mermaid/pie_layout.h"
+#include "mermaid/seq_layout.h"
 
 namespace mermaid {
 
-enum class MermaidKind { Flowchart, Pie };
+enum class MermaidKind { Flowchart, Pie, Sequence };
 
 // A parsed mermaid fence of any supported diagram kind. Exactly one shared
 // pointer is set; kind says which.
@@ -33,6 +34,7 @@ struct MermaidRender {
     MermaidKind kind = MermaidKind::Flowchart;
     std::shared_ptr<LaidOutFlowchart> flow;
     std::shared_ptr<LaidOutPie> pie;
+    std::shared_ptr<LaidOutSequence> seq;
 };
 
 // Padding used above and below the flowchart drawing when placed inline
@@ -51,11 +53,18 @@ inline float MeasurePieHeight(const LaidOutPie& lp, float zoom) {
     return static_cast<float>(lp.height) * zoom + 2.0f * kMermaidBlockPad;
 }
 
+// Sequence variant: vbheight already includes the extra 40 for a title.
+inline float MeasureSequenceHeight(const LaidOutSequence& ls, float zoom) {
+    return static_cast<float>(ls.vbheight) * zoom + 2.0f * kMermaidBlockPad;
+}
+
 // Height for either variant.
 inline float MeasureMermaidHeight(const MermaidRender& mr, float zoom) {
     switch (mr.kind) {
         case MermaidKind::Pie:
             return MeasurePieHeight(*mr.pie, zoom);
+        case MermaidKind::Sequence:
+            return MeasureSequenceHeight(*mr.seq, zoom);
         case MermaidKind::Flowchart:
         default:
             return MeasureLayoutHeight(*mr.flow, zoom);

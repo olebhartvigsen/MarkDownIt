@@ -13,6 +13,8 @@
 #include "mermaid/parse.h"
 #include "mermaid/pie_parse.h"
 #include "mermaid/pie_layout.h"
+#include "mermaid/seq_parse.h"
+#include "mermaid/seq_layout.h"
 #include "mermaid/layout.h"
 #include <chrono>
 #include <memory>
@@ -409,6 +411,23 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
                                 mermaid::LayoutPie(pie));
                             n.mermaid_pie = laid;
                             n.block = BlockKind::MermaidPie;
+                            goto promoted;
+                        } catch (...) {
+                            // Keep as CodeBlock on layout failure.
+                        }
+                    }
+                }
+                // Not a flowchart or pie: try sequence. ParseSequence rejects
+                // non-sequence input (header must be `sequenceDiagram`), so
+                // chain order does not matter, only that each step can fail.
+                {
+                    mermaid::SequenceDiagram sd = mermaid::ParseSequence(utf8);
+                    if (sd.error.empty() && !sd.participants.empty()) {
+                        try {
+                            auto laid = std::make_shared<mermaid::LaidOutSequence>(
+                                mermaid::LayoutSequence(sd));
+                            n.mermaid_seq = laid;
+                            n.block = BlockKind::MermaidSequence;
                             goto promoted;
                         } catch (...) {
                             // Keep as CodeBlock on layout failure.

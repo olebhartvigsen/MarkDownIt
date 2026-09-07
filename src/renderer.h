@@ -107,4 +107,6 @@ private:
     float MeasureMermaidBlock(const Node& n) const;
     void DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                              const Node& n, float x, float y);
+    void DrawMermaidSequenceBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+                                  const Node& n, float x, float y);
 };

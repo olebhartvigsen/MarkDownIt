@@ -89,6 +89,7 @@ add_executable(MarkDownIt WIN32
     src/app.cpp
     src/renderer.cpp
     src/renderer_pie.cpp
+    src/renderer_sequence.cpp
     src/colortext.cpp
     src/imagehelper.cpp
     src/filewatch.cpp
