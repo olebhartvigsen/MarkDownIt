@@ -1,0 +1,107 @@
+{
+  "canvas": {
+    "width": 450,
+    "height": 216,
+    "startx": -50,
+    "starty": -50,
+    "vbwidth": 450,
+    "vbheight": 256
+  },
+  "actors": [
+    {
+      "bottom": true,
+      "name": "Bob",
+      "x": 200,
+      "y": 183,
+      "w": 150,
+      "h": 12
+    },
+    {
+      "bottom": true,
+      "name": "Alice",
+      "x": 0,
+      "y": 183,
+      "w": 150,
+      "h": 12
+    },
+    {
+      "bottom": false,
+      "name": "Bob",
+      "x": 200,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "Alice",
+      "x": 0,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "kind": "lifeline",
+      "x": 275,
+      "y1": 65,
+      "y2": 183
+    },
+    {
+      "kind": "lifeline",
+      "x": 75,
+      "y1": 65,
+      "y2": 183
+    }
+  ],
+  "messages": [
+    {
+      "text": "I rektangel",
+      "tx": 174,
+      "ty": 100,
+      "line": {
+        "x1": 76,
+        "y1": 119,
+        "x2": 271,
+        "y2": 119,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    },
+    {
+      "text": "Efter rektangel",
+      "tx": 174,
+      "ty": 144,
+      "line": {
+        "x1": 76,
+        "y1": 163,
+        "x2": 271,
+        "y2": 163,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    }
+  ],
+  "notes": [],
+  "activations": [],
+  "loops": [
+    {
+      "loopLineCount": 0
+    }
+  ],
+  "backgrounds": [
+    {
+      "x": 64,
+      "y": 75,
+      "w": 222,
+      "h": 54,
+      "fill": "rgb(200, 220, 240)"
+    }
+  ],
+  "title": {
+    "text": "Med titel øverst",
+    "x": 75,
+    "y": -25
+  }
+}

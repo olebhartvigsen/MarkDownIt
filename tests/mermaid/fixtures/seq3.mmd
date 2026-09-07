@@ -1,0 +1,21 @@
+sequenceDiagram
+    participant A as Alice
+    participant B as Bob
+    A->>B: Hej Bob, hvordan går det?
+    Note over A: Noterne spotter
+    B-->>A: Fint, tak!
+    A->>A: Selvkommunikation
+    A->>C: Gå videre
+    activate B
+    B->>C: Data klar?
+    deactivate B
+    B->>x: Stoppilot
+    A->>Mountains: Signel liste
+    loop Gældere
+        A->>B: Ping
+    end
+    alt Klar
+        A->>B: Ok
+    else I gen
+        A-->>B: Summary
+    end

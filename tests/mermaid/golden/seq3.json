@@ -1,0 +1,379 @@
+{
+  "canvas": {
+    "width": 1050,
+    "height": 685,
+    "startx": -50,
+    "starty": -10,
+    "vbwidth": 1050,
+    "vbheight": 685
+  },
+  "actors": [
+    {
+      "bottom": true,
+      "name": "Mountains",
+      "x": 800,
+      "y": 652,
+      "w": 150,
+      "h": 12
+    },
+    {
+      "bottom": true,
+      "name": "x",
+      "x": 600,
+      "y": 652,
+      "w": 150,
+      "h": 12
+    },
+    {
+      "bottom": true,
+      "name": "C",
+      "x": 400,
+      "y": 652,
+      "w": 150,
+      "h": 12
+    },
+    {
+      "bottom": true,
+      "name": "B",
+      "x": 200,
+      "y": 652,
+      "w": 150,
+      "h": 12
+    },
+    {
+      "bottom": true,
+      "name": "A",
+      "x": 0,
+      "y": 652,
+      "w": 150,
+      "h": 12
+    },
+    {
+      "bottom": false,
+      "name": "Mountains",
+      "x": 800,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "x",
+      "x": 600,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "C",
+      "x": 400,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "B",
+      "x": 200,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "A",
+      "x": 0,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "kind": "lifeline",
+      "x": 875,
+      "y1": 65,
+      "y2": 652
+    },
+    {
+      "kind": "lifeline",
+      "x": 675,
+      "y1": 65,
+      "y2": 652
+    },
+    {
+      "kind": "lifeline",
+      "x": 475,
+      "y1": 65,
+      "y2": 652
+    },
+    {
+      "kind": "lifeline",
+      "x": 275,
+      "y1": 65,
+      "y2": 652
+    },
+    {
+      "kind": "lifeline",
+      "x": 75,
+      "y1": 65,
+      "y2": 652
+    }
+  ],
+  "messages": [
+    {
+      "text": "Hej Bob, hvordan går det?",
+      "tx": 174,
+      "ty": 80,
+      "line": {
+        "x1": 76,
+        "y1": 99,
+        "x2": 271,
+        "y2": 99,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    },
+    {
+      "text": "Fint, tak!",
+      "tx": 177,
+      "ty": 156,
+      "line": {
+        "x1": 274,
+        "y1": 175,
+        "x2": 79,
+        "y2": 175,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    },
+    {
+      "text": "Selvkommunikation",
+      "tx": 76,
+      "ty": 190,
+      "path": {
+        "d": "M 76,209 C 136,199 136,239 76,229",
+        "cls": "messageLine0"
+      }
+    },
+    {
+      "text": "Gå videre",
+      "tx": 274,
+      "ty": 254,
+      "line": {
+        "x1": 76,
+        "y1": 273,
+        "x2": 471,
+        "y2": 273,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    },
+    {
+      "text": "Data klar?",
+      "tx": 376,
+      "ty": 288,
+      "line": {
+        "x1": 280,
+        "y1": 307,
+        "x2": 471,
+        "y2": 307,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    },
+    {
+      "text": "Stoppilot",
+      "tx": 474,
+      "ty": 322,
+      "line": {
+        "x1": 276,
+        "y1": 341,
+        "x2": 671,
+        "y2": 341,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    },
+    {
+      "text": "Signel liste",
+      "tx": 474,
+      "ty": 356,
+      "line": {
+        "x1": 76,
+        "y1": 375,
+        "x2": 871,
+        "y2": 375,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    },
+    {
+      "text": "Ping",
+      "tx": 174,
+      "ty": 435,
+      "line": {
+        "x1": 76,
+        "y1": 454,
+        "x2": 271,
+        "y2": 454,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    },
+    {
+      "text": "Ok",
+      "tx": 174,
+      "ty": 524,
+      "line": {
+        "x1": 76,
+        "y1": 543,
+        "x2": 271,
+        "y2": 543,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    },
+    {
+      "text": "Summary",
+      "tx": 174,
+      "ty": 603,
+      "line": {
+        "x1": 76,
+        "y1": 622,
+        "x2": 271,
+        "y2": 622,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    }
+  ],
+  "notes": [
+    {
+      "text": "Noterne spotter",
+      "tx": 75,
+      "ty": 114,
+      "rx": 0,
+      "ry": 109,
+      "rw": 150,
+      "rh": 32
+    }
+  ],
+  "activations": [
+    {
+      "x": 270,
+      "y": 273,
+      "w": 10,
+      "h": 34,
+      "cls": "activation0"
+    }
+  ],
+  "loops": [
+    {
+      "loopLineCount": 9
+    },
+    {
+      "top": true,
+      "x1": 64,
+      "y1": 385,
+      "x2": 286,
+      "y2": 385
+    },
+    {
+      "vert": true,
+      "x1": 286,
+      "y1": 385,
+      "x2": 286,
+      "y2": 464
+    },
+    {
+      "top": true,
+      "x1": 64,
+      "y1": 464,
+      "x2": 286,
+      "y2": 464
+    },
+    {
+      "vert": true,
+      "x1": 64,
+      "y1": 385,
+      "x2": 64,
+      "y2": 464
+    },
+    {
+      "top": true,
+      "x1": 64,
+      "y1": 474,
+      "x2": 286,
+      "y2": 474
+    },
+    {
+      "vert": true,
+      "x1": 286,
+      "y1": 474,
+      "x2": 286,
+      "y2": 632
+    },
+    {
+      "top": true,
+      "x1": 64,
+      "y1": 632,
+      "x2": 286,
+      "y2": 632
+    },
+    {
+      "vert": true,
+      "x1": 64,
+      "y1": 474,
+      "x2": 64,
+      "y2": 632
+    },
+    {
+      "top": true,
+      "x1": 64,
+      "y1": 558,
+      "x2": 286,
+      "y2": 558
+    },
+    {
+      "labelBox": "64,385 114,385 114,398 105.6,405 64,405"
+    },
+    {
+      "labelBox": "64,474 114,474 114,487 105.6,494 64,494"
+    },
+    {
+      "labelText": "loop",
+      "x": 89,
+      "y": 398
+    },
+    {
+      "labelText": "alt",
+      "x": 89,
+      "y": 487
+    },
+    {
+      "loopText": "[Gældere]",
+      "x": 200,
+      "y": 403
+    },
+    {
+      "loopText": "[Klar]",
+      "x": 200,
+      "y": 492
+    },
+    {
+      "loopText": "[I gen]",
+      "x": 175,
+      "y": 576
+    }
+  ],
+  "backgrounds": []
+}

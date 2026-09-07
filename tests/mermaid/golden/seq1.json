@@ -1,0 +1,144 @@
+{
+  "canvas": {
+    "width": 650,
+    "height": 254,
+    "startx": -50,
+    "starty": -10,
+    "vbwidth": 650,
+    "vbheight": 254
+  },
+  "actors": [
+    {
+      "bottom": true,
+      "name": "Carol",
+      "x": 400,
+      "y": 221,
+      "w": 150,
+      "h": 12
+    },
+    {
+      "bottom": true,
+      "name": "B",
+      "x": 200,
+      "y": 221,
+      "w": 150,
+      "h": 12
+    },
+    {
+      "bottom": true,
+      "name": "A",
+      "x": 0,
+      "y": 221,
+      "w": 150,
+      "h": 12
+    },
+    {
+      "bottom": false,
+      "name": "Carol",
+      "x": 400,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "B",
+      "x": 200,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "A",
+      "x": 0,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "kind": "lifeline",
+      "x": 475,
+      "y1": 65,
+      "y2": 221
+    },
+    {
+      "kind": "lifeline",
+      "x": 275,
+      "y1": 65,
+      "y2": 221
+    },
+    {
+      "kind": "lifeline",
+      "x": 75,
+      "y1": 65,
+      "y2": 221
+    }
+  ],
+  "messages": [
+    {
+      "text": "Hej Bob, hvordan går det?",
+      "tx": 174,
+      "ty": 80,
+      "line": {
+        "x1": 76,
+        "y1": 99,
+        "x2": 271,
+        "y2": 99,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    },
+    {
+      "text": "Fint, tak!",
+      "tx": 177,
+      "ty": 114,
+      "line": {
+        "x1": 274,
+        "y1": 133,
+        "x2": 79,
+        "y2": 133,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    },
+    {
+      "text": "Møde kl. 14?",
+      "tx": 274,
+      "ty": 148,
+      "line": {
+        "x1": 76,
+        "y1": 167,
+        "x2": 471,
+        "y2": 167,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    },
+    {
+      "text": "Bekræftet",
+      "tx": 277,
+      "ty": 182,
+      "line": {
+        "x1": 474,
+        "y1": 201,
+        "x2": 79,
+        "y2": 201,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    }
+  ],
+  "notes": [],
+  "activations": [],
+  "loops": [
+    {
+      "loopLineCount": 0
+    }
+  ],
+  "backgrounds": []
+}

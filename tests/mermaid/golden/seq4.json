@@ -1,0 +1,120 @@
+{
+  "canvas": {
+    "width": 450,
+    "height": 250,
+    "startx": -50,
+    "starty": -10,
+    "vbwidth": 450,
+    "vbheight": 250
+  },
+  "actors": [
+    {
+      "bottom": true,
+      "name": "Bob",
+      "x": 200,
+      "y": 217,
+      "w": 150,
+      "h": 12
+    },
+    {
+      "bottom": true,
+      "name": "Alice",
+      "x": 0,
+      "y": 217,
+      "w": 150,
+      "h": 12
+    },
+    {
+      "bottom": false,
+      "name": "Bob",
+      "x": 200,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "Alice",
+      "x": 0,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "kind": "lifeline",
+      "x": 275,
+      "y1": 65,
+      "y2": 217
+    },
+    {
+      "kind": "lifeline",
+      "x": 75,
+      "y1": 65,
+      "y2": 217
+    }
+  ],
+  "messages": [
+    {
+      "text": "Besked nummer ét",
+      "tx": 174,
+      "ty": 80,
+      "line": {
+        "x1": 76,
+        "y1": 99,
+        "x2": 271,
+        "y2": 99,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Svar nummer to",
+      "tx": 177,
+      "ty": 114,
+      "line": {
+        "x1": 274,
+        "y1": 133,
+        "x2": 79,
+        "y2": 133,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Selv nummer tre",
+      "tx": 76,
+      "ty": 148,
+      "path": {
+        "d": "M 76,167 C 136,157 136,197 76,187",
+        "cls": "messageLine0"
+      }
+    }
+  ],
+  "notes": [],
+  "activations": [],
+  "loops": [
+    {
+      "loopLineCount": 0
+    }
+  ],
+  "backgrounds": [],
+  "sequenceNumbers": [
+    {
+      "n": "1",
+      "x": 76,
+      "y": 103
+    },
+    {
+      "n": "2",
+      "x": 274,
+      "y": 137
+    },
+    {
+      "n": "3",
+      "x": 76,
+      "y": 171
+    }
+  ]
+}

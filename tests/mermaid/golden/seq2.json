@@ -1,0 +1,126 @@
+{
+  "canvas": {
+    "width": 650,
+    "height": 228,
+    "startx": -50,
+    "starty": -10,
+    "vbwidth": 650,
+    "vbheight": 228
+  },
+  "actors": [
+    {
+      "bottom": true,
+      "name": "C",
+      "x": 400,
+      "y": 195,
+      "w": 150,
+      "h": 12
+    },
+    {
+      "bottom": true,
+      "name": "B",
+      "x": 200,
+      "y": 195,
+      "w": 150,
+      "h": 12
+    },
+    {
+      "bottom": true,
+      "name": "A",
+      "x": 0,
+      "y": 195,
+      "w": 150,
+      "h": 12
+    },
+    {
+      "bottom": false,
+      "name": "C",
+      "x": 400,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "B",
+      "x": 200,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "A",
+      "x": 0,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "kind": "lifeline",
+      "x": 475,
+      "y1": 65,
+      "y2": 195
+    },
+    {
+      "kind": "lifeline",
+      "x": 275,
+      "y1": 65,
+      "y2": 195
+    },
+    {
+      "kind": "lifeline",
+      "x": 75,
+      "y1": 65,
+      "y2": 195
+    }
+  ],
+  "messages": [
+    {
+      "text": "Danish æøå test",
+      "tx": 174,
+      "ty": 80,
+      "line": {
+        "x1": 76,
+        "y1": 99,
+        "x2": 271,
+        "y2": 99,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    },
+    {
+      "text": "Videre",
+      "tx": 374,
+      "ty": 156,
+      "line": {
+        "x1": 276,
+        "y1": 175,
+        "x2": 471,
+        "y2": 175,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": ""
+      }
+    }
+  ],
+  "notes": [
+    {
+      "text": "Dobbelt-scope note",
+      "tx": 375,
+      "ty": 114,
+      "rx": 250,
+      "ry": 109,
+      "rw": 250,
+      "rh": 32
+    }
+  ],
+  "activations": [],
+  "loops": [
+    {
+      "loopLineCount": 0
+    }
+  ],
+  "backgrounds": []
+}
