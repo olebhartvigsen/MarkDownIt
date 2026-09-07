@@ -1,0 +1,169 @@
+{
+  "canvas": {
+    "width": 304,
+    "height": 28,
+    "startx": -152,
+    "starty": -14,
+    "vbwidth": 304,
+    "vbheight": 28
+  },
+  "nodes": [
+    {
+      "id": "Shape",
+      "cx": 298,
+      "cy": 96,
+      "w": 144,
+      "h": 36,
+      "title": "Shape",
+      "annotations": [
+        "«interface»"
+      ],
+      "members": [],
+      "methods": [
+        "+double area()"
+      ],
+      "member_x": [],
+      "member_y": [],
+      "method_x": [
+        -60
+      ],
+      "method_y": [
+        80
+      ],
+      "annotation_y": -4,
+      "annotation_w": 88,
+      "label_y": 8,
+      "label_x": -10,
+      "label_w": 40,
+      "divider_y": [
+        30,
+        66
+      ]
+    },
+    {
+      "id": "Circle",
+      "cx": 92,
+      "cy": 148,
+      "w": 168,
+      "h": 36,
+      "title": "Circle",
+      "annotations": [],
+      "members": [
+        "+double radius"
+      ],
+      "methods": [
+        "+area() : double"
+      ],
+      "member_x": [
+        -72
+      ],
+      "member_y": [
+        32
+      ],
+      "method_x": [
+        -72
+      ],
+      "method_y": [
+        68
+      ],
+      "annotation_y": null,
+      "annotation_w": 0,
+      "label_y": -4,
+      "label_x": -12,
+      "label_w": 48,
+      "divider_y": [
+        30,
+        66
+      ]
+    },
+    {
+      "id": "Square",
+      "cx": 92,
+      "cy": 44,
+      "w": 48,
+      "h": 72,
+      "title": "Square",
+      "annotations": [],
+      "members": [],
+      "methods": [],
+      "member_x": [],
+      "member_y": [],
+      "method_x": [],
+      "method_y": [],
+      "annotation_y": null,
+      "annotation_w": 0,
+      "label_y": -22,
+      "label_x": -12,
+      "label_w": 48,
+      "divider_y": [
+        12,
+        42
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "id_Square_Shape_1",
+      "from": "Square",
+      "to": "Shape",
+      "start_marker": "",
+      "end_marker": "extension",
+      "pattern": "solid",
+      "d": "M116,44L130.167,44C144.333,44,172.667,44,194.76,48.249C216.853,52.498,232.706,60.997,240.632,65.246L248.559,69.495",
+      "points": [
+        {
+          "x": 116,
+          "y": 44
+        },
+        {
+          "x": 130.167,
+          "y": 44
+        },
+        {
+          "x": 194.76,
+          "y": 48.249
+        },
+        {
+          "x": 240.632,
+          "y": 65.246
+        },
+        {
+          "x": 248.559,
+          "y": 69.495
+        }
+      ]
+    },
+    {
+      "id": "id_Circle_Shape_2",
+      "from": "Circle",
+      "to": "Shape",
+      "start_marker": "",
+      "end_marker": "extension",
+      "pattern": "dashed",
+      "d": "M176,148L180.167,148C184.333,148,192.667,148,204.76,143.751C216.853,139.502,232.706,131.003,240.632,126.754L248.559,122.505",
+      "points": [
+        {
+          "x": 176,
+          "y": 148
+        },
+        {
+          "x": 180.167,
+          "y": 148
+        },
+        {
+          "x": 204.76,
+          "y": 143.751
+        },
+        {
+          "x": 240.632,
+          "y": 126.754
+        },
+        {
+          "x": 248.559,
+          "y": 122.505
+        }
+      ]
+    }
+  ],
+  "edge_labels": []
+}

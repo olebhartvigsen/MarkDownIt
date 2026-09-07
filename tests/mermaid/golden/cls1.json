@@ -1,0 +1,112 @@
+{
+  "canvas": {
+    "width": 188,
+    "height": 28,
+    "startx": -94,
+    "starty": -14,
+    "vbwidth": 188,
+    "vbheight": 28
+  },
+  "nodes": [
+    {
+      "id": "Animal",
+      "cx": 100,
+      "cy": 148,
+      "w": 184,
+      "h": 36,
+      "title": "Animal",
+      "annotations": [],
+      "members": [
+        "+String name",
+        "+int age"
+      ],
+      "methods": [
+        "+eat()",
+        "+sleep()"
+      ],
+      "member_x": [
+        -80,
+        -80
+      ],
+      "member_y": [
+        32,
+        52
+      ],
+      "method_x": [
+        -80,
+        -80
+      ],
+      "method_y": [
+        68,
+        88
+      ],
+      "annotation_y": null,
+      "annotation_w": 0,
+      "label_y": -4,
+      "label_x": -12,
+      "label_w": 48,
+      "divider_y": [
+        30,
+        66
+      ]
+    },
+    {
+      "id": "Dog",
+      "cx": 100,
+      "cy": 44,
+      "w": 36,
+      "h": 72,
+      "title": "Dog",
+      "annotations": [],
+      "members": [],
+      "methods": [],
+      "member_x": [],
+      "member_y": [],
+      "method_x": [],
+      "method_y": [],
+      "annotation_y": null,
+      "annotation_w": 0,
+      "label_y": -22,
+      "label_x": -6,
+      "label_w": 24,
+      "divider_y": [
+        12,
+        42
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "id_Dog_Animal_1",
+      "from": "Dog",
+      "to": "Animal",
+      "start_marker": "",
+      "end_marker": "extension",
+      "pattern": "solid",
+      "d": "M100,80L100,84.167C100,88.333,100,96.667,100,102C100,107.333,100,109.667,100,110.833L100,112",
+      "points": [
+        {
+          "x": 100,
+          "y": 80
+        },
+        {
+          "x": 100,
+          "y": 84.167
+        },
+        {
+          "x": 100,
+          "y": 102
+        },
+        {
+          "x": 100,
+          "y": 110.833
+        },
+        {
+          "x": 100,
+          "y": 112
+        }
+      ]
+    }
+  ],
+  "edge_labels": []
+}

@@ -1,0 +1,13 @@
+classDiagram
+  class Logger {
+    <<service>>
+    +Logger instance$
+    +log(msg)$
+    +flush()*
+  }
+  class App {
+    #Logger logger
+    +run()
+  }
+  App ..> Logger : uses
+  App -- Config

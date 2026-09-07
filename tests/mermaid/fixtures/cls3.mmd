@@ -1,0 +1,18 @@
+classDiagram
+  class Car {
+    +Engine engine
+    +start()
+  }
+  class Engine {
+    -bool running
+    -stop()
+  }
+  class Wheel {
+    +int position
+  }
+  class Driver {
+    +String licenseId
+  }
+  Car *-- Engine : owns
+  Car o-- Wheel : has
+  Driver "1" --> "0..4" Wheel : drives

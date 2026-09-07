@@ -1,0 +1,187 @@
+{
+  "canvas": {
+    "width": 340,
+    "height": 28,
+    "startx": -170,
+    "starty": -14,
+    "vbwidth": 340,
+    "vbheight": 28
+  },
+  "nodes": [
+    {
+      "id": "Logger",
+      "cx": 116,
+      "cy": 150,
+      "w": 216,
+      "h": 36,
+      "title": "Logger",
+      "annotations": [
+        "«service»"
+      ],
+      "members": [
+        "+Logger instance"
+      ],
+      "methods": [
+        "+log(msg)",
+        "+flush()"
+      ],
+      "member_x": [
+        -96
+      ],
+      "member_y": [
+        44
+      ],
+      "method_x": [
+        -96,
+        -96
+      ],
+      "method_y": [
+        80,
+        100
+      ],
+      "annotation_y": -4,
+      "annotation_w": 72,
+      "label_y": 8,
+      "label_x": -12,
+      "label_w": 48,
+      "divider_y": [
+        30,
+        66
+      ]
+    },
+    {
+      "id": "App",
+      "cx": 207,
+      "cy": 26,
+      "w": 116,
+      "h": 36,
+      "title": "App",
+      "annotations": [],
+      "members": [
+        "#Logger logger"
+      ],
+      "methods": [
+        "+run()"
+      ],
+      "member_x": [
+        -46
+      ],
+      "member_y": [
+        32
+      ],
+      "method_x": [
+        -46
+      ],
+      "method_y": [
+        68
+      ],
+      "annotation_y": null,
+      "annotation_w": 0,
+      "label_y": -4,
+      "label_x": -6,
+      "label_w": 24,
+      "divider_y": [
+        30,
+        66
+      ]
+    },
+    {
+      "id": "Config",
+      "cx": 298,
+      "cy": 150,
+      "w": 48,
+      "h": 72,
+      "title": "Config",
+      "annotations": [],
+      "members": [],
+      "methods": [],
+      "member_x": [],
+      "member_y": [],
+      "method_x": [],
+      "method_y": [],
+      "annotation_y": null,
+      "annotation_w": 0,
+      "label_y": -22,
+      "label_x": -12,
+      "label_w": 48,
+      "divider_y": [
+        12,
+        42
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "id_App_Logger_1",
+      "from": "App",
+      "to": "Logger",
+      "start_marker": "",
+      "end_marker": "dependency",
+      "pattern": "dashed",
+      "d": "M176.094,44L166.079,49.833C156.063,55.667,136.031,67.333,126.016,81C116,94.667,116,110.333,116,118.167L116,126",
+      "points": [
+        {
+          "x": 176.094,
+          "y": 44
+        },
+        {
+          "x": 166.079,
+          "y": 49.833
+        },
+        {
+          "x": 126.016,
+          "y": 81
+        },
+        {
+          "x": 116,
+          "y": 118.167
+        },
+        {
+          "x": 116,
+          "y": 126
+        }
+      ]
+    },
+    {
+      "id": "id_App_Config_2",
+      "from": "App",
+      "to": "Config",
+      "start_marker": "",
+      "end_marker": "",
+      "pattern": "solid",
+      "d": "M237.906,44L247.921,49.833C257.937,55.667,277.969,67.333,287.984,79C298,90.667,298,102.333,298,108.167L298,114",
+      "points": [
+        {
+          "x": 237.906,
+          "y": 44
+        },
+        {
+          "x": 247.921,
+          "y": 49.833
+        },
+        {
+          "x": 287.984,
+          "y": 79
+        },
+        {
+          "x": 298,
+          "y": 108.167
+        },
+        {
+          "x": 298,
+          "y": 114
+        }
+      ]
+    }
+  ],
+  "edge_labels": [
+    {
+      "kind": "label",
+      "text": "uses",
+      "x": 116,
+      "y": 79,
+      "w": 32,
+      "h": 20
+    }
+  ]
+}

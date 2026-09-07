@@ -1,0 +1,285 @@
+{
+  "canvas": {
+    "width": 456,
+    "height": 28,
+    "startx": -228,
+    "starty": -14,
+    "vbwidth": 456,
+    "vbheight": 28
+  },
+  "nodes": [
+    {
+      "id": "Car",
+      "cx": 96,
+      "cy": 38,
+      "w": 124,
+      "h": 36,
+      "title": "Car",
+      "annotations": [],
+      "members": [
+        "+Engine engine"
+      ],
+      "methods": [
+        "+start()"
+      ],
+      "member_x": [
+        -50
+      ],
+      "member_y": [
+        32
+      ],
+      "method_x": [
+        -50
+      ],
+      "method_y": [
+        68
+      ],
+      "annotation_y": null,
+      "annotation_w": 0,
+      "label_y": -4,
+      "label_x": -6,
+      "label_w": 24,
+      "divider_y": [
+        30,
+        66
+      ]
+    },
+    {
+      "id": "Engine",
+      "cx": 72,
+      "cy": 168,
+      "w": 128,
+      "h": 36,
+      "title": "Engine",
+      "annotations": [],
+      "members": [
+        "-bool running"
+      ],
+      "methods": [
+        "-stop()"
+      ],
+      "member_x": [
+        -52
+      ],
+      "member_y": [
+        32
+      ],
+      "method_x": [
+        -52
+      ],
+      "method_y": [
+        68
+      ],
+      "annotation_y": null,
+      "annotation_w": 0,
+      "label_y": -4,
+      "label_x": -12,
+      "label_w": 48,
+      "divider_y": [
+        30,
+        66
+      ]
+    },
+    {
+      "id": "Wheel",
+      "cx": 262,
+      "cy": 168,
+      "w": 96,
+      "h": 60,
+      "title": "Wheel",
+      "annotations": [],
+      "members": [
+        "+int position"
+      ],
+      "methods": [],
+      "member_x": [
+        -36
+      ],
+      "member_y": [
+        20
+      ],
+      "method_x": [],
+      "method_y": [],
+      "annotation_y": null,
+      "annotation_w": 0,
+      "label_y": -16,
+      "label_x": -10,
+      "label_w": 40,
+      "divider_y": [
+        18,
+        54
+      ]
+    },
+    {
+      "id": "Driver",
+      "cx": 290,
+      "cy": 38,
+      "w": 116,
+      "h": 60,
+      "title": "Driver",
+      "annotations": [],
+      "members": [
+        "+String licenseId"
+      ],
+      "methods": [],
+      "member_x": [
+        -46
+      ],
+      "member_y": [
+        20
+      ],
+      "method_x": [],
+      "method_y": [],
+      "annotation_y": null,
+      "annotation_w": 0,
+      "label_y": -16,
+      "label_x": -12,
+      "label_w": 48,
+      "divider_y": [
+        18,
+        54
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "id_Car_Engine_1",
+      "from": "Car",
+      "to": "Engine",
+      "start_marker": "composition",
+      "end_marker": "",
+      "pattern": "solid",
+      "d": "M83.119,72.886L81.266,77.905C79.413,82.924,75.706,92.962,73.853,105.814C72,118.667,72,134.333,72,142.167L72,150",
+      "points": [
+        {
+          "x": 83.119,
+          "y": 72.886
+        },
+        {
+          "x": 81.266,
+          "y": 77.905
+        },
+        {
+          "x": 73.853,
+          "y": 105.814
+        },
+        {
+          "x": 72,
+          "y": 142.167
+        },
+        {
+          "x": 72,
+          "y": 150
+        }
+      ]
+    },
+    {
+      "id": "id_Car_Wheel_2",
+      "from": "Car",
+      "to": "Wheel",
+      "start_marker": "aggregation",
+      "end_marker": "",
+      "pattern": "solid",
+      "d": "M132.469,67.266L139.891,73.221C147.313,79.177,162.156,91.089,177.206,102.878C192.256,114.667,207.513,126.333,215.141,132.167L222.769,138",
+      "points": [
+        {
+          "x": 132.469,
+          "y": 67.266
+        },
+        {
+          "x": 139.891,
+          "y": 73.221
+        },
+        {
+          "x": 177.206,
+          "y": 102.878
+        },
+        {
+          "x": 215.141,
+          "y": 132.167
+        },
+        {
+          "x": 222.769,
+          "y": 138
+        }
+      ]
+    },
+    {
+      "id": "id_Driver_Wheel_3",
+      "from": "Driver",
+      "to": "Wheel",
+      "start_marker": "",
+      "end_marker": "dependency",
+      "pattern": "solid",
+      "d": "M290,68L290,73.833C290,79.667,290,91.333,287.883,102.082C285.766,112.83,281.531,122.66,279.414,127.575L277.297,132.49",
+      "points": [
+        {
+          "x": 290,
+          "y": 68
+        },
+        {
+          "x": 290,
+          "y": 73.833
+        },
+        {
+          "x": 287.883,
+          "y": 102.082
+        },
+        {
+          "x": 279.414,
+          "y": 127.575
+        },
+        {
+          "x": 277.297,
+          "y": 132.49
+        }
+      ]
+    }
+  ],
+  "edge_labels": [
+    {
+      "kind": "label",
+      "text": "owns",
+      "x": 72,
+      "y": 103,
+      "w": 32,
+      "h": 20
+    },
+    {
+      "kind": "label",
+      "text": "has",
+      "x": 177,
+      "y": 103,
+      "w": 24,
+      "h": 20
+    },
+    {
+      "kind": "label",
+      "text": "drives",
+      "x": 290,
+      "y": 103,
+      "w": 48,
+      "h": 20
+    },
+    {
+      "kind": "terminal",
+      "text": "1",
+      "x": 275,
+      "y": 85.5,
+      "w": 4,
+      "h": 12,
+      "ix": -2,
+      "iy": -6
+    },
+    {
+      "kind": "terminal",
+      "text": "0..4",
+      "x": 290.62268310597045,
+      "y": 122.86213749518382,
+      "w": 0,
+      "h": 12,
+      "ix": -8,
+      "iy": -6
+    }
+  ]
+}

@@ -23,7 +23,46 @@ Object.defineProperty(globalThis, 'navigator', { value: w.navigator, configurabl
 
 const { Element: Pel } = w;
 Pel.prototype.getBBox = function () {
-  const t = String(this.textContent ?? '');
+  // Exclude <style> CSS text from measurements: svg-root textContent
+  // includes the stylesheet, which exploded the viewBox width. Clone
+  // without style/defs children and measure that.
+  const tag = this.tagName ? this.tagName.toLowerCase() : '';
+  if (tag === 'style' || tag === 'defs') {
+    return { x: 0, y: 0, width: 0, height: 0 };
+  }
+  let t = '';
+  const paths = [];
+  const walk = (node) => {
+    for (const child of node.childNodes || []) {
+      const ctag = child.tagName ? child.tagName.toLowerCase() : '';
+      if (ctag === 'style' || ctag === 'defs') continue;
+      if (child.nodeType === 3) t += String(child.textContent ?? '');
+      else if (ctag === 'path') paths.push(child);
+      else walk(child);
+    }
+  };
+  walk(this);
+  if (!t && paths.length) {
+    // No text: measure geometric bounds from path d attributes instead of
+    // returning the empty-text 12px-tall box. Needed by classBox's
+    // updateNodeBounds: the label-container holds the class box path, and
+    // dagre sizes/positions derive from it.
+    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+    for (const p of paths) {
+      const nums = String(p.getAttribute('d') ?? '').match(/-?[\d.]+/g) ?? [];
+      for (let i = 0; i + 1 < nums.length; i += 2) {
+        const x = Number(nums[i]), y = Number(nums[i + 1]);
+        if (x < minx) minx = x;
+        if (x > maxx) maxx = x;
+        if (y < miny) miny = y;
+        if (y > maxy) maxy = y;
+      }
+    }
+    if (minx !== Infinity) {
+      return { x: minx, y: miny, width: maxx - minx, height: maxy - miny };
+    }
+  }
+  if (!t) t = String(this.textContent ?? '');
   return { x: -(t.length * 4) / 2, y: -6, width: t.length * 4, height: 12 };
 };
 Pel.prototype.getCTM = () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });

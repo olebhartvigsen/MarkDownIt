@@ -1,0 +1,28 @@
+classDiagram
+  class Repository {
+    <<abstract>>
+    ~Database db
+    #connect()
+    #disconnect()
+    +query(sql)
+    +insert(row)
+    +delete(id)
+    +count() int
+  }
+  class SqlRepository {
+    +String connectionString
+    +connect()
+    +query(sql)
+  }
+  class MemoryRepository {
+    +Map data
+    +clear()
+  }
+  class Migration {
+    +int version
+    +apply()
+  }
+  SqlRepository --|> Repository
+  MemoryRepository --|> Repository
+  Migration ..> Repository : schema
+  Migration "1" o-- "many" SqlRepository : upgrades

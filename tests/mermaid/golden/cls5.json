@@ -1,0 +1,348 @@
+{
+  "canvas": {
+    "width": 984,
+    "height": 28,
+    "startx": -492,
+    "starty": -14,
+    "vbwidth": 984,
+    "vbheight": 28
+  },
+  "nodes": [
+    {
+      "id": "Repository",
+      "cx": 392,
+      "cy": 218,
+      "w": 436,
+      "h": 36,
+      "title": "Repository",
+      "annotations": [
+        "«abstract»"
+      ],
+      "members": [
+        "~Database db"
+      ],
+      "methods": [
+        "#connect()",
+        "#disconnect()",
+        "+query(sql)",
+        "+insert(row)",
+        "+delete(id)",
+        "+count() : int"
+      ],
+      "member_x": [
+        -206
+      ],
+      "member_y": [
+        44
+      ],
+      "method_x": [
+        -206,
+        -206,
+        -206,
+        -206,
+        -206,
+        -206
+      ],
+      "method_y": [
+        80,
+        100,
+        120,
+        140,
+        160,
+        180
+      ],
+      "annotation_y": -4,
+      "annotation_w": 80,
+      "label_y": 8,
+      "label_x": -20,
+      "label_w": 80,
+      "divider_y": [
+        30,
+        66
+      ]
+    },
+    {
+      "id": "SqlRepository",
+      "cx": 136,
+      "cy": 132,
+      "w": 256,
+      "h": 36,
+      "title": "SqlRepository",
+      "annotations": [],
+      "members": [
+        "+String connectionString"
+      ],
+      "methods": [
+        "+connect()",
+        "+query(sql)"
+      ],
+      "member_x": [
+        -116
+      ],
+      "member_y": [
+        32
+      ],
+      "method_x": [
+        -116,
+        -116
+      ],
+      "method_y": [
+        68,
+        88
+      ],
+      "annotation_y": null,
+      "annotation_w": 0,
+      "label_y": -4,
+      "label_x": -26,
+      "label_w": 104,
+      "divider_y": [
+        30,
+        66
+      ]
+    },
+    {
+      "id": "MemoryRepository",
+      "cx": 392,
+      "cy": 132,
+      "w": 156,
+      "h": 36,
+      "title": "MemoryRepository",
+      "annotations": [],
+      "members": [
+        "+Map data"
+      ],
+      "methods": [
+        "+clear()"
+      ],
+      "member_x": [
+        -66
+      ],
+      "member_y": [
+        32
+      ],
+      "method_x": [
+        -66
+      ],
+      "method_y": [
+        68
+      ],
+      "annotation_y": null,
+      "annotation_w": 0,
+      "label_y": -4,
+      "label_x": -32,
+      "label_w": 128,
+      "divider_y": [
+        30,
+        66
+      ]
+    },
+    {
+      "id": "Migration",
+      "cx": 332.5,
+      "cy": 26,
+      "w": 140,
+      "h": 36,
+      "title": "Migration",
+      "annotations": [],
+      "members": [
+        "+int version"
+      ],
+      "methods": [
+        "+apply()"
+      ],
+      "member_x": [
+        -58
+      ],
+      "member_y": [
+        32
+      ],
+      "method_x": [
+        -58
+      ],
+      "method_y": [
+        68
+      ],
+      "annotation_y": null,
+      "annotation_w": 0,
+      "label_y": -4,
+      "label_x": -18,
+      "label_w": 72,
+      "divider_y": [
+        30,
+        66
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "id_SqlRepository_Repository_1",
+      "from": "SqlRepository",
+      "to": "Repository",
+      "start_marker": "",
+      "end_marker": "extension",
+      "pattern": "solid",
+      "d": "M136,150L136,154.167C136,158.333,136,166.667,157.848,174.503C179.695,182.339,223.391,189.679,245.238,193.349L267.086,197.018",
+      "points": [
+        {
+          "x": 136,
+          "y": 150
+        },
+        {
+          "x": 136,
+          "y": 154.167
+        },
+        {
+          "x": 157.848,
+          "y": 174.503
+        },
+        {
+          "x": 245.238,
+          "y": 193.349
+        },
+        {
+          "x": 267.086,
+          "y": 197.018
+        }
+      ]
+    },
+    {
+      "id": "id_MemoryRepository_Repository_2",
+      "from": "MemoryRepository",
+      "to": "Repository",
+      "start_marker": "",
+      "end_marker": "extension",
+      "pattern": "solid",
+      "d": "M392,150L392,154.167C392,158.333,392,166.667,392,172C392,177.333,392,179.667,392,180.833L392,182",
+      "points": [
+        {
+          "x": 392,
+          "y": 150
+        },
+        {
+          "x": 392,
+          "y": 154.167
+        },
+        {
+          "x": 392,
+          "y": 172
+        },
+        {
+          "x": 392,
+          "y": 180.833
+        },
+        {
+          "x": 392,
+          "y": 182
+        }
+      ]
+    },
+    {
+      "id": "id_Migration_Repository_3",
+      "from": "Migration",
+      "to": "Repository",
+      "start_marker": "",
+      "end_marker": "dependency",
+      "pattern": "dashed",
+      "d": "M399.236,44L420.863,49.833C442.491,55.667,485.745,67.333,507.373,82C529,96.667,529,114.333,529,130.333C529,146.333,529,160.667,516.679,171.701C504.358,182.734,479.716,190.469,467.395,194.336L455.073,198.203",
+      "points": [
+        {
+          "x": 399.236,
+          "y": 44
+        },
+        {
+          "x": 420.863,
+          "y": 49.833
+        },
+        {
+          "x": 507.373,
+          "y": 82
+        },
+        {
+          "x": 529,
+          "y": 130.333
+        },
+        {
+          "x": 516.679,
+          "y": 171.701
+        },
+        {
+          "x": 467.395,
+          "y": 194.336
+        },
+        {
+          "x": 455.073,
+          "y": 198.203
+        }
+      ]
+    },
+    {
+      "id": "id_Migration_SqlRepository_4",
+      "from": "Migration",
+      "to": "SqlRepository",
+      "start_marker": "aggregation",
+      "end_marker": "",
+      "pattern": "solid",
+      "d": "M248.385,48.687L229.654,53.74C210.923,58.792,173.462,68.896,154.731,79.781C136,90.667,136,102.333,136,108.167L136,114",
+      "points": [
+        {
+          "x": 248.385,
+          "y": 48.687
+        },
+        {
+          "x": 229.654,
+          "y": 53.74
+        },
+        {
+          "x": 154.731,
+          "y": 79.781
+        },
+        {
+          "x": 136,
+          "y": 108.167
+        },
+        {
+          "x": 136,
+          "y": 114
+        }
+      ]
+    }
+  ],
+  "edge_labels": [
+    {
+      "kind": "label",
+      "text": "schema",
+      "x": 529,
+      "y": 132,
+      "w": 48,
+      "h": 20
+    },
+    {
+      "kind": "label",
+      "text": "upgrades",
+      "x": 136,
+      "y": 79,
+      "w": 64,
+      "h": 20
+    },
+    {
+      "kind": "terminal",
+      "text": "1",
+      "x": 244.9617409332356,
+      "y": 34.07478916400227,
+      "w": 4,
+      "h": 12,
+      "ix": -2,
+      "iy": -6
+    },
+    {
+      "kind": "terminal",
+      "text": "many",
+      "x": 146,
+      "y": 91.5,
+      "w": 0,
+      "h": 12,
+      "ix": -8,
+      "iy": -6
+    }
+  ]
+}

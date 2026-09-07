@@ -1,0 +1,12 @@
+classDiagram
+  direction LR
+  class Shape {
+    <<interface>>
+    +double area()
+  }
+  class Circle {
+    +double radius
+    +area() double
+  }
+  Square --|> Shape
+  Circle ..|> Shape

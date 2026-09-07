@@ -117,6 +117,9 @@ jobs:
             elif [[ "$name" == seq* ]]; then
               node --import ./tools/mermaid-oracle/dom-shim.mjs \
                  tools/mermaid-oracle/sequence_oracle.mjs "$f" "/tmp/golden/$name.json"
+            elif [[ "$name" == cls* ]]; then
+              node --import ./tools/mermaid-oracle/dom-shim.mjs \
+                 tools/mermaid-oracle/class_oracle.mjs "$f" "/tmp/golden/$name.json"
             else
               node tools/mermaid-oracle/dump.mjs "$f" > "/tmp/golden/$name.json"
             fi
