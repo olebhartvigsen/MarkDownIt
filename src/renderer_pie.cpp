@@ -2,6 +2,7 @@
 
 #include "theme.h"
 #include "mermaid/pie_layout.h"
+#include "mermaid/layout_cache.h"
 
 #include <cmath>
 #include <d2d1.h>
