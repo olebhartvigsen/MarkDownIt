@@ -15,11 +15,25 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <string>
 
 #include "model.h"
 
+#include "mermaid/pie_parse.h"
+#include "mermaid/pie_layout.h"
+
 namespace mermaid {
+
+enum class MermaidKind { Flowchart, Pie };
+
+// A parsed mermaid fence of any supported diagram kind. Exactly one shared
+// pointer is set; kind says which.
+struct MermaidRender {
+    MermaidKind kind = MermaidKind::Flowchart;
+    std::shared_ptr<LaidOutFlowchart> flow;
+    std::shared_ptr<LaidOutPie> pie;
+};
 
 // Padding used above and below the flowchart drawing when placed inline
 // in a document. Kept here so measure and render can never drift.
@@ -30,6 +44,22 @@ constexpr float kMermaidBlockPad = 12.0f;
 // they agree by construction.
 inline float MeasureLayoutHeight(const LaidOutFlowchart& lo, float zoom) {
     return static_cast<float>(lo.height) * zoom + 2.0f * kMermaidBlockPad;
+}
+
+// Pie variant: canvas is 450 DIP tall, same padding scheme.
+inline float MeasurePieHeight(const LaidOutPie& lp, float zoom) {
+    return static_cast<float>(lp.height) * zoom + 2.0f * kMermaidBlockPad;
+}
+
+// Height for either variant.
+inline float MeasureMermaidHeight(const MermaidRender& mr, float zoom) {
+    switch (mr.kind) {
+        case MermaidKind::Pie:
+            return MeasurePieHeight(*mr.pie, zoom);
+        case MermaidKind::Flowchart:
+        default:
+            return MeasureLayoutHeight(*mr.flow, zoom);
+    }
 }
 
 // Stable hash of the fence source keyed by zoom. Uses std::hash<std::string>

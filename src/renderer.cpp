@@ -715,6 +715,8 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
             blockH = 12.0f;
         } else if (n.block == BlockKind::MermaidFlowchart) {
             blockH = MeasureMermaidBlock(n);
+        } else if (n.block == BlockKind::MermaidPie) {
+            blockH = mermaid::MeasurePieHeight(*n.mermaid_pie, zoom_);
         } else if (n.block == BlockKind::Table) {
             blockH = MeasureTable(dw, n, drawX, drawW);
         } else {
@@ -904,6 +906,14 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (n.block == BlockKind::MermaidFlowchart) {
             DrawMermaidBlock(rt, dw, n, drawX, curY);
             curY += MeasureMermaidBlock(n);
+            prevBlock = n.block;
+            prevDepth = n.depth;
+            continue;
+        }
+
+        if (n.block == BlockKind::MermaidPie) {
+            DrawMermaidPieBlock(rt, dw, n, drawX, curY);
+            curY += mermaid::MeasurePieHeight(*n.mermaid_pie, zoom_);
             prevBlock = n.block;
             prevDepth = n.depth;
             continue;

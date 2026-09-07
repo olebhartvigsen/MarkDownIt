@@ -88,6 +88,7 @@ add_executable(MarkDownIt WIN32
     src/main.cpp
     src/app.cpp
     src/renderer.cpp
+    src/renderer_pie.cpp
     src/colortext.cpp
     src/imagehelper.cpp
     src/filewatch.cpp
@@ -102,6 +103,8 @@ add_executable(MarkDownIt WIN32
     src/mermaid/layout_measure.cpp
     src/mermaid/measure_dwrite.cpp
     src/mermaid/parse.cpp
+    src/mermaid/pie_parse.cpp
+    src/mermaid/pie_layout.cpp
     src/mermaid/swimlanes.cpp
     src/ribbon.cpp
     src/textbuffer.cpp
@@ -216,6 +219,7 @@ if(BUILD_TESTS)
         tests/mermaid_parse_test.cpp
         tests/mermaid_layout_test.cpp
         tests/mermaid_golden_test.cpp
+        tests/mermaid_pie_golden_test.cpp
         tests/mermaid_swimlanes_test.cpp
         tests/mermaid_measure_test.cpp
         tests/dom_mermaid_test.cpp
@@ -242,6 +246,8 @@ if(BUILD_TESTS)
         src/mermaid/layout.cpp
         src/mermaid/layout_measure.cpp
         src/mermaid/parse.cpp
+        src/mermaid/pie_parse.cpp
+        src/mermaid/pie_layout.cpp
         src/mermaid/swimlanes.cpp
         src/svgtext.cpp
     )

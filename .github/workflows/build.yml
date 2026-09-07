@@ -111,7 +111,12 @@ jobs:
           mkdir -p /tmp/golden
           for f in tests/mermaid/fixtures/*.mmd; do
             name=$(basename "$f" .mmd)
-            node tools/mermaid-oracle/dump.mjs "$f" > "/tmp/golden/$name.json"
+            if [[ "$name" == pie* ]]; then
+              node --import ./tools/mermaid-oracle/dom-shim.mjs \
+                 tools/mermaid-oracle/pie_oracle.mjs "$f" "/tmp/golden/$name.json"
+            else
+              node tools/mermaid-oracle/dump.mjs "$f" > "/tmp/golden/$name.json"
+            fi
           done
           # flowchart.txt lives outside fixtures/ (referenced directly by
           # tests/mermaid_golden_test.cpp) but is still golden-regenerated.

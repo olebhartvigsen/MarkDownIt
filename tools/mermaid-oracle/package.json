@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "mermaid": "11.7.0",
-    "dagre-d3-es": "7.0.11"
+    "dagre-d3-es": "7.0.11",
+    "dompurify": "^3.4.15",
+    "jsdom": "^29.1.1",
+    "mermaid": "11.7.0"
   }
 }

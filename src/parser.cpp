@@ -11,6 +11,8 @@
 
 #include "parser.h"
 #include "mermaid/parse.h"
+#include "mermaid/pie_parse.h"
+#include "mermaid/pie_layout.h"
 #include "mermaid/layout.h"
 #include <chrono>
 #include <memory>
@@ -391,11 +393,30 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
                             mermaid::LayoutFlowchart(flow, p));
                         n.mermaid_layout = laid;
                         n.block = BlockKind::MermaidFlowchart;
+                        goto promoted;
                     } catch (...) {
                         // Keep as CodeBlock on layout failure.
                     }
                 }
+                // Not a flowchart: try pie. Pie blocks render even with a
+                // single degenerate slice (one full-circle arc), so the
+                // parse error check is enough.
+                {
+                    mermaid::PieDiagram pie = mermaid::ParsePie(utf8);
+                    if (pie.error.empty() && !pie.slices.empty()) {
+                        try {
+                            auto laid = std::make_shared<mermaid::LaidOutPie>(
+                                mermaid::LayoutPie(pie));
+                            n.mermaid_pie = laid;
+                            n.block = BlockKind::MermaidPie;
+                            goto promoted;
+                        } catch (...) {
+                            // Keep as CodeBlock on layout failure.
+                        }
+                    }
+                }
             }
+            promoted:;
         }
     }
     if (type == MD_BLOCK_H) {
