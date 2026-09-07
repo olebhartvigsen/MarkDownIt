@@ -4,10 +4,71 @@
 #include "parse.h"
 
 #include <algorithm>
+#include <cstring>
 #include <limits>
 #include <utility>
 
 namespace mermaid {
+
+// `<br/>`-aware label sizing, the exact mirror of dump.mjs sizeFor with
+// CHAR_W=8.4, LINE_H=19, PADDING=15: a label with line breaks wraps into N
+// visual lines; width counts the longest line.
+static void StubSizeForLabel(const std::string& label, float& width,
+                             float& height) {
+    const double CHAR_W = 8.4, LINE_H = 19.0, PADDING = 15.0;
+    std::vector<std::string> lines = SplitLabelLines(label);
+    double longest = 0.0;
+    for (const auto& l : lines) {
+        // JS String.length counts UTF-16 code units; our std::string is
+        // UTF-8. For characters in the BMP (Latin-1 supplement, Greek,
+        // most CJK) one UTF-8 char maps to one UTF-16 unit for 1/2-byte
+        // sequences; a 3-byte UTF-8 char is one UTF-16 unit as well. Only
+        // astral-plane chars (4-byte UTF-8) take two UTF-16 units. Node
+        // labels in Mermaid sources are BMP-only in practice, so count
+        // non-continuation bytes.
+        double units = 0.0;
+        for (unsigned char c : l) {
+            if ((c & 0xC0) != 0x80) ++units;  // skip continuation bytes
+        }
+        longest = std::max(longest, units);
+    }
+    double raw_w = longest * CHAR_W;
+    if (raw_w < 14.0) raw_w = 14.0;
+    width = static_cast<float>(raw_w + PADDING * 2.0);
+    height = static_cast<float>(
+        (lines.empty() ? 1.0 : static_cast<double>(lines.size())) * LINE_H +
+        PADDING * 2.0);
+}
+
+// Mermaid line-break separators for node labels: <br/>, <br>, <br /> and the
+// literal two-character sequence backslash-n. Trailing empty segments are
+// dropped (mermaid skips empty lines).
+std::vector<std::string> SplitLabelLines(const std::string& label) {
+    static const char* const seps[] = {"<br/>", "<br>", "<br />", "\\n"};
+    std::vector<std::string> lines;
+    std::string cur;
+    size_t i = 0;
+    while (i < label.size()) {
+        bool matched = false;
+        for (const char* sep : seps) {
+            size_t slen = std::strlen(sep);
+            if (label.compare(i, slen, sep) == 0) {
+                lines.push_back(cur);
+                cur.clear();
+                i += slen;
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            cur.push_back(label[i]);
+            ++i;
+        }
+    }
+    lines.push_back(cur);
+    while (!lines.empty() && lines.back().empty()) lines.pop_back();
+    return lines;
+}
 
 LayoutGraph FlowchartToLayoutGraph(const Flowchart& flow) {
     LayoutGraph g;
@@ -16,13 +77,7 @@ LayoutGraph FlowchartToLayoutGraph(const Flowchart& flow) {
         LayoutNode ln;
         ln.id = static_cast<int>(g.nodes.size());
         ln.label = n.label.empty() ? n.id : n.label;
-        // Match dump.mjs oracle: CHAR_W=8.4, LINE_H=19, PADDING=15.
-        const double CHAR_W = 8.4, LINE_H = 19.0, PADDING = 15.0;
-        double len = static_cast<double>(ln.label.size());
-        double raw_w = len * CHAR_W;
-        if (raw_w < 14.0) raw_w = 14.0;
-        ln.width  = static_cast<float>(raw_w + PADDING * 2.0);
-        ln.height = static_cast<float>(LINE_H + PADDING * 2.0);
+        StubSizeForLabel(ln.label, ln.width, ln.height);
         switch (n.shape) {
             case Shape::Rect:    ln.shape = NodeShape::Rect; break;
             case Shape::Round:   ln.shape = NodeShape::Round; break;
@@ -40,6 +95,8 @@ LayoutGraph FlowchartToLayoutGraph(const Flowchart& flow) {
         le.minlen = e.minlen > 0 ? e.minlen : 1;
         le.weight = e.weight > 0 ? e.weight : 1;
         le.label = e.label;
+        le.style = e.style;
+        le.head = e.head;
         g.edges.push_back(le);
     }
     return g;

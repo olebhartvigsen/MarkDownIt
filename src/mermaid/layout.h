@@ -1,6 +1,8 @@
 #pragma once
 // Public mermaid layout entry point.
 #include "model.h"
+#include <string>
+#include <vector>
 
 namespace mermaid {
 
@@ -21,6 +23,12 @@ LaidOutFlowchart LayoutFlowchart(const Flowchart& flow, const LayoutParams& p);
 // in MeasureWithDWrite (see measure_dwrite.cpp, Windows-only).
 struct LabelSize { float width; float height; };
 using MeasureFn = LabelSize (*)(const std::string& utf8, float maxWidth, void* ctx);
+
+// Split a label into visual lines at mermaid's line-break separators
+// (<br/>, <br>, <br /> and literal backslash-n). Empty trailing segments
+// are dropped, matching mermaid's skip of empty lines. Shared by the
+// stub sizer, the MeasureFn wrapper and tests so all three agree.
+std::vector<std::string> SplitLabelLines(const std::string& label);
 
 // Compute lane bounding boxes for each Subgraph declared in `flow`, using
 // the laid-out node positions. Called by LayoutFlowchart after positions

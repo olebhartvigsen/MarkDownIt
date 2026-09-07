@@ -1647,6 +1647,13 @@ void Renderer::DrawSvgBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 // Mermaid flowchart rendering (Task 12).
 // -----------------------------------------------------------------------------
 
+// Dotted edge dash pattern (D2D1_DASH_STYLE_CUSTOM takes float pairs:
+// dash, gap in stroke-width multiples). Mermaid's `.flowchart .edgePath
+// [style*='dotted']` renders ~3:3 dots at 1px stroke; we use 1.5/2.2 to read
+// as dots at 1.5px stroke.
+static const float kMermaidDash[] = {1.0f, 2.0f};
+static const UINT32 kMermaidDashSize = 2;
+
 // Note: layout is computed once at parse time (parser.cpp) and stored on
 // Node::mermaid_layout, so we never re-run layout on WM_PAINT. Height is
 // derived through mermaid::MeasureLayoutHeight so measure and paint agree.
@@ -1762,12 +1769,30 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
     // Edges first.
     if (fac && edgeBrush) {
+        ID2D1SolidColorBrush* labelBrush = nullptr;
+        rt->CreateSolidColorBrush(pal.textPrimary, &labelBrush);
         for (const auto& e : lo.edges) {
             if (e.route.size() < 2) continue;
+            // Stroke style: dotted edges use a dash pattern; thick edges
+            // draw at ~2.5x width, matching mermaid's visual weight.
+            const bool dotted = (e.style == mermaid::LineStyle::Dotted);
+            const bool thick = (e.style == mermaid::LineStyle::Thick);
+            const float stroke_w = thick ? 3.5f : 1.5f;
+            ID2D1StrokeStyle* stroke = nullptr;
+            if (dotted && fac) {
+                // Square dashes, like mermaid's stroke-dasharray 3 3 look.
+                fac->CreateStrokeStyle(
+                    D2D1_STROKE_STYLE_PROPERTIES{
+                        D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_FLAT,
+                        D2D1_CAP_STYLE_ROUND, D2D1_LINE_JOIN_MITER, 8.0f,
+                        D2D1_DASH_STYLE_CUSTOM, 0.0f,
+                    },
+                    kMermaidDash, kMermaidDashSize, &stroke);
+            }
             ID2D1PathGeometry* path = nullptr;
-            if (FAILED(fac->CreatePathGeometry(&path)) || !path) continue;
+            if (FAILED(fac->CreatePathGeometry(&path)) || !path) { if (stroke) stroke->Release(); continue; }
             ID2D1GeometrySink* sink = nullptr;
-            if (FAILED(path->Open(&sink)) || !sink) { path->Release(); continue; }
+            if (FAILED(path->Open(&sink)) || !sink) { path->Release(); if (stroke) stroke->Release(); continue; }
             D2D1_POINT_2F p0 = {
                 ox + static_cast<float>(e.route[0].x * scale),
                 oy + static_cast<float>(e.route[0].y * scale)
@@ -1783,12 +1808,75 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             sink->EndFigure(D2D1_FIGURE_END_OPEN);
             sink->Close();
             sink->Release();
-            rt->DrawGeometry(path, edgeBrush, 1.5f);
+            rt->DrawGeometry(path, edgeBrush, stroke_w, stroke);
             path->Release();
-            DrawArrowHead(rt, fac, edgeBrush,
-                          e.route[e.route.size() - 2], e.route.back(),
-                          ox, oy, scale);
+            if (stroke) stroke->Release();
+            if (e.head == mermaid::Head::Arrow) {
+                DrawArrowHead(rt, fac, edgeBrush,
+                              e.route[e.route.size() - 2], e.route.back(),
+                              ox, oy, scale);
+            }
+
+            // Edge label: centered at the polyline midpoint, with an opaque
+            // backing rect so the line does not strike through the glyphs.
+            if (!e.label.empty() && labelBrush && body_fmt_) {
+                size_t mid_seg = (e.route.size() - 1) / 2;
+                double mx = (e.route[mid_seg].x + e.route[mid_seg + 1].x) * 0.5;
+                double my = (e.route[mid_seg].y + e.route[mid_seg + 1].y) * 0.5;
+                std::u16string m16;
+                {
+                    const std::string& s = e.label;
+                    for (size_t i = 0; i < s.size(); ) {
+                        unsigned char c = static_cast<unsigned char>(s[i]);
+                        uint32_t cp = 0;
+                        int n_b = 1;
+                        if (c < 0x80) { cp = c; n_b = 1; }
+                        else if ((c & 0xE0) == 0xC0 && i + 1 < s.size()) {
+                            cp = ((c & 0x1F) << 6) | (s[i+1] & 0x3F); n_b = 2;
+                        } else if ((c & 0xF0) == 0xE0 && i + 2 < s.size()) {
+                            cp = ((c & 0x0F) << 12) | ((s[i+1] & 0x3F) << 6) |
+                                 (s[i+2] & 0x3F); n_b = 3;
+                        } else if ((c & 0xF8) == 0xF0 && i + 3 < s.size()) {
+                            cp = ((c & 0x07) << 18) | ((s[i+1] & 0x3F) << 12) |
+                                 ((s[i+2] & 0x3F) << 6) | (s[i+3] & 0x3F); n_b = 4;
+                        } else { cp = '?'; n_b = 1; }
+                        if (cp <= 0xFFFF) {
+                            m16.push_back(static_cast<char16_t>(cp));
+                        } else {
+                            cp -= 0x10000;
+                            m16.push_back(static_cast<char16_t>(0xD800 + (cp >> 10)));
+                            m16.push_back(static_cast<char16_t>(0xDC00 + (cp & 0x3FF)));
+                        }
+                        i += n_b;
+                    }
+                }
+                IDWriteTextLayout* tl = nullptr;
+                float max_lbl_w = 220.0f * scale;
+                if (SUCCEEDED(dw->CreateTextLayout(
+                        reinterpret_cast<const WCHAR*>(m16.data()),
+                        static_cast<UINT32>(m16.size()),
+                        body_fmt_, max_lbl_w, 28.0f * scale, &tl)) && tl) {
+                    DWRITE_TEXT_METRICS tm{};
+                    tl->GetMetrics(&tm);
+                    float lbl_w = tm.widthIncludingTrailingWhitespace;
+                    float lbl_h = tm.height;
+                    float lx = ox + static_cast<float>(mx * scale) - lbl_w * 0.5f;
+                    float ly = oy + static_cast<float>(my * scale) - lbl_h * 0.5f;
+                    D2D1_RECT_F bg = D2D1::RectF(lx - 2.0f, ly - 2.0f,
+                                                 lx + lbl_w + 2.0f, ly + lbl_h + 2.0f);
+                    ID2D1SolidColorBrush* bgBrush = nullptr;
+                    rt->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 1.0f), &bgBrush);
+                    if (bgBrush) {
+                        rt->FillRectangle(bg, bgBrush);
+                        bgBrush->Release();
+                    }
+                    rt->DrawTextLayout(D2D1::Point2F(lx, ly), tl, labelBrush,
+                                       D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                    tl->Release();
+                }
+            }
         }
+        if (labelBrush) labelBrush->Release();
     }
 
     // Nodes.
@@ -1854,36 +1942,43 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             }
         }
 
-        // Label text, centered.
+        // Label text, centered. Mermaid line-break separators (<br/> etc.)
+        // split into separate lines; the DWrite layout renders them as a
+        // multi-line block that matches SplitLabelLines sizing.
         if (!nd.label.empty() && body_fmt_ && textBrush) {
-            // Convert UTF-8 label to UTF-16.
+            std::vector<std::string> lines =
+                mermaid::SplitLabelLines(nd.label);
+            if (lines.empty()) lines.push_back(nd.label);
             std::u16string text16;
-            const std::string& s = nd.label;
-            for (size_t i = 0; i < s.size(); ) {
-                unsigned char c = static_cast<unsigned char>(s[i]);
-                uint32_t cp = 0;
-                int n_bytes = 1;
-                if (c < 0x80) { cp = c; n_bytes = 1; }
-                else if ((c & 0xE0) == 0xC0 && i + 1 < s.size()) {
-                    cp = ((c & 0x1F) << 6) | (s[i+1] & 0x3F);
-                    n_bytes = 2;
-                } else if ((c & 0xF0) == 0xE0 && i + 2 < s.size()) {
-                    cp = ((c & 0x0F) << 12) | ((s[i+1] & 0x3F) << 6) |
-                         (s[i+2] & 0x3F);
-                    n_bytes = 3;
-                } else if ((c & 0xF8) == 0xF0 && i + 3 < s.size()) {
-                    cp = ((c & 0x07) << 18) | ((s[i+1] & 0x3F) << 12) |
-                         ((s[i+2] & 0x3F) << 6) | (s[i+3] & 0x3F);
-                    n_bytes = 4;
-                } else { cp = '?'; n_bytes = 1; }
-                if (cp <= 0xFFFF) {
-                    text16.push_back(static_cast<char16_t>(cp));
-                } else {
-                    cp -= 0x10000;
-                    text16.push_back(static_cast<char16_t>(0xD800 + (cp >> 10)));
-                    text16.push_back(static_cast<char16_t>(0xDC00 + (cp & 0x3FF)));
+            for (size_t li = 0; li < lines.size(); ++li) {
+                if (li > 0) text16.push_back(u'\n');
+                const std::string& s = lines[li];
+                for (size_t i = 0; i < s.size(); ) {
+                    unsigned char c = static_cast<unsigned char>(s[i]);
+                    uint32_t cp = 0;
+                    int n_bytes = 1;
+                    if (c < 0x80) { cp = c; n_bytes = 1; }
+                    else if ((c & 0xE0) == 0xC0 && i + 1 < s.size()) {
+                        cp = ((c & 0x1F) << 6) | (s[i+1] & 0x3F);
+                        n_bytes = 2;
+                    } else if ((c & 0xF0) == 0xE0 && i + 2 < s.size()) {
+                        cp = ((c & 0x0F) << 12) | ((s[i+1] & 0x3F) << 6) |
+                             (s[i+2] & 0x3F);
+                        n_bytes = 3;
+                    } else if ((c & 0xF8) == 0xF0 && i + 3 < s.size()) {
+                        cp = ((c & 0x07) << 18) | ((s[i+1] & 0x3F) << 12) |
+                             ((s[i+2] & 0x3F) << 6) | (s[i+3] & 0x3F);
+                        n_bytes = 4;
+                    } else { cp = '?'; n_bytes = 1; }
+                    if (cp <= 0xFFFF) {
+                        text16.push_back(static_cast<char16_t>(cp));
+                    } else {
+                        cp -= 0x10000;
+                        text16.push_back(static_cast<char16_t>(0xD800 + (cp >> 10)));
+                        text16.push_back(static_cast<char16_t>(0xDC00 + (cp & 0x3FF)));
+                    }
+                    i += n_bytes;
                 }
-                i += n_bytes;
             }
             IDWriteTextLayout* layout = nullptr;
             HRESULT hr = dw->CreateTextLayout(

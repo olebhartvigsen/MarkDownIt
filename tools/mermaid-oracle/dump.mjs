@@ -8,10 +8,17 @@ const CHAR_W = 8.4, LINE_H = 19;
 // Swimlane band paddings. Must match src/mermaid/swimlanes.cpp constants.
 const LANE_PADDING = 20;
 const LANE_TITLE_BAND = 20;
-const sizeFor = (label) => ({
-  width:  Math.max(label.length * CHAR_W, 14) + PADDING * 2,
-  height: LINE_H + PADDING * 2,
-});
+// `<br/>`-aware sizing, mirroring LayoutGraph::stubSizesFor: a label with
+// line breaks wraps into N visual lines; width counts the longest line.
+const LINE_SPLIT = /<br\s*\/?\s*>|\\n/i;
+const sizeFor = (label) => {
+  const lines = String(label).split(LINE_SPLIT).filter(l => l.length > 0);
+  const longest = lines.length ? Math.max(...lines.map(l => l.length)) : 0;
+  return {
+    width:  Math.max(longest * CHAR_W, 14) + PADDING * 2,
+    height: Math.max(lines.length, 1) * LINE_H + PADDING * 2,
+  };
+};
 
 function parseFlow(src) {
   const rawLines = src.split('\n').map(s => s.trim()).filter(Boolean);
@@ -28,7 +35,18 @@ function parseFlow(src) {
     if (!g) return null;
     const id = g[1];
     const label = g[2] ?? g[3] ?? g[4] ?? g[5] ?? g[6] ?? id;
-    if (!nodes.has(id)) nodes.set(id, { id, label });
+    // Re-declaration rule, mirroring parse.cpp UpsertNode: an explicit
+    // label replaces the current one; a bare re-mention (label == id)
+    // never erases an earlier label.
+    if (nodes.has(id)) {
+      if (label !== id) {
+        const cur = nodes.get(id);
+        cur.label = label;
+      }
+      // (shape is not tracked in the oracle; sizes come from labels only)
+    } else {
+      nodes.set(id, { id, label });
+    }
     for (const s of stack) subgraphs[s].nodeIds.add(id);
     return id;
   };
@@ -50,6 +68,13 @@ function parseFlow(src) {
     const dm = line.match(/^direction\s+(TB|TD|BT|LR|RL)$/);
     if (dm && stack.length) {
       subgraphs[stack[stack.length - 1]].direction = dm[1] === 'TD' ? 'TB' : dm[1];
+      continue;
+    }
+    // Form 2b: dotted edge with inline text: `-. text .->` / `-. text .-`
+    const mi_dot = line.match(/^(.+?)\s*-\.\s+(.+?)\s*\.(->|-)\s*(.+)$/);
+    if (mi_dot) {
+      const from = decl(mi_dot[1]), to = decl(mi_dot[4]);
+      edges.push({ from, to, label: mi_dot[2].trim(), head: mi_dot[3] === '->' ? 'arrow' : 'none', style: 'dotted' });
       continue;
     }
     // Form 1: inline label between dashes: `A -- text --> B` / `A -- text --- B`.

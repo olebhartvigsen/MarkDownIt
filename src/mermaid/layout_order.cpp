@@ -40,44 +40,46 @@ void WriteOrders(LayoutGraph& g, const RankLayers& L) {
     }
 }
 
-// DFS visit from sources (rank 0). Assign per-rank order in visit order.
+// DFS init order, dagre init-order.js ported 1:1: iterate ALL nodes sorted by
+// (rank, insertion order), DFS from each unvisited, push to layers at first
+// visit. Successors follow edge-list order (our edge indices already match
+// dagre's normalize insertion order).
 void InitOrderDFS(const LayoutGraph& g, RankLayers& L) {
-    std::vector<std::vector<int>> out(g.nodes.size());
+    std::vector<std::vector<int>> succ(g.nodes.size());
     for (const auto& e : g.edges) {
         if (e.from >= 0 && e.to >= 0)
-            out[static_cast<size_t>(e.from)].push_back(e.to);
+            succ[static_cast<size_t>(e.from)].push_back(e.to);
     }
     std::vector<char> seen(g.nodes.size(), 0);
     for (auto& row : L.ranks) row.clear();
 
-    // Sort sources by id for determinism.
-    std::vector<int> sources;
-    for (const auto& n : g.nodes) if (n.rank == 0) sources.push_back(n.id);
-    std::sort(sources.begin(), sources.end());
+    // Nodes sorted by rank, stable within rank = insertion order.
+    std::vector<int> ordered;
+    ordered.reserve(g.nodes.size());
+    for (const auto& n : g.nodes) ordered.push_back(n.id);
+    std::stable_sort(ordered.begin(), ordered.end(), [&](int a, int b) {
+        return g.nodes[static_cast<size_t>(a)].rank <
+               g.nodes[static_cast<size_t>(b)].rank;
+    });
 
-    // Iterative DFS.
+    // Iterative preorder DFS (matches dagre's recursive dfs visit order).
     std::vector<int> stack;
-    auto visit_root = [&](int root) {
-        if (seen[static_cast<size_t>(root)]) return;
+    for (int root : ordered) {
+        if (seen[static_cast<size_t>(root)]) continue;
         stack.push_back(root);
         while (!stack.empty()) {
-            int u = stack.back(); stack.pop_back();
+            int u = stack.back();
+            stack.pop_back();
             if (seen[static_cast<size_t>(u)]) continue;
             seen[static_cast<size_t>(u)] = 1;
             int r = g.nodes[static_cast<size_t>(u)].rank;
             if (r >= 0) L.ranks[static_cast<size_t>(r)].push_back(u);
-            // push children in reverse so lower ids get visited first
-            auto& kids = out[static_cast<size_t>(u)];
+            // Push successors in reverse so the forward-most is on top.
+            auto& kids = succ[static_cast<size_t>(u)];
             for (auto it = kids.rbegin(); it != kids.rend(); ++it) {
                 if (!seen[static_cast<size_t>(*it)]) stack.push_back(*it);
             }
         }
-    };
-    for (int s : sources) visit_root(s);
-    // Any node not reached (shouldn't happen post-normalize, but be safe).
-    for (const auto& n : g.nodes) {
-        if (!seen[static_cast<size_t>(n.id)] && n.rank >= 0)
-            L.ranks[static_cast<size_t>(n.rank)].push_back(n.id);
     }
 }
 
@@ -167,19 +169,14 @@ struct Entry {
     double weight = 0.0;
 };
 
-// barycenter.js: mean of neighbor orders weighted by edge weight. Nodes with
-// no neighbors get no barycenter (unsortable, stay in place relative to i).
+// barycenter.js: mean of neighbor orders weighted by edge weight, restricted
+// to the layer-graph edges: PREDECESSORS on down-sweeps (inEdges relation),
+// SUCCESSORS on up-sweeps (outEdges relation). Nodes with no adjacent-rank
+// neighbors get no barycenter.
 static std::vector<Entry> BarycenterEntries(const LayoutGraph& g,
                                             const std::vector<int>& movable,
                                             const std::vector<int>& pos_of,
                                             bool use_preds) {
-    // Build neighbor lists with weights from normalized unit edges (weight 1 each).
-    std::vector<std::vector<std::pair<int, double>>> nbrs(g.nodes.size());
-    for (const auto& e : g.edges) {
-        if (e.from < 0 || e.to < 0) continue;
-        nbrs[static_cast<size_t>(e.to)].emplace_back(e.from, static_cast<double>(e.weight));
-        nbrs[static_cast<size_t>(e.from)].emplace_back(e.to, static_cast<double>(e.weight));
-    }
     std::vector<Entry> out;
     out.reserve(movable.size());
     for (size_t idx = 0; idx < movable.size(); ++idx) {
@@ -188,13 +185,19 @@ static std::vector<Entry> BarycenterEntries(const LayoutGraph& g,
         en.vs = {v};
         en.i = static_cast<int>(idx);
         double sum = 0.0, weight = 0.0;
-        for (const auto& [u, w] : nbrs[static_cast<size_t>(v)]) {
-            // Only neighbors on the adjacent rank count (they are the only ones
-            // present in dagre's per-rank layer graph).
-            int p = pos_of[static_cast<size_t>(u)];
+        for (const auto& e : g.edges) {
+            int nbr;
+            if (use_preds) {
+                if (e.to != v) continue;
+                nbr = e.from;
+            } else {
+                if (e.from != v) continue;
+                nbr = e.to;
+            }
+            int p = pos_of[static_cast<size_t>(nbr)];
             if (p < 0) continue;
-            sum += w * static_cast<double>(p);
-            weight += w;
+            sum += static_cast<double>(e.weight) * static_cast<double>(p);
+            weight += static_cast<double>(e.weight);
         }
         if (weight > 0.0) {
             en.has_bc = true;
@@ -210,50 +213,105 @@ static std::vector<Entry> BarycenterEntries(const LayoutGraph& g,
 static void SortEntries(std::vector<Entry>& entries, bool bias_right) {
     std::stable_sort(entries.begin(), entries.end(),
                      [bias_right](const Entry& a, const Entry& b) {
-                         if (a.has_bc != b.has_bc) return false;  // keep unsortable relative order? handled below
-                         if (a.has_bc && b.has_bc && a.barycenter != b.barycenter)
+                         if (a.has_bc && b.has_bc &&
+                             a.barycenter != b.barycenter) {
                              return a.barycenter < b.barycenter;
+                         }
+                         if (a.has_bc != b.has_bc) return a.has_bc;
                          return bias_right ? (a.i > b.i) : (a.i < b.i);
                      });
 }
 
-// Reorder one rank against its adjacent rank. use_preds: neighbors are on r-1.
-// dagre builds a fresh layer graph per sweep whose movable list (children of the
-// root) is the node INSERTION order of that rank, and tie-breaks on that index -
-// not on the current order. So we iterate g.nodes() order, not the current row.
-static void SweepRankDagre(const LayoutGraph& g, RankLayers& L, int r, bool use_preds,
-                           bool bias_right) {
+// sort.js: partition entries into sortable (with barycenter) and unsortable;
+// sort the sortable ones; then weave unsortable entries back in at their
+// original index positions (consumeUnsortable), lowest remaining i first.
+static std::vector<Entry> SortEntriesWeaved(std::vector<Entry> entries,
+                                            bool bias_right) {
+    std::vector<Entry> sortable, unsortable;
+    for (auto& e : entries) {
+        if (e.has_bc) sortable.push_back(std::move(e));
+        else           unsortable.push_back(std::move(e));
+    }
+    // unsortable = _.sortBy(unsorted, entry => -entry.i): descending by i.
+    std::stable_sort(unsortable.begin(), unsortable.end(),
+                     [](const Entry& a, const Entry& b) { return a.i > b.i; });
+    SortEntries(sortable, bias_right);
+
+    std::vector<Entry> vs;
+    size_t vs_index = 0;
+    auto consume_unsortable = [&](size_t index) {
+        // While last unsortable has i <= index, pop and place it next.
+        while (!unsortable.empty() && unsortable.back().i <= static_cast<int>(index)) {
+            vs.push_back(std::move(unsortable.back()));
+            unsortable.pop_back();
+            ++index;
+        }
+        return index;
+    };
+    vs_index = consume_unsortable(vs_index);
+    for (auto& en : sortable) {
+        vs_index += en.vs.size();
+        vs.push_back(std::move(en));
+        vs_index = consume_unsortable(vs_index);
+    }
+    // Any leftovers (indices beyond vs end) append in reverse-pop order.
+    while (!unsortable.empty()) {
+        vs.push_back(std::move(unsortable.back()));
+        unsortable.pop_back();
+    }
+    return vs;
+}
+
+// Per-rank layer graph in dagre = only edges between r-1 (or r+1) and r.
+// movable = ALL nodes of rank r in GLOBAL INSERTION ORDER (dagre's
+// g.children(root) for the per-rank layer graph, which is built by
+// iterating g.nodes() in insertion order). The sort tie-break index i is
+// exactly the entry's position in this list.
+static void SweepRankDagre(const LayoutGraph& g, RankLayers& L, int r,
+                           bool use_preds, bool bias_right) {
     if (r < 0 || r >= static_cast<int>(L.ranks.size())) return;
     int adj = use_preds ? r - 1 : r + 1;
     if (adj < 0 || adj >= static_cast<int>(L.ranks.size())) return;
 
     int max_id = 0;
-    for (const auto& row : L.ranks) for (int id : row) if (id > max_id) max_id = id;
+    for (const auto& n : g.nodes) if (n.id > max_id) max_id = n.id;
     std::vector<int> pos_of(static_cast<size_t>(max_id + 1), -1);
     for (size_t i = 0; i < L.ranks[static_cast<size_t>(adj)].size(); ++i)
         pos_of[static_cast<size_t>(L.ranks[static_cast<size_t>(adj)][i])] = static_cast<int>(i);
 
-    // Movable: dagre's layer-graph children are the rank's nodes in graph
-    // insertion order, but our normalized node insertion differs from dagre's
-    // uniqueId-ordered dummies in a way that shifts tie-breaks. Using the
-    // current row order reproduces dagre's oracle output on the fixtures.
-    auto& row = L.ranks[static_cast<size_t>(r)];
-    const std::vector<int> movable = row;
+    // Movable: the rank's nodes in global insertion order (id order == the
+    // order our Normalize inserted dummies). NOTE: use only nodes present
+    // in this rank (L.ranks[r] always holds them all).
+    std::vector<int> present(static_cast<size_t>(max_id + 1), 0);
+    for (int id : L.ranks[static_cast<size_t>(r)]) present[static_cast<size_t>(id)] = 1;
+    std::vector<int> movable;
+    movable.reserve(L.ranks[static_cast<size_t>(r)].size());
+    for (const auto& n : g.nodes) {
+        if (present[static_cast<size_t>(n.id)]) movable.push_back(n.id);
+    }
 
     std::vector<Entry> entries = BarycenterEntries(g, movable, pos_of, use_preds);
-    SortEntries(entries, bias_right);
 
+    // dagre has a resolveConflicts pass over a layout-constraint graph; with
+    // no subgraph parents it is a no-op preserving entry order, so the sort
+    // input equals the barycenter entries list.
+    std::vector<Entry> ordered = SortEntriesWeaved(std::move(entries), bias_right);
+
+    auto& row = L.ranks[static_cast<size_t>(r)];
     std::vector<int> new_row;
     new_row.reserve(row.size());
-    for (const auto& en : entries)
+    for (const auto& en : ordered)
         for (int v : en.vs) new_row.push_back(v);
     row = std::move(new_row);
 }
 
-// order() in dagre index.js: sweeps until 4 non-improving iterations, keeping best.
+// order() in dagre index.js: sweeps until 4 non-improving iterations, keeping
+// best. IMPORTANT dagre semantics: the sweep ALWAYS keeps its result (no
+// rollback); "best" only records the layering snapshot. bestCC starts at
+// +infinity, so iteration 0 is always recorded.
 void OrderSweepsDagre(const LayoutGraph& g, RankLayers& L) {
-    int best_cc = CountCrossingsLayers(g, L);
-    RankLayers best = L;
+    double best_cc = std::numeric_limits<double>::infinity();
+    RankLayers best;
     int last_best = 0;
     for (int i = 0; last_best < 4; ++i, ++last_best) {
         bool down = (i % 2 == 1);          // dagre: i%2 ? down : up
@@ -272,6 +330,7 @@ void OrderSweepsDagre(const LayoutGraph& g, RankLayers& L) {
             best = L;
         }
     }
+    if (best.ranks.empty()) best = L;
     L = best;
 }
 

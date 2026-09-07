@@ -8,8 +8,7 @@ namespace mermaid {
 
 enum class Dir { TB, BT, LR, RL };
 enum class Shape { Rect, Round, Stadium, Diamond, Circle };
-enum class LineStyle { Solid, Dotted, Thick };
-enum class Head { None, Arrow };
+// LineStyle/Head now live in layout_internal.h (shared with LayoutEdge).
 
 struct FlowNode {
     std::string id;

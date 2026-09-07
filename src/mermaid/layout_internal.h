@@ -10,6 +10,11 @@ namespace mermaid {
 
 enum class NodeShape { Rect, Round, Stadium, Diamond, Circle };
 
+// Edge presentation. Shared by the parse model (model.h) and the internal
+// layout graph so routed edges can carry their style to the renderer.
+enum class LineStyle { Solid, Dotted, Thick };
+enum class Head { None, Arrow };
+
 struct Point {
     double x = 0;
     double y = 0;
@@ -37,6 +42,10 @@ struct LayoutEdge {
     std::string label;
     int original_edge_index = -1;  // index into original_edges (dummies restored by Denormalize)
     std::vector<Point> route;      // populated by RouteEdges (Task 10)
+    // Renderer-facing edge styling (propagated from FlowEdge in layout.cpp;
+    // denormalized edges carry the original's style forward).
+    LineStyle style = LineStyle::Solid;
+    Head head = Head::Arrow;
 };
 
 struct DummyChain {

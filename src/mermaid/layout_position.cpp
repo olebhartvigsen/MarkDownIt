@@ -17,6 +17,7 @@
 #include "layout_internal.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>

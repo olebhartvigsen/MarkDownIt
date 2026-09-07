@@ -16,7 +16,12 @@
 namespace {
 
 std::string ReadFixture(const char* name) {
-    std::ifstream f(std::string("tests/mermaid/fixtures/") + name + ".mmd");
+    // Fixture 12 lives outside fixtures/ (the user-edited flowchart.txt);
+    // everything else is a checked-in .mmd fixture file.
+    std::string path = (std::string(name) == "12-flowchart")
+        ? std::string("tests/mermaid/flowchart.txt")
+        : std::string("tests/mermaid/fixtures/") + name + ".mmd";
+    std::ifstream f(path);
     std::stringstream ss; ss << f.rdbuf();
     return ss.str();
 }
@@ -100,6 +105,7 @@ TEST(MermaidGolden, NodeCentersAllFixtures) {
     const char* fixtures[] = {
         "01-linear", "02-shapes-edges", "03-diamond", "04-crossing",
         "05-long-edge", "06-siblings", "07-lr", "08-rl", "09-bt",
+        "12-flowchart",
     };
     const double tol = 0.5;
     for (const char* name : fixtures) {
@@ -113,6 +119,7 @@ TEST(MermaidGolden, EdgePointsMatchDagre) {
     const char* fixtures[] = {
         "01-linear", "02-shapes-edges", "03-diamond",
         "05-long-edge", "06-siblings", "07-lr", "08-rl", "09-bt",
+        "12-flowchart",
     };
     const double tol = 0.5;
     for (const char* name : fixtures) {

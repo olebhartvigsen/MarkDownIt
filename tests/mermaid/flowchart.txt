@@ -1,0 +1,44 @@
+flowchart TB
+    U[AU-bruger] --> IDP[AU-identitet<br/>OIDC / Entra ID]
+    U --> UI[LibreChat eller<br/>AU-tilpasset portal]
+    IDP --> UI
+
+    UI --> AC[Assistentkatalog<br/>prompts, politik og modelprofil]
+    UI --> CHAT[Chat- og samtaleservice]
+    UI --> TASK[Opgave-API]
+
+    CHAT --> CTX[Kontekstservice<br/>søgning, RAG og kilder]
+    CHAT --> LLM[LiteLLM Gateway]
+
+    TASK --> AGENT[Afgrænset agentservice<br/>tilstand, budget og godkendelser]
+    AGENT --> CTX
+    AGENT --> TOOLS[Værktøjsgateway<br/>AU-MCP-server med Entra ID-autorisation<br/>og adaptere til interne API'er]
+    AGENT --> LLM
+
+    ING[Dokumentindlæsning] --> PII
+    CTX --> DOCS[Godkendte dokumentkilder]
+    CTX --> SEARCH[Søgeindeks og vector store]
+    ING --> SEARCH
+    DOCS --> ING
+    TOOLS --> AUSYS[AU-systemer og tjenester]
+
+    PII[PII-kontrolservice<br/>Presidio Analyzer og Anonymizer<br/>dansk sprogpakke og AU-genkendere]
+    CHAT -. maskering af uploads og historik .-> PII
+    LLM -. guardrail: input, output og logging .-> PII
+    LF -. klientmaskering før lagring .-> PII
+
+    LLM --> CLOUD[Godkendte cloudmodeller]
+    LLM --> LOCAL[Lokale eller selvhostede modeller]
+
+    CHAT --> LF[Langfuse<br/>traces, prompts og evaluering]
+    AGENT --> LF
+    CTX --> LF
+    TOOLS --> LF
+    LLM --> LF
+
+    CHAT --> OPS[Drift, sikkerhedslog og audit]
+    AGENT --> OPS
+    CTX --> OPS
+    TOOLS --> OPS
+    LLM --> OPS
+    PII --> OPS

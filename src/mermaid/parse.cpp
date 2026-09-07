@@ -132,6 +132,50 @@ bool MatchEdgeOp(const std::string& line, size_t& pos, EdgeOp& op) {
         return true;
     }
 
+    // Dotted open link with inline text: `-. text .->` (arrow) or
+    // `-. text .-` (no head). Matches mermaid's LINKLETTES grammar.
+    // The tail is ".->" (dot-dash-gt) or ".-" (dot-dash).
+    if (startsAt(pos, "-.")) {
+        size_t p = pos + 2;
+        while (p < n && line[p] == ' ') ++p;
+        if (p >= n || line[p] == '-') return false;  // bare -.-> handled above
+        size_t label_start = p;
+        size_t tail = std::string::npos;
+        bool tail_arrow = true;
+        for (size_t q = p; q + 3 < n; ++q) {
+            if (line[q] == '.' && line[q + 1] == '-' && line[q + 2] == '>') {
+                tail = q; tail_arrow = true; break;
+            }
+            if (line[q] == '.' && line[q + 1] == '-') {
+                if (line[q + 2] == '.' && !(q + 3 < n && line[q + 3] == '>')) {
+                    tail = q; tail_arrow = false; break;
+                }
+                if (line[q + 2] == '-' && q + 3 < n && line[q + 3] == '>') {
+                    tail = q; tail_arrow = true; break;
+                }
+                // Bare `.-` terminator: dot-dash with no further symbol.
+                if (line[q + 2] == ' ' || q + 2 == n) {
+                    tail = q; tail_arrow = false; break;
+                }
+                // ".-" at end-of-line handled by (q + 2 == n) above; a dot
+                // followed by dash(">")-style symbols falls through.
+                if (q + 2 < n && line[q + 2] != '.' && line[q + 2] != '-' &&
+                    line[q + 2] != '>') {
+                    tail = q; tail_arrow = false; break;
+                }
+            }
+        }
+        if (tail == std::string::npos) return false;
+        std::string label = line.substr(label_start, tail - label_start);
+        while (!label.empty() && label.back() == ' ') label.pop_back();
+        op.style = LineStyle::Dotted;
+        op.head = tail_arrow ? Head::Arrow : Head::None;
+        op.label = label;
+        pos = tail + (tail_arrow ? 4 : 3);
+        pos = std::min(pos, n);
+        return true;
+    }
+
     if (startsAt(pos, "--")) {
         if (startsAt(pos, "-->|")) {
             size_t start = pos + 4;
@@ -199,6 +243,16 @@ int UpsertNode(Flowchart& fc, const FlowNode& decl,
     if (idx < 0) {
         fc.nodes.push_back(decl);
         idx = (int)fc.nodes.size() - 1;
+    } else {
+        // Re-declared node. Mermaid rule: "the last text found for the node
+        // will be used", but only an explicit declaration counts. A bare
+        // re-mention (label == id, default shape) must not erase an
+        // earlier label or shape.
+        bool explicit_decl = !decl.label.empty() && decl.label != decl.id;
+        if (explicit_decl) {
+            fc.nodes[idx].label = decl.label;
+            fc.nodes[idx].shape = decl.shape;
+        }
     }
     for (int sgi : sg_stack) {
         auto& v = fc.subgraphs[sgi].node_indices;
