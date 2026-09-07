@@ -255,6 +255,7 @@ if(BUILD_TESTS)
     target_include_directories(MarkDownIt.tests PRIVATE
         src
         tests
+        tests/mermaid
         third_party/md4c
     )
     target_compile_definitions(MarkDownIt.tests PRIVATE

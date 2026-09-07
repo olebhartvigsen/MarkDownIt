@@ -4,9 +4,8 @@
 // angles.
 #include "mermaid/pie_parse.h"
 #include "mermaid/pie_layout.h"
-#include "pie_golden_loader.h"
+#include "mermaid/pie_golden_loader.h"
 #include "gtest_lite.h"
-
 #include <cmath>
 #include <cstdio>
 #include <fstream>
