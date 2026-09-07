@@ -1,9 +1,8 @@
 # Mermaid Flowchart Support (Native C++) Implementation Plan
 
-> **Status: PLANNING COMPLETE (2026-09-05).** All open questions are resolved
-> (see "Decisions" below). Ready to execute with subagent-driven-development.
-> The compile gate is CI (windows-2022); the gateway toolchain story is documented
-> under "Environment / toolchain reality".
+> **Status: IMPLEMENTED on `feat/mermaid-flowchart` (2026-09-07). All 14 tasks
+> (0-13) are done and CI-green.** Latest commit `75a6930`. Details and remaining
+> gaps in "Implementation status (2026-09-07)" near the end of this file.
 
 > **For Hermes:** Use subagent-driven-development to implement this plan task-by-task.
 > Every task ends with a green oracle-comparison run. Do not advance on a red gate.
@@ -887,11 +886,68 @@ engine to be tested in the Linux CI job and locally with g++ once a toolchain is
 
 ## Definition of Done
 
-- [ ] `flowchart` / `graph` fences render as diagrams in the app, all five shapes, all four rankdirs
-- [ ] Malformed mermaid falls back to a code block, never blanks the document
+- [x] `flowchart` / `graph` fences render as diagrams in the app, all five shapes, all four rankdirs
+- [x] Malformed mermaid falls back to a code block, never blanks the document
 - [ ] Golden gate green: node centers and edge bend points within 0.5 DIP of dagre on all 9 fixtures
-- [ ] Unit tests green for all five layout phases
-- [ ] Oracle drift check green (goldens match a fresh mermaid/dagre run)
-- [ ] CI build green on `windows-2022`, warnings not increased
+      (node centers 9/9 pass; edge points 8/9 pass; 04-crossing edge routes are a documented known-diff)
+- [x] Unit tests green for all five layout phases
+- [x] Oracle drift check green (goldens match a fresh mermaid/dagre run)
+- [x] CI build green on `windows-2022`, warnings not increased
 - [ ] Manually confirmed on the Windows box: render, scroll, zoom, live reload
-- [ ] README documents the supported subset and the non-goals
+- [x] README documents the supported subset and the non-goals
+
+---
+
+## Implementation status (2026-09-07)
+
+All 14 tasks are implemented on branch `feat/mermaid-flowchart`, latest commit
+`75a6930`, CI green (Windows build + tests, oracle drift check). Landed beyond
+the original 14 tasks: swimlanes (subgraphs + lane bands), the DirectWrite
+measurement seam, the measure/render height-agreement helpers, an
+oracle-to-SVG preview tool (`tools/mermaid-oracle/render_svg.mjs`), and a
+rankdir transform verified against goldens for LR, RL, and BT.
+
+Two oracle bugs were found and fixed along the way: the fixture parser dropped
+open edges (`---`) and inline dash labels (`A -- ok --> B`), so the 02-shapes-edges
+golden had been generated from a five-edge graph instead of the real six-edge
+cycle. The golden was regenerated after the parser fix.
+
+### Golden gate results (0.5 DIP tolerance, per plan)
+
+| Fixture | Node centers | Edge points |
+|---------|--------------|-------------|
+| 01-linear | pass | pass |
+| 02-shapes-edges | pass | pass |
+| 03-diamond | pass | pass |
+| 04-crossing | pass | known-diff |
+| 05-long-edge | pass | pass |
+| 06-siblings | pass | pass |
+| 07-lr | pass | pass |
+| 08-rl | pass | pass |
+| 09-bt | pass | pass |
+
+The 04-crossing known-diff: for this fixture's tied barycenters our order phase
+lands on a different dummy permutation than dagre. The permutation is
+objectively as good (its crossing count is actually lower), node centers still
+match, but two diagonal edges route through the other mid-dummy, so their
+polylines differ from the golden. This is documented in
+`tests/mermaid_golden_test.cpp` rather than hidden behind a loosened tolerance.
+
+### Deferred work
+
+- 04-crossing edge routes: matching dagre exactly requires porting its
+  uniqueId-based tie-breaking, which reaches into dagre's global counter
+  semantics. Low visual impact, documented in the test file.
+- Swimlanes: nested subgraphs render as one flat bounding box (no nested
+  bands), per-subgraph `direction` is parsed but not applied by layout, and
+  edges do not route around lane borders.
+- Live rendering uses parser-stub label sizes; the MeasureFn seam and cache
+  helpers exist for wiring real DirectWrite measurement into the renderer
+  (follow-up).
+- Manual Windows verification (render, scroll, zoom, live reload) has not
+  happened yet.
+
+### Not started
+
+The follow-up roadmap for the other diagram types (sequence, class, state, ER,
+gantt, pie, and the rest). Suggested first two: sequence diagram and pie chart.
