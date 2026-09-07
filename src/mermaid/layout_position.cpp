@@ -18,6 +18,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdio>
+#include <cstdlib>
 #include <limits>
 #include <unordered_map>
 #include <unordered_set>
@@ -295,6 +297,27 @@ void AssignCoordinates(LayoutGraph& g, const LayoutParams& p) {
 
     // ---- X via BK 4-alignment ----
     Conflicts conflicts = FindType1Conflicts(g, adj, layering);
+    if (std::getenv("BK_DEBUG")) {
+        std::fprintf(stderr, "LAYER=");
+        for (const auto& row : layering) {
+            std::fprintf(stderr, "[");
+            for (int u : row) {
+                bool dummy = g.nodes[u].is_dummy;
+                int chain_e = -1;
+                for (const auto& dc : g.dummy_chains)
+                    for (int dn : dc.dummy_nodes)
+                        if (dn == u) chain_e = dc.original_edge_index;
+                if (dummy && chain_e >= 0)
+                    std::fprintf(stderr, "e%d(%s>%s)", chain_e,
+                                 g.nodes[g.original_edges[chain_e].from].label.c_str(),
+                                 g.nodes[g.original_edges[chain_e].to].label.c_str());
+                else
+                    std::fprintf(stderr, "%s#", g.nodes[u].label.c_str());
+            }
+            std::fprintf(stderr, "]");
+        }
+        std::fprintf(stderr, "\n");
+    }
     // (Type-2 conflicts skipped: no border segments in our port.)
 
     // 4 candidate x-vectors: ul, ur, dl, dr.
@@ -318,6 +341,12 @@ void AssignCoordinates(LayoutGraph& g, const LayoutParams& p) {
                 for (auto& x : xs) x = -x;
             }
             xss[vi * 2 + hi] = std::move(xs);
+            if (std::getenv("BK_DEBUG")) {
+                std::fprintf(stderr, "XSS%c%c=", verts[vi], horizs[hi]);
+                for (size_t v = 0; v < xss[vi*2+hi].size(); ++v)
+                    std::fprintf(stderr, "%s:%.0f ", g.nodes[v].label.c_str(), xss[vi*2+hi][v]);
+                std::fprintf(stderr, "\n");
+            }
         }
     }
 

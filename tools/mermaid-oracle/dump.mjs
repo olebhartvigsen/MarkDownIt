@@ -123,6 +123,9 @@ for (const n of nodes) g.setNode(n.id, { ...sizeFor(n.label), label: n.label });
 for (const e of edges) g.setEdge(e.from, e.to, { weight: 1, minlen: 1, labelpos: 'c', label: e.label });
 
 layout(g);
+if (process.env.ORDER_DEBUG) {
+  console.error('ORDERS:', g.nodes().map(id => id + '=' + (g.node(id).order ?? 'x')).join(' '));
+}
 
 const nodeObjs = g.nodes().map(id => g.node(id));
 const ranks = computeRanks(nodeObjs, dir);
