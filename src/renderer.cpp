@@ -8,6 +8,7 @@
 #include "imagehelper.h"
 #include "mermaid/model.h"
 #include "mermaid/layout_internal.h"
+#include "mermaid/layout.h"
 #include "mermaid/layout_cache.h"
 #include <cmath>
 
