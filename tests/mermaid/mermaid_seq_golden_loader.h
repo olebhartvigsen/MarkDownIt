@@ -23,8 +23,10 @@ struct SeqGoldenCanvas {
 struct SeqGoldenActor {
     bool bottom = false;
     bool is_lifeline = false;
+    bool is_stickman = false;  // g.actor-man (jsdom drops the rect)
     std::string name;
     double x = 0, y = 0, w = 0, h = 0;
+    double cx = 0, cy = 0;          // stickman (circle center)
     double x1 = 0, y1 = 0, y2 = 0;  // lifeline
 };
 
@@ -80,6 +82,7 @@ struct SeqGolden {
     bool has_title = false;
     std::string title;
     double title_x = 0, title_y = 0;
+    std::vector<std::string> stick_top;  // top stickman actor names
     std::vector<SeqGoldenActor> actors;
     std::vector<SeqGoldenMessage> messages;
     std::vector<SeqGoldenNote> notes;
@@ -184,7 +187,11 @@ inline SeqGoldenActor parse_actor(Cursor& c) {
     while (true) {
         std::string k = c.parse_string();
         c.expect(':');
-        if (k == "kind") a.is_lifeline = (c.parse_string() == "lifeline");
+        if (k == "kind") {
+            std::string kind = c.parse_string();
+            a.is_lifeline = (kind == "lifeline");
+            a.is_stickman = (kind == "stickman");
+        }
         else if (k == "name") a.name = c.parse_string();
         else if (k == "bottom") {
             c.skip_ws();
@@ -196,6 +203,8 @@ inline SeqGoldenActor parse_actor(Cursor& c) {
         else if (k == "y") a.y = num_or_zero(c.parse_number_or_null());
         else if (k == "w") a.w = num_or_zero(c.parse_number_or_null());
         else if (k == "h") a.h = num_or_zero(c.parse_number_or_null());
+        else if (k == "cx") a.cx = num_or_zero(c.parse_number_or_null());
+        else if (k == "cy") a.cy = num_or_zero(c.parse_number_or_null());
         else if (k == "y1") a.y1 = num_or_zero(c.parse_number_or_null());
         else if (k == "y2") a.y2 = num_or_zero(c.parse_number_or_null());
         else c.skip_value();
@@ -455,6 +464,21 @@ inline SeqGolden LoadSeqGolden(const std::string& path) {
             seqgolddetail::parse_array(c, g.numbers, seqgolddetail::parse_number);
         } else if (k == "backgrounds") {
             seqgolddetail::parse_array(c, g.backgrounds, seqgolddetail::parse_background);
+        } else if (k == "stickTop") {
+            // Stickman actors (`actor X`); jsdom drops their rect, so the
+            // oracle emits top-stickman NAMES as a plain string array.
+            c.skip_ws();
+            c.expect('[');
+            c.skip_ws();
+            if (c.peek() != ']') {
+                while (true) {
+                    g.stick_top.push_back(c.parse_string());
+                    c.skip_ws();
+                    if (c.peek() == ',') { c.get(); c.skip_ws(); continue; }
+                    break;
+                }
+            }
+            c.expect(']');
         } else {
             c.skip_value();
         }

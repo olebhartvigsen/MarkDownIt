@@ -1,0 +1,22 @@
+sequenceDiagram
+    autonumber
+    actor B as Bruger
+    participant TASK as Opgave-API
+    participant AG as Agentservice
+    participant CTX as Kontekstservice
+    participant MCP as AU-MCP-server
+    participant SYS as AU-system
+    B->>TASK: Start meritopgave + bilag (PII-skannes)
+    TASK->>AG: Opgave-id + idempotensnøgle
+    AG->>CTX: Hent studieordning + meritregler
+    loop Inden for budget-, trin- og tidsgrænse
+        AG->>MCP: Værktøjskald (allowlistet værktøj)
+        MCP->>MCP: Entra-roller ∩ assistentprofil
+        MCP->>SYS: On-behalf-of-kald (kortlivet token)
+        SYS-->>MCP: Resultat
+        MCP-->>AG: Struktureret output
+    end
+    AG->>B: Udkast + begrundelse + kilder
+    B->>AG: Godkend / ret
+    AG->>MCP: Skrivende kald (kun efter godkendelse)
+    AG-->>TASK: FÆRDIG + revisionsspor

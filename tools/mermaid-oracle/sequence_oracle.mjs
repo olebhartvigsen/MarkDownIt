@@ -55,6 +55,21 @@ for (const l of doc.querySelectorAll('line.actor-line')) {
     y2: Number(l.getAttribute('y2')),
   });
 }
+// Stickman actors (`actor X`): jsdom drops their rect (no stroke/geometry),
+// but the `g.actor-man` group carries the name and cx (= circle.cx / torso
+// x1). Emit as stickman entries so parity tests can count + position them.
+for (const g of doc.querySelectorAll('g.actor-man')) {
+  const circle = g.querySelector('circle');
+  if (!circle) continue;
+  out.actors.push({
+    kind: 'stickman',
+    bottom: g.classList.contains('actor-bottom'),
+    name: g.getAttribute('name'),
+    cx: Number(circle.getAttribute('cx')),
+    cy: Number(circle.getAttribute('cy')),
+  });
+}
+const STICK_TOP = out.actors.filter(a => a.kind === 'stickman' && !a.bottom).map(a => a.name);
 
 // ---- messages: zip messageText elements with their matched line -------------
 // drawMessage appends text first, then the line (self: path). Lines and paths
@@ -148,6 +163,7 @@ for (const t of labelTxts) out.loops.push({ labelText: t.textContent, x: Number(
 for (const t of loopTxts) out.loops.push({ loopText: t.textContent, x: Number(t.getAttribute('x')), y: Number(t.getAttribute('y')) });
 // section dividers are dashed loopLines; keep class info
 out.loops = out.loops.filter(Boolean);
+out.stickTop = STICK_TOP;
 
 // ---- title ---------------------------------------------------------------
 // Title: draw() appends text with y=-25, x = (stopx-startx)/2 - 2*marginX

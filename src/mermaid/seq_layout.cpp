@@ -107,10 +107,16 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
         double w = SeqTextWidth(m.text) + 2 * WRAP_PAD;
         if (f == t) {
             charge(f, w / 2);
-        } else if (t == f + 1) {
-            charge(t, w);      // msg.from is to-actor.prevActor
         } else if (f == t + 1) {
-            charge(t, w);      // msg.from is to-actor.nextActor → charge msg.to
+            // msg.from is the TO-actor's nextActor → the DIST charges *,
+            // i.e. the SENDER ((msg.from === actor.nextActor) →
+            // maxMessageWidthPerActor[msg.to]) — since actor = msg.to, this
+            // lands on msg.to here.
+            charge(t, w);
+        } else if (t == f + 1) {
+            // msg.from is the TO-actor's prevActor → the DIST charges
+            // msg.from (the SENDER).
+            charge(f, w);
         }
         // non-adjacent partners charge nobody (mermaid behavior)
     }

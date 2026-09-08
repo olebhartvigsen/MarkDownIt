@@ -21,14 +21,21 @@ std::string ReadFile(const std::string& path) {
     return ss.str();
 }
 
-// Extract the M 76,209 start-Y of a self-message path (`M x,y C ...`).
+// Extract the M 76,209 start-X of a self-message path (`M x,y C ...`):
+// start x sits at the SENDER's lifeline center x (the path bows outward
+// around it).
 double ParseSelfY(const std::string& d) {
     size_t comma = d.find(',');
     if (comma == std::string::npos) return 0.0;
     return std::atof(d.c_str() + comma + 1);
 }
 
-const char* kFixtures[] = {"seq1", "seq2", "seq3", "seq4", "seq5"};
+double ParseSelfX(const std::string& d) {
+    if (d.size() < 2 || d[0] != 'M') return 0.0;
+    return std::atof(d.c_str() + 1);
+}
+
+const char* kFixtures[] = {"seq1", "seq2", "seq3", "seq4", "seq5", "seq6"};
 
 }  // namespace
 
@@ -58,13 +65,39 @@ TEST(SeqGolden, ActorXAndCanvasMatchOracle) {
                          lo.error.c_str());
         }
         EXPECT_EQ(lo.error, "");
-        // count top-actor boxes
+        // count top-actor boxes; top stickmen (`actor X`) have NO rect in
+        // the jsdom dump (their <g> is dropped), but the engine still lays
+        // them out — they are counted via gold.stick_top and matched by id.
         size_t n_top = 0;
         for (const auto& a : gold.actors)
-            if (!a.bottom && !a.is_lifeline) ++n_top;
+            if (!a.bottom && !a.is_lifeline && !a.is_stickman) ++n_top;
+        n_top += gold.stick_top.size();
+        if (lo.actors.size() != n_top) {
+            size_t dbg_rects = 0, dbg_stick = 0;
+            for (const auto& a : gold.actors)
+                if (!a.bottom && !a.is_lifeline && !a.is_stickman) ++dbg_rects;
+            for (const auto& a : gold.actors)
+                if (a.is_stickman) ++dbg_stick;
+            std::fprintf(stderr,
+                "[%s] actor-count: ours %zu vs gold %zu (rects %zu, stick "
+                "entries %zu, stick_top %zu)\n", name, lo.actors.size(),
+                n_top, dbg_rects, dbg_stick, gold.stick_top.size());
+        }
         ASSERT_EQ(lo.actors.size(), n_top);
+        // stickman parity: cx equals the engine's lifeline center x
+        for (const auto& s : gold.stick_top) {
+            const mermaid::SeqGoldenActor* gs = nullptr;
+            for (const auto& a : gold.actors)
+                if (a.is_stickman && !a.bottom && a.name == s) { gs = &a; break; }
+            if (!gs) continue;
+            const mermaid::SeqActorBox* mine = nullptr;
+            for (const auto& b : lo.actors)
+                if (b.id == s) { mine = &b; break; }
+            if (!mine) { EXPECT_TRUE(false); continue; }
+            EXPECT_NEAR(mine->x + mine->w / 2, gs->cx, pos_tol);
+        }
         for (const auto& a : gold.actors) {
-            if (a.bottom || a.is_lifeline) continue;
+            if (a.bottom || a.is_lifeline || a.is_stickman) continue;
             // find ours top actor by mermaid actor.name (= the id)
             const mermaid::SeqActorBox* mine = nullptr;
             for (const auto& b : lo.actors)
@@ -144,7 +177,13 @@ TEST(SeqGolden, MessagesMatchOracle) {
                 EXPECT_NEAR(g.x2, m.line.x2, pos_tol);
                 EXPECT_NEAR(g.y2, m.line.y2, pos_tol);
             } else {
-                EXPECT_NEAR(g.x1, 75.0, 300.0);  // self path x in band
+                // SELF-CALL: compare against the oracle's own path `M x,y`:
+                // g.x1 is the engine's lifeline center x; the path starts on
+                // the SAME lifeline (its `M x` = center x) — the old
+                // "75, band 300" was a placeholder that cannot hold on any
+                // fixture whose leftmost actor is not the self-sender
+                // (seq6 msg 4: MCP→MCP at x=901).
+                EXPECT_NEAR(g.x1, ParseSelfX(m.path_d), 300.0);
                 EXPECT_NEAR(g.y1, ParseSelfY(m.path_d), 0.01);
             }
         }
