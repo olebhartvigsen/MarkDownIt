@@ -1,33 +1,33 @@
 {
   "canvas": {
-    "width": 450,
-    "height": 250,
+    "width": 452,
+    "height": 292,
     "startx": -50,
     "starty": -10,
-    "vbwidth": 450,
-    "vbheight": 250
+    "vbwidth": 452,
+    "vbheight": 292
   },
   "actors": [
     {
       "bottom": true,
       "name": "Bob",
-      "x": 200,
-      "y": 217,
+      "x": 202,
+      "y": 271,
       "w": 150,
-      "h": 12
+      "h": 0
     },
     {
       "bottom": true,
       "name": "Alice",
       "x": 0,
-      "y": 217,
+      "y": 271,
       "w": 150,
-      "h": 12
+      "h": 0
     },
     {
       "bottom": false,
       "name": "Bob",
-      "x": 200,
+      "x": 202,
       "y": 0,
       "w": 150,
       "h": 65
@@ -42,27 +42,27 @@
     },
     {
       "kind": "lifeline",
-      "x": 275,
+      "x": 277,
       "y1": 65,
-      "y2": 217
+      "y2": 271
     },
     {
       "kind": "lifeline",
       "x": 75,
       "y1": 65,
-      "y2": 217
+      "y2": 271
     }
   ],
   "messages": [
     {
       "text": "Besked nummer ét",
-      "tx": 174,
+      "tx": 175,
       "ty": 80,
       "line": {
         "x1": 76,
-        "y1": 99,
-        "x2": 271,
-        "y2": 99,
+        "y1": 117,
+        "x2": 273,
+        "y2": 117,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -70,13 +70,13 @@
     },
     {
       "text": "Svar nummer to",
-      "tx": 177,
-      "ty": 114,
+      "tx": 178,
+      "ty": 132,
       "line": {
-        "x1": 274,
-        "y1": 133,
+        "x1": 276,
+        "y1": 169,
         "x2": 79,
-        "y2": 133,
+        "y2": 169,
         "cls": "messageLine1",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -85,9 +85,9 @@
     {
       "text": "Selv nummer tre",
       "tx": 76,
-      "ty": 148,
+      "ty": 184,
       "path": {
-        "d": "M 76,167 C 136,157 136,197 76,187",
+        "d": "M 76,221 C 136,211 136,251 76,241",
         "cls": "messageLine0"
       }
     }
@@ -105,17 +105,17 @@
     {
       "n": "1",
       "x": 76,
-      "y": 103
+      "y": 121
     },
     {
       "n": "2",
-      "x": 274,
-      "y": 137
+      "x": 276,
+      "y": 173
     },
     {
       "n": "3",
       "x": 76,
-      "y": 171
+      "y": 225
     }
   ]
 }

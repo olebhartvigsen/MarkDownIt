@@ -28,8 +28,6 @@ constexpr double NOTE_MARGIN = 10.0;
 constexpr double ACTIVATION_W = 10.0;
 constexpr double LABEL_BOX_W = 50.0;
 constexpr double LABEL_BOX_H = 20.0;
-constexpr double TEXT_H = 12.0;     // shim text height (one line)
-constexpr double TEXT_UNIT = 4.0;   // shim width per UTF-16 unit
 constexpr double WRAP_PAD = 10.0;
 constexpr double BOTTOM_MARGIN_ADJ = 1.0;
 
@@ -40,14 +38,63 @@ double Min(double a, double b) { return a < b ? a : b; }
 
 }  // namespace
 
-double SeqTextWidth(const std::string& utf8) {
-    double n = 0;
-    for (unsigned char c : utf8) {
-        if ((c & 0xC0) != 0x80) ++n;  // non-continuation = UTF-16 unit (BMP)
+// UTF-8 -> codepoint iterator (sequence labels are UTF-8; BMP only here).
+// Advance table generated from segoeui.ttf (tools/mermaid-oracle/
+// gen_seq_metrics.mjs): real Segoe UI glyph advances. The table lives in
+// table scope: close mermaid, include, reopen.
+}  // namespace mermaid
+#include "seq_metrics_table.h"
+namespace mermaid {
+
+namespace {
+
+// measure_dwrite.h exposes the platform measure seam; the portable core
+// uses the generated table, the platform renderer swaps in DirectWrite
+// behind the same function signature when MeasureSeqText is set.
+SeqMeasureFn g_seq_measure = nullptr;  // tests may inject
+
+double DefaultSeqTextWidth(const std::string& utf8, double fontSize) {
+    double total = 0;
+    for (size_t i = 0; i < utf8.size(); ) {
+        unsigned char c = static_cast<unsigned char>(utf8[i]);
+        uint32_t cp = 0;
+        int n_b = 1;
+        if (c < 0x80) { cp = c; n_b = 1; }
+        else if ((c & 0xE0) == 0xC0 && i + 1 < utf8.size()) {
+            cp = ((c & 0x1F) << 6) | (utf8[i+1] & 0x3F); n_b = 2;
+        } else if ((c & 0xF0) == 0xE0 && i + 2 < utf8.size()) {
+            cp = ((c & 0x0F) << 12) | ((utf8[i+1] & 0x3F) << 6) |
+                 (utf8[i+2] & 0x3F); n_b = 3;
+        } else if ((c & 0xF8) == 0xF0 && i + 3 < utf8.size()) {
+            cp = ((c & 0x07) << 18) | ((utf8[i+1] & 0x3F) << 12) |
+                 ((utf8[i+2] & 0x3F) << 6) | (utf8[i+3] & 0x3F); n_b = 4;
+        } else { cp = 0x20; n_b = 1; }
+        uint16_t adv = SeqAdvanceFor(cp);
+        if (adv == 0) adv = SeqAdvanceFor(0x20);  // unmapped: space width
+        total += adv;
+        i += n_b;
     }
-    return n * TEXT_UNIT;
+    // mermaid calculateTextDimensions rounds the measured width (Math.round
+    // in the dims loop): mirror it so engine and oracle agree at half-px
+    // boundaries.
+    double px = total / kSeqFontUpm * fontSize;
+    return std::floor(px + 0.5);
 }
-double SeqTextHeight(const std::string&) { return TEXT_H; }
+
+double DefaultSeqTextHeight(double fontSize) {
+    return kSeqLineHeightPx16 / 16.0 * fontSize;
+}
+
+}  // namespace
+
+double SeqTextWidth(const std::string& utf8, double fontSize) {
+    if (g_seq_measure) return g_seq_measure(utf8, fontSize);
+    return DefaultSeqTextWidth(utf8, fontSize);
+}
+double SeqTextHeight(const std::string&, double fontSize) {
+    return DefaultSeqTextHeight(fontSize);
+}
+void SetSeqMeasureFn(SeqMeasureFn fn) { g_seq_measure = fn; }
 
 LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
     LaidOutSequence out;
@@ -277,7 +324,7 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                         ? ax[fi] + aw[fi] / 2 - ACTOR_MARGIN / 2
                         : ax[ti] + aw[ti] / 2 - ACTOR_MARGIN / 2;
                 }
-                double h = TEXT_H + 2 * NOTE_MARGIN;  // bump(12 + 20 = 32)
+                double h = SeqTextHeight(m.text, 16.0) + 2 * NOTE_MARGIN;
                 SeqNoteGeo geo;
                 geo.x = startx; geo.y = starty;
                 geo.w = w; geo.h = h;
@@ -351,7 +398,7 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                 vpos += BOX_MARGIN;              // preMargin
                 ol.starty = vpos;
                 if (titled) {
-                    vpos += (BOX_MARGIN + BOX_TEXT_MARGIN) + Max(TEXT_H, LABEL_BOX_H);
+                    vpos += (BOX_MARGIN + BOX_TEXT_MARGIN) + Max(SeqTextHeight("x", 16.0), LABEL_BOX_H);
                 } else {
                     vpos += BOX_MARGIN;
                 }
@@ -371,7 +418,7 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                 const SeqLoop& lp = seq.loops[it.loop_id];
                 ol.section_titles.push_back(lp.label);
                 ol.section_item.push_back(it.loop_id);
-                vpos += BOX_MARGIN + Max(TEXT_H, LABEL_BOX_H);  // +30
+                vpos += BOX_MARGIN + Max(SeqTextHeight("x", 16.0), LABEL_BOX_H);
                 break;
             }
             case MsgType::LoopEnd:
@@ -425,7 +472,7 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                 std::size_t ti = static_cast<std::size_t>(t2);
                 double starty = vpos;
                 vpos += BOX_MARGIN;   // bump(10)
-                vpos += TEXT_H;       // bump(lineHeight=12) → starty+22
+                vpos += SeqTextHeight(m.text, 16.0);  // bump(text height)
                 bool self = (m.from == m.to);
                 double startx, stopx;
                 double tx, ty;
@@ -464,11 +511,20 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                     tx = JRound(startx + (stopx - startx) / 2);
                     ty = JRound(starty + 10.0 + NOTE_MARGIN / 2);
                 }
-                double line_y = starty + 34.0;
+                // boundMessage: lineStartY = vP_after_bumps + totalOffset,
+                // where vP_after_bumps = starty + 10 + h and totalOffset =
+                // (h - 10) + boxMargin(10) = h  →  starty + 10 + 2h.
+                // (h = 12 shim-era → starty+34, the old constant.)
+                double line_y = starty + 10.0 + 2.0 * SeqTextHeight(m.text, 16.0);
                 if (self) {
-                    // self: lineStartY = vP_after_pre + totalOffset(2+10)
-                    //      = starty + 34 (same); the path draws from there.
-                    line_y = starty + 34.0;
+                    // self: totalOffset starts (h-10), +boxMargin twice?
+                    // no rightAngles: totalOffset = (h-10) + boxMargin(10) + 30
+                    //   → vP + h + 30 = starty + 10 + h + h + 30?? mermaid:
+                    //   lineStartY = vP + totalOffset with the FIRST +
+                    //   (h-10)+10 = h: starty+10+h + h → same as non-self,
+                    //   then totalOffset += 30 for the bump only (line stays
+                    //   at the non-self position).
+                    line_y = starty + 10.0 + 2.0 * SeqTextHeight(m.text, 16.0);
                 }
                 SeqMessageGeo g;
                 g.self = self;
@@ -481,13 +537,18 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                 out.messages.push_back(g);
                 // boundMessage inserts: line band + msg-model band.
                 if (self) {
-                    double dx = Max(SeqTextWidth(m.text) / 2, ACTOR_W / 2);
-                    insert(startx - dx, vpos - 10.0 + 42.0, stopx + dx,
-                           vpos + 30.0 + 42.0);
-                    vpos += 42.0;   // bump(totalOffset=42) → starty+64
+                    // self: totalOffset = (h-10) + boxMargin(10) + 30 = h+30;
+                    // insert band spans vP-10+total → vP+30+total; dx per
+                    // drawMessage self branch: max(textW/2, conf.width/2).
+                    double h21 = SeqTextHeight(m.text, 16.0);
+                    double toff = h21 + 30.0;
+                    double dxs = Max(SeqTextWidth(m.text) / 2, ACTOR_W / 2);
+                    insert(startx - dxs, vpos - 10.0 + toff, stopx + dxs,
+                           vpos + 30.0 + toff);
+                    vpos += toff;
                 } else {
                     insert(startx, line_y - 10.0, stopx, line_y);
-                    vpos += (TEXT_H - 10.0) + BOX_MARGIN;  // +12 → = line_y
+                    vpos += (SeqTextHeight(m.text, 16.0) - 10.0) + BOX_MARGIN;
                     // msg-model insert (buildMessageModel bounds):
                     double f_left, f_right, t_left, t_right;
                     act_bounds(f, f_left, f_right);
@@ -517,7 +578,10 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
     for (size_t i = 0; i < out.actors.size(); ++i) {
         out.actors[i].stopy = foot_stopy;
     }
-    vpos += FOOT_H + BOX_MARGIN;
+    // Footer bump: mermaid uses maxHeight = rect getBBox height; the oracle
+    // shim reports 0×0 for <rect> (no text), so the effective bump is
+    // maxHeight(0) + boxMargin.
+    vpos += BOX_MARGIN;
     insert_dataonly(d_minx, vpos, d_maxx, vpos);  // stopy only: data.stopy tracks bumps
     // bumpVerticalPos already lifts data.stopy implicitly — emulate: maxy.
     d_maxy = Max(d_maxy, vpos);

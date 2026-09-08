@@ -1,36 +1,36 @@
 {
   "canvas": {
     "width": 650,
-    "height": 228,
+    "height": 261,
     "startx": -50,
     "starty": -10,
     "vbwidth": 650,
-    "vbheight": 228
+    "vbheight": 261
   },
   "actors": [
     {
       "bottom": true,
       "name": "C",
       "x": 400,
-      "y": 195,
+      "y": 240,
       "w": 150,
-      "h": 12
+      "h": 0
     },
     {
       "bottom": true,
       "name": "B",
       "x": 200,
-      "y": 195,
+      "y": 240,
       "w": 150,
-      "h": 12
+      "h": 0
     },
     {
       "bottom": true,
       "name": "A",
       "x": 0,
-      "y": 195,
+      "y": 240,
       "w": 150,
-      "h": 12
+      "h": 0
     },
     {
       "bottom": false,
@@ -60,19 +60,19 @@
       "kind": "lifeline",
       "x": 475,
       "y1": 65,
-      "y2": 195
+      "y2": 240
     },
     {
       "kind": "lifeline",
       "x": 275,
       "y1": 65,
-      "y2": 195
+      "y2": 240
     },
     {
       "kind": "lifeline",
       "x": 75,
       "y1": 65,
-      "y2": 195
+      "y2": 240
     }
   ],
   "messages": [
@@ -82,9 +82,9 @@
       "ty": 80,
       "line": {
         "x1": 76,
-        "y1": 99,
+        "y1": 117,
         "x2": 271,
-        "y2": 99,
+        "y2": 117,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": ""
@@ -93,12 +93,12 @@
     {
       "text": "Videre",
       "tx": 374,
-      "ty": 156,
+      "ty": 183,
       "line": {
         "x1": 276,
-        "y1": 175,
+        "y1": 220,
         "x2": 471,
-        "y2": 175,
+        "y2": 220,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": ""
@@ -109,11 +109,11 @@
     {
       "text": "Dobbelt-scope note",
       "tx": 375,
-      "ty": 114,
+      "ty": 132,
       "rx": 250,
-      "ry": 109,
+      "ry": 127,
       "rw": 250,
-      "rh": 32
+      "rh": 41
     }
   ],
   "activations": [],

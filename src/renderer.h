@@ -57,6 +57,7 @@ public:
 
 private:
     IDWriteTextFormat* body_fmt_ = nullptr;
+    IDWriteTextFormat* num_fmt_ = nullptr;     // seq autonumber (12px)
     IDWriteTextFormat* code_fmt_ = nullptr;      // monospace for code blocks
     IDWriteTextFormat* heading_fmt_[7] = {};
     float zoom_ = 0.8f;  // default: one zoom-out step smaller

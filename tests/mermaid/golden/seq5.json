@@ -1,28 +1,28 @@
 {
   "canvas": {
     "width": 450,
-    "height": 216,
+    "height": 240,
     "startx": -50,
     "starty": -50,
     "vbwidth": 450,
-    "vbheight": 256
+    "vbheight": 280
   },
   "actors": [
     {
       "bottom": true,
       "name": "Bob",
       "x": 200,
-      "y": 183,
+      "y": 219,
       "w": 150,
-      "h": 12
+      "h": 0
     },
     {
       "bottom": true,
       "name": "Alice",
       "x": 0,
-      "y": 183,
+      "y": 219,
       "w": 150,
-      "h": 12
+      "h": 0
     },
     {
       "bottom": false,
@@ -44,13 +44,13 @@
       "kind": "lifeline",
       "x": 275,
       "y1": 65,
-      "y2": 183
+      "y2": 219
     },
     {
       "kind": "lifeline",
       "x": 75,
       "y1": 65,
-      "y2": 183
+      "y2": 219
     }
   ],
   "messages": [
@@ -60,9 +60,9 @@
       "ty": 100,
       "line": {
         "x1": 76,
-        "y1": 119,
+        "y1": 137,
         "x2": 271,
-        "y2": 119,
+        "y2": 137,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": ""
@@ -71,12 +71,12 @@
     {
       "text": "Efter rektangel",
       "tx": 174,
-      "ty": 144,
+      "ty": 162,
       "line": {
         "x1": 76,
-        "y1": 163,
+        "y1": 199,
         "x2": 271,
-        "y2": 163,
+        "y2": 199,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": ""
@@ -95,7 +95,7 @@
       "x": 64,
       "y": 75,
       "w": 222,
-      "h": 54,
+      "h": 72,
       "fill": "rgb(200, 220, 240)"
     }
   ],

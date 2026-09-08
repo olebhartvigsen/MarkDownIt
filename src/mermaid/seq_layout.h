@@ -96,10 +96,19 @@ struct LaidOutSequence {
     std::string error;
 };
 
-// Text metrics matching the oracle shim (width = UTF-16 units * 4, height
-// 12/line). Shared by tests and the renderer.
-double SeqTextWidth(const std::string& utf8);
-double SeqTextHeight(const std::string& utf8);
+// Text metrics: REAL font advances (Segoe UI via the generated table —
+// see tools/mermaid-oracle/gen_seq_metrics.mjs). Width = sum of glyph
+// advances scaled by size/upm; height = real line box (21.28 at 16px).
+// Shared by tests and the renderer. The live D2D path measures DirectWrite
+// over the same font, so the two agree within kerning/rounding.
+double SeqTextWidth(const std::string& utf8, double fontSize = 16.0);
+double SeqTextHeight(const std::string& utf8, double fontSize = 16.0);
+
+// Measure seam: platform renderers/tests may replace the table-backed
+// metric (e.g. DirectWrite live measurement on Windows). Signature:
+// utf8 text and font size → advance width in px.
+using SeqMeasureFn = double (*)(const std::string&, double);
+void SetSeqMeasureFn(SeqMeasureFn fn);
 
 LaidOutSequence LayoutSequence(const SequenceDiagram& seq);
 

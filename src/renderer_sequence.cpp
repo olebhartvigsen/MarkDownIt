@@ -305,14 +305,17 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
         }
     }
 
-    // Autonumber circles: filled circle at (startx, lineStartY + 4).
+    // Autonumber circles — mermaid parity: marker #sequencenumber is a
+    // circle r=6 (12px diameter) at the line start X, with the number as a
+    // 12px sans-serif text at (x, y+4) — NOT an oversized 9px-radius disc
+    // with a 16px digit squeezed inside.
     for (const auto& num : ls.numbers) {
         float cx = P(num.x), cy = Q(num.y);
         D2D1_ELLIPSE c = D2D1::Ellipse(D2D1::Point2F(cx, cy),
-                                       9.0f * scale, 9.0f * scale);
+                                       6.0f * scale, 6.0f * scale);
         rt->FillEllipse(c, ink);
-        DrawSeqText(dw, rt, body_fmt_, std::to_string(num.n),
-                    cx, cy, actorFill, true, true);
+        DrawSeqText(dw, rt, num_fmt_, std::to_string(num.n),
+                    cx, cy + 4.0f * scale, actorFill, true, true);
     }
 
     // Notes.

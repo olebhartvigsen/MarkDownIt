@@ -82,6 +82,16 @@ bool Renderer::Init(IDWriteFactory* dw) {
         DWRITE_LINE_SPACING_METHOD_PROPORTIONAL,
         base.bodyLineHeight, 1.24f);
 
+    // Sequence autonumber digits: mermaid renders 12px sans-serif.
+    hr = dw->CreateTextFormat(
+        L"Segoe UI", nullptr,
+        DWRITE_FONT_WEIGHT_REGULAR,
+        DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL,
+        12.0f * (4.0f / 3.0f) * zoom_,
+        L"", &num_fmt_);
+    if (FAILED(hr)) num_fmt_ = nullptr;
+
     // Code format: Cascadia Mono, 12.5pt (falls back to Consolas).
     hr = dw->CreateTextFormat(
         base.codeFont, nullptr,
@@ -117,6 +127,7 @@ void Renderer::Release() {
     auto rel = [](IDWriteTextFormat*& p) { if (p) { p->Release(); p = nullptr; } };
     rel(body_fmt_);
     rel(code_fmt_);
+    rel(num_fmt_);
     for (int i = 1; i <= 6; ++i) rel(heading_fmt_[i]);
 }
 
