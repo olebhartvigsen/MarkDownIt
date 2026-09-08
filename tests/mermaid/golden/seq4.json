@@ -1,17 +1,17 @@
 {
   "canvas": {
-    "width": 452,
+    "width": 462,
     "height": 292,
     "startx": -50,
     "starty": -10,
-    "vbwidth": 452,
+    "vbwidth": 462,
     "vbheight": 292
   },
   "actors": [
     {
       "bottom": true,
       "name": "Bob",
-      "x": 202,
+      "x": 212,
       "y": 271,
       "w": 150,
       "h": 0
@@ -27,7 +27,7 @@
     {
       "bottom": false,
       "name": "Bob",
-      "x": 202,
+      "x": 212,
       "y": 0,
       "w": 150,
       "h": 65
@@ -42,7 +42,7 @@
     },
     {
       "kind": "lifeline",
-      "x": 277,
+      "x": 287,
       "y1": 65,
       "y2": 271
     },
@@ -56,12 +56,12 @@
   "messages": [
     {
       "text": "Besked nummer ét",
-      "tx": 175,
+      "tx": 180,
       "ty": 80,
       "line": {
         "x1": 76,
         "y1": 117,
-        "x2": 273,
+        "x2": 283,
         "y2": 117,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
@@ -70,10 +70,10 @@
     },
     {
       "text": "Svar nummer to",
-      "tx": 178,
+      "tx": 183,
       "ty": 132,
       "line": {
-        "x1": 276,
+        "x1": 286,
         "y1": 169,
         "x2": 79,
         "y2": 169,
@@ -109,7 +109,7 @@
     },
     {
       "n": "2",
-      "x": 276,
+      "x": 286,
       "y": 173
     },
     {

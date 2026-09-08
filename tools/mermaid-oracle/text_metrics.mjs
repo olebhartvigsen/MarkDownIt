@@ -23,14 +23,15 @@ import { dirname, join } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FONT_DIR = join(HERE, 'fonts');
-const WIN_FONTS = '/mnt/c/Windows/Fonts';
 
+// DETERMINISTIC font stack: only the vendored OFL Open Sans, identical on
+// WSL and CI. The /mnt/c Segoe lookup made goldens machine-dependent.
 const FONT_FILES = {
-  'segoe ui': [join(WIN_FONTS, 'segoeui.ttf'), join(FONT_DIR, 'OpenSans-Regular.ttf')],
-  'sans-serif': [join(WIN_FONTS, 'segoeui.ttf'), join(FONT_DIR, 'OpenSans-Regular.ttf')],
-  'arial': [join(WIN_FONTS, 'arial.ttf'), join(FONT_DIR, 'OpenSans-Regular.ttf')],
-  'trebuchet ms': [join(WIN_FONTS, 'trebuc.ttf'), join(FONT_DIR, 'OpenSans-Regular.ttf')],
-  'verdana': [join(WIN_FONTS, 'verdana.ttf'), join(FONT_DIR, 'OpenSans-Regular.ttf')],
+  'segoe ui': [join(FONT_DIR, 'OpenSans-Regular.ttf')],
+  'sans-serif': [join(FONT_DIR, 'OpenSans-Regular.ttf')],
+  'arial': [join(FONT_DIR, 'OpenSans-Regular.ttf')],
+  'trebuchet ms': [join(FONT_DIR, 'OpenSans-Regular.ttf')],
+  'verdana': [join(FONT_DIR, 'OpenSans-Regular.ttf')],
   'open sans': [join(FONT_DIR, 'OpenSans-Regular.ttf')],
 };
 const DEFAULT_STACK = [join(FONT_DIR, 'OpenSans-Regular.ttf')];
