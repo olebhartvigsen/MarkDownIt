@@ -114,7 +114,7 @@ jobs:
             if [[ "$name" == pie* ]]; then
               node --import ./tools/mermaid-oracle/dom-shim.mjs \
                  tools/mermaid-oracle/pie_oracle.mjs "$f" "/tmp/golden/$name.json"
-            elif [[ "$name" == seq* ]]; then
+            elif [[ "$name" == seq* || "$name" == msk* ]]; then
               node --import ./tools/mermaid-oracle/dom-shim-seq.mjs \
                  tools/mermaid-oracle/sequence_oracle.mjs "$f" "/tmp/golden/$name.json"
             elif [[ "$name" == cls* ]]; then
