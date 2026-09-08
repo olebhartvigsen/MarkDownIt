@@ -232,7 +232,9 @@ SequenceDiagram ParseSequence(std::string_view src) {
         }
 
         // ---- Note ----
-        if (StartsWithWord(line, "Note")) {
+        // mermaid keywords are case-insensitive: both `Note over A: ...` and
+        // `note over A: ...` must parse (the MSK integration doc uses lowercase).
+        if (StartsWithWord(line, "Note") || StartsWithWord(line, "note")) {
             std::string rest = Trim(line.substr(4));
             NotePlacement place = NotePlacement::Over;
             size_t id_start = 0;

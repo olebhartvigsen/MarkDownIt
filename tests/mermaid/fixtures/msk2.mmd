@@ -1,0 +1,30 @@
+sequenceDiagram
+    autonumber
+    actor RED as Stamkortredaktør
+    participant TOOL as CPR-skifte-service
+    participant FM as FuzzyMatch
+    participant IDM as IDM aktivitetscheck
+    participant STADS as STADS eksamenscheck
+    participant HR as HR Topdesk
+
+    RED->>TOOL: Indtaster nuværende CPR og nyt CPR
+    TOOL->>FM: Fuzzy match, opdager eventuelle taste-fejl
+    FM-->>TOOL: Mindst ét andet AUID tilhører brugeren
+
+    par Kald 1: IDM
+        TOOL->>IDM: Hvilken bruger er aktiv?
+        IDM-->>TOOL: Én aktiv, én ikke-aktiv eller flere
+    and Kald 2: STADS
+        TOOL->>STADS: Er der ægte STADS-aktivitet (beståede eksamner)?
+        STADS-->>TOOL: Ja eller nej, uden hentning af eksamensdata
+    end
+
+    alt Én aktiv eller én ikke-aktiv IDM-bruger, og STADS-profilerne har ingen relevant eksamensaktivitet
+        TOOL-->>RED: Åbner menuen til CPR-skift
+        RED->>TOOL: Skift CPR
+        note over TOOL: Skifter med det samme i alle systemer
+    else Både aktiv og ikke-aktiv bruger, flere af hver, eller STADS-profiler med aktivitet
+        TOOL-->>RED: Menuen åbnes ikke
+        TOOL->>HR: Svar fra servicen lægges ind i en sag til HR
+        HR->>STADS: Sagen overdrages til STADS support og udredes
+    end

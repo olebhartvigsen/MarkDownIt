@@ -35,7 +35,8 @@ double ParseSelfX(const std::string& d) {
     return std::atof(d.c_str() + 1);
 }
 
-const char* kFixtures[] = {"seq1", "seq2", "seq3", "seq4", "seq5", "seq6"};
+const char* kFixtures[] = {"seq1", "seq2", "seq3", "seq4", "seq5", "seq6",
+                           "msk1", "msk2", "msk3", "msk4"};
 
 }  // namespace
 

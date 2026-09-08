@@ -1,0 +1,24 @@
+sequenceDiagram
+    autonumber
+    participant FE as Frontend, jQuery-service-lag
+    participant GW as Gateway
+    participant NET as MSK .NET 8, ASP.NET Core
+    participant CF as ColdFusion, fallback
+    participant AUDP as Azure integrationsplatformen
+    participant OSB as Oracle Service Bus, udfases
+    participant DB as Oracle CELOS
+
+    FE->>GW: StamkortService.cfc?method=, kontrakten bevares
+    alt Modul er flyttet til .NET
+        GW->>NET: Håndterer kaldet
+        NET->>AUDP: REST, person og relationer og EDRMS
+        AUDP-->>NET: Data på den nye kontrakt
+        NET-->>GW: Svar med samme indhold som i dag
+    else Modul er ikke flyttet endnu
+        GW->>CF: Fører kaldet videre
+        CF->>OSB: SOAP, 13 services, bygg som tekst
+        OSB-->>CF: XML, læses med XPath
+        CF->>DB: Direkte SQL, nedlukning og brugerrettigheder
+        CF-->>GW: Svar
+    end
+    GW-->>FE: Identisk svarformat

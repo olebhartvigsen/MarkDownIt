@@ -1,0 +1,36 @@
+sequenceDiagram
+    autonumber
+    participant NET as MSK .NET 8
+    participant CIP as Azure integrationsplatformen
+    participant PD as Persondatabasen, IDM
+    participant EDRMS as EDRMS / WorkZone
+    participant ORG as Organisationsregisteret
+    participant SMTP as Mailservice
+
+    NET->>CIP: hentPersonUdfraAUID / hentPersonByCpr
+    CIP->>PD: GET PATCH POST persons
+    PD-->>CIP: Person-data
+    CIP-->>NET: AUPerson
+
+    NET->>CIP: hentFuzzyMatch
+    CIP->>PD: get-fuzzy-matches
+    PD-->>NET: Matching AUID'er
+
+    NET->>CIP: hentArbejdsrelationerUdfraAUID
+    CIP-->>NET: Arbejdsrelationer
+
+    NET->>CIP: OpretSag (asynkron)
+    CIP->>EDRMS: POST cases
+    EDRMS-->>NET: caseUrl + sag
+
+    NET->>CIP: HentSagsgruppe / gemPartUdfraAUID
+    CIP->>EDRMS: case-groups / cases med PartyAssociationCreate
+    EDRMS-->>NET: Sagsgruppe + sag
+
+    NET->>CIP: Opslagsdata: enheder, stillingstyper, titler, landekoder
+    CIP->>ORG: organisational-units, job-types, Countries
+    ORG-->>NET: Referencelister
+
+    NET->>CIP: afsendVelkomstmail
+    CIP->>SMTP: send-email-notifikation
+    SMTP-->>NET: Ok

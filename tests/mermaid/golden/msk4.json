@@ -1,0 +1,556 @@
+{
+  "canvas": {
+    "width": 1668,
+    "height": 1198,
+    "startx": -50,
+    "starty": -10,
+    "vbwidth": 1668,
+    "vbheight": 1198
+  },
+  "actors": [
+    {
+      "bottom": true,
+      "name": "SMTP",
+      "x": 1418,
+      "y": 1177,
+      "w": 150,
+      "h": 0
+    },
+    {
+      "bottom": true,
+      "name": "ORG",
+      "x": 1172,
+      "y": 1177,
+      "w": 196,
+      "h": 0
+    },
+    {
+      "bottom": true,
+      "name": "EDRMS",
+      "x": 957,
+      "y": 1177,
+      "w": 165,
+      "h": 0
+    },
+    {
+      "bottom": true,
+      "name": "PD",
+      "x": 718,
+      "y": 1177,
+      "w": 189,
+      "h": 0
+    },
+    {
+      "bottom": true,
+      "name": "CIP",
+      "x": 428,
+      "y": 1177,
+      "w": 240,
+      "h": 0
+    },
+    {
+      "bottom": true,
+      "name": "NET",
+      "x": 0,
+      "y": 1177,
+      "w": 150,
+      "h": 0
+    },
+    {
+      "bottom": false,
+      "name": "SMTP",
+      "x": 1418,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "ORG",
+      "x": 1172,
+      "y": 0,
+      "w": 196,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "EDRMS",
+      "x": 957,
+      "y": 0,
+      "w": 165,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "PD",
+      "x": 718,
+      "y": 0,
+      "w": 189,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "CIP",
+      "x": 428,
+      "y": 0,
+      "w": 240,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "NET",
+      "x": 0,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "kind": "lifeline",
+      "x": 1493,
+      "y1": 65,
+      "y2": 1177
+    },
+    {
+      "kind": "lifeline",
+      "x": 1270,
+      "y1": 65,
+      "y2": 1177
+    },
+    {
+      "kind": "lifeline",
+      "x": 1039.5,
+      "y1": 65,
+      "y2": 1177
+    },
+    {
+      "kind": "lifeline",
+      "x": 812.5,
+      "y1": 65,
+      "y2": 1177
+    },
+    {
+      "kind": "lifeline",
+      "x": 548,
+      "y1": 65,
+      "y2": 1177
+    },
+    {
+      "kind": "lifeline",
+      "x": 75,
+      "y1": 65,
+      "y2": 1177
+    }
+  ],
+  "messages": [
+    {
+      "text": "hentPersonUdfraAUID / hentPersonByCpr",
+      "tx": 310,
+      "ty": 80,
+      "line": {
+        "x1": 76,
+        "y1": 117,
+        "x2": 544,
+        "y2": 117,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "GET PATCH POST persons",
+      "tx": 679,
+      "ty": 132,
+      "line": {
+        "x1": 549,
+        "y1": 169,
+        "x2": 808.5,
+        "y2": 169,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Person-data",
+      "tx": 682,
+      "ty": 184,
+      "line": {
+        "x1": 811.5,
+        "y1": 221,
+        "x2": 552,
+        "y2": 221,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "AUPerson",
+      "tx": 313,
+      "ty": 236,
+      "line": {
+        "x1": 547,
+        "y1": 273,
+        "x2": 79,
+        "y2": 273,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "hentFuzzyMatch",
+      "tx": 310,
+      "ty": 288,
+      "line": {
+        "x1": 76,
+        "y1": 325,
+        "x2": 544,
+        "y2": 325,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "get-fuzzy-matches",
+      "tx": 679,
+      "ty": 340,
+      "line": {
+        "x1": 549,
+        "y1": 377,
+        "x2": 808.5,
+        "y2": 377,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Matching AUID'er",
+      "tx": 445,
+      "ty": 392,
+      "line": {
+        "x1": 811.5,
+        "y1": 429,
+        "x2": 79,
+        "y2": 429,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "hentArbejdsrelationerUdfraAUID",
+      "tx": 310,
+      "ty": 444,
+      "line": {
+        "x1": 76,
+        "y1": 481,
+        "x2": 544,
+        "y2": 481,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Arbejdsrelationer",
+      "tx": 313,
+      "ty": 496,
+      "line": {
+        "x1": 547,
+        "y1": 533,
+        "x2": 79,
+        "y2": 533,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "OpretSag (asynkron)",
+      "tx": 310,
+      "ty": 548,
+      "line": {
+        "x1": 76,
+        "y1": 585,
+        "x2": 544,
+        "y2": 585,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "POST cases",
+      "tx": 792,
+      "ty": 600,
+      "line": {
+        "x1": 549,
+        "y1": 637,
+        "x2": 1035.5,
+        "y2": 637,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "caseUrl + sag",
+      "tx": 559,
+      "ty": 652,
+      "line": {
+        "x1": 1038.5,
+        "y1": 689,
+        "x2": 79,
+        "y2": 689,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "HentSagsgruppe / gemPartUdfraAUID",
+      "tx": 310,
+      "ty": 704,
+      "line": {
+        "x1": 76,
+        "y1": 741,
+        "x2": 544,
+        "y2": 741,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "case-groups / cases med PartyAssociationCreate",
+      "tx": 792,
+      "ty": 756,
+      "line": {
+        "x1": 549,
+        "y1": 793,
+        "x2": 1035.5,
+        "y2": 793,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Sagsgruppe + sag",
+      "tx": 559,
+      "ty": 808,
+      "line": {
+        "x1": 1038.5,
+        "y1": 845,
+        "x2": 79,
+        "y2": 845,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Opslagsdata: enheder, stillingstyper, titler, landekoder",
+      "tx": 310,
+      "ty": 860,
+      "line": {
+        "x1": 76,
+        "y1": 897,
+        "x2": 544,
+        "y2": 897,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "organisational-units, job-types, Countries",
+      "tx": 908,
+      "ty": 912,
+      "line": {
+        "x1": 549,
+        "y1": 949,
+        "x2": 1266,
+        "y2": 949,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Referencelister",
+      "tx": 674,
+      "ty": 964,
+      "line": {
+        "x1": 1269,
+        "y1": 1001,
+        "x2": 79,
+        "y2": 1001,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "afsendVelkomstmail",
+      "tx": 310,
+      "ty": 1016,
+      "line": {
+        "x1": 76,
+        "y1": 1053,
+        "x2": 544,
+        "y2": 1053,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "send-email-notifikation",
+      "tx": 1019,
+      "ty": 1068,
+      "line": {
+        "x1": 549,
+        "y1": 1105,
+        "x2": 1489,
+        "y2": 1105,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Ok",
+      "tx": 786,
+      "ty": 1120,
+      "line": {
+        "x1": 1492,
+        "y1": 1157,
+        "x2": 79,
+        "y2": 1157,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    }
+  ],
+  "notes": [],
+  "activations": [],
+  "loops": [
+    {
+      "loopLineCount": 0
+    }
+  ],
+  "backgrounds": [],
+  "stickTop": [],
+  "sequenceNumbers": [
+    {
+      "n": "1",
+      "x": 76,
+      "y": 121
+    },
+    {
+      "n": "2",
+      "x": 549,
+      "y": 173
+    },
+    {
+      "n": "3",
+      "x": 811.5,
+      "y": 225
+    },
+    {
+      "n": "4",
+      "x": 547,
+      "y": 277
+    },
+    {
+      "n": "5",
+      "x": 76,
+      "y": 329
+    },
+    {
+      "n": "6",
+      "x": 549,
+      "y": 381
+    },
+    {
+      "n": "7",
+      "x": 811.5,
+      "y": 433
+    },
+    {
+      "n": "8",
+      "x": 76,
+      "y": 485
+    },
+    {
+      "n": "9",
+      "x": 547,
+      "y": 537
+    },
+    {
+      "n": "10",
+      "x": 76,
+      "y": 589
+    },
+    {
+      "n": "11",
+      "x": 549,
+      "y": 641
+    },
+    {
+      "n": "12",
+      "x": 1038.5,
+      "y": 693
+    },
+    {
+      "n": "13",
+      "x": 76,
+      "y": 745
+    },
+    {
+      "n": "14",
+      "x": 549,
+      "y": 797
+    },
+    {
+      "n": "15",
+      "x": 1038.5,
+      "y": 849
+    },
+    {
+      "n": "16",
+      "x": 76,
+      "y": 901
+    },
+    {
+      "n": "17",
+      "x": 549,
+      "y": 953
+    },
+    {
+      "n": "18",
+      "x": 1269,
+      "y": 1005
+    },
+    {
+      "n": "19",
+      "x": 76,
+      "y": 1057
+    },
+    {
+      "n": "20",
+      "x": 549,
+      "y": 1109
+    },
+    {
+      "n": "21",
+      "x": 1492,
+      "y": 1161
+    }
+  ]
+}

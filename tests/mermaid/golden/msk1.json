@@ -1,0 +1,901 @@
+{
+  "canvas": {
+    "width": 1745.5,
+    "height": 2020,
+    "startx": -50,
+    "starty": -10,
+    "vbwidth": 1745.5,
+    "vbheight": 2020
+  },
+  "actors": [
+    {
+      "bottom": true,
+      "name": "IDM",
+      "x": 1460.5,
+      "y": 1999,
+      "w": 185,
+      "h": 0
+    },
+    {
+      "bottom": true,
+      "name": "STADS",
+      "x": 1260.5,
+      "y": 1999,
+      "w": 150,
+      "h": 0
+    },
+    {
+      "bottom": true,
+      "name": "HR",
+      "x": 812.5,
+      "y": 1999,
+      "w": 150,
+      "h": 0
+    },
+    {
+      "bottom": true,
+      "name": "FM",
+      "x": 612.5,
+      "y": 1999,
+      "w": 150,
+      "h": 0
+    },
+    {
+      "bottom": true,
+      "name": "MSK",
+      "x": 349,
+      "y": 1999,
+      "w": 179,
+      "h": 0
+    },
+    {
+      "bottom": false,
+      "name": "IDM",
+      "x": 1460.5,
+      "y": 0,
+      "w": 185,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "STADS",
+      "x": 1260.5,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "HR",
+      "x": 812.5,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "FM",
+      "x": 612.5,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "MSK",
+      "x": 349,
+      "y": 0,
+      "w": 179,
+      "h": 65
+    },
+    {
+      "kind": "lifeline",
+      "x": 1553,
+      "y1": 65,
+      "y2": 1999
+    },
+    {
+      "kind": "lifeline",
+      "x": 1335.5,
+      "y1": 65,
+      "y2": 1999
+    },
+    {
+      "kind": "lifeline",
+      "x": 887.5,
+      "y1": 65,
+      "y2": 1999
+    },
+    {
+      "kind": "lifeline",
+      "x": 687.5,
+      "y1": 65,
+      "y2": 1999
+    },
+    {
+      "kind": "lifeline",
+      "x": 438.5,
+      "y1": 65,
+      "y2": 1999
+    },
+    {
+      "kind": "lifeline",
+      "x": 76.5,
+      "y1": 80,
+      "y2": 1999
+    },
+    {
+      "kind": "stickman",
+      "bottom": false,
+      "name": "RED",
+      "cx": 76.5,
+      "cy": 10
+    },
+    {
+      "kind": "stickman",
+      "bottom": true,
+      "name": "RED",
+      "cx": 76.5,
+      "cy": 2009
+    }
+  ],
+  "messages": [
+    {
+      "text": "Slår dansk CPR op ved ny ansættelse",
+      "tx": 256,
+      "ty": 80,
+      "line": {
+        "x1": 77.5,
+        "y1": 117,
+        "x2": 434.5,
+        "y2": 117,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "hentFuzzyMatch (CPR)",
+      "tx": 562,
+      "ty": 132,
+      "line": {
+        "x1": 439.5,
+        "y1": 169,
+        "x2": 683.5,
+        "y2": 169,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "0, 1 eller flere matches",
+      "tx": 565,
+      "ty": 184,
+      "line": {
+        "x1": 686.5,
+        "y1": 221,
+        "x2": 442.5,
+        "y2": 221,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Opret person som normalt",
+      "tx": 259,
+      "ty": 282,
+      "line": {
+        "x1": 437.5,
+        "y1": 319,
+        "x2": 80.5,
+        "y2": 319,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Opret person og arbejdsrelation",
+      "tx": 256,
+      "ty": 334,
+      "line": {
+        "x1": 77.5,
+        "y1": 371,
+        "x2": 434.5,
+        "y2": 371,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "opretPerson + opretArbejdsRelation",
+      "tx": 994,
+      "ty": 386,
+      "line": {
+        "x1": 439.5,
+        "y1": 423,
+        "x2": 1549,
+        "y2": 423,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "OpretSag (asynkron HR-sag i ESDH)",
+      "tx": 662,
+      "ty": 438,
+      "line": {
+        "x1": 439.5,
+        "y1": 475,
+        "x2": 883.5,
+        "y2": 475,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Vælger eksisterende identitet",
+      "tx": 256,
+      "ty": 536,
+      "line": {
+        "x1": 77.5,
+        "y1": 573,
+        "x2": 434.5,
+        "y2": 573,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "skiftCprKOTtilSLS (tager få sekunder)",
+      "tx": 994,
+      "ty": 634,
+      "line": {
+        "x1": 439.5,
+        "y1": 671,
+        "x2": 1549,
+        "y2": 671,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Mail til HRs Topdesk-mail, en Skift-CPR-sag",
+      "tx": 662,
+      "ty": 742,
+      "line": {
+        "x1": 439.5,
+        "y1": 779,
+        "x2": 883.5,
+        "y2": 779,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Skifter CPR, afslutter sagen",
+      "tx": 1219,
+      "ty": 845,
+      "line": {
+        "x1": 888.5,
+        "y1": 882,
+        "x2": 1549,
+        "y2": 882,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Ansættelsen fortsætter på kunstigt CPR",
+      "tx": 259,
+      "ty": 907,
+      "line": {
+        "x1": 437.5,
+        "y1": 944,
+        "x2": 80.5,
+        "y2": 944,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Klik: opret person alligevel",
+      "tx": 256,
+      "ty": 1005,
+      "line": {
+        "x1": 77.5,
+        "y1": 1042,
+        "x2": 434.5,
+        "y2": 1042,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Opretter sag hos HR",
+      "tx": 662,
+      "ty": 1108,
+      "line": {
+        "x1": 439.5,
+        "y1": 1145,
+        "x2": 883.5,
+        "y2": 1145,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Administrator opretter personen efter udredning",
+      "tx": 665,
+      "ty": 1206,
+      "line": {
+        "x1": 886.5,
+        "y1": 1243,
+        "x2": 442.5,
+        "y2": 1243,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Ansættelsen fortsætter",
+      "tx": 259,
+      "ty": 1268,
+      "line": {
+        "x1": 437.5,
+        "y1": 1305,
+        "x2": 80.5,
+        "y2": 1305,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Vælger ældste AUID som standard",
+      "tx": 256,
+      "ty": 1366,
+      "line": {
+        "x1": 77.5,
+        "y1": 1403,
+        "x2": 434.5,
+        "y2": 1403,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Mail med nyt CPR og de matchede CPR-numre",
+      "tx": 662,
+      "ty": 1418,
+      "line": {
+        "x1": 439.5,
+        "y1": 1455,
+        "x2": 883.5,
+        "y2": 1455,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Udred, hvilken identitet der skal overleve",
+      "tx": 1110,
+      "ty": 1470,
+      "line": {
+        "x1": 888.5,
+        "y1": 1507,
+        "x2": 1331.5,
+        "y2": 1507,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Ok, nedlægger én identitet (IDM sletter senere)",
+      "tx": 1113,
+      "ty": 1522,
+      "line": {
+        "x1": 1334.5,
+        "y1": 1559,
+        "x2": 891.5,
+        "y2": 1559,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Skift CPR på tiloversblevne, evt. flyt ansættelsen",
+      "tx": 1219,
+      "ty": 1574,
+      "line": {
+        "x1": 888.5,
+        "y1": 1611,
+        "x2": 1549,
+        "y2": 1611,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Ansættelsen fortsætter",
+      "tx": 259,
+      "ty": 1626,
+      "line": {
+        "x1": 437.5,
+        "y1": 1663,
+        "x2": 80.5,
+        "y2": 1663,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Send CPR-skifte-sag",
+      "tx": 256,
+      "ty": 1724,
+      "line": {
+        "x1": 77.5,
+        "y1": 1761,
+        "x2": 434.5,
+        "y2": 1761,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Sagen overføres straks til STADS",
+      "tx": 662,
+      "ty": 1776,
+      "line": {
+        "x1": 439.5,
+        "y1": 1813,
+        "x2": 883.5,
+        "y2": 1813,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Reagerer inden samme dag, når intet AUID er valgt",
+      "tx": 1113,
+      "ty": 1828,
+      "line": {
+        "x1": 1334.5,
+        "y1": 1865,
+        "x2": 891.5,
+        "y2": 1865,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Skifter CPR og afslutter sagen",
+      "tx": 1219,
+      "ty": 1880,
+      "line": {
+        "x1": 888.5,
+        "y1": 1917,
+        "x2": 1549,
+        "y2": 1917,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Ansættelsen fortsætter",
+      "tx": 259,
+      "ty": 1932,
+      "line": {
+        "x1": 437.5,
+        "y1": 1969,
+        "x2": 80.5,
+        "y2": 1969,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    }
+  ],
+  "notes": [
+    {
+      "text": "HR ser det samme fuzzy match",
+      "tx": 888,
+      "ty": 794,
+      "rx": 762.5,
+      "ry": 789,
+      "rw": 250,
+      "rh": 41
+    },
+    {
+      "text": "Klikket opretter IKKE en person, kun en sag hos HR",
+      "tx": 439,
+      "ty": 1057,
+      "rx": 239.5,
+      "ry": 1052,
+      "rw": 398,
+      "rh": 41
+    }
+  ],
+  "activations": [],
+  "loops": [
+    {
+      "loopLineCount": 20
+    },
+    {
+      "top": true,
+      "x1": 427.5,
+      "y1": 583,
+      "x2": 1564,
+      "y2": 583
+    },
+    {
+      "vert": true,
+      "x1": 1564,
+      "y1": 583,
+      "x2": 1564,
+      "y2": 681
+    },
+    {
+      "top": true,
+      "x1": 427.5,
+      "y1": 681,
+      "x2": 1564,
+      "y2": 681
+    },
+    {
+      "vert": true,
+      "x1": 427.5,
+      "y1": 583,
+      "x2": 427.5,
+      "y2": 681
+    },
+    {
+      "top": true,
+      "x1": 427.5,
+      "y1": 691,
+      "x2": 1564,
+      "y2": 691
+    },
+    {
+      "vert": true,
+      "x1": 1564,
+      "y1": 691,
+      "x2": 1564,
+      "y2": 892
+    },
+    {
+      "top": true,
+      "x1": 427.5,
+      "y1": 892,
+      "x2": 1564,
+      "y2": 892
+    },
+    {
+      "vert": true,
+      "x1": 427.5,
+      "y1": 691,
+      "x2": 427.5,
+      "y2": 892
+    },
+    {
+      "top": true,
+      "x1": 427.5,
+      "y1": 1155,
+      "x2": 898.5,
+      "y2": 1155
+    },
+    {
+      "vert": true,
+      "x1": 898.5,
+      "y1": 1155,
+      "x2": 898.5,
+      "y2": 1253
+    },
+    {
+      "top": true,
+      "x1": 427.5,
+      "y1": 1253,
+      "x2": 898.5,
+      "y2": 1253
+    },
+    {
+      "vert": true,
+      "x1": 427.5,
+      "y1": 1155,
+      "x2": 427.5,
+      "y2": 1253
+    },
+    {
+      "top": true,
+      "x1": 65.5,
+      "y1": 231,
+      "x2": 1574,
+      "y2": 231
+    },
+    {
+      "vert": true,
+      "x1": 1574,
+      "y1": 231,
+      "x2": 1574,
+      "y2": 1979
+    },
+    {
+      "top": true,
+      "x1": 65.5,
+      "y1": 1979,
+      "x2": 1574,
+      "y2": 1979
+    },
+    {
+      "vert": true,
+      "x1": 65.5,
+      "y1": 231,
+      "x2": 65.5,
+      "y2": 1979
+    },
+    {
+      "top": true,
+      "x1": 65.5,
+      "y1": 490,
+      "x2": 1574,
+      "y2": 490
+    },
+    {
+      "top": true,
+      "x1": 65.5,
+      "y1": 959,
+      "x2": 1574,
+      "y2": 959
+    },
+    {
+      "top": true,
+      "x1": 65.5,
+      "y1": 1320,
+      "x2": 1574,
+      "y2": 1320
+    },
+    {
+      "top": true,
+      "x1": 65.5,
+      "y1": 1678,
+      "x2": 1574,
+      "y2": 1678
+    },
+    {
+      "labelBox": "427.5,583 477.5,583 477.5,596 469.1,603 427.5,603"
+    },
+    {
+      "labelBox": "427.5,691 477.5,691 477.5,704 469.1,711 427.5,711"
+    },
+    {
+      "labelBox": "427.5,1155 477.5,1155 477.5,1168 469.1,1175 427.5,1175"
+    },
+    {
+      "labelBox": "65.5,231 115.5,231 115.5,244 107.1,251 65.5,251"
+    },
+    {
+      "labelText": "opt",
+      "x": 453,
+      "y": 596
+    },
+    {
+      "labelText": "opt",
+      "x": 453,
+      "y": 704
+    },
+    {
+      "labelText": "opt",
+      "x": 453,
+      "y": 1168
+    },
+    {
+      "labelText": "alt",
+      "x": 91,
+      "y": 244
+    },
+    {
+      "loopText": "[Personen har KOT-CPR]",
+      "x": 1020.75,
+      "y": 601
+    },
+    {
+      "loopText": "[Knap: Send CPR-skifte-sag]",
+      "x": 1020.75,
+      "y": 709
+    },
+    {
+      "loopText": "[Knap kun synlig for administratorer]",
+      "x": 688,
+      "y": 1173
+    },
+    {
+      "loopText": "[Ingen match]",
+      "x": 844.75,
+      "y": 249
+    },
+    {
+      "loopText": "[Ét match, redaktøren er sikker]",
+      "x": 819.75,
+      "y": 508
+    },
+    {
+      "loopText": "[Ét match, redaktøren er usikker]",
+      "x": 819.75,
+      "y": 977
+    },
+    {
+      "loopText": "[Flere matches, redaktøren er sikker]",
+      "x": 819.75,
+      "y": 1338
+    },
+    {
+      "loopText": "[Flere matches, eller valget er ikke truffet]",
+      "x": 819.75,
+      "y": 1696
+    }
+  ],
+  "backgrounds": [],
+  "stickTop": [
+    "RED"
+  ],
+  "sequenceNumbers": [
+    {
+      "n": "1",
+      "x": 77.5,
+      "y": 121
+    },
+    {
+      "n": "2",
+      "x": 439.5,
+      "y": 173
+    },
+    {
+      "n": "3",
+      "x": 686.5,
+      "y": 225
+    },
+    {
+      "n": "4",
+      "x": 437.5,
+      "y": 323
+    },
+    {
+      "n": "5",
+      "x": 77.5,
+      "y": 375
+    },
+    {
+      "n": "6",
+      "x": 439.5,
+      "y": 427
+    },
+    {
+      "n": "7",
+      "x": 439.5,
+      "y": 479
+    },
+    {
+      "n": "8",
+      "x": 77.5,
+      "y": 577
+    },
+    {
+      "n": "9",
+      "x": 439.5,
+      "y": 675
+    },
+    {
+      "n": "10",
+      "x": 439.5,
+      "y": 783
+    },
+    {
+      "n": "11",
+      "x": 888.5,
+      "y": 886
+    },
+    {
+      "n": "12",
+      "x": 437.5,
+      "y": 948
+    },
+    {
+      "n": "13",
+      "x": 77.5,
+      "y": 1046
+    },
+    {
+      "n": "14",
+      "x": 439.5,
+      "y": 1149
+    },
+    {
+      "n": "15",
+      "x": 886.5,
+      "y": 1247
+    },
+    {
+      "n": "16",
+      "x": 437.5,
+      "y": 1309
+    },
+    {
+      "n": "17",
+      "x": 77.5,
+      "y": 1407
+    },
+    {
+      "n": "18",
+      "x": 439.5,
+      "y": 1459
+    },
+    {
+      "n": "19",
+      "x": 888.5,
+      "y": 1511
+    },
+    {
+      "n": "20",
+      "x": 1334.5,
+      "y": 1563
+    },
+    {
+      "n": "21",
+      "x": 888.5,
+      "y": 1615
+    },
+    {
+      "n": "22",
+      "x": 437.5,
+      "y": 1667
+    },
+    {
+      "n": "23",
+      "x": 77.5,
+      "y": 1765
+    },
+    {
+      "n": "24",
+      "x": 439.5,
+      "y": 1817
+    },
+    {
+      "n": "25",
+      "x": 1334.5,
+      "y": 1869
+    },
+    {
+      "n": "26",
+      "x": 888.5,
+      "y": 1921
+    },
+    {
+      "n": "27",
+      "x": 437.5,
+      "y": 1973
+    }
+  ]
+}
