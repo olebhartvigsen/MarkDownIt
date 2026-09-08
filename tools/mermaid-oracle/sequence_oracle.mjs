@@ -23,6 +23,7 @@ if (!srcPath || !outPath) {
 }
 
 const src = readFileSync(srcPath, 'utf8');
+globalThis.__ORACLE_REAL_FONTS = true;
 const { svg } = await renderDiagram('sequence', src, {});
 
 const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');

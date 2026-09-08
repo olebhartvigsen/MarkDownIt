@@ -7,6 +7,8 @@
 // Order control: split into shim-a.mjs (globals only) + shim-b.mjs (DP bind).
 // Simpler: do everything synchronously via createRequire inside dom-shim —
 // require() is NOT hoisted.
+const { calculateTextDims, drawnTextBBox } = await import('./text_metrics.mjs');
+globalThis.__TEXT_METRICS = { calculateTextDims, drawnTextBBox };
 import { JSDOM } from 'jsdom';
 
 const w = new JSDOM('<!DOCTYPE html><body></body>').window;
@@ -63,7 +65,34 @@ Pel.prototype.getBBox = function () {
     }
   }
   if (!t) t = String(this.textContent ?? '');
-  return { x: -(t.length * 4) / 2, y: -6, width: t.length * 4, height: 12 };
+  if (!t) return { x: 0, y: 0, width: 0, height: 0 };
+  // Real font metrics only when the caller opts in (sequence oracle sets
+  // __ORACLE_REAL_FONTS). Other diagram oracles (class/pie/flowchart) keep
+  // their historical Len*4 calibration the C++ engines were tuned against.
+  if (!globalThis.__ORACLE_REAL_FONTS) {
+    return { x: -(t.length * 4) / 2, y: -6, width: t.length * 4, height: 12 };
+  }
+  // getBBox of a DRAWN <text> (advances sum, ink-ish
+  // height ≈ round(size*1.06); the size comes from the element's own
+  // style (config-mapped by mermaid: 16px on most sequence elements, or
+  // the SVG root default).
+  const style = this.getAttribute && this.getAttribute('style') || '';
+  let size = 16;
+  const m = /font-size\s*:\s*([\d.]+)px/.exec(style);
+  if (m) size = parseFloat(m[1]);
+  else if (this.getAttribute('font-size')) {
+    size = parseFloat(this.getAttribute('font-size')) || 16;
+  }
+  if (this.style && this.style.fontFamily) {
+    // take both family AND size from live CSSOM (mermaid sets style first)
+    this.__mermaidFontFamily = this.style.fontFamily;
+    const fs = parseFloat(this.style.fontSize);
+    if (fs) size = fs;
+  }
+  const fam = this.__mermaidFontFamily || 'sans-serif';
+  const bb = __TEXT_METRICS.drawnTextBBox(t, { fontFamily: fam, fontSize: size });
+  if (process.env.SHIM_TRACE_BB) console.error('[bb]', JSON.stringify({ t: t.slice(0, 24), fam, size, bb }));
+  return bb;
 };
 Pel.prototype.getCTM = () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
 Pel.prototype.getBoundingClientRect = function () {
