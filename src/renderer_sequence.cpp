@@ -241,16 +241,23 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
                         P(l.startx) + 70.0f * scale, Q(l.starty) + 10.0f * scale,
                         ink, false, true, textScale);
         }
-        // Section dividers: dashed line + branch title.
+        // Section dividers: dashed line + branch label tag. Design deviation
+        // (agreed with the user): branches get a filled tag box like the
+        // frame keyword boxes, instead of mermaid's bare title text.
         for (size_t i = 0; i < l.section_y.size(); ++i) {
             float sy = Q(l.section_y[i]);
             rt->DrawLine(D2D1::Point2F(P(l.startx), sy),
                          D2D1::Point2F(P(l.stopx), sy),
                          ink, 1.0f * scale);
             if (i < l.section_titles.size() && !l.section_titles[i].empty()) {
+                const float lw = 60.0f * scale, lh = 20.0f * scale;
+                D2D1_RECT_F lb = D2D1::RectF(P(l.startx), sy - lh,
+                                             P(l.startx) + lw, sy);
+                rt->FillRectangle(lb, actorFill);
+                rt->DrawRectangle(lb, ink, 1.0f * scale);
                 DrawSeqText(dw, rt, body_fmt_, l.section_titles[i],
-                            P(l.startx) + 70.0f * scale, sy + 10.0f * scale,
-                            ink, false, true, textScale);
+                            P(l.startx) + lw * 0.5f, sy - lh * 0.5f,
+                            ink, true, true, textScale);
             }
         }
     }
