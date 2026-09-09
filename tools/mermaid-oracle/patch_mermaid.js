@@ -41,6 +41,27 @@ function patchFile(path, finalBump) {
   return wasPatched;
 }
 
+// Footer strip: wrap the drawActors(footer) final bump so the strip is
+// reserved like in a real browser (jsdom returns height 0 for the rects).
+const FOOTER_MARKER = 'KSEQ_FOOTER_STRIP';
+function patchFooterBump(path) {
+  let src = readFileSync(path, 'utf8');
+  if (src.includes(FOOTER_MARKER)) return true;
+  // UMD bundle spells it conf2; the ESM chunks use conf.
+  const confNames = ['conf2.boxMargin', 'conf.boxMargin'];
+  for (const cn of confNames) {
+    const site = 'bumpVerticalPos(maxHeight + ' + cn + ')';
+    if (!src.includes(site)) continue;
+    const replaced = src.replace(
+      site,
+      'bumpVerticalPos(Math.max(maxHeight, 65) + ' + cn + ') /* ' + FOOTER_MARKER + ' */',
+    );
+    writeFileSync(path, replaced);
+    return false;
+  }
+  throw new Error(`patch_mermaid: footer bump site not found in ${path}`);
+}
+
 const ROOT = new URL('./node_modules/mermaid/dist/', import.meta.url).pathname;
 
 // 1) The UMD bundle.
@@ -61,6 +82,13 @@ for (const f of readdirSync(coreDir)) {
   }
 }
 
-console.log(already
+let footerTouched = patchFooterBump(ROOT + 'mermaid.js');
+for (const f of readdirSync(coreDir)) {
+  if (f.startsWith('sequenceDiagram-') && f.endsWith('.mjs')) {
+    footerTouched = patchFooterBump(coreDir + f) || footerTouched;
+  }
+}
+
+console.log((already || footerTouched)
   ? '[patch_mermaid] re-applied (was already patched)'
-  : '[patch_mermaid] applied (+12 after titled frame/section rows)');
+  : '[patch_mermaid] applied (+12 after titled frame/section rows, footer strip reserved)');

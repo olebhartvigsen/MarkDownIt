@@ -1,11 +1,11 @@
 {
   "canvas": {
     "width": 650,
-    "height": 257,
+    "height": 322,
     "startx": -50,
     "starty": -10,
     "vbwidth": 650,
-    "vbheight": 257
+    "vbheight": 322
   },
   "actors": [
     {

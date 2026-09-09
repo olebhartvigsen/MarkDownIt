@@ -590,10 +590,12 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
     for (size_t i = 0; i < out.actors.size(); ++i) {
         out.actors[i].stopy = foot_stopy;
     }
-    // Footer bump: mermaid uses maxHeight = rect getBBox height; the oracle
-    // shim reports 0×0 for <rect> (no text), so the effective bump is
-    // maxHeight(0) + boxMargin.
-    vpos += BOX_MARGIN;
+    // Footer bump: real browsers draw the footer rects 65 DIP high; the
+    // oracle shim (jsdom) reports 0 for them, but svg height in a real
+    // render reserves the strip (reference SVG: rect bottom 2056 + margin
+    // 11 = viewBox 2077). Adopt real semantics so the painter never draws
+    // past the measured canvas on non-default column widths.
+    vpos += 65.0 + BOX_MARGIN;
     insert_dataonly(d_minx, vpos, d_maxx, vpos);  // stopy only: data.stopy tracks bumps
     // bumpVerticalPos already lifts data.stopy implicitly — emulate: maxy.
     d_maxy = Max(d_maxy, vpos);
