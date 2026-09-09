@@ -47,27 +47,38 @@ constexpr float kMermaidBlockPad = 12.0f;
 // measure and draw must both pass the same availW or they will disagree.
 inline float MeasureLayoutHeight(const LaidOutFlowchart& lo, float zoom,
                                  float availW) {
-    float fit = 1.0f;
-    if (lo.width > 0 && availW > 0 && lo.width > availW)
-        fit = availW / static_cast<float>(lo.width);
-    return static_cast<float>(lo.height) * zoom * fit + 2.0f * kMermaidBlockPad;
+    // Lineær zoom: skaler ned så diagrammet passer i kolonnen, aldrig op.
+    // scale = min(zoom, availW/naturalW) — IKKE zoom*fit, som bliver
+    // kvadratisk i zoom, fordi selve kolonnebredden også skaleres med zoom.
+    float scale = zoom;
+    if (lo.width > 0 && availW > 0) {
+        float fit_scale = availW / static_cast<float>(lo.width);
+        if (fit_scale < scale) scale = fit_scale;
+    }
+    return static_cast<float>(lo.height) * scale + 2.0f * kMermaidBlockPad;
 }
 
 // Pie variant: canvas is 450 DIP tall, same padding scheme.
 inline float MeasurePieHeight(const LaidOutPie& lp, float zoom, float availW) {
-    float fit = 1.0f;
-    if (lp.width > 0 && availW > 0 && lp.width > availW)
-        fit = availW / static_cast<float>(lp.width);
-    return static_cast<float>(lp.height) * zoom * fit + 2.0f * kMermaidBlockPad;
+    // Samme lineære regel som draw-pathen (se MeasureLayoutHeight).
+    float scale = zoom;
+    if (lp.width > 0 && availW > 0) {
+        float fit_scale = availW / static_cast<float>(lp.width);
+        if (fit_scale < scale) scale = fit_scale;
+    }
+    return static_cast<float>(lp.height) * scale + 2.0f * kMermaidBlockPad;
 }
 
 // Sequence variant: vbwidth/vbheight already include the extra 40 for a title.
 inline float MeasureSequenceHeight(const LaidOutSequence& ls, float zoom,
                                    float availW) {
-    float fit = 1.0f;
-    if (ls.width > 0 && availW > 0 && ls.width > availW)
-        fit = availW / static_cast<float>(ls.width);
-    return static_cast<float>(ls.vbheight) * zoom * fit + 2.0f * kMermaidBlockPad;
+    // Samme lineære regel som draw-pathen (se MeasureLayoutHeight).
+    float scale = zoom;
+    if (ls.width > 0 && availW > 0) {
+        float fit_scale = availW / static_cast<float>(ls.width);
+        if (fit_scale < scale) scale = fit_scale;
+    }
+    return static_cast<float>(ls.vbheight) * scale + 2.0f * kMermaidBlockPad;
 }
 
 // Height for either variant.

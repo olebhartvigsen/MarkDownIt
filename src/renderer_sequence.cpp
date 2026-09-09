@@ -172,9 +172,13 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
     // natural canvas (viewBox width) is wider than the available width.
     const float availW =
         width > 2.0f * pad ? width - 2.0f * pad : 0.0f;
+    // Lineær zoom: scale = min(zoom, availW/naturalW) — aldrig op-skaler.
+    // (zoom*fit var kvadratisk i zoom, fordi kolonnen også zoomer.)
     float scale = zoom_;
-    if (ls.width > 0 && availW > 0 && ls.width > availW)
-        scale = zoom_ * (availW / static_cast<float>(ls.width));
+    if (ls.width > 0 && availW > 0) {
+        float fit_scale = availW / static_cast<float>(ls.width);
+        if (fit_scale < scale) scale = fit_scale;
+    }
     // Golden coords live in mermaid's viewBox space (startx may be negative).
     // Translate into block-local space: origin at viewBox min + block pos.
     const float ox = x - static_cast<float>(ls.startx) * scale;

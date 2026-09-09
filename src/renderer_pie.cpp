@@ -115,9 +115,12 @@ void Renderer::DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // natural canvas is wider than the available width.
     const float availW =
         width > 2.0f * pad ? width - 2.0f * pad : 0.0f;
+    // Lineær zoom: scale = min(zoom, availW/naturalW) — aldrig op-skaler.
     float scale = zoom_;
-    if (lp.width > 0 && availW > 0 && lp.width > availW)
-        scale = zoom_ * (availW / static_cast<float>(lp.width));
+    if (lp.width > 0 && availW > 0) {
+        float fit_scale = availW / static_cast<float>(lp.width);
+        if (fit_scale < scale) scale = fit_scale;
+    }
     float ox = x;
     float oy = y + pad;
     // Text must shrink by the same factor the geometry shrank by.
