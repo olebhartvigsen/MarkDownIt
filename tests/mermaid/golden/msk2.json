@@ -1,18 +1,18 @@
 {
   "canvas": {
     "width": 1837.5,
-    "height": 985,
+    "height": 981,
     "startx": -50,
     "starty": -10,
     "vbwidth": 1837.5,
-    "vbheight": 985
+    "vbheight": 981
   },
   "actors": [
     {
       "bottom": true,
       "name": "HR",
       "x": 1587.5,
-      "y": 964,
+      "y": 960,
       "w": 150,
       "h": 0
     },
@@ -20,7 +20,7 @@
       "bottom": true,
       "name": "STADS",
       "x": 1143.5,
-      "y": 964,
+      "y": 960,
       "w": 190,
       "h": 0
     },
@@ -28,7 +28,7 @@
       "bottom": true,
       "name": "IDM",
       "x": 929.5,
-      "y": 964,
+      "y": 960,
       "w": 164,
       "h": 0
     },
@@ -36,7 +36,7 @@
       "bottom": true,
       "name": "FM",
       "x": 729.5,
-      "y": 964,
+      "y": 960,
       "w": 150,
       "h": 0
     },
@@ -44,7 +44,7 @@
       "bottom": true,
       "name": "TOOL",
       "x": 345.5,
-      "y": 964,
+      "y": 960,
       "w": 152,
       "h": 0
     },
@@ -92,37 +92,37 @@
       "kind": "lifeline",
       "x": 1662.5,
       "y1": 65,
-      "y2": 964
+      "y2": 960
     },
     {
       "kind": "lifeline",
       "x": 1238.5,
       "y1": 65,
-      "y2": 964
+      "y2": 960
     },
     {
       "kind": "lifeline",
       "x": 1011.5,
       "y1": 65,
-      "y2": 964
+      "y2": 960
     },
     {
       "kind": "lifeline",
       "x": 804.5,
       "y1": 65,
-      "y2": 964
+      "y2": 960
     },
     {
       "kind": "lifeline",
       "x": 421.5,
       "y1": 65,
-      "y2": 964
+      "y2": 960
     },
     {
       "kind": "lifeline",
       "x": 76.5,
       "y1": 80,
-      "y2": 964
+      "y2": 960
     },
     {
       "kind": "stickman",
@@ -136,7 +136,7 @@
       "bottom": true,
       "name": "RED",
       "cx": 76.5,
-      "cy": 974
+      "cy": 970
     }
   ],
   "messages": [
@@ -269,12 +269,12 @@
     {
       "text": "Menuen åbnes ikke",
       "tx": 251,
-      "ty": 793,
+      "ty": 789,
       "line": {
         "x1": 420.5,
-        "y1": 830,
+        "y1": 826,
         "x2": 80.5,
-        "y2": 830,
+        "y2": 826,
         "cls": "messageLine1",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -283,12 +283,12 @@
     {
       "text": "Svar fra servicen lægges ind i en sag til HR",
       "tx": 1041,
-      "ty": 845,
+      "ty": 841,
       "line": {
         "x1": 422.5,
-        "y1": 882,
+        "y1": 878,
         "x2": 1658.5,
-        "y2": 882,
+        "y2": 878,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -297,12 +297,12 @@
     {
       "text": "Sagen overdrages til STADS support og udredes",
       "tx": 1452,
-      "ty": 897,
+      "ty": 893,
       "line": {
         "x1": 1661.5,
-        "y1": 934,
+        "y1": 930,
         "x2": 1242.5,
-        "y2": 934,
+        "y2": 930,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -317,7 +317,7 @@
       "rx": 269.5,
       "ry": 691,
       "rw": 304,
-      "rh": 41
+      "rh": 37
     }
   ],
   "activations": [],
@@ -372,28 +372,28 @@
       "x1": 1673.5,
       "y1": 541,
       "x2": 1673.5,
-      "y2": 944
+      "y2": 940
     },
     {
       "top": true,
       "x1": 65.5,
-      "y1": 944,
+      "y1": 940,
       "x2": 1673.5,
-      "y2": 944
+      "y2": 940
     },
     {
       "vert": true,
       "x1": 65.5,
       "y1": 541,
       "x2": 65.5,
-      "y2": 944
+      "y2": 940
     },
     {
       "top": true,
       "x1": 65.5,
-      "y1": 747,
+      "y1": 743,
       "x2": 1673.5,
-      "y2": 747
+      "y2": 743
     },
     {
       "labelBox": "410.5,231 460.5,231 460.5,244 452.1,251 410.5,251"
@@ -429,7 +429,7 @@
     {
       "loopText": "[Både aktiv og ikke-aktiv bruger, flere af hver, eller STADS-profiler med aktivitet]",
       "x": 869.5,
-      "y": 765
+      "y": 761
     }
   ],
   "backgrounds": [],
@@ -485,17 +485,17 @@
     {
       "n": "10",
       "x": 420.5,
-      "y": 834
+      "y": 830
     },
     {
       "n": "11",
       "x": 422.5,
-      "y": 886
+      "y": 882
     },
     {
       "n": "12",
       "x": 1661.5,
-      "y": 938
+      "y": 934
     }
   ]
 }

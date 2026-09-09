@@ -205,3 +205,15 @@ export function drawnTextBBox(text, { fontFamily = 'Open Sans, sans-serif', font
   return { x: -w / 2, y: -(Math.round(fontSize * 1.33) / 2),
            width: w, height: Math.round(fontSize * 1.33) };
 }
+
+// getBBox for the class of text elements mermaid MEASURES with dy=1em +
+// dominant-baseline middle (drawNote/drawText3 valign center): Chrome returns
+// the ink-ish box round(size*1.06) (16px -> 17), verified via headless-Chrome
+// tspan probes. Plain mock texts (calculateTextDimensions) measure the
+// line-box round(size*1.33) -> keep drawnTextBBox for those.
+export function veneeredTextBBox(text, { fontFamily = 'Open Sans, sans-serif', fontSize = 16 } = {}) {
+  const font = resolveFamilyList(fontFamily);
+  const w = font ? widthOf(font, text || '', fontSize) : (text || '').length * 8;
+  const h = Math.round(fontSize * 1.06);
+  return { x: -w / 2, y: -h / 2, width: w, height: h };
+}

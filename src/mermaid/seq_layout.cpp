@@ -85,6 +85,13 @@ double DefaultSeqTextHeight(double fontSize) {
     return kSeqLineHeightPx16 / 16.0 * fontSize;
 }
 
+// Chrome getBBox of a drawn one-line SVG text: ink height round(size*1.06)
+// (16px -> 17). Mermaid's drawNote sizes the rect from getBBox — only the
+// NOTE box uses this; message geometry uses the line-box height (calcDims).
+double DefaultSeqTextInkHeight(double fontSize) {
+    return std::floor(fontSize * 1.06 + 0.5);
+}
+
 }  // namespace
 
 double SeqTextWidth(const std::string& utf8, double fontSize) {
@@ -324,7 +331,7 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                         ? ax[fi] + aw[fi] / 2 - ACTOR_MARGIN / 2
                         : ax[ti] + aw[ti] / 2 - ACTOR_MARGIN / 2;
                 }
-                double h = SeqTextHeight(m.text, 16.0) + 2 * NOTE_MARGIN;
+                double h = DefaultSeqTextInkHeight(16.0) + 2 * NOTE_MARGIN;
                 SeqNoteGeo geo;
                 geo.x = startx; geo.y = starty;
                 geo.w = w; geo.h = h;

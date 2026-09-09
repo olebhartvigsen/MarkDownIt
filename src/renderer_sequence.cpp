@@ -23,7 +23,7 @@ constexpr uint32_t kSeqLifeline = 0x666666;
 constexpr uint32_t kSeqLoopFill = 0xEDEDED;
 
 constexpr float kActorBoxHeight = 65.0f;   // mermaid actor box height
-constexpr float kActorFooterHeight = 20.0f;  // mirrorActors footer box height
+constexpr float kActorFooterHeight = 20.0f;  // legacy (unused, kept for ref)
 constexpr float kActorFontSize = 14.0f;
 constexpr float kMsgFontSize = 14.0f;
 constexpr float kLabelFontSize = 12.0f;
@@ -338,13 +338,13 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
     }
 
     // Autonumber circles — mermaid parity: marker #sequencenumber is a
-    // circle r=6 (12px diameter) at the line start X, with the number as a
-    // 12px sans-serif text at (x, y+4) — NOT an oversized 9px-radius disc
-    // with a 16px digit squeezed inside.
+    // circle r=6 drawn with markerUnits=strokeWidth, so the rendered radius
+    // is 6 × strokeWidth (1.5) = 9 px. The 12px digit is baseline-anchored
+    // at cy + 4 → it fits inside the 18px disc.
     for (const auto& num : ls.numbers) {
         float cx = P(num.x), cy = Q(num.y);
         D2D1_ELLIPSE c = D2D1::Ellipse(D2D1::Point2F(cx, cy),
-                                       6.0f * scale, 6.0f * scale);
+                                       9.0f * scale, 9.0f * scale);
         rt->FillEllipse(c, ink);
         DrawSeqText(dw, rt, num_fmt_, std::to_string(num.n),
                     cx, cy + 4.0f * scale, actorFill, true, true, textScale);
@@ -374,14 +374,14 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
         DrawSeqText(dw, rt, body_fmt_, a.name,
                     bx + bw * 0.5f, Q(0.0) + kActorBoxHeight * scale * 0.5f,
                     ink, true, true, textScale);
-        // Footer (mirrorActors): small box at stopy.
+        // Footer (mirrorActors): box at stopy, same height as the top box.
         float fy = Q(a.stopy);
         D2D1_RECT_F foot = D2D1::RectF(bx, fy, bx + bw,
-                                       fy + kActorFooterHeight * scale);
+                                       fy + kActorBoxHeight * scale);
         rt->FillRectangle(foot, actorFill);
         rt->DrawRectangle(foot, actorStroke, 1.0f * scale);
         DrawSeqText(dw, rt, body_fmt_, a.name,
-                    bx + bw * 0.5f, fy + kActorFooterHeight * scale * 0.5f,
+                    bx + bw * 0.5f, fy + kActorBoxHeight * scale * 0.5f,
                     ink, true, true, textScale);
     }
 

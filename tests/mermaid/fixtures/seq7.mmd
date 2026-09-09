@@ -9,7 +9,7 @@ sequenceDiagram
 
     RED->>MSK: Slår dansk CPR op ved ny ansættelse
     MSK->>FM: hentFuzzyMatch (CPR)
-    FM-->>MSK: 0, 1 eller flere matches
+    FM-->>MSK: 0, 1 eller flere matches og valget sker på Match-siden
 
     alt Ingen match
         MSK-->>RED: Opret person som normalt

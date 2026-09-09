@@ -1,18 +1,18 @@
 {
   "canvas": {
     "width": 1745.5,
-    "height": 2020,
+    "height": 2012,
     "startx": -50,
     "starty": -10,
     "vbwidth": 1745.5,
-    "vbheight": 2020
+    "vbheight": 2012
   },
   "actors": [
     {
       "bottom": true,
       "name": "IDM",
       "x": 1460.5,
-      "y": 1999,
+      "y": 1991,
       "w": 185,
       "h": 0
     },
@@ -20,7 +20,7 @@
       "bottom": true,
       "name": "STADS",
       "x": 1260.5,
-      "y": 1999,
+      "y": 1991,
       "w": 150,
       "h": 0
     },
@@ -28,7 +28,7 @@
       "bottom": true,
       "name": "HR",
       "x": 812.5,
-      "y": 1999,
+      "y": 1991,
       "w": 150,
       "h": 0
     },
@@ -36,7 +36,7 @@
       "bottom": true,
       "name": "FM",
       "x": 612.5,
-      "y": 1999,
+      "y": 1991,
       "w": 150,
       "h": 0
     },
@@ -44,7 +44,7 @@
       "bottom": true,
       "name": "MSK",
       "x": 349,
-      "y": 1999,
+      "y": 1991,
       "w": 179,
       "h": 0
     },
@@ -92,37 +92,37 @@
       "kind": "lifeline",
       "x": 1553,
       "y1": 65,
-      "y2": 1999
+      "y2": 1991
     },
     {
       "kind": "lifeline",
       "x": 1335.5,
       "y1": 65,
-      "y2": 1999
+      "y2": 1991
     },
     {
       "kind": "lifeline",
       "x": 887.5,
       "y1": 65,
-      "y2": 1999
+      "y2": 1991
     },
     {
       "kind": "lifeline",
       "x": 687.5,
       "y1": 65,
-      "y2": 1999
+      "y2": 1991
     },
     {
       "kind": "lifeline",
       "x": 438.5,
       "y1": 65,
-      "y2": 1999
+      "y2": 1991
     },
     {
       "kind": "lifeline",
       "x": 76.5,
       "y1": 80,
-      "y2": 1999
+      "y2": 1991
     },
     {
       "kind": "stickman",
@@ -136,7 +136,7 @@
       "bottom": true,
       "name": "RED",
       "cx": 76.5,
-      "cy": 2009
+      "cy": 2001
     }
   ],
   "messages": [
@@ -283,12 +283,12 @@
     {
       "text": "Skifter CPR, afslutter sagen",
       "tx": 1219,
-      "ty": 845,
+      "ty": 841,
       "line": {
         "x1": 888.5,
-        "y1": 882,
+        "y1": 878,
         "x2": 1549,
-        "y2": 882,
+        "y2": 878,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -297,12 +297,12 @@
     {
       "text": "Ansættelsen fortsætter på kunstigt CPR",
       "tx": 259,
-      "ty": 907,
+      "ty": 903,
       "line": {
         "x1": 437.5,
-        "y1": 944,
+        "y1": 940,
         "x2": 80.5,
-        "y2": 944,
+        "y2": 940,
         "cls": "messageLine1",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -311,12 +311,12 @@
     {
       "text": "Klik: opret person alligevel",
       "tx": 256,
-      "ty": 1005,
+      "ty": 1001,
       "line": {
         "x1": 77.5,
-        "y1": 1042,
+        "y1": 1038,
         "x2": 434.5,
-        "y2": 1042,
+        "y2": 1038,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -325,12 +325,12 @@
     {
       "text": "Opretter sag hos HR",
       "tx": 662,
-      "ty": 1108,
+      "ty": 1100,
       "line": {
         "x1": 439.5,
-        "y1": 1145,
+        "y1": 1137,
         "x2": 883.5,
-        "y2": 1145,
+        "y2": 1137,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -339,12 +339,12 @@
     {
       "text": "Administrator opretter personen efter udredning",
       "tx": 665,
-      "ty": 1206,
+      "ty": 1198,
       "line": {
         "x1": 886.5,
-        "y1": 1243,
+        "y1": 1235,
         "x2": 442.5,
-        "y2": 1243,
+        "y2": 1235,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -353,12 +353,12 @@
     {
       "text": "Ansættelsen fortsætter",
       "tx": 259,
-      "ty": 1268,
+      "ty": 1260,
       "line": {
         "x1": 437.5,
-        "y1": 1305,
+        "y1": 1297,
         "x2": 80.5,
-        "y2": 1305,
+        "y2": 1297,
         "cls": "messageLine1",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -367,12 +367,12 @@
     {
       "text": "Vælger ældste AUID som standard",
       "tx": 256,
-      "ty": 1366,
+      "ty": 1358,
       "line": {
         "x1": 77.5,
-        "y1": 1403,
+        "y1": 1395,
         "x2": 434.5,
-        "y2": 1403,
+        "y2": 1395,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -381,12 +381,12 @@
     {
       "text": "Mail med nyt CPR og de matchede CPR-numre",
       "tx": 662,
-      "ty": 1418,
+      "ty": 1410,
       "line": {
         "x1": 439.5,
-        "y1": 1455,
+        "y1": 1447,
         "x2": 883.5,
-        "y2": 1455,
+        "y2": 1447,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -395,12 +395,12 @@
     {
       "text": "Udred, hvilken identitet der skal overleve",
       "tx": 1110,
-      "ty": 1470,
+      "ty": 1462,
       "line": {
         "x1": 888.5,
-        "y1": 1507,
+        "y1": 1499,
         "x2": 1331.5,
-        "y2": 1507,
+        "y2": 1499,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -409,12 +409,12 @@
     {
       "text": "Ok, nedlægger én identitet (IDM sletter senere)",
       "tx": 1113,
-      "ty": 1522,
+      "ty": 1514,
       "line": {
         "x1": 1334.5,
-        "y1": 1559,
+        "y1": 1551,
         "x2": 891.5,
-        "y2": 1559,
+        "y2": 1551,
         "cls": "messageLine1",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -423,12 +423,12 @@
     {
       "text": "Skift CPR på tiloversblevne, evt. flyt ansættelsen",
       "tx": 1219,
-      "ty": 1574,
+      "ty": 1566,
       "line": {
         "x1": 888.5,
-        "y1": 1611,
+        "y1": 1603,
         "x2": 1549,
-        "y2": 1611,
+        "y2": 1603,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -437,12 +437,12 @@
     {
       "text": "Ansættelsen fortsætter",
       "tx": 259,
-      "ty": 1626,
+      "ty": 1618,
       "line": {
         "x1": 437.5,
-        "y1": 1663,
+        "y1": 1655,
         "x2": 80.5,
-        "y2": 1663,
+        "y2": 1655,
         "cls": "messageLine1",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -451,12 +451,12 @@
     {
       "text": "Send CPR-skifte-sag",
       "tx": 256,
-      "ty": 1724,
+      "ty": 1716,
       "line": {
         "x1": 77.5,
-        "y1": 1761,
+        "y1": 1753,
         "x2": 434.5,
-        "y2": 1761,
+        "y2": 1753,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -465,12 +465,12 @@
     {
       "text": "Sagen overføres straks til STADS",
       "tx": 662,
-      "ty": 1776,
+      "ty": 1768,
       "line": {
         "x1": 439.5,
-        "y1": 1813,
+        "y1": 1805,
         "x2": 883.5,
-        "y2": 1813,
+        "y2": 1805,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -479,12 +479,12 @@
     {
       "text": "Reagerer inden samme dag, når intet AUID er valgt",
       "tx": 1113,
-      "ty": 1828,
+      "ty": 1820,
       "line": {
         "x1": 1334.5,
-        "y1": 1865,
+        "y1": 1857,
         "x2": 891.5,
-        "y2": 1865,
+        "y2": 1857,
         "cls": "messageLine1",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -493,12 +493,12 @@
     {
       "text": "Skifter CPR og afslutter sagen",
       "tx": 1219,
-      "ty": 1880,
+      "ty": 1872,
       "line": {
         "x1": 888.5,
-        "y1": 1917,
+        "y1": 1909,
         "x2": 1549,
-        "y2": 1917,
+        "y2": 1909,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -507,12 +507,12 @@
     {
       "text": "Ansættelsen fortsætter",
       "tx": 259,
-      "ty": 1932,
+      "ty": 1924,
       "line": {
         "x1": 437.5,
-        "y1": 1969,
+        "y1": 1961,
         "x2": 80.5,
-        "y2": 1969,
+        "y2": 1961,
         "cls": "messageLine1",
         "markerEnd": "url(#arrowhead)",
         "markerStart": "url(#sequencenumber)"
@@ -527,16 +527,16 @@
       "rx": 762.5,
       "ry": 789,
       "rw": 250,
-      "rh": 41
+      "rh": 37
     },
     {
       "text": "Klikket opretter IKKE en person, kun en sag hos HR",
       "tx": 439,
-      "ty": 1057,
+      "ty": 1053,
       "rx": 239.5,
-      "ry": 1052,
+      "ry": 1048,
       "rw": 398,
-      "rh": 41
+      "rh": 37
     }
   ],
   "activations": [],
@@ -584,49 +584,49 @@
       "x1": 1564,
       "y1": 691,
       "x2": 1564,
-      "y2": 892
+      "y2": 888
     },
     {
       "top": true,
       "x1": 427.5,
-      "y1": 892,
+      "y1": 888,
       "x2": 1564,
-      "y2": 892
+      "y2": 888
     },
     {
       "vert": true,
       "x1": 427.5,
       "y1": 691,
       "x2": 427.5,
-      "y2": 892
+      "y2": 888
     },
     {
       "top": true,
       "x1": 427.5,
-      "y1": 1155,
+      "y1": 1147,
       "x2": 898.5,
-      "y2": 1155
+      "y2": 1147
     },
     {
       "vert": true,
       "x1": 898.5,
-      "y1": 1155,
+      "y1": 1147,
       "x2": 898.5,
-      "y2": 1253
+      "y2": 1245
     },
     {
       "top": true,
       "x1": 427.5,
-      "y1": 1253,
+      "y1": 1245,
       "x2": 898.5,
-      "y2": 1253
+      "y2": 1245
     },
     {
       "vert": true,
       "x1": 427.5,
-      "y1": 1155,
+      "y1": 1147,
       "x2": 427.5,
-      "y2": 1253
+      "y2": 1245
     },
     {
       "top": true,
@@ -640,21 +640,21 @@
       "x1": 1574,
       "y1": 231,
       "x2": 1574,
-      "y2": 1979
+      "y2": 1971
     },
     {
       "top": true,
       "x1": 65.5,
-      "y1": 1979,
+      "y1": 1971,
       "x2": 1574,
-      "y2": 1979
+      "y2": 1971
     },
     {
       "vert": true,
       "x1": 65.5,
       "y1": 231,
       "x2": 65.5,
-      "y2": 1979
+      "y2": 1971
     },
     {
       "top": true,
@@ -666,23 +666,23 @@
     {
       "top": true,
       "x1": 65.5,
-      "y1": 959,
+      "y1": 955,
       "x2": 1574,
-      "y2": 959
+      "y2": 955
     },
     {
       "top": true,
       "x1": 65.5,
-      "y1": 1320,
+      "y1": 1312,
       "x2": 1574,
-      "y2": 1320
+      "y2": 1312
     },
     {
       "top": true,
       "x1": 65.5,
-      "y1": 1678,
+      "y1": 1670,
       "x2": 1574,
-      "y2": 1678
+      "y2": 1670
     },
     {
       "labelBox": "427.5,583 477.5,583 477.5,596 469.1,603 427.5,603"
@@ -691,7 +691,7 @@
       "labelBox": "427.5,691 477.5,691 477.5,704 469.1,711 427.5,711"
     },
     {
-      "labelBox": "427.5,1155 477.5,1155 477.5,1168 469.1,1175 427.5,1175"
+      "labelBox": "427.5,1147 477.5,1147 477.5,1160 469.1,1167 427.5,1167"
     },
     {
       "labelBox": "65.5,231 115.5,231 115.5,244 107.1,251 65.5,251"
@@ -709,7 +709,7 @@
     {
       "labelText": "opt",
       "x": 453,
-      "y": 1168
+      "y": 1160
     },
     {
       "labelText": "alt",
@@ -729,7 +729,7 @@
     {
       "loopText": "[Knap kun synlig for administratorer]",
       "x": 688,
-      "y": 1173
+      "y": 1165
     },
     {
       "loopText": "[Ingen match]",
@@ -744,17 +744,17 @@
     {
       "loopText": "[Ét match, redaktøren er usikker]",
       "x": 819.75,
-      "y": 977
+      "y": 973
     },
     {
       "loopText": "[Flere matches, redaktøren er sikker]",
       "x": 819.75,
-      "y": 1338
+      "y": 1330
     },
     {
       "loopText": "[Flere matches, eller valget er ikke truffet]",
       "x": 819.75,
-      "y": 1696
+      "y": 1688
     }
   ],
   "backgrounds": [],
@@ -815,87 +815,87 @@
     {
       "n": "11",
       "x": 888.5,
-      "y": 886
+      "y": 882
     },
     {
       "n": "12",
       "x": 437.5,
-      "y": 948
+      "y": 944
     },
     {
       "n": "13",
       "x": 77.5,
-      "y": 1046
+      "y": 1042
     },
     {
       "n": "14",
       "x": 439.5,
-      "y": 1149
+      "y": 1141
     },
     {
       "n": "15",
       "x": 886.5,
-      "y": 1247
+      "y": 1239
     },
     {
       "n": "16",
       "x": 437.5,
-      "y": 1309
+      "y": 1301
     },
     {
       "n": "17",
       "x": 77.5,
-      "y": 1407
+      "y": 1399
     },
     {
       "n": "18",
       "x": 439.5,
-      "y": 1459
+      "y": 1451
     },
     {
       "n": "19",
       "x": 888.5,
-      "y": 1511
+      "y": 1503
     },
     {
       "n": "20",
       "x": 1334.5,
-      "y": 1563
+      "y": 1555
     },
     {
       "n": "21",
       "x": 888.5,
-      "y": 1615
+      "y": 1607
     },
     {
       "n": "22",
       "x": 437.5,
-      "y": 1667
+      "y": 1659
     },
     {
       "n": "23",
       "x": 77.5,
-      "y": 1765
+      "y": 1757
     },
     {
       "n": "24",
       "x": 439.5,
-      "y": 1817
+      "y": 1809
     },
     {
       "n": "25",
       "x": 1334.5,
-      "y": 1869
+      "y": 1861
     },
     {
       "n": "26",
       "x": 888.5,
-      "y": 1921
+      "y": 1913
     },
     {
       "n": "27",
       "x": 437.5,
-      "y": 1973
+      "y": 1965
     }
   ]
 }

@@ -1,18 +1,18 @@
 {
   "canvas": {
     "width": 1113,
-    "height": 865,
+    "height": 861,
     "startx": -50,
     "starty": -10,
     "vbwidth": 1113,
-    "vbheight": 865
+    "vbheight": 861
   },
   "actors": [
     {
       "bottom": true,
       "name": "Mountains",
       "x": 863,
-      "y": 844,
+      "y": 840,
       "w": 150,
       "h": 0
     },
@@ -20,7 +20,7 @@
       "bottom": true,
       "name": "x",
       "x": 663,
-      "y": 844,
+      "y": 840,
       "w": 150,
       "h": 0
     },
@@ -28,7 +28,7 @@
       "bottom": true,
       "name": "C",
       "x": 463,
-      "y": 844,
+      "y": 840,
       "w": 150,
       "h": 0
     },
@@ -36,7 +36,7 @@
       "bottom": true,
       "name": "B",
       "x": 263,
-      "y": 844,
+      "y": 840,
       "w": 150,
       "h": 0
     },
@@ -44,7 +44,7 @@
       "bottom": true,
       "name": "A",
       "x": 0,
-      "y": 844,
+      "y": 840,
       "w": 150,
       "h": 0
     },
@@ -92,31 +92,31 @@
       "kind": "lifeline",
       "x": 938,
       "y1": 65,
-      "y2": 844
+      "y2": 840
     },
     {
       "kind": "lifeline",
       "x": 738,
       "y1": 65,
-      "y2": 844
+      "y2": 840
     },
     {
       "kind": "lifeline",
       "x": 538,
       "y1": 65,
-      "y2": 844
+      "y2": 840
     },
     {
       "kind": "lifeline",
       "x": 338,
       "y1": 65,
-      "y2": 844
+      "y2": 840
     },
     {
       "kind": "lifeline",
       "x": 75,
       "y1": 65,
-      "y2": 844
+      "y2": 840
     }
   ],
   "messages": [
@@ -137,12 +137,12 @@
     {
       "text": "Fint, tak!",
       "tx": 208,
-      "ty": 183,
+      "ty": 179,
       "line": {
         "x1": 337,
-        "y1": 220,
+        "y1": 216,
         "x2": 79,
-        "y2": 220,
+        "y2": 216,
         "cls": "messageLine1",
         "markerEnd": "url(#arrowhead)",
         "markerStart": ""
@@ -151,21 +151,21 @@
     {
       "text": "Selvkommunikation",
       "tx": 76,
-      "ty": 235,
+      "ty": 231,
       "path": {
-        "d": "M 76,272 C 136,262 136,302 76,292",
+        "d": "M 76,268 C 136,258 136,298 76,288",
         "cls": "messageLine0"
       }
     },
     {
       "text": "Gå videre",
       "tx": 305,
-      "ty": 317,
+      "ty": 313,
       "line": {
         "x1": 76,
-        "y1": 354,
+        "y1": 350,
         "x2": 534,
-        "y2": 354,
+        "y2": 350,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": ""
@@ -174,12 +174,12 @@
     {
       "text": "Data klar?",
       "tx": 439,
-      "ty": 369,
+      "ty": 365,
       "line": {
         "x1": 343,
-        "y1": 406,
+        "y1": 402,
         "x2": 534,
-        "y2": 406,
+        "y2": 402,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": ""
@@ -188,12 +188,12 @@
     {
       "text": "Stoppilot",
       "tx": 537,
-      "ty": 421,
+      "ty": 417,
       "line": {
         "x1": 339,
-        "y1": 458,
+        "y1": 454,
         "x2": 734,
-        "y2": 458,
+        "y2": 454,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": ""
@@ -202,12 +202,12 @@
     {
       "text": "Signel liste",
       "tx": 505,
-      "ty": 473,
+      "ty": 469,
       "line": {
         "x1": 76,
-        "y1": 510,
+        "y1": 506,
         "x2": 934,
-        "y2": 510,
+        "y2": 506,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": ""
@@ -216,12 +216,12 @@
     {
       "text": "Ping",
       "tx": 205,
-      "ty": 571,
+      "ty": 567,
       "line": {
         "x1": 76,
-        "y1": 608,
+        "y1": 604,
         "x2": 334,
-        "y2": 608,
+        "y2": 604,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": ""
@@ -230,12 +230,12 @@
     {
       "text": "Ok",
       "tx": 205,
-      "ty": 679,
+      "ty": 675,
       "line": {
         "x1": 76,
-        "y1": 716,
+        "y1": 712,
         "x2": 334,
-        "y2": 716,
+        "y2": 712,
         "cls": "messageLine0",
         "markerEnd": "url(#arrowhead)",
         "markerStart": ""
@@ -244,12 +244,12 @@
     {
       "text": "Summary",
       "tx": 205,
-      "ty": 777,
+      "ty": 773,
       "line": {
         "x1": 76,
-        "y1": 814,
+        "y1": 810,
         "x2": 334,
-        "y2": 814,
+        "y2": 810,
         "cls": "messageLine1",
         "markerEnd": "url(#arrowhead)",
         "markerStart": ""
@@ -264,13 +264,13 @@
       "rx": 0,
       "ry": 127,
       "rw": 150,
-      "rh": 41
+      "rh": 37
     }
   ],
   "activations": [
     {
       "x": 333,
-      "y": 354,
+      "y": 350,
       "w": 10,
       "h": 52,
       "cls": "activation0"
@@ -283,96 +283,96 @@
     {
       "top": true,
       "x1": 64,
-      "y1": 520,
+      "y1": 516,
       "x2": 349,
-      "y2": 520
+      "y2": 516
     },
     {
       "vert": true,
       "x1": 349,
-      "y1": 520,
+      "y1": 516,
       "x2": 349,
-      "y2": 618
+      "y2": 614
     },
     {
       "top": true,
       "x1": 64,
-      "y1": 618,
+      "y1": 614,
       "x2": 349,
-      "y2": 618
+      "y2": 614
     },
     {
       "vert": true,
       "x1": 64,
-      "y1": 520,
+      "y1": 516,
       "x2": 64,
-      "y2": 618
+      "y2": 614
     },
     {
       "top": true,
       "x1": 64,
-      "y1": 628,
+      "y1": 624,
       "x2": 349,
-      "y2": 628
+      "y2": 624
     },
     {
       "vert": true,
       "x1": 349,
-      "y1": 628,
+      "y1": 624,
       "x2": 349,
-      "y2": 824
+      "y2": 820
     },
     {
       "top": true,
       "x1": 64,
-      "y1": 824,
+      "y1": 820,
       "x2": 349,
-      "y2": 824
+      "y2": 820
     },
     {
       "vert": true,
       "x1": 64,
-      "y1": 628,
+      "y1": 624,
       "x2": 64,
-      "y2": 824
+      "y2": 820
     },
     {
       "top": true,
       "x1": 64,
-      "y1": 731,
+      "y1": 727,
       "x2": 349,
-      "y2": 731
+      "y2": 727
     },
     {
-      "labelBox": "64,520 114,520 114,533 105.6,540 64,540"
+      "labelBox": "64,516 114,516 114,529 105.6,536 64,536"
     },
     {
-      "labelBox": "64,628 114,628 114,641 105.6,648 64,648"
+      "labelBox": "64,624 114,624 114,637 105.6,644 64,644"
     },
     {
       "labelText": "loop",
       "x": 89,
-      "y": 533
+      "y": 529
     },
     {
       "labelText": "alt",
       "x": 89,
-      "y": 641
+      "y": 637
     },
     {
       "loopText": "[Gældere]",
       "x": 231.5,
-      "y": 538
+      "y": 534
     },
     {
       "loopText": "[Klar]",
       "x": 231.5,
-      "y": 646
+      "y": 642
     },
     {
       "loopText": "[I gen]",
       "x": 206.5,
-      "y": 749
+      "y": 745
     }
   ],
   "backgrounds": [],

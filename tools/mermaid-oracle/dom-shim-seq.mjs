@@ -7,8 +7,9 @@
 // Order control: split into shim-a.mjs (globals only) + shim-b.mjs (DP bind).
 // Simpler: do everything synchronously via createRequire inside dom-shim —
 // require() is NOT hoisted.
-const { calculateTextDims, drawnTextBBox } = await import('./text_metrics.mjs');
-globalThis.__TEXT_METRICS = { calculateTextDims, drawnTextBBox };
+const { calculateTextDims, drawnTextBBox, veneeredTextBBox } =
+  await import('./text_metrics.mjs');
+globalThis.__TEXT_METRICS = { calculateTextDims, drawnTextBBox, veneeredTextBBox };
 import { JSDOM } from 'jsdom';
 
 const w = new JSDOM('<!DOCTYPE html><body></body>').window;
@@ -77,6 +78,16 @@ Pel.prototype.getBBox = function () {
   // style (config-mapped by mermaid: 16px on most sequence elements, or
   // the SVG root default).
   const style = this.getAttribute && this.getAttribute('style') || '';
+  // Bitmap: mermaid measures mock texts (calculateTextDimensions) with a
+  // plain construction -> line-box height round(size*1.33). The DRAWN
+  // note/message texts carry dy=1em + dominant-baseline middle
+  // (drawText3 valign center); Chrome gives those the ink box
+  // round(size*1.06) (16px -> 17). drawNote sizes the note rect from the
+  // drawn box, so only those shrink.
+  const hasDy = this.getAttribute && this.getAttribute('dy') === '1em';
+  const dominant = this.getAttribute && (this.getAttribute('dominant-baseline') ||
+    this.getAttribute('alignment-baseline') || '');
+  const veneered = hasDy && dominant === 'middle';
   let size = 16;
   const m = /font-size\s*:\s*([\d.]+)px/.exec(style);
   if (m) size = parseFloat(m[1]);
@@ -90,7 +101,7 @@ Pel.prototype.getBBox = function () {
     if (fs) size = fs;
   }
   const fam = this.__mermaidFontFamily || 'sans-serif';
-  const bb = __TEXT_METRICS.drawnTextBBox(t, { fontFamily: fam, fontSize: size });
+  const bb = (veneered ? __TEXT_METRICS.veneeredTextBBox : __TEXT_METRICS.drawnTextBBox)(t, { fontFamily: fam, fontSize: size });
   if (process.env.SHIM_TRACE_BB) console.error('[bb]', JSON.stringify({ t: t.slice(0, 24), fam, size, bb }));
   return bb;
 };
