@@ -28,6 +28,9 @@ constexpr double NOTE_MARGIN = 10.0;
 constexpr double ACTIVATION_W = 10.0;
 constexpr double LABEL_BOX_W = 50.0;
 constexpr double LABEL_BOX_H = 20.0;
+// Intentional design deviation from mermaid: vertical air after alt/opt/par/
+// critical branch-label rows (both frame start and each else/and-option).
+constexpr double kAltElseExtraSpace = 12.0;
 constexpr double WRAP_PAD = 10.0;
 constexpr double BOTTOM_MARGIN_ADJ = 1.0;
 
@@ -405,7 +408,8 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                 vpos += BOX_MARGIN;              // preMargin
                 ol.starty = vpos;
                 if (titled) {
-                    vpos += (BOX_MARGIN + BOX_TEXT_MARGIN) + Max(SeqTextHeight("x", 16.0), LABEL_BOX_H);
+                    vpos += (BOX_MARGIN + BOX_TEXT_MARGIN) + Max(SeqTextHeight("x", 16.0), LABEL_BOX_H)
+                          + kAltElseExtraSpace;  // intentional extra air after label
                 } else {
                     vpos += BOX_MARGIN;
                 }
@@ -425,7 +429,8 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                 const SeqLoop& lp = seq.loops[it.loop_id];
                 ol.section_titles.push_back(lp.label);
                 ol.section_item.push_back(it.loop_id);
-                vpos += BOX_MARGIN + Max(SeqTextHeight("x", 16.0), LABEL_BOX_H);
+                vpos += BOX_MARGIN + Max(SeqTextHeight("x", 16.0), LABEL_BOX_H)
+                      + kAltElseExtraSpace;  // intentional extra air after label
                 break;
             }
             case MsgType::LoopEnd:
