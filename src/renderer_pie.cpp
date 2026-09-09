@@ -61,15 +61,39 @@ void Utf8To16(const std::string& s, std::u16string& out) {
 void DrawPieText(IDWriteFactory* dw, ID2D1RenderTarget* rt,
                  IDWriteTextFormat* fmt, const std::string& utf8,
                  float cx, float cy, float scale_x, float scale_y,
-                 ID2D1SolidColorBrush* brush, bool center_h, bool center_v) {
+                 ID2D1SolidColorBrush* brush, bool center_h, bool center_v,
+                 float sizeFactor = 1.0f) {
     if (!fmt) return;
     std::u16string t16;
     Utf8To16(utf8, t16);
+    if (t16.empty()) return;
+    IDWriteTextFormat* use_fmt = fmt;
+    IDWriteTextFormat* scaled = nullptr;
+    if (sizeFactor != 1.0f && sizeFactor > 0.01f) {
+        // Clone the base format with the scaled font size (resize fits are
+        // infrequent; runs per diagram are few dozen).
+        WCHAR fam[64] = L"";
+        if (SUCCEEDED(fmt->GetFontFamilyName(fam, 64))) {
+            DWRITE_FONT_WEIGHT wght;
+            DWRITE_FONT_STYLE style;
+            DWRITE_FONT_STRETCH stretch;
+            float size = 0.0f;
+            if (SUCCEEDED(fmt->GetFontSize(&size)) &&
+                SUCCEEDED(fmt->GetWeight(&wght)) &&
+                SUCCEEDED(fmt->GetStyle(&style)) &&
+                SUCCEEDED(fmt->GetStretch(&stretch))) {
+                dw->CreateTextFormat(fam, nullptr, wght, style, stretch,
+                                     size * sizeFactor, L"", &scaled);
+            }
+        }
+        if (scaled) use_fmt = scaled;
+    }
     IDWriteTextLayout* tl = nullptr;
     if (FAILED(dw->CreateTextLayout(
             reinterpret_cast<const WCHAR*>(t16.data()),
-            static_cast<UINT32>(t16.size()), fmt,
+            static_cast<UINT32>(t16.size()), use_fmt,
             1e9f, 1e9f, &tl)) || !tl) return;
+    if (scaled) scaled->Release();
     DWRITE_TEXT_METRICS tm{};
     tl->GetMetrics(&tm);
     float w = tm.widthIncludingTrailingWhitespace;
@@ -101,6 +125,8 @@ void Renderer::DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         scale = zoom_ * (availW / static_cast<float>(lp.width));
     float ox = x;
     float oy = y + pad;
+    // Text must shrink by the same factor the geometry shrank by.
+    const float textScale = scale / (zoom_ > 0.001f ? zoom_ : 1.0f);
 
     Palette pal = BasePalette();
     ID2D1SolidColorBrush* fillBrush = nullptr;
@@ -190,7 +216,7 @@ void Renderer::DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         DrawPieText(dw, rt, slice_fmt, arc.pct,
                     static_cast<float>(arc.label_x),
                     static_cast<float>(arc.label_y),
-                    scale, scale, textBrush, true, true);
+                    scale, scale, textBrush, true, true, textScale);
     }
 
     // Title: 25px, black, centered at (0, -200) relative to pie center.
@@ -198,7 +224,7 @@ void Renderer::DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         DrawPieText(dw, rt, body_fmt_, lp.title,
                     static_cast<float>(lp.cx),
                     static_cast<float>(lp.cy - 200.0),
-                    scale, scale, textBrush, true, true);
+                    scale, scale, textBrush, true, true, textScale);
     }
 
     // Legend: swatch 18x18 + text at (216, k*22 - offset) with label text
@@ -221,7 +247,7 @@ void Renderer::DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         rt->CreateSolidColorBrush(D2D1::ColorF(0x000000), &legTxt);
         DrawPieText(dw, rt, body_fmt_, row.label,
                     rx + 22.0f * scale, ry + 14.0f * scale,
-                    1.0f, 1.0f, legTxt ? legTxt : textBrush, false, true);
+                    1.0f, 1.0f, legTxt ? legTxt : textBrush, false, true, textScale);
         if (legTxt) legTxt->Release();
     }
 

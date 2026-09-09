@@ -1755,6 +1755,28 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         scale = zoom_ * (availW / static_cast<float>(lo.width));
     float ox = x;
     float oy = y + pad;
+    // Text must shrink by the same factor the geometry shrank by: clone the
+    // base format once at the fitted size and use it for all diagram text.
+    const float textScale = scale / (zoom_ > 0.001f ? zoom_ : 1.0f);
+    IDWriteTextFormat* scale_fmt = body_fmt_;
+    IDWriteTextFormat* scaled_fmt = nullptr;
+    if (body_fmt_ && textScale != 1.0f && textScale > 0.01f) {
+        WCHAR fam[64] = L"";
+        if (SUCCEEDED(body_fmt_->GetFontFamilyName(fam, 64))) {
+            DWRITE_FONT_WEIGHT wght;
+            DWRITE_FONT_STYLE style;
+            DWRITE_FONT_STRETCH stretch;
+            float size = 0.0f;
+            if (SUCCEEDED(body_fmt_->GetFontSize(&size)) &&
+                SUCCEEDED(body_fmt_->GetWeight(&wght)) &&
+                SUCCEEDED(body_fmt_->GetStyle(&style)) &&
+                SUCCEEDED(body_fmt_->GetStretch(&stretch))) {
+                dw->CreateTextFormat(fam, nullptr, wght, style, stretch,
+                                     size * textScale, L"", &scaled_fmt);
+            }
+        }
+        if (scaled_fmt) scale_fmt = scaled_fmt;
+    }
 
     Palette pal = BasePalette();
     ID2D1SolidColorBrush* edgeBrush = nullptr;
@@ -1794,7 +1816,7 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 if (SUCCEEDED(dw->CreateTextLayout(
                         reinterpret_cast<const WCHAR*>(t16.data()),
                         static_cast<UINT32>(t16.size()),
-                        body_fmt_, lw, 20.0f * scale, &tl)) && tl) {
+                        scale_fmt, lw, 20.0f * scale, &tl)) && tl) {
                     rt->DrawTextLayout(D2D1::Point2F(lx + 6.0f * scale, ly + 2.0f * scale),
                                        tl, laneTitle,
                                        D2D1_DRAW_TEXT_OPTIONS_CLIP);
@@ -1895,7 +1917,7 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 if (SUCCEEDED(dw->CreateTextLayout(
                         reinterpret_cast<const WCHAR*>(m16.data()),
                         static_cast<UINT32>(m16.size()),
-                        body_fmt_, max_lbl_w, 28.0f * scale, &tl)) && tl) {
+                        scale_fmt, max_lbl_w, 28.0f * scale, &tl)) && tl) {
                     DWRITE_TEXT_METRICS tm{};
                     tl->GetMetrics(&tm);
                     float lbl_w = tm.widthIncludingTrailingWhitespace;
@@ -2024,7 +2046,7 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             HRESULT hr = dw->CreateTextLayout(
                 reinterpret_cast<const WCHAR*>(text16.data()),
                 static_cast<UINT32>(text16.size()),
-                body_fmt_, nw, nh, &layout);
+                scale_fmt, nw, nh, &layout);
             if (SUCCEEDED(hr) && layout) {
                 layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
                 layout->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -2035,6 +2057,7 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
     }
 
+    if (scaled_fmt) scaled_fmt->Release();
     if (fac) fac->Release();
     if (edgeBrush) edgeBrush->Release();
     if (nodeFill) nodeFill->Release();

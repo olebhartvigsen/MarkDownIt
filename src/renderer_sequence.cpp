@@ -56,19 +56,46 @@ void SeqUtf8To16(const std::string& s, std::u16string& out) {
 }
 
 // Draw one text run centered on (cx, cy) if asked; mirrors DrawPieText.
+// sizeFactor shrinks/grows the font: when a diagram is scaled down to fit
+// the text column, text must shrink by the same factor, or the glyphs stay
+// full-size inside shrunken boxes. Implemented by cloning the text format
+// with a scaled font size (IDWriteTextLayout has no size factor).
 void DrawSeqText(IDWriteFactory* dw, ID2D1RenderTarget* rt,
                  IDWriteTextFormat* fmt, const std::string& utf8,
                  float cx, float cy, ID2D1SolidColorBrush* brush,
-                 bool center_h, bool center_v) {
+                 bool center_h, bool center_v, float sizeFactor = 1.0f) {
     if (!fmt || !brush) return;
     std::u16string t16;
     SeqUtf8To16(utf8, t16);
     if (t16.empty()) return;
+    IDWriteTextFormat* use_fmt = fmt;
+    IDWriteTextFormat* scaled = nullptr;
+    if (sizeFactor != 1.0f && sizeFactor > 0.01f) {
+        // Clone the base format with the scaled font size. Creating a format
+        // per call is acceptable here: scale fits are infrequent (resize),
+        // and text runs per diagram are few dozen.
+        WCHAR fam[64] = L"";
+        if (SUCCEEDED(fmt->GetFontFamilyName(fam, 64))) {
+            DWRITE_FONT_WEIGHT wght;
+            DWRITE_FONT_STYLE style;
+            DWRITE_FONT_STRETCH stretch;
+            float size = 0.0f;
+            if (SUCCEEDED(fmt->GetFontSize(&size)) &&
+                SUCCEEDED(fmt->GetWeight(&wght)) &&
+                SUCCEEDED(fmt->GetStyle(&style)) &&
+                SUCCEEDED(fmt->GetStretch(&stretch))) {
+                dw->CreateTextFormat(fam, nullptr, wght, style, stretch,
+                                     size * sizeFactor, L"", &scaled);
+            }
+        }
+        if (scaled) use_fmt = scaled;
+    }
     IDWriteTextLayout* tl = nullptr;
     if (FAILED(dw->CreateTextLayout(
             reinterpret_cast<const WCHAR*>(t16.data()),
-            static_cast<UINT32>(t16.size()), fmt,
+            static_cast<UINT32>(t16.size()), use_fmt,
             1e9f, 1e9f, &tl)) || !tl) return;
+    if (scaled) scaled->Release();
     DWRITE_TEXT_METRICS tm{};
     tl->GetMetrics(&tm);
     float w = tm.widthIncludingTrailingWhitespace;
@@ -139,6 +166,9 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
 
     auto P = [&](double v) { return ox + static_cast<float>(v) * scale; };
     auto Q = [&](double v) { return oy + static_cast<float>(v) * scale; };
+    // Text must shrink by the same factor the geometry shrank by, or glyphs
+    // stay full-size inside shrunken boxes (user-visible overflow bug).
+    const float textScale = scale / (zoom_ > 0.001f ? zoom_ : 1.0f);
 
     ID2D1SolidColorBrush* ink = nullptr;
     ID2D1SolidColorBrush* actorFill = nullptr;
@@ -184,12 +214,12 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
             rt->DrawRectangle(lb, ink, 1.0f * scale);
             DrawSeqText(dw, rt, body_fmt_, l.label,
                         P(l.startx) + lw * 0.5f, Q(l.starty) + lh * 0.5f,
-                        ink, true, true);
+                        ink, true, true, textScale);
         }
         if (!l.title.empty()) {
             DrawSeqText(dw, rt, body_fmt_, l.title,
                         P(l.startx) + 70.0f * scale, Q(l.starty) + 10.0f * scale,
-                        ink, false, true);
+                        ink, false, true, textScale);
         }
         // Section dividers: dashed line + branch title.
         for (size_t i = 0; i < l.section_y.size(); ++i) {
@@ -200,7 +230,7 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
             if (i < l.section_titles.size() && !l.section_titles[i].empty()) {
                 DrawSeqText(dw, rt, body_fmt_, l.section_titles[i],
                             P(l.startx) + 70.0f * scale, sy + 10.0f * scale,
-                            ink, false, true);
+                            ink, false, true, textScale);
             }
         }
     }
@@ -308,7 +338,7 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
         }
         if (!m.text.empty()) {
             DrawSeqText(dw, rt, body_fmt_, m.text,
-                        P(m.tx), Q(m.ty), ink, true, true);
+                        P(m.tx), Q(m.ty), ink, true, true, textScale);
         }
     }
 
@@ -322,7 +352,7 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
                                        6.0f * scale, 6.0f * scale);
         rt->FillEllipse(c, ink);
         DrawSeqText(dw, rt, num_fmt_, std::to_string(num.n),
-                    cx, cy + 4.0f * scale, actorFill, true, true);
+                    cx, cy + 4.0f * scale, actorFill, true, true, textScale);
     }
 
     // Notes.
@@ -335,7 +365,7 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
             D2D1::RoundedRect(rc, 4.0f * scale, 4.0f * scale), actorStroke,
             1.0f * scale);
         DrawSeqText(dw, rt, body_fmt_, nt.text, P(nt.tx), Q(nt.ty),
-                    ink, true, true);
+                    ink, true, true, textScale);
     }
 
     // Actor boxes: top first pass stored, bottom uses stopy. Top box y=0.
@@ -348,7 +378,7 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
         rt->DrawRectangle(top, actorStroke, 1.0f * scale);
         DrawSeqText(dw, rt, body_fmt_, a.name,
                     bx + bw * 0.5f, Q(0.0) + kActorBoxHeight * scale * 0.5f,
-                    ink, true, true);
+                    ink, true, true, textScale);
         // Footer (mirrorActors): small box at stopy.
         float fy = Q(a.stopy);
         D2D1_RECT_F foot = D2D1::RectF(bx, fy, bx + bw,
@@ -357,14 +387,14 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
         rt->DrawRectangle(foot, actorStroke, 1.0f * scale);
         DrawSeqText(dw, rt, body_fmt_, a.name,
                     bx + bw * 0.5f, fy + kActorFooterHeight * scale * 0.5f,
-                    ink, true, true);
+                    ink, true, true, textScale);
     }
 
     // Title: mermaid draws it at (title_x, -25) in viewBox space; the
     // viewBox already shifts by -40 so Q(-25) lands inside the block.
     if (!ls.title.empty()) {
         DrawSeqText(dw, rt, body_fmt_, ls.title,
-                    P(ls.title_x), Q(-25.0), ink, true, true);
+                    P(ls.title_x), Q(-25.0), ink, true, true, textScale);
     }
 
     ink->Release();
