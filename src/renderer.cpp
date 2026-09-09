@@ -1740,7 +1740,8 @@ static void DrawArrowHead(ID2D1RenderTarget* rt, ID2D1Factory* fac,
 }
 
 void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
-                                 const Node& n, float x, float y) {
+                                 const Node& n, float x, float y,
+                                 float width) {
     if (!rt || !dw) return;
     if (!n.mermaid_layout) return;
     const auto& lo = *n.mermaid_layout;
