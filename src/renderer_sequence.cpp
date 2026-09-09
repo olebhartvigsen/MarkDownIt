@@ -110,9 +110,15 @@ void DrawSeqText(IDWriteFactory* dw, ID2D1RenderTarget* rt,
     if (center_v && !baseline) y -= h * 0.5f;
     if (baseline) {
         // Place the layout so the line's alphabetic baseline lands on cy.
-        // GetMetrics().baseline is relative to the layout top and equals the
-        // first line's ascent incl. leading.
-        y -= tm.baseline;
+        // DWRITE_TEXT_METRICS has no baseline member; the offset lives on
+        // the line metrics: GetLineMetrics().baseline for line 0.
+        DWRITE_LINE_METRICS lm[1]{};
+        UINT32 line_count = 0;
+        if (SUCCEEDED(tl->GetLineMetrics(lm, 1, &line_count)) && line_count > 0) {
+            y -= lm[0].baseline;
+        } else {
+            y -= h * 0.8f;  // no line metrics: approximate ascent
+        }
     }
     rt->DrawTextLayout(D2D1::Point2F(x, y), tl, brush,
                        D2D1_DRAW_TEXT_OPTIONS_CLIP);
