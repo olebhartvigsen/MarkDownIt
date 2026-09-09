@@ -60,10 +60,19 @@ void SeqUtf8To16(const std::string& s, std::u16string& out) {
 // the text column, text must shrink by the same factor, or the glyphs stay
 // full-size inside shrunken boxes. Implemented by cloning the text format
 // with a scaled font size (IDWriteTextLayout has no size factor).
+//
+// baseline: when true, (cx, cy) is the ALPHABETIC BASELINE, not the center
+// of the line box. mermaid's SVG texts are baseline-anchored (`dy`, or
+// plain alphabetic y), so vertical-parity fixes must express themselves as
+// baselines; centering the 21px DWrite line box on the same point sits the
+// glyphs several pixels off the real browser render. The layout top is
+// derived at runtime from the line metrics (ascent), which keeps the rule
+// font-independent.
 void DrawSeqText(IDWriteFactory* dw, ID2D1RenderTarget* rt,
                  IDWriteTextFormat* fmt, const std::string& utf8,
                  float cx, float cy, ID2D1SolidColorBrush* brush,
-                 bool center_h, bool center_v, float sizeFactor = 1.0f) {
+                 bool center_h, bool center_v, float sizeFactor = 1.0f,
+                 bool baseline = false) {
     if (!fmt || !brush) return;
     std::u16string t16;
     SeqUtf8To16(utf8, t16);
@@ -98,7 +107,13 @@ void DrawSeqText(IDWriteFactory* dw, ID2D1RenderTarget* rt,
     float x = cx;
     float y = cy;
     if (center_h) x -= w * 0.5f;
-    if (center_v) y -= h * 0.5f;
+    if (center_v && !baseline) y -= h * 0.5f;
+    if (baseline) {
+        // Place the layout so the line's alphabetic baseline lands on cy.
+        // GetMetrics().baseline is relative to the layout top and equals the
+        // first line's ascent incl. leading.
+        y -= tm.baseline;
+    }
     rt->DrawTextLayout(D2D1::Point2F(x, y), tl, brush,
                        D2D1_DRAW_TEXT_OPTIONS_CLIP);
     tl->Release();
@@ -332,22 +347,28 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
             }
         }
         if (!m.text.empty()) {
+            // mermaid parity: the SVG message text is `y = ty, dy = 1em,
+            // dominant-baseline:middle`; measured in headless Chrome its
+            // effective alphabetic baseline is ty + 17 (16px font). The
+            // previous centered box put the glyphs far above the line.
             DrawSeqText(dw, rt, body_fmt_, m.text,
-                        P(m.tx), Q(m.ty), ink, true, true, textScale);
+                        P(m.tx), Q(m.ty) + 17.0f * scale, ink, true, false,
+                        textScale, true);
         }
     }
 
     // Autonumber circles — mermaid parity: marker #sequencenumber is a
-    // circle r=6 drawn with markerUnits=strokeWidth, so the rendered radius
-    // is 6 × strokeWidth (1.5) = 9 px. The 12px digit is baseline-anchored
-    // at cy + 4 → it fits inside the 18px disc.
+    // circle r=6 drawn with markerUnits=strokeWidth on a stroke-width=2
+    // message line, so the rendered radius is 6 × 2 = 12 px (24px disc).
+    // The 12px digit is plain (alphabetic) at y = lineStartY + 4.
     for (const auto& num : ls.numbers) {
         float cx = P(num.x), cy = Q(num.y);
         D2D1_ELLIPSE c = D2D1::Ellipse(D2D1::Point2F(cx, cy),
-                                       9.0f * scale, 9.0f * scale);
+                                       12.0f * scale, 12.0f * scale);
         rt->FillEllipse(c, ink);
         DrawSeqText(dw, rt, num_fmt_, std::to_string(num.n),
-                    cx, cy + 4.0f * scale, actorFill, true, true, textScale);
+                    cx, cy + 4.0f * scale, actorFill, true, false,
+                    textScale, true);
     }
 
     // Notes.
@@ -359,8 +380,10 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
         rt->DrawRoundedRectangle(
             D2D1::RoundedRect(rc, 4.0f * scale, 4.0f * scale), actorStroke,
             1.0f * scale);
-        DrawSeqText(dw, rt, body_fmt_, nt.text, P(nt.tx), Q(nt.ty),
-                    ink, true, true, textScale);
+        // Same dy=1em + middle construction as message texts.
+        DrawSeqText(dw, rt, body_fmt_, nt.text, P(nt.tx),
+                    Q(nt.ty) + 17.0f * scale,
+                    ink, true, false, textScale, true);
     }
 
     // Actor boxes: top first pass stored, bottom uses stopy. Top box y=0.
