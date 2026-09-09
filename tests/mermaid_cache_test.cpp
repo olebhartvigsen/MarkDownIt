@@ -27,8 +27,8 @@ TEST(MermaidCache, MeasureHeightIsIdempotent) {
     Flowchart fc = ParseFlowchart("flowchart TD\nA --> B\nB --> C\n");
     LayoutParams p;
     LaidOutFlowchart lo = LayoutFlowchart(fc, p);
-    float h1 = MeasureLayoutHeight(lo, 1.0f);
-    float h2 = MeasureLayoutHeight(lo, 1.0f);
+    float h1 = MeasureLayoutHeight(lo, 1.0f, 1.0e9f);
+    float h2 = MeasureLayoutHeight(lo, 1.0f, 1.0e9f);
     EXPECT_EQ(h1, h2);
     EXPECT_GT(h1, 2.0f * kMermaidBlockPad);
 }
@@ -37,8 +37,8 @@ TEST(MermaidCache, MeasureHeightScalesWithZoom) {
     Flowchart fc = ParseFlowchart("flowchart TD\nA --> B\n");
     LayoutParams p;
     LaidOutFlowchart lo = LayoutFlowchart(fc, p);
-    float h1 = MeasureLayoutHeight(lo, 1.0f);
-    float h2 = MeasureLayoutHeight(lo, 2.0f);
+    float h1 = MeasureLayoutHeight(lo, 1.0f, 1.0e9f);
+    float h2 = MeasureLayoutHeight(lo, 2.0f, 1.0e9f);
     // Padding is constant, so h2 - 2*pad == 2 * (h1 - 2*pad).
     float body1 = h1 - 2.0f * kMermaidBlockPad;
     float body2 = h2 - 2.0f * kMermaidBlockPad;

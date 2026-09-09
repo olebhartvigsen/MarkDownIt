@@ -725,11 +725,11 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
         } else if (n.block == BlockKind::ThematicBreak) {
             blockH = 12.0f;
         } else if (n.block == BlockKind::MermaidFlowchart) {
-            blockH = MeasureMermaidBlock(n);
+            blockH = MeasureMermaidBlock(n, drawW);
         } else if (n.block == BlockKind::MermaidPie) {
-            blockH = mermaid::MeasurePieHeight(*n.mermaid_pie, zoom_);
+            blockH = mermaid::MeasurePieHeight(*n.mermaid_pie, zoom_, drawW);
         } else if (n.block == BlockKind::MermaidSequence) {
-            blockH = mermaid::MeasureSequenceHeight(*n.mermaid_seq, zoom_);
+            blockH = mermaid::MeasureSequenceHeight(*n.mermaid_seq, zoom_, drawW);
         } else if (n.block == BlockKind::Table) {
             blockH = MeasureTable(dw, n, drawX, drawW);
         } else {
@@ -917,24 +917,24 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
 
         if (n.block == BlockKind::MermaidFlowchart) {
-            DrawMermaidBlock(rt, dw, n, drawX, curY);
-            curY += MeasureMermaidBlock(n);
+            DrawMermaidBlock(rt, dw, n, drawX, curY, drawW);
+            curY += MeasureMermaidBlock(n, drawW);
             prevBlock = n.block;
             prevDepth = n.depth;
             continue;
         }
 
         if (n.block == BlockKind::MermaidPie) {
-            DrawMermaidPieBlock(rt, dw, n, drawX, curY);
-            curY += mermaid::MeasurePieHeight(*n.mermaid_pie, zoom_);
+            DrawMermaidPieBlock(rt, dw, n, drawX, curY, drawW);
+            curY += mermaid::MeasurePieHeight(*n.mermaid_pie, zoom_, drawW);
             prevBlock = n.block;
             prevDepth = n.depth;
             continue;
         }
 
         if (n.block == BlockKind::MermaidSequence) {
-            DrawMermaidSequenceBlock(rt, dw, n, drawX, curY);
-            curY += mermaid::MeasureSequenceHeight(*n.mermaid_seq, zoom_);
+            DrawMermaidSequenceBlock(rt, dw, n, drawX, curY, drawW);
+            curY += mermaid::MeasureSequenceHeight(*n.mermaid_seq, zoom_, drawW);
             prevBlock = n.block;
             prevDepth = n.depth;
             continue;
@@ -1689,9 +1689,10 @@ static const UINT32 kMermaidDashSize = 2;
 // Note: layout is computed once at parse time (parser.cpp) and stored on
 // Node::mermaid_layout, so we never re-run layout on WM_PAINT. Height is
 // derived through mermaid::MeasureLayoutHeight so measure and paint agree.
-float Renderer::MeasureMermaidBlock(const Node& n) const {
+float Renderer::MeasureMermaidBlock(const Node& n, float width) const {
     if (!n.mermaid_layout) return 0.0f;
-    return mermaid::MeasureLayoutHeight(*n.mermaid_layout, zoom_);
+    const float availW = width - 2.0f * mermaid::kMermaidBlockPad;
+    return mermaid::MeasureLayoutHeight(*n.mermaid_layout, zoom_, availW);
 }
 
 static void DrawArrowHead(ID2D1RenderTarget* rt, ID2D1Factory* fac,
@@ -1744,7 +1745,13 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (!n.mermaid_layout) return;
     const auto& lo = *n.mermaid_layout;
     const float pad = mermaid::kMermaidBlockPad;
+    // Fit the diagram into the text column: scale down (never up) when the
+    // natural canvas is wider than the available width.
+    const float availW =
+        width > 2.0f * pad ? width - 2.0f * pad : 0.0f;
     float scale = zoom_;
+    if (lo.width > 0 && availW > 0 && lo.width > availW)
+        scale = zoom_ * (availW / static_cast<float>(lo.width));
     float ox = x;
     float oy = y + pad;
 

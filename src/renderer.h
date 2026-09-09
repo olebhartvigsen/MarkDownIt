@@ -104,10 +104,10 @@ private:
     float MeasureTable(IDWriteFactory* dw, const Node& n,
                        float x, float width);
     void DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
-                          const Node& n, float x, float y);
-    float MeasureMermaidBlock(const Node& n) const;
+                          const Node& n, float x, float y, float width);
+    float MeasureMermaidBlock(const Node& n, float width) const;
     void DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
-                             const Node& n, float x, float y);
+                             const Node& n, float x, float y, float width);
     void DrawMermaidSequenceBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
-                                  const Node& n, float x, float y);
+                                  const Node& n, float x, float y, float width);
 };

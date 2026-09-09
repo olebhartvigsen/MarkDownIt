@@ -119,12 +119,19 @@ void DrawOpenHead(ID2D1RenderTarget* rt, ID2D1SolidColorBrush* brush,
 
 void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
                                         IDWriteFactory* dw,
-                                        const Node& n, float x, float y) {
+                                        const Node& n, float x, float y,
+                                        float width) {
     if (!rt || !dw) return;
     if (!n.mermaid_seq) return;
     const auto& ls = *n.mermaid_seq;
     const float pad = mermaid::kMermaidBlockPad;
-    const float scale = zoom_;
+    // Fit the diagram into the text column: scale down (never up) when the
+    // natural canvas (viewBox width) is wider than the available width.
+    const float availW =
+        width > 2.0f * pad ? width - 2.0f * pad : 0.0f;
+    float scale = zoom_;
+    if (ls.width > 0 && availW > 0 && ls.width > availW)
+        scale = zoom_ * (availW / static_cast<float>(ls.width));
     // Golden coords live in mermaid's viewBox space (startx may be negative).
     // Translate into block-local space: origin at viewBox min + block pos.
     const float ox = x - static_cast<float>(ls.startx) * scale;

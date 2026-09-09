@@ -86,12 +86,19 @@ void DrawPieText(IDWriteFactory* dw, ID2D1RenderTarget* rt,
 }  // namespace
 
 void Renderer::DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
-                                   const Node& n, float x, float y) {
+                                   const Node& n, float x, float y,
+                                   float width) {
     if (!rt || !dw) return;
     if (!n.mermaid_pie) return;
     const auto& lp = *n.mermaid_pie;
     const float pad = mermaid::kMermaidBlockPad;
+    // Fit the pie into the text column: scale down (never up) when the
+    // natural canvas is wider than the available width.
+    const float availW =
+        width > 2.0f * pad ? width - 2.0f * pad : 0.0f;
     float scale = zoom_;
+    if (lp.width > 0 && availW > 0 && lp.width > availW)
+        scale = zoom_ * (availW / static_cast<float>(lp.width));
     float ox = x;
     float oy = y + pad;
 

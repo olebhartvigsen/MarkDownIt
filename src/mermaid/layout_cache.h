@@ -42,32 +42,45 @@ struct MermaidRender {
 constexpr float kMermaidBlockPad = 12.0f;
 
 // Height in device-independent pixels of the mermaid block at the given
-// zoom. Both MeasureMermaidBlock and DrawMermaidBlock must call this so
-// they agree by construction.
-inline float MeasureLayoutHeight(const LaidOutFlowchart& lo, float zoom) {
-    return static_cast<float>(lo.height) * zoom + 2.0f * kMermaidBlockPad;
+// zoom, constrained to the available width. Diagrams wider than the text
+// column are scaled down to fit (same-fit rule as the SVG block path), so
+// measure and draw must both pass the same availW or they will disagree.
+inline float MeasureLayoutHeight(const LaidOutFlowchart& lo, float zoom,
+                                 float availW) {
+    float fit = 1.0f;
+    if (lo.width > 0 && availW > 0 && lo.width > availW)
+        fit = availW / static_cast<float>(lo.width);
+    return static_cast<float>(lo.height) * zoom * fit + 2.0f * kMermaidBlockPad;
 }
 
 // Pie variant: canvas is 450 DIP tall, same padding scheme.
-inline float MeasurePieHeight(const LaidOutPie& lp, float zoom) {
-    return static_cast<float>(lp.height) * zoom + 2.0f * kMermaidBlockPad;
+inline float MeasurePieHeight(const LaidOutPie& lp, float zoom, float availW) {
+    float fit = 1.0f;
+    if (lp.width > 0 && availW > 0 && lp.width > availW)
+        fit = availW / static_cast<float>(lp.width);
+    return static_cast<float>(lp.height) * zoom * fit + 2.0f * kMermaidBlockPad;
 }
 
-// Sequence variant: vbheight already includes the extra 40 for a title.
-inline float MeasureSequenceHeight(const LaidOutSequence& ls, float zoom) {
-    return static_cast<float>(ls.vbheight) * zoom + 2.0f * kMermaidBlockPad;
+// Sequence variant: vbwidth/vbheight already include the extra 40 for a title.
+inline float MeasureSequenceHeight(const LaidOutSequence& ls, float zoom,
+                                   float availW) {
+    float fit = 1.0f;
+    if (ls.width > 0 && availW > 0 && ls.width > availW)
+        fit = availW / static_cast<float>(ls.width);
+    return static_cast<float>(ls.vbheight) * zoom * fit + 2.0f * kMermaidBlockPad;
 }
 
 // Height for either variant.
-inline float MeasureMermaidHeight(const MermaidRender& mr, float zoom) {
+inline float MeasureMermaidHeight(const MermaidRender& mr, float zoom,
+                                  float availW) {
     switch (mr.kind) {
         case MermaidKind::Pie:
-            return MeasurePieHeight(*mr.pie, zoom);
+            return MeasurePieHeight(*mr.pie, zoom, availW);
         case MermaidKind::Sequence:
-            return MeasureSequenceHeight(*mr.seq, zoom);
+            return MeasureSequenceHeight(*mr.seq, zoom, availW);
         case MermaidKind::Flowchart:
         default:
-            return MeasureLayoutHeight(*mr.flow, zoom);
+            return MeasureLayoutHeight(*mr.flow, zoom, availW);
     }
 }
 
