@@ -1763,17 +1763,12 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (body_fmt_ && textScale != 1.0f && textScale > 0.01f) {
         WCHAR fam[64] = L"";
         if (SUCCEEDED(body_fmt_->GetFontFamilyName(fam, 64))) {
-            DWRITE_FONT_WEIGHT wght;
-            DWRITE_FONT_STYLE style;
-            DWRITE_FONT_STRETCH stretch;
-            float size = 0.0f;
-            if (SUCCEEDED(body_fmt_->GetFontSize(&size)) &&
-                SUCCEEDED(body_fmt_->GetWeight(&wght)) &&
-                SUCCEEDED(body_fmt_->GetStyle(&style)) &&
-                SUCCEEDED(body_fmt_->GetStretch(&stretch))) {
-                dw->CreateTextFormat(fam, nullptr, wght, style, stretch,
-                                     size * textScale, L"", &scaled_fmt);
-            }
+            DWRITE_FONT_WEIGHT wght = body_fmt_->GetFontWeight();
+            DWRITE_FONT_STYLE style = body_fmt_->GetFontStyle();
+            DWRITE_FONT_STRETCH stretch = body_fmt_->GetFontStretch();
+            float size = body_fmt_->GetFontSize();
+            dw->CreateTextFormat(fam, nullptr, wght, style, stretch,
+                                 size * textScale, L"", &scaled_fmt);
         }
         if (scaled_fmt) scale_fmt = scaled_fmt;
     }

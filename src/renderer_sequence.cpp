@@ -76,17 +76,12 @@ void DrawSeqText(IDWriteFactory* dw, ID2D1RenderTarget* rt,
         // and text runs per diagram are few dozen.
         WCHAR fam[64] = L"";
         if (SUCCEEDED(fmt->GetFontFamilyName(fam, 64))) {
-            DWRITE_FONT_WEIGHT wght;
-            DWRITE_FONT_STYLE style;
-            DWRITE_FONT_STRETCH stretch;
-            float size = 0.0f;
-            if (SUCCEEDED(fmt->GetFontSize(&size)) &&
-                SUCCEEDED(fmt->GetWeight(&wght)) &&
-                SUCCEEDED(fmt->GetStyle(&style)) &&
-                SUCCEEDED(fmt->GetStretch(&stretch))) {
-                dw->CreateTextFormat(fam, nullptr, wght, style, stretch,
-                                     size * sizeFactor, L"", &scaled);
-            }
+            DWRITE_FONT_WEIGHT wght = fmt->GetFontWeight();
+            DWRITE_FONT_STYLE style = fmt->GetFontStyle();
+            DWRITE_FONT_STRETCH stretch = fmt->GetFontStretch();
+            float size = fmt->GetFontSize();
+            dw->CreateTextFormat(fam, nullptr, wght, style, stretch,
+                                 size * sizeFactor, L"", &scaled);
         }
         if (scaled) use_fmt = scaled;
     }
