@@ -372,12 +372,12 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
             }
         }
         if (!m.text.empty()) {
-            // mermaid parity: the SVG message text is `y = ty, dy = 1em,
-            // dominant-baseline:middle`; measured in headless Chrome its
-            // effective alphabetic baseline is ty + 17 (16px font). The
-            // previous centered box put the glyphs far above the line.
+            // mermaid parity for the baseline (ty + 17 at 16px), pulled
+            // down by +8 viewBox px: the user finds mermaid's ~14 px gap
+            // between the label's ink bottom and the message line too
+            // airy, so the label sits ~5-6 px above the line instead.
             DrawSeqText(dw, rt, body_fmt_, m.text,
-                        P(m.tx), Q(m.ty) + 17.0f * scale, ink, true, false,
+                        P(m.tx), Q(m.ty) + 25.0f * scale, ink, true, false,
                         textScale, true);
         }
     }
