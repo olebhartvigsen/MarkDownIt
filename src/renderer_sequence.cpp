@@ -241,23 +241,31 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
                         P(l.startx) + 70.0f * scale, Q(l.starty) + 10.0f * scale,
                         ink, false, true, textScale);
         }
-        // Section dividers: dashed line + branch label tag. Design deviation
-        // (agreed with the user): branches get a filled tag box like the
-        // frame keyword boxes, instead of mermaid's bare title text.
+        // Section dividers: branch tag at the divider, keyword inside the
+        // box (else/and/option by frame kind) and the branch title to the
+        // RIGHT of the box — mermaid draws these as a small top-left notch
+        // on the branch's top line. Design deviation, agreed with the user:
+        // branches get a filled tag like the alt/opt/loop keyword boxes.
         for (size_t i = 0; i < l.section_y.size(); ++i) {
             float sy = Q(l.section_y[i]);
             rt->DrawLine(D2D1::Point2F(P(l.startx), sy),
                          D2D1::Point2F(P(l.stopx), sy),
                          ink, 1.0f * scale);
+            const char* kw = l.kind == "par" ? "and"
+                           : l.kind == "critical" ? "option"
+                           : "else";
+            const float lw = 60.0f * scale, lh = 20.0f * scale;
+            D2D1_RECT_F lb = D2D1::RectF(P(l.startx), sy,
+                                         P(l.startx) + lw, sy + lh);
+            rt->FillRectangle(lb, actorFill);
+            rt->DrawRectangle(lb, ink, 1.0f * scale);
+            DrawSeqText(dw, rt, body_fmt_, kw,
+                        P(l.startx) + lw * 0.5f, sy + lh * 0.5f,
+                        ink, true, true, textScale);
             if (i < l.section_titles.size() && !l.section_titles[i].empty()) {
-                const float lw = 60.0f * scale, lh = 20.0f * scale;
-                D2D1_RECT_F lb = D2D1::RectF(P(l.startx), sy - lh,
-                                             P(l.startx) + lw, sy);
-                rt->FillRectangle(lb, actorFill);
-                rt->DrawRectangle(lb, ink, 1.0f * scale);
                 DrawSeqText(dw, rt, body_fmt_, l.section_titles[i],
-                            P(l.startx) + lw * 0.5f, sy - lh * 0.5f,
-                            ink, true, true, textScale);
+                            P(l.startx) + 70.0f * scale, sy + lh * 0.5f,
+                            ink, false, true, textScale);
             }
         }
     }
