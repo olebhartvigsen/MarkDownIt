@@ -269,7 +269,7 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
     PROPVARIANT* ppropvarNewValue)
 {
     UNREFERENCED_PARAMETER(ppropvarCurrentValue);
-    diag::Trace("UpdateProperty enter");
+    diag::TraceFmt("UpdateProperty enter cmd=%u", nCmdID);
 
     // The Ribbon framework queries the initial toggle state of the
     // Wrap ToggleButton via UI_PKEY_BooleanValue. Return the renderer's
@@ -278,6 +278,7 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
     {
         if (IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
         {
+            diag::TraceFmt("UpdateProperty wrap bool");
             ppropvarNewValue->vt = VT_BOOL;
             ppropvarNewValue->boolVal =
                 (m_pApp && m_pApp->IsWrapEnabled()) ? VARIANT_TRUE : VARIANT_FALSE;
@@ -289,6 +290,7 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
     {
         if (IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
         {
+            diag::TraceFmt("UpdateProperty edit bool");
             ppropvarNewValue->vt = VT_BOOL;
             ppropvarNewValue->boolVal =
                 (m_pApp && m_pApp->IsEditing()) ? VARIANT_TRUE : VARIANT_FALSE;
@@ -300,6 +302,7 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
     {
         if (IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
         {
+            diag::TraceFmt("UpdateProperty source bool");
             ppropvarNewValue->vt = VT_BOOL;
             ppropvarNewValue->boolVal =
                 (m_pApp && m_pApp->IsSourceView()) ? VARIANT_TRUE : VARIANT_FALSE;
@@ -312,9 +315,12 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
     // Width buttons show a checkmark prefix when active.
     if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_Label))
     {
+        diag::TraceFmt("UpdateProperty label branch cmd=%u", nCmdID);
         if (nCmdID == IDC_CMD_ASSOC_MD)
         {
+            diag::TraceFmt("UpdateProperty assoc label, IsMdRegistered begin");
             bool on = (m_pApp && m_pApp->IsMdRegistered());
+            diag::TraceFmt("UpdateProperty assoc label done on=%d", (int)on);
             const wchar_t* lbl = on
                 ? L"Unassociate .md files"
                 : L"Associate .md files";
@@ -331,7 +337,7 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         };
         for (int i = 0; i < 4; ++i) {
             if (nCmdID == widthCmds[i]) {
-                diag::Trace("UpdateProperty width label");
+                diag::TraceFmt("UpdateProperty width label begin i=%d", i);
                 int mode = m_pApp ? m_pApp->GetContentWidthMode() : 0;
                 const wchar_t* lbl = widthLabels[i];
                 if (mode == i) {
@@ -342,8 +348,10 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
                     wcsncpy_s(buf + 2, 38, lbl, _TRUNCATE);
                     lbl = buf;
                 }
+                diag::TraceFmt("UpdateProperty width label SysAllocString i=%d", i);
                 ppropvarNewValue->vt = VT_LPWSTR;
                 ppropvarNewValue->pwszVal = SysAllocString(lbl);
+                diag::TraceFmt("UpdateProperty width label done i=%d", i);
                 return S_OK;
             }
         }
@@ -352,6 +360,7 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
     // Enable/disable format buttons based on edit mode.
     if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_Enabled))
     {
+        diag::TraceFmt("UpdateProperty enabled branch cmd=%u", nCmdID);
         static const UINT fmtCmds[] = {
             IDC_CMD_BOLD, IDC_CMD_ITALIC, IDC_CMD_CODE, IDC_CMD_STRIKE,
             IDC_CMD_H1, IDC_CMD_H2, IDC_CMD_H3,
@@ -378,10 +387,13 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
     // Formatting toggle buttons: query the caret's format state.
     if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
     {
+        diag::TraceFmt("UpdateProperty boolean branch cmd=%u", nCmdID);
         bool on = false;
         if (m_pApp)
         {
+            diag::TraceFmt("UpdateProperty GetFormatState begin cmd=%u", nCmdID);
             FormatState fs = m_pApp->GetFormatState();
+            diag::TraceFmt("UpdateProperty GetFormatState done cmd=%u", nCmdID);
             switch (nCmdID)
             {
             case IDC_CMD_BOLD:     on = fs.bold;      break;
