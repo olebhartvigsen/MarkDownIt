@@ -14,7 +14,7 @@ inline void TraceFmt(const char* fmt, ...) {
     char line[512];
     va_list args;
     va_start(args, fmt);
-    int n = _snprintf_s(line, sizeof(line), _TRUNCATE, fmt, args);
+    int n = _vsnprintf_s(line, sizeof(line), _TRUNCATE, fmt, args);
     va_end(args);
     if (n <= 0) return;
     char path[MAX_PATH] = {};

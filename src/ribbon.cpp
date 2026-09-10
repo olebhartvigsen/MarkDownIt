@@ -324,8 +324,10 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
             const wchar_t* lbl = on
                 ? L"Unassociate .md files"
                 : L"Associate .md files";
+            diag::TraceFmt("assoc SysAllocString begin");
             ppropvarNewValue->vt = VT_LPWSTR;
             ppropvarNewValue->pwszVal = SysAllocString(lbl);
+            diag::TraceFmt("assoc SysAllocString done");
             return S_OK;
         }
         static const UINT widthCmds[4] = {
@@ -411,9 +413,11 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         }
         ppropvarNewValue->vt = VT_BOOL;
         ppropvarNewValue->boolVal = on ? VARIANT_TRUE : VARIANT_FALSE;
+        diag::TraceFmt("boolean branch return");
         return S_OK;
     }
 
+    diag::TraceFmt("UpdateProperty E_NOTIMPL return");
     return E_NOTIMPL;
 }
 
