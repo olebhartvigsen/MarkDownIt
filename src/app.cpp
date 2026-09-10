@@ -18,6 +18,7 @@
 #include <cmath>
 #include <algorithm>
 #include <vector>
+#include "crash_trace.h"
 
 
 
@@ -926,6 +927,7 @@ void AppWindow::OpenLink(const std::string& url) {
 
 void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     SetFocus(hwnd);
+    diag::Trace("OnLButtonDown enter");
 
     // Welcome screen: clicking a card opens that file.
     if (welcome_mode_) {
@@ -1109,6 +1111,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     }
     // Only update caret position in edit mode; in view mode we have no caret.
     if (editing_) UpdateCaretPosition();
+    diag::Trace("OnLButtonDown end");
     Repaint();
 }
 
@@ -1882,6 +1885,7 @@ void AppWindow::UpdateDpi() {
 }
 
 void AppWindow::OnContentPaint(HWND hwnd) {
+    diag::Trace("OnContentPaint enter");
     if (!rt_) {
             RecreateRenderTarget();
         if (!rt_) { ValidateRect(hwnd, nullptr); return; }
@@ -1936,6 +1940,7 @@ void AppWindow::OnContentPaint(HWND hwnd) {
     }
 
     HRESULT hr = rt_->EndDraw();
+    diag::Trace("OnContentPaint EndDraw done");
     if (hr == D2DERR_RECREATE_TARGET) {
         RecreateRenderTarget();
         // Force immediate repaint after target recreation.
@@ -1944,6 +1949,7 @@ void AppWindow::OnContentPaint(HWND hwnd) {
     }
     EndPaint(hwnd, &ps);
     UpdateCaretPosition();
+    diag::Trace("OnContentPaint exit");
 }
 
 
@@ -3872,6 +3878,7 @@ int AppWindow::GetContentWidthMode() const {
 }
 
 void AppWindow::SetContentWidthMode(int mode) {
+    diag::Trace("SetContentWidthMode enter");
     if (mode < 0 || mode > 3) mode = 0;
     settings_.contentWidthMode = mode;
     renderer_.SetContentWidthMode(mode);
@@ -3880,9 +3887,11 @@ void AppWindow::SetContentWidthMode(int mode) {
     // to avoid re-entrant calls inside the Ribbon Execute callback.
     layout_cache_.Clear();
     renderer_.ClearSvgCache();
+    diag::Trace("SetContentWidthMode caches cleared");
     if (hwnd_content_) {
         PostMessage(hwnd_content_, WM_USER + 1, 0, 0);
     }
+    diag::Trace("SetContentWidthMode posted");
 }
 
 void AppWindow::InvalidateSettingsButtons() {
@@ -4030,10 +4039,14 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
             return 0;
         case WM_USER + 1: {  // Deferred settings change (width, etc.)
+            diag::Trace("WM_USER+1 enter");
             InvalidateSettingsButtons();
+            diag::Trace("WM_USER+1 buttons invalidated");
             UpdateScrollInfo();
+            diag::Trace("WM_USER+1 scroll info updated");
             RedrawWindow(hwnd_content_, nullptr, nullptr,
                 RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
+            diag::Trace("WM_USER+1 repaint done");
             return 0;
         }
         case WM_USER + 2: {  // Deferred .md association toggle
