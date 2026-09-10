@@ -1,4 +1,5 @@
 #include "ribbon.h"
+#include "crash_trace.h"
 #include "app.h"
 
 // Module-level globals.
@@ -268,6 +269,7 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
     PROPVARIANT* ppropvarNewValue)
 {
     UNREFERENCED_PARAMETER(ppropvarCurrentValue);
+    diag::Trace("UpdateProperty enter");
 
     // The Ribbon framework queries the initial toggle state of the
     // Wrap ToggleButton via UI_PKEY_BooleanValue. Return the renderer's
@@ -329,6 +331,7 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         };
         for (int i = 0; i < 4; ++i) {
             if (nCmdID == widthCmds[i]) {
+                diag::Trace("UpdateProperty width label");
                 int mode = m_pApp ? m_pApp->GetContentWidthMode() : 0;
                 const wchar_t* lbl = widthLabels[i];
                 if (mode == i) {
@@ -408,6 +411,7 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     const PROPVARIANT* ppropvarValue,
     IUISimplePropertySet* pCommandExecutionProperties)
 {
+    diag::Trace("Execute enter");
     UNREFERENCED_PARAMETER(key);
     UNREFERENCED_PARAMETER(ppropvarValue);
     UNREFERENCED_PARAMETER(pCommandExecutionProperties);
@@ -450,10 +454,11 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_UNDO:    m_pApp->UndoAction();       break;
     case IDC_CMD_REDO:    m_pApp->RedoAction();       break;
     case IDC_CMD_ASSOC_MD:    m_pApp->ToggleMdAssociation();         break;
-    case IDC_CMD_WIDTH_STD:   m_pApp->SetContentWidthMode(0);        break;
-    case IDC_CMD_WIDTH_960:   m_pApp->SetContentWidthMode(1);        break;
-    case IDC_CMD_WIDTH_1600:  m_pApp->SetContentWidthMode(2);        break;
-    case IDC_CMD_WIDTH_FULL:  m_pApp->SetContentWidthMode(3);        break;
+    case IDC_CMD_WIDTH_STD:   diag::Trace("Execute width std");   m_pApp->SetContentWidthMode(0);        break;
+    case IDC_CMD_WIDTH_960:   diag::Trace("Execute width 960");   m_pApp->SetContentWidthMode(1);        break;
+    case IDC_CMD_WIDTH_1600:  diag::Trace("Execute width 1600");  m_pApp->SetContentWidthMode(2);        break;
+    case IDC_CMD_WIDTH_FULL:  diag::Trace("Execute width full");  m_pApp->SetContentWidthMode(3);        break;
     }
+    diag::Trace("Execute return");
     return S_OK;
 }
