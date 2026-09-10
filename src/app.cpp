@@ -3868,6 +3868,9 @@ void AppWindow::ToggleMdAssociation() {
     // Defer all side effects (registry writes, SHChangeNotify,
     // InvalidateUICommand) via PostMessage to avoid re-entrant calls
     // inside the Ribbon's Execute callback, which causes a CTD.
+    if (hwnd_) {
+        SetTimer(hwnd_, 6, 350, nullptr);
+    }
     if (hwnd_content_) {
         PostMessage(hwnd_content_, WM_USER + 2, 0, 0);
     }
@@ -3888,6 +3891,16 @@ void AppWindow::SetContentWidthMode(int mode) {
     layout_cache_.Clear();
     renderer_.ClearSvgCache();
     diag::Trace("SetContentWidthMode caches cleared");
+    // InvalidateUICommand while a Ribbon popup (the ApplicationMenu the user
+    // just clicked in) is still closing corrupts the framework and CTDs on
+    // the next menu open (crash_trace showed the crash between frame
+    // framework queries right after the assoc-label query returned). The
+    // framework dismisses its popup after animation; a timer ensures the
+    // invalidation only runs once the menu is fully gone. Timer id 6 (free:
+    // 1/3/5 are taken on hwnd_).
+    if (hwnd_) {
+        SetTimer(hwnd_, 6, 350, nullptr);
+    }
     if (hwnd_content_) {
         PostMessage(hwnd_content_, WM_USER + 1, 0, 0);
     }
@@ -3954,6 +3967,14 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 // Debounced window placement save after resize.
                 KillTimer(hwnd_, 5);
                 SaveWinPlacement(hwnd_);
+            } else if (wp == 6) {
+                // Deferred Ribbon button invalidation: the ApplicationMenu
+                // popup has fully closed by now, so invalidating the label
+                // properties cannot corrupt the framework anymore (CTD fix).
+                KillTimer(hwnd_, 6);
+                diag::Trace("timer6 InvalidateSettingsButtons begin");
+                InvalidateSettingsButtons();
+                diag::Trace("timer6 InvalidateSettingsButtons done");
             }
             return 0;
         case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
@@ -4040,8 +4061,8 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         case WM_USER + 1: {  // Deferred settings change (width, etc.)
             diag::Trace("WM_USER+1 enter");
-            InvalidateSettingsButtons();
-            diag::Trace("WM_USER+1 buttons invalidated");
+            // Invalidations moved to timer 6 (see SetContentWidthMode);
+            // only scroll + repaint remain here.
             UpdateScrollInfo();
             diag::Trace("WM_USER+1 scroll info updated");
             RedrawWindow(hwnd_content_, nullptr, nullptr,
@@ -4058,7 +4079,8 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 UnregisterMdAssociation();
             }
             SaveSettings(settings_);
-            InvalidateSettingsButtons();
+            // Invalidations now run on timer 6 once the Ribbon popup is
+            // fully closed; direct invalidation here corrupts the framework.
             return 0;
         }
         default: return DefWindowProcW(hwnd, msg, wp, lp);
