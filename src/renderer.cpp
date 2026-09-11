@@ -11,7 +11,6 @@
 #include "mermaid/layout.h"
 #include "mermaid/layout_cache.h"
 #include <cmath>
-#include "crash_trace.h"
 
 static const float kPtToDip = 96.0f / 72.0f;
 
@@ -726,16 +725,12 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
         } else if (n.block == BlockKind::ThematicBreak) {
             blockH = 12.0f;
         } else if (n.block == BlockKind::MermaidFlowchart) {
-            diag::Trace("measure flowchart");
             blockH = MeasureMermaidBlock(n, drawW);
         } else if (n.block == BlockKind::MermaidPie) {
-            diag::Trace("measure pie");
             blockH = mermaid::MeasurePieHeight(*n.mermaid_pie, zoom_, drawW);
         } else if (n.block == BlockKind::MermaidSequence) {
-            diag::Trace("measure sequence");
             blockH = mermaid::MeasureSequenceHeight(*n.mermaid_seq, zoom_, drawW);
         } else if (n.block == BlockKind::Table) {
-            diag::Trace("measure table");
             blockH = MeasureTable(dw, n, drawX, drawW);
         } else {
             IDWriteTextFormat* fmt = nullptr;
@@ -922,7 +917,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
 
         if (n.block == BlockKind::MermaidFlowchart) {
-            diag::Trace("draw flowchart");
             DrawMermaidBlock(rt, dw, n, drawX, curY, drawW);
             curY += MeasureMermaidBlock(n, drawW);
             prevBlock = n.block;
@@ -931,7 +925,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
 
         if (n.block == BlockKind::MermaidPie) {
-            diag::Trace("draw pie");
             DrawMermaidPieBlock(rt, dw, n, drawX, curY, drawW);
             curY += mermaid::MeasurePieHeight(*n.mermaid_pie, zoom_, drawW);
             prevBlock = n.block;
@@ -940,7 +933,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
 
         if (n.block == BlockKind::MermaidSequence) {
-            diag::Trace("draw sequence");
             DrawMermaidSequenceBlock(rt, dw, n, drawX, curY, drawW);
             curY += mermaid::MeasureSequenceHeight(*n.mermaid_seq, zoom_, drawW);
             prevBlock = n.block;
@@ -1797,7 +1789,6 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     ID2D1Factory* fac = nullptr;
     rt->GetFactory(&fac);
 
-    diag::Trace("flow: lanes");
     // Swimlane bands first, so nodes/edges overlay.
     if (!lo.lanes.empty()) {
         ID2D1SolidColorBrush* laneFill = nullptr;
@@ -1836,7 +1827,6 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (laneTitle)  laneTitle->Release();
     }
 
-    diag::Trace("flow: edges");
     // Edges first.
     if (fac && edgeBrush) {
         ID2D1SolidColorBrush* labelBrush = nullptr;
@@ -1949,7 +1939,6 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (labelBrush) labelBrush->Release();
     }
 
-    diag::Trace("flow: nodes");
     // Nodes.
     for (const auto& nd : lo.nodes) {
         if (nd.is_dummy) continue;

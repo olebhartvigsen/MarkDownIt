@@ -1,5 +1,4 @@
 #include "renderer.h"
-#include "crash_trace.h"
 
 #include "theme.h"
 #include "mermaid/pie_layout.h"
@@ -135,7 +134,6 @@ void Renderer::DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     rt->CreateSolidColorBrush(D2D1::ColorF(0x000000), &ringBrush);
     rt->CreateSolidColorBrush(D2D1::ColorF(kPieTextDark), &textBrush);
 
-    diag::Trace("pie: ring");
     // Outer ring (class pieOuterCircle): stroke-only, fill none, 2px.
     if (ringBrush) {
         D2D1_ELLIPSE ring = D2D1::Ellipse(
@@ -146,7 +144,6 @@ void Renderer::DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         rt->DrawEllipse(ring, ringBrush, 2.0f * scale);
     }
 
-    diag::Trace("pie: slices");
     // Slices: each arc is a filled path from center, out to arc, back.
     ID2D1Factory* fac = nullptr;
     rt->GetFactory(&fac);

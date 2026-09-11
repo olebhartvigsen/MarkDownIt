@@ -1,5 +1,4 @@
 #include "renderer.h"
-#include "crash_trace.h"
 
 #include "theme.h"
 #include "mermaid/seq_layout.h"
@@ -213,7 +212,6 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
         return;
     }
 
-    diag::Trace("seq: backgrounds");
     // Background rects (rect blocks) first.
     for (const auto& b : ls.backgrounds) {
         D2D1_RECT_F rc = D2D1::RectF(P(b.x), Q(b.y),
@@ -222,7 +220,6 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
         rt->FillRectangle(rc, loopFill);
     }
 
-    diag::Trace("seq: loops");
     // Loop / alt / par / opt / critical / break frames.
     for (const auto& l : ls.loops) {
         D2D1_RECT_F rc = D2D1::RectF(P(l.startx), Q(l.starty),
@@ -273,7 +270,6 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
         }
     }
 
-    diag::Trace("seq: pre-lifelines");
     // Lifelines (between top box bottom and footer/top of bottom box).
     for (const auto& a : ls.actors) {
         (void)a;  // lifelines are derived from actor boxes below
@@ -290,7 +286,6 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
         (void)i;
     }
 
-    diag::Trace("seq: activations");
     // Activations.
     for (const auto& a : ls.activations) {
         D2D1_RECT_F rc = D2D1::RectF(P(a.x), Q(a.y),
@@ -299,7 +294,6 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
         rt->DrawRectangle(rc, actorStroke, 1.0f * scale);
     }
 
-    diag::Trace("seq: messages");
     // Messages (lines and self paths) with heads and text.
     for (const auto& m : ls.messages) {
         bool dotted = (m.type == mermaid::MsgType::Dotted);
@@ -388,7 +382,6 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
         }
     }
 
-    diag::Trace("seq: autonumber");
     // Autonumber circles — mermaid parity: marker #sequencenumber is a
     // circle r=6 drawn with markerUnits=strokeWidth on a stroke-width=2
     // message line, so the rendered radius is 6 × 2 = 12 px (24px disc).
@@ -403,7 +396,6 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
                     textScale, true);
     }
 
-    diag::Trace("seq: notes");
     // Notes.
     for (const auto& nt : ls.notes) {
         D2D1_RECT_F rc = D2D1::RectF(P(nt.x), Q(nt.y),
@@ -419,7 +411,6 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
                     ink, true, false, textScale, true);
     }
 
-    diag::Trace("seq: actors");
     // Actor boxes: top first pass stored, bottom uses stopy. Top box y=0.
     for (const auto& a : ls.actors) {
         float bx = P(a.x);
@@ -442,7 +433,6 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
                     ink, true, true, textScale);
     }
 
-    diag::Trace("seq: title");
     // Title: mermaid draws it at (title_x, -25) in viewBox space; the
     // viewBox already shifts by -40 so Q(-25) lands inside the block.
     if (!ls.title.empty()) {

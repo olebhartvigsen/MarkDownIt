@@ -1885,7 +1885,6 @@ void AppWindow::UpdateDpi() {
 }
 
 void AppWindow::OnContentPaint(HWND hwnd) {
-    diag::Trace("OnContentPaint enter");
     if (!rt_) {
             RecreateRenderTarget();
         if (!rt_) { ValidateRect(hwnd, nullptr); return; }
@@ -1940,7 +1939,6 @@ void AppWindow::OnContentPaint(HWND hwnd) {
     }
 
     HRESULT hr = rt_->EndDraw();
-    diag::Trace("OnContentPaint EndDraw done");
     if (hr == D2DERR_RECREATE_TARGET) {
         RecreateRenderTarget();
         // Force immediate repaint after target recreation.
@@ -1949,7 +1947,6 @@ void AppWindow::OnContentPaint(HWND hwnd) {
     }
     EndPaint(hwnd, &ps);
     UpdateCaretPosition();
-    diag::Trace("OnContentPaint exit");
 }
 
 
