@@ -1,0 +1,778 @@
+{
+  "canvas": {
+    "width": 1404.5,
+    "height": 1864,
+    "startx": -223,
+    "starty": -10,
+    "vbwidth": 1404.5,
+    "vbheight": 1864
+  },
+  "actors": [
+    {
+      "bottom": true,
+      "name": "HR",
+      "x": 981.5,
+      "y": 1778,
+      "w": 150,
+      "h": 0
+    },
+    {
+      "bottom": true,
+      "name": "DB",
+      "x": 780.5,
+      "y": 1778,
+      "w": 151,
+      "h": 0
+    },
+    {
+      "bottom": true,
+      "name": "API",
+      "x": 517,
+      "y": 1778,
+      "w": 150,
+      "h": 0
+    },
+    {
+      "bottom": true,
+      "name": "UI",
+      "x": 313,
+      "y": 1778,
+      "w": 150,
+      "h": 0
+    },
+    {
+      "bottom": false,
+      "name": "HR",
+      "x": 981.5,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "DB",
+      "x": 780.5,
+      "y": 0,
+      "w": 151,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "API",
+      "x": 517,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "bottom": false,
+      "name": "UI",
+      "x": 313,
+      "y": 0,
+      "w": 150,
+      "h": 65
+    },
+    {
+      "kind": "lifeline",
+      "x": 1056.5,
+      "y1": 65,
+      "y2": 1778
+    },
+    {
+      "kind": "lifeline",
+      "x": 856,
+      "y1": 65,
+      "y2": 1778
+    },
+    {
+      "kind": "lifeline",
+      "x": 592,
+      "y1": 65,
+      "y2": 1778
+    },
+    {
+      "kind": "lifeline",
+      "x": 388,
+      "y1": 65,
+      "y2": 1778
+    },
+    {
+      "kind": "lifeline",
+      "x": 75,
+      "y1": 80,
+      "y2": 1778
+    },
+    {
+      "kind": "stickman",
+      "bottom": false,
+      "name": "BRU",
+      "cx": 75,
+      "cy": 10
+    },
+    {
+      "kind": "stickman",
+      "bottom": true,
+      "name": "BRU",
+      "cx": 75,
+      "cy": 1788
+    }
+  ],
+  "messages": [
+    {
+      "text": "Åbn stamkort",
+      "tx": 228,
+      "ty": 80,
+      "line": {
+        "x1": 76,
+        "y1": 117,
+        "x2": 380,
+        "y2": 117,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "hentPerson(AUID)",
+      "tx": 489,
+      "ty": 132,
+      "line": {
+        "x1": 393,
+        "y1": 169,
+        "x2": 584,
+        "y2": 169,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "SELECT person",
+      "tx": 723,
+      "ty": 184,
+      "line": {
+        "x1": 597,
+        "y1": 221,
+        "x2": 848,
+        "y2": 221,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "person-rækker",
+      "tx": 726,
+      "ty": 236,
+      "line": {
+        "x1": 851,
+        "y1": 273,
+        "x2": 600,
+        "y2": 273,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "AUPerson",
+      "tx": 492,
+      "ty": 288,
+      "line": {
+        "x1": 587,
+        "y1": 325,
+        "x2": 396,
+        "y2": 325,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Stamkort vist",
+      "tx": 231,
+      "ty": 340,
+      "line": {
+        "x1": 383,
+        "y1": 377,
+        "x2": 79,
+        "y2": 377,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Opdater felter (UI er stadig aktiv)",
+      "tx": 230,
+      "ty": 533,
+      "line": {
+        "x1": 76,
+        "y1": 570,
+        "x2": 384,
+        "y2": 570,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "hentRoller (første stak)",
+      "tx": 721,
+      "ty": 585,
+      "line": {
+        "x1": 593,
+        "y1": 622,
+        "x2": 848,
+        "y2": 622,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "hentRetttigheder (stakket)",
+      "tx": 721,
+      "ty": 637,
+      "line": {
+        "x1": 593,
+        "y1": 674,
+        "x2": 848,
+        "y2": 674,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "roller",
+      "tx": 724,
+      "ty": 689,
+      "line": {
+        "x1": 851,
+        "y1": 726,
+        "x2": 596,
+        "y2": 726,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "rettigheder",
+      "tx": 724,
+      "ty": 741,
+      "line": {
+        "x1": 851,
+        "y1": 778,
+        "x2": 596,
+        "y2": 778,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "OpretSag",
+      "tx": 821,
+      "ty": 851,
+      "line": {
+        "x1": 593,
+        "y1": 888,
+        "x2": 1048.5,
+        "y2": 888,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Sag oprettet",
+      "tx": 824,
+      "ty": 903,
+      "line": {
+        "x1": 1051.5,
+        "y1": 940,
+        "x2": 596,
+        "y2": 940,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Eskalér sagen til HR-support",
+      "tx": 823,
+      "ty": 1013,
+      "line": {
+        "x1": 593,
+        "y1": 1050,
+        "x2": 1052.5,
+        "y2": 1050,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Fejlbesked til bruger",
+      "tx": 335,
+      "ty": 1133,
+      "line": {
+        "x1": 591,
+        "y1": 1170,
+        "x2": 79,
+        "y2": 1170,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "hentProfil",
+      "tx": 489,
+      "ty": 1253,
+      "line": {
+        "x1": 389,
+        "y1": 1290,
+        "x2": 588,
+        "y2": 1290,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Profildata",
+      "tx": 492,
+      "ty": 1305,
+      "line": {
+        "x1": 591,
+        "y1": 1342,
+        "x2": 392,
+        "y2": 1342,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "hentRoller",
+      "tx": 489,
+      "ty": 1415,
+      "line": {
+        "x1": 389,
+        "y1": 1452,
+        "x2": 588,
+        "y2": 1452,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Roller",
+      "tx": 492,
+      "ty": 1467,
+      "line": {
+        "x1": 591,
+        "y1": 1504,
+        "x2": 392,
+        "y2": 1504,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Log adgang",
+      "tx": 721,
+      "ty": 1577,
+      "line": {
+        "x1": 389,
+        "y1": 1614,
+        "x2": 1052.5,
+        "y2": 1614,
+        "cls": "messageLine0",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "Logget",
+      "tx": 724,
+      "ty": 1629,
+      "line": {
+        "x1": 1055.5,
+        "y1": 1666,
+        "x2": 392,
+        "y2": 1666,
+        "cls": "messageLine1",
+        "markerEnd": "url(#arrowhead)",
+        "markerStart": "url(#sequencenumber)"
+      }
+    },
+    {
+      "text": "intern validering",
+      "tx": 593,
+      "ty": 1691,
+      "path": {
+        "d": "M 593,1728 C 653,1718 653,1758 593,1748",
+        "cls": "messageLine0"
+      }
+    }
+  ],
+  "notes": [
+    {
+      "text": "Bruger skal være logget ind",
+      "tx": -61,
+      "ty": 392,
+      "rx": -173,
+      "ry": 387,
+      "rw": 223,
+      "rh": 37
+    },
+    {
+      "text": "Kun read-adgang fra UI",
+      "tx": 714,
+      "ty": 439,
+      "rx": 617,
+      "ry": 434,
+      "rw": 193,
+      "rh": 37
+    },
+    {
+      "text": "Spørgsmål til adgangsstyring",
+      "tx": 622,
+      "ty": 486,
+      "rx": 363,
+      "ry": 481,
+      "rw": 518,
+      "rh": 37
+    }
+  ],
+  "activations": [
+    {
+      "x": 383,
+      "y": 117,
+      "w": 10,
+      "h": 260,
+      "cls": "activation0"
+    },
+    {
+      "x": 587,
+      "y": 171,
+      "w": 10,
+      "h": 154,
+      "cls": "activation0"
+    },
+    {
+      "x": 851,
+      "y": 223,
+      "w": 10,
+      "h": 50,
+      "cls": "activation0"
+    },
+    {
+      "x": 851,
+      "y": 622,
+      "w": 10,
+      "h": 156,
+      "cls": "activation0"
+    },
+    {
+      "x": 856,
+      "y": 676,
+      "w": 10,
+      "h": 50,
+      "cls": "activation1"
+    },
+    {
+      "x": 1051.5,
+      "y": 888,
+      "w": 10,
+      "h": 52,
+      "cls": "activation0"
+    }
+  ],
+  "loops": [
+    {
+      "loopLineCount": 15
+    },
+    {
+      "top": true,
+      "x1": 581,
+      "y1": 788,
+      "x2": 1071.5,
+      "y2": 788
+    },
+    {
+      "vert": true,
+      "x1": 1071.5,
+      "y1": 788,
+      "x2": 1071.5,
+      "y2": 1060
+    },
+    {
+      "top": true,
+      "x1": 581,
+      "y1": 1060,
+      "x2": 1071.5,
+      "y2": 1060
+    },
+    {
+      "vert": true,
+      "x1": 581,
+      "y1": 788,
+      "x2": 581,
+      "y2": 1060
+    },
+    {
+      "top": true,
+      "x1": 581,
+      "y1": 955,
+      "x2": 1071.5,
+      "y2": 955
+    },
+    {
+      "top": true,
+      "x1": 64,
+      "y1": 1070,
+      "x2": 603,
+      "y2": 1070
+    },
+    {
+      "vert": true,
+      "x1": 603,
+      "y1": 1070,
+      "x2": 603,
+      "y2": 1180
+    },
+    {
+      "top": true,
+      "x1": 64,
+      "y1": 1180,
+      "x2": 603,
+      "y2": 1180
+    },
+    {
+      "vert": true,
+      "x1": 64,
+      "y1": 1070,
+      "x2": 64,
+      "y2": 1180
+    },
+    {
+      "top": true,
+      "x1": 377,
+      "y1": 1190,
+      "x2": 1067.5,
+      "y2": 1190
+    },
+    {
+      "vert": true,
+      "x1": 1067.5,
+      "y1": 1190,
+      "x2": 1067.5,
+      "y2": 1676
+    },
+    {
+      "top": true,
+      "x1": 377,
+      "y1": 1676,
+      "x2": 1067.5,
+      "y2": 1676
+    },
+    {
+      "vert": true,
+      "x1": 377,
+      "y1": 1190,
+      "x2": 377,
+      "y2": 1676
+    },
+    {
+      "top": true,
+      "x1": 377,
+      "y1": 1357,
+      "x2": 1067.5,
+      "y2": 1357
+    },
+    {
+      "top": true,
+      "x1": 377,
+      "y1": 1519,
+      "x2": 1067.5,
+      "y2": 1519
+    },
+    {
+      "labelBox": "581,788 631,788 631,801 622.6,808 581,808"
+    },
+    {
+      "labelBox": "64,1070 114,1070 114,1083 105.6,1090 64,1090"
+    },
+    {
+      "labelBox": "377,1190 427,1190 427,1203 418.6,1210 377,1210"
+    },
+    {
+      "labelText": "critical",
+      "x": 606,
+      "y": 801
+    },
+    {
+      "labelText": "break",
+      "x": 89,
+      "y": 1083
+    },
+    {
+      "labelText": "par",
+      "x": 402,
+      "y": 1203
+    },
+    {
+      "loopText": "[Opret person]",
+      "x": 851.25,
+      "y": 806
+    },
+    {
+      "loopText": "[Deadline overskredet]",
+      "x": 826.25,
+      "y": 973
+    },
+    {
+      "loopText": "[Validering fejlede]",
+      "x": 358.5,
+      "y": 1088
+    },
+    {
+      "loopText": "[Læs profil]",
+      "x": 747.25,
+      "y": 1208
+    },
+    {
+      "loopText": "[Læs roller]",
+      "x": 722.25,
+      "y": 1375
+    },
+    {
+      "loopText": "[Skriv revisionsspor]",
+      "x": 722.25,
+      "y": 1537
+    }
+  ],
+  "backgrounds": [],
+  "stickTop": [
+    "BRU"
+  ],
+  "sequenceNumbers": [
+    {
+      "n": "1",
+      "x": 76,
+      "y": 121
+    },
+    {
+      "n": "2",
+      "x": 393,
+      "y": 173
+    },
+    {
+      "n": "3",
+      "x": 597,
+      "y": 225
+    },
+    {
+      "n": "4",
+      "x": 851,
+      "y": 277
+    },
+    {
+      "n": "5",
+      "x": 587,
+      "y": 329
+    },
+    {
+      "n": "6",
+      "x": 383,
+      "y": 381
+    },
+    {
+      "n": "7",
+      "x": 76,
+      "y": 574
+    },
+    {
+      "n": "8",
+      "x": 593,
+      "y": 626
+    },
+    {
+      "n": "9",
+      "x": 593,
+      "y": 678
+    },
+    {
+      "n": "10",
+      "x": 851,
+      "y": 730
+    },
+    {
+      "n": "11",
+      "x": 851,
+      "y": 782
+    },
+    {
+      "n": "12",
+      "x": 593,
+      "y": 892
+    },
+    {
+      "n": "13",
+      "x": 1051.5,
+      "y": 944
+    },
+    {
+      "n": "14",
+      "x": 593,
+      "y": 1054
+    },
+    {
+      "n": "15",
+      "x": 591,
+      "y": 1174
+    },
+    {
+      "n": "16",
+      "x": 389,
+      "y": 1294
+    },
+    {
+      "n": "17",
+      "x": 591,
+      "y": 1346
+    },
+    {
+      "n": "18",
+      "x": 389,
+      "y": 1456
+    },
+    {
+      "n": "19",
+      "x": 591,
+      "y": 1508
+    },
+    {
+      "n": "20",
+      "x": 389,
+      "y": 1618
+    },
+    {
+      "n": "21",
+      "x": 1055.5,
+      "y": 1670
+    },
+    {
+      "n": "22",
+      "x": 593,
+      "y": 1732
+    }
+  ]
+}

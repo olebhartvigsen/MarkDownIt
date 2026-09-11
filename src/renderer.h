@@ -82,6 +82,15 @@ private:
     };
     std::vector<SvgCacheEntry> svg_cache_;
 
+    // Decoded inline-image cache: keyed by the URL/alt string, so a remote
+    // image is fetched once per document view instead of once per paint
+    // frame (every scroll tick used to re-download it on the UI thread).
+    struct InlineImageCacheEntry {
+        std::string url;
+        ID2D1Bitmap* bmp = nullptr;
+    };
+    std::vector<InlineImageCacheEntry> img_cache_;
+
     void DrawSvgBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                       const Node& n, float x, float y, float width,
                       float& outH, const Selection* sel);

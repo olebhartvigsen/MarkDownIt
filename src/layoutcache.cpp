@@ -51,10 +51,17 @@ bool LayoutCache::GetLineRangeAtY(int blockIndex, float y,
     const auto& bl = blocks_[blockIndex];
     if (!bl.layout) return false;
 
-    // Get line metrics from the DirectWrite layout.
-    DWRITE_LINE_METRICS metrics[64];
-    uint32_t lineCount = 0;
-    HRESULT hr = bl.layout->GetLineMetrics(metrics, 64, &lineCount);
+    // Get line metrics from the DirectWrite layout. The buffer must be
+    // sized for the whole block: GetLineMetrics with a fixed 64-entry
+    // buffer silently truncates (E_NOT_SUFFICIENT_BUFFER is returned for
+    // layouts with more lines), which broke line selection in long
+    // code blocks. Query the count first, then allocate to fit.
+    UINT32 lineCount = 0;
+    HRESULT hr = bl.layout->GetLineMetrics(nullptr, 0, &lineCount);
+    if (FAILED(hr) || lineCount == 0) return false;
+    if (lineCount > 4096) lineCount = 4096;  // sanity cap
+    std::vector<DWRITE_LINE_METRICS> metrics(static_cast<size_t>(lineCount));
+    hr = bl.layout->GetLineMetrics(metrics.data(), lineCount, &lineCount);
     if (FAILED(hr) || lineCount == 0) return false;
 
     // Convert y to layout-local coordinate.

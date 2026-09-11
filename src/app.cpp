@@ -1409,6 +1409,12 @@ void AppWindow::Reload() {
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
     buffer_.SetText(utf8);
+    // The buffer pointer may have been reallocated; stale layouts, SVG
+    // documents and decoded bitmaps are all bound to the old content.
+    layout_cache_.Clear();
+    renderer_.ClearSvgCache();
+    layout_cache_.SetSourceText(&buffer_.Text());
+    renderer_.SetSourceText(&buffer_.Text());
     undo_stack_.Clear();
     UpdateScrollInfo();
     if (scrollY_ > savedY) scrollY_ = savedY;
@@ -1879,8 +1885,11 @@ void AppWindow::RecreateRenderTarget() {
     }
     // The renderer holds its own copy of the device context (for SVG and
     // the diagram paths). Republish it, or it keeps pointing at the
-    // released context (use-after-free on the next SVG paint).
+    // released context (use-after-free on the next SVG paint). Cached
+    // SVG documents and inline bitmaps were created against the old
+    // target, so drop them too.
     renderer_.SetD2DDeviceContext5(d2d_ctx5_);
+    renderer_.ClearSvgCache();
 }
 
 void AppWindow::UpdateDpi() {

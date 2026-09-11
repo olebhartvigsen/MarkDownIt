@@ -1133,8 +1133,27 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                         }
                     }
                 } else {
-                    ID2D1Bitmap* bmp = ImageHelper::LoadBitmapFromUrl(
-                        rt, ib.url, drawW);
+                    // Inline raster image: fetch once per URL, reuse across
+                    // repaints (the old code re-downloaded on every frame,
+                    // blocking the UI thread on each scroll tick).
+                    ID2D1Bitmap* bmp = nullptr;
+                    for (const auto& e : img_cache_) {
+                        if (e.url == ib.url) { bmp = e.bmp; break; }
+                    }
+                    if (!bmp) {
+                        bmp = ImageHelper::LoadBitmapFromUrl(
+                            rt, ib.url, drawW);
+                        if (bmp) {
+                            // Cache owns it; drop the oldest entry when
+                            // over the cap so ownership stays unambiguous.
+                            if (img_cache_.size() >= 128) {
+                                if (img_cache_.front().bmp)
+                                    img_cache_.front().bmp->Release();
+                                img_cache_.erase(img_cache_.begin());
+                            }
+                            img_cache_.push_back({ib.url, bmp});
+                        }
+                    }
                     if (bmp) {
                         D2D1_SIZE_F bmpSize = bmp->GetSize();
                         float drawW2 = drawW;
@@ -1151,7 +1170,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                             0, 0, bmpSize.width, bmpSize.height);
                         rt->DrawBitmap(bmp, dest, 1.0f,
                             D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, src);
-                        bmp->Release();
+                        // Bitmaps in the cache are owned by the cache;
+                        // nothing to release per frame.
                         curY += drawH2 + m.paraGap;
                         drewImages = true;
                     }
@@ -1593,6 +1613,12 @@ void Renderer::ClearSvgCache() {
         e.doc.Release();
     }
     svg_cache_.clear();
+    // Inline bitmaps belong to the render target; drop them whenever the
+    // target is recreated or the document changes.
+    for (auto& e : img_cache_) {
+        if (e.bmp) e.bmp->Release();
+    }
+    img_cache_.clear();
 }
 
 svg::SvgDoc* Renderer::GetSvgDoc(const Node& n, float availW) {

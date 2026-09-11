@@ -1,0 +1,49 @@
+sequenceDiagram
+    autonumber
+    actor BRU as Bruger
+    participant UI as Frontend
+    participant API as StamkortService
+    participant DB as Persondatabasen
+    participant HR as HR Topdesk
+
+    BRU->>+UI: Åbn stamkort
+    UI->>+API: hentPerson(AUID)
+    API->>+DB: SELECT person
+    DB-->>-API: person-rækker
+    API-->>-UI: AUPerson
+    UI-->>-BRU: Stamkort vist
+
+    note left of BRU: Bruger skal være logget ind
+    note right of API: Kun read-adgang fra UI
+    note over UI,DB: Spørgsmål til adgangsstyring
+
+    BRU->>UI: Opdater felter (UI er stadig aktiv)
+
+    API->>+DB: hentRoller (første stak)
+    API->>+DB: hentRetttigheder (stakket)
+    DB-->>-API: roller
+    DB-->>-API: rettigheder
+
+    critical Opret person
+        API->>+HR: OpretSag
+        HR-->>-API: Sag oprettet
+    option Deadline overskredet
+        API->>HR: Eskalér sagen til HR-support
+    end
+
+    break Validering fejlede
+        API-->>BRU: Fejlbesked til bruger
+    end
+
+    par Læs profil
+        UI->>API: hentProfil
+        API-->>UI: Profildata
+    and Læs roller
+        UI->>API: hentRoller
+        API-->>UI: Roller
+    and Skriv revisionsspor
+        UI->>HR: Log adgang
+        HR-->>UI: Logget
+    end
+
+    API->>API: intern validering
