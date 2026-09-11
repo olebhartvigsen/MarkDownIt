@@ -8,22 +8,22 @@
 // One entry per rendered block: the live layout plus the rect it
 // occupied, in document coordinates (before scroll translation).
 struct BlockLayout {
-    IDWriteTextLayout* layout = nullptr;  // owned, may be null
+    IDWriteTextLayout* layout = nullptr; // owned, may be null
     float x = 0.0f;
     float y = 0.0f;
     float width = 0.0f;
     float height = 0.0f;
-    uint32_t srcOffset = 0;    // copied from Node — start of rendered content
+    uint32_t srcOffset = 0;   // copied from Node; start of rendered content
     uint32_t srcLength = 0;
     uint32_t srcCellStart = 0; // extended start (before opening markers)
-    uint32_t srcCellEnd = 0;   // extended end (past closing markers)
-    uint32_t textStartOffset = 0;  // source offset of layout char 0
+    uint32_t srcCellEnd = 0;  // extended end (past closing markers)
+    uint32_t textStartOffset = 0; // source offset of layout char 0
     size_t nodeIndex = 0;
     // Maps each UTF-16 code-unit position in the layout to its
     // UTF-8 source byte offset. Built during Render() for accurate
     // hit-testing and caret placement when inline syntax is present.
     std::vector<uint32_t> u16ToSrc;
-    float fontHeight = 0.0f;  // em size in DIP (for caret height)
+    float fontHeight = 0.0f; // em size in DIP (for caret height)
 };
 
 class LayoutCache {
@@ -71,7 +71,7 @@ public:
 
 private:
     std::vector<BlockLayout> blocks_;
-    const std::string* srcText_ = nullptr;  // source text for offset calc
+    const std::string* srcText_ = nullptr; // source text for offset calc
 };
 
 // UTF-8 / UTF-16 offset conversion helpers.

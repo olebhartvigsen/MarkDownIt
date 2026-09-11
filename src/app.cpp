@@ -74,7 +74,7 @@ static std::string CleanSelectionForCopy(const std::string& src) {
             // Soft break within a paragraph: replace with space.
             // Avoid double spaces if the previous char is already a space.
             if (out.empty() || out.back() == ' ' || out.back() == '\n')
-                continue;  // skip, already separated
+                continue; // skip, already separated
             out += ' ';
         }
     }
@@ -307,10 +307,13 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             vk == VK_UP || vk == VK_DOWN ||
             vk == VK_HOME || vk == VK_END ||
             vk == VK_PRIOR || vk == VK_NEXT);
-        bool isCopy = (ctrl && vk == 0x43);  // Ctrl+C
-        bool isSelectAll = (ctrl && vk == 0x41);  // Ctrl+A
-        // Shift+navigation is allowed (extends selection for copy).
-        if (!isNavigation && !isCopy && !isSelectAll && !shift) return;
+        bool isCopy = (ctrl && vk == 0x43); // Ctrl+C
+        bool isSelectAll = (ctrl && vk == 0x41); // Ctrl+A
+        // Shift extends navigation (selection) but nothing else: Shift with
+        // any non-navigation key (Backspace, Tab, letter combos) would
+        // otherwise fall through to the edit handlers below and mutate the
+        // buffer while in view mode.
+        if (!isNavigation && !isCopy && !isSelectAll) return;
     }
 
     switch (vk) {
@@ -353,7 +356,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             float lineHeight = 20.0f;
             if (rt_) {
                 D2D1_SIZE_F sz = rt_->GetSize();
-                lineHeight = sz.height / 40.0f;  // rough estimate
+                lineHeight = sz.height / 40.0f; // rough estimate
                 if (lineHeight < 16.0f) lineHeight = 16.0f;
             }
             uint32_t newOffset = MoveVertical(layout_cache_,
@@ -460,7 +463,8 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             break;
         }
         case VK_F5:
-            Reload();
+            // OnReload (not Reload): prompts before discarding unsaved edits.
+            OnReload();
             break;
         case 0x31:  // Ctrl+1 = H1
         case 0x32:  // Ctrl+2 = H2
@@ -620,7 +624,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         case VK_RETURN:
             editor_.InsertParagraphBreak(doc_);
             OnBufferChanged();
-            // Force immediate visual update after Enter — don't wait
+            // Force immediate visual update after Enter; don't wait
             // for the debounced reparse timer.
             ForceRepaintNow();
             break;
@@ -673,14 +677,14 @@ void AppWindow::ScheduleReparse() {
         OnReparseTimer();
         return;
     }
-    if (reparse_timer_) return;  // already scheduled
+    if (reparse_timer_) return; // already scheduled
     reparse_pending_ = true;
     reparse_timer_ = SetTimer(hwnd_content_, 2, 150, nullptr);
 }
 
 void AppWindow::ToggleSourceView() {
     source_view_ = !source_view_;
-    // Keep the current edit state — source view does not force edit mode.
+    // Keep the current edit state; source view does not force edit mode.
     // Invalidate the ribbon toggle state.
     if (g_pRibbonFramework) {
         g_pRibbonFramework->InvalidateUICommand(IDC_CMD_SOURCE,
@@ -697,7 +701,7 @@ void AppWindow::ToggleSourceView() {
 void AppWindow::OnReparseTimer() {
     reparse_pending_ = false;
     if (reparse_timer_) { KillTimer(hwnd_content_, reparse_timer_); reparse_timer_ = 0; }
-    // In source view, we don't need to reparse the markdown — the
+    // In source view, we don't need to reparse the markdown; the
     // raw text is displayed directly. Just rebuild the layout cache.
     if (source_view_) {
         layout_cache_.Clear();
@@ -748,15 +752,15 @@ void AppWindow::ScrollCaretIntoView(float caretY, float caretH) {
 
 void AppWindow::UpdateCaretPosition() {
     if (!has_focus_ || !hwnd_content_) return;
-    if (!editing_) return;  // No caret in view mode.
+    if (!editing_) return; // No caret in view mode.
     InvalidateFormatButtons();
 
-    // Hide the caret when text is selected — only show it when the
+    // Hide the caret when text is selected; only show it when the
     // selection is collapsed to a single point (no active selection).
     if (!sel_.Empty()) {
         if (caret_visible_) { HideCaret(hwnd_content_); caret_visible_ = false; }
         // Still scroll to follow the moving (active) end of a
-        // shift-extended selection — but only when the offset actually
+        // shift-extended selection; but only when the offset actually
         // changed since the last follow, so wheel scrolling is never
         // fought by caret-follow.
         float sx, sy, sh;
@@ -788,7 +792,7 @@ void AppWindow::UpdateCaretPosition() {
         if (newH < 1) newH = 1;
         if (caret_height_ != newH) {
             DestroyCaret();
-            caret_visible_ = false;  // caret destroyed — must re-show
+            caret_visible_ = false; // caret destroyed; must re-show
             CreateCaret(hwnd_content_, nullptr, 2, newH);
             caret_height_ = newH;
         }
@@ -816,8 +820,8 @@ std::string AppWindow::FindLinkAtOffset(uint32_t offset) const {
             // Extend range to include the [ before and ] after the text,
             // which are hidden markup characters that PointToOffset may
             // land on (especially trailing hits).
-            if (start > 0) start -= 1;  // include '['
-            end += 1;                    // include ']'
+            if (start > 0) start -= 1; // include '['
+            end += 1;                   // include ']'
             if (offset >= start && offset <= end) {
                 return ib.url;
             }
@@ -892,7 +896,7 @@ void AppWindow::OpenLink(const std::string& url) {
             wideUrl += static_cast<wchar_t>(c);
             i += 1;
         } else if (c < 0xC0) {
-            i += 1;  // continuation byte, skip
+            i += 1; // continuation byte, skip
         } else if (c < 0xE0) {
             if (i + 1 < url.size()) {
                 wchar_t ch = ((c & 0x1F) << 6) |
@@ -1017,7 +1021,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     if (click_count_ >= 2 &&
         (now - last_click_time_) <= dblClickTime &&
         abs(y - last_click_y_) < 5) {
-        click_count_ = 0;  // reset
+        click_count_ = 0; // reset
         // Triple-click: select the full block/paragraph.
         int blkIdx = layout_cache_.FindBlockAtY(docY);
         if (blkIdx < 0) {
@@ -1066,7 +1070,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     // If so, select the visual line at that y position (like Word).
     uint32_t offset = layout_cache_.PointToOffset(docX, docY);
     if (offset == UINT32_MAX) {
-        // Click missed all text blocks — in the left margin.
+        // Click missed all text blocks; in the left margin.
         // Find the block at this y and select the single visual line.
         int blkIdx = layout_cache_.FindBlockAtY(docY);
         if (blkIdx >= 0) {
@@ -1117,7 +1121,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
 
 void AppWindow::OnLButtonDblClk(HWND hwnd, int x, int y) {
     SetFocus(hwnd);
-    if (welcome_mode_) return;  // single-click handles welcome screen clicks
+    if (welcome_mode_) return; // single-click handles welcome screen clicks
     // Track for triple-click: double-click counts as the 2nd click.
     click_count_ = std::max(click_count_, 2);
     last_click_time_ = GetTickCount();
@@ -1325,7 +1329,7 @@ void AppWindow::OpenFile(const std::wstring& path) {
     if (editing_) {
         SetEdit(false);
     }
-    welcome_mode_ = false;  // leaving welcome screen
+    welcome_mode_ = false; // leaving welcome screen
 
     // Track this file in the recent list.
     AddRecentFile(settings_, path);
@@ -1375,7 +1379,7 @@ void AppWindow::OpenFile(const std::wstring& path) {
     SetWindowTextW(hwnd_, title.c_str());
 
     UpdateScrollInfo();
-    // Force render target recreation — the D2D hwnd target can become
+    // Force render target recreation; the D2D hwnd target can become
     // invalid after the GetOpenFileNameW modal dialog closes.
     SafeRelease(rt_);
     RedrawWindow(hwnd_content_, nullptr, nullptr,
@@ -1421,7 +1425,7 @@ void AppWindow::OnReload() {
             L"or reload the file from disk?",
             L"MarkDownIt - File Changed",
             MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON1);
-        if (result != IDNO) return;  // IDYES = keep mine
+        if (result != IDNO) return; // IDYES = keep mine
     }
 
     // Save caret position so we can restore it after reload.
@@ -1450,7 +1454,7 @@ void AppWindow::OnDropFiles(HWND hwnd, HDROP hDrop) {
 void AppWindow::OnCreate(HWND hwnd) {
     hwnd_ = hwnd;
 
-    // Load settings FIRST — LoadSampleDoc (below) needs recentFiles.
+    // Load settings FIRST; LoadSampleDoc (below) needs recentFiles.
     settings_ = LoadSettings();
 
     D2D1_FACTORY_OPTIONS opts = {};
@@ -1608,31 +1612,31 @@ float AppWindow::ClampScroll(float y) const {
 //
 // Three phases, all driven by a single 16 ms timer (ID 4):
 //
-// 1. SPRING – mouse wheel, arrow keys, scrollbar line/page clicks.
+// 1. SPRING - mouse wheel, arrow keys, scrollbar line/page clicks.
 //    spring_target_ is the rest position; each tick applies:
 //       force   = (target − pos) × stiffness
 //       vel    += force − damping × vel
 //       pos    += vel
 //    Critically damped → smooth ease-out, multi-notch accumulation.
 //
-// 2. TRACKPAD – precision touchpad / high-frequency wheel.
+// 2. TRACKPAD - precision touchpad / high-frequency wheel.
 //    Each WM_MOUSEWHEEL event applies its delta immediately (1:1)
 //    and records an exponential moving average of recent velocity.
 //    The timer runs but does nothing while events arrive.
 //    When events stop for >80 ms, → MOMENTUM.
 //
-// 3. MOMENTUM – fingers lifted, scroll glides with friction.
+// 3. MOMENTUM - fingers lifted, scroll glides with friction.
 //    pos += vel; vel *= friction (0.955 per 16 ms tick).
 //    Stops when |vel| < 0.5 or hit an edge.
 //
-// SB_THUMBTRACK (scrollbar drag) bypasses all physics — instant jump.
+// SB_THUMBTRACK (scrollbar drag) bypasses all physics; instant jump.
 // ─────────────────────────────────────────────────────────────────
 
 // Spring constants (tuned for ~300 ms settle with critical damping).
-static const float SPRING_STIFFNESS = 0.12f;  // per 16ms tick (stiffer = faster settle)
-static const float SPRING_DAMPING   = 0.45f;   // per 16ms tick (higher = less oscillation)
-static const float SPRING_SETTLE    = 0.5f;    // stop when within 0.5px of target
-static const float SPRING_MIN_VEL   = 0.3f;    // stop when velocity below this
+static const float SPRING_STIFFNESS = 0.12f; // per 16ms tick (stiffer = faster settle)
+static const float SPRING_DAMPING   = 0.45f;  // per 16ms tick (higher = less oscillation)
+static const float SPRING_SETTLE    = 0.5f;   // stop when within 0.5px of target
+static const float SPRING_MIN_VEL   = 0.3f;   // stop when velocity below this
 
 // Mouse wheel: pixels per notch (WHEEL_DELTA = 120).
 static const float WHEEL_STEP_PX = 120.0f;
@@ -1643,7 +1647,7 @@ static const float TRACKPAD_SCALE = 0.75f;
 // Momentum friction: vel *= FRICTION each 16ms tick.
 // 0.955 ≈ 3.5% velocity loss per tick ≈ ~2 s glide from 20 px/tick.
 static const float MOMENTUM_FRICTION = 0.955f;
-static const float MOMENTUM_MIN_VEL  = 0.5f;     // stop threshold (px/tick)
+static const float MOMENTUM_MIN_VEL  = 0.5f;    // stop threshold (px/tick)
 
 void AppWindow::EnsureScrollTimer() {
     if (!scroll_timer_) {
@@ -1656,7 +1660,7 @@ void AppWindow::StopScrollTimer() {
         KillTimer(hwnd_content_, scroll_timer_);
         scroll_timer_ = 0;
     }
-    scroll_phase_ = 0;  // IDLE
+    scroll_phase_ = 0; // IDLE
     momentum_vel_ = 0.0f;
 }
 
@@ -1684,15 +1688,15 @@ void AppWindow::StartSpring(float targetY) {
     } else {
         momentum_vel_ = 0.0f;
     }
-    scroll_phase_ = 1;  // SPRING
+    scroll_phase_ = 1; // SPRING
     EnsureScrollTimer();
 }
 
 // Trackpad scroll: apply delta immediately (1:1) and track velocity.
 void AppWindow::BeginTrackpadScroll(float delta, DWORD now) {
-    // Cancel any spring/momentum — trackpad takes over.
-    scroll_phase_ = 2;  // TRACKPAD
-    spring_target_ = scrollY_;  // no spring while trackpad is active
+    // Cancel any spring/momentum; trackpad takes over.
+    scroll_phase_ = 2; // TRACKPAD
+    spring_target_ = scrollY_; // no spring while trackpad is active
 
     // Apply delta immediately (1:1, no animation latency).
     float prev = scrollY_;
@@ -1703,9 +1707,9 @@ void AppWindow::BeginTrackpadScroll(float delta, DWORD now) {
     // Use the actual (clamped) delta so hitting an edge zeroes velocity.
     // If same direction, blend smoothly; if reversed, snap.
     if ((momentum_vel_ > 0) != (delta > 0)) {
-        momentum_vel_ = actual;  // direction reversed → snap
+        momentum_vel_ = actual; // direction reversed → snap
     } else {
-        momentum_vel_ = momentum_vel_ * 0.6f + actual * 0.4f;  // EMA
+        momentum_vel_ = momentum_vel_ * 0.6f + actual * 0.4f; // EMA
     }
 
     // Start the timer so it can detect when trackpad events stop
@@ -1719,11 +1723,11 @@ void AppWindow::BeginTrackpadScroll(float delta, DWORD now) {
 // Transition from TRACKPAD idle to MOMENTUM (fingers lifted after flick).
 void AppWindow::EnterMomentum() {
     if (std::fabs(momentum_vel_) < MOMENTUM_MIN_VEL) {
-        scroll_phase_ = 0;  // IDLE
+        scroll_phase_ = 0; // IDLE
         StopScrollTimer();
         return;
     }
-    scroll_phase_ = 3;  // MOMENTUM
+    scroll_phase_ = 3; // MOMENTUM
     EnsureScrollTimer();
 }
 
@@ -1762,11 +1766,11 @@ void AppWindow::OnScrollTick() {
         scrollY_ += momentum_vel_;
         momentum_vel_ *= MOMENTUM_FRICTION;
 
-        // Clamp at edges — stop dead (no bounce).
+        // Clamp at edges; stop dead (no bounce).
         float prev = scrollY_;
         scrollY_ = ClampScroll(scrollY_);
         if (scrollY_ != prev) {
-            momentum_vel_ = 0.0f;  // hit edge
+            momentum_vel_ = 0.0f; // hit edge
         }
 
         UpdateScrollInfo();
@@ -1791,8 +1795,8 @@ void AppWindow::OnContentVScroll(HWND hwnd, int code, int pos) {
     switch (code) {
         case SB_LINEUP:        targetY = scrollY_ - 30.0f; break;
         case SB_LINEDOWN:      targetY = scrollY_ + 30.0f; break;
-        case SB_PAGEUP:        targetY = scrollY_ - page;  break;
-        case SB_PAGEDOWN:      targetY = scrollY_ + page;  break;
+        case SB_PAGEUP:        targetY = scrollY_ - page; break;
+        case SB_PAGEDOWN:      targetY = scrollY_ + page; break;
         case SB_THUMBTRACK:
         case SB_THUMBPOSITION: {
             SCROLLINFO si = {};
@@ -1822,7 +1826,7 @@ void AppWindow::OnContentMouseWheel(HWND hwnd, int delta) {
 
     // Distinguish trackpad (small deltas) from mouse wheel (WHEEL_DELTA=120).
     // A precision trackpad sends small deltas (1-30) in rapid succession.
-    // Only use delta magnitude — timing alone catches fast mouse scrolling.
+    // Only use delta magnitude; timing alone catches fast mouse scrolling.
     bool isTrackpad = (std::abs(delta) < WHEEL_DELTA);
 
     if (isTrackpad) {
@@ -1841,7 +1845,7 @@ void AppWindow::OnContentMouseWheel(HWND hwnd, int delta) {
 
     float deltaScroll = -static_cast<float>(delta) / static_cast<float>(WHEEL_DELTA) * WHEEL_STEP_PX;
 
-    // Accumulate into the spring target — rapid notches build up speed.
+    // Accumulate into the spring target; rapid notches build up speed.
     if (scroll_phase_ == 1) {
         spring_target_ = ClampScroll(spring_target_ + deltaScroll);
     } else {
@@ -1873,6 +1877,10 @@ void AppWindow::RecreateRenderTarget() {
             }
         }
     }
+    // The renderer holds its own copy of the device context (for SVG and
+    // the diagram paths). Republish it, or it keeps pointing at the
+    // released context (use-after-free on the next SVG paint).
+    renderer_.SetD2DDeviceContext5(d2d_ctx5_);
 }
 
 void AppWindow::UpdateDpi() {
@@ -1996,11 +2004,18 @@ bool AppWindow::DoSave(const std::wstring& path) {
         out += (char)0xBF;
     }
     if (use_crlf_) {
+        // Convert any line ending to CRLF while preserving existing CRLF:
+        // CR followed by LF is passed through as a pair, a lone LF (or a
+        // lone CR at end of input) becomes CRLF.
         for (size_t i = 0; i < content.size(); i++) {
-            if (content[i] == 0x0A && (i == 0 || content[i - 1] != 0x0D))
-                { out += (char)0x0D; out += (char)0x0A; }
-            else if (content[i] != 0x0D)
+            if (content[i] == 0x0D) {
+                out += (char)0x0D; out += (char)0x0A;
+                if (i + 1 < content.size() && content[i + 1] == 0x0A) i++;
+            } else if (content[i] == 0x0A) {
+                out += (char)0x0D; out += (char)0x0A;
+            } else {
                 out += content[i];
+            }
         }
     } else {
         out = content;
@@ -2090,7 +2105,7 @@ void AppWindow::OnClose() {
         int result = PromptSaveDiscardCancel();
         if (result == IDCANCEL) return;
         if (result == IDYES) {
-            if (!Save()) return;  // save failed or cancelled, don't close
+            if (!Save()) return; // save failed or cancelled, don't close
         }
         // IDNO: discard, proceed to close
     }
@@ -2197,7 +2212,7 @@ FormatState AppWindow::GetFormatState() const {
         // Scan the source text around chkStart for markdown markers.
         // This catches formatting that u16ToSrc mapping might miss.
         // Find cell boundaries (pipe chars or newlines).
-        uint32_t pos = (chkStart + chkEnd) / 2;  // use midpoint
+        uint32_t pos = (chkStart + chkEnd) / 2; // use midpoint
         if (pos >= text.size()) return;
         uint32_t left = pos;
         while (left > 0 && text[left - 1] != '|' && text[left - 1] != '\n')
@@ -2218,7 +2233,7 @@ FormatState AppWindow::GetFormatState() const {
                     // Also check the char before the run to distinguish
                     // ** (bold) from * (italic).
                     if (mlen == 1 && i >= left + 2 && text[i - 2] == ch)
-                        continue;  // part of a longer ** run, skip for single-*
+                        continue; // part of a longer ** run, skip for single-*
                     // Found opening. Scan right for closing of same length.
                     for (uint32_t j = pos; j + mlen <= right; j++) {
                         bool match2 = true;
@@ -2268,8 +2283,8 @@ FormatState AppWindow::GetFormatState() const {
                 uint32_t ce = cs + child.srcLength;
                 bool hit = (cs <= caret && caret <= ce);
                 if (!hit) {
-                    if (ce == lo) hit = true;       // span ends right before caret
-                    if (cs == hi) hit = true;       // span starts right after caret
+                    if (ce == lo) hit = true;      // span ends right before caret
+                    if (cs == hi) hit = true;      // span starts right after caret
                 }
                 if (hit) {
                     if (child.strong) fs.bold = true;
@@ -2356,7 +2371,7 @@ void AppWindow::InvalidateFormatButtons() {
 
 // Remove ALL inline formatting of a specific type from the selection.
 // Used by ToggleBold/Italic/Strike/Code when the format is detected as
-// active — instead of removing just the first matching span, this
+// active; instead of removing just the first matching span, this
 // iterates all spans and removes all markers of that type.
 void AppWindow::RemoveAllFormattingInSelection(bool wantStrong, bool wantEm,
                                                 bool wantCode, bool wantStrike,
@@ -2406,7 +2421,7 @@ void AppWindow::RemoveAllFormattingInSelection(bool wantStrong, bool wantEm,
             }
         }
 
-        // Path 2: table cells — scan raw source text for markers.
+        // Path 2: table cells; scan raw source text for markers.
         // Table cells don't create node.children (parser returns early),
         // so we must scan the source text directly.
         if (node.block == BlockKind::Table) {
@@ -2502,7 +2517,7 @@ void AppWindow::RemoveAllFormattingInSelection(bool wantStrong, bool wantEm,
     }
 
     Selection selBefore = sel_;
-    int32_t totalDelta = 0;  // net chars removed (markers removed - content kept)
+    int32_t totalDelta = 0; // net chars removed (markers removed - content kept)
     for (const auto& r : merged) {
         std::string content = buffer_.Text().substr(r.contentStart, r.contentEnd - r.contentStart);
         std::string removed = buffer_.Text().substr(r.markerStart, r.markerEnd - r.markerStart);
@@ -2548,7 +2563,7 @@ bool AppWindow::ExpandSelectionToFormatSpan(bool wantStrong, bool wantEm,
 
             uint32_t cs = child.srcOffset;
             uint32_t ce = cs + child.srcLength;
-            if (ce <= cs) continue;  // skip empty spans
+            if (ce <= cs) continue; // skip empty spans
 
             // Check if caret/selection overlaps this span.
             bool hit = false;
@@ -2693,14 +2708,14 @@ static std::vector<BYTE> BuildLinkDialogTemplate() {
             buf.push_back(static_cast<BYTE>(*s >> 8));
             s++;
         }
-        buf.push_back(0); buf.push_back(0);  // null terminator
+        buf.push_back(0); buf.push_back(0); // null terminator
     };
 
     std::vector<BYTE> buf;
     // DLGTEMPLATE
     DWORD style = WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
                 | DS_MODALFRAME | DS_SETFONT;
-    pushStr(buf, L"Segoe UI");  // menu (none... actually this is menu field)
+    pushStr(buf, L"Segoe UI"); // menu (none... actually this is menu field)
     // Wait, DLGTEMPLATE order is: style, exStyle, cdit, x, y, cx, cy
     // Then: menu, class, title, (if DS_SETFONT: fontSize, font)
     // Let me rebuild properly.
@@ -2717,10 +2732,10 @@ static std::vector<BYTE> BuildLinkDialogTemplate() {
     // x, y, cx, cy (in dialog units)
     // cx=200, cy=80
     WORD cx = 200, cy = 80;
-    buf.push_back(10); buf.push_back(0);   // x
-    buf.push_back(10); buf.push_back(0);   // y
-    buf.push_back(cx & 0xFF); buf.push_back(cx >> 8);   // cx
-    buf.push_back(cy & 0xFF); buf.push_back(cy >> 8);   // cy
+    buf.push_back(10); buf.push_back(0);  // x
+    buf.push_back(10); buf.push_back(0);  // y
+    buf.push_back(cx & 0xFF); buf.push_back(cx >> 8);  // cx
+    buf.push_back(cy & 0xFF); buf.push_back(cy >> 8);  // cy
 
     // menu: none (empty string)
     buf.push_back(0); buf.push_back(0);
@@ -2741,14 +2756,14 @@ static std::vector<BYTE> BuildLinkDialogTemplate() {
     buf.push_back(labStyle & 0xFF); buf.push_back((labStyle>>8)&0xFF);
     buf.push_back((labStyle>>16)&0xFF); buf.push_back((labStyle>>24)&0xFF);
     buf.push_back(0); buf.push_back(0); buf.push_back(0); buf.push_back(0); // exStyle
-    buf.push_back(10); buf.push_back(0);  // x
-    buf.push_back(10); buf.push_back(0);  // y
+    buf.push_back(10); buf.push_back(0); // x
+    buf.push_back(10); buf.push_back(0); // y
     buf.push_back(180); buf.push_back(0); // cx
-    buf.push_back(12); buf.push_back(0);  // cy
+    buf.push_back(12); buf.push_back(0); // cy
     buf.push_back(1000); buf.push_back(0); // id = 1000
 
     // class: static
-    buf.push_back(0x0082); buf.push_back(0);  // atom for STATIC
+    buf.push_back(0x0082); buf.push_back(0); // atom for STATIC
     // title
     pushStr(buf, L"Link URL:");
     // creation data: none
@@ -2762,14 +2777,14 @@ static std::vector<BYTE> BuildLinkDialogTemplate() {
     buf.push_back(editStyle & 0xFF); buf.push_back((editStyle>>8)&0xFF);
     buf.push_back((editStyle>>16)&0xFF); buf.push_back((editStyle>>24)&0xFF);
     buf.push_back(0); buf.push_back(0); buf.push_back(0); buf.push_back(0); // exStyle
-    buf.push_back(10); buf.push_back(0);  // x
-    buf.push_back(25); buf.push_back(0);  // y
+    buf.push_back(10); buf.push_back(0); // x
+    buf.push_back(25); buf.push_back(0); // y
     buf.push_back(180); buf.push_back(0); // cx
-    buf.push_back(14); buf.push_back(0);  // cy
+    buf.push_back(14); buf.push_back(0); // cy
     buf.push_back(1001); buf.push_back(0); // id = 1001
 
     // class: edit
-    buf.push_back(0x0081); buf.push_back(0);  // atom for EDIT
+    buf.push_back(0x0081); buf.push_back(0); // atom for EDIT
     // title: empty
     buf.push_back(0); buf.push_back(0);
     // creation data: none
@@ -2784,13 +2799,13 @@ static std::vector<BYTE> BuildLinkDialogTemplate() {
     buf.push_back((btnStyle>>16)&0xFF); buf.push_back((btnStyle>>24)&0xFF);
     buf.push_back(0); buf.push_back(0); buf.push_back(0); buf.push_back(0); // exStyle
     buf.push_back(140); buf.push_back(0); // x
-    buf.push_back(50); buf.push_back(0);  // y
+    buf.push_back(50); buf.push_back(0); // y
     buf.push_back(50); buf.push_back(0); // cx
     buf.push_back(14); buf.push_back(0); // cy
     buf.push_back(IDOK & 0xFF); buf.push_back(IDOK >> 8); // id = IDOK
 
     // class: button
-    buf.push_back(0x0080); buf.push_back(0);  // atom for BUTTON
+    buf.push_back(0x0080); buf.push_back(0); // atom for BUTTON
     // title
     pushStr(buf, L"OK");
     // creation data: none
@@ -2804,10 +2819,10 @@ static std::vector<BYTE> BuildLinkDialogTemplate() {
     buf.push_back(btnCancelStyle & 0xFF); buf.push_back((btnCancelStyle>>8)&0xFF);
     buf.push_back((btnCancelStyle>>16)&0xFF); buf.push_back((btnCancelStyle>>24)&0xFF);
     buf.push_back(0); buf.push_back(0); buf.push_back(0); buf.push_back(0);
-    buf.push_back(80); buf.push_back(0);  // x (right of OK)
-    buf.push_back(50); buf.push_back(0);  // y
-    buf.push_back(50); buf.push_back(0);  // cx
-    buf.push_back(14); buf.push_back(0);  // cy
+    buf.push_back(80); buf.push_back(0); // x (right of OK)
+    buf.push_back(50); buf.push_back(0); // y
+    buf.push_back(50); buf.push_back(0); // cx
+    buf.push_back(14); buf.push_back(0); // cy
     buf.push_back(IDCANCEL & 0xFF); buf.push_back(IDCANCEL >> 8);
 
     // class: button
@@ -2834,7 +2849,7 @@ static INT_PTR CALLBACK LinkDialogProc(HWND hDlg, UINT msg, WPARAM wp, LPARAM lp
         HWND hEdit = GetDlgItem(hDlg, 1001);
         SetFocus(hEdit);
         Edit_SetSel(hEdit, 0, -1);
-        return FALSE;  // we already set focus
+        return FALSE; // we already set focus
     }
     case WM_COMMAND:
         switch (LOWORD(wp)) {
@@ -2925,9 +2940,9 @@ void AppWindow::SpliceWithUndo(uint32_t offset, uint32_t length,
 struct TableGridPicker {
     static constexpr int kMaxCols = 10;
     static constexpr int kMaxRows = 8;
-    static constexpr int kCellSize = 16;    // pixels per cell
-    static constexpr int kMargin = 6;       // padding around grid
-    static constexpr int kLabelH = 22;      // bottom label "3 x 3 Table"
+    static constexpr int kCellSize = 16;   // pixels per cell
+    static constexpr int kMargin = 6;      // padding around grid
+    static constexpr int kLabelH = 22;     // bottom label "3 x 3 Table"
 
     int selCols = 3;
     int selRows = 3;
@@ -3204,12 +3219,12 @@ static const Node* FindContainingTable(const Document& doc, uint32_t offset) {
 // A row is one line within the table block. Also return the column
 // index that the cursor is in.
 struct TableLocation {
-    uint32_t rowStart;   // source offset of row's first character
-    uint32_t rowEnd;     // source offset past the row's newline (or end of table)
-    int columnIndex;     // 0-based column the cursor is in
-    int rowIndex;        // 0-based row index
-    int numCols;          // number of columns
-    int numRows;          // number of rows
+    uint32_t rowStart;  // source offset of row's first character
+    uint32_t rowEnd;    // source offset past the row's newline (or end of table)
+    int columnIndex;    // 0-based column the cursor is in
+    int rowIndex;       // 0-based row index
+    int numCols;         // number of columns
+    int numRows;         // number of rows
 };
 
 static bool LocateInTable(const std::string& text, const Node* node,
@@ -3230,7 +3245,7 @@ static bool LocateInTable(const std::string& text, const Node* node,
 
     for (uint32_t i = tblStart; i <= tblEnd; ++i) {
         if (i == tblEnd || text[i] == '\n') {
-            uint32_t lineEnd = i;  // not including newline
+            uint32_t lineEnd = i; // not including newline
             if (offset >= lineStart && offset <= (i == tblEnd ? i : i + 1)) {
                 // Found the row. Count pipes to determine column.
                 int col = 0;
@@ -3364,7 +3379,7 @@ bool AppWindow::AddTableColumn() {
                 }
             }
         }
-        if (pipeSeen == 0) continue;  // not a table line
+        if (pipeSeen == 0) continue; // not a table line
 
         // Determine if this is the separator line (all dashes).
         bool isSep = true;
@@ -3401,7 +3416,7 @@ bool AppWindow::RemoveTableColumn() {
     TableLocation loc;
     if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
 
-    if (loc.numCols <= 1) return false;  // don't remove the last column
+    if (loc.numCols <= 1) return false; // don't remove the last column
 
     uint32_t tblStart = tbl->srcOffset;
     uint32_t tblEnd = tblStart + tbl->srcLength;
@@ -3434,10 +3449,10 @@ bool AppWindow::RemoveTableColumn() {
             if (text[j] == '|') {
                 ++pipeSeen;
                 if (pipeSeen == loc.columnIndex + 1) {
-                    colStart = j;  // the pipe before this column
+                    colStart = j; // the pipe before this column
                 }
                 if (pipeSeen == loc.columnIndex + 2) {
-                    colEnd = j + 1;  // include the pipe after this column
+                    colEnd = j + 1; // include the pipe after this column
                     found = true;
                     break;
                 }
@@ -3458,7 +3473,7 @@ bool AppWindow::RemoveTableColumn() {
 
 void AppWindow::ClearFormat() {
     if (!editing_) return;
-    if (sel_.Empty()) return;  // Need a selection to clear formatting.
+    if (sel_.Empty()) return; // Need a selection to clear formatting.
 
     uint32_t origStart = sel_.Start();
     uint32_t origEnd = origStart + sel_.Length();
@@ -3469,10 +3484,10 @@ void AppWindow::ClearFormat() {
     // For each span, record the marker region to remove. We'll splice
     // in reverse order so earlier removals don't shift later offsets.
     struct MarkerRemoval {
-        uint32_t markerStart;  // start of left markers
-        uint32_t markerEnd;    // end of right markers
+        uint32_t markerStart; // start of left markers
+        uint32_t markerEnd;   // end of right markers
         uint32_t contentStart; // start of content (after left markers)
-        uint32_t contentEnd;   // end of content (before right markers)
+        uint32_t contentEnd;  // end of content (before right markers)
     };
     std::vector<MarkerRemoval> removals;
 
@@ -3489,7 +3504,7 @@ void AppWindow::ClearFormat() {
 
             uint32_t cs = child.srcOffset;
             uint32_t ce = cs + child.srcLength;
-            if (ce <= cs) continue;  // skip empty spans
+            if (ce <= cs) continue; // skip empty spans
 
             // Check overlap with the selection.
             if (ce <= origStart || cs >= origEnd) continue;
@@ -3527,7 +3542,7 @@ void AppWindow::ClearFormat() {
     std::vector<MarkerRemoval> merged;
     for (const auto& r : removals) {
         if (!merged.empty() && r.markerEnd >= merged.back().markerStart) {
-            // Overlaps with previous — merge by taking the wider range.
+            // Overlaps with previous; merge by taking the wider range.
             merged.back().markerStart = std::min(merged.back().markerStart, r.markerStart);
             merged.back().markerEnd = std::max(merged.back().markerEnd, r.markerEnd);
             merged.back().contentStart = std::min(merged.back().contentStart, r.contentStart);
@@ -3562,7 +3577,7 @@ void AppWindow::ClearFormat() {
 
 
     // Remove BLOCK-level formatting: headings, lists, blockquotes.
-    FormatState fs = GetFormatState();  // re-read after inline changes
+    FormatState fs = GetFormatState(); // re-read after inline changes
     if (fs.headingLevel > 0) {
         SetHeadingLevel(&buffer_, &sel_, 0, &undo_stack_);
     }
@@ -3669,6 +3684,11 @@ void AppWindow::RecreateRenderer() {
     renderer_.Release();
     renderer_inited_ = false;
     EnsureRenderer();
+    // EnsureRenderer above re-inits because renderer_inited_ was reset first,
+    // but if the release/init round-trip is skipped (inited stayed false on
+    // init failure), still republish the current device context:
+    // RecreateRenderTarget may have swapped d2d_ctx5_ since the last init.
+    renderer_.SetD2DDeviceContext5(d2d_ctx5_);
 }
 
 void AppWindow::OpenFileDialog() {
@@ -3804,8 +3824,8 @@ void AppWindow::ShowContextMenu(int screenX, int screenY) {
 
     // Dispatch the selected command.
     switch (cmd) {
-    case CM_UNDO:    editor_.Undo();  OnBufferChanged(); break;
-    case CM_REDO:    editor_.Redo();  OnBufferChanged(); break;
+    case CM_UNDO:    editor_.Undo(); OnBufferChanged(); break;
+    case CM_REDO:    editor_.Redo(); OnBufferChanged(); break;
     case CM_CUT:
         if (!sel_.Empty()) {
             uint32_t s = sel_.Start(), len = sel_.Length();
@@ -3832,13 +3852,13 @@ void AppWindow::ShowContextMenu(int screenX, int screenY) {
         break;
     }
     case CM_SELALL:  SelectAll(); break;
-    case CM_BOLD:   ToggleBold();   break;
+    case CM_BOLD:   ToggleBold();  break;
     case CM_ITALIC: ToggleItalic(); break;
-    case CM_CODE:   ToggleCode();   break;
-    case CM_EDIT:   ToggleEdit();   break;
-    case CM_WRAP:   ToggleWrap();  break;
-    case CM_ZOOMIN: ZoomIn();  break;
-    case CM_ZOOMOUT: ZoomOut();   break;
+    case CM_CODE:   ToggleCode();  break;
+    case CM_EDIT:   ToggleEdit();  break;
+    case CM_WRAP:   ToggleWrap(); break;
+    case CM_ZOOMIN: ZoomIn(); break;
+    case CM_ZOOMOUT: ZoomOut();  break;
     }
 }
 
@@ -3925,7 +3945,7 @@ void AppWindow::InvalidateSettingsButtons() {
 //
 LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
-        case WM_CREATE:    OnCreate(hwnd);    return 0;
+        case WM_CREATE:    OnCreate(hwnd);   return 0;
         case WM_DROPFILES: OnDropFiles(hwnd, (HDROP)wp); return 0;
         case WM_MOVE: {
             // Debounce-save window placement when the window is moved.
@@ -3976,8 +3996,8 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
         case WM_ERASEBKGND: return 1;
-        case WM_CLOSE:      OnClose();         return 0;
-        case WM_DESTROY:   OnDestroy();   return 0;
+        case WM_CLOSE:      OnClose();        return 0;
+        case WM_DESTROY:   OnDestroy();  return 0;
         case WM_PAINT: {
             // Main window does not paint. The ribbon framework handles
             // its own area, and the content child handles content.
@@ -4002,7 +4022,7 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         case WM_PAINT:     OnContentPaint(hwnd); return 0;
-        case WM_ERASEBKGND: return 1;  // D2D handles all painting
+        case WM_ERASEBKGND: return 1; // D2D handles all painting
         case WM_LBUTTONDOWN: {
             int x = GET_X_LPARAM(lp);
             int y = GET_Y_LPARAM(lp);
@@ -4021,7 +4041,7 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             OnMouseMove(hwnd, x, y);
             return 0;
         }
-        case WM_LBUTTONUP:   OnLButtonUp(hwnd);    return 0;
+        case WM_LBUTTONUP:   OnLButtonUp(hwnd);   return 0;
         case WM_CONTEXTMENU: {
             int x = GET_X_LPARAM(lp);
             int y = GET_Y_LPARAM(lp);
@@ -4029,8 +4049,8 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         case WM_CHAR:        OnChar(hwnd, static_cast<wchar_t>(wp)); return 0;
-        case WM_SETFOCUS:  OnSetFocus(hwnd);   return 0;
-        case WM_KILLFOCUS: OnKillFocus(hwnd);  return 0;
+        case WM_SETFOCUS:  OnSetFocus(hwnd);  return 0;
+        case WM_KILLFOCUS: OnKillFocus(hwnd); return 0;
         case WM_VSCROLL:    OnContentVScroll(hwnd, (int)LOWORD(wp), (int)HIWORD(wp)); return 0;
         case WM_MOUSEWHEEL: {
             int delta = GET_WHEEL_DELTA_WPARAM(wp);

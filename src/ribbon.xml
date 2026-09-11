@@ -8,7 +8,7 @@
     </Command>
     <Command Name="cmdTabInsert" Symbol="IDC_TAB_INSERT" Id="10002">
       <Command.LabelTitle>
-        <String>Insert</String>
+        <String>Edit</String>
       </Command.LabelTitle>
     </Command>
     <Command Name="cmdGroupFile" Symbol="IDC_GROUP_FILE" Id="10010">
@@ -39,6 +39,11 @@
     <Command Name="cmdGroupTable" Symbol="IDC_GROUP_TABLE" Id="10050">
       <Command.LabelTitle>
         <String>Table</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdGroupHistory" Symbol="IDC_GROUP_HISTORY" Id="10012">
+      <Command.LabelTitle>
+        <String>History</String>
       </Command.LabelTitle>
     </Command>
     <Command Name="cmdOpen" Symbol="IDC_CMD_OPEN" Id="10100">
@@ -482,15 +487,11 @@
             <Button CommandName="cmdAbout" />
             <Button CommandName="cmdAssocMd" />
           </MenuGroup>
-          <MenuGroup Class="StandardItems">
-            <DropDownButton CommandName="cmdWidthMenu">
-              <MenuGroup>
-                <Button CommandName="cmdWidthStandard" />
-                <Button CommandName="cmdWidth960" />
-                <Button CommandName="cmdWidth1600" />
-                <Button CommandName="cmdWidthFull" />
-              </MenuGroup>
-            </DropDownButton>
+          <MenuGroup CommandName="cmdWidthMenu" Class="StandardItems">
+            <Button CommandName="cmdWidthStandard" />
+            <Button CommandName="cmdWidth960" />
+            <Button CommandName="cmdWidth1600" />
+            <Button CommandName="cmdWidthFull" />
           </MenuGroup>
         </ApplicationMenu>
       </Ribbon.ApplicationMenu>
@@ -502,11 +503,9 @@
             <Button CommandName="cmdSave" />
             <Button CommandName="cmdSaveAs" />
           </Group>
-          <Group CommandName="cmdGroupEdit" SizeDefinition="FourButtons">
+          <Group CommandName="cmdGroupHistory" SizeDefinition="TwoButtons">
             <Button CommandName="cmdUndo" />
             <Button CommandName="cmdRedo" />
-            <ToggleButton CommandName="cmdEditToggle" />
-            <ToggleButton CommandName="cmdViewSource" />
           </Group>
           <Group CommandName="cmdGroupView" SizeDefinition="ThreeButtons">
             <ToggleButton CommandName="cmdWrap" />
@@ -515,6 +514,10 @@
           </Group>
         </Tab>
         <Tab CommandName="cmdTabInsert">
+          <Group CommandName="cmdGroupEdit" SizeDefinition="TwoButtons">
+            <ToggleButton CommandName="cmdEditToggle" />
+            <ToggleButton CommandName="cmdViewSource" />
+          </Group>
           <Group CommandName="cmdGroupFormat" SizeDefinition="SixButtons">
             <ToggleButton CommandName="cmdBold" />
             <ToggleButton CommandName="cmdItalic" />

@@ -29,3 +29,7 @@ a.out
 # Node (oracle harness)
 node_modules/
 package-lock.json
+
+# macOS resource forks
+desktop.ini
+.DS_Store

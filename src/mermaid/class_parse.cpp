@@ -103,9 +103,12 @@ bool ClassParseMember(const std::string& raw, std::string& text,
     std::string s = Trim(raw);
     if (s.empty()) return false;
     // Annotations: <<...>> (also the bare <<Interface>> form inside bodies).
+    // Keep the delimited form in text; the caller classifies on the << >>
+    // wrapper and strips it there. Stripping twice made the wrapper check
+    // never fire, so annotations landed in members.
     if (s.size() >= 4 && s.compare(0, 2, "<<") == 0 &&
         s.compare(s.size() - 2, 2, ">>") == 0) {
-        text = Trim(s.substr(2, s.size() - 4));
+        text = s;
         is_method = false;
         return true;
     }

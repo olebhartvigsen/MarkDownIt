@@ -25,12 +25,12 @@ void WelcomeScreen::Init(IDWriteFactory* dw) {
     if (dw_) return;
     dw_ = dw;
 
-    // Heading: "Recent Documents" — 24pt semi-bold
+    // Heading: "Recent Documents"; 24pt semi-bold
     dw->CreateTextFormat(L"Segoe UI", nullptr,
         DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL, 24.0f, L"en-US", &title_fmt_);
 
-    // Card title: filename — 14pt semi-bold
+    // Card title: filename; 14pt semi-bold
     dw->CreateTextFormat(L"Segoe UI", nullptr,
         DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL, 14.0f, L"en-US", &cardTitle_fmt_);

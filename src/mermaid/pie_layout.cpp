@@ -39,7 +39,7 @@ std::string FormatNumber(double v) {
 // ES toFixed(0): pick the integer minimizing |n - x|; on a tie pick the
 // LARGER n (spec: "the number n ... is the largest"). For exact .5 values
 // this is floor(x + 0.5). Note printf %.0f uses round-half-even, which
-// differs from JS at 61.5 (62 vs 61.5→61) — so we do NOT use printf.
+// differs from JS at 61.5 (62 vs 61.5→61); so we do NOT use printf.
 std::string PercentText(double value, double sum) {
     double pct = sum > 0 ? std::abs(value) / sum * 100.0 : 0.0;
     char buf[32];
@@ -72,7 +72,7 @@ LaidOutPie LayoutPie(const PieDiagram& pie) {
     double sum = 0;
     for (const auto& s : sorted) sum += s.value;
 
-    const double radius = (SCREEN_H / 2.0) - MARGIN;  // 185
+    const double radius = (SCREEN_H / 2.0) - MARGIN; // 185
     const double text_pos = 0.75;
     double a0 = 0.0;
     const double full = 2.0 * 3.14159265358979323846;
@@ -99,7 +99,7 @@ LaidOutPie LayoutPie(const PieDiagram& pie) {
     }
 
     // Legend rows, in arc order.
-    const double legend_h = LEGEND_RECT_SIZE + LEGEND_SPACING;  // 22
+    const double legend_h = LEGEND_RECT_SIZE + LEGEND_SPACING; // 22
     const double offset = legend_h * static_cast<double>(out.arcs.size()) / 2.0;
     for (size_t k = 0; k < out.arcs.size(); ++k) {
         PieLegendRow row;
@@ -111,20 +111,20 @@ LaidOutPie LayoutPie(const PieDiagram& pie) {
         }
         row.label = label;
         row.color_index = out.arcs[k].color_index;
-        row.x = 12.0 * LEGEND_RECT_SIZE;  // 216
+        row.x = 12.0 * LEGEND_RECT_SIZE; // 216
         row.y = k * legend_h - offset;
         out.legend.push_back(row);
     }
 
     // Canvas size: width = pieWidth + MARGIN + LEGEND_RECT_SIZE +
     // LEGEND_SPACING + longest legend text; height fixed 450. Longest text
-    // width uses the oracle's measurement model (8 px per UTF-16 unit —
+    // width uses the oracle's measurement model (8 px per UTF-16 unit; 
     // jsdom getBoundingClientRect shim: width = n * 8).
     double longest_text = 0.0;
     for (const auto& row : out.legend) {
         double units = 0.0;
         for (unsigned char c : row.label) {
-            if ((c & 0xC0) != 0x80) ++units;  // UTF-16 units for BMP chars
+            if ((c & 0xC0) != 0x80) ++units; // UTF-16 units for BMP chars
         }
         longest_text = std::max(longest_text, units * 8.0);
     }
@@ -135,7 +135,7 @@ LaidOutPie LayoutPie(const PieDiagram& pie) {
     out.cx = cx;
     out.cy = cy;
     out.radius = radius;
-    out.ring_r = radius + 1.0;  // outerStrokeWidth/2 = 1
+    out.ring_r = radius + 1.0; // outerStrokeWidth/2 = 1
     out.title = pie.title;
     return out;
 }

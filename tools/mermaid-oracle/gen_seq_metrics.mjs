@@ -72,11 +72,15 @@ function parseTtf(buf) {
 // Which codepoints to emit: printable ASCII + Latin-1 + Danish specials +
 // common punctuation/box-drawing used in sequence diagrams. Keep BMP-wise
 // compact: emit codepoints 0x20-0x7E + 0xA0-0x17F + selected extras.
+// The table MUST stay globally sorted by cp: SeqAdvanceFor binary-searches it.
 const cps = [];
 for (let c = 0x20; c <= 0x7E; c++) cps.push(c);
 for (let c = 0xA0; c <= 0x17F; c++) cps.push(c);
 for (const c of [0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
-                 0x2026, 0x2192, 0x2190, 0x00D7, 0x2229, 0x00B7]) cps.push(c);
+                 0x2026, 0x2192, 0x2190, 0x00D7, 0x2229, 0x00B7]) {
+  if (!cps.includes(c)) cps.push(c);
+}
+cps.sort((a, b) => a - b);
 
 // DETERMINISTIC: always the vendored OFL Open Sans (same on WSL and CI —
 // the /mnt/c Segoe probe made the generated table machine-dependent).

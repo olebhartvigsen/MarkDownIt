@@ -28,7 +28,7 @@ constexpr uint32_t kPieColors[] = {
     0xFF5353,  // pie12
 };
 
-constexpr uint32_t kPieTextDark = 0x333333;  // % labels: fill:#333
+constexpr uint32_t kPieTextDark = 0x333333; // % labels: fill:#333
 constexpr float kPieMARGIN = 40.0f;
 
 // UTF-8 → UTF-16 (same helper as the flowchart renderer).
@@ -87,7 +87,10 @@ void DrawPieText(IDWriteFactory* dw, ID2D1RenderTarget* rt,
     if (FAILED(dw->CreateTextLayout(
             reinterpret_cast<const WCHAR*>(t16.data()),
             static_cast<UINT32>(t16.size()), use_fmt,
-            1e9f, 1e9f, &tl)) || !tl) return;
+            1e9f, 1e9f, &tl)) || !tl) {
+        if (scaled) scaled->Release();
+        return;
+    }
     if (scaled) scaled->Release();
     DWRITE_TEXT_METRICS tm{};
     tl->GetMetrics(&tm);
@@ -115,7 +118,7 @@ void Renderer::DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // natural canvas is wider than the available width.
     const float availW =
         width > 2.0f * pad ? width - 2.0f * pad : 0.0f;
-    // Lineær zoom: scale = min(zoom, availW/naturalW) — aldrig op-skaler.
+    // Lineær zoom: scale = min(zoom, availW/naturalW); aldrig op-skaler.
     float scale = zoom_;
     if (lp.width > 0 && availW > 0) {
         float fit_scale = availW / static_cast<float>(lp.width);
@@ -252,4 +255,5 @@ void Renderer::DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (fillBrush) fillBrush->Release();
     if (ringBrush) ringBrush->Release();
     if (textBrush) textBrush->Release();
+    if (fac) fac->Release();
 }

@@ -181,6 +181,13 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
     ctx->CreateSolidColorBrush(defaultColor, &br.p);
     if (!br.p) return;
 
+    // Restore the outer (page) transform: shapes compose prev*docT in
+    // Draw(), so text must do the same or it is drawn offset by the scroll
+    // translation whenever the document is scrolled.
+    D2D1_MATRIX_3X2_F prev;
+    ctx->GetTransform(&prev);
+    ctx->SetTransform(prev * docTransform);
+
     // Cache text formats by (fontFamily, fontSize, bold)
     struct FmtKey {
         std::string family;
@@ -195,8 +202,6 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
         IDWriteTextFormat* fmt;
     };
     std::vector<FmtEntry> fmtCache;
-
-    ctx->SetTransform(docTransform);
 
     for (const auto& run : texts_) {
         if (run.text.empty()) continue;
@@ -228,10 +233,44 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
             fmtCache.push_back({ key, fmt });
         }
 
-        // Create text layout with generous width, no wrapping
+        // Create text layout with generous width, no wrapping.
+        // Decode UTF-8 to UTF-16 properly: byte-wise casting renders every
+        // non-ASCII label as mojibake (e.g. C3 A9 becomes two C1 controls).
         std::u16string u16;
-        for (char c : run.text)
-            u16.push_back(static_cast<char16_t>(static_cast<unsigned char>(c)));
+        {
+            for (size_t i = 0; i < run.text.size(); ) {
+                unsigned char c = static_cast<unsigned char>(run.text[i]);
+                uint32_t cp = 0;
+                int n_b = 1;
+                if (c < 0x80) { cp = c; n_b = 1; }
+                else if ((c & 0xE0) == 0xC0 && i + 1 < run.text.size()) {
+                    cp = ((c & 0x1F) << 6) |
+                         (static_cast<unsigned char>(run.text[i+1]) & 0x3F);
+                    n_b = 2;
+                } else if ((c & 0xF0) == 0xE0 && i + 2 < run.text.size()) {
+                    cp = ((c & 0x0F) << 12) |
+                         ((static_cast<unsigned char>(run.text[i+1]) & 0x3F) << 6) |
+                         (static_cast<unsigned char>(run.text[i+2]) & 0x3F);
+                    n_b = 3;
+                } else if ((c & 0xF8) == 0xF0 && i + 3 < run.text.size()) {
+                    cp = ((c & 0x07) << 18) |
+                         ((static_cast<unsigned char>(run.text[i+1]) & 0x3F) << 12) |
+                         ((static_cast<unsigned char>(run.text[i+2]) & 0x3F) << 6) |
+                         (static_cast<unsigned char>(run.text[i+3]) & 0x3F);
+                    n_b = 4;
+                } else { cp = 0xFFFD; n_b = 1; }
+                // Reject surrogates and out-of-range code points.
+                if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) cp = 0xFFFD;
+                if (cp <= 0xFFFF) {
+                    u16.push_back(static_cast<char16_t>(cp));
+                } else {
+                    cp -= 0x10000;
+                    u16.push_back(static_cast<char16_t>(0xD800 + (cp >> 10)));
+                    u16.push_back(static_cast<char16_t>(0xDC00 + (cp & 0x3FF)));
+                }
+                i += n_b;
+            }
+        }
 
         IDWriteTextLayout* tl = nullptr;
         HRESULT hr = dw->CreateTextLayout(
@@ -269,10 +308,11 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
         tl->Release();
     }
 
-    // Release cached formats
+    // Release cached formats and restore the caller's transform.
     for (auto& e : fmtCache) {
         if (e.fmt) e.fmt->Release();
     }
+    ctx->SetTransform(prev);
 }
 
 }  // namespace svg

@@ -19,6 +19,29 @@ class SvgDoc {
 public:
     ~SvgDoc();
 
+    // Move-only: the type owns a COM reference. Copying would hand the same
+    // ID2D1SvgDocument* to two owners whose destructors both Release it
+    // (the vector-backed SVG cache relies on moving, so forbid copies).
+    SvgDoc() = default;
+    SvgDoc(SvgDoc&& o) noexcept
+        : doc_(o.doc_), texts_(std::move(o.texts_)),
+          width_(o.width_), height_(o.height_) {
+        o.doc_ = nullptr;
+        o.width_ = 0.0f;
+        o.height_ = 0.0f;
+    }
+    SvgDoc& operator=(SvgDoc&& o) noexcept {
+        if (this != &o) {
+            Release();
+            doc_ = o.doc_; texts_ = std::move(o.texts_);
+            width_ = o.width_; height_ = o.height_;
+            o.doc_ = nullptr; o.width_ = 0.0f; o.height_ = 0.0f;
+        }
+        return *this;
+    }
+    SvgDoc(const SvgDoc&) = delete;
+    SvgDoc& operator=(const SvgDoc&) = delete;
+
     // Parse an SVG string. Returns false on failure.
     bool Load(ID2D1DeviceContext5* ctx, const std::string& xml);
 

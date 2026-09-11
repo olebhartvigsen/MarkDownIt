@@ -12,6 +12,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <algorithm>
+#include <tuple>
 
 namespace {
 
@@ -36,7 +38,7 @@ double ParseSelfX(const std::string& d) {
 }
 
 const char* kFixtures[] = {"seq1", "seq2", "seq3", "seq4", "seq5", "seq6",
-                           "msk1", "msk2", "msk3", "msk4"};
+                           "seq7", "seq8", "msk1", "msk2", "msk3", "msk4"};
 
 }  // namespace
 
@@ -68,7 +70,7 @@ TEST(SeqGolden, ActorXAndCanvasMatchOracle) {
         EXPECT_EQ(lo.error, "");
         // count top-actor boxes; top stickmen (`actor X`) have NO rect in
         // the jsdom dump (their <g> is dropped), but the engine still lays
-        // them out — they are counted via gold.stick_top and matched by id.
+        // them out; they are counted via gold.stick_top and matched by id.
         size_t n_top = 0;
         for (const auto& a : gold.actors)
             if (!a.bottom && !a.is_lifeline && !a.is_stickman) ++n_top;
@@ -180,7 +182,7 @@ TEST(SeqGolden, MessagesMatchOracle) {
             } else {
                 // SELF-CALL: compare against the oracle's own path `M x,y`:
                 // g.x1 is the engine's lifeline center x; the path starts on
-                // the SAME lifeline (its `M x` = center x) — the old
+                // the SAME lifeline (its `M x` = center x); the old
                 // "75, band 300" was a placeholder that cannot hold on any
                 // fixture whose leftmost actor is not the self-sender
                 // (seq6 msg 4: MCP→MCP at x=901).
@@ -221,11 +223,27 @@ TEST(SeqGolden, NotesActivationsLoopsMatchOracle) {
         }
         // activations
         ASSERT_EQ(lo.activations.size(), gold.activations.size());
-        for (size_t i = 0; i < lo.activations.size(); ++i) {
-            EXPECT_NEAR(lo.activations[i].x, gold.activations[i].x, pos_tol);
-            EXPECT_NEAR(lo.activations[i].y, gold.activations[i].y, pos_tol);
-            EXPECT_NEAR(lo.activations[i].w, gold.activations[i].w, pos_tol);
-            EXPECT_NEAR(lo.activations[i].h, gold.activations[i].h, pos_tol);
+        // Order-independent match: the draw order of activation bands is
+        // DOM order in the oracle but splice order in the engine; compare
+        // the sorted sets so a reordering does not mask geometry errors.
+        std::vector<std::tuple<double,double,double>> ours, theirs;
+        for (const auto& a : lo.activations) ours.push_back({a.x, a.y, a.h});
+        for (const auto& a : gold.activations) theirs.push_back({a.x, a.y, a.h});
+        std::sort(ours.begin(), ours.end());
+        std::sort(theirs.begin(), theirs.end());
+        for (size_t i = 0; i < ours.size(); ++i) {
+            EXPECT_NEAR(std::get<0>(ours[i]), std::get<0>(theirs[i]), pos_tol);
+            EXPECT_NEAR(std::get<1>(ours[i]), std::get<1>(theirs[i]), pos_tol);
+            EXPECT_NEAR(std::get<2>(ours[i]), std::get<2>(theirs[i]), pos_tol);
+        }
+        // widths: compare as multiset too
+        std::vector<double> ow, tw;
+        for (const auto& a : lo.activations) ow.push_back(a.w);
+        for (const auto& a : gold.activations) tw.push_back(a.w);
+        std::sort(ow.begin(), ow.end());
+        std::sort(tw.begin(), tw.end());
+        for (size_t i = 0; i < ow.size(); ++i) {
+            EXPECT_NEAR(ow[i], tw[i], pos_tol);
         }
         // backgrounds (rect rgb)
         if (!gold.backgrounds.empty()) {
@@ -250,7 +268,7 @@ TEST(SeqGolden, TitleMatchesOracle) {
     EXPECT_EQ(lo.title, gold5.title);
     // title x from the golden's raw title entry is not in the loader schema;
     // the canvas (starty -50 with a title) is the authoritative check.
-    EXPECT_NEAR(lo.starty, gold5.canvas.starty, 0.5);  // -50 with title
+    EXPECT_NEAR(lo.starty, gold5.canvas.starty, 0.5); // -50 with title
     auto gold1 = mermaid::LoadSeqGolden("tests/mermaid/golden/seq1.json");
     EXPECT_FALSE(gold1.has_title);
 }

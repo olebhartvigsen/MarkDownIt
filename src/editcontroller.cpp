@@ -152,7 +152,7 @@ void EditController::InsertParagraphBreak(const Document& doc) {
         }
     }
 
-    // In a table cell, inserting any newline breaks the table syntax —
+    // In a table cell, inserting any newline breaks the table syntax; 
     // markdown tables require single-line rows. Do nothing instead.
     if (inTable || ctx == BlockKind::Table) {
         return;

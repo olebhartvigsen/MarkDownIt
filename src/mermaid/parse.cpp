@@ -171,7 +171,11 @@ bool MatchEdgeOp(const std::string& line, size_t& pos, EdgeOp& op) {
         op.style = LineStyle::Dotted;
         op.head = tail_arrow ? Head::Arrow : Head::None;
         op.label = label;
-        pos = tail + (tail_arrow ? 4 : 3);
+        // Resume right after the matched tail token: ".->" (3 chars) when
+        // the tail carries an arrowhead, ".-" (2 chars) otherwise. Counting
+        // one extra char eats the first character of the target node and
+        // drops the whole edge (A-.x.->B lost node B).
+        pos = tail + (tail_arrow ? 3 : 2);
         pos = std::min(pos, n);
         return true;
     }

@@ -32,7 +32,7 @@ int LayoutCache::HitTestBlock(float x, float y) const {
 
 int LayoutCache::FindBlockAtY(float y) const {
     // Find the topmost block whose y-range contains y.
-    // Do NOT snap to nearest block — if y is in a gap between blocks,
+    // Do NOT snap to nearest block; if y is in a gap between blocks,
     // return -1 so the caller can clear the selection.
     for (size_t i = 0; i < blocks_.size(); ++i) {
         const auto& bl = blocks_[i];
@@ -281,7 +281,7 @@ uint32_t Utf8OffsetToUtf16(const std::string& s, uint32_t byteOffset) {
         } else if ((b & 0xF8) == 0xF0) {
             // Surrogate pair: 4 UTF-8 bytes -> 2 UTF-16 code units.
             i += 4;
-            u16++;  // account for the extra UTF-16 unit
+            u16++; // account for the extra UTF-16 unit
         } else {
             i += 1;
         }
@@ -304,7 +304,7 @@ uint32_t Utf16OffsetToUtf8(const std::string& s, uint32_t u16Offset) {
             i += 3;
         } else if ((b & 0xF8) == 0xF0) {
             i += 4;
-            u16++;  // surrogate pair: 2 UTF-16 units
+            u16++; // surrogate pair: 2 UTF-16 units
         } else {
             i += 1;
         }

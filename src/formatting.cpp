@@ -53,8 +53,8 @@ void ToggleInlineMarker(TextBuffer* buf, Selection* sel, const std::string& mark
     // First try: selection already includes the markers.
     if (IsWrappedIn(text, start, end, marker)) {
         // Remove the markers: single splice replacing "**content**" with "content".
-        std::string removed = text.substr(start, end - start);  // "**content**"
-        std::string kept = removed.substr(mlen, removed.size() - mlen * 2);  // "content"
+        std::string removed = text.substr(start, end - start); // "**content**"
+        std::string kept = removed.substr(mlen, removed.size() - mlen * 2); // "content"
         buf->Splice(start, end - start, kept);
         sel->anchor = {start};
         sel->active = {start + static_cast<uint32_t>(kept.size())};
@@ -63,7 +63,7 @@ void ToggleInlineMarker(TextBuffer* buf, Selection* sel, const std::string& mark
     }
 
     // Second try: the selection is the inner content (markers are just
-    // outside). This happens when the user selects rendered bold text —
+    // outside). This happens when the user selects rendered bold text; 
     // the selection offsets point to the content, not the ** markers.
     // Expand outward to include ALL consecutive marker characters, then
     // remove them. This handles ** as well as **** (double-bold) etc.
@@ -142,7 +142,7 @@ void InsertLink(TextBuffer* buf, Selection* sel, const std::string& url,
 
 // --- Code block toggle ---
 
-// Forward declaration — LineStartOf is defined later in this file.
+// Forward declaration; LineStartOf is defined later in this file.
 static uint32_t LineStartOf(const std::string& text, uint32_t offset);
 
 // Check if a line starting at lineStart begins with the given prefix.
@@ -310,14 +310,14 @@ static std::string GetLine(const std::string& text, uint32_t start) {
 
 // Find the start of the paragraph (block of consecutive non-blank lines)
 // containing offset. A blank line (only whitespace) ends a paragraph.
-// A heading line (starting with #) is always its own paragraph — the
+// A heading line (starting with #) is always its own paragraph; the
 // following non-blank line starts a NEW paragraph, even without a blank
 // line between them.
 static uint32_t ParagraphStartOf(const std::string& text, uint32_t offset) {
     uint32_t lineStart = LineStartOf(text, offset);
     while (lineStart > 0) {
         // Move to the previous line.
-        uint32_t prevEnd = lineStart - 1;  // skip the '\n'
+        uint32_t prevEnd = lineStart - 1; // skip the '\n'
         uint32_t prevStart = LineStartOf(text, prevEnd);
         std::string prevLine = GetLine(text, prevStart);
         // Check if the previous line is blank (only whitespace).
@@ -355,7 +355,7 @@ static uint32_t ParagraphEndOf(const std::string& text, uint32_t offset) {
 
     while (end < text.size()) {
         // Peek at the next line.
-        uint32_t nextStart = end + 1;  // skip this '\n'
+        uint32_t nextStart = end + 1; // skip this '\n'
         if (nextStart >= text.size()) break;
         std::string nextLine = GetLine(text, nextStart);
         bool blank = true;
@@ -477,7 +477,7 @@ void SetHeadingLevel(TextBuffer* buf, Selection* sel, int level,
         while (cur < text.size() && text[cur] != '\n') cur++;
         while (cur < paraEnd) {
             // cur is at '\n'; move to next line.
-            cur++;  // skip '\n'
+            cur++; // skip '\n'
             std::string line = GetLine(text, cur);
             // Skip any indent on continuation lines.
             size_t i = 0;
@@ -526,7 +526,7 @@ static std::vector<uint32_t> LinesInRange(const std::string& text,
         lines.push_back(pos);
         // Advance to next line.
         while (pos < text.size() && text[pos] != '\n') pos++;
-        if (pos < text.size()) pos++;  // skip the \n
+        if (pos < text.size()) pos++; // skip the \n
     }
     return lines;
 }
@@ -618,43 +618,45 @@ void ToggleOrderedList(TextBuffer* buf, Selection* sel, UndoStack* undo) {
 
     Selection selBefore = *sel;
     int itemNumber = 1;
-    // Process lines in FORWARD order so item numbers ascend with the
-    // document. Splice offsets are absolute line starts, and since each
-    // splice only changes bytes at or after its own line start, later
-    // (larger) offsets remain valid as we walk forward.
-    for (size_t li = 0; li < lineStarts.size(); ++li) {
-        uint32_t ls = lineStarts[li];
+    // Number the lines first, then apply bottom-to-top. Forward order would
+    // shift every later line start once an earlier splice changes length
+    // (multi-line toggle corrupted the buffer). Reversing keeps offsets
+    // valid; itemNumber counts forward so numbering still ascends.
+    std::vector<std::string> newPrefixes(lineStarts.size());
+    {
+        size_t li = 0;
+        while (li < lineStarts.size()) {
+            uint32_t ls = lineStarts[li];
+            std::string line = GetLine(buf->Text(), ls);
+            std::string prefix = GetLinePrefix(line);
+            if (isOL) {
+                newPrefixes[li] = ""; // remove marker
+            } else {
+                newPrefixes[li] = std::to_string(itemNumber) + ". ";
+            }
+            itemNumber++;
+            li++;
+        }
+    }
+    for (int li = static_cast<int>(lineStarts.size()) - 1; li >= 0; --li) {
+        uint32_t ls = lineStarts[static_cast<size_t>(li)];
         const std::string& cur = buf->Text();
         std::string line = GetLine(cur, ls);
         std::string prefix = GetLinePrefix(line);
-        if (isOL) {
-            // Check if this line has an ordered list prefix.
-            size_t i = 0;
-            while (i < prefix.size() && prefix[i] == ' ') i++;
-            bool hasOL = false;
-            if (i < prefix.size() && prefix[i] >= '0' && prefix[i] <= '9') {
-                size_t j = i;
-                while (j < prefix.size() && prefix[j] >= '0' && prefix[j] <= '9') j++;
-                if (j < prefix.size() && prefix[j] == '.' && j + 1 < prefix.size() && prefix[j + 1] == ' ')
-                    hasOL = true;
-            }
-            if (hasOL) {
-                std::string removed = prefix;
-                buf->Splice(ls, static_cast<uint32_t>(prefix.size()), "");
-                Selection dummySel = *sel;
-                dummySel.Collapse({ls});
-                RecordUndo(undo, ls, removed, "", selBefore, dummySel);
-            }
+        const std::string& numPrefix = newPrefixes[static_cast<size_t>(li)];
+        if (numPrefix.empty()) {
+            std::string removed = prefix;
+            buf->Splice(ls, static_cast<uint32_t>(prefix.size()), "");
+            Selection dummySel = *sel;
+            dummySel.Collapse({ls});
+            RecordUndo(undo, ls, removed, "", selBefore, dummySel);
         } else {
-            // Add "N. " prefix.
-            std::string numPrefix = std::to_string(itemNumber) + ". ";
             std::string removed = prefix;
             buf->Splice(ls, static_cast<uint32_t>(prefix.size()), numPrefix);
             Selection dummySel = *sel;
             dummySel.Collapse({ls});
             RecordUndo(undo, ls, removed, numPrefix, selBefore, dummySel);
         }
-        itemNumber++;
     }
     sel->Collapse({selBefore.Start()});
 }

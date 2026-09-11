@@ -61,11 +61,18 @@ static bool DownloadImage(const std::wstring& url, std::vector<BYTE>& out) {
     DWORD fileSize = 0;
     DWORD avail = 0;
     bool anyData = false;
+    // Cap the download: a document can point at any URL, so refuse to
+    // buffer unlimited bytes (memory exhaustion from one image tag).
+    constexpr size_t kMaxImageBytes = 32u * 1024u * 1024u;
     do {
         avail = 0;
         if (!WinHttpQueryDataAvailable(hRequest, &avail)) break;
         if (avail > 0) {
             anyData = true;
+            if (out.size() + avail > kMaxImageBytes) {
+                anyData = false;
+                break;
+            }
             size_t oldSize = out.size();
             out.resize(oldSize + avail);
             if (!WinHttpReadData(hRequest, out.data()+oldSize, avail, nullptr))

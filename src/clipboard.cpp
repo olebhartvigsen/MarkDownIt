@@ -70,6 +70,9 @@ std::string HtmlToMarkdown(const std::string& html) {
     bool inPre = false;
     int headingLevel = 0;
     bool atLineStart = true;
+    // Stack of hrefs for nested <a> elements; each </a> closes with the
+    // href pushed by its opener.
+    std::vector<std::string> hrefStack;
 
     while (p < end) {
         if (*p == '<') {
@@ -106,9 +109,13 @@ std::string HtmlToMarkdown(const std::string& html) {
                 atLineStart = false;
             } else if (tag.name == "a") {
                 if (tag.closing) {
-                    out += "]";
+                    // Close with ](href): pop the href pushed by the opener.
+                    std::string href =
+                        hrefStack.empty() ? "" : hrefStack.back();
+                    if (!hrefStack.empty()) hrefStack.pop_back();
+                    out += "](" + href + ")";
                 } else {
-                    // Extract href from attrs
+                    // Extract href from attrs and push it for the closer.
                     std::string href;
                     size_t hpos = tag.attrs.find("href=\"");
                     if (hpos != std::string::npos) {
@@ -118,55 +125,8 @@ std::string HtmlToMarkdown(const std::string& html) {
                             hpos++;
                         }
                     }
+                    hrefStack.push_back(href);
                     out += "[";
-                    // We need to close with ](href) after the text.
-                    // Store href for use when </a> is encountered.
-                    // This is simplified: we push ](href) immediately after [
-                    // and remove the trailing ] when </a> comes.
-                    // Actually, let's just store the href and output ](href) at </a>.
-                    // For simplicity, output ](href) at </a>.
-                    // We'll use a stack of hrefs:
-                    // (simplified: just output "[" and remember to add ](href) at close)
-                    // For now, save href as a marker in the output:
-                    out = out; // no-op
-                    // Store href in a way we can retrieve at </a>.
-                    // Simple approach: append a sentinel.
-                    // Actually, let's use a hrefs vector.
-                    // (Replaced with simplified approach below.)
-                    // We'll just store the href and output ](href) at </a>.
-                    // For now, output "[" and store href.
-                    // This works because HTML is well-nested for links.
-                    // We use a simple stack.
-                    // Let's rewrite: we'll push href to a stack.
-                    // (Done below with a vector.)
-                    // For now, we output "[" and append after.
-                    // The simplest correct approach: we save the href position.
-                    out += ""; // placeholder
-                    // Actually, let's use a simpler approach:
-                    // We'll store the href in a vector and pop at </a>.
-                    // But we're in a flat string scanner. Let's just do:
-                    out += ""; // we'll handle this properly below
-                    // Simpler: just output [text](href) by buffering link content.
-                    // For now, skip the link and just output the text.
-                    // This is the simplified version:
-                    // (We'll output [ at open and ](url) at close.)
-                    // To make this work, we need to track the href.
-                    // Let's use a simple stack.
-                    // Actually, let's just output "[" and save href to a stack.
-                    // We'll use a static vector (not ideal but simple):
-                    // This is a function-local approach using a lambda capture.
-                    // Let's use a different approach: we'll store the hrefs
-                    // in a vector declared outside the loop.
-                    // (No, this is getting too complex. Let's simplify.)
-                    // Simplified: we'll output the href at </a> by finding
-                    // the last "[" in the output and replacing.
-                    // No, that's bad. Let's just use a vector.
-                    // OK, I'll rewrite this properly.
-                    // For now: output "[" and store href in a stack.
-                    // We'll pop it at </a>.
-                    // Let's define hrefs as a vector<string> at the top.
-                    // (I'll do this by rewriting the function.)
-                    // For now, just output "[" and continue.
                 }
             } else if (tag.name == "ul" || tag.name == "ol") {
                 if (!tag.closing) out += "\n";

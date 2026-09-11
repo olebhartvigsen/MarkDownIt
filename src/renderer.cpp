@@ -22,13 +22,13 @@ LayoutMetrics Renderer::ComputeMetrics() const {
     // Override the content width cap based on the user's width setting.
     // Mode 3 (Full) means no cap, so we use a very large value.
     if (contentWidthMode_ == 0) {
-        m.maxContentWidth = 800.0f * zoom_;       // Standard (default)
+        m.maxContentWidth = 800.0f * zoom_;      // Standard (default)
     } else if (contentWidthMode_ == 1) {
         m.maxContentWidth = 960.0f * zoom_;
     } else if (contentWidthMode_ == 2) {
         m.maxContentWidth = 1600.0f * zoom_;
     } else {
-        m.maxContentWidth = 100000.0f;            // Full window width
+        m.maxContentWidth = 100000.0f;           // Full window width
     }
     return m;
 }
@@ -259,7 +259,7 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     u16End += utf16Len;
                     byteIdx += utf8Len;
                 }
-                if (!pastStart) u16Start = u16End;  // past end
+                if (!pastStart) u16Start = u16End; // past end
                 if (!pastEnd) u16End = static_cast<UINT32>(text16.size());
                 if (u16End > u16Start) {
                     UINT32 hitCount = 0;
@@ -622,7 +622,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     }
                     bl.textStartOffset = row.cells[c].srcOffset;
                     bl.nodeIndex = 0;
-                    bl.u16ToSrc = row.cells[c].u16ToSrc;  // copy parser's mapping
+                    bl.u16ToSrc = row.cells[c].u16ToSrc; // copy parser's mapping
                     if (body_fmt_) {
                         bl.fontHeight = body_fmt_->GetFontSize();
                     }
@@ -752,25 +752,40 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
                     text32 += n.ordered ? U"1. " : U"\u2022  ";
                 }
                 for (const auto& ib : n.children) text32 += ib.text;
-                if (text32.empty()) {
+                // Images advance the draw path's curY (aspect-scaled height
+                // capped at 400 plus paraGap each); measure must charge the
+                // same or totalH_ underestimates and content below images
+                // cannot be scrolled to.
+                float imageH = 0.0f;
+                for (const auto& ib : n.children) {
+                    if (ib.kind != InlineKind::Image || ib.url.empty()) continue;
+                    float h = 100.0f; // draw-path fallback for unknown size
+                    // Same cap the draw path applies (400 DIP).
+                    if (imageH + h > 400.0f) h = 400.0f;
+                    imageH += h + m.paraGap;
+                }
+                if (text32.empty() && imageH == 0.0f) {
                     curY += GapForTransition(prevBlock, n.block,
                         BlockKind::Paragraph, n.depth, prevDepth, m);
                     prevBlock = n.block;
                     prevDepth = n.depth;
                     continue;
                 }
-                std::u16string text16 = ToUtf16(text32);
-                IDWriteTextLayout* layout = nullptr;
-                float layoutW = drawW - markerW;
-                HRESULT hr = dw->CreateTextLayout(
-                    reinterpret_cast<const WCHAR*>(text16.data()),
-                    static_cast<UINT32>(text16.size()),
-                    fmt, layoutW > 0 ? layoutW : drawW, 1.0e9f, &layout);
-                if (SUCCEEDED(hr) && layout) {
-                    DWRITE_TEXT_METRICS tm = {};
-                    layout->GetMetrics(&tm);
-                    blockH = tm.height;
-                    layout->Release();
+                blockH = imageH;
+                if (!text32.empty()) {
+                    std::u16string text16 = ToUtf16(text32);
+                    IDWriteTextLayout* layout = nullptr;
+                    float layoutW = drawW - markerW;
+                    HRESULT hr = dw->CreateTextLayout(
+                        reinterpret_cast<const WCHAR*>(text16.data()),
+                        static_cast<UINT32>(text16.size()),
+                        fmt, layoutW > 0 ? layoutW : drawW, 1.0e9f, &layout);
+                    if (SUCCEEDED(hr) && layout) {
+                        DWRITE_TEXT_METRICS tm = {};
+                        layout->GetMetrics(&tm);
+                        blockH += tm.height;
+                        layout->Release();
+                    }
                 }
                 if (n.block == BlockKind::Heading && n.level <= 2) {
                     blockH += m.ruleGapAbove + m.ruleGapBelow;
@@ -1027,7 +1042,16 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             }
         }
 
-        if (text16.empty() && marker16.empty()) {
+        // Image-only paragraphs have no text; they must still reach the
+        // image-drawing loop below, so only skip when there are no images.
+        bool hasImage = false;
+        for (const auto& ib : n.children) {
+            if (ib.kind == InlineKind::Image && !ib.url.empty()) {
+                hasImage = true;
+                break;
+            }
+        }
+        if (text16.empty() && marker16.empty() && !hasImage) {
             prevBlock = n.block;
             prevDepth = n.depth;
             continue;
@@ -1310,7 +1334,7 @@ static std::u16string Utf8ToUtf16(const std::string& s) {
             out += static_cast<char16_t>(c);
             i += 1;
         } else if (c < 0xC0) {
-            i += 1;  // skip continuation byte
+            i += 1; // skip continuation byte
         } else if (c < 0xE0) {
             if (i + 1 < s.size()) {
                 char16_t ch = ((c & 0x1F) << 6) |
@@ -1750,7 +1774,7 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // natural canvas is wider than the available width.
     const float availW =
         width > 2.0f * pad ? width - 2.0f * pad : 0.0f;
-    // Lineær zoom: scale = min(zoom, availW/naturalW) — aldrig op-skaler.
+    // Lineær zoom: scale = min(zoom, availW/naturalW); aldrig op-skaler.
     float scale = zoom_;
     if (lo.width > 0 && availW > 0) {
         float fit_scale = availW / static_cast<float>(lo.width);

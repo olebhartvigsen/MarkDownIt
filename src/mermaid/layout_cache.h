@@ -48,7 +48,7 @@ constexpr float kMermaidBlockPad = 12.0f;
 inline float MeasureLayoutHeight(const LaidOutFlowchart& lo, float zoom,
                                  float availW) {
     // Lineær zoom: skaler ned så diagrammet passer i kolonnen, aldrig op.
-    // scale = min(zoom, availW/naturalW) — IKKE zoom*fit, som bliver
+    // scale = min(zoom, availW/naturalW); IKKE zoom*fit, som bliver
     // kvadratisk i zoom, fordi selve kolonnebredden også skaleres med zoom.
     float scale = zoom;
     if (lo.width > 0 && availW > 0) {

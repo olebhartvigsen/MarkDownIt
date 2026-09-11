@@ -1,5 +1,5 @@
 // Pie golden loader: parses the pie oracle's JSON (pie1..3.json).
-// Separate from golden_loader.h — different schema (arcs/legend, no graph).
+// Separate from golden_loader.h; different schema (arcs/legend, no graph).
 #pragma once
 
 #include "../../src/mermaid/pie_layout.h"

@@ -22,8 +22,8 @@ constexpr uint32_t kSeqInk = 0x333333;
 constexpr uint32_t kSeqLifeline = 0x666666;
 constexpr uint32_t kSeqLoopFill = 0xEDEDED;
 
-constexpr float kActorBoxHeight = 65.0f;   // mermaid actor box height
-constexpr float kActorFooterHeight = 20.0f;  // legacy (unused, kept for ref)
+constexpr float kActorBoxHeight = 65.0f;  // mermaid actor box height
+constexpr float kActorFooterHeight = 20.0f; // legacy (unused, kept for ref)
 constexpr float kActorFontSize = 14.0f;
 constexpr float kMsgFontSize = 14.0f;
 constexpr float kLabelFontSize = 12.0f;
@@ -98,7 +98,10 @@ void DrawSeqText(IDWriteFactory* dw, ID2D1RenderTarget* rt,
     if (FAILED(dw->CreateTextLayout(
             reinterpret_cast<const WCHAR*>(t16.data()),
             static_cast<UINT32>(t16.size()), use_fmt,
-            1e9f, 1e9f, &tl)) || !tl) return;
+            1e9f, 1e9f, &tl)) || !tl) {
+        if (scaled) scaled->Release();
+        return;
+    }
     if (scaled) scaled->Release();
     DWRITE_TEXT_METRICS tm{};
     tl->GetMetrics(&tm);
@@ -117,7 +120,7 @@ void DrawSeqText(IDWriteFactory* dw, ID2D1RenderTarget* rt,
         if (SUCCEEDED(tl->GetLineMetrics(lm, 1, &line_count)) && line_count > 0) {
             y -= lm[0].baseline;
         } else {
-            y -= h * 0.8f;  // no line metrics: approximate ascent
+            y -= h * 0.8f; // no line metrics: approximate ascent
         }
     }
     rt->DrawTextLayout(D2D1::Point2F(x, y), tl, brush,
@@ -135,7 +138,10 @@ void DrawFilledHead(ID2D1RenderTarget* rt, ID2D1SolidColorBrush* brush,
     rt->GetFactory(&fac);
     if (!fac) return;
     ID2D1PathGeometry* geom = nullptr;
-    if (FAILED(fac->CreatePathGeometry(&geom)) || !geom) return;
+    if (FAILED(fac->CreatePathGeometry(&geom)) || !geom) {
+        fac->Release();
+        return;
+    }
     ID2D1GeometrySink* sink = nullptr;
     if (SUCCEEDED(geom->Open(&sink)) && sink) {
         sink->BeginFigure(tip, D2D1_FIGURE_BEGIN_FILLED);
@@ -147,6 +153,7 @@ void DrawFilledHead(ID2D1RenderTarget* rt, ID2D1SolidColorBrush* brush,
         rt->FillGeometry(geom, brush);
     }
     geom->Release();
+    fac->Release();
 }
 
 // Open (V-shaped) arrowhead for dotted messages: stroke only.
@@ -172,7 +179,7 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
     // natural canvas (viewBox width) is wider than the available width.
     const float availW =
         width > 2.0f * pad ? width - 2.0f * pad : 0.0f;
-    // Lineær zoom: scale = min(zoom, availW/naturalW) — aldrig op-skaler.
+    // Lineær zoom: scale = min(zoom, availW/naturalW); aldrig op-skaler.
     // (zoom*fit var kvadratisk i zoom, fordi kolonnen også zoomer.)
     float scale = zoom_;
     if (ls.width > 0 && availW > 0) {
@@ -243,7 +250,7 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
         }
         // Section dividers: branch tag at the divider, keyword inside the
         // box (else/and/option by frame kind) and the branch title to the
-        // RIGHT of the box — mermaid draws these as a small top-left notch
+        // RIGHT of the box; mermaid draws these as a small top-left notch
         // on the branch's top line. Design deviation, agreed with the user:
         // branches get a filled tag like the alt/opt/loop keyword boxes.
         for (size_t i = 0; i < l.section_y.size(); ++i) {
@@ -272,7 +279,7 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
 
     // Lifelines (between top box bottom and footer/top of bottom box).
     for (const auto& a : ls.actors) {
-        (void)a;  // lifelines are derived from actor boxes below
+        (void)a; // lifelines are derived from actor boxes below
     }
     for (size_t i = 0; i < ls.actors.size(); ++i) {
         const auto& a = ls.actors[i];
@@ -324,6 +331,7 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
                 }
                 geom->Release();
             }
+            if (fac) fac->Release();
             // Head points down-ish at the return; draw small filled head.
             D2D1_POINT_2F tip = D2D1::Point2F(ex, ey);
             D2D1_POINT_2F u = D2D1::Point2F(ex + 10.0f * scale, ey - 4.0f * scale);
@@ -344,6 +352,7 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
                 }
                 hg->Release();
             }
+            if (fac2) fac2->Release();
         } else {
             float x1 = P(m.x1), y1 = Q(m.y1), x2 = P(m.x2), y2 = Q(m.y2);
             float dir = (x2 >= x1) ? 1.0f : -1.0f;
@@ -382,7 +391,7 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
         }
     }
 
-    // Autonumber circles — mermaid parity: marker #sequencenumber is a
+    // Autonumber circles; mermaid parity: marker #sequencenumber is a
     // circle r=6 drawn with markerUnits=strokeWidth on a stroke-width=2
     // message line, so the rendered radius is 6 × 2 = 12 px (24px disc).
     // The 12px digit is plain (alphabetic) at y = lineStartY + 4.

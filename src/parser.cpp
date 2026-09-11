@@ -37,15 +37,15 @@ namespace {
 struct Frame {
     MD_BLOCKTYPE type;
     int node_index;
-    bool merge_inlines;  // true for LI: inlines go to this node, not a new P
-    bool owns_node;      // true if this frame created the node (for offset tracking)
+    bool merge_inlines; // true for LI: inlines go to this node, not a new P
+    bool owns_node;     // true if this frame created the node (for offset tracking)
 };
 
 // Frame on the span stack: which inline span we are inside, and accumulated
 // style flags for the current inline being built.
 struct SpanFrame {
     MD_SPANTYPE type;
-    std::string url;        // for A/IMG: accumulated from enter_span detail
+    std::string url;       // for A/IMG: accumulated from enter_span detail
     bool em;
     bool strong;
     bool code;
@@ -62,14 +62,14 @@ struct ParserCtx {
     Document* doc;
     std::vector<Frame> block_stack;
     std::vector<SpanFrame> span_stack;
-    bool capture_title;  // true when we enter the first H1 and title is empty
-    int list_depth;      // current list nesting depth (0 = top level)
-    int quote_depth;     // current blockquote nesting depth
-    int table_node_idx;  // current table node index, -1 if none
-    bool in_header;      // true when in THEAD
-    TableRow* cur_row;   // current row being filled, nullptr if none
-    std::u32string* cur_cell;  // current cell text, nullptr if none
-    TableCell* cur_cell_obj;   // current TableCell object, nullptr if none
+    bool capture_title; // true when we enter the first H1 and title is empty
+    int list_depth;     // current list nesting depth (0 = top level)
+    int quote_depth;    // current blockquote nesting depth
+    int table_node_idx; // current table node index, -1 if none
+    bool in_header;     // true when in THEAD
+    TableRow* cur_row;  // current row being filled, nullptr if none
+    std::u32string* cur_cell; // current cell text, nullptr if none
+    TableCell* cur_cell_obj;  // current TableCell object, nullptr if none
     uint32_t cur_cell_last_end; // end source offset of last text chunk for gap detection
     // Stack of open inline spans within a table cell.
     // Each entry: {u16 start position in cell text, span type flags}
@@ -81,9 +81,9 @@ struct ParserCtx {
         bool del;
     };
     std::vector<CellSpanOpen> cell_span_stack;
-    const char* input;        // pointer to start of input (for offset calculation)
-    MD_SIZE inputSize;        // size of input
-    std::vector<NodeOffsetInfo> nodeOffsets;  // per-node offset tracking
+    const char* input;       // pointer to start of input (for offset calculation)
+    MD_SIZE inputSize;       // size of input
+    std::vector<NodeOffsetInfo> nodeOffsets; // per-node offset tracking
 };
 
 // Append a new node to the document and return its index.
@@ -108,7 +108,7 @@ int current_node(const ParserCtx& ctx) {
 // md4c gives us valid UTF-8; this is a simple per-call incremental decoder.
 struct Utf8Decoder {
     uint32_t codepoint = 0;
-    int pending = 0;  // bytes still expected for the current sequence
+    int pending = 0; // bytes still expected for the current sequence
 
     void reset() { codepoint = 0; pending = 0; }
 
@@ -125,7 +125,7 @@ struct Utf8Decoder {
                 } else if ((b & 0xF8) == 0xF0) {
                     codepoint = (b & 0x07); pending = 3;
                 } else {
-                    out.push_back(static_cast<char32_t>(b));  // invalid, pass through
+                    out.push_back(static_cast<char32_t>(b)); // invalid, pass through
                 }
             } else {
                 if ((b & 0xC0) == 0x80) {
@@ -146,7 +146,7 @@ struct Utf8Decoder {
 
 // Decode common HTML entities to UTF-32.
 void decode_entity(const char* text, MD_SIZE size, std::u32string& out) {
-    // md4c passes entity text INCLUDING the & and ; (e.g. "&amp;", "&#39;").
+    // md4c passes entity text INCLUDING the & and; (e.g. "&amp;", "&#39;").
     // Strip the wrapper before matching names / parsing numeric values.
     if (size >= 2 && text[0] == '&' && text[size - 1] == ';') {
         text += 1;
@@ -333,7 +333,7 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
                 ctx->cur_row->cells.back().isHeader = ctx->in_header;
                 ctx->cur_cell = &ctx->cur_row->cells.back().text;
                 ctx->cur_cell_obj = &ctx->cur_row->cells.back();
-                ctx->cur_cell_last_end = 0;  // will be set on first text
+                ctx->cur_cell_last_end = 0; // will be set on first text
             }
             ctx->block_stack.push_back({type, -1, false, false});
             break;
@@ -753,14 +753,22 @@ bool ParseMarkdown(const std::string& utf8, Document& out) {
         int rc = ParseMarkdownInner(utf8, out);
         return rc == 0;
     } __except(EXCEPTION_EXECUTE_HANDLER) {
-        // Crash in parser — log and return false instead of CTD.
-        HANDLE h = CreateFileW(L"C:\\Users\\au19277\\MarkDownIt-crash.log",
-            FILE_APPEND_DATA, FILE_SHARE_READ|FILE_SHARE_WRITE,
-            nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (h != INVALID_HANDLE_VALUE) {
-            const char* msg = "PARSE CRASH\r\n";
-            DWORD w; WriteFile(h, msg, (DWORD)strlen(msg), &w, nullptr);
-            CloseHandle(h);
+        // Crash in parser; log and return false instead of CTD. Write to
+        // %LOCALAPPDATA%\MarkDownIt\parse_crash.log: a hardcoded user path
+        // fails on every other machine.
+        char path[MAX_PATH] = {};
+        char dir[MAX_PATH] = {};
+        if (GetEnvironmentVariableA("LOCALAPPDATA", dir, MAX_PATH) > 0) {
+            _snprintf_s(path, sizeof(path), _TRUNCATE,
+                        "%s\\MarkDownIt\\parse_crash.log", dir);
+            HANDLE h = CreateFileA(path, FILE_APPEND_DATA,
+                FILE_SHARE_READ|FILE_SHARE_WRITE,
+                nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (h != INVALID_HANDLE_VALUE) {
+                const char* msg = "PARSE CRASH\r\n";
+                DWORD w; WriteFile(h, msg, (DWORD)strlen(msg), &w, nullptr);
+                CloseHandle(h);
+            }
         }
         return false;
     }

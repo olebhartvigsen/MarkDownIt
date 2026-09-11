@@ -14,11 +14,18 @@ void FileWatcher::Stop() {
     InterlockedExchange(&state_.running, 0);
     if (state_.stopEvent) SetEvent(state_.stopEvent);
     if (state_.thread) {
-        WaitForSingleObject(state_.thread, 2000);
+        // Wait until the worker actually exits before closing its handles:
+        // the worker is at most ~600 ms away from a check (500 ms poll plus
+        // the 100 ms debounce), but a slow GetFileAttributesExW call on a
+        // network path can stretch that, so wait INFINITE instead of closing
+        // a handle on a thread that is still running (zombie reads shared
+        // state and posts to stale HWNDs).
+        WaitForSingleObject(state_.thread, INFINITE);
         CloseHandle(state_.thread);
         state_.thread = nullptr;
     }
     if (state_.stopEvent) { CloseHandle(state_.stopEvent); state_.stopEvent = nullptr; }
+    state_.hwnd = nullptr;
 }
 
 void FileWatcher::Start(HWND hwnd, const std::wstring& path) {
@@ -54,13 +61,17 @@ DWORD WINAPI FileWatcher::ThreadProc(LPVOID param) {
 }
 
 void FileWatcher::Run() {
+    // Snapshot the watched path once: the UI thread rewrites state_.filePath
+    // when Start() is called again (SaveAs/OpenFile), and a stopped worker
+    // must not read the new path mid-flight.
+    std::wstring path = state_.filePath;
     while (state_.running) {
         // Sleep 500ms, wake early if stop event is signalled.
         DWORD result = WaitForSingleObject(state_.stopEvent, 500);
         if (result == WAIT_OBJECT_0) break;
 
         WIN32_FILE_ATTRIBUTE_DATA fad;
-        if (!GetFileAttributesExW(state_.filePath.c_str(),
+        if (!GetFileAttributesExW(path.c_str(),
                                    GetFileExInfoStandard, &fad)) {
             continue;  // file might be temporarily locked during save
         }
