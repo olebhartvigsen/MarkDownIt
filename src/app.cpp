@@ -294,6 +294,27 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
     bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
     bool ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
 
+    // Zoom shortcuts. Handled before the view-mode suppression below so
+    // they work in both view and edit mode and never touch the editor:
+    //   Ctrl+0 / Ctrl+Numpad0 -> reset to 100%
+    //   Ctrl+Plus / Ctrl+=    -> zoom in (VK_OEM_PLUS is the = key on US
+    //                              and the + key on ISO/Danish layouts)
+    //   Ctrl+Minus / Ctrl+-   -> zoom out
+    // Every branch returns early: no scrolling, no text insertion, and no
+    // selection change from these keys.
+    if (ctrl && (vk == VK_OEM_PLUS || vk == VK_ADD)) {
+        ZoomIn();
+        return;
+    }
+    if (ctrl && (vk == VK_OEM_MINUS || vk == VK_SUBTRACT)) {
+        ZoomOut();
+        return;
+    }
+    if (ctrl && !shift && (vk == 0x30 || vk == VK_NUMPAD0)) {
+        ResetZoom();
+        return;
+    }
+
     // Toggle edit mode with Ctrl+E
     if (ctrl && !shift && vk == 0x45) {
         SetEdit(!editing_);
@@ -475,13 +496,6 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             if (ctrl && !shift) {
                 int level = static_cast<int>(vk - 0x30);
                 SetHeading(level);
-            }
-            break;
-        case 0x30:  // Ctrl+0 = remove heading
-            if (ctrl && !shift) {
-                SetHeadingLevel(&buffer_, &sel_, 0, &undo_stack_);
-                editor_.BreakUndoCoalesce();
-                OnBufferChanged();
             }
             break;
         case 0x37:  // Ctrl+7/Ctrl+Shift+7 = ordered list
@@ -4119,6 +4133,24 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_VSCROLL:    OnContentVScroll(hwnd, (int)LOWORD(wp), (int)HIWORD(wp)); return 0;
         case WM_MOUSEWHEEL: {
             int delta = GET_WHEEL_DELTA_WPARAM(wp);
+            // Ctrl+wheel zooms instead of scrolling; ApplyZoom anchors on
+            // the point under the cursor. Deltas accumulate in
+            // wheel_zoom_acc_ so precision trackpads (small deltas) also
+            // step once per 120 WHEEL_DELTA notch. Returns early: no
+            // scrolling path runs for the same event.
+            if (GET_KEYSTATE_WPARAM(wp) & MK_CONTROL) {
+                wheel_zoom_acc_ += static_cast<float>(delta);
+                while (wheel_zoom_acc_ >= WHEEL_DELTA) {
+                    ZoomIn();
+                    wheel_zoom_acc_ -= WHEEL_DELTA;
+                }
+                while (wheel_zoom_acc_ <= -WHEEL_DELTA) {
+                    ZoomOut();
+                    wheel_zoom_acc_ += WHEEL_DELTA;
+                }
+                return 0;
+            }
+            wheel_zoom_acc_ = 0.0f;
             OnContentMouseWheel(hwnd, delta);
             return 0;
         }
