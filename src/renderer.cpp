@@ -132,7 +132,20 @@ void Renderer::Release() {
 }
 
 void Renderer::SetZoom(float z) {
-    zoom_ = z;
+    // Clamp to the supported range: 25% (kMinZoom) .. 400% (kMaxZoom).
+    zoom_ = zoom::Clamp(z);
+}
+
+void Renderer::ZoomIn() {
+    zoom_ = zoom::Clamp(zoom_ * zoom::kZoomStep);
+}
+
+void Renderer::ZoomOut() {
+    zoom_ = zoom::Clamp(zoom_ / zoom::kZoomStep);
+}
+
+void Renderer::ResetZoom() {
+    zoom_ = zoom::kDefaultZoom;
 }
 
 void Renderer::SetWrap(bool w) {

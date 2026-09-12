@@ -3716,30 +3716,71 @@ void AppWindow::OpenFileDialog() {
     }
 }
 
-void AppWindow::ZoomIn() {
-    float z = renderer_.Zoom();
-    z *= 1.25f;
-    if (z > 4.0f) z = 4.0f;
-    renderer_.SetZoom(z);
+// Apply a new zoom factor with a stable anchor: the document point
+// under the mouse cursor (or the viewport center when the cursor is
+// elsewhere) stays at the same screen position. All layout measures
+// scale linearly with zoom, so a doc point at scrollY_ + anchorY sits
+// at (scrollY_ + anchorY) * newZoom/oldZoom after the change; solve
+// for the scroll offset that puts it back under the anchor.
+void AppWindow::ApplyZoom(float newZoom) {
+    float oldZoom = renderer_.GetZoom();
+    renderer_.SetZoom(newZoom);  // clamps to kMinZoom..kMaxZoom
+    const float newZoomClamped = renderer_.GetZoom();
+    if (newZoomClamped == oldZoom) return;
+
+    // Anchor Y inside the content viewport (DIPs): the cursor when it
+    // is over the document, otherwise the viewport center.
+    float anchorY = 0.0f;
+    if (rt_) anchorY = rt_->GetSize().height * 0.5f;
+    POINT pt = {};
+    if (hwnd_content_ && GetCursorPos(&pt)) {
+        ScreenToClient(hwnd_content_, &pt);
+        RECT rc = {};
+        GetClientRect(hwnd_content_, &rc);
+        if (pt.x >= 0 && pt.y >= 0 && pt.x < rc.right && pt.y < rc.bottom) {
+            anchorY = static_cast<float>(pt.y);
+        }
+    }
+
+    // Stop any in-flight scroll animation so it cannot fight the jump.
+    StopScrollAnimation();
+
+    // Re-create the text formats at the new zoom so Measure and Render
+    // agree; clear zoom-dependent caches (metrics, hit-test rects, SVG).
     RecreateRenderer();
-    // Cached line metrics and hit-test rects were measured at the old
-    // zoom; clear them so caret/selection stay accurate.
     layout_cache_.Clear();
     renderer_.ClearSvgCache();
+
+    if (oldZoom > 0.001f) {
+        const float k = newZoomClamped / oldZoom;
+        scrollY_ = (scrollY_ + anchorY) * k - anchorY;
+    }
+
+    // Re-measure at the new zoom so the clamp below uses the new total
+    // height; UpdateScrollInfo clamps scrollY_ into [0, maxScroll].
+    if (renderer_inited_ && dw_factory_ && rt_) {
+        D2D1_SIZE_F size = rt_->GetSize();
+        if (source_view_) {
+            totalH_ = renderer_.MeasureSourceView(
+                dw_factory_, buffer_.Text(), size.width, 0.0f);
+        } else {
+            totalH_ = renderer_.Measure(dw_factory_, doc_, size.width, 0.0f);
+        }
+    }
     UpdateScrollInfo();
     Repaint();
 }
 
+void AppWindow::ZoomIn() {
+    ApplyZoom(renderer_.GetZoom() * renderer_.kZoomStep);
+}
+
 void AppWindow::ZoomOut() {
-    float z = renderer_.Zoom();
-    z /= 1.25f;
-    if (z < 0.5f) z = 0.5f;
-    renderer_.SetZoom(z);
-    RecreateRenderer();
-    layout_cache_.Clear();
-    renderer_.ClearSvgCache();
-    UpdateScrollInfo();
-    Repaint();
+    ApplyZoom(renderer_.GetZoom() / renderer_.kZoomStep);
+}
+
+void AppWindow::ResetZoom() {
+    ApplyZoom(renderer_.kDefaultZoom);
 }
 
 bool AppWindow::IsWrapEnabled() const {

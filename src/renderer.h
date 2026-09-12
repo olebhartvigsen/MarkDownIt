@@ -10,6 +10,7 @@
 #include "layoutcache.h"
 #include "svgdoc.h"
 #include "caret.h"
+#include "zoommodel.h"
 
 class Renderer {
 public:
@@ -18,8 +19,24 @@ public:
 
     bool Init(IDWriteFactory* dw);
     void Release();
+
+    // Zoom model: default 100%, clamped to 25%..400%, step x1.25.
+    // The constants and clamp live in zoommodel.h (namespace zoom)
+    // so the model is unit-testable headless; the Renderer::k* names
+    // below are aliases so callers keep a single spelling.
+    static constexpr float kMinZoom     = zoom::kMinZoom;
+    static constexpr float kMaxZoom     = zoom::kMaxZoom;
+    static constexpr float kZoomStep    = zoom::kZoomStep;
+    static constexpr float kDefaultZoom = zoom::kDefaultZoom;
+
+    // Set a specific zoom factor. The value is clamped to
+    // [kMinZoom, kMaxZoom] before it is stored.
     void SetZoom(float z);
-    float Zoom() const { return zoom_; }
+    float GetZoom() const { return zoom_; }
+    float Zoom() const { return zoom_; }  // legacy alias for GetZoom
+    void ZoomIn();     // multiply by kZoomStep, clamped
+    void ZoomOut();    // divide by kZoomStep, clamped
+    void ResetZoom();  // back to kDefaultZoom (100%)
     void SetWrap(bool w);
     bool Wrap() const { return wrapEnabled_; }
 
@@ -60,7 +77,7 @@ private:
     IDWriteTextFormat* num_fmt_ = nullptr;     // seq autonumber (12px)
     IDWriteTextFormat* code_fmt_ = nullptr;      // monospace for code blocks
     IDWriteTextFormat* heading_fmt_[7] = {};
-    float zoom_ = 0.8f;  // default: one zoom-out step smaller
+    float zoom_ = kDefaultZoom;  // 100%
     bool wrapEnabled_ = true;
     int  contentWidthMode_ = 0;  // 0=Standard(800), 1=960, 2=1600, 3=Full
     LayoutCache* cache_ = nullptr;

@@ -231,6 +231,7 @@ if(BUILD_TESTS)
         tests/perf_harness.cpp
         tests/test_main.cpp
         tests/svgtext_test.cpp
+        tests/zoommodel_test.cpp
         src/parser.cpp
         src/textbuffer.cpp
         src/layoutcache.cpp

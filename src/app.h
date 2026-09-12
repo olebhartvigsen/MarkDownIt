@@ -50,6 +50,7 @@ public:
     void OpenFileDialog();
     void ZoomIn();
     void ZoomOut();
+    void ResetZoom();
     void ToggleWrap();
     bool IsWrapEnabled() const;
     void ShowAbout();
@@ -172,6 +173,10 @@ private:
     int    scroll_phase_ = 0;        // 0=IDLE,1=SPRING,2=TRACKPAD,3=MOMENTUM
 
     float  ClampScroll(float y) const;
+    // Change the zoom factor and keep the point under the cursor (or the
+    // viewport center) anchored on screen; updates scroll, scrollbars,
+    // and repaints.
+    void ApplyZoom(float newZoom);
 
     // Editor state
     TextBuffer   buffer_;
