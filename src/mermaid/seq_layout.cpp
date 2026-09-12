@@ -19,9 +19,9 @@ namespace {
 constexpr double DIAGRAM_MARGIN_X = 50.0;
 constexpr double DIAGRAM_MARGIN_Y = 10.0;
 constexpr double ACTOR_MARGIN = 50.0;
-constexpr double ACTOR_W = 150.0;   // conf.width (initial actor width)
-constexpr double ACTOR_H = 65.0;    // conf.height
-constexpr double FOOT_H = 12.0;     // actor rect getBBox height (shim)
+constexpr double ACTOR_W = 150.0;  // conf.width (initial actor width)
+constexpr double ACTOR_H = 65.0;   // conf.height
+constexpr double FOOT_H = 12.0;    // actor rect getBBox height (shim)
 constexpr double BOX_MARGIN = 10.0;
 constexpr double BOX_TEXT_MARGIN = 5.0;
 constexpr double NOTE_MARGIN = 10.0;
@@ -54,7 +54,7 @@ namespace {
 // measure_dwrite.h exposes the platform measure seam; the portable core
 // uses the generated table, the platform renderer swaps in DirectWrite
 // behind the same function signature when MeasureSeqText is set.
-SeqMeasureFn g_seq_measure = nullptr;  // tests may inject
+SeqMeasureFn g_seq_measure = nullptr; // tests may inject
 
 double DefaultSeqTextWidth(const std::string& utf8, double fontSize) {
     double total = 0;
@@ -73,7 +73,7 @@ double DefaultSeqTextWidth(const std::string& utf8, double fontSize) {
                  ((utf8[i+2] & 0x3F) << 6) | (utf8[i+3] & 0x3F); n_b = 4;
         } else { cp = 0x20; n_b = 1; }
         uint16_t adv = SeqAdvanceFor(cp);
-        if (adv == 0) adv = SeqAdvanceFor(0x20);  // unmapped: space width
+        if (adv == 0) adv = SeqAdvanceFor(0x20); // unmapped: space width
         total += adv;
         i += n_b;
     }
@@ -89,7 +89,7 @@ double DefaultSeqTextHeight(double fontSize) {
 }
 
 // Chrome getBBox of a drawn one-line SVG text: ink height round(size*1.06)
-// (16px -> 17). Mermaid's drawNote sizes the rect from getBBox — only the
+// (16px -> 17). Mermaid's drawNote sizes the rect from getBBox; only the
 // NOTE box uses this; message geometry uses the line-box height (calcDims).
 double DefaultSeqTextInkHeight(double fontSize) {
     return std::floor(fontSize * 1.06 + 0.5);
@@ -144,7 +144,7 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
         if (m.type == MsgType::Note) {
             // OVER-branch charging only applies when both neighbors exist;
             // single-actor note over A: actor = A: prevActor A-1 gets /2,
-            // msg.from (A) gets /2 — but the fixture single note over A
+            // msg.from (A) gets /2; but the fixture single note over A
             // (seq3) shows charging does not change the 150/50 defaults,
             // A is actor[0] with NO prevActor: only msg.from gets width/2.
             double tw = SeqTextWidth(m.text) + 2 * WRAP_PAD;
@@ -153,8 +153,8 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                 if (f > 0) charge(f - 1, tw / 2);
                 charge(f, tw / 2);
             } else if (t == f + 1) {
-                charge(f, tw / 2);   // msg.from (B in "over B,C")
-                charge(t - 1 == f ? f : f, tw / 2);  // actor.prevActor == f
+                charge(f, tw / 2);  // msg.from (B in "over B,C")
+                charge(t - 1 == f ? f : f, tw / 2); // actor.prevActor == f
             } else if (m.placement == NotePlacement::Over && t > 0) {
                 charge(t - 1, tw / 2);
                 charge(f, tw / 2);
@@ -167,7 +167,7 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
         } else if (f == t + 1) {
             // msg.from is the TO-actor's nextActor → the DIST charges *,
             // i.e. the SENDER ((msg.from === actor.nextActor) →
-            // maxMessageWidthPerActor[msg.to]) — since actor = msg.to, this
+            // maxMessageWidthPerActor[msg.to]); since actor = msg.to, this
             // lands on msg.to here.
             charge(t, w);
         } else if (t == f + 1) {
@@ -189,7 +189,7 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
         double need = mw[i] + ACTOR_MARGIN - aw[i] / 2;
         if (i + 1 < N) need -= aw[i + 1] / 2;
         // final margin never below default (the walk applies Max with 50)
-        mw[i] = need;  // store potential margin (default handled later)
+        mw[i] = need; // store potential margin (default handled later)
     }
 
     // ---- addActorRenderingData positions (no box groups) --------------------
@@ -215,19 +215,27 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
     double d_minx = 0, d_maxx = 0, d_miny = 0, d_maxy = 0;
     struct OpenLoop {
         size_t loop_index = 0;
-        double starty = 0;      // captured start y (post pre-bump)
+        double starty = 0;     // captured start y (post pre-bump)
         double startx = 1e18, stopx = -1e18;
-        double lo_y = 1e18, hi_y = -1e18;  // inflated starty/stopy
+        double lo_y = 1e18, hi_y = -1e18; // inflated starty/stopy
         std::vector<double> section_y;
         std::vector<std::string> section_titles;
-        std::vector<size_t> section_item;  // loop_index of else/and/option
+        std::vector<size_t> section_item; // loop_index of else/and/option
     };
     std::vector<OpenLoop> open;
     bool have_data = false;
 
+    // activations db: {actor, startx, starty, stopx, stopy} (bounds.activations)
+    // stopy tracks the band's growing bottom while open (-inf = open);
+    // starty is stored at vP+2 (newActivation) and pulled by later inserts
+    // with RAW values (mermaid updateBounds: activations inflate with
+    // n = -index ≤ 0, i.e. never inflated, startx/stopx never touched).
+    struct Act { int actor; double startx, starty, stopx, stopy; };
+    std::vector<Act> acts;
+
     // mermaid updateBounds: data min/max + inflation of every open item by
     // n*boxMargin (n = distance from innermost, innermost=1). Activations
-    // are NOT inflated in y (type check) but data still gets y inflation —
+    // are NOT inflated in y (type check) but data still gets y inflation; 
     // activations are separate and not inflated at all; data starty/stopy
     // inflate via "if (!(type === activation))" only for ITEM bounds; data
     // startx/stopx always inflate; data starty/stopy inflate ONLY from
@@ -245,7 +253,7 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
         }
         for (size_t k = 0; k < open.size(); ++k) {
             double n = static_cast<double>(k + 1);
-            OpenLoop& ol = open[open.size() - 1 - k];  // innermost first
+            OpenLoop& ol = open[open.size() - 1 - k]; // innermost first
             ol.startx = Min(ol.startx, nx0 - n * BOX_MARGIN);
             ol.stopx = Max(ol.stopx, nx1 + n * BOX_MARGIN);
             ol.lo_y = Min(ol.lo_y, ny0 - n * BOX_MARGIN);
@@ -255,6 +263,17 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
             d_maxx = Max(d_maxx, nx1 + n * BOX_MARGIN);
             d_miny = Min(d_miny, ny0 - n * BOX_MARGIN);
             d_maxy = Max(d_maxy, ny1 + n * BOX_MARGIN);
+        }
+        // Open activation bands: updateBounds iterates activations AFTER
+        // the sequenceItems, so the k-th open band (0-based, oldest first
+        // in the push order) gets n = -k: starty is pulled toward
+        // ny0 + k*10 (inner stacked bands are protected by k*10), stopy
+        // toward ny1 - k*10. x never moves. A band's drawn rect is
+        // [starty, activeEnd's vP]; stopy only feeds this pull model.
+        for (size_t k = 0; k < acts.size(); ++k) {
+            double n = -static_cast<double>(k);
+            acts[k].starty = Min(acts[k].starty, ny0 - n * BOX_MARGIN);
+            acts[k].stopy = Max(acts[k].stopy, ny1 + n * BOX_MARGIN);
         }
     };
     auto insert_dataonly = [&](double x0, double y0, double x1, double y1) {
@@ -274,12 +293,10 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
     for (size_t i = 0; i < N; ++i) {
         insert_dataonly(ax[i], 0.0, ax[i] + aw[i], ACTOR_H);
     }
-    double vpos = ACTOR_H;  // bumpVerticalPos(maxHeight)
+    double vpos = ACTOR_H; // bumpVerticalPos(maxHeight)
 
-    // activations db: {actor, startx, starty, stopx} (bounds.activations)
-    struct Act { int actor; double startx, starty, stopx; };
-    std::vector<Act> acts;
-
+    // |toLeft-toRight| > 2 (mermaid isArrowToActivation): the target already
+    // carries an activation band.
     auto act_bounds = [&](int a, double& left, double& right) {
         left = ax[a] + aw[a] / 2 - 1;
         right = ax[a] + aw[a] / 2 + 1;
@@ -288,6 +305,11 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
             left = Min(left, ad.startx);
             right = Max(right, ad.stopx);
         }
+    };
+    auto has_band = [&](int a) {
+        for (const auto& ad : acts)
+            if (ad.actor == a) return true;
+        return false;
     };
 
     int auto_n = 1;
@@ -344,12 +366,13 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                 geo.ty = JRound(starty + NOTE_MARGIN / 2);
                 geo.text = m.text;
                 out.notes.push_back(geo);
-                vpos += h;  // bump(textHeight + 2*noteMargin)
+                vpos += h; // bump(textHeight + 2*noteMargin)
                 insert(startx, starty, startx + w, starty + h);
                 break;
             }
             case MsgType::ActiveStart: {
-                // bounds.newActivation: stacked index → x = center + (n-1)*5;
+                // newActivation: stacked index → x = center + (n-1)*5;
+                // starty = vP + 2 (mermaid literal +2), stopy open (-inf).
                 int a = it.actor_index;
                 if (a < 0) break;
                 size_t stacked = 0;
@@ -359,14 +382,17 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                 na.actor = a;
                 na.startx = ax[a] + aw[a] / 2
                           + (static_cast<double>(stacked) - 1.0) * ACTIVATION_W / 2;
-                na.starty = vpos;          // GOLDEN: y = current vP
+                na.starty = vpos + 2.0;
                 na.stopx = na.startx + ACTIVATION_W;
+                na.stopy = -1e17;
                 acts.push_back(na);
                 break;
             }
             case MsgType::ActiveEnd: {
-                // activeEnd: splice last activation of the actor; min-height
-                // rule 18 (starty=vp-6, vP+=12); draw + insert.
+                // activeEnd: splice last activation of the actor; raw inserts
+                // since the band opened pull starty up / stopy down; min-height
+                // clamp starty+18 > vP → (vP-6, vP+12); draw [starty, vP],
+                // insert [vP-10, vP].
                 for (std::vector<Act>::reverse_iterator ri = acts.rbegin();
                      ri != acts.rend(); ++ri) {
                     if (ri->actor != it.actor_index) continue;
@@ -379,11 +405,14 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                         vp += 12;
                         vpos = vp;
                     }
+                    // The stored top already includes mermaid's +2 (newActivation stores
+                    // y = vP + 2); the drawn rect spans [starty, vP] as-is.
                     SeqActivationGeo gg;
                     gg.x = ad.startx;
                     gg.y = starty;
                     gg.w = ad.stopx - ad.startx;
                     gg.h = vp - starty;
+                    if (gg.h < 0) gg.h = 0;
                     out.activations.push_back(gg);
                     insert(ad.startx, vp - 10, ad.stopx, vp);
                     break;
@@ -405,11 +434,11 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                 bool titled = it.type != MsgType::RectStart;
                 OpenLoop ol;
                 ol.loop_index = static_cast<size_t>(it.loop_index);
-                vpos += BOX_MARGIN;              // preMargin
+                vpos += BOX_MARGIN;             // preMargin
                 ol.starty = vpos;
                 if (titled) {
                     vpos += (BOX_MARGIN + BOX_TEXT_MARGIN) + Max(SeqTextHeight("x", 16.0), LABEL_BOX_H)
-                          + kAltElseExtraSpace;  // intentional extra air after label
+                          + kAltElseExtraSpace; // intentional extra air after label
                 } else {
                     vpos += BOX_MARGIN;
                 }
@@ -424,13 +453,13 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                 // bump(10 + max(12,20) = 30).
                 if (open.empty()) break;
                 OpenLoop& ol = open.back();
-                vpos += BOX_MARGIN + BOX_TEXT_MARGIN;  // preMargin 15
+                vpos += BOX_MARGIN + BOX_TEXT_MARGIN; // preMargin 15
                 ol.section_y.push_back(vpos);
                 const SeqLoop& lp = seq.loops[it.loop_id];
                 ol.section_titles.push_back(lp.label);
                 ol.section_item.push_back(it.loop_id);
                 vpos += BOX_MARGIN + Max(SeqTextHeight("x", 16.0), LABEL_BOX_H)
-                      + kAltElseExtraSpace;  // intentional extra air after label
+                      + kAltElseExtraSpace; // intentional extra air after label
                 break;
             }
             case MsgType::LoopEnd:
@@ -469,7 +498,7 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                 // For seq1 empty loops: stopy == starty... loop with NO
                 // contents: no inserts → startx= +/-inf UNSET: mermaid
                 // creates loopModel with startx=void → drawLoop lines NaN?
-                // Actual seq1 golden: loopLineCount 0 (no lines drawn!) —
+                // Actual seq1 golden: loopLineCount 0 (no lines drawn!); 
                 // jsdom drops NaN attrs. Our loader accepts count 0.
                 double delta = ol.hi_y - vpos;
                 if (ol.hi_y > -1e17) vpos += delta;
@@ -483,8 +512,8 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                 std::size_t fi = static_cast<std::size_t>(f);
                 std::size_t ti = static_cast<std::size_t>(t2);
                 double starty = vpos;
-                vpos += BOX_MARGIN;   // bump(10)
-                vpos += SeqTextHeight(m.text, 16.0);  // bump(text height)
+                vpos += BOX_MARGIN;  // bump(10)
+                vpos += SeqTextHeight(m.text, 16.0); // bump(text height)
                 bool self = (m.from == m.to);
                 double startx, stopx;
                 double tx, ty;
@@ -492,7 +521,7 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                     startx = stopx = ax[fi] + aw[fi] / 2;
                     // totalOffset = (12-10)=2; += boxMargin → 12;
                     // lineStartY = vP + 12 = starty+34; +30 → 42.
-                    tx = startx;                                  // width 0
+                    tx = startx;                                 // width 0
                     ty = JRound(starty + 10.0 + NOTE_MARGIN / 2); // +15
                 } else {
                     double fl, fr, tl, tr;
@@ -504,14 +533,14 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                     startx = to_right ? fr : fl;
                     stopx = to_right ? tl : tr;
                     double adj = to_right ? -1.0 : 1.0;
-                    // activation head lands on an activation band (±1)
-                    if (m.activation_delta != 0 && std::fabs(tl - tr) > 2) {
-                        // msg.activate is carried by the syntax `->>+`; the
-                        // isArrowToActivation test is |toLeft-toRight| > 2 —
-                        // NOTE dist: isArrowToActivation = abs(toLeft -
-                        // toRight) > 2; adjust stopx toward the band edge:
-                        stopx += adj * (ACTIVATION_W / 2 - 1);
-                    } else if (m.activation_delta != 0) {
+                    // msg.activate (mermaid buildMessageModel): only a TRAILING
+                    // plus (arrow opens the TARGET) adjusts the endpoint toward
+                    // the future band edge, and only when the target does not
+                    // already carry a band (isArrowToActivation). A trailing
+                    // minus (`-->>-`, closes the SOURCE) never adjusts the
+                    // endpoint; golden e-probe: -->>- lands 1px inside the
+                    // ±1 lifeline slack.
+                    if (m.activation_delta > 0 && !has_band(t2)) {
                         stopx += adj * (ACTIVATION_W / 2 - 1);
                     }
                     if (m.type != MsgType::SolidOpen &&
@@ -572,7 +601,7 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
                 if (out.autonumber) {
                     SeqNumberGeo nn;
                     nn.n = auto_n;
-                    nn.x = startx;         // marker/num at START side x
+                    nn.x = startx;        // marker/num at START side x
                     nn.y = line_y + 4;
                     out.numbers.push_back(nn);
                 }
@@ -596,8 +625,8 @@ LaidOutSequence LayoutSequence(const SequenceDiagram& seq) {
     // 11 = viewBox 2077). Adopt real semantics so the painter never draws
     // past the measured canvas on non-default column widths.
     vpos += 65.0 + BOX_MARGIN;
-    insert_dataonly(d_minx, vpos, d_maxx, vpos);  // stopy only: data.stopy tracks bumps
-    // bumpVerticalPos already lifts data.stopy implicitly — emulate: maxy.
+    insert_dataonly(d_minx, vpos, d_maxx, vpos); // stopy only: data.stopy tracks bumps
+    // bumpVerticalPos already lifts data.stopy implicitly; emulate: maxy.
     d_maxy = Max(d_maxy, vpos);
     if (!have_data) {
         d_minx = 0; d_maxx = 0; d_miny = 0; d_maxy = vpos;

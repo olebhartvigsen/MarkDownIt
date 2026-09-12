@@ -425,12 +425,27 @@ SequenceDiagram ParseSequence(std::string_view src) {
             size_t colon = rest.find(':');
             std::string to_part = Trim(rest.substr(0, colon));
             std::string text = colon == std::string::npos ? "" : Trim(rest.substr(colon + 1));
+            // Mermaid's ACTOR token never contains '+' or '-'; stray suffix
+            // characters that did not sit flush against the arrow are not
+            // activation syntax (mermaid parse-errors on them; we strip and
+            // render the message, a documented lenient divergence).
+            while (!from.empty() && (from.back() == '+' || from.back() == '-'))
+                from.pop_back();
+            while (!to_part.empty() && (to_part.back() == '+' || to_part.back() == '-'))
+                to_part.pop_back();
             if (from.empty() || to_part.empty()) {
                 seq.error = "message with empty actor";
                 return seq;
             }
             InternParticipant(seq, from);
             InternParticipant(seq, to_part);
+            // Grammar (mermaid jison cases 65-67): a trailing `+` right after
+            // the arrow expands to message + ACTIVE_START on the target; a
+            // trailing `-` expands to message + ACTIVE_END on the source.
+            // mermaid errors on mixed/double suffixes at the arrow; accept at
+            // most one of each (lenient).
+            bool opens_target = plus_after > 0 && minus_after == 0;
+            bool closes_source = minus_after > 0 && plus_after == 0;
             SeqMessage m;
             m.from = from;
             m.to = to_part;
@@ -442,6 +457,20 @@ SequenceDiagram ParseSequence(std::string_view src) {
             it.type = type;
             it.msg_index = static_cast<int>(seq.messages.size()) - 1;
             seq.items.push_back(it);
+            if (opens_target) {
+                size_t idx = InternParticipant(seq, to_part);
+                Item st;
+                st.type = MsgType::ActiveStart;
+                st.actor_index = static_cast<int>(idx);
+                seq.items.push_back(st);
+            }
+            if (closes_source) {
+                size_t idx = InternParticipant(seq, from);
+                Item en;
+                en.type = MsgType::ActiveEnd;
+                en.actor_index = static_cast<int>(idx);
+                seq.items.push_back(en);
+            }
             continue;
         }
     }
