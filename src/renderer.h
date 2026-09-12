@@ -24,6 +24,13 @@ public:
     // The constants and clamp live in zoommodel.h (namespace zoom)
     // so the model is unit-testable headless; the Renderer::k* names
     // below are aliases so callers keep a single spelling.
+    //
+    // Zoom is a GLOBAL view setting, not per-document state: it is
+    // never reset when a document opens or closes, so every file shares
+    // the factor within a session. AppWindow persists the factor in
+    // AppSettings (HKCU registry) on every change and restores it in
+    // OnCreate before the renderer is first initialized, so the last
+    // zoom survives a restart as well.
     static constexpr float kMinZoom     = zoom::kMinZoom;
     static constexpr float kMaxZoom     = zoom::kMaxZoom;
     static constexpr float kZoomStep    = zoom::kZoomStep;

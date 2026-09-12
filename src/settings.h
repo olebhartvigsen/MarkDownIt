@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <string>
 #include <vector>
+#include "zoommodel.h"
 
 // Persisted application settings, stored in HKCU\Software\MarkDownIt.
 // Loaded at startup, saved on change and shutdown.
@@ -22,6 +23,13 @@ struct AppSettings {
     //   2 = 1600 DIP
     //   3 = Full window width (no cap)
     int contentWidthMode = 0;
+
+    // Zoom factor for document content (1.0 = 100%, range 25%..400%,
+    // constants and clamp in zoommodel.h). Zoom is a GLOBAL view
+    // setting, not per-document state: every open document shares the
+    // factor within a session, and the last one used is persisted here
+    // so it is restored on the next launch. ResetZoom() stores 1.0.
+    float zoomFactor = zoom::kDefaultZoom;
 
     // Recent files (most-recent first, max 12).
     std::vector<RecentFile> recentFiles;

@@ -20,6 +20,19 @@ cmake --build build --config Release
 MarkDownIt.exe path\to\file.md
 ```
 
+## Zoom
+
+- Ctrl+MouseWheel: zoom in and out.
+- Ctrl+=: zoom in.
+- Ctrl+-: zoom out.
+- Ctrl+0: reset zoom to 100%.
+
+Zoom is a global view setting, not per-document state. The factor you
+set carries over when you open another file, and the last factor used
+is restored on the next launch. Supported range is 25% to 400%. Zoom
+applies to the document content only; the ribbon and the scrollbar
+keep their size.
+
 ## Mermaid flowcharts
 
 MarkDownIt renders ` ```mermaid ` fenced blocks directly with Direct2D. There

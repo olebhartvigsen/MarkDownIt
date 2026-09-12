@@ -1,4 +1,6 @@
 #include "settings.h"
+#include <cmath>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 
@@ -29,6 +31,19 @@ AppSettings LoadSettings() {
     }
     if (s.contentWidthMode < 0 || s.contentWidthMode > 3)
         s.contentWidthMode = 0;
+
+    // Zoom factor: stored as a REG_DWORD holding the float bit pattern.
+    // Missing or corrupt values fall back to the default (100%).
+    val = 0; sz = sizeof(val); type = 0;
+    if (RegQueryValueExW(hKey, L"ZoomFactor", nullptr, &type,
+            reinterpret_cast<BYTE*>(&val), &sz) == ERROR_SUCCESS &&
+        type == REG_DWORD) {
+        float zf = 0.0f;
+        memcpy(&zf, &val, sizeof(zf));
+        if (std::isfinite(zf)) {
+            s.zoomFactor = zoom::Clamp(zf);
+        }
+    }
 
     RegCloseKey(hKey);
 
@@ -89,6 +104,14 @@ void SaveSettings(const AppSettings& s) {
     DWORD cw = static_cast<DWORD>(s.contentWidthMode);
     RegSetValueExW(hKey, L"ContentWidth", 0, REG_DWORD,
         reinterpret_cast<BYTE*>(&cw), sizeof(cw));
+
+    // Store the zoom factor bit pattern as a REG_DWORD (same layout as
+    // the load path above).
+    float zf = s.zoomFactor;
+    DWORD zBits = 0;
+    memcpy(&zBits, &zf, sizeof(zBits));
+    RegSetValueExW(hKey, L"ZoomFactor", 0, REG_DWORD,
+        reinterpret_cast<BYTE*>(&zBits), sizeof(zBits));
 
     RegCloseKey(hKey);
 
