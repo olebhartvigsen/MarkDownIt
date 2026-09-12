@@ -171,6 +171,10 @@ private:
     // Input tracking
     DWORD  last_wheel_time_ = 0;     // for trackpad vs mouse detection
     int    scroll_phase_ = 0;        // 0=IDLE,1=SPRING,2=TRACKPAD,3=MOMENTUM
+    // Ctrl+wheel zoom: leftover wheel delta (less than one notch) carried
+    // over between events so precision trackpads (small deltas) also step
+    // the zoom once per 120 WHEEL_DELTA units.
+    float  wheel_zoom_acc_ = 0.0f;
 
     float  ClampScroll(float y) const;
     // Change the zoom factor and keep the point under the cursor (or the

@@ -1463,6 +1463,14 @@ void AppWindow::OnCreate(HWND hwnd) {
     // Load settings FIRST; LoadSampleDoc (below) needs recentFiles.
     settings_ = LoadSettings();
 
+    // Zoom is a global view setting, not per-document state: restore
+    // the factor persisted by the previous session so it carries across
+    // launches and across documents within a session. This must happen
+    // BEFORE EnsureRenderer (below) because Renderer::Init bakes the
+    // current zoom into every text format it creates; ApplyZoom
+    // recreates the renderer for the same reason on live zoom changes.
+    renderer_.SetZoom(settings_.zoomFactor);
+
     D2D1_FACTORY_OPTIONS opts = {};
     HRESULT hr = D2D1CreateFactory(
         D2D1_FACTORY_TYPE_SINGLE_THREADED,
@@ -3727,6 +3735,13 @@ void AppWindow::ApplyZoom(float newZoom) {
     renderer_.SetZoom(newZoom);  // clamps to kMinZoom..kMaxZoom
     const float newZoomClamped = renderer_.GetZoom();
     if (newZoomClamped == oldZoom) return;
+
+    // Persist the new factor as a global view setting (see OnCreate):
+    // the last zoom used is restored on the next launch, and all
+    // documents in this session share it. ResetZoom() persists 1.0,
+    // so a reset stays at 100% after a restart too.
+    settings_.zoomFactor = renderer_.GetZoom();
+    SaveSettings(settings_);
 
     // Anchor Y inside the content viewport (DIPs): the cursor when it
     // is over the document, otherwise the viewport center.
