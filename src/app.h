@@ -175,10 +175,6 @@ private:
     // over between events so precision trackpads (small deltas) also step
     // the zoom once per 120 WHEEL_DELTA units.
     float  wheel_zoom_acc_ = 0.0f;
-    // Ctrl+wheel zoom: leftover wheel delta (less than one notch) carried
-    // over between events so precision trackpads (small deltas) also step
-    // the zoom once per 120 WHEEL_DELTA units.
-    float  wheel_zoom_acc_ = 0.0f;
 
     float  ClampScroll(float y) const;
     // Change the zoom factor and keep the point under the cursor (or the
