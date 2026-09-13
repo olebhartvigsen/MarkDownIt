@@ -1,0 +1,9 @@
+stateDiagram-v2
+    [*] --> A : begin
+    state A {
+        [*] --> A1
+        A1 --> A2 : next
+        A2 --> [*]
+    }
+    A --> B : done
+    B --> [*] : finish

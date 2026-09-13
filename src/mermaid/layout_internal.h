@@ -84,6 +84,11 @@ struct LayoutParams {
     double node_sep = 50.0;
     double edge_sep = 10.0;
     double margin = 20.0;
+    // Flowchart reproduces mermaid with real node widths through BK plus a
+    // left-align of real nodes' left edges to 0. Diagram types that match
+    // the layout of a *post-translateGraph* dagre graph (state) must keep
+    // the raw BK coordinates instead.
+    bool left_align_zero = true;
 };
 
 void AssignCoordinates(LayoutGraph& g, const LayoutParams& p);

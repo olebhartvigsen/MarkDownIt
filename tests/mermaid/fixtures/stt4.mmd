@@ -1,0 +1,5 @@
+stateDiagram-v2
+    [*] --> Idle : boot
+    Idle --> Busy : task
+    Busy --> Idle : done
+    Idle --> [*] : shutdown

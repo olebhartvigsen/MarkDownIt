@@ -388,15 +388,20 @@ void AssignCoordinates(LayoutGraph& g, const LayoutParams& p) {
         g.nodes[i].x = static_cast<float>(finalX[i]);
     }
 
-    // Left-align real nodes' left edges to 0.
-    double min_left = std::numeric_limits<double>::infinity();
-    for (const auto& n : g.nodes) {
-        if (n.is_dummy) continue;
-        double left = static_cast<double>(n.x) - static_cast<double>(n.width) * 0.5;
-        if (left < min_left) min_left = left;
-    }
-    if (min_left != std::numeric_limits<double>::infinity() && min_left != 0.0) {
-        for (auto& n : g.nodes) n.x = static_cast<float>(n.x - min_left);
+    // Flowchart keeps a BK post-pass aligning real nodes' left edges to 0
+    // (matches its goldens). State/class-style layouts that mirror a
+    // translated dagre graph keep the raw BK coordinates (left_align_zero
+    // false, set by the state layout).
+    if (p.left_align_zero) {
+        double min_left = std::numeric_limits<double>::infinity();
+        for (const auto& n : g.nodes) {
+            if (n.is_dummy) continue;
+            double left = static_cast<double>(n.x) - static_cast<double>(n.width) * 0.5;
+            if (left < min_left) min_left = left;
+        }
+        if (min_left != std::numeric_limits<double>::infinity() && min_left != 0.0) {
+            for (auto& n : g.nodes) n.x = static_cast<float>(n.x - min_left);
+        }
     }
 }
 

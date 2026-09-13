@@ -1,0 +1,6 @@
+stateDiagram-v2
+    [*] --> Begin : enter
+    Begin --> InStock : available
+    Begin --> OutOfStock : missing
+    InStock --> [*] : ok
+    OutOfStock --> [*] : ok

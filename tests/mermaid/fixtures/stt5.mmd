@@ -1,0 +1,7 @@
+stateDiagram-v2
+    direction LR
+    [*] --> Open : start
+    Open --> Confirmed : yes
+    Open --> Cancelled : no
+    Confirmed --> [*] : ok
+    Cancelled --> [*] : ok
