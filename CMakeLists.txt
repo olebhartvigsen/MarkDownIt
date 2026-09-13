@@ -94,6 +94,8 @@ add_executable(MarkDownIt WIN32
     src/imagehelper.cpp
     src/filewatch.cpp
     src/parser.cpp
+    src/mermaid/class_parse.cpp
+    src/mermaid/class_layout.cpp
     src/mermaid/layout_acyclic.cpp
     src/mermaid/layout_edges.cpp
     src/mermaid/layout_normalize.cpp
@@ -220,6 +222,7 @@ if(BUILD_TESTS)
         tests/inputfilter_test.cpp
         tests/mermaid_model_test.cpp
         tests/mermaid_parse_test.cpp
+        tests/mermaid_class_golden_test.cpp
         tests/mermaid_layout_test.cpp
         tests/mermaid_golden_test.cpp
         tests/mermaid_pie_golden_test.cpp
@@ -242,6 +245,8 @@ if(BUILD_TESTS)
         src/formatting.cpp
         src/autoformat.cpp
         src/inputfilter.cpp
+        src/mermaid/class_parse.cpp
+        src/mermaid/class_layout.cpp
         src/mermaid/layout_acyclic.cpp
         src/mermaid/layout_edges.cpp
         src/mermaid/layout_normalize.cpp

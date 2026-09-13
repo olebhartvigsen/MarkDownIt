@@ -42,6 +42,15 @@ struct LayoutEdge {
     std::string label;
     int original_edge_index = -1;  // index into original_edges (dummies restored by Denormalize)
     std::vector<Point> route;      // populated by RouteEdges (Task 10)
+    // Edge-label layout (class diagrams): when nonzero, dagre's
+    // injectEdgeLabelProxies puts a label-proxy dummy of this size on the
+    // middle rank of the edge; its laid-out position becomes the label
+    // anchor (fixupEdgeLabelCoords). C++ port stores the proxy's final
+    // center here after Denormalize.
+    float label_width = 0;
+    float label_height = 0;
+    int label_proxy_node = -1;     // dummy node id of the label proxy
+    Point label_pos;               // final label center (after margin shift)
     // Renderer-facing edge styling (propagated from FlowEdge in layout.cpp;
     // denormalized edges carry the original's style forward).
     LineStyle style = LineStyle::Solid;

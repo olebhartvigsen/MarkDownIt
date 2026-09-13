@@ -1,11 +1,10 @@
 import re
-s = open('/workspace/MarkDownIt/tools/mermaid-oracle/node_modules/mermaid/dist/chunks/mermaid.core/chunk-DS2CGKN3.mjs').read()
-i = s.find('textHelper')
-print('first at', i)
-i = s.find('function textHelper')
-print('fn at', i)
-if i < 0:
-    # search for 'async function textHelper' or 'textHelper ='
-    for m in re.finditer(r'textHelper', s):
-        j = m.start()
-        print(j, repr(s[j-30:j+40]))
+s = open('/workspace/MarkDownIt/tools/mermaid-oracle/node_modules/mermaid/dist/chunks/mermaid.core/chunk-F7MYA6JM.mjs').read()
+print('len', len(s))
+# class box drawing: search for patterns like 'width' near 'rect' / 'divider' / 'getClassBox'
+for key in ['getClassBox', 'class_merge', 'divider', 'boxMargin', 'foreignObject', 'setClass', 'classBox']:
+    i = s.find(key)
+    if i > 0:
+        print('===', key, 'at', i)
+        print(s[max(0,i-300):i+500].replace('\n', ' ')[:800])
+        print()

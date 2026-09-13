@@ -63,7 +63,7 @@ Pel.prototype.getBBox = function () {
     }
   }
   if (!t) t = String(this.textContent ?? '');
-  if (typeof process !== 'undefined' && process.env.BBOX_LOG) console.log('[bbox]', JSON.stringify(t.length), JSON.stringify(t.slice(0,40)));
+  if (typeof process !== 'undefined' && process.env.BBOX_LOG) console.log('[bbox]', this.getAttribute && this.getAttribute('class'), JSON.stringify(t.length), JSON.stringify(t.slice(0,40)));
   return { x: -(t.length * 4) / 2, y: -6, width: t.length * 4, height: 12 };
 
 };
