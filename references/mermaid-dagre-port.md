@@ -88,3 +88,47 @@ oracle pattern from scratch.
 | `src/mermaid/render_d2d.cpp`  | Direct2D drawing                      |
 | `tools/oracle/`               | JS oracle harness                     |
 | `tests/mermaid/`              | fixtures, goldens, C++ tests          |
+
+## State diagram (stateDiagram-v2): empirical geometry
+
+Verified against `tools/mermaid-oracle/state_oracle.mjs` goldens (stt1-5),
+tolerance +-0.5 DIP. The state renderer uses mermaid's unified dagre wrapper
+(`dagre-IE2X5DAH.mjs`), which sizes layout nodes from the shim's empty-text
+bbox BEFORE the label shapes are inserted, so dagre itself sees:
+
+- state and `[*]` start nodes: w=0, h=12
+- end node (`root_end`): w=14.1383, h=23 (stateEnd path bbox)
+- labeled edges get a label dummy on the middle rank with w = 8*len, h = 20
+  (the shim's content-width metric, same as class labels)
+
+Rendered geometry (what the goldens store and the C++ layer emits):
+
+- state rect: w = 8*len + 16, h = 36, centered on the dagre position
+- start/end: circle r = 7 at the dagre center; end bbox is 14.0177 x 23
+- edge polylines anchor at the circle border (r=7, toward the neighbour)
+  for start/end and at the node center for plain states; then the d3 Basis
+  spline. No marker trim: the barb marker does not shift the path.
+- edge labels sit at the label-dummy center (goldens store the center).
+
+translateGraph emulation differs from class/flowchart:
+
+1. The margin extremes (minx/miny) are computed AFTER the rankdir
+   transforms, in final space, and they include the label-proxy boxes.
+   A probe proxy at x=-48 w=16 drives minx=-56 (stt1); in LR the proxy
+   drives miny (the 'yes' proxy, y=0 h=20 -> -10).
+2. For LR/RL the proxy box dimensions in translateGraph space are the
+   ORIGINALS (8*len x 20): dagre swaps w/h before position and swaps back
+   in undo. But positionY sees the SWAPPED height (label WIDTH), so proxy
+   dummy sizes are set swapped (w=20, h=8*len) before AssignCoordinates.
+3. Acyclic-reversed edges have their point order flipped before anchoring
+   (dagre reversePointsForReversedEdges), and the anchor source/target
+   roles swap for reversed edges.
+4. `LayoutParams.left_align_zero` keeps the flowchart BK post-pass alive;
+   state (like class) keeps raw BK coordinates.
+
+`calcLabelPosition` in the mermaid chunk needs a NaN filter under the shim
+(the w=0 nodes make dagre border intersections NaN on straight edges);
+dom-shim.mjs self-patches the chunk at startup so CI works too.
+Composite states (stt2) and self transitions are declared TODO: the parser
+understands them, layout rejects them with an error.
+
