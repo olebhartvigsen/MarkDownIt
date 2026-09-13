@@ -81,3 +81,52 @@ const req = createRequire(import.meta.url);
 const DP = req('dompurify');
 console.log('[shim] DP.isSupported after globals:', DP.isSupported, 'sanitize:', typeof DP.sanitize);
 globalThis.DOMPurify = DP;
+
+// --- self-patch for zero-width state nodes -------------------------------
+// The state renderer runs dagre with w=0 nodes sourced from this shim's
+// empty-text bbox, so dagre's border intersections on straight vertical
+// edges become NaN and calcLabelPosition crashes ("Cannot read properties
+// of undefined (reading 'y')"). Real browsers measure real widths and never
+// hit this; the C++ port matches the NaN-free path. Patch the mermaid chunk
+// on disk so fresh CI node_modules behave like this workspace.
+import { readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+const __fileURL = fileURLToPath(import.meta.url).replace(/dom-shim\.mjs$/, '');
+const CHUNK = __fileURL + 'node_modules/mermaid/dist/chunks/mermaid.core/chunk-F7MYA6JM.mjs';
+try {
+  const text = readFileSync(CHUNK, 'utf8');
+  if (!text.includes('Shim-only hardening')) {
+    // Replace the whole calcLabelPosition body between its signature and the
+    // __name() registration line, whatever the pristine body looks like.
+    const sig = 'function calcLabelPosition(points) {';
+    const endMark = 'traverseEdge(points);';
+    const at = text.indexOf(sig);
+    if (at >= 0) {
+      const bodyStart = at + sig.length;
+      const bodyEnd = text.indexOf(endMark, bodyStart);
+      if (bodyEnd >= 0) {
+        const tail = text.slice(bodyEnd + endMark.length);
+        const patched =
+          text.slice(0, bodyStart) +
+          `\n  // Shim-only hardening: dagre's assignNodeIntersects can leave NaN
+  // coordinates in edge.points[0]/[last] when the graph node has w=0
+  // (jsdom shim; real browsers measure real widths). Drop NaN points
+  // before computing so label placement mirrors the real path.
+  const clean = points.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+  if (clean.length === 1) {
+    return clean[0];
+  }
+  return traverseEdge(clean);` +
+          tail;
+        writeFileSync(CHUNK, patched);
+        console.log('[shim] patched calcLabelPosition (NaN hardening)');
+      } else {
+        console.error('[shim] WARNING: calcLabelPosition body end not found');
+      }
+    } else {
+      console.error('[shim] WARNING: calcLabelPosition signature not found');
+    }
+  }
+} catch (e) {
+  console.error('[shim] patch calcLabelPosition skipped:', e.message);
+}
