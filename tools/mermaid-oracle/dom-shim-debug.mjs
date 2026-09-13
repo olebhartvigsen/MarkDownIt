@@ -23,6 +23,7 @@ Object.defineProperty(globalThis, 'navigator', { value: w.navigator, configurabl
 
 const { Element: Pel } = w;
 Pel.prototype.getBBox = function () {
+  const __dbg = { tag: (this.tagName || '').toLowerCase(), cls: String(this.getAttribute('class') || ''), id: String(this.getAttribute('id') || '') };
   // Exclude <style> CSS text from measurements: svg-root textContent
   // includes the stylesheet, which exploded the viewBox width. Clone
   // without style/defs children and measure that.
@@ -59,13 +60,13 @@ Pel.prototype.getBBox = function () {
       }
     }
     if (minx !== Infinity) {
+      if (process.env.BBOX_DEBUG) console.error('[getBBox-path]', __dbg.tag, JSON.stringify(__dbg.cls).slice(0, 60), 'id=' + JSON.stringify(__dbg.id).slice(0, 40), '-> w=' + (maxx - minx) + ' h=' + (maxy - miny));
       return { x: minx, y: miny, width: maxx - minx, height: maxy - miny };
     }
   }
   if (!t) t = String(this.textContent ?? '');
-  if (typeof process !== 'undefined' && process.env.BBOX_LOG) console.log('[bbox]', JSON.stringify(t.length), JSON.stringify(t.slice(0,40)));
+  if (process.env.BBOX_DEBUG) console.error('[getBBox-text]', __dbg.tag, JSON.stringify(__dbg.cls).slice(0, 60), 'id=' + JSON.stringify(__dbg.id).slice(0, 40), 'textlen=' + t.length, '-> w=' + (t.length * 4) + ' h=12');
   return { x: -(t.length * 4) / 2, y: -6, width: t.length * 4, height: 12 };
-
 };
 Pel.prototype.getCTM = () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
 Pel.prototype.getBoundingClientRect = function () {
