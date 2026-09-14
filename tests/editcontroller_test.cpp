@@ -277,7 +277,7 @@ TEST(EditController, DeleteBackwardRegionalIndicatorPair) {
 
 TEST(Navigation, UnicodeWordBoundaries) {
     TextBuffer b;
-    b.SetText(" dansk\xC3\xA6ble 你好 123 ");
+    b.SetText(" dansk" "\xC3\xA6" "ble 你好 123 ");
     EXPECT_EQ(MoveWordLeft(b, static_cast<uint32_t>(b.Length())), 19u);
     EXPECT_EQ(MoveWordRight(b, 1u), 11u);
 }
