@@ -14,16 +14,21 @@ public:
     void SetUndoStack(UndoStack* u) { undo_ = u; }
 
     void InsertText(const std::string& utf8);
+    void ReplaceText(uint32_t offset, uint32_t length,
+                     const std::string& replacement,
+                     EditType type = EditType::Other);
     void DeleteBackward();
     void DeleteForward();
+    void DeleteWordBackward();
+    void DeleteWordForward();
     void DeleteSelection();
 
     // Insert a paragraph break, context-aware.
     void InsertParagraphBreak(const Document& doc);
 
     // Undo/redo: apply inverse or re-apply an entry.
-    void Undo();
-    void Redo();
+    bool Undo(UndoEntry* undone = nullptr);
+    bool Redo(UndoEntry* redone = nullptr);
 
     // Break undo coalescing (call on caret movement).
     void BreakUndoCoalesce() { if (undo_) undo_->BreakCoalesce(); }

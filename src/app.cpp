@@ -7,6 +7,7 @@
 #include <windowsx.h>
 
 #include <windows.h>
+#include <imm.h>
 #include <shellapi.h>
 #include <d2d1.h>
 #include <d2d1_3.h>
@@ -80,6 +81,49 @@ static std::string CleanSelectionForCopy(const std::string& src) {
     }
     return out;
 }
+
+static std::string ImeWideToUtf8(const std::wstring& text) {
+    if (text.empty()) return {};
+    int needed = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+        text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+    if (needed <= 0) {
+        needed = WideCharToMultiByte(CP_UTF8, 0, text.data(),
+            static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+    }
+    if (needed <= 0) return {};
+    std::string out(static_cast<size_t>(needed), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, text.data(),
+        static_cast<int>(text.size()), out.data(), needed, nullptr, nullptr);
+    return out;
+}
+
+std::string AppWindow::SelectionForClipboard() const {
+    const std::string& source = buffer_.Text();
+    uint32_t start = std::min(sel_.Start(), static_cast<uint32_t>(source.size()));
+    uint32_t end = std::min(start + sel_.Length(), static_cast<uint32_t>(source.size()));
+    if (start >= end) return {};
+
+    // WYSIWYG selection is exported as visible text. Markdown delimiters,
+    // list prefixes and fence markers are not user-visible characters and
+    // must not leak into CF_UNICODETEXT or the lossless application format.
+    std::string visible;
+    for (uint32_t at = start; at < end;) {
+        uint32_t next = NextGraphemeBoundary(source, at);
+        if (next <= at) break;
+        bool rendered = layout_cache_.OffsetIsRendered(at);
+        bool lineBreak = source[at] == '\n' || source[at] == '\r';
+        if (rendered || lineBreak)
+            visible.append(source, at, next - at);
+        at = next;
+    }
+    if (visible.empty() && layout_cache_.Blocks().empty()) {
+        // Raw source view and documents whose layout is not ready still
+        // need normal clipboard behavior rather than silently copying none.
+        visible = source.substr(start, end - start);
+    }
+    return editing_ ? visible : CleanSelectionForCopy(visible);
+}
+
 AppWindow::~AppWindow() {
     SafeRelease(d2d_ctx5_);
     SafeRelease(rt_);
@@ -291,6 +335,16 @@ void AppWindow::InitEditor() {
 void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
     if (!has_focus_) return;
 
+    // A navigation action ends pending typing-format state. The state only
+    // applies while the caret remains at the insertion point.
+    if (vk == VK_LEFT || vk == VK_RIGHT || vk == VK_UP || vk == VK_DOWN ||
+        vk == VK_HOME || vk == VK_END || vk == VK_PRIOR || vk == VK_NEXT) {
+        pending_bold_set_ = false;
+        pending_italic_set_ = false;
+        pending_run_active_ = false;
+        pending_run_suffix_bytes_ = 0;
+    }
+
     bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
     bool ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
 
@@ -321,6 +375,42 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         return;
     }
 
+    // Standard Windows clipboard aliases. Keep these before the main
+    // switch so they work in the same modes as Ctrl+C/X/V.
+    if (vk == VK_INSERT && ctrl && !shift) {
+        if (!sel_.Empty()) {
+            uint32_t s = sel_.Start();
+            uint32_t len = sel_.Length();
+            std::string sel_text = SelectionForClipboard();
+            ClipboardCopy(hwnd_content_, sel_text);
+        }
+        return;
+    }
+    if (vk == VK_INSERT && shift && !ctrl) {
+        if (editing_) {
+            std::string text = ClipboardPaste(hwnd_content_);
+            if (!text.empty()) {
+                pending_run_active_ = false;
+                pending_run_suffix_bytes_ = 0;
+                editor_.InsertText(text);
+                OnBufferChanged();
+            }
+        }
+        return;
+    }
+    if (vk == VK_DELETE && shift && !ctrl) {
+        if (editing_ && !sel_.Empty()) {
+            uint32_t s = sel_.Start();
+            uint32_t len = sel_.Length();
+            std::string sel_text = SelectionForClipboard();
+            if (ClipboardCut(hwnd_content_, sel_text)) {
+                editor_.DeleteSelection();
+                OnBufferChanged();
+            }
+        }
+        return;
+    }
+
     // In view mode, suppress editing keys but allow navigation, selection,
     // and copy (Ctrl+C).
     if (!editing_) {
@@ -339,9 +429,10 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
 
     switch (vk) {
         case VK_LEFT: {
-            uint32_t newOffset = ctrl
-                ? MoveWordLeft(buffer_, sel_.active.offset)
-                : MoveLeft(buffer_, sel_.active.offset, &layout_cache_);
+            uint32_t newOffset = (!shift && !sel_.Empty())
+                ? sel_.Start()
+                : (ctrl ? MoveWordLeft(buffer_, sel_.active.offset)
+                        : MoveLeft(buffer_, sel_.active.offset, &layout_cache_));
             desiredX_ = -1.0f;
             if (!shift) editor_.BreakUndoCoalesce();
             if (shift) sel_.active = {newOffset};
@@ -351,9 +442,10 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             break;
         }
         case VK_RIGHT: {
-            uint32_t newOffset = ctrl
-                ? MoveWordRight(buffer_, sel_.active.offset)
-                : MoveRight(buffer_, sel_.active.offset, &layout_cache_);
+            uint32_t newOffset = (!shift && !sel_.Empty())
+                ? sel_.End()
+                : (ctrl ? MoveWordRight(buffer_, sel_.active.offset)
+                        : MoveRight(buffer_, sel_.active.offset, &layout_cache_));
             desiredX_ = -1.0f;
             if (!shift) editor_.BreakUndoCoalesce();
             if (shift) sel_.active = {newOffset};
@@ -380,8 +472,10 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 lineHeight = sz.height / 40.0f; // rough estimate
                 if (lineHeight < 16.0f) lineHeight = 16.0f;
             }
-            uint32_t newOffset = MoveVertical(layout_cache_,
-                sel_.active.offset, -1, &desiredX_, scrollY_, lineHeight);
+            uint32_t newOffset = (!shift && !sel_.Empty())
+                ? sel_.Start()
+                : MoveVertical(layout_cache_, sel_.active.offset,
+                               -1, &desiredX_, scrollY_, lineHeight);
             if (shift) sel_.active = {newOffset};
             else sel_.Collapse({newOffset});
             UpdateCaretPosition();
@@ -406,8 +500,10 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 lineHeight = sz.height / 40.0f;
                 if (lineHeight < 16.0f) lineHeight = 16.0f;
             }
-            uint32_t newOffset = MoveVertical(layout_cache_,
-                sel_.active.offset, 1, &desiredX_, scrollY_, lineHeight);
+            uint32_t newOffset = (!shift && !sel_.Empty())
+                ? sel_.End()
+                : MoveVertical(layout_cache_, sel_.active.offset,
+                               1, &desiredX_, scrollY_, lineHeight);
             if (shift) sel_.active = {newOffset};
             else sel_.Collapse({newOffset});
             UpdateCaretPosition();
@@ -416,7 +512,9 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         }
         case VK_HOME: {
             uint32_t newOffset;
-            if (ctrl) {
+            if (!shift && !sel_.Empty()) {
+                newOffset = sel_.Start();
+            } else if (ctrl) {
                 newOffset = 0;
             } else {
                 newOffset = MoveLineStart(layout_cache_, sel_.active.offset);
@@ -431,7 +529,9 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         }
         case VK_END: {
             uint32_t newOffset;
-            if (ctrl) {
+            if (!shift && !sel_.Empty()) {
+                newOffset = sel_.End();
+            } else if (ctrl) {
                 newOffset = static_cast<uint32_t>(buffer_.Length());
             } else {
                 newOffset = MoveLineEnd(layout_cache_, sel_.active.offset);
@@ -445,42 +545,57 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             break;
         }
         case VK_NEXT: {  // Page Down
-            float page = 0.0f;
-            if (rt_) page = rt_->GetSize().height;
-            else page = static_cast<float>(clientH_);
-            StartSpring(scrollY_ + page);
+            float page = rt_ ? rt_->GetSize().height : static_cast<float>(clientH_);
+            float lineHeight = 20.0f;
+            float caretX = desiredX_;
+            float caretY = scrollY_;
+            float caretH = lineHeight;
+            if (layout_cache_.OffsetToCaretRect(sel_.active.offset,
+                                                &caretX, &caretY, &caretH)) {
+                lineHeight = std::max(1.0f, caretH);
+                if (desiredX_ < 0.0f) desiredX_ = caretX;
+                caretX = desiredX_;
+            }
+            float amount = std::max(lineHeight, page - lineHeight);
+            float targetScroll = ClampScroll(scrollY_ + amount);
             if (editing_) {
-                // Move the caret to the top of the newly visible area,
-                // like standard editors do.
                 uint32_t newOff = layout_cache_.PointToOffset(
-                    desiredX_ >= 0 ? desiredX_ : 100.0f, scrollY_ + 20.0f);
-                if (newOff == UINT32_MAX)
-                    newOff = layout_cache_.PointToOffset(100.0f, scrollY_ + 20.0f);
+                    caretX >= 0.0f ? caretX : 100.0f, caretY + amount);
                 if (newOff != UINT32_MAX) {
                     if (shift) sel_.active = {newOff};
                     else sel_.Collapse({newOff});
-                    UpdateCaretPosition();
                 }
             }
+            StartSpring(targetScroll);
+            if (editing_) UpdateCaretPosition();
+            Repaint();
             break;
         }
         case VK_PRIOR: {  // Page Up
-            float page = 0.0f;
-            if (rt_) page = rt_->GetSize().height;
-            else page = static_cast<float>(clientH_);
-            StartSpring(scrollY_ - page);
+            float page = rt_ ? rt_->GetSize().height : static_cast<float>(clientH_);
+            float lineHeight = 20.0f;
+            float caretX = desiredX_;
+            float caretY = scrollY_;
+            float caretH = lineHeight;
+            if (layout_cache_.OffsetToCaretRect(sel_.active.offset,
+                                                &caretX, &caretY, &caretH)) {
+                lineHeight = std::max(1.0f, caretH);
+                if (desiredX_ < 0.0f) desiredX_ = caretX;
+                caretX = desiredX_;
+            }
+            float amount = std::max(lineHeight, page - lineHeight);
+            float targetScroll = ClampScroll(scrollY_ - amount);
             if (editing_) {
-                // Caret to the bottom of the newly visible area.
                 uint32_t newOff = layout_cache_.PointToOffset(
-                    desiredX_ >= 0 ? desiredX_ : 100.0f, scrollY_ - 20.0f);
-                if (newOff == UINT32_MAX)
-                    newOff = layout_cache_.PointToOffset(100.0f, scrollY_ - 20.0f);
+                    caretX >= 0.0f ? caretX : 100.0f, caretY - amount);
                 if (newOff != UINT32_MAX) {
                     if (shift) sel_.active = {newOff};
                     else sel_.Collapse({newOff});
-                    UpdateCaretPosition();
                 }
             }
+            StartSpring(targetScroll);
+            if (editing_) UpdateCaretPosition();
+            Repaint();
             break;
         }
         case VK_F5:
@@ -532,9 +647,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             break;
         case 0x42:  // Ctrl+B = bold
             if (ctrl && !shift) {
-                ToggleInlineMarker(&buffer_, &sel_, "**", &undo_stack_);
-                editor_.BreakUndoCoalesce();
-                OnBufferChanged();
+                ToggleBold();
             }
             break;
         case 0x41:  // Ctrl+A = select all
@@ -544,16 +657,12 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             break;
         case 0x49:  // Ctrl+I = italic
             if (ctrl && !shift) {
-                ToggleInlineMarker(&buffer_, &sel_, "*", &undo_stack_);
-                editor_.BreakUndoCoalesce();
-                OnBufferChanged();
+                ToggleItalic();
             }
             break;
-        case 0x4B:  // Ctrl+K = link
+        case 0x4B:  // Ctrl+K = link dialog
             if (ctrl && !shift) {
-                InsertLink(&buffer_, &sel_, "https://");
-                editor_.BreakUndoCoalesce();
-                OnBufferChanged();
+                InsertLinkCmd();
             }
             break;
         case 0x58:  // Ctrl+X = cut, Ctrl+Shift+X = strikethrough
@@ -565,10 +674,11 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 if (!sel_.Empty()) {
                     uint32_t s = sel_.Start();
                     uint32_t len = sel_.Length();
-                    std::string sel_text = buffer_.Text().substr(s, len);
-                    ClipboardCut(hwnd_content_, sel_text);
-                    editor_.DeleteSelection();
-                    OnBufferChanged();
+                    std::string sel_text = SelectionForClipboard();
+                    if (ClipboardCut(hwnd_content_, sel_text)) {
+                        editor_.DeleteSelection();
+                        OnBufferChanged();
+                    }
                 }
             }
             break;
@@ -591,7 +701,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 if (!sel_.Empty()) {
                     uint32_t s = sel_.Start();
                     uint32_t len = sel_.Length();
-                    std::string sel_text = buffer_.Text().substr(s, len);
+                    std::string sel_text = SelectionForClipboard();
                     // In view mode, convert soft line breaks (single \n within
                     // a paragraph) to spaces, preserving paragraph breaks
                     // (\n\n) and forced breaks (two trailing spaces + \n).
@@ -607,6 +717,8 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             if (ctrl && !shift) {
                 std::string text = ClipboardPaste(hwnd_content_);
                 if (!text.empty()) {
+                    pending_run_active_ = false;
+                    pending_run_suffix_bytes_ = 0;
                     editor_.InsertText(text);
                     OnBufferChanged();
                 }
@@ -614,28 +726,45 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             break;
         case 0x5A:  // Ctrl+Z = undo
             if (ctrl && !shift) {
-                editor_.Undo();
-                OnBufferChanged();
+                pending_run_active_ = false;
+                pending_run_suffix_bytes_ = 0;
+                pending_bold_set_ = false;
+                pending_italic_set_ = false;
+                ApplyUndo(false);
             } else if (ctrl && shift) {
-                editor_.Redo();
-                OnBufferChanged();
+                pending_run_active_ = false;
+                pending_run_suffix_bytes_ = 0;
+                pending_bold_set_ = false;
+                pending_italic_set_ = false;
+                ApplyUndo(true);
             }
             break;
         case 0x59:  // Ctrl+Y = redo
             if (ctrl) {
-                editor_.Redo();
-                OnBufferChanged();
+                pending_run_active_ = false;
+                pending_run_suffix_bytes_ = 0;
+                pending_bold_set_ = false;
+                pending_italic_set_ = false;
+                ApplyUndo(true);
             }
             break;
         case VK_BACK:
-            editor_.DeleteBackward();
+            pending_run_active_ = false;
+            pending_run_suffix_bytes_ = 0;
+            if (ctrl) editor_.DeleteWordBackward();
+            else editor_.DeleteBackward();
             OnBufferChanged();
             break;
         case VK_DELETE:
-            editor_.DeleteForward();
+            pending_run_active_ = false;
+            pending_run_suffix_bytes_ = 0;
+            if (ctrl) editor_.DeleteWordForward();
+            else editor_.DeleteForward();
             OnBufferChanged();
             break;
         case VK_RETURN:
+            pending_run_active_ = false;
+            pending_run_suffix_bytes_ = 0;
             editor_.InsertParagraphBreak(doc_);
             OnBufferChanged();
             // Force immediate visual update after Enter; don't wait
@@ -975,6 +1104,13 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     }
 
     bool shiftDown = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    pending_bold_set_ = false;
+    pending_italic_set_ = false;
+    pending_run_active_ = false;
+    pending_run_suffix_bytes_ = 0;
+    word_dragging_ = false;
+    paragraph_dragging_ = false;
+    selection_dragging_ = false;
 
     // Shift+click: extend the current selection to the clicked position.
     // The anchor stays where it is; only the active end moves. This
@@ -1050,6 +1186,9 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
             sel_.anchor = {bl.srcOffset};
             sel_.active = {bl.srcOffset + bl.srcLength};
             margin_selecting_ = false;
+            paragraph_dragging_ = true;
+            selection_dragging_ = false;
+            paragraph_anchor_block_ = blkIdx;
             if (editing_) UpdateCaretPosition();
             Repaint();
             return;
@@ -1074,8 +1213,10 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
         if (linkOffset != UINT32_MAX) {
             std::string url = FindLinkAtOffset(linkOffset);
             if (!url.empty()) {
+            if (!editing_ || (GetKeyState(VK_CONTROL) & 0x8000)) {
                 OpenLink(url);
                 return;
+            }
             }
         }
     }
@@ -1122,6 +1263,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     margin_selecting_ = false;
     if (offset != UINT32_MAX) {
         sel_.Collapse({offset});
+        selection_dragging_ = true;
     } else {
         // Click landed on empty space (no text block, no margin line).
         // Clear any active selection.
@@ -1147,25 +1289,36 @@ void AppWindow::OnLButtonDblClk(HWND hwnd, int x, int y) {
     if (offset == UINT32_MAX) return;
 
     const std::string& text = buffer_.Text();
-    if (offset >= text.size()) return;
-
-    // Word boundary: stop at whitespace OR punctuation, so e.g. a colon
-    // is not included when double-clicking a word in "Key: Value" text
-    // (common in markdown table cells).
-    auto isWordChar = [](unsigned char c) {
-        return (c >= 0x80 ||  // non-ASCII (UTF-8 continuation bytes, accented chars)
-                isalnum(c) ||
-                c == '_' || c == '-');
-    };
-    uint32_t start = offset;
-    while (start > 0 && isWordChar(static_cast<unsigned char>(text[start - 1])))
-        start--;
-    uint32_t end = offset;
-    while (end < text.size() && isWordChar(static_cast<unsigned char>(text[end])))
-        end++;
+    if (offset > text.size()) return;
+    // Use the same Unicode word boundaries as Ctrl+Left/Ctrl+Right.
+    // This operates on grapheme boundaries, not UTF-8 bytes.
+    uint32_t start = 0;
+    uint32_t end = 0;
+    WordSpanAt(buffer_, offset, &start, &end);
+    if (start == end && offset < text.size()) {
+        end = NextGraphemeBoundary(text, offset);
+    }
+    while (start < end && !layout_cache_.OffsetIsRendered(start)) {
+        uint32_t next = NextGraphemeBoundary(text, start);
+        if (next <= start) break;
+        start = next;
+    }
+    while (end > start && end <= text.size() &&
+           !layout_cache_.OffsetIsRendered(
+               PrevGraphemeBoundary(text, end))) {
+        uint32_t prev = PrevGraphemeBoundary(text, end);
+        if (prev >= end) break;
+        end = prev;
+    }
 
     sel_.anchor = {start};
     sel_.active = {end};
+    word_anchor_start_ = start;
+    word_anchor_end_ = end;
+    word_anchor_caret_ = offset;
+    word_dragging_ = true;
+    paragraph_dragging_ = false;
+    SetCapture(hwnd);
     if (editing_) UpdateCaretPosition();
     Repaint();
 }
@@ -1187,12 +1340,56 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
 
     if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) return;
     float scale = 96.0f / static_cast<float>(dpi_);
+    int hitY = y;
+    if (y < 0 || y > clientH_) {
+        float step = 24.0f;
+        if (y < 0) StartSpring(scrollY_ - step);
+        else StartSpring(scrollY_ + step);
+        hitY = std::max(0, std::min(clientH_, y));
+    }
     float docX = static_cast<float>(x) * scale;
-    float docY = static_cast<float>(y) * scale + scrollY_;
+    float docY = static_cast<float>(hitY) * scale + scrollY_;
 
     // Ensure the layout cache is populated during drag operations.
     if (layout_cache_.Blocks().empty()) {
         ForceRepaintNow();
+    }
+
+    if (paragraph_dragging_ && paragraph_anchor_block_ >= 0) {
+        int currentBlock = layout_cache_.FindBlockAtY(docY);
+        if (currentBlock >= 0) {
+            const auto& blocks = layout_cache_.Blocks();
+            int first = std::min(paragraph_anchor_block_, currentBlock);
+            int last = std::max(paragraph_anchor_block_, currentBlock);
+            uint32_t firstStart = blocks[first].srcOffset;
+            uint32_t lastEnd = blocks[last].srcOffset + blocks[last].srcLength;
+            if (currentBlock >= paragraph_anchor_block_) {
+                sel_.anchor = {firstStart};
+                sel_.active = {lastEnd};
+            } else {
+                sel_.anchor = {lastEnd};
+                sel_.active = {firstStart};
+            }
+            if (editing_) UpdateCaretPosition();
+            Repaint();
+        }
+        return;
+    }
+
+    uint32_t offset = layout_cache_.PointToOffset(docX, docY);
+    if (word_dragging_) {
+        if (offset != UINT32_MAX) {
+            if (offset >= word_anchor_caret_) {
+                sel_.anchor = {word_anchor_start_};
+                sel_.active = {MoveWordRight(buffer_, offset)};
+            } else {
+                sel_.anchor = {word_anchor_end_};
+                sel_.active = {MoveWordLeft(buffer_, offset)};
+            }
+            if (editing_) UpdateCaretPosition();
+            Repaint();
+        }
+        return;
     }
 
     if (margin_selecting_ && margin_anchor_block_ >= 0) {
@@ -1236,7 +1433,7 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
         return;
     }
 
-    uint32_t offset = layout_cache_.PointToOffset(docX, docY);
+    offset = layout_cache_.PointToOffset(docX, docY);
     if (offset != UINT32_MAX) {
         sel_.active = {offset};
     }
@@ -1248,6 +1445,10 @@ void AppWindow::OnLButtonUp(HWND hwnd) {
     ReleaseCapture();
     margin_selecting_ = false;
     margin_anchor_block_ = -1;
+    word_dragging_ = false;
+    paragraph_dragging_ = false;
+    selection_dragging_ = false;
+    paragraph_anchor_block_ = -1;
 }
 
 void AppWindow::OnSetFocus(HWND hwnd) {
@@ -1269,8 +1470,103 @@ void AppWindow::OnSetFocus(HWND hwnd) {
 }
 
 void AppWindow::OnKillFocus(HWND hwnd) {
+    OnImeEndComposition();
     has_focus_ = false;
     DestroyCaret();
+}
+
+void AppWindow::OnImeComposition(LPARAM lp) {
+    if (!editing_ || !hwnd_content_) return;
+    HIMC context = ImmGetContext(hwnd_content_);
+    if (!context) return;
+
+    auto readComposition = [&](DWORD flag) -> std::wstring {
+        LONG bytes = ImmGetCompositionStringW(context, flag, nullptr, 0);
+        if (bytes <= 0) return {};
+        std::wstring value(static_cast<size_t>(bytes) / sizeof(wchar_t), L'\0');
+        ImmGetCompositionStringW(context, flag, value.data(), bytes);
+        return value;
+    };
+
+    bool hasResult = (lp & GCS_RESULTSTR) != 0;
+    std::string result;
+    if (hasResult) {
+        result = ImeWideToUtf8(readComposition(GCS_RESULTSTR));
+    }
+    std::string preedit;
+    if (lp & GCS_COMPSTR) {
+        preedit = ImeWideToUtf8(readComposition(GCS_COMPSTR));
+    }
+
+    if (!ime_composing_) {
+        ime_selection_before_ = sel_;
+        uint32_t sourceLength = static_cast<uint32_t>(buffer_.Text().size());
+        ime_source_start_ = std::min(sel_.Start(), sourceLength);
+        uint32_t replaceLength = std::min(sel_.Length(),
+                                          sourceLength - ime_source_start_);
+        ime_replaced_text_ = buffer_.Text().substr(
+            ime_source_start_, replaceLength);
+        if (replaceLength != 0) {
+            buffer_.Splice(ime_source_start_, replaceLength, {});
+            sel_.Collapse({ime_source_start_});
+        }
+        ime_composing_ = true;
+    }
+
+    if (!ime_preedit_.empty()) {
+        buffer_.Splice(ime_source_start_,
+            static_cast<uint32_t>(ime_preedit_.size()), {});
+        ime_preedit_.clear();
+    }
+
+    if (hasResult) {
+        buffer_.Splice(ime_source_start_, 0, result);
+        sel_.Collapse({ime_source_start_ + static_cast<uint32_t>(result.size())});
+
+        UndoEntry entry{};
+        entry.offset = ime_source_start_;
+        entry.removed = ime_replaced_text_;
+        entry.inserted = result;
+        entry.selBefore = ime_selection_before_;
+        entry.selAfter = sel_;
+        entry.timestamp = GetTickCount64();
+        entry.type = EditType::Insert;
+        undo_stack_.Push(entry);
+
+        ime_composing_ = false;
+        ime_replaced_text_.clear();
+        ime_preedit_.clear();
+        OnBufferChanged();
+    } else {
+        ime_preedit_ = preedit;
+        if (!ime_preedit_.empty()) {
+            buffer_.Splice(ime_source_start_, 0, ime_preedit_);
+            sel_.Collapse({ime_source_start_ +
+                static_cast<uint32_t>(ime_preedit_.size())});
+        } else {
+            sel_.Collapse({ime_source_start_});
+        }
+        bool wasDirty = dirty_;
+        OnBufferChanged();
+        if (!wasDirty) dirty_ = false;
+    }
+    ImmReleaseContext(hwnd_content_, context);
+}
+
+void AppWindow::OnImeEndComposition() {
+    if (!ime_composing_) return;
+    if (!ime_preedit_.empty()) {
+        buffer_.Splice(ime_source_start_,
+            static_cast<uint32_t>(ime_preedit_.size()), {});
+    }
+    buffer_.Splice(ime_source_start_, 0, ime_replaced_text_);
+    sel_ = ime_selection_before_;
+    ime_composing_ = false;
+    ime_preedit_.clear();
+    ime_replaced_text_.clear();
+    bool wasDirty = dirty_;
+    OnBufferChanged();
+    if (!wasDirty) dirty_ = false;
 }
 
 void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
@@ -1279,6 +1575,52 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
     // In view mode, no character input is accepted.
     // Edit mode is entered explicitly via the Edit button or Ctrl+E.
     if (!editing_) return;
+
+    // Keep one continuous Markdown span while the caret remains at the end
+    // of text typed with pending formatting. Reusing the same closing markers
+    // avoids producing **a****b****c** for a continuous input sequence.
+    auto ApplyPendingTypingFormat = [&](const std::string& value) -> void {
+        std::string prefix;
+        std::string suffix;
+        if (pending_bold_set_ && pending_bold_) {
+            prefix += "**";
+            suffix = "**" + suffix;
+        }
+        if (pending_italic_set_ && pending_italic_) {
+            prefix += "*";
+            suffix = "*" + suffix;
+        }
+
+        if (value.empty()) {
+            pending_run_active_ = false;
+            pending_run_suffix_bytes_ = 0;
+            return;
+        }
+        if (suffix.empty()) {
+            editor_.InsertText(value);
+            pending_run_active_ = false;
+            pending_run_suffix_bytes_ = 0;
+            return;
+        }
+
+        const std::string& source = buffer_.Text();
+        const uint32_t caret = sel_.active.offset;
+        const uint32_t suffixBytes = static_cast<uint32_t>(suffix.size());
+        const bool canExtend = pending_run_active_ && sel_.Empty() &&
+            pending_run_suffix_bytes_ == suffixBytes &&
+            caret >= suffixBytes &&
+            source.compare(caret - suffixBytes, suffixBytes, suffix) == 0;
+
+        if (canExtend) {
+            editor_.ReplaceText(caret - suffixBytes, suffixBytes,
+                                 value + suffix, EditType::Insert);
+        } else {
+            editor_.InsertText(prefix + value + suffix);
+        }
+        pending_run_active_ = true;
+        pending_run_suffix_bytes_ = suffixBytes;
+        return;
+    };
 
     // Handle surrogate pairs: emoji and CJK arrive as two WM_CHAR messages.
     if (ch >= 0xD800 && ch <= 0xDBFF) {
@@ -1308,7 +1650,7 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
         has_surrogate_ = false;
         std::string ins(utf8);
         ins = EscapeForInsert(buffer_, sel_.active.offset, ins);
-        editor_.InsertText(ins);
+        ApplyPendingTypingFormat(ins);
         OnBufferChanged();
         return;
     }
@@ -1333,7 +1675,7 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
     std::string ins2(utf8);
     // Escape markdown metacharacters in the typed text.
     ins2 = EscapeForInsert(buffer_, sel_.active.offset, ins2);
-    editor_.InsertText(ins2);
+    ApplyPendingTypingFormat(ins2);
     if (!ins2.empty() && !ins2.empty()) CheckAutoformat(&buffer_, &sel_, ins2[0]);
     OnBufferChanged();
 }
@@ -1761,6 +2103,19 @@ void AppWindow::EnterMomentum() {
 
 // Called every 16 ms by the scroll timer.
 void AppWindow::OnScrollTick() {
+    // Continue semantic selection while the pointer is held outside the
+    // content viewport. WM_MOUSEMOVE is not guaranteed to repeat there.
+    if ((margin_selecting_ || word_dragging_ || paragraph_dragging_ ||
+         selection_dragging_) &&
+        GetCapture() == hwnd_content_ &&
+        (GetAsyncKeyState(VK_LBUTTON) & 0x8000)) {
+        POINT pt{};
+        GetCursorPos(&pt);
+        ScreenToClient(hwnd_content_, &pt);
+        if (pt.y < 0 || pt.y > clientH_)
+            OnMouseMove(hwnd_content_, pt.x, pt.y);
+    }
+
     if (scroll_phase_ == 1) {
         // ── SPRING ──────────────────────────────────────────────
         // Semi-implicit Euler: update velocity first, then position.
@@ -2330,6 +2685,8 @@ FormatState AppWindow::GetFormatState() const {
                 checkTableCells(node, caret, caret + 1);
             }
         }
+        if (pending_bold_set_) fs.bold = pending_bold_;
+        if (pending_italic_set_) fs.italic = pending_italic_;
         return fs;
     }
 
@@ -2628,6 +2985,23 @@ bool AppWindow::ExpandSelectionToFormatSpan(bool wantStrong, bool wantEm,
 
 void AppWindow::ToggleBold() {
     if (!editing_) return;
+    if (sel_.Empty()) {
+        bool beforeBold = pending_bold_;
+        bool beforeItalic = pending_italic_;
+        bool beforeBoldSet = pending_bold_set_;
+        bool beforeItalicSet = pending_italic_set_;
+        FormatState fs = GetFormatState();
+        bool current = pending_bold_set_ ? pending_bold_ : fs.bold;
+        pending_bold_ = !current;
+        pending_bold_set_ = true;
+        pending_run_active_ = false;
+        pending_run_suffix_bytes_ = 0;
+        RecordPendingFormatUndo(beforeBold, beforeItalic,
+                                beforeBoldSet, beforeItalicSet);
+        editor_.BreakUndoCoalesce();
+        InvalidateFormatButtons();
+        return;
+    }
     FormatState fs = GetFormatState();
     if (fs.bold && !sel_.Empty()) {
         // Selection contains bold text: remove ALL bold markers.
@@ -2647,6 +3021,23 @@ void AppWindow::ToggleBold() {
 
 void AppWindow::ToggleItalic() {
     if (!editing_) return;
+    if (sel_.Empty()) {
+        bool beforeBold = pending_bold_;
+        bool beforeItalic = pending_italic_;
+        bool beforeBoldSet = pending_bold_set_;
+        bool beforeItalicSet = pending_italic_set_;
+        FormatState fs = GetFormatState();
+        bool current = pending_italic_set_ ? pending_italic_ : fs.italic;
+        pending_italic_ = !current;
+        pending_italic_set_ = true;
+        pending_run_active_ = false;
+        pending_run_suffix_bytes_ = 0;
+        RecordPendingFormatUndo(beforeBold, beforeItalic,
+                                beforeBoldSet, beforeItalicSet);
+        editor_.BreakUndoCoalesce();
+        InvalidateFormatButtons();
+        return;
+    }
     FormatState fs = GetFormatState();
     if (fs.italic && !sel_.Empty()) {
         RemoveAllFormattingInSelection(false, true, false, false, 1);
@@ -2922,6 +3313,10 @@ static std::string WideToUtf8(const std::wstring& ws) {
 
 void AppWindow::InsertLinkCmd() {
     if (!editing_) return;
+    // Ctrl+K with an empty caret may open the dialog, but it must not create
+    // an empty link because the base editor specification requires a
+    // non-empty visible selection for link formatting.
+    bool hadSelection = !sel_.Empty();
     // Build the dialog template in memory.
     auto tmpl = BuildLinkDialogTemplate();
     std::wstring url;
@@ -2931,7 +3326,7 @@ void AppWindow::InsertLinkCmd() {
         hwnd_,
         LinkDialogProc,
         reinterpret_cast<LPARAM>(&url));
-    if (result != IDOK || url.empty()) return;
+    if (result != IDOK || url.empty() || !hadSelection) return;
     std::string urlUtf8 = WideToUtf8(url);
     InsertLink(&buffer_, &sel_, urlUtf8, &undo_stack_);
     editor_.BreakUndoCoalesce();
@@ -3679,19 +4074,66 @@ void AppWindow::Outdent() {
     ForceRepaintNow();
 }
 
+void AppWindow::RecordPendingFormatUndo(bool beforeBold, bool beforeItalic,
+                                         bool beforeBoldSet, bool beforeItalicSet) {
+    UndoEntry entry{};
+    entry.offset = sel_.active.offset;
+    entry.selBefore = sel_;
+    entry.selAfter = sel_;
+    entry.timestamp = GetTickCount64();
+    entry.type = EditType::PendingFormat;
+    entry.hasPendingFormat = true;
+    entry.pendingBold = beforeBold;
+    entry.pendingItalic = beforeItalic;
+    entry.pendingBoldSet = beforeBoldSet;
+    entry.pendingItalicSet = beforeItalicSet;
+    entry.afterPendingBold = pending_bold_;
+    entry.afterPendingItalic = pending_italic_;
+    entry.afterPendingBoldSet = pending_bold_set_;
+    entry.afterPendingItalicSet = pending_italic_set_;
+    undo_stack_.Push(entry);
+
+    // Store the after-state in the same entry by pushing it through the
+    // redo side is not possible with the public stack API. The current
+    // state is deterministic from the before-state and this toggle, so
+    // ApplyUndo/ApplyRedo recomputes the opposite state for this entry.
+}
+
+void AppWindow::ApplyUndo(bool redo) {
+    UndoEntry entry{};
+    bool changed = redo ? editor_.Redo(&entry) : editor_.Undo(&entry);
+    if (!changed) return;
+    if (entry.hasPendingFormat) {
+        if (redo) {
+            pending_bold_ = entry.afterPendingBold;
+            pending_italic_ = entry.afterPendingItalic;
+            pending_bold_set_ = entry.afterPendingBoldSet;
+            pending_italic_set_ = entry.afterPendingItalicSet;
+        } else {
+            pending_bold_ = entry.pendingBold;
+            pending_italic_ = entry.pendingItalic;
+            pending_bold_set_ = entry.pendingBoldSet;
+            pending_italic_set_ = entry.pendingItalicSet;
+        }
+        pending_run_active_ = false;
+        pending_run_suffix_bytes_ = 0;
+    }
+    OnBufferChanged();
+    InvalidateFormatButtons();
+    ForceRepaintNow();
+}
+
 void AppWindow::UndoAction() {
     if (!editing_) return;
-    editor_.Undo();
-    OnBufferChanged();
-    ForceRepaintNow();
+    ApplyUndo(false);
 }
 
 void AppWindow::RedoAction() {
     if (!editing_) return;
-    editor_.Redo();
-    OnBufferChanged();
-    ForceRepaintNow();
+    ApplyUndo(true);
 }
+
+
 
 void AppWindow::OnDestroy() {
     StopScrollAnimation();
@@ -3903,22 +4345,22 @@ void AppWindow::ShowContextMenu(int screenX, int screenY) {
 
     // Dispatch the selected command.
     switch (cmd) {
-    case CM_UNDO:    editor_.Undo(); OnBufferChanged(); break;
-    case CM_REDO:    editor_.Redo(); OnBufferChanged(); break;
+    case CM_UNDO:    ApplyUndo(false); break;
+    case CM_REDO:    ApplyUndo(true); break;
     case CM_CUT:
         if (!sel_.Empty()) {
             uint32_t s = sel_.Start(), len = sel_.Length();
-            std::string sel_text = buffer_.Text().substr(s, len);
-            ClipboardCut(hwnd_content_, sel_text);
-            editor_.DeleteSelection();
-            OnBufferChanged();
+            std::string sel_text = SelectionForClipboard();
+            if (ClipboardCut(hwnd_content_, sel_text)) {
+                editor_.DeleteSelection();
+                OnBufferChanged();
+            }
         }
         break;
     case CM_COPY:
         if (!sel_.Empty()) {
             uint32_t s = sel_.Start(), len = sel_.Length();
-            std::string sel_text = buffer_.Text().substr(s, len);
-            if (!editing_) sel_text = CleanSelectionForCopy(sel_text);
+            std::string sel_text = SelectionForClipboard();
             ClipboardCopy(hwnd_content_, sel_text);
         }
         break;
@@ -4128,6 +4570,12 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             ShowContextMenu(x, y);
             return 0;
         }
+        case WM_IME_COMPOSITION:
+            OnImeComposition(lp);
+            return 0;
+        case WM_IME_ENDCOMPOSITION:
+            OnImeEndComposition();
+            return 0;
         case WM_CHAR:        OnChar(hwnd, static_cast<wchar_t>(wp)); return 0;
         case WM_SETFOCUS:  OnSetFocus(hwnd);  return 0;
         case WM_KILLFOCUS: OnKillFocus(hwnd); return 0;

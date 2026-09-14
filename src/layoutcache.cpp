@@ -1,4 +1,5 @@
 #include "layoutcache.h"
+#include "editcontroller.h"
 #include <cmath>
 
 LayoutCache::~LayoutCache() {
@@ -58,7 +59,8 @@ bool LayoutCache::GetLineRangeAtY(int blockIndex, float y,
     // code blocks. Query the count first, then allocate to fit.
     UINT32 lineCount = 0;
     HRESULT hr = bl.layout->GetLineMetrics(nullptr, 0, &lineCount);
-    if (FAILED(hr) || lineCount == 0) return false;
+    if (FAILED(hr) && lineCount == 0) return false;
+    if (lineCount == 0) return false;
     if (lineCount > 4096) lineCount = 4096;  // sanity cap
     std::vector<DWRITE_LINE_METRICS> metrics(static_cast<size_t>(lineCount));
     hr = bl.layout->GetLineMetrics(metrics.data(), lineCount, &lineCount);
@@ -123,9 +125,13 @@ bool LayoutCache::GetLineRangeAtY(int blockIndex, float y,
 
         if (u16End < bl.u16ToSrc.size())
             *outEnd = bl.u16ToSrc[u16End];
-        else if (u16End > 0 && u16End - 1 < bl.u16ToSrc.size())
-            *outEnd = bl.u16ToSrc[u16End - 1] + 1;
-        else
+        else if (u16End > 0 && u16End - 1 < bl.u16ToSrc.size()) {
+            uint32_t lastStart = bl.u16ToSrc[u16End - 1];
+            if (srcText_ && lastStart < srcText_->size())
+                *outEnd = NextGraphemeBoundary(*srcText_, lastStart);
+            else
+                *outEnd = bl.srcOffset + bl.srcLength;
+        } else
             *outEnd = bl.srcOffset + bl.srcLength;
     } else {
         // Fallback: linear approximation.
@@ -157,11 +163,9 @@ int LayoutCache::BlockForOffset(uint32_t offset) const {
 }
 
 bool LayoutCache::OffsetIsRendered(uint32_t offset) const {
-    // A source offset is "rendered" when it maps to visible text:
-    // either inside a block's [start,end] range, or present in some
-    // block's u16ToSrc mapping. Offsets between blocks (blank lines,
-    // fence markers, list/quote prefixes) are NOT rendered.
-    if (BlockForOffset(offset) >= 0) return true;
+    // Only offsets explicitly present in the UTF-16-to-source map are
+    // rendered. A block's source interval also contains Markdown syntax,
+    // list prefixes and fence markers, so the interval itself is not enough.
     for (const auto& bl : blocks_) {
         for (uint32_t srcOff : bl.u16ToSrc) {
             if (srcOff == offset) return true;

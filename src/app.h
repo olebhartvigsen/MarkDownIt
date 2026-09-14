@@ -197,10 +197,16 @@ private:
     bool         has_focus_ = false;
     EditController  editor_;
     UndoStack       undo_stack_;
-    wchar_t      surrogate_buf_ = 0;  // high surrogate waiting for low
-    bool         has_surrogate_ = false;
-    float        desiredX_ = -1.0f;  // preserved column for vertical nav
-    UINT_PTR    reparse_timer_ = 0;
+    wchar_t         surrogate_buf_ = 0;  // high surrogate waiting for low
+    bool            has_surrogate_ = false;
+    float           desiredX_ = -1.0f;  // preserved column for vertical nav
+    bool            pending_bold_ = false;
+    bool            pending_italic_ = false;
+    bool            pending_bold_set_ = false;
+    bool            pending_italic_set_ = false;
+    bool            pending_run_active_ = false;
+    uint32_t        pending_run_suffix_bytes_ = 0;
+    UINT_PTR        reparse_timer_ = 0;
     bool        reparse_pending_ = false;
 
     // File lifecycle
@@ -223,6 +229,23 @@ private:
     uint32_t       margin_anchor_start_ = 0;   // start of anchor visual line
     uint32_t       margin_anchor_end_ = 0;     // end of anchor visual line
     float          margin_anchor_y_ = 0.0f;    // doc-space y of anchor line top
+
+    // Double- and triple-click drag preserve their semantic granularity.
+    bool           word_dragging_ = false;
+    bool           paragraph_dragging_ = false;
+    bool           selection_dragging_ = false;
+    uint32_t       word_anchor_start_ = 0;
+    uint32_t       word_anchor_end_ = 0;
+    uint32_t       word_anchor_caret_ = 0;
+    int            paragraph_anchor_block_ = -1;
+
+    // Native IME composition is represented as a temporary source splice.
+    // It is not added to the undo stack until the IME reports a result.
+    bool           ime_composing_ = false;
+    uint32_t       ime_source_start_ = 0;
+    std::string    ime_preedit_;
+    std::string    ime_replaced_text_;
+    Selection      ime_selection_before_;
 
     static const wchar_t* kClassName;
     static const wchar_t* kContentClassName;
@@ -258,7 +281,10 @@ private:
     void OnLButtonDblClk(HWND hwnd, int x, int y);
     void OnMouseMove(HWND hwnd, int x, int y);
     void OnLButtonUp(HWND hwnd);
+    std::string SelectionForClipboard() const;
     void OnSetFocus(HWND hwnd);
+    void OnImeComposition(LPARAM lp);
+    void OnImeEndComposition();
     void OnKillFocus(HWND hwnd);
 
     // Find the URL of a link at the given source offset, if any.
@@ -271,6 +297,9 @@ private:
     void OnChar(HWND hwnd, wchar_t ch);
     void InitEditor();
     void OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp);
+    void ApplyUndo(bool redo);
+    void RecordPendingFormatUndo(bool beforeBold, bool beforeItalic,
+                                 bool beforeBoldSet, bool beforeItalicSet);
     void OnReparseTimer();
     void ScheduleReparse();
     void OnDestroy();

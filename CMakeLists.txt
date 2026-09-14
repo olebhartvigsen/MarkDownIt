@@ -181,6 +181,7 @@ target_link_libraries(MarkDownIt PRIVATE
     d2d1
     dwrite
     user32
+    imm32
     gdi32
     ole32
     oleaut32

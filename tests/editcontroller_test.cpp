@@ -4,6 +4,7 @@
 #include "caret.h"
 #include "dom.h"
 #include "parser.h"
+#include "navigation.h"
 
 TEST(EditController, InsertTextAtCaret) {
     TextBuffer b;
@@ -193,4 +194,90 @@ TEST(InsertParagraphBreak, EmptyListItemEndsList) {
     // Result: "- \n\n" or the marker is removed.
     EXPECT_TRUE(text == "- " "\x0A\x0A" || text.empty() || text == "\x0A\x0A"
                 || text == "- ");
+}
+
+TEST(EditController, DeleteWordBackwardAtCaret) {
+    TextBuffer b;
+    b.SetText("hello");
+    Selection s;
+    s.Collapse({5});
+    EditController ec(&b, &s);
+    ec.DeleteWordBackward();
+    EXPECT_EQ(b.Text(), "");
+    EXPECT_EQ(s.active.offset, 0u);
+    EXPECT_TRUE(s.Empty());
+}
+
+TEST(EditController, DeleteWordForwardAtCaret) {
+    TextBuffer b;
+    b.SetText("hello");
+    Selection s;
+    s.Collapse({0});
+    EditController ec(&b, &s);
+    ec.DeleteWordForward();
+    EXPECT_EQ(b.Text(), "");
+    EXPECT_EQ(s.active.offset, 0u);
+    EXPECT_TRUE(s.Empty());
+}
+
+TEST(EditController, ReplacementIsOneUndoEntry) {
+    TextBuffer b;
+    b.SetText("hello world");
+    Selection s;
+    s.anchor = {0};
+    s.active = {5};
+    UndoStack undo;
+    EditController ec(&b, &s);
+    ec.SetUndoStack(&undo);
+    ec.InsertText("goodbye");
+    EXPECT_EQ(b.Text(), "goodbye world");
+    EXPECT_TRUE(undo.CanUndo());
+    ec.Undo();
+    EXPECT_EQ(b.Text(), "hello world");
+    EXPECT_EQ(s.anchor.offset, 0u);
+    EXPECT_EQ(s.active.offset, 5u);
+    EXPECT_FALSE(undo.CanUndo());
+}
+
+TEST(EditController, DeleteBackwardCombiningCluster) {
+    TextBuffer b;
+    b.SetText("A" "e" "\xCC\x81" "\xCC\xA7" "B");
+    Selection s;
+    s.Collapse({6});
+    EditController ec(&b, &s);
+    ec.DeleteBackward();
+    EXPECT_EQ(b.Text(), "AB");
+    EXPECT_EQ(s.active.offset, 1u);
+}
+
+TEST(EditController, DeleteForwardEmojiZwjCluster) {
+    TextBuffer b;
+    const char* family = "\xF0\x9F\x91\xA8\xE2\x80\x8D"
+                         "\xF0\x9F\x91\xA9\xE2\x80\x8D"
+                         "\xF0\x9F\x91\xA7";
+    b.SetText(std::string("A") + family + "B");
+    Selection s;
+    s.Collapse({1});
+    EditController ec(&b, &s);
+    ec.DeleteForward();
+    EXPECT_EQ(b.Text(), "AB");
+    EXPECT_EQ(s.active.offset, 1u);
+}
+
+TEST(EditController, DeleteBackwardRegionalIndicatorPair) {
+    TextBuffer b;
+    b.SetText("A" "\xF0\x9F\x87\xA9\xF0\x9F\x87\xB0" "B");
+    Selection s;
+    s.Collapse({9});
+    EditController ec(&b, &s);
+    ec.DeleteBackward();
+    EXPECT_EQ(b.Text(), "AB");
+    EXPECT_EQ(s.active.offset, 1u);
+}
+
+TEST(Navigation, UnicodeWordBoundaries) {
+    TextBuffer b;
+    b.SetText(" dansk\xC3\xA6ble 你好 123 ");
+    EXPECT_EQ(MoveWordLeft(b, static_cast<uint32_t>(b.Length())), 19u);
+    EXPECT_EQ(MoveWordRight(b, 1u), 11u);
 }

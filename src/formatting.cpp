@@ -1,6 +1,7 @@
 #include "formatting.h"
 #include "undostack.h"
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <vector>
 
@@ -114,6 +115,113 @@ void ToggleInlineMarker(TextBuffer* buf, Selection* sel, const std::string& mark
     }
 }
 
+struct SimpleLinkSpan {
+    uint32_t linkStart = 0;
+    uint32_t linkEnd = 0;
+    uint32_t labelStart = 0;
+    uint32_t labelEnd = 0;
+    uint32_t urlStart = 0;
+    uint32_t urlEnd = 0;
+};
+
+static bool FindSimpleLinkContaining(const std::string& text,
+                                     uint32_t start, uint32_t end,
+                                     SimpleLinkSpan* out) {
+    if (!out || start > text.size() || end > text.size()) return false;
+    size_t open = text.rfind('[', start == 0 ? 0 : start - 1);
+    while (open != std::string::npos) {
+        size_t close = text.find("](", open + 1);
+        if (close == std::string::npos) return false;
+        size_t urlEnd = text.find(')', close + 2);
+        if (urlEnd == std::string::npos) return false;
+        if (text.find('\n', open) != std::string::npos &&
+            text.find('\n', open) < urlEnd) return false;
+        uint32_t labelStart = static_cast<uint32_t>(open + 1);
+        uint32_t labelEnd = static_cast<uint32_t>(close);
+        uint32_t linkEnd = static_cast<uint32_t>(urlEnd + 1);
+        if (start <= labelEnd && end >= labelStart) {
+            out->linkStart = static_cast<uint32_t>(open);
+            out->linkEnd = linkEnd;
+            out->labelStart = labelStart;
+            out->labelEnd = labelEnd;
+            out->urlStart = static_cast<uint32_t>(close + 2);
+            out->urlEnd = static_cast<uint32_t>(urlEnd);
+            return true;
+        }
+        if (open == 0) break;
+        open = text.rfind('[', open - 1);
+    }
+    return false;
+}
+
+static void UpdateLinkDestination(TextBuffer* buf, Selection* sel,
+                                  const std::string& url,
+                                  const SimpleLinkSpan& link,
+                                  UndoStack* undo) {
+    const std::string oldText = buf->Text();
+    uint32_t start = sel->Start();
+    uint32_t end = start + sel->Length();
+    Selection before = *sel;
+
+    if (start >= link.labelStart && end <= link.labelEnd) {
+        std::string label = oldText.substr(link.labelStart,
+                                           link.labelEnd - link.labelStart);
+        std::string replacement;
+        uint32_t selectedStart = 0;
+        if (start == link.labelStart && end == link.labelEnd) {
+            replacement = "[" + label + "](" + url + ")";
+            selectedStart = 1;
+        } else {
+            uint32_t localStart = start - link.labelStart;
+            uint32_t localEnd = end - link.labelStart;
+            std::string left = label.substr(0, localStart);
+            std::string selected = label.substr(localStart, localEnd - localStart);
+            std::string right = label.substr(localEnd);
+            replacement = (left.empty() ? "" : "[" + left + "](" +
+                          oldText.substr(link.urlStart, link.urlEnd - link.urlStart) + ")")
+                        + "[" + selected + "](" + url + ")"
+                        + (right.empty() ? "" : "[" + right + "](" +
+                          oldText.substr(link.urlStart, link.urlEnd - link.urlStart) + ")");
+            selectedStart = left.empty()
+                ? 1u
+                : static_cast<uint32_t>(left.size() +
+                                        (link.urlEnd - link.urlStart) + 5);
+        }
+        buf->Splice(link.linkStart, link.linkEnd - link.linkStart, replacement);
+        sel->anchor = {link.linkStart + selectedStart};
+        sel->active = {link.linkStart + selectedStart + (end - start)};
+        RecordUndo(undo, link.linkStart,
+                   oldText.substr(link.linkStart, link.linkEnd - link.linkStart),
+                   replacement, before, *sel);
+        return;
+    }
+
+    // A selection that crosses a link boundary must not wrap the existing
+    // Markdown syntax in another pair of brackets. Update the link that it
+    // touches and leave the outside text unchanged.
+    std::string replacement = oldText.substr(link.linkStart,
+                                             link.urlStart - link.linkStart) +
+                              url + oldText.substr(link.urlEnd,
+                                                   link.linkEnd - link.urlEnd);
+    const int64_t delta = static_cast<int64_t>(replacement.size()) -
+                           static_cast<int64_t>(link.linkEnd - link.linkStart);
+    auto adjust = [&](uint32_t value) -> uint32_t {
+        if (delta > 0 && value >= link.linkEnd)
+            return value + static_cast<uint32_t>(delta);
+        if (delta < 0 && value >= link.linkEnd)
+            return value - static_cast<uint32_t>(-delta);
+        return value;
+    };
+    start = adjust(start);
+    end = adjust(end);
+    buf->Splice(link.linkStart, link.linkEnd - link.linkStart, replacement);
+    sel->anchor = {start};
+    sel->active = {end};
+    RecordUndo(undo, link.linkStart,
+               oldText.substr(link.linkStart, link.linkEnd - link.linkStart),
+               replacement, before, *sel);
+}
+
 void InsertLink(TextBuffer* buf, Selection* sel, const std::string& url,
                 UndoStack* undo) {
     Selection selBefore = *sel;
@@ -128,6 +236,11 @@ void InsertLink(TextBuffer* buf, Selection* sel, const std::string& url,
     } else {
         uint32_t start = sel->Start();
         uint32_t end = start + sel->Length();
+        SimpleLinkSpan existing;
+        if (FindSimpleLinkContaining(buf->Text(), start, end, &existing)) {
+            UpdateLinkDestination(buf, sel, url, existing, undo);
+            return;
+        }
         // Single contiguous splice: replace "text" with "[text](url)".
         const std::string& text = buf->Text();
         std::string removed = text.substr(start, end - start);

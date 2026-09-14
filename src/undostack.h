@@ -9,6 +9,7 @@ enum class EditType {
     Delete,
     ParagraphBreak,
     Other,
+    PendingFormat,
 };
 
 struct UndoEntry {
@@ -19,6 +20,15 @@ struct UndoEntry {
     Selection selAfter;
     uint64_t timestamp;
     EditType type;
+    bool hasPendingFormat = false;
+    bool pendingBold = false;
+    bool pendingItalic = false;
+    bool pendingBoldSet = false;
+    bool pendingItalicSet = false;
+    bool afterPendingBold = false;
+    bool afterPendingItalic = false;
+    bool afterPendingBoldSet = false;
+    bool afterPendingItalicSet = false;
 };
 
 class UndoStack {

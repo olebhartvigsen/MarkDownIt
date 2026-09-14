@@ -19,6 +19,9 @@ uint32_t MoveWordLeft(const TextBuffer& buf, uint32_t offset);
 // Move right by one word (Ctrl+Right).
 uint32_t MoveWordRight(const TextBuffer& buf, uint32_t offset);
 
+// Return the contiguous Unicode word/space/punctuation span containing offset.
+void WordSpanAt(const TextBuffer& buf, uint32_t offset,
+                uint32_t* outStart, uint32_t* outEnd);
 // Move up or down by one rendered line.
 // direction: -1 for up, +1 for down.
 // desiredX: in/out. On first vertical move, set to caret x.

@@ -96,6 +96,26 @@ TEST(Formatting, InsertLinkOnSelection) {
     EXPECT_EQ(b.Text(), "[click here](https://example.com)");
 }
 
+TEST(Formatting, UpdateExistingLinkDestination) {
+    TextBuffer b;
+    b.SetText("[click here](https://old.example)");
+    Selection s;
+    s.anchor = {1}; s.active = {11};
+    InsertLink(&b, &s, "https://new.example");
+    EXPECT_EQ(b.Text(), "[click here](https://new.example)");
+}
+
+TEST(Formatting, SplitPartiallySelectedExistingLink) {
+    TextBuffer b;
+    b.SetText("[hello](old)");
+    Selection s;
+    s.anchor = {2}; s.active = {4};
+    InsertLink(&b, &s, "new");
+    EXPECT_EQ(b.Text(), "[h](old)[el](new)[lo](old)");
+    EXPECT_EQ(s.Start(), 9u);
+    EXPECT_EQ(s.Length(), 2u);
+}
+
 TEST(Formatting, InsertLinkEmptySelection) {
     TextBuffer b;
     b.SetText("hello");

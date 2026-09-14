@@ -58,6 +58,7 @@ public:
 
     // Set the source text for marker-aware offset calculations.
     void SetSourceText(const std::string* src) { srcText_ = src; }
+    const std::string* SourceText() const { return srcText_; }
 
     // Screen point to source offset. Used for mouse clicks.
     // Returns UINT32_MAX on failure.

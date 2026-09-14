@@ -1,5 +1,6 @@
 #include "navigation.h"
 #include "editcontroller.h"
+#include <algorithm>
 
 // Check if a source offset is a hidden markdown marker character
 // (not part of the rendered text) using the layout cache's u16ToSrc
@@ -82,28 +83,79 @@ uint32_t MoveRight(const TextBuffer& buf, uint32_t offset,
     return next;
 }
 
-static bool isWordChar(unsigned char c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-           (c >= '0' && c <= '9') || c == '_' ||
-           // Multi-byte UTF-8 sequences (æøå, CJK, etc.): treat the lead
-           // byte and all continuation bytes as word characters so
-           // word motion does not stop inside accented words.
-           c >= 0x80;
+namespace {
+struct NavCp { char32_t value; uint32_t next; };
+static NavCp DecodeNav(const std::string& s, uint32_t at) {
+    if (at >= s.size()) return {0, at};
+    unsigned char b = static_cast<unsigned char>(s[at]);
+    if (b < 0x80) return {b, at + 1};
+    if ((b & 0xE0) == 0xC0 && at + 1 < s.size())
+        return {static_cast<char32_t>((b & 0x1F) << 6 | (static_cast<unsigned char>(s[at+1]) & 0x3F)), at + 2};
+    if ((b & 0xF0) == 0xE0 && at + 2 < s.size())
+        return {static_cast<char32_t>((b & 0x0F) << 12 | (static_cast<unsigned char>(s[at+1]) & 0x3F) << 6 | (static_cast<unsigned char>(s[at+2]) & 0x3F)), at + 3};
+    if ((b & 0xF8) == 0xF0 && at + 3 < s.size())
+        return {static_cast<char32_t>((b & 7) << 18 | (static_cast<unsigned char>(s[at+1]) & 0x3F) << 12 | (static_cast<unsigned char>(s[at+2]) & 0x3F) << 6 | (static_cast<unsigned char>(s[at+3]) & 0x3F)), at + 4};
+    return {0xFFFD, at + 1};
+}
+static bool UnicodeSpace(char32_t cp) {
+    return cp == 0x0009 || cp == 0x000A || cp == 0x000B || cp == 0x000C ||
+           cp == 0x000D || cp == 0x0020 || cp == 0x0085 || cp == 0x00A0 ||
+           (cp >= 0x1680 && cp <= 0x180E) || (cp >= 0x2000 && cp <= 0x200A) ||
+           cp == 0x2028 || cp == 0x2029 || cp == 0x202F || cp == 0x205F || cp == 0x3000;
+}
+static bool UnicodeMark(char32_t cp) {
+    return (cp >= 0x0300 && cp <= 0x036F) || (cp >= 0x1AB0 && cp <= 0x1AFF) ||
+           (cp >= 0x1DC0 && cp <= 0x1DFF) || (cp >= 0x20D0 && cp <= 0x20FF) ||
+           (cp >= 0xFE00 && cp <= 0xFE0F) || (cp >= 0xE0100 && cp <= 0xE01EF);
+}
+static bool UnicodePunctuation(char32_t cp) {
+    return (cp >= 0x0021 && cp <= 0x002F) ||
+           (cp >= 0x003A && cp <= 0x0040) ||
+           (cp >= 0x005B && cp <= 0x0060) ||
+           (cp >= 0x007B && cp <= 0x007E) ||
+           (cp >= 0x2000 && cp <= 0x206F) ||
+           (cp >= 0x2E00 && cp <= 0x2E7F) ||
+           (cp >= 0x3000 && cp <= 0x303F) ||
+           (cp >= 0xFE10 && cp <= 0xFE1F) ||
+           (cp >= 0xFE30 && cp <= 0xFE6F) ||
+           (cp >= 0xFF01 && cp <= 0xFF65);
+}
+
+static bool UnicodeWord(char32_t cp) {
+    if (UnicodePunctuation(cp)) return false;
+    return UnicodeMark(cp) ||
+           (cp >= '0' && cp <= '9') || (cp >= 'A' && cp <= 'Z') ||
+           (cp >= 'a' && cp <= 'z') || (cp == '_') ||
+           (cp >= 0x00C0 && cp <= 0x02FF) || (cp >= 0x0370 && cp <= 0x052F) ||
+           (cp >= 0x0590 && cp <= 0x08FF) || (cp >= 0x0900 && cp <= 0x1FFF) ||
+           (cp >= 0x2E80 && cp <= 0xA4CF) || (cp >= 0xAC00 && cp <= 0xD7FF) ||
+           (cp >= 0xF900 && cp <= 0xFAFF) || (cp >= 0x10000 && cp <= 0x1EFFF);
+}
+enum class WordKind { Space, Word, Other };
+static WordKind Kind(char32_t cp) {
+    if (UnicodeSpace(cp)) return WordKind::Space;
+    if (UnicodeWord(cp)) return WordKind::Word;
+    return WordKind::Other;
+}
 }
 
 uint32_t MoveWordLeft(const TextBuffer& buf, uint32_t offset) {
     const std::string& s = buf.Text();
     if (offset == 0) return 0;
     uint32_t i = offset;
-    // Skip whitespace backward.
-    while (i > 0 && isspace(static_cast<unsigned char>(s[i - 1]))) i--;
-    // Skip word characters backward.
-    if (i > 0 && isWordChar(static_cast<unsigned char>(s[i - 1]))) {
-        while (i > 0 && isWordChar(static_cast<unsigned char>(s[i - 1]))) i--;
-    } else {
-        // Skip non-word, non-space characters backward (punctuation).
-        while (i > 0 && !isspace(static_cast<unsigned char>(s[i - 1])) &&
-               !isWordChar(static_cast<unsigned char>(s[i - 1]))) i--;
+    while (i > 0) {
+        uint32_t p = PrevGraphemeBoundary(s, i);
+        NavCp cp = DecodeNav(s, p);
+        if (Kind(cp.value) != WordKind::Space) break;
+        i = p;
+    }
+    uint32_t p = PrevGraphemeBoundary(s, i);
+    if (p == i) return i;
+    WordKind wanted = Kind(DecodeNav(s, p).value);
+    while (i > 0) {
+        p = PrevGraphemeBoundary(s, i);
+        if (Kind(DecodeNav(s, p).value) != wanted) break;
+        i = p;
     }
     return i;
 }
@@ -111,21 +163,44 @@ uint32_t MoveWordLeft(const TextBuffer& buf, uint32_t offset) {
 uint32_t MoveWordRight(const TextBuffer& buf, uint32_t offset) {
     const std::string& s = buf.Text();
     uint32_t n = static_cast<uint32_t>(s.size());
-    if (offset >= n) return n;
-    uint32_t i = offset;
-    // Skip whitespace forward.
-    while (i < n && isspace(static_cast<unsigned char>(s[i]))) i++;
-    // Skip word characters forward.
-    if (i < n && isWordChar(static_cast<unsigned char>(s[i]))) {
-        while (i < n && isWordChar(static_cast<unsigned char>(s[i]))) i++;
-    } else {
-        // Skip non-word, non-space characters forward.
-        while (i < n && !isspace(static_cast<unsigned char>(s[i])) &&
-               !isWordChar(static_cast<unsigned char>(s[i]))) i++;
+    uint32_t i = offset > n ? n : offset;
+    while (i < n) {
+        NavCp cp = DecodeNav(s, i);
+        if (Kind(cp.value) != WordKind::Space) break;
+        i = NextGraphemeBoundary(s, i);
     }
+    if (i >= n) return n;
+    WordKind wanted = Kind(DecodeNav(s, i).value);
+    while (i < n && Kind(DecodeNav(s, i).value) == wanted)
+        i = NextGraphemeBoundary(s, i);
     return i;
 }
-
+void WordSpanAt(const TextBuffer& buf, uint32_t offset,
+                uint32_t* outStart, uint32_t* outEnd) {
+    const std::string& s = buf.Text();
+    uint32_t n = static_cast<uint32_t>(s.size());
+    if (!outStart || !outEnd || n == 0) return;
+    uint32_t at = std::min(offset, n);
+    if (at == n) at = PrevGraphemeBoundary(s, n);
+    else if (at > 0) {
+        uint32_t prev = PrevGraphemeBoundary(s, at);
+        if (prev < at && NextGraphemeBoundary(s, prev) != at)
+            at = prev;
+    }
+    NavCp current = DecodeNav(s, at);
+    WordKind wanted = Kind(current.value);
+    uint32_t start = at;
+    while (start > 0) {
+        uint32_t prev = PrevGraphemeBoundary(s, start);
+        if (Kind(DecodeNav(s, prev).value) != wanted) break;
+        start = prev;
+    }
+    uint32_t end = NextGraphemeBoundary(s, at);
+    while (end < n && Kind(DecodeNav(s, end).value) == wanted)
+        end = NextGraphemeBoundary(s, end);
+    *outStart = start;
+    *outEnd = end;
+}
 uint32_t MoveVertical(const LayoutCache& lc, uint32_t offset,
                       int direction, float* desiredX,
                       float scrollY, float lineHeight) {
@@ -179,11 +254,14 @@ uint32_t MoveVertical(const LayoutCache& lc, uint32_t offset,
             newOffset = blocks.front().srcOffset;
         } else {
             const auto& last = blocks.back();
-            // Prefer the end of the last rendered character; fall back
-            // to the block's source end when there is no mapping.
-            newOffset = last.u16ToSrc.empty()
-                ? last.srcOffset + last.srcLength
-                : last.u16ToSrc.back() + 1;
+            if (last.u16ToSrc.empty()) {
+                newOffset = last.srcOffset + last.srcLength;
+            } else if (lc.SourceText()) {
+                newOffset = NextGraphemeBoundary(
+                    *lc.SourceText(), last.u16ToSrc.back());
+            } else {
+                newOffset = last.srcOffset + last.srcLength;
+            }
         }
     }
     return newOffset;

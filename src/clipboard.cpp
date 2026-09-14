@@ -179,6 +179,45 @@ std::string HtmlToMarkdown(const std::string& html) {
 }
 
 #ifdef _WIN32
+static std::string NormalizeToCrlf(const std::string& text) {
+    std::string out;
+    out.reserve(text.size() + text.size() / 16);
+    for (size_t i = 0; i < text.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(text[i]);
+        if (c == 0x0D) {
+            out.push_back(static_cast<char>(0x0D));
+            if (i + 1 >= text.size() ||
+                static_cast<unsigned char>(text[i + 1]) != 0x0A) {
+                out.push_back(static_cast<char>(0x0A));
+            }
+        } else if (c == 0x0A) {
+            out.push_back(static_cast<char>(0x0D));
+            out.push_back(static_cast<char>(0x0A));
+        } else {
+            out.push_back(text[i]);
+        }
+    }
+    return out;
+}
+
+static std::string NormalizeToLf(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (size_t i = 0; i < text.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(text[i]);
+        if (c == 0x0D) {
+            if (i + 1 < text.size() &&
+                static_cast<unsigned char>(text[i + 1]) == 0x0A) {
+                ++i;
+            }
+            out.push_back(static_cast<char>(0x0A));
+        } else {
+            out.push_back(text[i]);
+        }
+    }
+    return out;
+}
+
 // --- Win32 clipboard operations ---
 
 static std::string WideToUtf8(const wchar_t* wide, int len) {
@@ -190,42 +229,71 @@ static std::string WideToUtf8(const wchar_t* wide, int len) {
 }
 
 static std::wstring Utf8ToWide(const std::string& utf8) {
-    int needed = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
+    if (utf8.empty()) return {};
+    int needed = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                     utf8.data(), static_cast<int>(utf8.size()),
+                                     nullptr, 0);
     if (needed <= 0) return {};
-    std::wstring wide(needed - 1, 0);
-    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, &wide[0], needed);
+    std::wstring wide(static_cast<size_t>(needed), L'\0');
+    int written = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                      utf8.data(), static_cast<int>(utf8.size()),
+                                      wide.data(), needed);
+    if (written != needed) return {};
     return wide;
 }
 
 bool ClipboardCopy(HWND hwnd, const std::string& utf8) {
-    if (!OpenClipboard(hwnd)) return false;
-    EmptyClipboard();
+    const std::string unicodeText = NormalizeToCrlf(utf8);
+    std::wstring wide = Utf8ToWide(unicodeText);
+    if (!unicodeText.empty() && wide.empty()) return false;
 
-    // 1. CF_UNICODETEXT
-    std::wstring wide = Utf8ToWide(utf8);
-    size_t wideBytes = (wide.size() + 1) * sizeof(wchar_t);
+    UINT customFmt = RegisterClipboardFormatA(kMarkdownFormatName);
+    if (!customFmt) return false;
+
+    const size_t wideBytes = (wide.size() + 1) * sizeof(wchar_t);
     HGLOBAL hWide = GlobalAlloc(GMEM_MOVEABLE, wideBytes);
-    if (hWide) {
-        memcpy(GlobalLock(hWide), wide.c_str(), wideBytes);
-        GlobalUnlock(hWide);
-        SetClipboardData(CF_UNICODETEXT, hWide);
+    HGLOBAL hCustom = GlobalAlloc(GMEM_MOVEABLE, utf8.size() + 1);
+    if (!hWide || !hCustom) {
+        if (hWide) GlobalFree(hWide);
+        if (hCustom) GlobalFree(hCustom);
+        return false;
     }
 
-    // 2. Custom format (raw UTF-8 markdown)
-    UINT customFmt = RegisterClipboardFormatA(kMarkdownFormatName);
-    if (customFmt) {
-        size_t bytes = utf8.size() + 1;
-        HGLOBAL hCustom = GlobalAlloc(GMEM_MOVEABLE, bytes);
-        if (hCustom) {
-            char* dst = static_cast<char*>(GlobalLock(hCustom));
-            memcpy(dst, utf8.c_str(), bytes);
-            GlobalUnlock(hCustom);
-            SetClipboardData(customFmt, hCustom);
+    void* wideDst = GlobalLock(hWide);
+    void* customDst = GlobalLock(hCustom);
+    if (!wideDst || !customDst) {
+        if (wideDst) GlobalUnlock(hWide);
+        if (customDst) GlobalUnlock(hCustom);
+        GlobalFree(hWide);
+        GlobalFree(hCustom);
+        return false;
+    }
+    memcpy(wideDst, wide.c_str(), wideBytes);
+    memcpy(customDst, utf8.c_str(), utf8.size() + 1);
+    GlobalUnlock(hWide);
+    GlobalUnlock(hCustom);
+
+    if (!OpenClipboard(hwnd)) {
+        GlobalFree(hWide);
+        GlobalFree(hCustom);
+        return false;
+    }
+
+    bool success = false;
+    if (EmptyClipboard()) {
+        // Clipboard owns a handle only after SetClipboardData succeeds.
+        if (SetClipboardData(CF_UNICODETEXT, hWide)) {
+            hWide = nullptr;
+            if (SetClipboardData(customFmt, hCustom)) {
+                hCustom = nullptr;
+                success = true;
+            }
         }
     }
-
+    if (hWide) GlobalFree(hWide);
+    if (hCustom) GlobalFree(hCustom);
     CloseClipboard();
-    return true;
+    return success;
 }
 
 bool ClipboardCut(HWND hwnd, const std::string& utf8) {
@@ -289,6 +357,7 @@ std::string ClipboardPaste(HWND hwnd) {
         }
     }
 
+    result = NormalizeToLf(result);
     CloseClipboard();
     return result;
 }
