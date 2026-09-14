@@ -3987,13 +3987,13 @@ void AppWindow::SetContentWidthMode(int mode) {
     layout_cache_.Clear();
     renderer_.ClearSvgCache();
     diag::Trace("SetContentWidthMode caches cleared");
-    // InvalidateUICommand while a Ribbon popup (the ApplicationMenu the user
-    // just clicked in) is still closing corrupts the framework and CTDs on
-    // the next menu open (crash_trace showed the crash between frame
-    // framework queries right after the assoc-label query returned). The
-    // framework dismisses its popup after animation; a timer ensures the
-    // invalidation only runs once the menu is fully gone. Timer id 6 (free:
-    // 1/3/5 are taken on hwnd_).
+    // Defer the invalidation past the closing popup. (The Fil-click CTD was
+    // later root-caused to UpdateProperty returning SysAllocString'd
+    // VT_LPWSTR labels that PropVariantClear frees with CoTaskMemFree,
+    // corrupting the heap; ribbon.cpp now allocates labels with
+    // UIInitPropertyToString. The 350 ms timer remains as a cheap guarantee
+    // that invalidation never runs while a popup is animating closed.)
+    // Timer id 6 (free: 1/3/5 are taken on hwnd_).
     if (hwnd_) {
         SetTimer(hwnd_, 6, 350, nullptr);
     }

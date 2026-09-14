@@ -324,11 +324,16 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
             const wchar_t* lbl = on
                 ? L"Unassociate .md files"
                 : L"Associate .md files";
-            diag::TraceFmt("assoc SysAllocString begin");
-            ppropvarNewValue->vt = VT_LPWSTR;
-            ppropvarNewValue->pwszVal = SysAllocString(lbl);
-            diag::TraceFmt("assoc SysAllocString done");
-            return S_OK;
+            // UI_PKEY_Label strings must be allocated with the allocator the
+            // framework frees them with (PropVariantClear -> CoTaskMemFree).
+            // SysAllocString memory freed as VT_LPWSTR corrupts the heap
+            // (WER: 0xC0000374 right after the label query returns).
+            diag::TraceFmt("assoc label UIInitPropertyToString begin");
+            HRESULT hrAssoc = UIInitPropertyToString(UI_PKEY_Label, lbl,
+                                                     ppropvarNewValue);
+            diag::TraceFmt("assoc label alloc done hr=0x%08X",
+                           (unsigned)hrAssoc);
+            return hrAssoc;
         }
         static const UINT widthCmds[4] = {
             IDC_CMD_WIDTH_STD, IDC_CMD_WIDTH_960,
@@ -350,11 +355,13 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
                     wcsncpy_s(buf + 2, 38, lbl, _TRUNCATE);
                     lbl = buf;
                 }
-                diag::TraceFmt("UpdateProperty width label SysAllocString i=%d", i);
-                ppropvarNewValue->vt = VT_LPWSTR;
-                ppropvarNewValue->pwszVal = SysAllocString(lbl);
-                diag::TraceFmt("UpdateProperty width label done i=%d", i);
-                return S_OK;
+                // Same allocator contract as the assoc label above.
+                diag::TraceFmt("UpdateProperty width label begin i=%d", i);
+                HRESULT hrWidth = UIInitPropertyToString(UI_PKEY_Label, lbl,
+                                                         ppropvarNewValue);
+                diag::TraceFmt("UpdateProperty width label done i=%d hr=0x%08X",
+                               i, (unsigned)hrWidth);
+                return hrWidth;
             }
         }
     }
