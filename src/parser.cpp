@@ -602,6 +602,31 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
                 g += static_cast<uint32_t>(gUtf8Len);
             }
         }
+        // HTML <br>, <br/> and <br /> inside a cell must render as a line
+        // break, not as literal text. md4c passes them as MD_TEXT_HTML with
+        // the raw tag text. Replace the whole chunk with one newline and
+        // point the single u16ToSrc entry at the tag's first source byte,
+        // so caret mapping stays aligned with the one u16 unit that follows.
+        bool is_br = (type == MD_TEXT_HTML) && (size >= 4);
+        if (is_br) {
+            const unsigned char* s = reinterpret_cast<const unsigned char*>(text);
+            if (_strnicmp(reinterpret_cast<const char*>(s), "<br", 3) != 0) {
+                is_br = false;
+            } else {
+                MD_SIZE k = 3;
+                while (k < size && (s[k] == ' ' || s[k] == 0x09)) k++;
+                if (k < size && s[k] == '/') k++;
+                if (k + 1 != size || s[k] != '>') is_br = false;
+            }
+        }
+        if (is_br) {
+            if (ctx->cur_cell_obj) {
+                ctx->cur_cell_obj->u16ToSrc.push_back(thisOff);
+            }
+            ctx->cur_cell->push_back(U'\n');
+            ctx->cur_cell_last_end = thisOff + size;
+            return 0;
+        }
         // Build u16ToSrc mapping: for each decoded codepoint, record
         // its source byte offset. We walk the UTF-8 bytes in parallel
         // with the Utf8Decoder so we know the exact source offset of
