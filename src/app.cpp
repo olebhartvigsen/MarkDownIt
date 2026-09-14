@@ -1612,8 +1612,8 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
             source.compare(caret - suffixBytes, suffixBytes, suffix) == 0;
 
         if (canExtend) {
-            editor_.ReplaceText(caret - suffixBytes, suffixBytes,
-                                 value + suffix, EditType::Insert);
+            editor_.ReplaceTextRange(caret - suffixBytes, suffixBytes,
+                                      value + suffix, EditType::Insert);
         } else {
             editor_.InsertText(prefix + value + suffix);
         }

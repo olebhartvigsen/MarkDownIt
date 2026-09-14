@@ -228,10 +228,10 @@ uint32_t NextGraphemeBoundary(const std::string& s, uint32_t offset) {
     bool zwjReady = false;
     while (i < s.size()) {
         CodePoint current = DecodeAt(s, i);
-        if (IsControl(previous) || IsControl(current) ||
-            (previous == '\r' && current != '\n'))
+        if (IsControl(previous) || IsControl(current.value) ||
+            (previous == '\r' && current.value != '\n'))
             break;
-        if (!GraphemeExtends(previous, current, regionalCount, zwjReady))
+        if (!GraphemeExtends(previous, current.value, regionalCount, zwjReady))
             break;
         const bool currentIsExtend = IsCombining(current.value) ||
             IsSpacingMark(current.value) || IsEmojiModifier(current.value) ||
@@ -303,9 +303,9 @@ void EditController::InsertText(const std::string& utf8) {
     RecordAndApply(at, length, utf8, EditType::Insert);
 }
 
-void EditController::ReplaceText(uint32_t offset, uint32_t length,
-                                  const std::string& replacement,
-                                  EditType type) {
+void EditController::ReplaceTextRange(uint32_t offset, uint32_t length,
+                                       const std::string& replacement,
+                                       EditType type) {
     RecordAndApply(offset, length, replacement, type);
 }
 

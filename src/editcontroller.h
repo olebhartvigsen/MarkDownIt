@@ -14,9 +14,9 @@ public:
     void SetUndoStack(UndoStack* u) { undo_ = u; }
 
     void InsertText(const std::string& utf8);
-    void ReplaceText(uint32_t offset, uint32_t length,
-                     const std::string& replacement,
-                     EditType type = EditType::Other);
+    void ReplaceTextRange(uint32_t offset, uint32_t length,
+                          const std::string& replacement,
+                          EditType type = EditType::Other);
     void DeleteBackward();
     void DeleteForward();
     void DeleteWordBackward();
