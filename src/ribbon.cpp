@@ -263,6 +263,25 @@ STDMETHODIMP CRibbonCommandHandler::QueryInterface(REFIID iid, void** ppv)
     return S_OK;
 }
 
+// Allocate a VT_LPWSTR value with CoTaskMemAlloc. The Ribbon framework frees
+// UI_PKEY_Label strings through PropVariantClear, which calls CoTaskMemFree;
+// SysAllocString-backed memory freed that way is an allocator mismatch with a
+// 4-byte OLEAUT header offset and corrupts the heap (0xC0000374 in ntdll,
+// WER 2026-09-14 09:25:05). The SDK's UIInitPropertyToString helper is not
+// present in modern Windows SDK headers, so the allocation is done here.
+static HRESULT SetCmdLabel(const wchar_t* label, PROPVARIANT* out)
+{
+    if (!out || !label) return E_POINTER;
+    size_t len = wcslen(label);
+    PWSTR copy = static_cast<PWSTR>(
+        CoTaskMemAlloc((len + 1) * sizeof(wchar_t)));
+    if (!copy) return E_OUTOFMEMORY;
+    wmemcpy(copy, label, len + 1);
+    out->vt = VT_LPWSTR;
+    out->pwszVal = copy;
+    return S_OK;
+}
+
 STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
     UINT nCmdID, REFPROPERTYKEY key,
     const PROPVARIANT* ppropvarCurrentValue,
@@ -324,13 +343,8 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
             const wchar_t* lbl = on
                 ? L"Unassociate .md files"
                 : L"Associate .md files";
-            // UI_PKEY_Label strings must be allocated with the allocator the
-            // framework frees them with (PropVariantClear -> CoTaskMemFree).
-            // SysAllocString memory freed as VT_LPWSTR corrupts the heap
-            // (WER: 0xC0000374 right after the label query returns).
-            diag::TraceFmt("assoc label UIInitPropertyToString begin");
-            HRESULT hrAssoc = UIInitPropertyToString(UI_PKEY_Label, lbl,
-                                                     ppropvarNewValue);
+            diag::TraceFmt("assoc label SetCmdLabel begin");
+            HRESULT hrAssoc = SetCmdLabel(lbl, ppropvarNewValue);
             diag::TraceFmt("assoc label alloc done hr=0x%08X",
                            (unsigned)hrAssoc);
             return hrAssoc;
@@ -355,10 +369,8 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
                     wcsncpy_s(buf + 2, 38, lbl, _TRUNCATE);
                     lbl = buf;
                 }
-                // Same allocator contract as the assoc label above.
                 diag::TraceFmt("UpdateProperty width label begin i=%d", i);
-                HRESULT hrWidth = UIInitPropertyToString(UI_PKEY_Label, lbl,
-                                                         ppropvarNewValue);
+                HRESULT hrWidth = SetCmdLabel(lbl, ppropvarNewValue);
                 diag::TraceFmt("UpdateProperty width label done i=%d hr=0x%08X",
                                i, (unsigned)hrWidth);
                 return hrWidth;

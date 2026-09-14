@@ -3990,8 +3990,9 @@ void AppWindow::SetContentWidthMode(int mode) {
     // Defer the invalidation past the closing popup. (The Fil-click CTD was
     // later root-caused to UpdateProperty returning SysAllocString'd
     // VT_LPWSTR labels that PropVariantClear frees with CoTaskMemFree,
-    // corrupting the heap; ribbon.cpp now allocates labels with
-    // UIInitPropertyToString. The 350 ms timer remains as a cheap guarantee
+    // corrupting the heap; ribbon.cpp now allocates labels with a
+    // CoTaskMemAlloc copy (SetCmdLabel). The 350 ms timer remains as a
+    // cheap guarantee
     // that invalidation never runs while a popup is animating closed.)
     // Timer id 6 (free: 1/3/5 are taken on hwnd_).
     if (hwnd_) {
