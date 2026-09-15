@@ -297,6 +297,7 @@ struct ParserCtx {
     std::vector<NodeOffsetInfo> nodeOffsets; // per-node offset tracking
     std::vector<SourceCellRange> sourceCellRanges;
     size_t nextSourceCellRange = 0;
+    size_t currentRowSourceStart = 0;
 };
 
 // Append a new node to the document and return its index.
@@ -552,6 +553,7 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
             ctx->block_stack.push_back({type, -1, false, false});
             break;
         case MD_BLOCK_TR: {
+            ctx->currentRowSourceStart = ctx->nextSourceCellRange;
             if (ctx->table_node_idx >= 0) {
                 ctx->doc->nodes[ctx->table_node_idx].rows.push_back(TableRow{});
                 ctx->cur_row = &ctx->doc->nodes[ctx->table_node_idx].rows.back();
@@ -695,11 +697,52 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
     }
     if (type == MD_BLOCK_TR) {
         if (ctx->cur_row && ctx->cur_row->cells.size() > 1) {
-            std::stable_sort(ctx->cur_row->cells.begin(),
-                             ctx->cur_row->cells.end(),
-                             [](const TableCell& a, const TableCell& b) {
-                                 return a.srcOffset < b.srcOffset;
-                             });
+            const size_t rangeStart = ctx->currentRowSourceStart;
+            const size_t rangeCount = ctx->nextSourceCellRange - rangeStart;
+            if (rangeCount == ctx->cur_row->cells.size() &&
+                rangeStart + rangeCount <= ctx->sourceCellRanges.size()) {
+                std::vector<TableCell> ordered;
+                ordered.reserve(ctx->cur_row->cells.size());
+                std::vector<bool> used(ctx->cur_row->cells.size(), false);
+                for (size_t r = 0; r < rangeCount; ++r) {
+                    const SourceCellRange target =
+                        ctx->sourceCellRanges[rangeStart + r];
+                    size_t chosen = ctx->cur_row->cells.size();
+                    for (size_t c = 0; c < ctx->cur_row->cells.size(); ++c) {
+                        const TableCell& cell = ctx->cur_row->cells[c];
+                        if (used[c] || cell.text.empty()) continue;
+                        if (cell.srcOffset >= target.start &&
+                            cell.srcOffset < target.end) {
+                            chosen = c;
+                            break;
+                        }
+                    }
+                    if (chosen == ctx->cur_row->cells.size()) {
+                        for (size_t c = 0; c < ctx->cur_row->cells.size(); ++c) {
+                            if (used[c] || !ctx->cur_row->cells[c].text.empty())
+                                continue;
+                            chosen = c;
+                            break;
+                        }
+                    }
+                    if (chosen == ctx->cur_row->cells.size()) {
+                        for (size_t c = 0; c < ctx->cur_row->cells.size(); ++c) {
+                            if (!used[c]) {
+                                chosen = c;
+                                break;
+                            }
+                        }
+                    }
+                    if (chosen == ctx->cur_row->cells.size()) break;
+                    used[chosen] = true;
+                    TableCell cell = std::move(ctx->cur_row->cells[chosen]);
+                    cell.srcOffset = target.start;
+                    cell.srcEnd = target.end;
+                    ordered.push_back(std::move(cell));
+                }
+                if (ordered.size() == ctx->cur_row->cells.size())
+                    ctx->cur_row->cells = std::move(ordered);
+            }
         }
         ctx->cur_row = nullptr;
     }
