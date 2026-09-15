@@ -1482,8 +1482,10 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
     if (text_drag_candidate_ && !text_dragging_) {
         int dx = x - text_drag_down_x_;
         int dy = y - text_drag_down_y_;
-        const int dragX = std::max(1, GetSystemMetrics(SM_CXDRAG) * dpi_ / 96);
-        const int dragY = std::max(1, GetSystemMetrics(SM_CYDRAG) * dpi_ / 96);
+        const int dragX = std::max(1, static_cast<int>(
+            GetSystemMetrics(SM_CXDRAG) * dpi_ / 96));
+        const int dragY = std::max(1, static_cast<int>(
+            GetSystemMetrics(SM_CYDRAG) * dpi_ / 96));
         if (std::abs(dx) >= dragX || std::abs(dy) >= dragY) {
             text_dragging_ = true;
             word_dragging_ = false;
