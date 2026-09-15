@@ -69,19 +69,28 @@ struct CellInlineSpan {
     bool strike = false;
 };
 
+struct TableLink {
+    uint32_t srcOffset = 0;
+    uint32_t srcLength = 0;
+    std::string url;
+};
+
 // A table cell: text plus inline formatting spans.
 struct TableCell {
     std::u32string text;
     bool isHeader = false;
     uint32_t srcOffset = 0;  // byte offset into UTF-8 source
+    uint32_t srcEnd = 0;     // exclusive end of the source cell contents
     // Maps each UTF-16 code-unit position in the rendered text to its
     // UTF-8 source byte offset. Built during parsing because md4c may
     // split cell text at mark characters (e.g., ':' with permissive URL
     // autolinks), creating gaps in the source that the renderer's
     // contiguity assumption cannot handle.
     std::vector<uint32_t> u16ToSrc;
+    std::vector<uint32_t> u16ToSrcEnd;
     // Inline formatting spans (bold, italic, code) within this cell.
     std::vector<CellInlineSpan> inlineSpans;
+    std::vector<TableLink> links;
 };
 
 // A table row: list of cells.

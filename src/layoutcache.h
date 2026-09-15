@@ -23,6 +23,7 @@ struct BlockLayout {
     // UTF-8 source byte offset. Built during Render() for accurate
     // hit-testing and caret placement when inline syntax is present.
     std::vector<uint32_t> u16ToSrc;
+    std::vector<uint32_t> u16ToSrcEnd;
     float fontHeight = 0.0f; // em size in DIP (for caret height)
 };
 
@@ -48,6 +49,12 @@ public:
                          uint32_t* outStart, uint32_t* outEnd,
                          float* outLineTop = nullptr) const;
 
+    bool GetRenderedBlockRange(int blockIndex,
+                               uint32_t* outStart,
+                               uint32_t* outEnd) const;
+
+    uint32_t NormalizeToRenderedCaret(uint32_t offset) const;
+
     // Find the block owning a source offset. Returns -1 if none.
     int BlockForOffset(uint32_t offset) const;
 
@@ -55,6 +62,10 @@ public:
     // Offsets between blocks (blank lines, fence markers) are not
     // rendered; caret navigation should skip past them.
     bool OffsetIsRendered(uint32_t offset) const;
+
+    // True when every UTF-8 code point in [start, start + length) is
+    // represented by rendered text. Hidden Markdown markers are excluded.
+    bool RangeIsRendered(uint32_t start, uint32_t length) const;
 
     // Set the source text for marker-aware offset calculations.
     void SetSourceText(const std::string* src) { srcText_ = src; }

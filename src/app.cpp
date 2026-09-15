@@ -19,6 +19,9 @@
 #include <cmath>
 #include <algorithm>
 #include <vector>
+#include <utility>
+#include <cctype>
+#include <cstdint>
 #include "crash_trace.h"
 
 
@@ -411,6 +414,20 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         return;
     }
 
+    if (ctrl && !shift && vk == 0x46) {
+        ShowFindReplace(false);
+        return;
+    }
+    if (ctrl && !shift && vk == 0x48) {
+        ShowFindReplace(true);
+        return;
+    }
+
+    // Any direct keyboard action can move or replace the caret. Invalidate
+    // the previous Find origin; ShowFindReplace will restart at the current
+    // caret when the next search dialog opens.
+    find_cursor_ = UINT32_MAX;
+
     // In view mode, suppress editing keys but allow navigation, selection,
     // and copy (Ctrl+C).
     if (!editing_) {
@@ -634,17 +651,58 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 OnBufferChanged();
             }
             break;
-        case VK_TAB:
-            if (shift) {
-                OutdentLine(&buffer_, &sel_, &undo_stack_);
+        case VK_TAB: {
+            // Markdown tables keep each cell on one source line. Tab moves
+            // between cells instead of inserting indentation or changing the
+            // table prefix. Shift+Tab moves in the opposite direction.
+            uint32_t tableOffset = 0;
+            if (IsOffsetInTable(doc_, sel_.active.offset)) {
+                if (MoveTableCell(doc_, sel_.active.offset, shift, &tableOffset)) {
+                    sel_.Collapse({tableOffset});
+                    editor_.BreakUndoCoalesce();
+                    desiredX_ = -1.0f;
+                    UpdateCaretPosition();
+                    Repaint();
+                }
+                break;
+            }
+            // In fenced code, Tab is literal four-space indentation. Outside
+            // code blocks, retain the Markdown list indentation behavior.
+            bool inCodeBlock = false;
+            for (const auto& node : doc_.nodes) {
+                if ((node.block == BlockKind::CodeBlock ||
+                     node.block == BlockKind::MermaidFlowchart ||
+                     node.block == BlockKind::MermaidPie ||
+                     node.block == BlockKind::MermaidSequence) &&
+                    sel_.active.offset >= node.srcOffset &&
+                    sel_.active.offset <= node.srcOffset + node.srcLength) {
+                    inCodeBlock = true;
+                    break;
+                }
+            }
+            if (inCodeBlock && !shift) {
+                editor_.InsertText("    ");
+            } else if (shift && inCodeBlock) {
+                const std::string& source = buffer_.Text();
+                const size_t newline = sel_.active.offset == 0
+                    ? std::string::npos
+                    : source.rfind('\n', sel_.active.offset - 1);
+                const uint32_t lineStart = newline == std::string::npos
+                    ? 0 : static_cast<uint32_t>(newline + 1);
+                uint32_t spaces = 0;
+                while (lineStart + spaces < source.size() && spaces < 4 &&
+                       source[lineStart + spaces] == ' ') ++spaces;
+                if (spaces == 4) {
+                    editor_.ReplaceTextRange(lineStart, 4, "", EditType::Other);
+                }
                 editor_.BreakUndoCoalesce();
-                OnBufferChanged();
             } else {
                 IndentLine(&buffer_, &sel_, &undo_stack_);
                 editor_.BreakUndoCoalesce();
-                OnBufferChanged();
             }
+            OnBufferChanged();
             break;
+        }
         case 0x42:  // Ctrl+B = bold
             if (ctrl && !shift) {
                 ToggleBold();
@@ -765,11 +823,12 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         case VK_RETURN:
             pending_run_active_ = false;
             pending_run_suffix_bytes_ = 0;
-            editor_.InsertParagraphBreak(doc_);
-            OnBufferChanged();
-            // Force immediate visual update after Enter; don't wait
-            // for the debounced reparse timer.
-            ForceRepaintNow();
+            if (editor_.InsertParagraphBreak(doc_)) {
+                OnBufferChanged();
+                // Force immediate visual update after Enter; don't wait
+                // for the debounced reparse timer.
+                ForceRepaintNow();
+            }
             break;
         default:
             DefWindowProcW(hwnd, WM_KEYDOWN, vk, lp);
@@ -868,6 +927,7 @@ void AppWindow::OnReparseTimer() {
 void AppWindow::OnBufferChanged() {
     MarkDirty();
     InvalidateFormatButtons();
+    find_cursor_ = UINT32_MAX;
     layout_cache_.Clear();
     renderer_.ClearSvgCache();
     ScheduleReparse();
@@ -950,27 +1010,89 @@ void AppWindow::UpdateCaretPosition() {
 }
 
 std::string AppWindow::FindLinkAtOffset(uint32_t offset) const {
-    // Search all nodes for an InlineBlock with kind == Link whose source
-    // range contains the offset. We check the text range [srcOffset,
-    // srcOffset + srcLength) AND a slightly wider range that includes
-    // the surrounding [ and ] markers, since PointToOffset may return
-    // an offset on those hidden characters.
+    // The parser records rendered link text plus its trailing caret boundary
+    // for hit testing, not the Markdown delimiters around the link.
     for (const auto& n : doc_.nodes) {
         for (const auto& ib : n.children) {
             if (ib.kind != InlineKind::Link) continue;
-            uint32_t start = ib.srcOffset;
-            uint32_t end = ib.srcOffset + ib.srcLength;
-            // Extend range to include the [ before and ] after the text,
-            // which are hidden markup characters that PointToOffset may
-            // land on (especially trailing hits).
-            if (start > 0) start -= 1; // include '['
-            end += 1;                   // include ']'
-            if (offset >= start && offset <= end) {
+            const uint32_t end = ib.srcOffset + ib.srcLength;
+            if (offset >= ib.srcOffset && offset < end)
                 return ib.url;
+            if (offset == end && !layout_cache_.OffsetIsRendered(offset))
+                return ib.url;
+        }
+        if (n.block != BlockKind::Table) continue;
+        for (const auto& row : n.rows) {
+            for (const auto& cell : row.cells) {
+                for (const auto& link : cell.links) {
+                    const uint32_t end = link.srcOffset + link.srcLength;
+                    if (offset >= link.srcOffset && offset < end)
+                        return link.url;
+                    if (offset == end &&
+                        !layout_cache_.OffsetIsRendered(offset))
+                        return link.url;
+                }
             }
         }
     }
     return {};
+}
+
+static void AppendCodePointUtf8(std::string& out, char32_t cp) {
+    if (cp <= 0x7F) out.push_back(static_cast<char>(cp));
+    else if (cp <= 0x7FF) {
+        out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else if (cp <= 0xFFFF) {
+        out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else {
+        out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    }
+}
+
+static std::string SlugifyAnchor(const std::string& value) {
+    std::string result;
+    bool pendingHyphen = false;
+    for (size_t i = 0; i < value.size();) {
+        const unsigned char b = static_cast<unsigned char>(value[i]);
+        if (b < 0x80) {
+            const char c = static_cast<char>(b);
+            if (std::isspace(b) != 0) {
+                pendingHyphen = !result.empty();
+                ++i;
+                continue;
+            }
+            if (std::ispunct(b) != 0 && c != '_' && c != '-') {
+                ++i;
+                continue;
+            }
+            if (pendingHyphen && !result.empty() && result.back() != '-') {
+                result.push_back('-');
+            }
+            pendingHyphen = false;
+            result.push_back((c >= 'A' && c <= 'Z') ?
+                             static_cast<char>(c - 'A' + 'a') : c);
+            ++i;
+            continue;
+        }
+        uint32_t length = (b & 0xE0) == 0xC0 ? 2 :
+                          (b & 0xF0) == 0xE0 ? 3 :
+                          (b & 0xF8) == 0xF0 ? 4 : 1;
+        if (i + length > value.size()) length = 1;
+        if (pendingHyphen && !result.empty() && result.back() != '-') {
+            result.push_back('-');
+        }
+        pendingHyphen = false;
+        result.append(value, i, length);
+        i += length;
+    }
+    while (!result.empty() && result.back() == '-') result.pop_back();
+    return result;
 }
 
 void AppWindow::OpenLink(const std::string& url) {
@@ -978,41 +1100,18 @@ void AppWindow::OpenLink(const std::string& url) {
 
     // Internal anchor link: #section or #heading-text
     if (url[0] == '#') {
-        std::string anchor = url.substr(1);
-        // Convert anchor to lowercase and replace spaces with hyphens
-        // (GitHub-style heading anchors).
-        for (char& c : anchor) {
-            if (c >= 'A' && c <= 'Z') c = c - 'A' + 'a';
-            if (c == ' ') c = '-';
-        }
-        // Search all heading nodes for a matching anchor.
+        const std::string anchor = SlugifyAnchor(url.substr(1));
         for (const auto& n : doc_.nodes) {
             if (n.block != BlockKind::Heading) continue;
-            // Build the heading's anchor from its text.
-            std::string text8;
+            std::string headingText;
             for (const auto& ib : n.children) {
-                for (char32_t cp : ib.text) {
-                    if (cp <= 0x7F) {
-                        text8 += static_cast<char>(cp);
-                    } else {
-                        // Skip non-ASCII for simple matching.
-                    }
-                }
+                for (char32_t cp : ib.text) AppendCodePointUtf8(headingText, cp);
             }
-            // Normalize heading text: lowercase, replace spaces with -.
-            std::string headingAnchor;
-            for (char c : text8) {
-                if (c >= 'A' && c <= 'Z') headingAnchor += c - 'A' + 'a';
-                else if (c == ' ') headingAnchor += '-';
-                else headingAnchor += c;
-            }
-            if (headingAnchor == anchor) {
-                // Scroll to this heading's position.
+            if (SlugifyAnchor(headingText) == anchor) {
                 int blkIdx = layout_cache_.BlockForOffset(n.srcOffset);
                 if (blkIdx >= 0) {
                     const auto& blocks = layout_cache_.Blocks();
-                    float targetY = blocks[blkIdx].y;
-                    StartSpring(targetY - 50.0f);
+                    StartSpring(blocks[blkIdx].y - 50.0f);
                 }
                 return;
             }
@@ -1074,6 +1173,9 @@ void AppWindow::OpenLink(const std::string& url) {
 
 void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     SetFocus(hwnd);
+    // A click can move or extend the caret/selection. Invalidate any prior
+    // Find origin so the next search starts from this interaction.
+    find_cursor_ = UINT32_MAX;
     diag::Trace("OnLButtonDown enter");
 
     // Welcome screen: clicking a card opens that file.
@@ -1111,8 +1213,14 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     word_dragging_ = false;
     paragraph_dragging_ = false;
     selection_dragging_ = false;
-
-    // Shift+click: extend the current selection to the clicked position.
+    text_drag_candidate_ = false;
+    text_dragging_ = false;
+    text_drag_start_ = 0;
+    text_drag_length_ = 0;
+    text_drag_last_x_ = x;
+    text_drag_last_y_ = y;
+    text_drag_down_x_ = x;
+    text_drag_down_y_ = y;
     // The anchor stays where it is; only the active end moves. This
     // works for text clicks, margin clicks, and empty-space clicks.
     // Link-click behavior is suppressed when Shift is held.
@@ -1181,10 +1289,13 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
                 blkIdx = layout_cache_.BlockForOffset(off);
         }
         if (blkIdx >= 0) {
-            const auto& blocks = layout_cache_.Blocks();
-            const auto& bl = blocks[blkIdx];
-            sel_.anchor = {bl.srcOffset};
-            sel_.active = {bl.srcOffset + bl.srcLength};
+            uint32_t blockStart = 0, blockEnd = 0;
+            if (!layout_cache_.GetRenderedBlockRange(blkIdx,
+                                                     &blockStart, &blockEnd)) {
+                return;
+            }
+            sel_.anchor = {blockStart};
+            sel_.active = {blockEnd};
             margin_selecting_ = false;
             paragraph_dragging_ = true;
             selection_dragging_ = false;
@@ -1229,7 +1340,6 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
         // Find the block at this y and select the single visual line.
         int blkIdx = layout_cache_.FindBlockAtY(docY);
         if (blkIdx >= 0) {
-            const auto& blocks0 = layout_cache_.Blocks();
             uint32_t lineStart = 0, lineEnd = 0;
             float lineTopRel = 0.0f;
             bool gotLine = layout_cache_.GetLineRangeAtY(blkIdx, docY,
@@ -1238,12 +1348,10 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
                 sel_.anchor = {lineStart};
                 sel_.active = {lineEnd};
             } else {
-                const auto& blocks = layout_cache_.Blocks();
-                const auto& bl = blocks[blkIdx];
-                sel_.anchor = {bl.srcOffset};
-                sel_.active = {bl.srcOffset + bl.srcLength};
-                lineStart = bl.srcOffset;
-                lineEnd = bl.srcOffset + bl.srcLength;
+                if (!layout_cache_.GetRenderedBlockRange(blkIdx,
+                                                         &lineStart, &lineEnd)) {
+                    return;
+                }
                 lineTopRel = 0.0f;
             }
             margin_selecting_ = true;
@@ -1262,8 +1370,17 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
 
     margin_selecting_ = false;
     if (offset != UINT32_MAX) {
-        sel_.Collapse({offset});
-        selection_dragging_ = true;
+        // A press inside an existing selection starts an internal text drag.
+        // Keep the selection until movement crosses the system threshold.
+        if (editing_ && !sel_.Empty() && offset >= sel_.Start() &&
+            offset < sel_.End()) {
+            text_drag_candidate_ = true;
+            text_drag_start_ = sel_.Start();
+            text_drag_length_ = sel_.Length();
+        } else {
+            sel_.Collapse({offset});
+            selection_dragging_ = true;
+        }
     } else {
         // Click landed on empty space (no text block, no margin line).
         // Clear any active selection.
@@ -1277,6 +1394,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
 
 void AppWindow::OnLButtonDblClk(HWND hwnd, int x, int y) {
     SetFocus(hwnd);
+    find_cursor_ = UINT32_MAX;
     if (welcome_mode_) return; // single-click handles welcome screen clicks
     // Track for triple-click: double-click counts as the 2nd click.
     click_count_ = std::max(click_count_, 2);
@@ -1342,10 +1460,14 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
     float scale = 96.0f / static_cast<float>(dpi_);
     int hitY = y;
     if (y < 0 || y > clientH_) {
-        float step = 24.0f;
+        float distance = y < 0 ? static_cast<float>(-y)
+                               : static_cast<float>(y - clientH_);
+        float step = std::min(96.0f, std::max(24.0f, distance * 0.5f));
         if (y < 0) StartSpring(scrollY_ - step);
         else StartSpring(scrollY_ + step);
         hitY = std::max(0, std::min(clientH_, y));
+    } else if (text_dragging_) {
+        StopScrollAnimation();
     }
     float docX = static_cast<float>(x) * scale;
     float docY = static_cast<float>(hitY) * scale + scrollY_;
@@ -1355,14 +1477,35 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
         ForceRepaintNow();
     }
 
+    text_drag_last_x_ = x;
+    text_drag_last_y_ = y;
+    if (text_drag_candidate_ && !text_dragging_) {
+        int dx = x - text_drag_down_x_;
+        int dy = y - text_drag_down_y_;
+        const int dragX = std::max(1, GetSystemMetrics(SM_CXDRAG) * dpi_ / 96);
+        const int dragY = std::max(1, GetSystemMetrics(SM_CYDRAG) * dpi_ / 96);
+        if (std::abs(dx) >= dragX || std::abs(dy) >= dragY) {
+            text_dragging_ = true;
+            word_dragging_ = false;
+            paragraph_dragging_ = false;
+            selection_dragging_ = false;
+        }
+    }
+    if (text_dragging_) return;
+
     if (paragraph_dragging_ && paragraph_anchor_block_ >= 0) {
         int currentBlock = layout_cache_.FindBlockAtY(docY);
         if (currentBlock >= 0) {
-            const auto& blocks = layout_cache_.Blocks();
             int first = std::min(paragraph_anchor_block_, currentBlock);
             int last = std::max(paragraph_anchor_block_, currentBlock);
-            uint32_t firstStart = blocks[first].srcOffset;
-            uint32_t lastEnd = blocks[last].srcOffset + blocks[last].srcLength;
+            uint32_t firstStart = 0, ignoredEnd = 0;
+            uint32_t ignoredStart = 0, lastEnd = 0;
+            if (!layout_cache_.GetRenderedBlockRange(first, &firstStart,
+                                                     &ignoredEnd) ||
+                !layout_cache_.GetRenderedBlockRange(last, &ignoredStart,
+                                                     &lastEnd)) {
+                return;
+            }
             if (currentBlock >= paragraph_anchor_block_) {
                 sel_.anchor = {firstStart};
                 sel_.active = {lastEnd};
@@ -1401,9 +1544,10 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
             bool gotLine = layout_cache_.GetLineRangeAtY(
                 blkIdx, docY, &curStart, &curEnd);
             if (!gotLine) {
-                const auto& blocks = layout_cache_.Blocks();
-                curStart = blocks[blkIdx].srcOffset;
-                curEnd = blocks[blkIdx].srcOffset + blocks[blkIdx].srcLength;
+                if (!layout_cache_.GetRenderedBlockRange(blkIdx,
+                                                         &curStart, &curEnd)) {
+                    return;
+                }
             }
 
             // Determine drag direction by comparing current y with anchor y.
@@ -1441,13 +1585,55 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
     Repaint();
 }
 
+void AppWindow::FinishTextDrag() {
+    if (!text_dragging_ || !editing_) return;
+    float scale = 96.0f / static_cast<float>(dpi_);
+    float docX = static_cast<float>(text_drag_last_x_) * scale;
+    float docY = static_cast<float>(text_drag_last_y_) * scale + scrollY_;
+    uint32_t drop = layout_cache_.PointToOffset(docX, docY);
+    if (drop == UINT32_MAX) return;
+    drop = layout_cache_.NormalizeToRenderedCaret(drop);
+    if (drop == UINT32_MAX) return;
+
+    std::string moved;
+    uint32_t newStart = 0;
+    if (!MoveTextRange(buffer_.Text(), text_drag_start_, text_drag_length_,
+                       drop, &moved, &newStart)) return;
+
+    Selection before = sel_;
+    std::string original = buffer_.Text();
+    buffer_.Splice(0, static_cast<uint32_t>(original.size()), moved);
+    Selection after;
+    after.anchor = {newStart};
+    after.active = {newStart + text_drag_length_};
+    sel_ = after;
+
+    UndoEntry entry{};
+    entry.offset = 0;
+    entry.removed = std::move(original);
+    entry.inserted = std::move(moved);
+    entry.selBefore = before;
+    entry.selAfter = after;
+    entry.timestamp = GetTickCount64();
+    entry.type = EditType::Other;
+    undo_stack_.Push(entry);
+    editor_.BreakUndoCoalesce();
+    OnBufferChanged();
+    ForceRepaintNow();
+}
+
 void AppWindow::OnLButtonUp(HWND hwnd) {
+    FinishTextDrag();
     ReleaseCapture();
     margin_selecting_ = false;
     margin_anchor_block_ = -1;
     word_dragging_ = false;
     paragraph_dragging_ = false;
     selection_dragging_ = false;
+    text_drag_candidate_ = false;
+    text_dragging_ = false;
+    text_drag_start_ = 0;
+    text_drag_length_ = 0;
     paragraph_anchor_block_ = -1;
 }
 
@@ -1721,6 +1907,7 @@ void AppWindow::OpenFile(const std::wstring& path) {
     StopScrollAnimation();
     totalH_ = 0.0f;
     sel_.Collapse({0});
+    find_cursor_ = UINT32_MAX;
     layout_cache_.Clear();
     renderer_.ClearSvgCache();
     // Update source text pointers (buffer may have been reallocated).
@@ -1746,6 +1933,7 @@ void AppWindow::OpenFile(const std::wstring& path) {
 
 void AppWindow::Reload() {
     if (file_path_.empty()) return;
+    find_cursor_ = UINT32_MAX;
     std::ifstream f(file_path_.c_str(), std::ios::binary);
     if (!f.is_open()) return;
     std::stringstream ss;
@@ -2106,7 +2294,7 @@ void AppWindow::OnScrollTick() {
     // Continue semantic selection while the pointer is held outside the
     // content viewport. WM_MOUSEMOVE is not guaranteed to repeat there.
     if ((margin_selecting_ || word_dragging_ || paragraph_dragging_ ||
-         selection_dragging_) &&
+         selection_dragging_ || text_dragging_) &&
         GetCapture() == hwnd_content_ &&
         (GetAsyncKeyState(VK_LBUTTON) & 0x8000)) {
         POINT pt{};
@@ -3311,6 +3499,266 @@ static std::string WideToUtf8(const std::wstring& ws) {
     return out;
 }
 
+
+struct FindReplaceDialogData {
+    bool replaceMode = false;
+    std::wstring find;
+    std::wstring replacement;
+    bool matchCase = false;
+    bool wholeWord = false;
+};
+
+static void PushWord(std::vector<BYTE>& b, WORD v) {
+    b.push_back(static_cast<BYTE>(v & 0xFF));
+    b.push_back(static_cast<BYTE>((v >> 8) & 0xFF));
+}
+static void PushDword(std::vector<BYTE>& b, DWORD v) {
+    for (int i = 0; i < 4; ++i)
+        b.push_back(static_cast<BYTE>((v >> (i * 8)) & 0xFF));
+}
+static void PushWide(std::vector<BYTE>& b, const wchar_t* text) {
+    while (*text) { PushWord(b, static_cast<WORD>(*text++)); }
+    PushWord(b, 0);
+}
+static void AlignDialog(std::vector<BYTE>& b) {
+    while (b.size() % 4) b.push_back(0);
+}
+static void AddDialogItem(std::vector<BYTE>& b, DWORD style,
+                          WORD atom, const wchar_t* title, WORD id,
+                          WORD x, WORD y, WORD cx, WORD cy) {
+    AlignDialog(b);
+    PushDword(b, style);
+    PushDword(b, 0);
+    PushWord(b, x); PushWord(b, y); PushWord(b, cx); PushWord(b, cy);
+    PushWord(b, id);
+    PushWord(b, 0xFFFF); PushWord(b, atom);
+    PushWide(b, title);
+    PushWord(b, 0);
+}
+
+static std::vector<BYTE> BuildFindReplaceDialogTemplate(bool replaceMode) {
+    std::vector<BYTE> b;
+    const DWORD style = WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU |
+                        DS_MODALFRAME | DS_SETFONT;
+    PushDword(b, style); PushDword(b, 0); PushWord(b, 10);
+    PushWord(b, 10); PushWord(b, 10); PushWord(b, 270);
+    PushWord(b, replaceMode ? 130 : 92);
+    PushWord(b, 0); PushWord(b, 0); PushWide(b, replaceMode ?
+        L"Find and Replace" : L"Find");
+    PushWord(b, 9); PushWide(b, L"Segoe UI");
+    AlignDialog(b);
+
+    const DWORD labelStyle = WS_CHILD | WS_VISIBLE | SS_LEFT;
+    const DWORD editStyle = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP |
+                            ES_AUTOHSCROLL;
+    AddDialogItem(b, labelStyle, 0x0082, L"Find:", 1100,
+                  8, 7, 55, 10);
+    AddDialogItem(b, editStyle, 0x0081, L"", 1101,
+                  65, 5, 195, 14);
+    AddDialogItem(b, labelStyle, 0x0082, L"Replace:", 1108,
+                  8, 27, 55, 10);
+    AddDialogItem(b, editStyle, 0x0081, L"", 1102,
+                  65, 25, 195, 14);
+    AddDialogItem(b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                  0x0080, L"Match case", 1103, 65, 45, 75, 12);
+    AddDialogItem(b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                  0x0080, L"Whole word", 1104, 145, 45, 85, 12);
+    AddDialogItem(b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+                  0x0080, L"Find Next", 1105, 8, 68, 62, 14);
+    AddDialogItem(b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                  0x0080, L"Replace", 1106, 75, 68, 62, 14);
+    AddDialogItem(b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                  0x0080, L"Replace All", 1107, 142, 68, 62, 14);
+    AddDialogItem(b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                  0x0080, L"Cancel", IDCANCEL, 209, 68, 52, 14);
+    return b;
+}
+
+static INT_PTR CALLBACK FindReplaceDialogProc(HWND hDlg, UINT msg,
+                                               WPARAM wp, LPARAM lp) {
+    auto* data = reinterpret_cast<FindReplaceDialogData*>(
+        GetWindowLongPtrW(hDlg, DWLP_USER));
+    if (msg == WM_INITDIALOG) {
+        data = reinterpret_cast<FindReplaceDialogData*>(lp);
+        SetWindowLongPtrW(hDlg, DWLP_USER, reinterpret_cast<LONG_PTR>(data));
+        SetDlgItemTextW(hDlg, 1101, data->find.c_str());
+        SetDlgItemTextW(hDlg, 1102, data->replacement.c_str());
+        SendDlgItemMessageW(hDlg, 1103, BM_SETCHECK,
+            data->matchCase ? BST_CHECKED : BST_UNCHECKED, 0);
+        SendDlgItemMessageW(hDlg, 1104, BM_SETCHECK,
+            data->wholeWord ? BST_CHECKED : BST_UNCHECKED, 0);
+        if (!data->replaceMode) {
+            ShowWindow(GetDlgItem(hDlg, 1102), SW_HIDE);
+            ShowWindow(GetDlgItem(hDlg, 1108), SW_HIDE);
+            ShowWindow(GetDlgItem(hDlg, 1106), SW_HIDE);
+            ShowWindow(GetDlgItem(hDlg, 1107), SW_HIDE);
+        }
+        SetFocus(GetDlgItem(hDlg, 1101));
+        return FALSE;
+    }
+    if (msg == WM_COMMAND) {
+        int id = LOWORD(wp);
+        if (id == 1105 || id == 1106 || id == 1107 || id == IDOK) {
+            wchar_t find[4096] = {};
+            wchar_t replacement[4096] = {};
+            GetDlgItemTextW(hDlg, 1101, find, 4096);
+            GetDlgItemTextW(hDlg, 1102, replacement, 4096);
+            data->find = find;
+            data->replacement = replacement;
+            data->matchCase = SendDlgItemMessageW(
+                hDlg, 1103, BM_GETCHECK, 0, 0) == BST_CHECKED;
+            data->wholeWord = SendDlgItemMessageW(
+                hDlg, 1104, BM_GETCHECK, 0, 0) == BST_CHECKED;
+            EndDialog(hDlg, id == IDOK ? 1105 : id);
+            return TRUE;
+        }
+        if (id == IDCANCEL) { EndDialog(hDlg, IDCANCEL); return TRUE; }
+    }
+    if (msg == WM_CLOSE) { EndDialog(hDlg, IDCANCEL); return TRUE; }
+    return FALSE;
+}
+
+bool AppWindow::FindNextMatch() {
+    if (find_query_.empty()) return false;
+    SearchOptions options{find_case_sensitive_, find_whole_word_};
+    ForceRepaintNow();
+    std::vector<TextMatch> matches = FindTextMatches(buffer_.Text(),
+                                                     find_query_, options);
+    std::vector<TextMatch> visibleMatches;
+    visibleMatches.reserve(matches.size());
+    for (const TextMatch& match : matches) {
+        if (layout_cache_.RangeIsRendered(match.start, match.length))
+            visibleMatches.push_back(match);
+    }
+    matches.swap(visibleMatches);
+    if (matches.empty()) return false;
+    TextMatch chosen = matches.front();
+    const uint32_t cursor = find_cursor_ == UINT32_MAX
+        ? sel_.active.offset
+        : find_cursor_;
+    for (const TextMatch& match : matches) {
+        if (match.start >= cursor) { chosen = match; break; }
+    }
+    sel_.anchor = {chosen.start};
+    sel_.active = {chosen.start + chosen.length};
+    find_cursor_ = chosen.start + chosen.length;
+    UpdateCaretPosition();
+    Repaint();
+    return true;
+}
+
+void AppWindow::ReplaceAllMatches(const std::string& query,
+                                   const std::string& replacement,
+                                   SearchOptions options) {
+    if (!editing_ || query.empty()) return;
+    ForceRepaintNow();
+    std::vector<TextMatch> matches = FindTextMatches(buffer_.Text(), query,
+                                                      options);
+    std::vector<TextMatch> visibleMatches;
+    visibleMatches.reserve(matches.size());
+    for (const TextMatch& match : matches) {
+        if (layout_cache_.RangeIsRendered(match.start, match.length))
+            visibleMatches.push_back(match);
+    }
+    matches.swap(visibleMatches);
+    if (matches.empty()) return;
+    std::string result = ReplaceTextMatches(buffer_.Text(), matches, replacement);
+    Selection before = sel_;
+    std::string original = buffer_.Text();
+    buffer_.Splice(0, static_cast<uint32_t>(original.size()), result);
+    sel_.Collapse({0});
+    UndoEntry entry{};
+    entry.offset = 0;
+    entry.removed = std::move(original);
+    entry.inserted = std::move(result);
+    entry.selBefore = before;
+    entry.selAfter = sel_;
+    entry.timestamp = GetTickCount64();
+    entry.type = EditType::Other;
+    undo_stack_.Push(entry);
+    editor_.BreakUndoCoalesce();
+    OnBufferChanged();
+    ForceRepaintNow();
+}
+
+void AppWindow::ShowFindReplace(bool replaceMode) {
+    if (welcome_mode_) return;
+    // Opening Find starts a new navigation session, even when the query and
+    // options are unchanged. Do not reuse a cursor from an earlier dialog.
+    find_cursor_ = UINT32_MAX;
+    FindReplaceDialogData data;
+    data.replaceMode = replaceMode;
+    data.find.clear();
+    if (!find_query_.empty()) {
+        std::wstring wide;
+        int needed = MultiByteToWideChar(CP_UTF8, 0, find_query_.data(),
+            static_cast<int>(find_query_.size()), nullptr, 0);
+        if (needed > 0) {
+            wide.resize(static_cast<size_t>(needed));
+            MultiByteToWideChar(CP_UTF8, 0, find_query_.data(),
+                static_cast<int>(find_query_.size()), wide.data(), needed);
+            data.find = wide;
+        }
+    } else if (!sel_.Empty()) {
+        std::string selected = buffer_.Text().substr(sel_.Start(), sel_.Length());
+        int needed = MultiByteToWideChar(CP_UTF8, 0, selected.data(),
+            static_cast<int>(selected.size()), nullptr, 0);
+        if (needed > 0) {
+            data.find.resize(static_cast<size_t>(needed));
+            MultiByteToWideChar(CP_UTF8, 0, selected.data(),
+                static_cast<int>(selected.size()), data.find.data(), needed);
+        }
+    }
+    data.matchCase = find_case_sensitive_;
+    data.wholeWord = find_whole_word_;
+    auto tmpl = BuildFindReplaceDialogTemplate(replaceMode);
+    INT_PTR result = DialogBoxIndirectParamW(
+        GetModuleHandle(nullptr),
+        reinterpret_cast<DLGTEMPLATE*>(tmpl.data()), hwnd_,
+        FindReplaceDialogProc, reinterpret_cast<LPARAM>(&data));
+    if (result == IDCANCEL || data.find.empty()) return;
+    const std::string oldQuery = find_query_;
+    const bool oldCase = find_case_sensitive_;
+    const bool oldWholeWord = find_whole_word_;
+    find_query_ = ImeWideToUtf8(data.find);
+    find_case_sensitive_ = data.matchCase;
+    find_whole_word_ = data.wholeWord;
+    const bool newSearchSession = find_query_ != oldQuery ||
+        find_case_sensitive_ != oldCase || find_whole_word_ != oldWholeWord;
+    if (newSearchSession || find_cursor_ == UINT32_MAX ||
+        find_cursor_ > buffer_.Text().size()) {
+        find_cursor_ = sel_.active.offset;
+    }
+    if (find_query_.empty()) return;
+    if (result == 1107) {
+        ReplaceAllMatches(find_query_, ImeWideToUtf8(data.replacement),
+                          {find_case_sensitive_, find_whole_word_});
+        return;
+    }
+    if (result == 1106) {
+        if (!editing_) return;
+        const Selection commandBefore = sel_;
+        if (!FindNextMatch()) return;
+        if (!sel_.Empty()) {
+            const uint32_t replacementStart = sel_.Start();
+            const uint32_t removedLength = sel_.Length();
+            const std::string replacement = ImeWideToUtf8(data.replacement);
+            // Use the editor path so the undo entry records the same
+            // collapsed post-selection as every other replacement.
+            editor_.ReplaceTextRange(replacementStart, removedLength,
+                                      replacement, EditType::Other,
+                                      &commandBefore);
+            find_cursor_ = sel_.active.offset;
+            editor_.BreakUndoCoalesce();
+            OnBufferChanged();
+            find_cursor_ = sel_.active.offset;
+            ForceRepaintNow();
+        }
+        return;
+    }
+    FindNextMatch();
+}
+
 void AppWindow::InsertLinkCmd() {
     if (!editing_) return;
     // Ctrl+K with an empty caret may open the dialog, but it must not create
@@ -4266,6 +4714,7 @@ void AppWindow::ToggleWrap() {
 }
 
 void AppWindow::SelectAll() {
+    find_cursor_ = UINT32_MAX;
     sel_.anchor = {0};
     sel_.active = {static_cast<uint32_t>(buffer_.Length())};
     if (editing_) UpdateCaretPosition();
@@ -4563,6 +5012,19 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             OnMouseMove(hwnd, x, y);
             return 0;
         }
+        case WM_CAPTURECHANGED:
+        case WM_CANCELMODE:
+            margin_selecting_ = false;
+            margin_anchor_block_ = -1;
+            word_dragging_ = false;
+            paragraph_dragging_ = false;
+            selection_dragging_ = false;
+            text_drag_candidate_ = false;
+            text_dragging_ = false;
+            text_drag_start_ = 0;
+            text_drag_length_ = 0;
+            paragraph_anchor_block_ = -1;
+            return 0;
         case WM_LBUTTONUP:   OnLButtonUp(hwnd);   return 0;
         case WM_CONTEXTMENU: {
             int x = GET_X_LPARAM(lp);

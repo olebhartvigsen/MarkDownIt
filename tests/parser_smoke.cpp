@@ -142,3 +142,29 @@ TEST(ParserSmoke, FenceLangEmpty) {
     EXPECT_EQ(doc.nodes[0].lang, std::string(""));
 }
 
+// HTML entities decode to Unicode scalars and reject invalid scalar values.
+TEST(ParserSmoke, EntityDecoding) {
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown("&copy; &#x1F600; &#x110000;", doc));
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    std::u32string text;
+    for (const auto& child : doc.nodes[0].children) text += child.text;
+    EXPECT_TRUE(text.find(U'\u00A9') != std::u32string::npos);
+    EXPECT_TRUE(text.find(U'\U0001F600') != std::u32string::npos);
+    EXPECT_TRUE(text.find(U'\uFFFD') != std::u32string::npos);
+}
+
+// Table cells retain the complete source span for entities and links.
+TEST(ParserSmoke, TableCellSourceMapping) {
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown("| A | B |\n|---|---|\n| &amp; | [go](https://example.com) |", doc));
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    ASSERT_EQ(doc.nodes[0].rows.size(), 2u);
+    ASSERT_EQ(doc.nodes[0].rows[1].cells.size(), 2u);
+    const auto& entity = doc.nodes[0].rows[1].cells[0];
+    const auto& link = doc.nodes[0].rows[1].cells[1];
+    EXPECT_TRUE(entity.srcEnd > entity.srcOffset);
+    EXPECT_EQ(entity.u16ToSrc.size(), entity.u16ToSrcEnd.size());
+    EXPECT_TRUE(!link.links.empty());
+}
+

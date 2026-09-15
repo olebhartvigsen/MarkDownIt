@@ -289,3 +289,83 @@ uint32_t MoveLineEnd(const LayoutCache& lc, uint32_t offset) {
     if (newOffset == UINT32_MAX) return offset;
     return newOffset;
 }
+
+
+namespace {
+static uint32_t TableCellSourceEnd(const TableCell& cell) {
+    if (!cell.u16ToSrc.empty()) {
+        const uint32_t last = cell.u16ToSrc.back();
+        // u16ToSrc contains the same source offset twice for a non-BMP
+        // character. Use the final mapped code point, not +1 byte.
+        const char32_t cp = cell.text.empty() ? U' ' : cell.text.back();
+        const uint32_t length = cp <= 0x7F ? 1 : cp <= 0x7FF ? 2 :
+                                cp <= 0xFFFF ? 3 : 4;
+        return last + length;
+    }
+    uint32_t bytes = 0;
+    for (char32_t cp : cell.text) {
+        bytes += cp <= 0x7F ? 1 : cp <= 0x7FF ? 2 :
+                 cp <= 0xFFFF ? 3 : 4;
+    }
+    return cell.srcOffset + bytes;
+}
+}
+
+bool IsOffsetInTable(const Document& doc, uint32_t offset) {
+    for (const Node& node : doc.nodes) {
+        if (node.block != BlockKind::Table) continue;
+        if (offset >= node.srcOffset && offset <= node.srcOffset + node.srcLength)
+            return true;
+        for (const TableRow& row : node.rows) {
+            for (const TableCell& cell : row.cells) {
+                if (offset >= cell.srcOffset &&
+                    offset <= TableCellSourceEnd(cell)) return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool MoveTableCell(const Document& doc, uint32_t offset, bool backwards,
+                   uint32_t* destination) {
+    if (!destination) return false;
+    struct CellRef { uint32_t start; uint32_t end; };
+    for (const Node& node : doc.nodes) {
+        if (node.block != BlockKind::Table) continue;
+        std::vector<CellRef> cells;
+        for (const TableRow& row : node.rows) {
+            for (const TableCell& cell : row.cells) {
+                cells.push_back({cell.srcOffset, TableCellSourceEnd(cell)});
+            }
+        }
+
+        // Empty cells are represented by a zero-width range. At a shared
+        // boundary, forward movement belongs to the earlier cell and
+        // backward movement belongs to the later cell.
+        size_t current = cells.size();
+        if (backwards) {
+            for (size_t i = 0; i < cells.size(); ++i) {
+                if (offset >= cells[i].start && offset <= cells[i].end)
+                    current = i;
+            }
+        } else {
+            for (size_t i = 0; i < cells.size(); ++i) {
+                if (offset >= cells[i].start && offset <= cells[i].end) {
+                    current = i;
+                    break;
+                }
+            }
+        }
+        if (current == cells.size()) continue;
+
+        if (backwards) {
+            if (current == 0) return false;
+            *destination = cells[current - 1].end;
+        } else {
+            if (current + 1 >= cells.size()) return false;
+            *destination = cells[current + 1].start;
+        }
+        return true;
+    }
+    return false;
+}

@@ -3,6 +3,8 @@
 #include "navigation.h"
 #include <chrono>
 #include <cstdint>
+#include <cctype>
+#include <utility>
 
 namespace {
 struct CodePoint {
@@ -75,6 +77,75 @@ static std::string NormalizeUtf8(const std::string& input) {
         at = cp.next;
     }
     return out;
+}
+
+struct ListLineInfo {
+    uint32_t lineStart = 0;
+    uint32_t lineEnd = 0;
+    uint32_t contentStart = 0;
+    std::string prefix;
+    bool empty = false;
+};
+
+static bool GetListLineInfo(const std::string& text, uint32_t at,
+                            ListLineInfo* out) {
+    if (!out || at > text.size()) return false;
+
+    uint32_t lineStart = at;
+    while (lineStart > 0 && text[lineStart - 1] != '\n') --lineStart;
+    uint32_t lineEnd = lineStart;
+    while (lineEnd < text.size() && text[lineEnd] != '\n') ++lineEnd;
+
+    uint32_t markerStart = lineStart;
+    while (markerStart < lineEnd &&
+           (text[markerStart] == ' ' || text[markerStart] == '\t')) {
+        ++markerStart;
+    }
+    uint32_t markerEnd = markerStart;
+    if (markerStart < lineEnd &&
+        (text[markerStart] == '-' || text[markerStart] == '*' ||
+         text[markerStart] == '+')) {
+        markerEnd = markerStart + 1;
+    } else {
+        while (markerEnd < lineEnd &&
+               std::isdigit(static_cast<unsigned char>(text[markerEnd]))) {
+            ++markerEnd;
+        }
+        if (markerEnd == markerStart || markerEnd >= lineEnd ||
+            (text[markerEnd] != '.' && text[markerEnd] != ')')) {
+            return false;
+        }
+        ++markerEnd;
+    }
+
+    if (markerEnd >= lineEnd ||
+        (text[markerEnd] != ' ' && text[markerEnd] != '\t')) {
+        return false;
+    }
+    uint32_t contentStart = markerEnd;
+    while (contentStart < lineEnd &&
+           (text[contentStart] == ' ' || text[contentStart] == '\t')) {
+        ++contentStart;
+    }
+    uint32_t contentCheck = contentStart;
+    while (contentCheck < lineEnd && text[contentCheck] == '\r') ++contentCheck;
+
+    out->lineStart = lineStart;
+    out->lineEnd = lineEnd;
+    out->contentStart = contentStart;
+    out->prefix = text.substr(lineStart, contentStart - lineStart);
+    out->empty = contentCheck == lineEnd;
+    return true;
+}
+
+static std::string ListContinuationPrefix(const std::string& text,
+                                           uint32_t at) {
+    ListLineInfo line;
+    if (!GetListLineInfo(text, at, &line) || line.empty) return {};
+    // Keep the exact indentation, bullet character, ordered marker, and
+    // whitespace used by the current item. Ordered lists commonly use 1.
+    // for every source marker, so do not renumber the continuation here.
+    return "\n" + line.prefix;
 }
 
 static bool IsCombining(char32_t cp) {
@@ -264,9 +335,16 @@ uint32_t PrevGraphemeBoundary(const std::string& s, uint32_t offset) {
     return previous;
 }
 
+bool IsGraphemeBoundary(const std::string& s, uint32_t offset) {
+    if (offset == 0 || offset >= s.size()) return offset <= s.size();
+    const uint32_t previous = PrevGraphemeBoundary(s, offset);
+    return NextGraphemeBoundary(s, previous) == offset;
+}
+
 void EditController::RecordAndApply(uint32_t offset, uint32_t length,
-                                    const std::string& replacement,
-                                    EditType type) {
+                                      const std::string& replacement,
+                                      EditType type,
+                                      const Selection* undoSelectionBefore) {
     // Clamp to the buffer before substr: after an external buffer change
     // (file reload, watcher) a stale selection can exceed the text and
     // std::string::substr would throw std::out_of_range.
@@ -279,7 +357,7 @@ void EditController::RecordAndApply(uint32_t offset, uint32_t length,
     // Record what we are about to remove.
     std::string removed = buf_->Text().substr(offset, length);
 
-    Selection selBefore = *sel_;
+    Selection selBefore = undoSelectionBefore ? *undoSelectionBefore : *sel_;
     uint32_t end = buf_->Splice(offset, length, applied);
     sel_->Collapse({end});
     Selection selAfter = *sel_;
@@ -304,9 +382,10 @@ void EditController::InsertText(const std::string& utf8) {
 }
 
 void EditController::ReplaceTextRange(uint32_t offset, uint32_t length,
-                                       const std::string& replacement,
-                                       EditType type) {
-    RecordAndApply(offset, length, replacement, type);
+                                        const std::string& replacement,
+                                        EditType type,
+                                        const Selection* undoSelectionBefore) {
+    RecordAndApply(offset, length, replacement, type, undoSelectionBefore);
 }
 
 void EditController::DeleteSelection() {
@@ -348,15 +427,22 @@ void EditController::DeleteWordForward() {
     if (end > at) RecordAndApply(at, end - at, "", EditType::Delete);
 }
 
-void EditController::InsertParagraphBreak(const Document& doc) {
+bool EditController::InsertParagraphBreak(const Document& doc) {
+    // A table cell is single-line Markdown syntax. Test the original
+    // selection before deleting it, because Enter is a no-op in a table.
+    if (IsOffsetInTable(doc, sel_->active.offset) ||
+        (!sel_->Empty() && IsOffsetInTable(doc, sel_->Start()))) {
+        return false;
+    }
     if (!sel_->Empty()) DeleteSelection();
 
     uint32_t at = sel_->active.offset;
+    ListLineInfo listLine;
+    const bool hasListLine = GetListLineInfo(buf_->Text(), at, &listLine);
 
     BlockKind ctx = BlockKind::Paragraph;
     bool inList = false;
     bool inCode = false;
-    bool ordered = false;
     bool emptyListItem = false;
     bool inTable = false;
 
@@ -365,14 +451,16 @@ void EditController::InsertParagraphBreak(const Document& doc) {
             ctx = n.block;
             if (n.block == BlockKind::List) {
                 inList = true;
-                ordered = n.ordered;
                 bool hasContent = false;
                 for (const auto& ib : n.children) {
                     if (!ib.text.empty()) { hasContent = true; break; }
                 }
                 emptyListItem = !hasContent;
             }
-            if (n.block == BlockKind::CodeBlock) {
+            if (n.block == BlockKind::CodeBlock ||
+                n.block == BlockKind::MermaidFlowchart ||
+                n.block == BlockKind::MermaidPie ||
+                n.block == BlockKind::MermaidSequence) {
                 inCode = true;
             }
             if (n.block == BlockKind::Table) {
@@ -380,6 +468,13 @@ void EditController::InsertParagraphBreak(const Document& doc) {
             }
             break;
         }
+    }
+
+    // Source ranges for an empty list item may be absent from the parsed
+    // document. The line syntax is authoritative after a selection edit.
+    if (hasListLine) {
+        inList = true;
+        emptyListItem = listLine.empty;
     }
 
     // Second pass: the table node's srcLength may not cover the full
@@ -397,8 +492,12 @@ void EditController::InsertParagraphBreak(const Document& doc) {
                                    (cp <= 0xFFFF) ? 3 : 4;
                     }
                     uint32_t cellEnd = cell.srcOffset + cellLen;
-                    if (!cell.u16ToSrc.empty())
-                        cellEnd = cell.u16ToSrc.back() + 1;
+                    if (!cell.u16ToSrc.empty()) {
+                        const char32_t last = cell.text.empty() ? U' ' : cell.text.back();
+                        const uint32_t bytes = last <= 0x7F ? 1 :
+                            last <= 0x7FF ? 2 : last <= 0xFFFF ? 3 : 4;
+                        cellEnd = cell.u16ToSrc.back() + bytes;
+                    }
                     if (at >= cell.srcOffset && at <= cellEnd) {
                         inTable = true;
                         break;
@@ -413,29 +512,34 @@ void EditController::InsertParagraphBreak(const Document& doc) {
     // In a table cell, inserting any newline breaks the table syntax; 
     // markdown tables require single-line rows. Do nothing instead.
     if (inTable || ctx == BlockKind::Table) {
-        return;
+        return false;
     }
 
     if (inCode) {
         RecordAndApply(at, 0, "\n", EditType::ParagraphBreak);
-        return;
+        return true;
     }
 
     if (inList) {
-        if (emptyListItem) {
-            uint32_t lineStart = buf_->LineStart(at);
-            uint32_t toDelete = at - lineStart;
-            if (toDelete > 0) {
-                RecordAndApply(lineStart, toDelete, "", EditType::ParagraphBreak);
-            }
-            return;
+        if (emptyListItem && hasListLine) {
+            // Remove only the empty item's marker. Keep its line break so
+            // Enter exits the list into a blank paragraph.
+            RecordAndApply(listLine.lineStart,
+                           listLine.lineEnd - listLine.lineStart,
+                           "", EditType::ParagraphBreak);
+            return true;
         }
-        std::string marker = ordered ? "\n1. " : "\n- ";
-        RecordAndApply(at, 0, marker, EditType::ParagraphBreak);
-        return;
+        const std::string marker = ListContinuationPrefix(buf_->Text(), at);
+        if (!marker.empty()) {
+            RecordAndApply(at, 0, marker, EditType::ParagraphBreak);
+            return true;
+        }
+        RecordAndApply(at, 0, "\n", EditType::ParagraphBreak);
+        return true;
     }
 
     RecordAndApply(at, 0, "\n\n", EditType::ParagraphBreak);
+    return true;
 }
 
 bool EditController::Undo(UndoEntry* undone) {

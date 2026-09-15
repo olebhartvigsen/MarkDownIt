@@ -21,6 +21,8 @@
 #include "inputfilter.h"
 #include "settings.h"
 #include "welcomescreen.h"
+#include "searchreplace.h"
+#include "textdrag.h"
 
 // Active formatting state at the caret position, used to set
 // the pressed/unpressed state of ribbon toggle buttons.
@@ -115,6 +117,7 @@ public:
     void Outdent();
     void UndoAction();
     void RedoAction();
+    void ShowFindReplace(bool replaceMode);
 
     // Called by CRibbonApplication::OnViewChanged when ribbon height changes.
     void OnRibbonHeightChanged();
@@ -239,7 +242,23 @@ private:
     uint32_t       word_anchor_caret_ = 0;
     int            paragraph_anchor_block_ = -1;
 
-    // Native IME composition is represented as a temporary source splice.
+    // Internal text drag state. The selection remains intact until the
+    // pointer crosses the drag threshold, so a click in a selection can
+    // either keep the selection or move it.
+    bool           text_drag_candidate_ = false;
+    bool           text_dragging_ = false;
+    uint32_t       text_drag_start_ = 0;
+    uint32_t       text_drag_length_ = 0;
+    int            text_drag_last_x_ = 0;
+    int            text_drag_last_y_ = 0;
+    int            text_drag_down_x_ = 0;
+    int            text_drag_down_y_ = 0;
+
+    // Find/replace state is kept between dialogs for Ctrl+F/Ctrl+H.
+    std::string    find_query_;
+    uint32_t       find_cursor_ = 0;
+    bool           find_case_sensitive_ = false;
+    bool           find_whole_word_ = false;
     // It is not added to the undo stack until the IME reports a result.
     bool           ime_composing_ = false;
     uint32_t       ime_source_start_ = 0;
@@ -281,6 +300,11 @@ private:
     void OnLButtonDblClk(HWND hwnd, int x, int y);
     void OnMouseMove(HWND hwnd, int x, int y);
     void OnLButtonUp(HWND hwnd);
+    void FinishTextDrag();
+    bool FindNextMatch();
+    void ReplaceAllMatches(const std::string& query,
+                           const std::string& replacement,
+                           SearchOptions options);
     std::string SelectionForClipboard() const;
     void OnSetFocus(HWND hwnd);
     void OnImeComposition(LPARAM lp);

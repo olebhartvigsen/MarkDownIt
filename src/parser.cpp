@@ -51,6 +51,216 @@ struct SpanFrame {
     bool code;
 };
 
+// md4c does not expose table-cell source offsets in MD_BLOCK_TD_DETAIL.
+// Keep the source locations found from the same pipe boundaries md4c uses so
+// empty cells still receive a caret position when no text callback follows.
+struct SourceCellRange {
+    uint32_t start;
+    uint32_t end;
+};
+
+bool IsSourceWhitespace(char c) {
+    return c == ' ' || c == '\t' || c == '\r';
+}
+
+bool IsUnescapedTablePipe(const std::string& source, uint32_t offset) {
+    size_t backslashes = 0;
+    while (offset > backslashes &&
+           source[offset - backslashes - 1] == '\\') {
+        ++backslashes;
+    }
+    return (backslashes % 2) == 0;
+}
+
+std::vector<SourceCellRange> SplitSourceTableRow(const std::string& source,
+                                                  uint32_t lineStart,
+                                                  uint32_t lineEnd,
+                                                  bool* foundPipe) {
+    // md4c removes up to three indentation spaces before processing a table
+    // row. Match that here so indentation is not mistaken for a cell.
+    uint32_t contentStart = lineStart;
+    int indentation = 0;
+    while (contentStart < lineEnd && indentation < 3 &&
+           (source[contentStart] == ' ' || source[contentStart] == '\t')) {
+        ++contentStart;
+        ++indentation;
+    }
+
+    // md4c treats a leading/trailing pipe as a delimiter, not as an extra
+    // cell. Keep zero-width ranges between adjacent delimiters.
+    while (lineEnd > contentStart && IsSourceWhitespace(source[lineEnd - 1]))
+        --lineEnd;
+    bool hasPipe = false;
+    if (contentStart < lineEnd && source[contentStart] == '|') {
+        hasPipe = true;
+        ++contentStart;
+    }
+
+    std::vector<SourceCellRange> cells;
+    uint32_t cellStart = contentStart;
+    bool inCode = false;
+    size_t codeTicks = 0;
+    for (uint32_t i = contentStart; i < lineEnd; ++i) {
+        if (source[i] == '`') {
+            uint32_t runStart = i;
+            while (i < lineEnd && source[i] == '`') ++i;
+            size_t runLength = i - runStart;
+            if (!inCode) {
+                inCode = true;
+                codeTicks = runLength;
+            } else if (runLength == codeTicks) {
+                inCode = false;
+                codeTicks = 0;
+            }
+            --i;
+            continue;
+        }
+        if (source[i] != '|' || inCode || !IsUnescapedTablePipe(source, i))
+            continue;
+        hasPipe = true;
+        uint32_t start = cellStart;
+        uint32_t end = i;
+        while (start < end && IsSourceWhitespace(source[start])) ++start;
+        while (end > start && IsSourceWhitespace(source[end - 1])) --end;
+        cells.push_back({start, end});
+        cellStart = i + 1;
+    }
+
+    if (cellStart < lineEnd) {
+        uint32_t start = cellStart;
+        uint32_t end = lineEnd;
+        while (start < end && IsSourceWhitespace(source[start])) ++start;
+        while (end > start && IsSourceWhitespace(source[end - 1])) --end;
+        cells.push_back({start, end});
+    }
+    if (foundPipe) *foundPipe = hasPipe;
+    return cells;
+}
+
+bool IsTableUnderlineCell(const std::string& source, SourceCellRange cell) {
+    uint32_t start = cell.start;
+    uint32_t end = cell.end;
+    if (start < end && source[start] == ':') ++start;
+    uint32_t hyphens = 0;
+    while (start < end && source[start] == '-') {
+        ++start;
+        ++hyphens;
+    }
+    if (start < end && source[start] == ':') ++start;
+    return hyphens > 0 && start == end;
+}
+
+bool IsBlankSourceLine(const std::string& source, uint32_t start,
+                       uint32_t end) {
+    for (uint32_t i = start; i < end; ++i) {
+        if (!IsSourceWhitespace(source[i])) return false;
+    }
+    return true;
+}
+
+std::vector<SourceCellRange> FindTableCellRanges(const std::string& source) {
+    struct SourceLine { uint32_t start; uint32_t end; bool inFence; };
+    std::vector<SourceLine> lines;
+    uint32_t lineStart = 0;
+    bool inFence = false;
+    char fenceChar = 0;
+    uint32_t fenceLength = 0;
+    const uint32_t sourceSize = static_cast<uint32_t>(source.size());
+    for (uint32_t i = 0; i <= sourceSize; ++i) {
+        if (i == sourceSize || source[i] == '\n') {
+            uint32_t lineEnd = i;
+            if (lineEnd > lineStart && source[lineEnd - 1] == '\r') --lineEnd;
+            uint32_t contentStart = lineStart;
+            int indentation = 0;
+            while (contentStart < lineEnd && indentation < 3 &&
+                   (source[contentStart] == ' ' ||
+                    source[contentStart] == '\t')) {
+                ++contentStart;
+                ++indentation;
+            }
+            bool lineInFence = inFence;
+            uint32_t runStart = contentStart;
+            if (runStart < lineEnd &&
+                (source[runStart] == '`' || source[runStart] == '~')) {
+                char marker = source[runStart];
+                uint32_t runEnd = runStart;
+                while (runEnd < lineEnd && source[runEnd] == marker) ++runEnd;
+                uint32_t runLength = runEnd - runStart;
+                if (!inFence && runLength >= 3) {
+                    inFence = true;
+                    fenceChar = marker;
+                    fenceLength = runLength;
+                    lineInFence = true;
+                } else if (inFence && marker == fenceChar &&
+                           runLength >= fenceLength) {
+                    while (runEnd < lineEnd &&
+                           IsSourceWhitespace(source[runEnd])) ++runEnd;
+                    if (runEnd == lineEnd) inFence = false;
+                }
+            }
+            lines.push_back({lineStart, lineEnd, lineInFence});
+            lineStart = i + 1;
+        }
+    }
+
+    std::vector<SourceCellRange> result;
+    size_t lineIndex = 0;
+    while (lineIndex + 1 < lines.size()) {
+        if (lines[lineIndex].inFence || lines[lineIndex + 1].inFence) {
+            ++lineIndex;
+            continue;
+        }
+        bool hasUnderlinePipe = false;
+        auto underline = SplitSourceTableRow(
+            source, lines[lineIndex + 1].start, lines[lineIndex + 1].end,
+            &hasUnderlinePipe);
+        bool validUnderline = hasUnderlinePipe && !underline.empty();
+        for (const auto& cell : underline) {
+            if (!IsTableUnderlineCell(source, cell)) {
+                validUnderline = false;
+                break;
+            }
+        }
+        if (!validUnderline) {
+            ++lineIndex;
+            continue;
+        }
+
+        const size_t columnCount = underline.size();
+        auto appendRow = [&](size_t rowIndex) {
+            auto parsedCells = SplitSourceTableRow(
+                source, lines[rowIndex].start, lines[rowIndex].end, nullptr);
+            if (parsedCells.size() > columnCount)
+                parsedCells.resize(columnCount);
+
+            // Preserve the parser's left-to-right cell order. Empty cells use
+            // a zero-width range at their delimiter position.
+            while (parsedCells.size() < columnCount) {
+                const uint32_t caret = lines[rowIndex].end;
+                parsedCells.push_back({caret, caret});
+            }
+            result.insert(result.end(), parsedCells.begin(), parsedCells.end());
+        };
+
+        appendRow(lineIndex); // header row
+        size_t nextRow = lineIndex + 2; // skip the underline row
+        while (nextRow < lines.size() &&
+               !lines[nextRow].inFence &&
+               !IsBlankSourceLine(source, lines[nextRow].start,
+                                  lines[nextRow].end)) {
+            bool hasRowPipe = false;
+            const auto rowCells = SplitSourceTableRow(
+                source, lines[nextRow].start, lines[nextRow].end,
+                &hasRowPipe);
+            if (!hasRowPipe || rowCells.empty()) break;
+            appendRow(nextRow);
+            ++nextRow;
+        }
+        lineIndex = nextRow;
+    }
+    return result;
+}
+
 // Tracks source offset accumulation per node.
 struct NodeOffsetInfo {
     uint32_t firstTextOffset = 0;
@@ -84,6 +294,8 @@ struct ParserCtx {
     const char* input;       // pointer to start of input (for offset calculation)
     MD_SIZE inputSize;       // size of input
     std::vector<NodeOffsetInfo> nodeOffsets; // per-node offset tracking
+    std::vector<SourceCellRange> sourceCellRanges;
+    size_t nextSourceCellRange = 0;
 };
 
 // Append a new node to the document and return its index.
@@ -146,44 +358,64 @@ struct Utf8Decoder {
 
 // Decode common HTML entities to UTF-32.
 void decode_entity(const char* text, MD_SIZE size, std::u32string& out) {
-    // md4c passes entity text INCLUDING the & and; (e.g. "&amp;", "&#39;").
-    // Strip the wrapper before matching names / parsing numeric values.
+    const char* original = text;
+    const MD_SIZE originalSize = size;
     if (size >= 2 && text[0] == '&' && text[size - 1] == ';') {
         text += 1;
         size -= 2;
     }
-    std::string ent(text, size);
-    if (ent == "amp") out.push_back(U'&');
-    else if (ent == "lt") out.push_back(U'<');
-    else if (ent == "gt") out.push_back(U'>');
-    else if (ent == "quot") out.push_back(U'"');
-    else if (ent == "apos") out.push_back(U'\'');
-    else if (ent == "nbsp") out.push_back(U' ');
-    else if (ent == "mdash") out.push_back(U'\u2014');
-    else if (ent == "ndash") out.push_back(U'\u2013');
-    else if (size > 1 && text[0] == '#') {
-        // Numeric entity: #39 or #x27
-        if (size > 2 && (text[1] == 'x' || text[1] == 'X')) {
-            uint32_t cp = 0;
-            for (MD_SIZE i = 2; i < size; ++i) {
-                char c = text[i];
-                cp <<= 4;
-                if (c >= '0' && c <= '9') cp |= (c - '0');
-                else if (c >= 'a' && c <= 'f') cp |= (c - 'a' + 10);
-                else if (c >= 'A' && c <= 'F') cp |= (c - 'A' + 10);
-            }
-            out.push_back(static_cast<char32_t>(cp));
+
+    auto append_scalar = [&out](uint32_t cp) {
+        if (cp == 0 || cp > 0x10FFFFu ||
+            (cp >= 0xD800u && cp <= 0xDFFFu)) {
+            out.push_back(U'\uFFFD');
         } else {
-            uint32_t cp = 0;
-            for (MD_SIZE i = 1; i < size; ++i) {
-                if (text[i] >= '0' && text[i] <= '9') cp = cp * 10 + (text[i] - '0');
-            }
             out.push_back(static_cast<char32_t>(cp));
         }
-    } else {
-        // Unknown: pass through as literal text (best effort)
+    };
+    auto append_original = [&]() {
         Utf8Decoder d;
-        d.decode(text, size, out);
+        d.decode(original, originalSize, out);
+    };
+
+    std::string ent(text, size);
+    if (ent == "amp") append_scalar('&');
+    else if (ent == "lt") append_scalar('<');
+    else if (ent == "gt") append_scalar('>');
+    else if (ent == "quot") append_scalar('"');
+    else if (ent == "apos") append_scalar('\'');
+    else if (ent == "nbsp") append_scalar(0x00A0);
+    else if (ent == "copy") append_scalar(0x00A9);
+    else if (ent == "reg") append_scalar(0x00AE);
+    else if (ent == "hellip") append_scalar(0x2026);
+    else if (ent == "mdash") append_scalar(0x2014);
+    else if (ent == "ndash") append_scalar(0x2013);
+    else if (size > 1 && text[0] == '#') {
+        uint32_t cp = 0;
+        bool valid = true;
+        MD_SIZE begin = 1;
+        unsigned base = 10;
+        if (size > 2 && (text[1] == 'x' || text[1] == 'X')) {
+            begin = 2;
+            base = 16;
+        }
+        if (begin == size) valid = false;
+        for (MD_SIZE i = begin; valid && i < size; ++i) {
+            unsigned digit = 0;
+            const char c = text[i];
+            if (c >= '0' && c <= '9') digit = static_cast<unsigned>(c - '0');
+            else if (base == 16 && c >= 'a' && c <= 'f')
+                digit = static_cast<unsigned>(c - 'a' + 10);
+            else if (base == 16 && c >= 'A' && c <= 'F')
+                digit = static_cast<unsigned>(c - 'A' + 10);
+            else { valid = false; break; }
+            if (cp > (0x10FFFFu - digit) / base) valid = false;
+            else cp = cp * base + digit;
+        }
+        if (valid) append_scalar(cp);
+        else out.push_back(U'\uFFFD');
+    } else {
+        append_original();
     }
 }
 
@@ -330,9 +562,17 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
         case MD_BLOCK_TD: {
             if (ctx->cur_row) {
                 ctx->cur_row->cells.push_back(TableCell{});
-                ctx->cur_row->cells.back().isHeader = ctx->in_header;
+                TableCell& cell = ctx->cur_row->cells.back();
+                cell.isHeader = ctx->in_header;
+                if (ctx->nextSourceCellRange < ctx->sourceCellRanges.size()) {
+                    cell.srcOffset =
+                        ctx->sourceCellRanges[ctx->nextSourceCellRange].start;
+                    cell.srcEnd =
+                        ctx->sourceCellRanges[ctx->nextSourceCellRange].end;
+                    ++ctx->nextSourceCellRange;
+                }
                 ctx->cur_cell = &ctx->cur_row->cells.back().text;
-                ctx->cur_cell_obj = &ctx->cur_row->cells.back();
+                ctx->cur_cell_obj = &cell;
                 ctx->cur_cell_last_end = 0; // will be set on first text
             }
             ctx->block_stack.push_back({type, -1, false, false});
@@ -574,33 +814,11 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
             ctx->cur_cell_obj->srcOffset = thisOff;
             ctx->cur_cell_last_end = thisOff;
         }
-        // Fill gap: if md4c skipped mark characters (e.g., ':' for
-        // permissive URL autolinks), emit them into the cell text and
-        // the u16ToSrc mapping so the rendered text matches the source.
+        // md4c omits Markdown delimiters from text callbacks. Do not copy
+        // source gaps into the rendered cell, because those gaps are hidden
+        // syntax, not visible text.
         if (ctx->cur_cell_obj && thisOff > ctx->cur_cell_last_end) {
-            for (uint32_t g = ctx->cur_cell_last_end; g < thisOff; ) {
-                int gUtf8Len = 1;
-                if (g < ctx->inputSize) {
-                    unsigned char gb = static_cast<unsigned char>(ctx->input[g]);
-                    int gUtf16Len;
-                    if (gb < 0x80) { gUtf8Len = 1; gUtf16Len = 1; }
-                    else if ((gb & 0xE0) == 0xC0) { gUtf8Len = 2; gUtf16Len = 1; }
-                    else if ((gb & 0xF0) == 0xE0) { gUtf8Len = 3; gUtf16Len = 1; }
-                    else if ((gb & 0xF8) == 0xF0) { gUtf8Len = 4; gUtf16Len = 2; }
-                    else { gUtf8Len = 1; gUtf16Len = 1; }
-                    for (int u = 0; u < gUtf16Len; u++)
-                        ctx->cur_cell_obj->u16ToSrc.push_back(g);
-                    // Decode the gap character(s) into cell text too.
-                    std::u32string gap32;
-                    Utf8Decoder gd;
-                    gd.decode(ctx->input + g, gUtf8Len, gap32);
-                    *ctx->cur_cell += gap32;
-                }
-                // Advance by the full sequence length. Stepping one byte
-                // at a time turned continuation bytes into bogus code
-                // points and desynced u16ToSrc from inlineSpans.
-                g += static_cast<uint32_t>(gUtf8Len);
-            }
+            ctx->cur_cell_last_end = thisOff;
         }
         // HTML <br>, <br/> and <br /> inside a cell must render as a line
         // break, not as literal text. md4c passes them as MD_TEXT_HTML with
@@ -622,9 +840,40 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
         if (is_br) {
             if (ctx->cur_cell_obj) {
                 ctx->cur_cell_obj->u16ToSrc.push_back(thisOff);
+                ctx->cur_cell_obj->u16ToSrcEnd.push_back(thisOff +
+                    static_cast<uint32_t>(size));
             }
             ctx->cur_cell->push_back(U'\n');
             ctx->cur_cell_last_end = thisOff + size;
+            return 0;
+        }
+        if (ctx->cur_cell_obj) {
+            for (const auto& sf : ctx->span_stack) {
+                if (sf.type == MD_SPAN_A) {
+                    TableLink link;
+                    link.srcOffset = thisOff;
+                    link.srcLength = static_cast<uint32_t>(size);
+                    link.url = sf.url;
+                    ctx->cur_cell_obj->links.push_back(std::move(link));
+                    break;
+                }
+            }
+        }
+        if (type == MD_TEXT_ENTITY && ctx->cur_cell_obj) {
+            std::u32string decoded;
+            decode_entity(text, size, decoded);
+            if (!decoded.empty()) {
+                for (char32_t cp : decoded) {
+                    const int units = (cp <= 0xFFFF) ? 1 : 2;
+                    for (int u = 0; u < units; ++u) {
+                        ctx->cur_cell_obj->u16ToSrc.push_back(thisOff);
+                        ctx->cur_cell_obj->u16ToSrcEnd.push_back(
+                            thisOff + static_cast<uint32_t>(size));
+                    }
+                }
+                *ctx->cur_cell += decoded;
+            }
+            ctx->cur_cell_last_end = thisOff + static_cast<uint32_t>(size);
             return 0;
         }
         // Build u16ToSrc mapping: for each decoded codepoint, record
@@ -650,6 +899,9 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
                 }
                 for (int u = 0; u < utf16Len; u++)
                     ctx->cur_cell_obj->u16ToSrc.push_back(srcByte);
+                for (int u = 0; u < utf16Len; u++)
+                    ctx->cur_cell_obj->u16ToSrcEnd.push_back(srcByte +
+                        static_cast<uint32_t>(utf8Len));
                 srcByte += utf8Len;
                 i += utf8Len;
             }
@@ -754,6 +1006,7 @@ static int ParseMarkdownInner(const std::string& utf8, Document& out) {
     ctx.cur_row = nullptr;
     ctx.cur_cell = nullptr;
     ctx.cur_cell_obj = nullptr;
+    ctx.sourceCellRanges = FindTableCellRanges(utf8);
 
     MD_PARSER parser{};
     parser.abi_version = 0;

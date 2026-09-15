@@ -258,14 +258,45 @@ void InsertLink(TextBuffer* buf, Selection* sel, const std::string& url,
 // Forward declaration; LineStartOf is defined later in this file.
 static uint32_t LineStartOf(const std::string& text, uint32_t offset);
 
-// Check if a line starting at lineStart begins with the given prefix.
-static bool LineHasPrefix(const std::string& text, uint32_t lineStart,
-                          const std::string& prefix) {
-    if (lineStart + prefix.size() > text.size()) return false;
-    for (size_t i = 0; i < prefix.size(); i++) {
-        if (text[lineStart + i] != prefix[i]) return false;
+static uint32_t LineEndOf(const std::string& text, uint32_t lineStart) {
+    uint32_t end = lineStart;
+    while (end < text.size() && text[end] != '\n') ++end;
+    return end;
+}
+
+// Recognize a triple-backtick fence line. An opening fence may carry an
+// info string, while a closing fence may only have trailing whitespace.
+static bool IsFenceLine(const std::string& text, uint32_t lineStart,
+                        bool opening) {
+    if (lineStart > text.size()) return false;
+    const uint32_t lineEnd = LineEndOf(text, lineStart);
+    uint32_t cursor = lineStart;
+    while (cursor < lineEnd &&
+           (text[cursor] == ' ' || text[cursor] == '\t')) {
+        ++cursor;
     }
-    return true;
+    if (cursor + 3 > lineEnd || text[cursor] != '`' ||
+        text[cursor + 1] != '`' || text[cursor + 2] != '`') {
+        return false;
+    }
+
+    cursor += 3;
+    if (opening) {
+        // Backticks are not valid in a fenced-code info string. Rejecting
+        // them also prevents a four-backtick fence being mistaken for three.
+        while (cursor < lineEnd) {
+            if (text[cursor] == '`') return false;
+            ++cursor;
+        }
+        return true;
+    }
+
+    while (cursor < lineEnd &&
+           (text[cursor] == ' ' || text[cursor] == '\t' ||
+            text[cursor] == '\r')) {
+        ++cursor;
+    }
+    return cursor == lineEnd;
 }
 
 void ToggleCodeBlock(TextBuffer* buf, Selection* sel, UndoStack* undo) {
@@ -274,64 +305,76 @@ void ToggleCodeBlock(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     uint32_t selEnd = selStart + sel->Length();
     Selection selBefore = *sel;
 
-    // Find the start of the first line and the end (including newline) of
-    // the last line in the selection.
+    // Find the start of the first selected line.
     uint32_t firstLineStart = LineStartOf(text, selStart);
-    uint32_t lastLineEnd = selEnd;
-    while (lastLineEnd < text.size() && text[lastLineEnd] != '\n') lastLineEnd++;
-    // Include the trailing newline in the block content.
-    if (lastLineEnd < text.size() && text[lastLineEnd] == '\n') lastLineEnd++;
+    uint32_t lastLineStart = selEnd;
+    if (lastLineStart > 0 && lastLineStart <= text.size() &&
+        text[lastLineStart - 1] == '\n') {
+        --lastLineStart;
+    }
+    lastLineStart = LineStartOf(text, lastLineStart);
+    uint32_t afterLastLine = LineEndOf(text, lastLineStart);
+    if (afterLastLine < text.size() && text[afterLastLine] == '\n') {
+        ++afterLastLine;
+    }
+    const uint32_t lastLineEnd = afterLastLine;
 
-    // Check if already inside a code block: look for a line with ```
-    // just before the first line, and a line with ``` just after the
-    // last line.
     const std::string fence = "```";
-
-    // Look backwards from firstLineStart for an opening ``` fence.
     uint32_t fenceLineStart = 0;
+    uint32_t closeFenceStart = 0;
+    uint32_t openEnd = 0;
+    uint32_t closeEnd = 0;
     bool foundOpen = false;
-    if (firstLineStart >= fence.size() + 1) {
-        // The line before firstLineStart ends at firstLineStart - 1 (the \n).
-        // Walk back to find the start of that line.
-        uint32_t prevLineStart = firstLineStart - 1;
-        if (prevLineStart > 0) prevLineStart--;
-        while (prevLineStart > 0 && text[prevLineStart - 1] != '\n') prevLineStart--;
-        if (LineHasPrefix(text, prevLineStart, fence)) {
-            fenceLineStart = prevLineStart;
-            // Include the trailing newline after the opening fence.
-            uint32_t afterFence = prevLineStart + static_cast<uint32_t>(fence.size());
-            // Verify the fence line is just the fence (optionally followed by newline).
-            if (afterFence < text.size() && (text[afterFence] == '\n' || afterFence == text.size())) {
-                foundOpen = true;
+    bool foundClose = false;
+
+    // A selection beginning on the opening fence may include the complete
+    // block. Scan its selected lines so the closing fence is recognized too.
+    if (selStart == firstLineStart && IsFenceLine(text, firstLineStart, true)) {
+        uint32_t line = LineEndOf(text, firstLineStart);
+        if (line < text.size() && text[line] == '\n') ++line;
+        while (line < text.size()) {
+            if (IsFenceLine(text, line, false)) {
+                const uint32_t lineEnd = LineEndOf(text, line);
+                if (selEnd >= lineEnd) {
+                    fenceLineStart = firstLineStart;
+                    closeFenceStart = line;
+                    foundOpen = true;
+                    foundClose = true;
+                    break;
+                }
+                break;
             }
+            const uint32_t next = LineEndOf(text, line);
+            line = next < text.size() ? next + 1 : next;
         }
     }
 
-    // Look forwards from lastLineEnd for a closing ``` fence.
-    uint32_t closeFenceStart = 0;
-    bool foundClose = false;
-    if (foundOpen) {
-        if (LineHasPrefix(text, lastLineEnd, fence)) {
-            uint32_t afterClose = lastLineEnd + static_cast<uint32_t>(fence.size());
-            if (afterClose <= text.size() &&
-                (afterClose == text.size() || text[afterClose] == '\n')) {
-                closeFenceStart = lastLineEnd;
-                foundClose = true;
-            }
+    // Also support selecting only the content lines inside an existing
+    // fenced block. The opening line may contain an info string such as cpp.
+    if (!foundOpen && firstLineStart > 0) {
+        const uint32_t previousLineStart =
+            LineStartOf(text, firstLineStart - 1);
+        uint32_t closingLineStart = afterLastLine;
+        if (IsFenceLine(text, lastLineStart, false))
+            closingLineStart = lastLineStart;
+        if (IsFenceLine(text, previousLineStart, true) &&
+            IsFenceLine(text, closingLineStart, false)) {
+            fenceLineStart = previousLineStart;
+            closeFenceStart = closingLineStart;
+            foundOpen = true;
+            foundClose = true;
         }
     }
 
     if (foundOpen && foundClose) {
-        // Remove the code block fences.
-        // Remove closing fence (+ newline after it if present).
-        uint32_t closeEnd = closeFenceStart + static_cast<uint32_t>(fence.size());
-        if (closeEnd < text.size() && text[closeEnd] == '\n') closeEnd++;
-        std::string closeRemoved = text.substr(closeFenceStart, closeEnd - closeFenceStart);
-
-        // Remove opening fence (+ newline after it if present).
-        uint32_t openEnd = fenceLineStart + static_cast<uint32_t>(fence.size());
-        if (openEnd < text.size() && text[openEnd] == '\n') openEnd++;
-        std::string openRemoved = text.substr(fenceLineStart, openEnd - fenceLineStart);
+        openEnd = LineEndOf(text, fenceLineStart);
+        if (openEnd < text.size() && text[openEnd] == '\n') ++openEnd;
+        closeEnd = LineEndOf(text, closeFenceStart);
+        if (closeEnd < text.size() && text[closeEnd] == '\n') ++closeEnd;
+        std::string openRemoved =
+            text.substr(fenceLineStart, openEnd - fenceLineStart);
+        std::string closeRemoved =
+            text.substr(closeFenceStart, closeEnd - closeFenceStart);
 
         // Snapshot the content between the fences BEFORE any splice:
         // `text` is a live reference to the buffer and both splices

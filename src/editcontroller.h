@@ -16,7 +16,8 @@ public:
     void InsertText(const std::string& utf8);
     void ReplaceTextRange(uint32_t offset, uint32_t length,
                           const std::string& replacement,
-                          EditType type = EditType::Other);
+                          EditType type = EditType::Other,
+                          const Selection* undoSelectionBefore = nullptr);
     void DeleteBackward();
     void DeleteForward();
     void DeleteWordBackward();
@@ -24,7 +25,7 @@ public:
     void DeleteSelection();
 
     // Insert a paragraph break, context-aware.
-    void InsertParagraphBreak(const Document& doc);
+    bool InsertParagraphBreak(const Document& doc);
 
     // Undo/redo: apply inverse or re-apply an entry.
     bool Undo(UndoEntry* undone = nullptr);
@@ -39,8 +40,9 @@ private:
     UndoStack*  undo_;
 
     void RecordAndApply(uint32_t offset, uint32_t length,
-                       const std::string& replacement,
-                       EditType type);
+                        const std::string& replacement,
+                        EditType type,
+                        const Selection* undoSelectionBefore = nullptr);
 };
 
 // Find the previous grapheme boundary before the given offset.
@@ -50,3 +52,6 @@ uint32_t PrevGraphemeBoundary(const std::string& s, uint32_t offset);
 // Find the next grapheme boundary after the given offset.
 // Returns s.size() if already at the end.
 uint32_t NextGraphemeBoundary(const std::string& s, uint32_t offset);
+
+// Return true only at a valid UTF-8 grapheme-cluster boundary.
+bool IsGraphemeBoundary(const std::string& s, uint32_t offset);

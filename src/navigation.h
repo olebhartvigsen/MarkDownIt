@@ -22,6 +22,13 @@ uint32_t MoveWordRight(const TextBuffer& buf, uint32_t offset);
 // Return the contiguous Unicode word/space/punctuation span containing offset.
 void WordSpanAt(const TextBuffer& buf, uint32_t offset,
                 uint32_t* outStart, uint32_t* outEnd);
+bool IsOffsetInTable(const Document& doc, uint32_t offset);
+
+// Move to the adjacent Markdown table cell. Returns false outside a table
+// or at the requested document edge.
+bool MoveTableCell(const Document& doc, uint32_t offset, bool backwards,
+                   uint32_t* destination);
+
 // Move up or down by one rendered line.
 // direction: -1 for up, +1 for down.
 // desiredX: in/out. On first vertical move, set to caret x.

@@ -121,6 +121,8 @@ add_executable(MarkDownIt WIN32
     src/formatting.cpp
     src/autoformat.cpp
     src/inputfilter.cpp
+    src/searchreplace.cpp
+    src/textdrag.cpp
     src/fileassoc.cpp
     src/settings.cpp
     src/welcomescreen.cpp
@@ -221,6 +223,7 @@ if(BUILD_TESTS)
         tests/formatting_test.cpp
         tests/autoformat_test.cpp
         tests/inputfilter_test.cpp
+        tests/editor_features_test.cpp
         tests/mermaid_model_test.cpp
         tests/mermaid_parse_test.cpp
         tests/mermaid_class_golden_test.cpp
@@ -247,6 +250,8 @@ if(BUILD_TESTS)
         src/formatting.cpp
         src/autoformat.cpp
         src/inputfilter.cpp
+        src/searchreplace.cpp
+        src/textdrag.cpp
         src/mermaid/class_parse.cpp
         src/mermaid/class_layout.cpp
         src/mermaid/state_parse.cpp

@@ -304,13 +304,17 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (cache_) {
         // Build u16ToSrc mapping for the code block.
         std::vector<uint32_t> cu16ToSrc;
+        std::vector<uint32_t> cu16ToSrcEnd;
         uint32_t srcByte = n.contentOffset;
         for (char32_t cp : raw) {
             int utf8Len = (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
                           (cp <= 0xFFFF) ? 3 : 4;
             int utf16Len = (cp <= 0xFFFF) ? 1 : 2;
-            for (int u = 0; u < utf16Len; u++)
+            for (int u = 0; u < utf16Len; u++) {
                 cu16ToSrc.push_back(srcByte);
+                cu16ToSrcEnd.push_back(srcByte +
+                    static_cast<uint32_t>(utf8Len));
+            }
             srcByte += utf8Len;
         }
         BlockLayout bl;
@@ -324,6 +328,7 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         bl.textStartOffset = n.contentOffset;
         bl.nodeIndex = 0;
         bl.u16ToSrc = std::move(cu16ToSrc);
+        bl.u16ToSrcEnd = std::move(cu16ToSrcEnd);
         // Store the font em height for correct caret sizing.
         if (code_fmt_) {
             bl.fontHeight = code_fmt_->GetFontSize();
@@ -528,6 +533,27 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     if (sp.strike)
                         layout->SetStrikethrough(true, r);
                 }
+                for (const auto& link : row.cells[c].links) {
+                    UINT32 linkStart = static_cast<UINT32>(text16.size());
+                    UINT32 linkEnd = 0;
+                    for (size_t ui = 0; ui < row.cells[c].u16ToSrc.size(); ++ui) {
+                        const uint32_t spanStart = row.cells[c].u16ToSrc[ui];
+                        const uint32_t spanEnd = ui < row.cells[c].u16ToSrcEnd.size()
+                            ? row.cells[c].u16ToSrcEnd[ui] : spanStart + 1;
+                        const uint32_t linkEndSrc = link.srcOffset + link.srcLength;
+                        if (spanEnd <= link.srcOffset || spanStart >= linkEndSrc)
+                            continue;
+                        linkStart = std::min<UINT32>(linkStart,
+                            static_cast<UINT32>(ui));
+                        linkEnd = std::max<UINT32>(linkEnd,
+                            static_cast<UINT32>(ui + 1));
+                    }
+                    if (linkEnd > linkStart) {
+                        DWRITE_TEXT_RANGE range = {linkStart,
+                            linkEnd - linkStart};
+                        layout->SetUnderline(TRUE, range);
+                    }
+                }
                 D2D1_POINT_2F cellOrigin = D2D1::Point2F(
                     cellX + m.cellPadX, curY + m.cellPadY);
                 // Draw selection highlight for this cell.
@@ -538,38 +564,23 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     uint32_t selEnd = selStart + sel->Length();
                     // Use cell.srcOffset and cell text length.
                     uint32_t cellStart = cell.srcOffset;
-                    // Compute cell text length from the UTF-32 text.
-                    uint32_t cellTextLen = 0;
-                    for (char32_t cp : cell.text) {
-                        cellTextLen += (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
-                                       (cp <= 0xFFFF) ? 3 : 4;
-                    }
-                    uint32_t cellEnd = cellStart + cellTextLen;
-                    if (selStart < cellEnd && selEnd > cellStart) {
-                        uint32_t localStart = (selStart > cellStart) ?
-                            (selStart - cellStart) : 0;
-                        uint32_t localEnd = (selEnd < cellEnd) ?
-                            (selEnd - cellStart) : cellTextLen;
-                        // Convert UTF-8 offsets to UTF-16 indices.
-                        UINT32 u16Start = 0, u16End = 0;
-                        uint32_t byteIdx = 0;
-                        bool pastStart = false, pastEnd = false;
-                        for (char32_t cp : cell.text) {
-                            int utf8Len = (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
-                                          (cp <= 0xFFFF) ? 3 : 4;
-                            if (!pastStart && byteIdx >= localStart) {
-                                u16Start = u16End;
-                                pastStart = true;
-                            }
-                            if (!pastEnd && byteIdx >= localEnd) {
-                                pastEnd = true;
-                                break;
-                            }
-                            u16End += (cp <= 0xFFFF) ? 1 : 2;
-                            byteIdx += utf8Len;
+                    uint32_t cellEnd = cell.srcEnd > cellStart
+                        ? cell.srcEnd : cellStart;
+                    if (selStart < cellEnd && selEnd > cellStart &&
+                        !cell.u16ToSrc.empty()) {
+                        UINT32 u16Start = static_cast<UINT32>(text16.size());
+                        UINT32 u16End = 0;
+                        for (size_t ui = 0; ui < cell.u16ToSrc.size(); ++ui) {
+                            const uint32_t spanStart = cell.u16ToSrc[ui];
+                            const uint32_t spanEnd = ui < cell.u16ToSrcEnd.size()
+                                ? cell.u16ToSrcEnd[ui] : spanStart + 1;
+                            if (spanEnd <= selStart || spanStart >= selEnd)
+                                continue;
+                            u16Start = std::min<UINT32>(u16Start,
+                                static_cast<UINT32>(ui));
+                            u16End = std::max<UINT32>(u16End,
+                                static_cast<UINT32>(ui + 1));
                         }
-                        if (!pastStart) u16Start = u16End;
-                        if (!pastEnd) u16End = static_cast<UINT32>(text16.size());
                         if (u16End > u16Start) {
                             UINT32 hitCount = 0;
                             DWRITE_HIT_TEST_METRICS htm[64];
@@ -604,18 +615,14 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     bl.width = colW - 2.0f * m.cellPadX;
                     bl.height = rowH - 2.0f * m.cellPadY;
                     bl.srcOffset = row.cells[c].srcOffset;
-                    uint32_t cellTextLen = 0;
-                    for (char32_t cp : row.cells[c].text) {
-                        cellTextLen += (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
-                                       (cp <= 0xFFFF) ? 3 : 4;
-                    }
-                    bl.srcLength = cellTextLen;
-                    // Compute extended cell range: scan backward past
+                    bl.srcLength = row.cells[c].srcEnd > bl.srcOffset
+                        ? row.cells[c].srcEnd - bl.srcOffset : 0;
+                    // Compute extended cell range from the source mapping.
                     // opening markers and forward past closing markers
                     // so the caret works when placed between hidden
                     // marker characters (* ` ~).
                     bl.srcCellStart = bl.srcOffset;
-                    bl.srcCellEnd = bl.srcOffset + cellTextLen;
+                    bl.srcCellEnd = bl.srcOffset + bl.srcLength;
                     if (srcText_) {
                         const auto& src = *srcText_;
                         // Scan backward past opening markers.
@@ -626,7 +633,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                             st--;
                         bl.srcCellStart = st;
                         // Scan forward past closing markers.
-                        uint32_t e = bl.srcOffset + cellTextLen;
+                        uint32_t e = bl.srcOffset + bl.srcLength;
                         while (e < src.size() &&
                                (src[e] == '*' || src[e] == '`' ||
                                 src[e] == '~'))
@@ -636,6 +643,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     bl.textStartOffset = row.cells[c].srcOffset;
                     bl.nodeIndex = 0;
                     bl.u16ToSrc = row.cells[c].u16ToSrc; // copy parser's mapping
+                    bl.u16ToSrcEnd = row.cells[c].u16ToSrcEnd;
                     if (body_fmt_) {
                         bl.fontHeight = body_fmt_->GetFontSize();
                     }
@@ -1025,6 +1033,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         // Map each UTF-16 position to UTF-8 source byte offset.
         // Walk each inline block codepoint by codepoint to build this.
         std::vector<uint32_t> u16ToSrc;
+        std::vector<uint32_t> u16ToSrcEnd;
 
         for (const auto& ib : n.children) {
             if (ib.kind == InlineKind::Image) continue;
@@ -1042,8 +1051,14 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                               (cp <= 0xFFFF) ? 3 : 4;
                 // UTF-16 code unit count
                 int utf16Len = (cp <= 0xFFFF) ? 1 : 2;
+                uint32_t sourceEnd = srcByte + static_cast<uint32_t>(utf8Len);
+                if (ib.text.size() == 1 && ib.srcLength >
+                    static_cast<uint32_t>(utf8Len)) {
+                    sourceEnd = ib.srcOffset + ib.srcLength;
+                }
                 for (int u = 0; u < utf16Len; u++) {
                     u16ToSrc.push_back(srcByte);
+                    u16ToSrcEnd.push_back(sourceEnd);
                 }
                 srcByte += utf8Len;
                 u16Idx += utf16Len;
@@ -1326,6 +1341,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             bl.textStartOffset = n.contentOffset;
             bl.nodeIndex = nodeIdx;
             bl.u16ToSrc = std::move(u16ToSrc);
+            bl.u16ToSrcEnd = std::move(u16ToSrcEnd);
             // Store the font em height for correct caret sizing.
             if (fmt) {
                 bl.fontHeight = fmt->GetFontSize();
@@ -1568,6 +1584,7 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         bl.fontHeight = code_fmt_->GetFontSize();
         // Build u16ToSrc mapping: each UTF-16 code unit maps to its
         // source byte offset.
+        std::vector<uint32_t> sourceU16End;
         uint32_t bi = 0;
         for (size_t si = 0; si < src.size(); ) {
             unsigned char c = static_cast<unsigned char>(src[si]);
@@ -1577,10 +1594,12 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                            (c < 0xF0) ? 1 : 2;
             for (int u = 0; u < utf16Len; ++u) {
                 bl.u16ToSrc.push_back(bi);
+                sourceU16End.push_back(bi + static_cast<uint32_t>(utf8Len));
             }
             bi += utf8Len;
             si += utf8Len;
         }
+        bl.u16ToSrcEnd = std::move(sourceU16End);
         // layout is owned by the cache (don't Release it here).
         cache_->Add(bl);
     } else {

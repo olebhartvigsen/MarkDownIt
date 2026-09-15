@@ -2,9 +2,15 @@
 
 ## Formål
 
-Dette dokument fastlægger den almindelige tekstredigeringsadfærd for en WYSIWYG Markdown-wordprocessor til Windows. Kravene gælder dokumentets redigerbare tekstområde, uanset hvordan programmet gemmer Markdown internt.
+Dette dokument fastlægger krav til den synlige, redigerbare tekstmodel og de
+almindelige tekstredigeringshandlinger i MarkDownIt på Windows. Kravene gælder
+dokumentets redigerbare tekstområde, uanset om programmet gemmer Markdown som
+rå tekst eller med interne markører.
 
-En implementering skal ligne den adfærd, brugere forventer af et almindeligt Windows-tekstredigeringsfelt eller en wordprocessor. Den må ikke tilføje særfunktioner, der ændrer betydningen af de beskrevne musebevægelser, taster eller standardgenveje.
+En implementering skal følge den observerbare adfærd, som brugere forventer af
+et almindeligt Windows-tekstredigeringsfelt, for de handlinger der er beskrevet
+her. Funktioner uden for specifikationen må ikke ændre resultatet af de
+beskrevne musebevægelser, taster eller standardgenveje.
 
 ## Omfang og afgrænsning
 
@@ -20,16 +26,19 @@ Specifikationen omfatter:
 
 Specifikationen omfatter ikke:
 
-- Søgning og erstatning.
 - Stavekontrol.
 - Flere samtidige markeringer.
 - Rektangulær eller kolonnebaseret markering.
-- Drag and drop af tekst.
 - Automatisk fortolkning af skrevet Markdown-syntaks.
-- Særlige tastaturregler for tabeller, lister, kodeblokke eller andre dokumentelementer.
-- Linkaktivering med musen.
 
-Tab, Enter og klik i specialiserede dokumentelementer kan få yderligere regler i en senere specifikation. De må ikke ændre reglerne her for almindelig løbende tekst.
+Den sidste afgrænsning betyder, at almindeligt tekstinput ikke automatisk må
+omskrive eller formatere Markdown-markører. Hvis brugeren skriver `# `, `- `
+eller `**`, skal tegnene forblive tekst, medmindre brugeren anvender en separat
+og eksplicit formatkommando. At eksisterende Markdown fortolkes ved rendering
+er ikke det samme som automatisk formatering og er fortsat tilladt.
+
+Tab, Enter og klik i specialiserede dokumentelementer følger reglerne i afsnittet
+"Udvidede krav: dokumentbevidst redigering og søgning".
 
 ## Normative ord
 
@@ -371,7 +380,11 @@ Tab, Enter og klik i specialiserede dokumentelementer kan få yderligere regler 
 
 ## Acceptance criteria
 
-Implementeringsagenten skal levere automatiserede enhedstests for modelreglerne og en Windows-manuel testliste for hit-test, fokus, clipboard og IME. Følgende kriterier skal være opfyldt.
+Implementeringsagenten skal levere automatiserede enhedstests for modelreglerne
+og en Windows-manuel testliste for hit-test, fokus, clipboard og IME. Hvert
+kriterium skal verificeres med et konkret observerbart resultat. En test, der
+kun viser, at en operation ikke fejlede, opfylder ikke kriteriet. Følgende
+kriterier skal være opfyldt.
 
 ### Caret og mus
 
@@ -387,10 +400,11 @@ Implementeringsagenten skal levere automatiserede enhedstests for modelreglerne 
 ### Unicode og input
 
 1. Venstre pil, højre pil, Backspace og Delete behandler `e` plus kombinerende accent som én grafemklynge.
-2. Backspace efter en emoji-ZWJ-sekvens sletter hele den viste emoji og efterlader gyldig tekst.
-3. Indtastning af `*tekst*` viser de indtastede asterisker som tekst og anvender ikke kursiv automatisk.
-4. Indtastning med en aktiv markering erstatter hele markeringen og placerer caretet efter den indsatte tekst.
-5. Enter erstatter en aktiv markering med ét afsnitsskift.
+2. Venstre pil, højre pil, Backspace og Delete behandler et regionalindikator-par som én grafemklynge.
+3. Backspace efter en emoji-ZWJ-sekvens sletter hele den viste emoji og efterlader gyldig tekst.
+4. Indtastning af `*tekst*` viser de indtastede asterisker som tekst og anvender ikke kursiv automatisk.
+5. Indtastning med en aktiv markering erstatter hele markeringen og placerer caretet efter den indsatte tekst.
+6. Enter erstatter en aktiv markering med ét afsnitsskift.
 
 ### Sletning og navigation
 
@@ -454,12 +468,124 @@ Dette afsnit er ikke en lempelse af kravene ovenfor. Det registrerer, hvilke del
 - Indsætning over en eksisterende markering registreres som én `RecordAndApply`-mutation med én undo-post.
 - `CF_UNICODETEXT` eksporteres med CRLF-linjeskift, og indsat clipboardtekst normaliseres til LF.
 - Ctrl+K bruger linkdialogen og opretter ikke et tomt link, hvis markeringen er tom.
+- Søgning, erstatning, tekstflytning med drag and drop, dokumentbevidst Tab og
+  Enter samt linkaktivering er koblet til editorens aktuelle model.
+- Automatisk Markdown-formatering er ikke en del af denne status. Den er
+  afgrænset fra specifikationen og indgår ikke i acceptance-kriterierne.
+- Søgning og tekstflytning afviser kandidater, der ikke ligger på gyldige
+  grafemgrænser. Det er en modelkontrol, ikke dokumentation for fuld Unicode-
+  segmentering.
 
 ### Resterende krav, som skal verificeres eller implementeres
 
-1. `PrevGraphemeBoundary` og `NextGraphemeBoundary` skal udvides fra kodepunktgrænser til fuld Unicode-grafemsegmentering efter kravene i afsnittet om grafemklynger. Det gælder især kombinerende tegn, regionalindikatorer og emoji-ZWJ-sekvenser.
-2. Hit-test, dobbeltklik og ordbevægelse skal bruge Unicode-ordsegmentering og må ikke klassificere UTF-8-bytes som selvstændige tegn.
-3. Markering, caret og clipboard skal bruge visuelle tekstpositioner og ikke eksponere Markdown-markører, hvis intern lagring fortsat indeholder skjult syntaks.
-4. Clipboard skal testes på Windows for `CF_UNICODETEXT`, CRLF-normalisering, NUL-terminering, tom markering og fejlet klipning.
-5. IME-komposition, muse-autoscroll, fokus-tab, linkdestination-opdatering og selection-preservation ved relayout kræver målrettede Windows-tests.
-6. Den endelige Windows acceptance-test skal køres med MSVC og Windows SDK. En Linux- eller WSL-syntakskontrol kan ikke erstatte denne build-gate.
+1. Den portable grafemmodel skal valideres mod hele kravsættet for Unicode-
+   grafemklynger, især kombinerende tegn, regionalindikatorer og emoji-
+   ZWJ-sekvenser. De nuværende grænsekontroller er ikke en påstand om fuld
+   Unicode-segmentering.
+2. Hit-test, dobbeltklik, ordbevægelse, clipboard, linkaktivering og
+   selection-preservation ved relayout kræver fortsat målrettede Windows-tests.
+3. De portable regressionstests skal køres sammen med hele testpakken, og
+   tabelnavigation skal også dække tomme celler og dokumentets grænser.
+4. Den endelige Windows acceptance-test skal køres med MSVC og Windows SDK.
+   En Linux- eller WSL-syntakskontrol kan ikke erstatte denne build-gate.
+
+## Udvidede krav: dokumentbevidst redigering og søgning
+
+Dette afsnit er normativt. Det beskriver funktioner, som skal følge den
+samme caret-, markerings-, clipboard- og undo-model som resten af editoren.
+Det ændrer ikke afgrænsningen af automatisk Markdown-formatering ovenfor.
+Kravene til Tab og Enter beskriver tastens dokumentbevidste handling, ikke en
+automatisk omskrivning af almindeligt tekstinput.
+
+### Drag and drop af tekst
+
+1. Et tryk i en eksisterende markering starter ikke en ny markering. Hvis
+   markøren flyttes mindst systemets drag-tærskel, flyttes hele markeringen.
+2. Et drop inden for den valgte tekst er en no-op. Teksten må ikke duplikeres
+   eller slettes.
+3. Et drop før eller efter markeringen flytter den valgte kildeafstand én gang.
+   Markeringen flyttes med teksten og forbliver aktiv efter operationen.
+4. Drag-operationen er én undo-handling. Ctrl+Z gendanner både dokumenttekst og
+   den oprindelige markering, og Ctrl+Y genskaber flytningen.
+5. Drag må ikke flytte skjulte Markdown-markører til en ugyldig caret-position.
+   Kildeintervaller skal være gyldige UTF-8-grænser, og operationen skal
+   respektere den eksisterende synlighedsmodel.
+6. Mouse capture frigives ved venstre museknap-op, også hvis drop-positionen
+   ligger uden for viewporten eller operationen bliver afvist.
+
+### Særlige tastaturregler for dokumentelementer
+
+1. Enter i en almindelig paragraf opretter det almindelige afsnitsskift, som
+   editorens paragrafmodel definerer.
+2. Enter i en kodeblok indsætter ét LF-tegn og indsætter ikke en ekstra tom
+   paragraf uden for kodeblokken.
+3. Enter i en aktiv liste fortsætter samme liste med samme listetype. Enter på
+   et tomt listepunkt afslutter listepunktet uden at oprette en ny tom linje i
+   listen.
+4. Enter i en tabelcelle er en no-op, fordi en newline ellers bryder tabellens
+   Markdown-række.
+5. Tab i en tabel flytter til næste celle. Shift+Tab flytter til forrige celle.
+   Ved dokumentets første eller sidste celle er handlingen en no-op, medmindre
+   en separat tabelindsættelseshandling eksplicit er tilgængelig.
+6. Tab i en kodeblok indsætter fire ASCII-mellemrum. Shift+Tab fjerner én
+   kodeindrykning, når linjen har den tilsvarende indrykning.
+7. Tab uden for tabel og kodeblok bruger listeindrykning på liste-linjer og
+   almindelig indrykning på andre linjer. Shift+Tab udfører den tilsvarende
+   udrykning.
+8. Alle dokumentelementregler skal oprette højst én undo-post pr. tastetryk.
+   En no-op må ikke oprette en undo-post.
+
+### Linkaktivering med musen
+
+1. Et klik på et link i skrivebeskyttet tilstand aktiverer linket.
+2. Ctrl+klik på et link i redigeringstilstand aktiverer linket. Et almindeligt
+   klik i redigeringstilstand placerer caret eller ændrer markering, så links
+   ikke blokerer tekstredigering.
+3. Eksterne links må kun åbnes for understøttede sikre skemaer, herunder
+   `http`, `https` og `mailto`.
+4. Interne ankerlinks flytter viewporten til det tilsvarende dokumentafsnit.
+   De må ikke starte et eksternt program.
+5. Linkaktivering må ikke ændre dokumenttekst, dirty-state, markering eller
+   undo-historik.
+6. Hvis hit-test rammer skjulte linkmarkører, skal linket stadig kunne
+   aktiveres uden at placere caret på en skjult kildeposition.
+
+### Søgning og erstatning
+
+1. Ctrl+F åbner Find-dialogen. Dialogen indeholder søgetekst, Match case,
+   Whole word, Find Next og Annuller.
+2. Ctrl+H åbner Find and Replace-dialogen med søgetekst, erstatningstekst,
+   Match case, Whole word, Find Next, Replace, Replace All og Annuller.
+3. Søgning er som standard case-insensitiv. Whole word må kun matche ved
+   Unicode-ordgrænser, og en del af et længere ord må ikke matches.
+4. Find Next fortsætter fra den aktive caret-position, markerer hele matchen og
+   starter forfra ved dokumentets begyndelse efter sidste match.
+5. Empty query er en no-op. Find uden match ændrer hverken dokument,
+   markering eller undo-historik.
+6. Replace erstatter det næste match som én tekstmutation og markerer den
+   indsatte tekst. Replace i skrivebeskyttet tilstand er en no-op.
+7. Replace All erstatter alle ikke-overlappende match som én tekstmutation og
+   én undo-post. Ctrl+Z gendanner hele dokumentteksten i én handling.
+8. Erstatning skal bevare UTF-8, grafemgrænser og gyldige source offsets.
+   Søgning må ikke skabe caret-positioner midt i en UTF-8-sekvens.
+9. Dialogen annulleres uden sideeffekter. Den skal ikke ændre query,
+   selection, dokument eller undo-historik, før brugeren bekræfter en handling.
+
+### Acceptance criteria for de udvidede funktioner
+
+1. Portable tests dokumenterer case-regler, whole-word-regler, tom query,
+   non-overlapping matches, Replace All og tekstflytning før og efter en
+   markering med forventet tekst og ny startposition.
+2. Portable tests dokumenterer Tab-navigation til og fra en tom tabelcelle,
+   Shift+Tab ved første celle, Tab ved sidste celle, Enter i tabel, Enter i
+   kodeblok og listefortsættelse. Testene skal kontrollere både destinationer
+   og no-op-resultater.
+3. Portable tests afviser kilde- og drop-positioner midt i en kombinerende
+   grafemklynge, et regionalindikator-flag eller en emoji-ZWJ-sekvens og
+   accepterer flytning af hele grafemklyngen.
+4. Windows CI bygger både appen og testbinary med MSVC og kører hele testpakken.
+5. Windows acceptance-testen verificerer Ctrl+F, Ctrl+H, Replace, Replace All,
+   undo/redo, drag-and-drop, mouse capture, linkaktivering og alle dokument-
+   tastaturregler med en rigtig Win32-window message loop.
+6. Linux eller WSL må bruges til statisk kontrol, men kan ikke erstatte Windows
+   runtime-verifikation eller MSVC-buildet.

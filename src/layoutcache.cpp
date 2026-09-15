@@ -1,5 +1,6 @@
 #include "layoutcache.h"
 #include "editcontroller.h"
+#include <algorithm>
 #include <cmath>
 
 LayoutCache::~LayoutCache() {
@@ -175,6 +176,98 @@ bool LayoutCache::OffsetIsRendered(uint32_t offset) const {
     return false;
 }
 
+bool LayoutCache::RangeIsRendered(uint32_t start, uint32_t length) const {
+    const uint32_t end = start + length;
+    if (length == 0 || end < start) return false;
+
+    // No source mapping means the visible layout is not ready. Callers must
+    // repaint synchronously before filtering matches.
+    bool hasMapping = false;
+    for (const auto& bl : blocks_) {
+        if (!bl.u16ToSrc.empty()) {
+            hasMapping = true;
+            break;
+        }
+    }
+    if (!hasMapping) return false;
+    if (!srcText_ || end > srcText_->size()) return false;
+
+    for (uint32_t offset = start; offset < end; ++offset) {
+        const unsigned char byte =
+            static_cast<unsigned char>((*srcText_)[offset]);
+        if ((byte & 0xC0u) == 0x80u) continue;
+        bool covered = false;
+        for (const auto& bl : blocks_) {
+            for (size_t i = 0; i < bl.u16ToSrc.size(); ++i) {
+                const uint32_t spanStart = bl.u16ToSrc[i];
+                const uint32_t spanEnd = i < bl.u16ToSrcEnd.size()
+                    ? bl.u16ToSrcEnd[i] : spanStart + 1;
+                if (spanStart <= offset && offset < spanEnd) {
+                    if (start > spanStart || end < spanEnd) return false;
+                    covered = true;
+                    break;
+                }
+            }
+            if (covered) break;
+        }
+        if (!covered) return false;
+    }
+    return true;
+}
+
+bool LayoutCache::GetRenderedBlockRange(int blockIndex,
+                                         uint32_t* outStart,
+                                         uint32_t* outEnd) const {
+    if (blockIndex < 0 || static_cast<size_t>(blockIndex) >= blocks_.size() ||
+        !outStart || !outEnd) return false;
+    const auto& bl = blocks_[static_cast<size_t>(blockIndex)];
+    if (bl.u16ToSrc.empty()) return false;
+    *outStart = bl.u16ToSrc.front();
+    if (!bl.u16ToSrcEnd.empty()) {
+        *outEnd = bl.u16ToSrcEnd.back();
+    } else {
+        *outEnd = bl.u16ToSrc.back() + 1;
+    }
+    if (srcText_ && *outEnd < srcText_->size()) {
+        if ((*srcText_)[*outEnd] == '\r') ++*outEnd;
+        if (*outEnd < srcText_->size() && (*srcText_)[*outEnd] == '\n') ++*outEnd;
+    }
+    return *outStart <= *outEnd;
+}
+
+uint32_t LayoutCache::NormalizeToRenderedCaret(uint32_t offset) const {
+    uint32_t previous = UINT32_MAX;
+    uint32_t next = UINT32_MAX;
+    for (const auto& bl : blocks_) {
+        for (size_t i = 0; i < bl.u16ToSrc.size(); ++i) {
+            const uint32_t start = bl.u16ToSrc[i];
+            const uint32_t end = i < bl.u16ToSrcEnd.size()
+                ? bl.u16ToSrcEnd[i] : start + 1;
+            if (offset == start) return offset;
+            if (offset == end) {
+                uint32_t normalized = end;
+                if (srcText_) {
+                    while (normalized < srcText_->size() &&
+                           ((*srcText_)[normalized] == '*' ||
+                            (*srcText_)[normalized] == '`' ||
+                            (*srcText_)[normalized] == '~')) {
+                        ++normalized;
+                    }
+                }
+                return normalized;
+            }
+            if (offset > start && offset < end) return end;
+            if (end < offset && (previous == UINT32_MAX || end > previous))
+                previous = end;
+            if (start > offset && (next == UINT32_MAX || start < next))
+                next = start;
+        }
+    }
+    if (previous == UINT32_MAX) return next;
+    if (next == UINT32_MAX) return previous;
+    return offset - previous <= next - offset ? previous : next;
+}
+
 uint32_t LayoutCache::PointToOffset(float x, float y) const {
     int idx = HitTestBlock(x, y);
     if (idx < 0) return UINT32_MAX;
@@ -194,31 +287,16 @@ uint32_t LayoutCache::PointToOffset(float x, float y) const {
 
     // htm.textPosition is a UTF-16 code-unit position within the layout.
     // Use the u16ToSrc mapping to convert to a UTF-8 source offset.
-    if (!bl.u16ToSrc.empty() && htm.textPosition < bl.u16ToSrc.size()) {
-        uint32_t srcOff = bl.u16ToSrc[htm.textPosition];
-        if (isTrailingHit) {
-            if (htm.textPosition + 1 < bl.u16ToSrc.size()) {
-                // For trailing hits, advance to the next source position.
-                uint32_t nextOff = bl.u16ToSrc[htm.textPosition + 1];
-                if (nextOff > srcOff) return nextOff;
-            } else {
-                // Trailing hit on the last character: return end of block.
-                uint32_t endOff = bl.srcOffset + bl.srcLength;
-                // For table cells, bl.srcLength covers only the rendered
-                // content (e.g., "bold"), not the surrounding markdown
-                // markers (e.g., **bold**). The returned offset would
-                // land on the closing ** markers, so typing there
-                // breaks the formatting. Skip past any marker chars
-                // (* ` ~) to find the pipe or end of cell.
-                if (srcText_) {
-                    const auto& src = *srcText_;
-                    while (endOff < src.size() &&
-                           (src[endOff] == '*' || src[endOff] == '`' ||
-                            src[endOff] == '~'))
-                        endOff++;
-                }
-                return endOff;
-            }
+    if (!bl.u16ToSrc.empty()) {
+        const size_t pos = std::min<size_t>(htm.textPosition,
+                                             bl.u16ToSrc.size() - 1);
+        const uint32_t srcOff = bl.u16ToSrc[pos];
+        if (htm.textPosition >= bl.u16ToSrc.size() || isTrailingHit) {
+            if (pos < bl.u16ToSrcEnd.size())
+                return bl.u16ToSrcEnd[pos];
+            if (pos + 1 < bl.u16ToSrc.size() &&
+                bl.u16ToSrc[pos + 1] > srcOff)
+                return bl.u16ToSrc[pos + 1];
         }
         return srcOff;
     }
