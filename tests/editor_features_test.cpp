@@ -128,7 +128,7 @@ TEST(TextDrag, EnforcesEmojiZwjGraphemeBoundaries) {
 }
 
 TEST(TextDrag, MovesRegionalIndicatorFlagAsOneGrapheme) {
-    const std::string flag = "\xF0\x9F\x87\BA\xF0\x9F\x87\xB8";
+    const std::string flag = "\xF0\x9F\x87\xBA" "\xF0\x9F\x87\xB8";
     const std::string text = "A" + flag + "B";
     std::string moved;
     uint32_t newStart = 0;
@@ -284,7 +284,7 @@ TEST(EditController, SelectedEnterInTableIsNoOp) {
 
 TEST(EditController, CodeBlockIndentationUsesFourSpaces) {
     TextBuffer b;
-    b.SetText("```\x0Acode\x0A```");
+    b.SetText("```\ncode\n```");
     Document doc;
     ParseMarkdown(b.Text(), doc);
     ASSERT_EQ(doc.nodes.size(), 1u);
@@ -296,7 +296,7 @@ TEST(EditController, CodeBlockIndentationUsesFourSpaces) {
     EditController ec(&b, &s);
     ec.InsertText("    ");
 
-    EXPECT_EQ(b.Text(), "```\x0A    code\x0A```");
+    EXPECT_EQ(b.Text(), "```\n    code\n```");
     EXPECT_EQ(s.active.offset, doc.nodes[0].contentOffset + 4u);
 }
 
@@ -310,7 +310,7 @@ TEST(EditController, EnterContinuesUnorderedListExactly) {
     EditController ec(&b, &s);
     EXPECT_TRUE(ec.InsertParagraphBreak(doc));
 
-    EXPECT_EQ(b.Text(), "- first\x0A- ");
+    EXPECT_EQ(b.Text(), "- first\n- ");
     EXPECT_EQ(s.active.offset, 10u);
 }
 
@@ -324,7 +324,7 @@ TEST(EditController, EnterContinuesOrderedListExactly) {
     EditController ec(&b, &s);
     EXPECT_TRUE(ec.InsertParagraphBreak(doc));
 
-    EXPECT_EQ(b.Text(), "1. first\x0A1. ");
+    EXPECT_EQ(b.Text(), "1. first\n1. ");
     EXPECT_EQ(s.active.offset, 12u);
 }
 

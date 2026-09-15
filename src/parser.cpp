@@ -18,6 +18,7 @@
 #include "mermaid/layout.h"
 #include <chrono>
 #include <memory>
+#include <algorithm>
 
 #include <cstring>
 #include <windows.h>
@@ -693,6 +694,13 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
         ctx->cell_span_stack.clear();
     }
     if (type == MD_BLOCK_TR) {
+        if (ctx->cur_row && ctx->cur_row->cells.size() > 1) {
+            std::stable_sort(ctx->cur_row->cells.begin(),
+                             ctx->cur_row->cells.end(),
+                             [](const TableCell& a, const TableCell& b) {
+                                 return a.srcOffset < b.srcOffset;
+                             });
+        }
         ctx->cur_row = nullptr;
     }
     if (type == MD_BLOCK_THEAD) {
