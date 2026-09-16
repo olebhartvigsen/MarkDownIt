@@ -1,0 +1,51 @@
+sequenceDiagram
+    autonumber
+    actor RED as Stamkortredaktør
+    participant MSK as MSK StamkortService
+    participant FM as FuzzyMatch
+    participant HR as HR Topdesk
+    participant STADS as STADS support
+    participant IDM as IDM Persondatabasen
+
+    RED->>MSK: Slår dansk CPR op ved ny ansættelse
+    MSK->>FM: hentFuzzyMatch (CPR)
+    FM-->>MSK: 0, 1 eller flere matches og valget sker på Match-siden
+
+    alt Ingen match
+        MSK-->>RED: Opret person som normalt
+        RED->>MSK: Opret person og arbejdsrelation
+        MSK->>IDM: opretPerson + opretArbejdsRelation
+        MSK->>HR: OpretSag (asynkron HR-sag i ESDH)
+    else Ét match, redaktøren er sikker
+        RED->>MSK: Vælger eksisterende identitet
+        opt Personen har KOT-CPR
+            MSK->>IDM: skiftCprKOTtilSLS (tager få sekunder)
+        end
+        opt Knap: Send CPR-skifte-sag
+            MSK->>HR: Mail til HRs Topdesk-mail, en Skift-CPR-sag
+            note over HR: HR ser det samme fuzzy match
+            HR->>IDM: Skifter CPR, afslutter sagen
+        end
+        MSK-->>RED: Ansættelsen fortsætter på kunstigt CPR
+    else Ét match, redaktøren er usikker
+        RED->>MSK: Klik: opret person alligevel
+        note over MSK: Klikket opretter IKKE en person, kun en sag hos HR
+        MSK->>HR: Opretter sag hos HR
+        opt Knap kun synlig for administratorer
+            HR->>MSK: Administrator opretter personen efter udredning
+        end
+        MSK-->>RED: Ansættelsen fortsætter
+    else Flere matches, redaktøren er sikker
+        RED->>MSK: Vælger ældste AUID som standard
+        MSK->>HR: Mail med nyt CPR og de matchede CPR-numre
+        HR->>STADS: Udred, hvilken identitet der skal overleve
+        STADS-->>HR: Ok, nedlægger én identitet (IDM sletter senere)
+        HR->>IDM: Skift CPR på tiloversblevne, evt. flyt ansættelsen
+        MSK-->>RED: Ansættelsen fortsætter
+    else Flere matches, eller valget er ikke truffet
+        RED->>MSK: Send CPR-skifte-sag
+        MSK->>HR: Sagen overføres straks til STADS
+        STADS-->>HR: Reagerer inden samme dag, når intet AUID er valgt
+        HR->>IDM: Skifter CPR og afslutter sagen
+        MSK-->>RED: Ansættelsen fortsætter
+    end
