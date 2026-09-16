@@ -1,8 +1,8 @@
 # Mermaid Flowchart Support (Native C++) Implementation Plan
 
-> **Status: implementation and CI verified on `feat/mermaid-flowchart` (2026-09-16).**
-> All automated closure items are complete at commit `1a5c334`. The Windows GUI
-> validation remains open. See "Closure status (2026-09-16)" near the end.
+> **Status: closed on `feat/mermaid-flowchart` (2026-09-16).** All implementation,
+> CI, oracle, and manual Windows GUI checks are complete. See "Closure status
+> (2026-09-16)" near the end.
 
 > **For Hermes:** Use subagent-driven-development to implement this plan task-by-task.
 > Every task ends with a green oracle-comparison run. Do not advance on a red gate.
@@ -891,7 +891,7 @@ engine to be tested in the Linux CI job and locally with g++ once a toolchain is
 - [x] Golden gate covers node centres and edge bend points within 0.5 DIP of dagre on all nine fixtures
 - [x] Unit tests cover all five layout phases, measured layout directions, fallback, and cache behaviour
 - [x] CI build and oracle drift check passed on commit `1a5c334`
-- [ ] Manually confirm on the Windows box: rendering, scrolling, zoom, and live reload
+- [x] Manually confirmed on the Windows box: rendering, scrolling, zoom, live reload, palette, labels, and malformed-fence fallback
 - [x] README and reference notes document the supported subset and current limits
 
 ---
@@ -912,10 +912,9 @@ cache key includes the full fence source and the exact zoom bit pattern, so a
 source edit or zoom change cannot reuse another diagram's layout. Equality also
 compares the full key, so a hash collision is safe.
 
-The remaining manual check cannot be run from WSL. After the CI artifact is
-installed on Windows, verify a document containing TD/TB, BT, LR, and RL
-diagrams at 25%, 100%, and 400% zoom. Check label clipping, scrolling, live
-edit reparse, file reload, malformed-fence fallback, and palette colours.
+The Windows GUI check passed on the installed CI artifact. It covered TD/TB,
+BT, LR, and RL diagrams at 25%, 100%, and 400% zoom, label clipping, scrolling,
+live edit reparse, file reload, malformed-fence fallback, and palette colours.
 
 ### Historical notes
 
