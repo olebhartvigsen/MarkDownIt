@@ -1,8 +1,8 @@
 # Mermaid Flowchart Support (Native C++) Implementation Plan
 
-> **Status: IMPLEMENTED on `feat/mermaid-flowchart` (2026-09-07). All 14 tasks
-> (0-13) are done and CI-green.** Latest commit `75a6930`. Details and remaining
-> gaps in "Implementation status (2026-09-07)" near the end of this file.
+> **Status: implementation and CI verified on `feat/mermaid-flowchart` (2026-09-16).**
+> All automated closure items are complete at commit `1a5c334`. The Windows GUI
+> validation remains open. See "Closure status (2026-09-16)" near the end.
 
 > **For Hermes:** Use subagent-driven-development to implement this plan task-by-task.
 > Every task ends with a green oracle-comparison run. Do not advance on a red gate.
@@ -890,7 +890,7 @@ engine to be tested in the Linux CI job and locally with g++ once a toolchain is
 - [x] Malformed Mermaid falls back to a code block and never blanks the document
 - [x] Golden gate covers node centres and edge bend points within 0.5 DIP of dagre on all nine fixtures
 - [x] Unit tests cover all five layout phases, measured layout directions, fallback, and cache behaviour
-- [ ] CI build and oracle drift check must pass after the closure changes are committed
+- [x] CI build and oracle drift check passed on commit `1a5c334`
 - [ ] Manually confirm on the Windows box: rendering, scrolling, zoom, and live reload
 - [x] README and reference notes document the supported subset and current limits
 
@@ -898,9 +898,9 @@ engine to be tested in the Linux CI job and locally with g++ once a toolchain is
 
 ## Closure status (2026-09-16)
 
-The flowchart implementation is complete in the working tree and awaits its
-final Windows CI build. This closure work removes the old `04-crossing`
-exception. The fixture now passes the edge bend-point gate at 0.5 DIP.
+The flowchart implementation and its final Windows CI build are complete at
+commit `1a5c334`. This closure work removes the old `04-crossing` exception.
+The fixture now passes the edge bend-point gate at 0.5 DIP.
 
 The DirectWrite path now keeps the parsed flowchart source, measures labels in
 canonical DIPs, and uses the same layout pipeline as the oracle path. This
