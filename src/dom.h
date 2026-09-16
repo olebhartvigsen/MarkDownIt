@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <memory>
 
+namespace mermaid { struct Flowchart; }
 namespace mermaid { struct LaidOutFlowchart; }
 namespace mermaid { struct LaidOutPie; }
 namespace mermaid { struct LaidOutSequence; }
@@ -112,6 +113,10 @@ struct Node {
     std::u32string             raw;          // code block raw text (UTF-32)
     std::string                lang;         // fence info string, e.g. "mermaid"
     std::vector<TableRow>     rows;         // table rows (for BlockKind::Table)
+    // Parsed source and a provisional layout. The renderer replaces the layout
+    // with a DirectWrite-measured cached snapshot when its text services exist.
+    std::shared_ptr<mermaid::Flowchart> mermaid_flowchart;
+    std::string mermaid_source;
     std::shared_ptr<mermaid::LaidOutFlowchart> mermaid_layout;  // populated when block == MermaidFlowchart
     std::shared_ptr<mermaid::LaidOutPie>       mermaid_pie;     // populated when block == MermaidPie
     std::shared_ptr<mermaid::LaidOutSequence>  mermaid_seq;     // populated when block == MermaidSequence

@@ -149,15 +149,15 @@ static void ApplyRankdir(LayoutGraph& g, Dir dir) {
     }
 }
 
-LaidOutFlowchart LayoutFlowchart(const Flowchart& flow, const LayoutParams& p) {
+LaidOutFlowchart FinalizeFlowchartLayout(const Flowchart& flow,
+                                          LayoutGraph g,
+                                          const LayoutParams& p) {
     LaidOutFlowchart out;
-    LayoutGraph g = FlowchartToLayoutGraph(flow);
     if (g.nodes.empty()) return out;
 
     // For LR/RL, pre-swap node dimensions so the TB pipeline lays them out
     // along what will become the horizontal rank axis after the post-layout
-    // axis swap. Without this, TB row heights (49) leak into LR column
-    // widths and the geometry does not match dagre.
+    // axis swap. Without this, TB row heights leak into LR column widths.
     const bool axis_swap = (flow.dir == Dir::LR || flow.dir == Dir::RL);
     if (axis_swap) {
         for (auto& n : g.nodes) std::swap(n.width, n.height);
@@ -170,11 +170,9 @@ LaidOutFlowchart LayoutFlowchart(const Flowchart& flow, const LayoutParams& p) {
     AssignCoordinates(g, p);
     RouteEdges(g, p);
     Denormalize(g);
-
     ApplyRankdir(g, flow.dir);
 
-    // Shift by margin so nothing sits at (0,0) exactly and bbox includes it.
-    double margin = p.margin;
+    const double margin = p.margin;
     if (margin > 0.0) {
         for (auto& n : g.nodes) {
             n.x = static_cast<float>(n.x + margin);
@@ -185,12 +183,11 @@ LaidOutFlowchart LayoutFlowchart(const Flowchart& flow, const LayoutParams& p) {
         }
     }
 
-    // Bounding box: max of node right/bottom edges and edge route points.
     double max_x = 0.0, max_y = 0.0;
     for (const auto& n : g.nodes) {
-        double right  = static_cast<double>(n.x) + static_cast<double>(n.width)  * 0.5;
-        double bottom = static_cast<double>(n.y) + static_cast<double>(n.height) * 0.5;
-        if (right  > max_x) max_x = right;
+        const double right = static_cast<double>(n.x) + static_cast<double>(n.width) * 0.5;
+        const double bottom = static_cast<double>(n.y) + static_cast<double>(n.height) * 0.5;
+        if (right > max_x) max_x = right;
         if (bottom > max_y) max_y = bottom;
     }
     for (const auto& e : g.edges) {
@@ -199,20 +196,23 @@ LaidOutFlowchart LayoutFlowchart(const Flowchart& flow, const LayoutParams& p) {
             if (pt.y > max_y) max_y = pt.y;
         }
     }
-    out.width  = max_x + margin;
+    out.width = max_x + margin;
     out.height = max_y + margin;
     out.nodes = std::move(g.nodes);
     out.edges = std::move(g.edges);
 
-    // Swimlane bounding boxes, in the same coordinate system as nodes/edges.
     out.lanes = ComputeLaneBoxes(flow, out.nodes);
     for (const auto& lb : out.lanes) {
-        double r = static_cast<double>(lb.x) + static_cast<double>(lb.width);
-        double b = static_cast<double>(lb.y) + static_cast<double>(lb.height);
-        if (r + margin > out.width)  out.width  = r + margin;
+        const double r = static_cast<double>(lb.x) + static_cast<double>(lb.width);
+        const double b = static_cast<double>(lb.y) + static_cast<double>(lb.height);
+        if (r + margin > out.width) out.width = r + margin;
         if (b + margin > out.height) out.height = b + margin;
     }
     return out;
+}
+
+LaidOutFlowchart LayoutFlowchart(const Flowchart& flow, const LayoutParams& p) {
+    return FinalizeFlowchartLayout(flow, FlowchartToLayoutGraph(flow), p);
 }
 
 }  // namespace mermaid

@@ -10,6 +10,7 @@
 #include "mermaid/layout_internal.h"
 #include "mermaid/layout.h"
 #include "mermaid/layout_cache.h"
+#include "mermaid/measure_dwrite.h"
 #include <cmath>
 
 static const float kPtToDip = 96.0f / 72.0f;
@@ -82,6 +83,21 @@ bool Renderer::Init(IDWriteFactory* dw) {
         DWRITE_LINE_SPACING_METHOD_PROPORTIONAL,
         base.bodyLineHeight, 1.24f);
 
+    // Flowchart coordinates are kept in canonical DIPs. This format is
+    // deliberately unzoomed, so zoom is applied once by the drawing path.
+    hr = dw->CreateTextFormat(
+        base.bodyFont, nullptr,
+        DWRITE_FONT_WEIGHT_REGULAR,
+        DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL,
+        base.bodyFontSize * kPtToDip,
+        L"", &mermaid_measure_fmt_);
+    if (SUCCEEDED(hr) && mermaid_measure_fmt_) {
+        mermaid_measure_fmt_->SetLineSpacing(
+            DWRITE_LINE_SPACING_METHOD_PROPORTIONAL,
+            base.bodyLineHeight, 1.24f);
+    }
+
     // Sequence autonumber digits: mermaid renders 12px sans-serif.
     hr = dw->CreateTextFormat(
         L"Segoe UI", nullptr,
@@ -128,6 +144,8 @@ void Renderer::Release() {
     rel(body_fmt_);
     rel(code_fmt_);
     rel(num_fmt_);
+    rel(mermaid_measure_fmt_);
+    mermaid_layout_cache_.Clear();
     for (int i = 1; i <= 6; ++i) rel(heading_fmt_[i]);
 }
 
@@ -746,7 +764,7 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
         } else if (n.block == BlockKind::ThematicBreak) {
             blockH = 12.0f;
         } else if (n.block == BlockKind::MermaidFlowchart) {
-            blockH = MeasureMermaidBlock(n, drawW);
+            blockH = MeasureMermaidBlock(dw, n, drawW);
         } else if (n.block == BlockKind::MermaidPie) {
             blockH = mermaid::MeasurePieHeight(*n.mermaid_pie, zoom_, drawW);
         } else if (n.block == BlockKind::MermaidSequence) {
@@ -954,7 +972,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
         if (n.block == BlockKind::MermaidFlowchart) {
             DrawMermaidBlock(rt, dw, n, drawX, curY, drawW);
-            curY += MeasureMermaidBlock(n, drawW);
+            curY += MeasureMermaidBlock(dw, n, drawW);
             prevBlock = n.block;
             prevDepth = n.depth;
             continue;
@@ -1771,10 +1789,28 @@ static const UINT32 kMermaidDashSize = 2;
 // Note: layout is computed once at parse time (parser.cpp) and stored on
 // Node::mermaid_layout, so we never re-run layout on WM_PAINT. Height is
 // derived through mermaid::MeasureLayoutHeight so measure and paint agree.
-float Renderer::MeasureMermaidBlock(const Node& n, float width) const {
-    if (!n.mermaid_layout) return 0.0f;
+std::shared_ptr<mermaid::LaidOutFlowchart> Renderer::GetMermaidLayout(
+        IDWriteFactory* dw, const Node& n) const {
+    if (!n.mermaid_flowchart || n.mermaid_source.empty() || !dw ||
+        !mermaid_measure_fmt_) return n.mermaid_layout;
+    if (auto cached = mermaid_layout_cache_.Find(n.mermaid_source, zoom_))
+        return cached;
+    auto laid = std::make_shared<mermaid::LaidOutFlowchart>(
+        mermaid::LayoutFlowchartWithDWrite(*n.mermaid_flowchart, dw,
+                                            mermaid_measure_fmt_));
+    if (!laid->nodes.empty()) {
+        mermaid_layout_cache_.Put(n.mermaid_source, zoom_, laid);
+        return laid;
+    }
+    return n.mermaid_layout;
+}
+
+float Renderer::MeasureMermaidBlock(IDWriteFactory* dw, const Node& n,
+                                    float width) const {
+    const auto lo = GetMermaidLayout(dw, n);
+    if (!lo) return 0.0f;
     const float availW = width - 2.0f * mermaid::kMermaidBlockPad;
-    return mermaid::MeasureLayoutHeight(*n.mermaid_layout, zoom_, availW);
+    return mermaid::MeasureLayoutHeight(*lo, zoom_, availW);
 }
 
 static void DrawArrowHead(ID2D1RenderTarget* rt, ID2D1Factory* fac,
@@ -1825,8 +1861,9 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                  const Node& n, float x, float y,
                                  float width) {
     if (!rt || !dw) return;
-    if (!n.mermaid_layout) return;
-    const auto& lo = *n.mermaid_layout;
+    const auto laid = GetMermaidLayout(dw, n);
+    if (!laid) return;
+    const auto& lo = *laid;
     const float pad = mermaid::kMermaidBlockPad;
     // Fit the diagram into the text column: scale down (never up) when the
     // natural canvas is wider than the available width.
@@ -1860,13 +1897,13 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
     Palette pal = BasePalette();
     ID2D1SolidColorBrush* edgeBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.textPrimary, &edgeBrush);
+    rt->CreateSolidColorBrush(pal.mermaidText, &edgeBrush);
     ID2D1SolidColorBrush* nodeFill = nullptr;
-    rt->CreateSolidColorBrush(pal.codeBg, &nodeFill);
+    rt->CreateSolidColorBrush(pal.mermaidNodeFill, &nodeFill);
     ID2D1SolidColorBrush* nodeBorder = nullptr;
-    rt->CreateSolidColorBrush(pal.codeBorder, &nodeBorder);
+    rt->CreateSolidColorBrush(pal.mermaidNodeBorder, &nodeBorder);
     ID2D1SolidColorBrush* textBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.textPrimary, &textBrush);
+    rt->CreateSolidColorBrush(pal.mermaidText, &textBrush);
 
     ID2D1Factory* fac = nullptr;
     rt->GetFactory(&fac);
@@ -1912,7 +1949,7 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // Edges first.
     if (fac && edgeBrush) {
         ID2D1SolidColorBrush* labelBrush = nullptr;
-        rt->CreateSolidColorBrush(pal.textPrimary, &labelBrush);
+        rt->CreateSolidColorBrush(pal.mermaidText, &labelBrush);
         for (const auto& e : lo.edges) {
             if (e.route.size() < 2) continue;
             // Stroke style: dotted edges use a dash pattern; thick edges

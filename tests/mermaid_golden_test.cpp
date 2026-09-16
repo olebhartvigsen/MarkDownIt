@@ -95,12 +95,6 @@ void CheckEdges(const char* name, const mermaid::Golden& gold,
 
 }  // namespace
 
-// 04-crossing known-diff: our order phase lands on a different (equal-quality)
-// dummy permutation than dagre for this fixture's tied barycenters, so the A->C
-// and B->D polylines route through different mid-dummies than the golden. Node
-// centers still match at 0.5 DIP. Edge-points for 04 are therefore asserted as a
-// documented known-diff, not silently loosened; every other fixture gates both
-// nodes and edges at the plan's 0.5 DIP.
 TEST(MermaidGolden, NodeCentersAllFixtures) {
     const char* fixtures[] = {
         "01-linear", "02-shapes-edges", "03-diamond", "04-crossing",
@@ -117,7 +111,7 @@ TEST(MermaidGolden, NodeCentersAllFixtures) {
 
 TEST(MermaidGolden, EdgePointsMatchDagre) {
     const char* fixtures[] = {
-        "01-linear", "02-shapes-edges", "03-diamond",
+        "01-linear", "02-shapes-edges", "03-diamond", "04-crossing",
         "05-long-edge", "06-siblings", "07-lr", "08-rl", "09-bt",
         "12-flowchart",
     };

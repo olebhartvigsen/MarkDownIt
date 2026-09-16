@@ -64,6 +64,9 @@ struct Palette {
     D2D1_COLOR_F link;
     D2D1_COLOR_F codeBg;
     D2D1_COLOR_F codeBorder;
+    D2D1_COLOR_F mermaidNodeFill;
+    D2D1_COLOR_F mermaidNodeBorder;
+    D2D1_COLOR_F mermaidText;
     D2D1_COLOR_F inlineCodeBg;
     D2D1_COLOR_F quoteBar;
     D2D1_COLOR_F quoteText;
@@ -150,6 +153,9 @@ inline Palette BasePalette() {
     p.link = D2D1::ColorF(0x0969DA);
     p.codeBg = D2D1::ColorF(0xF6F8FA);
     p.codeBorder = D2D1::ColorF(0xD0D7DE);
+    p.mermaidNodeFill = D2D1::ColorF(0xECECFF);
+    p.mermaidNodeBorder = D2D1::ColorF(0x9370DB);
+    p.mermaidText = D2D1::ColorF(0x333333);
     p.inlineCodeBg = D2D1::ColorF(0xEFF1F3);
     p.quoteBar = D2D1::ColorF(0xD0D7DE);
     p.quoteText = D2D1::ColorF(0x656D76);

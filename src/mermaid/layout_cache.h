@@ -1,15 +1,4 @@
-// Mermaid layout cache helpers (Task 12 followup).
-//
-// Design note: the LaidOutFlowchart is already computed once per parse and
-// stored on Node::mermaid_layout (see src/parser.cpp). Rendering therefore
-// never re-runs layout on WM_PAINT; the shared_ptr on Node acts as the cache.
-//
-// The helpers below exist so that MeasureMermaidBlock and DrawMermaidBlock
-// derive the same block height from the same inputs, preventing the class of
-// scrollbar bugs where measure and paint disagree on how tall a block is.
-// They also provide a stable hash of the fence source keyed by zoom, so that
-// once MeasureFn (Task 11) forces a re-layout with real DirectWrite metrics,
-// a genuine cache table can key on this value without further churn.
+// Shared Mermaid layout helpers and a bounded source-plus-zoom flowchart cache.
 #pragma once
 
 #include <cstdint>
@@ -17,9 +6,9 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "model.h"
-
 #include "mermaid/pie_parse.h"
 #include "mermaid/pie_layout.h"
 #include "mermaid/seq_layout.h"
@@ -27,9 +16,6 @@
 namespace mermaid {
 
 enum class MermaidKind { Flowchart, Pie, Sequence };
-
-// A parsed mermaid fence of any supported diagram kind. Exactly one shared
-// pointer is set; kind says which.
 struct MermaidRender {
     MermaidKind kind = MermaidKind::Flowchart;
     std::shared_ptr<LaidOutFlowchart> flow;
@@ -37,79 +23,101 @@ struct MermaidRender {
     std::shared_ptr<LaidOutSequence> seq;
 };
 
-// Padding used above and below the flowchart drawing when placed inline
-// in a document. Kept here so measure and render can never drift.
 constexpr float kMermaidBlockPad = 12.0f;
 
-// Height in device-independent pixels of the mermaid block at the given
-// zoom, constrained to the available width. Diagrams wider than the text
-// column are scaled down to fit (same-fit rule as the SVG block path), so
-// measure and draw must both pass the same availW or they will disagree.
 inline float MeasureLayoutHeight(const LaidOutFlowchart& lo, float zoom,
-                                 float availW) {
-    // Lineær zoom: skaler ned så diagrammet passer i kolonnen, aldrig op.
-    // scale = min(zoom, availW/naturalW); IKKE zoom*fit, som bliver
-    // kvadratisk i zoom, fordi selve kolonnebredden også skaleres med zoom.
+                                 float avail_w) {
     float scale = zoom;
-    if (lo.width > 0 && availW > 0) {
-        float fit_scale = availW / static_cast<float>(lo.width);
-        if (fit_scale < scale) scale = fit_scale;
+    if (lo.width > 0 && avail_w > 0) {
+        const float fit = avail_w / static_cast<float>(lo.width);
+        if (fit < scale) scale = fit;
     }
     return static_cast<float>(lo.height) * scale + 2.0f * kMermaidBlockPad;
 }
-
-// Pie variant: canvas is 450 DIP tall, same padding scheme.
-inline float MeasurePieHeight(const LaidOutPie& lp, float zoom, float availW) {
-    // Samme lineære regel som draw-pathen (se MeasureLayoutHeight).
+inline float MeasurePieHeight(const LaidOutPie& lp, float zoom, float avail_w) {
     float scale = zoom;
-    if (lp.width > 0 && availW > 0) {
-        float fit_scale = availW / static_cast<float>(lp.width);
-        if (fit_scale < scale) scale = fit_scale;
+    if (lp.width > 0 && avail_w > 0) {
+        const float fit = avail_w / static_cast<float>(lp.width);
+        if (fit < scale) scale = fit;
     }
     return static_cast<float>(lp.height) * scale + 2.0f * kMermaidBlockPad;
 }
-
-// Sequence variant: vbwidth/vbheight already include the extra 40 for a title.
 inline float MeasureSequenceHeight(const LaidOutSequence& ls, float zoom,
-                                   float availW) {
-    // Samme lineære regel som draw-pathen (se MeasureLayoutHeight).
+                                   float avail_w) {
     float scale = zoom;
-    if (ls.width > 0 && availW > 0) {
-        float fit_scale = availW / static_cast<float>(ls.width);
-        if (fit_scale < scale) scale = fit_scale;
+    if (ls.width > 0 && avail_w > 0) {
+        const float fit = avail_w / static_cast<float>(ls.width);
+        if (fit < scale) scale = fit;
     }
     return static_cast<float>(ls.vbheight) * scale + 2.0f * kMermaidBlockPad;
 }
-
-// Height for either variant.
 inline float MeasureMermaidHeight(const MermaidRender& mr, float zoom,
-                                  float availW) {
+                                  float avail_w) {
     switch (mr.kind) {
-        case MermaidKind::Pie:
-            return MeasurePieHeight(*mr.pie, zoom, availW);
-        case MermaidKind::Sequence:
-            return MeasureSequenceHeight(*mr.seq, zoom, availW);
-        case MermaidKind::Flowchart:
-        default:
-            return MeasureLayoutHeight(*mr.flow, zoom, availW);
+        case MermaidKind::Pie: return MeasurePieHeight(*mr.pie, zoom, avail_w);
+        case MermaidKind::Sequence: return MeasureSequenceHeight(*mr.seq, zoom, avail_w);
+        case MermaidKind::Flowchart: default:
+            return MeasureLayoutHeight(*mr.flow, zoom, avail_w);
     }
 }
 
-// Stable hash of the fence source keyed by zoom. Uses std::hash<std::string>
-// mixed with the bit pattern of the zoom float, so identical source at the
-// same zoom produces the same key and different sources or zooms diverge.
 inline uint64_t HashFenceSource(const std::string& src, float zoom) {
     uint64_t h = static_cast<uint64_t>(std::hash<std::string>{}(src));
     uint32_t zbits = 0;
     std::memcpy(&zbits, &zoom, sizeof(zbits));
-    // splitmix-style mix so zoom actually perturbs low bits.
     uint64_t k = h ^ (static_cast<uint64_t>(zbits) * 0x9E3779B97F4A7C15ULL);
-    k ^= k >> 30;
-    k *= 0xBF58476D1CE4E5B9ULL;
-    k ^= k >> 27;
-    k *= 0x94D049BB133111EBULL;
-    k ^= k >> 31;
-    return k;
+    k ^= k >> 30; k *= 0xBF58476D1CE4E5B9ULL;
+    k ^= k >> 27; k *= 0x94D049BB133111EBULL;
+    return k ^ (k >> 31);
 }
 
-} // namespace mermaid
+struct MermaidLayoutKey {
+    std::string source;
+    uint32_t zoom_bits = 0;
+    uint64_t hash = 0;
+
+    MermaidLayoutKey() = default;
+    MermaidLayoutKey(const std::string& value, float zoom) : source(value) {
+        std::memcpy(&zoom_bits, &zoom, sizeof(zoom_bits));
+        hash = HashFenceSource(source, zoom);
+    }
+    bool operator==(const MermaidLayoutKey& other) const {
+        return zoom_bits == other.zoom_bits && source == other.source;
+    }
+};
+
+// Small FIFO cache. Equality checks the complete source and zoom bit pattern,
+// so a hash collision cannot return a layout for another diagram.
+class MermaidLayoutCache {
+public:
+    static constexpr size_t kCapacity = 128;
+
+    std::shared_ptr<LaidOutFlowchart> Find(const std::string& source, float zoom) const {
+        const MermaidLayoutKey key(source, zoom);
+        for (const auto& entry : entries_) {
+            if (entry.key.hash == key.hash && entry.key == key) return entry.layout;
+        }
+        return nullptr;
+    }
+    void Put(const std::string& source, float zoom,
+             std::shared_ptr<LaidOutFlowchart> layout) {
+        if (!layout) return;
+        const MermaidLayoutKey key(source, zoom);
+        for (auto& entry : entries_) {
+            if (entry.key.hash == key.hash && entry.key == key) {
+                entry.layout = std::move(layout);
+                return;
+            }
+        }
+        if (entries_.size() == kCapacity) entries_.erase(entries_.begin());
+        entries_.push_back({key, std::move(layout)});
+    }
+    void Clear() { entries_.clear(); }
+    size_t Size() const { return entries_.size(); }
+
+private:
+    struct Entry { MermaidLayoutKey key; std::shared_ptr<LaidOutFlowchart> layout; };
+    std::vector<Entry> entries_;
+};
+
+}  // namespace mermaid

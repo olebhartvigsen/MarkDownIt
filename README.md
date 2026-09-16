@@ -1,53 +1,56 @@
 # MarkDownIt
 
-A native Windows markdown viewer. No Electron, no .NET runtime, no external
-dependencies shipped.
-
-**Status:** early development.
+A native Windows Markdown viewer. MarkDownIt is a single executable with no
+Electron shell, no .NET runtime, and no bundled dependencies. It opens Markdown
+files and renders them with Direct2D and DirectWrite.
 
 ## Build
 
-CMake + Visual Studio 2022 Build Tools, Windows 10 SDK.
+MarkDownIt needs CMake 3.20 or later, Visual Studio 2022 Build Tools, and the
+Windows 10 SDK.
 
-```
-cmake -B build -S .
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 ```
 
-## Usage
+The executable is written to `build/Release/MarkDownIt.exe`.
 
-```
-MarkDownIt.exe path\to\file.md
-```
+## Use
 
-## Zoom
+Open a file from Explorer, drag a Markdown file onto the window, or use **Open**
+in the ribbon. The editor can switch between rendered Markdown and source view.
 
-- Ctrl+MouseWheel: zoom in and out.
-- Ctrl+=: zoom in.
-- Ctrl+-: zoom out.
-- Ctrl+0: reset zoom to 100%.
+### Zoom
 
-Zoom is a global view setting, not per-document state. The factor you
-set carries over when you open another file, and the last factor used
-is restored on the next launch. Supported range is 25% to 400%. Zoom
-applies to the document content only; the ribbon and the scrollbar
-keep their size.
+Zoom is a global view setting, not per-document state. The factor you set carries
+over when you open another file, and the last factor used is restored on the next
+launch. Supported range is 25% to 400%. Zoom applies to document content only;
+the ribbon and scrollbar keep their size.
 
-## Mermaid flowcharts
+## Mermaid diagrams
 
-MarkDownIt renders ` ```mermaid ` fenced blocks directly with Direct2D. There
-is no headless browser, no JS runtime, no network. The block gets parsed,
-laid out, and drawn like any other DOM element.
+MarkDownIt renders `mermaid` fenced blocks locally with Direct2D and DirectWrite.
+It does not start a browser, run JavaScript, or use the network. Flowchart labels
+use DirectWrite metrics, and the renderer caches flowchart layouts by fence source
+and zoom.
 
-Supported today:
+Supported diagram types:
 
-- Headers: `flowchart TD`, `flowchart LR`, `graph TD`, `graph LR`.
+- Flowcharts.
+- Pie charts.
+- Sequence diagrams.
+
+Flowcharts support:
+
+- Headers: `flowchart` or `graph` with TD/TB, BT, LR, or RL direction.
 - Node shapes: rectangle `A[text]`, rounded `A(text)`, stadium `A([text])`,
-  diamond `A{text}`, circle `A((text))`.
+  diamond `A{text}`, and circle `A((text))`.
 - Edges: solid `-->`, dotted `-.->`, thick `==>`, plain lines without arrows,
-  and edge labels via `A -->|label| B`.
-- Edge chains: `A --> B --> C` expands to two edges.
-- Node reuse: the same id in a later statement points at the same node.
+  and labels such as `A -->|label| B`.
+- Chains such as `A --> B --> C`.
+- Reusing a node id in a later statement.
+- Simple subgraphs, rendered as flat lane bands.
 
 Example:
 
@@ -62,21 +65,19 @@ flowchart TD
 ```
 ````
 
-### Non-goals
+### Limits
 
-Some things are out of scope, at least for now:
+- Flowchart subgraphs are flat. Nested bands, per-subgraph direction, and routing
+  around band borders are not implemented.
+- Mermaid styling directives, click handlers, and classes are not implemented.
+- Class and state diagrams have parser and layout code, but they are not connected
+  to `mermaid` fences in the application.
+- Browser Mermaid and the native renderer do not use the same font engine. The
+  native layout follows dagre's topology and default spacing, but browser pixels
+  are not a rendering target.
 
-- No subgraphs, no styling directives, no click handlers, no classes.
-- No sequence diagrams, class diagrams, state diagrams, or any other Mermaid
-  diagram type. Only flowcharts.
-- Pixel-exact parity with browser Mermaid is not a goal. The layout follows
-  the same algorithm (a port of dagre) and the same default constants, but
-  absolute coordinates drift because font metrics come from DirectWrite
-  instead of the browser. Topology and relative placement match; pixel
-  positions do not.
-
-See `references/mermaid-dagre-port.md` for the layout pipeline and the
-golden-oracle test pattern.
+See [references/mermaid-dagre-port.md](references/mermaid-dagre-port.md) for the
+layout pipeline and golden-oracle test setup.
 
 ## License
 

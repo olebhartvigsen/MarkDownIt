@@ -17,7 +17,10 @@ TEST(DomMermaid, RecognizesFlowchartFence) {
     auto doc = BuildDom(md);
     ASSERT_EQ(doc.nodes.size(), 1u);
     EXPECT_EQ(doc.nodes[0].block, BlockKind::MermaidFlowchart);
+    ASSERT_TRUE(doc.nodes[0].mermaid_flowchart != nullptr);
     ASSERT_TRUE(doc.nodes[0].mermaid_layout != nullptr);
+    EXPECT_EQ(doc.nodes[0].mermaid_source, "flowchart TD\nA --> B\n");
+    EXPECT_EQ(doc.nodes[0].mermaid_flowchart->nodes.size(), 2u);
     EXPECT_EQ(doc.nodes[0].mermaid_layout->nodes.size(), 2u);
 }
 
@@ -25,7 +28,7 @@ TEST(DomMermaid, FallbackOnParseFailure) {
     std::string md = "```mermaid\ngarbage garbage\n```\n";
     auto doc = BuildDom(md);
     ASSERT_EQ(doc.nodes.size(), 1u);
-    // Falls back to CodeBlock, or the parser accepts it as an empty flowchart.
-    EXPECT_TRUE(doc.nodes[0].block == BlockKind::CodeBlock ||
-                doc.nodes[0].block == BlockKind::MermaidFlowchart);
+    EXPECT_EQ(doc.nodes[0].block, BlockKind::CodeBlock);
+    EXPECT_TRUE(doc.nodes[0].mermaid_flowchart == nullptr);
+    EXPECT_TRUE(doc.nodes[0].mermaid_layout == nullptr);
 }

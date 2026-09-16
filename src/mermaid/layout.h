@@ -38,7 +38,6 @@ std::vector<LaneBox> ComputeLaneBoxes(const Flowchart& flow,
 
 LaidOutFlowchart LayoutFlowchartWith(const Flowchart& flow,
                                      MeasureFn measure,
-                                     void* ctx,
-                                     float zoom = 1.0f);
+                                     void* ctx);
 
 }  // namespace mermaid

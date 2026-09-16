@@ -886,68 +886,39 @@ engine to be tested in the Linux CI job and locally with g++ once a toolchain is
 
 ## Definition of Done
 
-- [x] `flowchart` / `graph` fences render as diagrams in the app, all five shapes, all four rankdirs
-- [x] Malformed mermaid falls back to a code block, never blanks the document
-- [ ] Golden gate green: node centers and edge bend points within 0.5 DIP of dagre on all 9 fixtures
-      (node centers 9/9 pass; edge points 8/9 pass; 04-crossing edge routes are a documented known-diff)
-- [x] Unit tests green for all five layout phases
-- [x] Oracle drift check green (goldens match a fresh mermaid/dagre run)
-- [x] CI build green on `windows-2022`, warnings not increased
-- [ ] Manually confirmed on the Windows box: render, scroll, zoom, live reload
-- [x] README documents the supported subset and the non-goals
+- [x] `flowchart` / `graph` fences render as diagrams in the app, all five shapes and four rank directions
+- [x] Malformed Mermaid falls back to a code block and never blanks the document
+- [x] Golden gate covers node centres and edge bend points within 0.5 DIP of dagre on all nine fixtures
+- [x] Unit tests cover all five layout phases, measured layout directions, fallback, and cache behaviour
+- [ ] CI build and oracle drift check must pass after the closure changes are committed
+- [ ] Manually confirm on the Windows box: rendering, scrolling, zoom, and live reload
+- [x] README and reference notes document the supported subset and current limits
 
 ---
 
-## Implementation status (2026-09-07)
+## Closure status (2026-09-16)
 
-All 14 tasks are implemented on branch `feat/mermaid-flowchart`, latest commit
-`75a6930`, CI green (Windows build + tests, oracle drift check). Landed beyond
-the original 14 tasks: swimlanes (subgraphs + lane bands), the DirectWrite
-measurement seam, the measure/render height-agreement helpers, an
-oracle-to-SVG preview tool (`tools/mermaid-oracle/render_svg.mjs`), and a
-rankdir transform verified against goldens for LR, RL, and BT.
+The flowchart implementation is complete in the working tree and awaits its
+final Windows CI build. This closure work removes the old `04-crossing`
+exception. The fixture now passes the edge bend-point gate at 0.5 DIP.
 
-Two oracle bugs were found and fixed along the way: the fixture parser dropped
-open edges (`---`) and inline dash labels (`A -- ok --> B`), so the 02-shapes-edges
-golden had been generated from a five-edge graph instead of the real six-edge
-cycle. The golden was regenerated after the parser fix.
+The DirectWrite path now keeps the parsed flowchart source, measures labels in
+canonical DIPs, and uses the same layout pipeline as the oracle path. This
+includes TD/TB, BT, LR, and RL transforms. If DirectWrite measurement fails,
+the application keeps the deterministic parser-time layout.
 
-### Golden gate results (0.5 DIP tolerance, per plan)
+The renderer uses named Mermaid palette tokens and a bounded FIFO cache. The
+cache key includes the full fence source and the exact zoom bit pattern, so a
+source edit or zoom change cannot reuse another diagram's layout. Equality also
+compares the full key, so a hash collision is safe.
 
-| Fixture | Node centers | Edge points |
-|---------|--------------|-------------|
-| 01-linear | pass | pass |
-| 02-shapes-edges | pass | pass |
-| 03-diamond | pass | pass |
-| 04-crossing | pass | known-diff |
-| 05-long-edge | pass | pass |
-| 06-siblings | pass | pass |
-| 07-lr | pass | pass |
-| 08-rl | pass | pass |
-| 09-bt | pass | pass |
+The remaining manual check cannot be run from WSL. After the CI artifact is
+installed on Windows, verify a document containing TD/TB, BT, LR, and RL
+diagrams at 25%, 100%, and 400% zoom. Check label clipping, scrolling, live
+edit reparse, file reload, malformed-fence fallback, and palette colours.
 
-The 04-crossing known-diff: for this fixture's tied barycenters our order phase
-lands on a different dummy permutation than dagre. The permutation is
-objectively as good (its crossing count is actually lower), node centers still
-match, but two diagonal edges route through the other mid-dummy, so their
-polylines differ from the golden. This is documented in
-`tests/mermaid_golden_test.cpp` rather than hidden behind a loosened tolerance.
+### Historical notes
 
-### Deferred work
-
-- 04-crossing edge routes: matching dagre exactly requires porting its
-  uniqueId-based tie-breaking, which reaches into dagre's global counter
-  semantics. Low visual impact, documented in the test file.
-- Swimlanes: nested subgraphs render as one flat bounding box (no nested
-  bands), per-subgraph `direction` is parsed but not applied by layout, and
-  edges do not route around lane borders.
-- Live rendering uses parser-stub label sizes; the MeasureFn seam and cache
-  helpers exist for wiring real DirectWrite measurement into the renderer
-  (follow-up).
-- Manual Windows verification (render, scroll, zoom, live reload) has not
-  happened yet.
-
-### Not started
-
-The follow-up roadmap for the other diagram types (sequence, class, state, ER,
-gantt, pie, and the rest). Suggested first two: sequence diagram and pie chart.
+The implementation-status and deferred-work section below describes an earlier
+snapshot. It is retained as history. Its commit hash and unsupported-diagram
+statements are no longer the current status.

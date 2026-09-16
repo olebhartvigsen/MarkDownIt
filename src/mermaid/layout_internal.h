@@ -8,6 +8,9 @@
 
 namespace mermaid {
 
+struct Flowchart;
+struct LaidOutFlowchart;
+
 enum class NodeShape { Rect, Round, Stadium, Diamond, Circle };
 
 // Edge presentation. Shared by the parse model (model.h) and the internal
@@ -93,6 +96,13 @@ struct LayoutParams {
 
 void AssignCoordinates(LayoutGraph& g, const LayoutParams& p);
 void RouteEdges(LayoutGraph& g, const LayoutParams& p);
+
+// Complete the common flowchart pipeline after node sizes have been selected.
+// Both the deterministic oracle path and the DirectWrite measurement path use
+// this function so rank direction, routing, margins, and lane boxes agree.
+LaidOutFlowchart FinalizeFlowchartLayout(const Flowchart& flow,
+                                          LayoutGraph g,
+                                          const LayoutParams& p);
 
 inline LayoutGraph MakeGraph(int node_count,
                              std::initializer_list<std::pair<int,int>> edges) {

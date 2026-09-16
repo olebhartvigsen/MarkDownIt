@@ -636,6 +636,9 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
                         mermaid::LayoutParams p;
                         auto laid = std::make_shared<mermaid::LaidOutFlowchart>(
                             mermaid::LayoutFlowchart(flow, p));
+                        n.mermaid_source = utf8;
+                        n.mermaid_flowchart = std::make_shared<mermaid::Flowchart>(
+                            std::move(flow));
                         n.mermaid_layout = laid;
                         n.block = BlockKind::MermaidFlowchart;
                         goto promoted;

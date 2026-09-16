@@ -236,6 +236,7 @@ if(BUILD_TESTS)
         tests/mermaid_measure_test.cpp
         tests/dom_mermaid_test.cpp
         tests/mermaid_cache_test.cpp
+        tests/theme_test.cpp
         tests/perf_harness.cpp
         tests/test_main.cpp
         tests/svgtext_test.cpp

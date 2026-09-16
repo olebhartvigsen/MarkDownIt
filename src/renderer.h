@@ -11,6 +11,7 @@
 #include "svgdoc.h"
 #include "caret.h"
 #include "zoommodel.h"
+#include "mermaid/layout_cache.h"
 
 class Renderer {
 public:
@@ -83,6 +84,7 @@ private:
     IDWriteTextFormat* body_fmt_ = nullptr;
     IDWriteTextFormat* num_fmt_ = nullptr;     // seq autonumber (12px)
     IDWriteTextFormat* code_fmt_ = nullptr;      // monospace for code blocks
+    IDWriteTextFormat* mermaid_measure_fmt_ = nullptr;  // unzoomed DirectWrite metrics
     IDWriteTextFormat* heading_fmt_[7] = {};
     float zoom_ = kDefaultZoom;  // 100%
     bool wrapEnabled_ = true;
@@ -90,6 +92,7 @@ private:
     LayoutCache* cache_ = nullptr;
     const std::string* srcText_ = nullptr;  // source text for offset calc
     ID2D1DeviceContext5* d2d_ctx5_ = nullptr;  // may be null
+    mutable mermaid::MermaidLayoutCache mermaid_layout_cache_;
 
 public:
     void SetD2DDeviceContext5(ID2D1DeviceContext5* ctx) { d2d_ctx5_ = ctx; }
@@ -138,7 +141,9 @@ private:
                        float x, float width);
     void DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                           const Node& n, float x, float y, float width);
-    float MeasureMermaidBlock(const Node& n, float width) const;
+    float MeasureMermaidBlock(IDWriteFactory* dw, const Node& n, float width) const;
+    std::shared_ptr<mermaid::LaidOutFlowchart> GetMermaidLayout(
+        IDWriteFactory* dw, const Node& n) const;
     void DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                              const Node& n, float x, float y, float width);
     void DrawMermaidSequenceBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
