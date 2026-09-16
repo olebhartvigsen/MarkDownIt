@@ -4550,6 +4550,7 @@ md_process_table_row(MD_CTX* ctx, MD_BLOCKTYPE cell_type, OFF beg, OFF end,
 {
     MD_LINE line;
     OFF* pipe_offs = NULL;
+    MD_MARK* mark = NULL;
     int i, j, k, n;
     int ret = 0;
 
@@ -4570,20 +4571,26 @@ md_process_table_row(MD_CTX* ctx, MD_BLOCKTYPE cell_type, OFF beg, OFF end,
         goto abort;
     }
     j = 0;
-    pipe_offs[j++] = beg;
-    for(i = ctx->table_cell_boundaries_head; i >= 0; i = ctx->marks[i].next) {
-        MD_MARK* mark = &ctx->marks[i];
-        pipe_offs[j++] = mark->end;
+
+    /* First cell of the row may or may not be started with '|'. */
+    mark = (ctx->table_cell_boundaries_head >= 0)
+           ? &ctx->marks[ctx->table_cell_boundaries_head] : NULL;
+    if(mark == NULL  ||  mark->beg > beg) {
+        pipe_offs[j++] = beg;
     }
-    pipe_offs[j++] = end+1;
+    for(i = ctx->table_cell_boundaries_head; i >= 0; i = ctx->marks[i].next) {
+        mark = &ctx->marks[i];
+        for(k = 0; k < (int)(mark->end - mark->beg); k++)
+            pipe_offs[j++] = mark->beg + k + 1;
+    }
+    if(mark == NULL  ||  mark->end < end)
+        pipe_offs[j++] = end+1;
 
     /* Process cells. */
     MD_ENTER_BLOCK(MD_BLOCK_TR, NULL);
     k = 0;
-    for(i = 0; i < j-1  &&  k < col_count; i++) {
-        if(pipe_offs[i] < pipe_offs[i+1]-1)
-            MD_CHECK(md_process_table_cell(ctx, cell_type, align[k++], pipe_offs[i], pipe_offs[i+1]-1));
-    }
+    for(i = 0; i < j-1  &&  k < col_count; i++)
+        MD_CHECK(md_process_table_cell(ctx, cell_type, align[k++], pipe_offs[i], pipe_offs[i+1]-1));
     /* Make sure we call enough table cells even if the current table contains
      * too few of them. */
     while(k < col_count)
