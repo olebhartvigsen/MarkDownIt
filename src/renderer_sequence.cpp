@@ -202,6 +202,32 @@ void DrawOpenHead(ID2D1RenderTarget* rt, ID2D1SolidColorBrush* brush,
     rt->DrawLine(D2D1::Point2F(x, y), dn, brush, 1.5f * scale);
 }
 
+void DrawStickman(ID2D1RenderTarget* rt,
+                  ID2D1SolidColorBrush* stroke,
+                  ID2D1SolidColorBrush* headFill,
+                  float cx, float topY, float h, float scale) {
+    if (!rt || !stroke) return;
+    float u = h / 65.0f * scale;
+    auto X = [&](float fx) { return cx + (fx - 25.0f) * u; };
+    auto Y = [&](float fy) { return topY + fy * u; };
+    // Head
+    D2D1_ELLIPSE head = D2D1::Ellipse(
+        D2D1::Point2F(X(25.0f), Y(6.25f)), 6.25f * u, 6.25f * u);
+    rt->FillEllipse(head, headFill);
+    rt->DrawEllipse(head, stroke, 1.5f * u);
+    // Body
+    rt->DrawLine(D2D1::Point2F(X(25.0f), Y(12.5f)),
+                 D2D1::Point2F(X(25.0f), Y(25.0f)), stroke, 1.5f * u);
+    // Arms
+    rt->DrawLine(D2D1::Point2F(X(10.0f), Y(16.0f)),
+                 D2D1::Point2F(X(40.0f), Y(16.0f)), stroke, 1.5f * u);
+    // Legs
+    rt->DrawLine(D2D1::Point2F(X(25.0f), Y(25.0f)),
+                 D2D1::Point2F(X(18.0f), Y(40.0f)), stroke, 1.5f * u);
+    rt->DrawLine(D2D1::Point2F(X(25.0f), Y(25.0f)),
+                 D2D1::Point2F(X(32.0f), Y(40.0f)), stroke, 1.5f * u);
+}
+
 }  // namespace
 
 void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
@@ -480,32 +506,6 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
 // head r=6.25 at (0.5w, 6.25), body to y=25, arms at y=12.5 spanning
 // 0.2..0.8 of width, legs to y=40. Stroke #666 (actorStroke), head
 // fill #ECECFF-family (actorFill).
-void DrawStickman(ID2D1RenderTarget* rt,
-                  ID2D1SolidColorBrush* stroke,
-                  ID2D1SolidColorBrush* headFill,
-                  float cx, float topY, float h, float scale) {
-    if (!rt || !stroke) return;
-    float u = h / 65.0f * scale;
-    auto X = [&](float fx) { return cx + (fx - 25.0f) * u; };
-    auto Y = [&](float fy) { return topY + fy * u; };
-    // Head
-    D2D1_ELLIPSE head = D2D1::Ellipse(
-        D2D1::Point2F(X(25.0f), Y(6.25f)), 6.25f * u, 6.25f * u);
-    rt->FillEllipse(head, headFill);
-    rt->DrawEllipse(head, stroke, 1.5f * u);
-    // Body
-    rt->DrawLine(D2D1::Point2F(X(25.0f), Y(12.5f)),
-                 D2D1::Point2F(X(25.0f), Y(25.0f)), stroke, 1.5f * u);
-    // Arms
-    rt->DrawLine(D2D1::Point2F(X(10.0f), Y(16.0f)),
-                 D2D1::Point2F(X(40.0f), Y(16.0f)), stroke, 1.5f * u);
-    // Legs
-    rt->DrawLine(D2D1::Point2F(X(25.0f), Y(25.0f)),
-                 D2D1::Point2F(X(18.0f), Y(40.0f)), stroke, 1.5f * u);
-    rt->DrawLine(D2D1::Point2F(X(25.0f), Y(25.0f)),
-                 D2D1::Point2F(X(32.0f), Y(40.0f)), stroke, 1.5f * u);
-}
-
     // Actor boxes (participants draw #eaeaea rectangles with #666
     // borders, mermaid "neo" look); actors (ActorStickman) draw the
     // mermaid actor-man figure with the name under it. The footer
