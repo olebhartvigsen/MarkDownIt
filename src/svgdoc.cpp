@@ -1,5 +1,6 @@
 #include "svgdoc.h"
 #include "svgtext.h"
+#include "crash_trace.h"
 
 #include <algorithm>
 #include <cmath>
@@ -111,12 +112,54 @@ void SvgDoc::Release() {
     height_ = 0.0f;
 }
 
+
+// --- Text pipeline mode (diagnostic; remove after alignment fix) ---
+// Marker file %LOCALAPPDATA%\MarkDownIt\svg_text_mode.on:
+//   content "native" -> D2D renders <text> itself (no strip, no
+//                        custom DrawTexts).
+//   anything else     -> strip text, draw runs via DrawTexts.
+namespace textmode {
+enum Mode { kUnknown, kStrip, kNative };
+static Mode g_mode = kUnknown;
+static Mode Current() {
+    if (g_mode != kUnknown) return g_mode;
+    char path[MAX_PATH] = {};
+    if (FAILED(SHGetFolderPathA(nullptr, CSIDL_LOCAL_APPDATA, nullptr,
+                                0, path))) {
+        g_mode = kStrip;
+        return g_mode;
+    }
+    std::string f = path;
+    f += "\x5cMarkDownIt\x5csvg_text_mode.on";
+    HANDLE h = CreateFileA(f.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                           nullptr, OPEN_EXISTING,
+                           FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) { g_mode = kStrip; return g_mode; }
+    char buf[16] = {};
+    DWORD got = 0;
+    ReadFile(h, buf, sizeof(buf) - 1, &got, nullptr);
+    CloseHandle(h);
+    std::string v(buf, got);
+    // trim
+    while (!v.empty() && (v.back() == 13 || v.back() == 10 || v.back() == 32)) v.pop_back();
+    g_mode = (v == "native") ? kNative : kStrip;
+    return g_mode;
+}
+}  // namespace textmode
 bool SvgDoc::Load(ID2D1DeviceContext5* ctx, const std::string& xml) {
     Release();
     if (!ctx || xml.empty()) return false;
 
     texts_ = ExtractTextRuns(xml);
     std::string shapes = StripTextElements(xml);
+    if (textmode::Current() == textmode::kNative) {
+        // Diagnostic: let D2D render <text> itself and skip our runs.
+        texts_.clear();
+        shapes = xml;
+        diag::TraceFmt("SVGDOC mode=native");
+    } else {
+        diag::TraceFmt("SVGDOC mode=strip runs=%zu", texts_.size());
+    }
 
     ReadViewBox(xml, width_, height_);
     if (width_ <= 0.0f) width_ = 300.0f;
@@ -140,6 +183,17 @@ bool SvgDoc::Load(ID2D1DeviceContext5* ctx, const std::string& xml) {
 void SvgDoc::Draw(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
                   float x, float y, float w, float h) {
     if (!ctx) return;
+    static float lastW = -1, lastH = -1;
+    if (w != lastW || h != lastH) {
+        lastW = w; lastH = h;
+        diag::TraceFmt("SVGDOC draw x=%.1f y=%.1f w=%.1f h=%.1f docW=%.1f docH=%.1f runs=%zu",
+                       x, y, w, h, width_, height_, texts_.size());
+        for (size_t i = 0; i < texts_.size() && i < 3; ++i) {
+            diag::TraceFmt("SVGDOC run%zu x=%.2f y=%.2f fs=%.2f text=[%.24s]",
+                           i, texts_[i].x, texts_[i].y, texts_[i].fontSize,
+                           texts_[i].text.c_str());
+        }
+    }
 
     // Compute uniform scale to fit, preserving aspect ratio.
     float sx = (width_ > 0.0f) ? w / width_ : 1.0f;
@@ -153,7 +207,7 @@ void SvgDoc::Draw(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
     // SVG user space and maps to the document position.
     D2D1::Matrix3x2F docT =
         D2D1::Matrix3x2F::Translation(x, y) * D2D1::Matrix3x2F::Scale(s, s);
-    ctx->SetTransform(prev * docT);
+    ctx->SetTransform(PrevOff() ? docT : (prev * docT));
 
     if (doc_) {
         ctx->DrawSvgDocument(doc_);
@@ -209,7 +263,7 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
     // translation whenever the document is scrolled.
     D2D1_MATRIX_3X2_F prev;
     ctx->GetTransform(&prev);
-    ctx->SetTransform(prev * docTransform);
+    ctx->SetTransform(PrevOff() ? docTransform : (prev * docTransform));
 
     // Cache text formats by (fontFamily, fontSize, bold)
     struct FmtKey {
@@ -318,6 +372,7 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
         UINT32 lmCount = 0;
         tl->GetLineMetrics(&lm, 1, &lmCount);
         float baseline = (lmCount > 0) ? lm.baseline : tm.height * 0.8f;
+        if (BaselineOff()) baseline = 0.0f;
         float ty = run.y - baseline;
 
         // Set color
