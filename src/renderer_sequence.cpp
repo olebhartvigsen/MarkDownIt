@@ -15,12 +15,19 @@
 // #ffffde/#9370DB, signal text #333333, lifeline #666666.
 namespace {
 
-constexpr uint32_t kSeqActorFill = 0xECECFF;
-constexpr uint32_t kSeqActorStroke = 0x9370DB;
-constexpr uint32_t kSeqNoteFill = 0xFFFFDE;
+// Palette matches mermaid.js theme-default + the "neo" actor look
+// (verified against a rendered reference SVG, 2026-09-17):
+// actors #eaeaea/#666, notes #fff5ad/#aaaa33, activations #f4f4f4/#666,
+// ink #333, lifelines #666, autonumber disc #333 with white digit.
+constexpr uint32_t kSeqActorFill = 0xEAEAEA;
+constexpr uint32_t kSeqActorStroke = 0x666666;
+constexpr uint32_t kSeqNoteFill = 0xFFF5AD;
+constexpr uint32_t kSeqNoteStroke = 0xAAAA33;
 constexpr uint32_t kSeqInk = 0x333333;
 constexpr uint32_t kSeqLifeline = 0x666666;
 constexpr uint32_t kSeqLoopFill = 0xEDEDED;
+constexpr uint32_t kSeqActivationFill = 0xF4F4F4;
+constexpr uint32_t kSeqActivationStroke = 0x666666;
 
 constexpr float kActorBoxHeight = 65.0f;  // mermaid actor box height
 constexpr float kActorFooterHeight = 20.0f; // legacy (unused, kept for ref)
@@ -55,6 +62,36 @@ void SeqUtf8To16(const std::string& s, std::u16string& out) {
     }
 }
 
+// Parse a CSS color (rgb(r,g,b) or #rrggbb) into an 0xRRGGBB
+// uint32 (alpha ignored; reference SVG backgrounds are opaque).
+// Returns false for unsupported strings.
+bool SeqParseCssColor(const std::string& css, uint32_t* out) {
+    if (!out || css.empty()) return false;
+    auto nib = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    auto hex2 = [&](const std::string& t, size_t i) -> int {
+        if (i + 1 >= t.size()) return -1;
+        return nib(t[i]) * 16 + nib(t[i + 1]);
+    };
+    if (css[0] == '#' &&
+        (css.size() == 7 || css.size() == 9)) {
+        int r = hex2(css, 1), g = hex2(css, 3), b = hex2(css, 5);
+        if (r < 0 || g < 0 || b < 0) return false;
+        *out = uint32_t(r) << 16 | uint32_t(g) << 8 | uint32_t(b);
+        return true;
+    }
+    int r = 0, g = 0, b = 0;
+    if (sscanf(css.c_str(), "rgb(%d, %d, %d)", &r, &g, &b) == 3 ||
+        sscanf(css.c_str(), "rgb(%d,%d,%d)", &r, &g, &b) == 3) {
+        *out = uint32_t(r) << 16 | uint32_t(g) << 8 | uint32_t(b);
+        return true;
+    }
+    return false;
+}
 // Draw one text run centered on (cx, cy) if asked; mirrors DrawPieText.
 // sizeFactor shrinks/grows the font: when a diagram is scaled down to fit
 // the text column, text must shrink by the same factor, or the glyphs stay
@@ -201,30 +238,48 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
     ID2D1SolidColorBrush* actorFill = nullptr;
     ID2D1SolidColorBrush* actorStroke = nullptr;
     ID2D1SolidColorBrush* noteFill = nullptr;
+    ID2D1SolidColorBrush* noteStroke = nullptr;
     ID2D1SolidColorBrush* lifeline = nullptr;
-    ID2D1SolidColorBrush* loopFill = nullptr;
+    ID2D1SolidColorBrush* bgFill = nullptr;   // rect-block fill (per diagram)
+    ID2D1SolidColorBrush* activation = nullptr; // activation #f4f4f4
+    ID2D1SolidColorBrush* whiteInk = nullptr;  // autonumber digit (white)
     rt->CreateSolidColorBrush(D2D1::ColorF(kSeqInk), &ink);
     rt->CreateSolidColorBrush(D2D1::ColorF(kSeqActorFill), &actorFill);
     rt->CreateSolidColorBrush(D2D1::ColorF(kSeqActorStroke), &actorStroke);
     rt->CreateSolidColorBrush(D2D1::ColorF(kSeqNoteFill), &noteFill);
+    rt->CreateSolidColorBrush(D2D1::ColorF(kSeqNoteStroke), &noteStroke);
     rt->CreateSolidColorBrush(D2D1::ColorF(kSeqLifeline), &lifeline);
-    rt->CreateSolidColorBrush(D2D1::ColorF(kSeqLoopFill), &loopFill);
-    if (!ink || !actorFill || !actorStroke || !noteFill || !lifeline || !loopFill) {
+    rt->CreateSolidColorBrush(D2D1::ColorF(kSeqLoopFill), &bgFill);
+    rt->CreateSolidColorBrush(D2D1::ColorF(kSeqActivationFill), &activation);
+    rt->CreateSolidColorBrush(D2D1::ColorF(0xFFFFFF), &whiteInk);
+    if (!ink || !actorFill || !actorStroke || !noteFill || !noteStroke ||
+        !lifeline || !bgFill || !activation || !whiteInk) {
         if (ink) ink->Release();
         if (actorFill) actorFill->Release();
         if (actorStroke) actorStroke->Release();
         if (noteFill) noteFill->Release();
+        if (noteStroke) noteStroke->Release();
         if (lifeline) lifeline->Release();
-        if (loopFill) loopFill->Release();
+        if (activation) activation->Release();
+        if (whiteInk) whiteInk->Release();
+        if (bgFill) bgFill->Release();
         return;
     }
+    // Parse the FIRST background fill once (mermaid puts one fill per
+    // rect block; the layout keeps them in order). Cheap: per paint.
 
-    // Background rects (rect blocks) first.
+    // Background rects (rect blocks) first; honor each block's own
+    // fill (rgb() or #hex from the rect rgb(...) lines) when it
+    // parses, else the soft-gray default.
     for (const auto& b : ls.backgrounds) {
+        bgFill->SetColor(D2D1::ColorF(kSeqLoopFill));
+        uint32_t rgbv = 0;
+        if (SeqParseCssColor(b.fill, &rgbv)) {
+            bgFill->SetColor(D2D1::ColorF(rgbv));
+        }
         D2D1_RECT_F rc = D2D1::RectF(P(b.x), Q(b.y),
                                      P(b.x + b.w), Q(b.y + b.h));
-        // Golden fill is a hex string from the oracle; default soft gray.
-        rt->FillRectangle(rc, loopFill);
+        rt->FillRectangle(rc, bgFill);
     }
 
     // Loop / alt / par / opt / critical / break frames.
@@ -297,8 +352,8 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
     for (const auto& a : ls.activations) {
         D2D1_RECT_F rc = D2D1::RectF(P(a.x), Q(a.y),
                                      P(a.x + a.w), Q(a.y + a.h));
-        rt->FillRectangle(rc, actorFill);
-        rt->DrawRectangle(rc, actorStroke, 1.0f * scale);
+        rt->FillRectangle(rc, activation);
+        rt->DrawRectangle(rc, activation, 1.0f * scale);
     }
 
     // Messages (lines and self paths) with heads and text.
@@ -401,7 +456,7 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
                                        12.0f * scale, 12.0f * scale);
         rt->FillEllipse(c, ink);
         DrawSeqText(dw, rt, num_fmt_, std::to_string(num.n),
-                    cx, cy + 4.0f * scale, actorFill, true, false,
+                    cx, cy + 4.0f * scale, whiteInk, true, false,
                     textScale, true);
     }
 
@@ -412,7 +467,7 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
         rt->FillRoundedRectangle(
             D2D1::RoundedRect(rc, 4.0f * scale, 4.0f * scale), noteFill);
         rt->DrawRoundedRectangle(
-            D2D1::RoundedRect(rc, 4.0f * scale, 4.0f * scale), actorStroke,
+            D2D1::RoundedRect(rc, 4.0f * scale, 4.0f * scale), noteStroke,
             1.0f * scale);
         // Same dy=1em + middle construction as message texts.
         DrawSeqText(dw, rt, body_fmt_, nt.text, P(nt.tx),
@@ -420,26 +475,79 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
                     ink, true, false, textScale, true);
     }
 
-    // Actor boxes: top first pass stored, bottom uses stopy. Top box y=0.
+// Draw the mermaid stickman (actor-man) inside an actor column band.
+// Proportions follow the mermaid actor-man svg (50x65 unit box):
+// head r=6.25 at (0.5w, 6.25), body to y=25, arms at y=12.5 spanning
+// 0.2..0.8 of width, legs to y=40. Stroke #666 (actorStroke), head
+// fill #ECECFF-family (actorFill).
+void DrawStickman(ID2D1RenderTarget* rt,
+                  ID2D1SolidColorBrush* stroke,
+                  ID2D1SolidColorBrush* headFill,
+                  float cx, float topY, float h, float scale) {
+    if (!rt || !stroke) return;
+    float u = h / 65.0f * scale;
+    auto X = [&](float fx) { return cx + (fx - 25.0f) * u; };
+    auto Y = [&](float fy) { return topY + fy * u; };
+    // Head
+    D2D1_ELLIPSE head = D2D1::Ellipse(
+        D2D1::Point2F(X(25.0f), Y(6.25f)), 6.25f * u, 6.25f * u);
+    rt->FillEllipse(head, headFill);
+    rt->DrawEllipse(head, stroke, 1.5f * u);
+    // Body
+    rt->DrawLine(D2D1::Point2F(X(25.0f), Y(12.5f)),
+                 D2D1::Point2F(X(25.0f), Y(25.0f)), stroke, 1.5f * u);
+    // Arms
+    rt->DrawLine(D2D1::Point2F(X(10.0f), Y(16.0f)),
+                 D2D1::Point2F(X(40.0f), Y(16.0f)), stroke, 1.5f * u);
+    // Legs
+    rt->DrawLine(D2D1::Point2F(X(25.0f), Y(25.0f)),
+                 D2D1::Point2F(X(18.0f), Y(40.0f)), stroke, 1.5f * u);
+    rt->DrawLine(D2D1::Point2F(X(25.0f), Y(25.0f)),
+                 D2D1::Point2F(X(32.0f), Y(40.0f)), stroke, 1.5f * u);
+}
+
+    // Actor boxes (participants draw #eaeaea rectangles with #666
+    // borders, mermaid "neo" look); actors (ActorStickman) draw the
+    // mermaid actor-man figure with the name under it. The footer
+    // (mirrorActors) mirrors the same look per shape.
     for (const auto& a : ls.actors) {
+        const bool man =
+            a.shape == mermaid::ActorShape::ActorStickman;
         float bx = P(a.x);
         float bw = static_cast<float>(a.w) * scale;
-        D2D1_RECT_F top = D2D1::RectF(bx, Q(0.0),
-                                      bx + bw, Q(0.0) + kActorBoxHeight * scale);
-        rt->FillRectangle(top, actorFill);
-        rt->DrawRectangle(top, actorStroke, 1.0f * scale);
-        DrawSeqText(dw, rt, body_fmt_, a.name,
-                    bx + bw * 0.5f, Q(0.0) + kActorBoxHeight * scale * 0.5f,
-                    ink, true, true, textScale);
-        // Footer (mirrorActors): box at stopy, same height as the top box.
+        float boxH = kActorBoxHeight * scale;
+        if (man) {
+            DrawStickman(rt, actorStroke, actorFill,
+                         bx + bw * 0.5f, Q(0.0f), boxH, 1.0f);
+            DrawSeqText(dw, rt, body_fmt_, a.name,
+                        bx + bw * 0.5f, Q(0.0f) + boxH * 0.9f,
+                        ink, true, false, textScale);
+        } else {
+            D2D1_RECT_F top = D2D1::RectF(bx, Q(0.0), bx + bw,
+                                          Q(0.0) + boxH);
+            rt->FillRectangle(top, actorFill);
+            rt->DrawRectangle(top, actorStroke, 1.0f * scale);
+            DrawSeqText(dw, rt, body_fmt_, a.name,
+                        bx + bw * 0.5f, Q(0.0) + boxH * 0.5f,
+                        ink, true, true, textScale);
+        }
+        // Footer (mirrorActors): at stopy, same height/shape as top.
         float fy = Q(a.stopy);
-        D2D1_RECT_F foot = D2D1::RectF(bx, fy, bx + bw,
-                                       fy + kActorBoxHeight * scale);
-        rt->FillRectangle(foot, actorFill);
-        rt->DrawRectangle(foot, actorStroke, 1.0f * scale);
-        DrawSeqText(dw, rt, body_fmt_, a.name,
-                    bx + bw * 0.5f, fy + kActorBoxHeight * scale * 0.5f,
-                    ink, true, true, textScale);
+        if (man) {
+            DrawStickman(rt, actorStroke, actorFill,
+                         bx + bw * 0.5f, fy, boxH, 1.0f);
+            DrawSeqText(dw, rt, body_fmt_, a.name,
+                        bx + bw * 0.5f, fy + boxH * 0.9f,
+                        ink, true, false, textScale);
+        } else {
+            D2D1_RECT_F foot = D2D1::RectF(bx, fy, bx + bw,
+                                           fy + boxH);
+            rt->FillRectangle(foot, actorFill);
+            rt->DrawRectangle(foot, actorStroke, 1.0f * scale);
+            DrawSeqText(dw, rt, body_fmt_, a.name,
+                        bx + bw * 0.5f, fy + boxH * 0.5f,
+                        ink, true, true, textScale);
+        }
     }
 
     // Title: mermaid draws it at (title_x, -25) in viewBox space; the
@@ -453,6 +561,9 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
     actorFill->Release();
     actorStroke->Release();
     noteFill->Release();
+    noteStroke->Release();
     lifeline->Release();
-    loopFill->Release();
+    bgFill->Release();
+    activation->Release();
+    whiteInk->Release();
 }
