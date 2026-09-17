@@ -146,6 +146,39 @@ static Mode Current() {
     return g_mode;
 }
 }  // namespace textmode
+
+// Diagnostic offset experiments, marker-gated:
+//   svg_baseline_off.on  -> skip baseline correction in DrawTexts
+//   svg_prev_off.on      -> SetTransform(docT) ignoring page prev
+static bool DrawableMarker(const char* tail) {
+    char path[MAX_PATH] = {};
+    if (FAILED(SHGetFolderPathA(nullptr, CSIDL_LOCAL_APPDATA, nullptr,
+                                0, path))) return false;
+    std::string f = path;
+    f += std::string(1, 92) + "MarkDownIt" + std::string(1, 92) + tail;
+    DWORD at = GetFileAttributesA(f.c_str());
+    return at != INVALID_FILE_ATTRIBUTES;
+}
+static bool g_baseOffChecked = false;
+static bool g_baseOff = false;
+static bool BaselineOff() {
+    if (!g_baseOffChecked) {
+        g_baseOff = DrawableMarker("svg_baseline_off.on");
+        g_baseOffChecked = true;
+        diag::TraceFmt("SVGDOC baseline_off=%d", g_baseOff ? 1 : 0);
+    }
+    return g_baseOff;
+}
+static bool g_prevOffChecked = false;
+static bool g_prevOff = false;
+static bool PrevOff() {
+    if (!g_prevOffChecked) {
+        g_prevOff = DrawableMarker("svg_prev_off.on");
+        g_prevOffChecked = true;
+        diag::TraceFmt("SVGDOC prev_off=%d", g_prevOff ? 1 : 0);
+    }
+    return g_prevOff;
+}
 bool SvgDoc::Load(ID2D1DeviceContext5* ctx, const std::string& xml) {
     Release();
     if (!ctx || xml.empty()) return false;
