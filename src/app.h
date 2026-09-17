@@ -217,6 +217,13 @@ private:
     bool        dirty_ = false;
     bool        use_crlf_ = false;
     bool        has_bom_ = false;
+    // True while the opened file is a standalone Mermaid file (.mmd):
+    // the buffer shows the file wrapped in ```mermaid fences for
+    // rendering/editing; save unwraps them again (no fences on disk).
+    bool        is_mmd_ = false;
+    // True when OpenFile/Reload added the synthetic .mmd fence; only
+    // then may save unwrap it (user-fenced .mmd files keep theirs).
+    bool        mmd_wrapped_ = false;
     std::wstring pending_file_;  // file to open after init completes
 
     // Persisted settings
