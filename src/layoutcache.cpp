@@ -1,5 +1,6 @@
 #include "layoutcache.h"
 #include "editcontroller.h"
+#include "crash_trace.h"
 #include <algorithm>
 #include <cmath>
 
@@ -319,15 +320,24 @@ uint32_t LayoutCache::PointToOffsetAtOrAfterBlock(float x, float y) const {
     // the x-span first and keep the row only as a fallback for clicks
     // in the whitespace beside the block.
     int idx = HitTestBlock(x, y);
+    const bool exact = idx >= 0;
     if (idx < 0) {
         // Between/around sibling spans: the click belongs to the block
         // it is nearest to (cell padding belongs to that cell, not to
         // the leftmost neighbor).
         idx = FindNearestBlockInRow(x, y);
-        if (idx < 0) return UINT32_MAX;
-        if (x < blocks_[static_cast<size_t>(idx)].x) return UINT32_MAX;
+        if (idx < 0) { diag::TraceFmt("P2O miss x=%.1f y=%.1f", x, y); return UINT32_MAX; }
+        if (x < blocks_[static_cast<size_t>(idx)].x) {
+            diag::TraceFmt("P2O left-of-block idx=%d x=%.1f bx=%.1f", idx, x, blocks_[static_cast<size_t>(idx)].x);
+            return UINT32_MAX;
+        }
     }
+    diag::TraceFmt("P2O %s idx=%d bx=%.1f bw=%.1f x=%.1f y=%.1f",
+                   exact ? "hit" : "nearest", idx,
+                   blocks_[static_cast<size_t>(idx)].x,
+                   blocks_[static_cast<size_t>(idx)].width, x, y);
     const uint32_t candidate = PointToOffsetInBlock(idx, x, y);
+    if (candidate == UINT32_MAX) { diag::TraceFmt("P2O in-block miss idx=%d", idx); }
     if (candidate == UINT32_MAX) return UINT32_MAX;
     const uint32_t normalized = NormalizeToRenderedCaret(candidate);
     return normalized == UINT32_MAX ? candidate : normalized;

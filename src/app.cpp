@@ -1452,6 +1452,8 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     }
 
     uint32_t offset = layout_cache_.PointToOffsetAtOrAfterBlock(docX, docY);
+    diag::TraceFmt("DOWN doc=(%.1f,%.1f) clicks=%d off=%u", docX, docY,
+                   click_count_, offset);
 
     // Table projection (plan 51): identify the cell first, then the
     // caret inside it. Whitespace, cell padding and the gap between the
@@ -1615,6 +1617,8 @@ void AppWindow::OnLButtonDblClk(HWND hwnd, int x, int y) {
         end = prev;
     }
 
+    diag::TraceFmt("DBLCLK off=%u span=[%u,%u) txtlen=%zu",
+                   offset, start, end, text.size());
     sel_.anchor = {start};
     sel_.active = {end};
     word_anchor_start_ = start;
@@ -1708,6 +1712,10 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
     }
 
     uint32_t offset = layout_cache_.PointToOffsetAtOrAfterBlock(docX, docY);
+    diag::TraceFmt("MOVE doc=(%.1f,%.1f) off=%u word=%d para=%d margin=%d sel=%d txtdrag=%d",
+                   docX, docY, offset, word_dragging_,
+                   paragraph_dragging_, margin_selecting_,
+                   selection_dragging_, text_dragging_);
     if (word_dragging_) {
         if (offset != UINT32_MAX) {
             if (offset >= word_anchor_caret_) {
