@@ -5,7 +5,7 @@
 #include "fileassoc.h"
 
 static const wchar_t* kProgId  = L"MarkDownIt.md";
-static const wchar_t* kExts[]   = { L".md", L".markdown", L".mmd" };
+static const wchar_t* kExts[]   = { L".md", L".markdown", L".mmd", L".svg" };
 
 // Write a string value to a registry key.
 static bool SetStr(HKEY root, const wchar_t* sub, const wchar_t* val,

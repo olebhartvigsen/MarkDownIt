@@ -224,6 +224,10 @@ private:
     // True when OpenFile/Reload added the synthetic .mmd fence; only
     // then may save unwrap it (user-fenced .mmd files keep theirs).
     bool        mmd_wrapped_ = false;
+    // Same pattern for standalone SVG files (.svg on disk, ```svg
+    // fence in the buffer; the renderer rasterizes svg blocks).
+    bool        is_svg_ = false;
+    bool        svg_wrapped_ = false;
     std::wstring pending_file_;  // file to open after init completes
 
     // Persisted settings

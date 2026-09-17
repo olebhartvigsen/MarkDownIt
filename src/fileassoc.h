@@ -1,6 +1,6 @@
 #pragma once
 
-// File association: register .md, .markdown and .mmd files so Explorer shows
+// File association: register .md, .markdown, .mmd and .svg files so Explorer shows
 // the MarkDownIt document icon and double-click opens the file in MarkDownIt.
 //
 // Registration is per-user (HKCU), no admin rights needed.

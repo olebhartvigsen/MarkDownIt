@@ -2103,10 +2103,11 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
     OnBufferChanged();
 }
 
-// Standalone .mmd support (Mermaid source file, no markdown fences
-// on disk). The buffer shows the content wrapped in a ```mermaid
-// fence so the regular markdown pipeline parses and renders it as
-// a diagram; saving unwraps the fence again.
+// Standalone diagram-file support (.mmd = mermaid source, .svg =
+// plain SVG). Neither is markdown on disk: the buffer shows the
+// content wrapped in a fence (```mermaid / ```svg) so the regular
+// markdown pipeline parses and renders it as a diagram; saving
+// unwraps the fence again, leaving the file on disk unchanged.
 
 // Case-insensitive check whether the path ends with the extension
 // (including the dot, e.g. L".mmd").
@@ -2121,10 +2122,11 @@ static bool EndsWithExtension(const std::wstring& path,
     return true;
 }
 
-// Does the text already contain a ```mermaid fence (or the alias
-// ```mmd)? Used both to detect user-provided fences in a .mmd file
-// and (indirectly) to keep the wrap idempotent.
-static bool HasMermaidFence(const std::string& text) {
+// Does the text already contain a ```<lang> fence? Used both to
+// detect user-provided fences in a wrapped file and (indirectly)
+// to keep the wrap idempotent.
+static bool HasLangFence(const std::string& text,
+                         const std::string& lang) {
     size_t i = 0;
     while (i < text.size()) {
         size_t eol = text.find('\n', i);
@@ -2137,7 +2139,7 @@ static bool HasMermaidFence(const std::string& text) {
         if (line.compare(b, 3, "```") == 0) {
             std::string info = line.substr(b + 3);
             if (!info.empty() && info[0] == ' ') info.erase(0, info.find_first_not_of(" \t"));
-            if (info == "mermaid" || info == "mmd") return true;
+            if (info == lang) return true;
         }
         if (eol == std::string::npos) break;
         i = eol + 1;
@@ -2145,10 +2147,11 @@ static bool HasMermaidFence(const std::string& text) {
     return false;
 }
 
-// Wrap bare mermaid source in a ```mermaid fence that the markdown
-// parser promotes to a live diagram.
-static std::string WrapMermaidFence(const std::string& text) {
-    std::string out = "```mermaid\n";
+// Wrap bare source of the given language in a fence that the
+// markdown parser promotes to a rendered block.
+static std::string WrapLangFence(const std::string& lang,
+                                 const std::string& text) {
+    std::string out = "```" + lang + "\n";
     out += text;
     if (out.empty() || out.back() != '\n') out += '\n';
     if (text.empty()) out += '\n';  // keep the code block non-empty
@@ -2156,19 +2159,22 @@ static std::string WrapMermaidFence(const std::string& text) {
     return out;
 }
 
-// Strip the synthetic ```mermaid fence added by WrapMermaidFence.
-// Removes at most one opening fence right at the top and matching
-// closing fence at the end, so content that legitimately contains
-// other fences stays intact when the wrap was skipped.
-static std::string UnwrapMermaidFence(const std::string& text) {
+// Strip the synthetic fence added by WrapLangFence. Removes at
+// most one opening fence right at the top and a matching closing
+// fence at the end, so content that legitimately contains other
+// fences stays intact when the wrap was skipped.
+static std::string UnwrapLangFence(const std::string& lang,
+                                   const std::string& text) {
+    const std::string openingFence = "```" + lang;
+    const size_t fl = openingFence.size();
     size_t b = 0;
     while (b < text.size() && text[b] == '\n') b++;
-    bool opening = (text.size() >= b + 10 &&
-        text.compare(b, 10, "```mermaid") == 0 &&
-        (b + 10 == text.size() || text[b + 10] == '\n' ||
-         text[b + 10] == '\r'));
+    bool opening = (text.size() >= b + fl &&
+        text.compare(b, fl, openingFence) == 0 &&
+        (b + fl == text.size() || text[b + fl] == '\n' ||
+         text[b + fl] == '\r'));
     if (!opening) return text;
-    size_t i = b + 10;
+    size_t i = b + fl;
     if (i < text.size() && (text[i] == '\n' || text[i] == '\r')) i++;
     if (i < text.size() && text[i - 1] == '\r' && text[i] == '\n') i++;
     size_t j = text.find("```", i);
@@ -2182,7 +2188,7 @@ static std::string UnwrapMermaidFence(const std::string& text) {
     if (e < text.size() && text[e] == '\r') e++;
     if (e < text.size() && text[e] == '\n') e++;
     std::string inner = text.substr(i, j - i);
-    // Empty .mmd: wrap added one blank line; drop it on unwrap so
+    // Empty file: wrap added one blank line; drop it on unwrap so
     // an empty file stays empty.
     if (inner == "\n") return std::string();
     return inner;
@@ -2221,10 +2227,16 @@ void AppWindow::OpenFile(const std::wstring& path) {
     // pipeline parses and renders it as a diagram. DoSave unwraps
     // the fence again so the file on disk keeps its original form.
     is_mmd_ = EndsWithExtension(path, L".mmd");
+    is_svg_ = EndsWithExtension(path, L".svg");
     mmd_wrapped_ = false;
-    if (is_mmd_ && !HasMermaidFence(utf8)) {
-        utf8 = WrapMermaidFence(utf8);
+    if (is_mmd_ && !HasLangFence(utf8, "mermaid")) {
+        utf8 = WrapLangFence("mermaid", utf8);
         mmd_wrapped_ = true;
+    }
+    svg_wrapped_ = false;
+    if (is_svg_ && !HasLangFence(utf8, "svg")) {
+        utf8 = WrapLangFence("svg", utf8);
+        svg_wrapped_ = true;
     }
 
     // Detect line endings: check for CR LF (0x0D 0x0A)
@@ -2283,9 +2295,14 @@ void AppWindow::Reload() {
     // Re-apply the .mmd fence wrap (matches OpenFile: the disk file
     // is bare mermaid, the buffer shows it fenced).
     mmd_wrapped_ = false;
-    if (is_mmd_ && !HasMermaidFence(utf8)) {
-        utf8 = WrapMermaidFence(utf8);
+    if (is_mmd_ && !HasLangFence(utf8, "mermaid")) {
+        utf8 = WrapLangFence("mermaid", utf8);
         mmd_wrapped_ = true;
+    }
+    svg_wrapped_ = false;
+    if (is_svg_ && !HasLangFence(utf8, "svg")) {
+        utf8 = WrapLangFence("svg", utf8);
+        svg_wrapped_ = true;
     }
     use_crlf_ = (utf8.find("\x0D\x0A") != std::string::npos);
 
@@ -2913,7 +2930,10 @@ bool AppWindow::DoSave(const std::wstring& path) {
     // ```mermaid fence (see OpenFile). The file on disk is bare
     // mermaid source, so unwrap the fence before writing.
     if (is_mmd_ && mmd_wrapped_) {
-        content = UnwrapMermaidFence(content);
+        content = UnwrapLangFence("mermaid", content);
+    }
+    if (is_svg_ && svg_wrapped_) {
+        content = UnwrapLangFence("svg", content);
     }
 
     // Detect and strip BOM if present on load, add it back on save.
@@ -3002,7 +3022,7 @@ std::wstring AppWindow::SaveDialog() {
     ofn.hwndOwner = hwnd_;
     ofn.lpstrFile = szFile;
     ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrFilter = L"Markdown (*.md)\0*.md\0Mermaid (*.mmd)\0*.mmd\0All Files (*.*)\0*.*\0";
+    ofn.lpstrFilter = L"Markdown (*.md)\0*.md\0Mermaid (*.mmd)\0*.mmd\0SVG (*.svg)\0*.svg\0All Files (*.*)\0*.*\0";
     ofn.lpstrDefExt = L"md";
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
     if (file_path_.empty()) {
@@ -5014,7 +5034,7 @@ void AppWindow::OpenFileDialog() {
     ofn.hwndOwner = hwnd_;
     ofn.lpstrFile = buf;
     ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrFilter = L"Markdown (*.md;*.markdown;*.mmd)\0*.md;*.markdown;*.mmd\0All Files\0*.*\0";
+    ofn.lpstrFilter = L"Markdown (*.md;*.markdown;*.mmd;*.svg)\0*.md;*.markdown;*.mmd;*.svg\0All Files\0*.*\0";
     ofn.nFilterIndex = 1;
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
     ofn.lpstrTitle = L"Open Markdown File";
