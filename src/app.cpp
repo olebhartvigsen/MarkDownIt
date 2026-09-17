@@ -1459,13 +1459,14 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     if (offset == UINT32_MAX) {
         // Missed all text blocks: if the click's y is inside the band of
         // a cached table cell row, project into that row's nearest cell.
-        int rowBlock = layout_cache_.FindBlockAtY(docY);
-        if (rowBlock < 0) {
-            // Widen by one small tolerance to catch the padding rows.
-            for (float dy = 1.0f; dy <= 6.0f && rowBlock < 0; dy += 1.0f) {
-                rowBlock = layout_cache_.FindBlockAtY(docY - dy);
-                if (rowBlock < 0) rowBlock = layout_cache_.FindBlockAtY(docY + dy);
-            }
+        // Pick the cell block whose x-span contains the click; a click
+        // in the padding beside a cell stays in that cell (plan 51).
+        int rowBlock = layout_cache_.HitTestBlock(docX, docY);
+        for (float dy = 1.0f; dy <= 6.0f && rowBlock < 0; dy += 1.0f) {
+            rowBlock = layout_cache_.FindNearestBlockInRow(docX, docY - dy);
+            if (rowBlock < 0)
+                rowBlock = layout_cache_.FindNearestBlockInRow(docX,
+                                                               docY + dy);
         }
         if (rowBlock >= 0) {
             const auto& bl = layout_cache_.Blocks()[

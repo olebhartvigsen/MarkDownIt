@@ -41,6 +41,11 @@ public:
     // Used for margin-click line selection. Returns -1 if none.
     int FindBlockAtY(float y) const;
 
+    // Among blocks sharing the y band, the one horizontally nearest
+    // to x. Keeps cell padding and side whitespace in the correct
+    // column for parallel table cells. Returns -1 if the band is empty.
+    int FindNearestBlockInRow(float x, float y) const;
+
     // Find the visual line within a block at the given y coordinate.
     // Returns the source offset range [start, end) of the visual line.
     // Also outputs the line's top y (relative to block top).

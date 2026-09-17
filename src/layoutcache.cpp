@@ -32,6 +32,26 @@ int LayoutCache::HitTestBlock(float x, float y) const {
     return -1;
 }
 
+int LayoutCache::FindNearestBlockInRow(float x, float y) const {
+    // All blocks sharing the y band are candidates (table row cells,
+    // parallel columns). Nearest by horizontal distance keeps padding
+    // and side whitespace inside the clicked column's cell.
+    int best = -1;
+    float bestDist = 0.0f;
+    for (size_t i = 0; i < blocks_.size(); ++i) {
+        const auto& bl = blocks_[i];
+        if (y < bl.y || y >= bl.y + bl.height) continue;
+        const float dist =
+            x < bl.x ? bl.x - x :
+            x >= bl.x + bl.width ? x - (bl.x + bl.width) : 0.0f;
+        if (best < 0 || dist < bestDist) {
+            best = static_cast<int>(i);
+            bestDist = dist;
+        }
+    }
+    return best;
+}
+
 int LayoutCache::FindBlockAtY(float y) const {
     // Find the topmost block whose y-range contains y.
     // Do NOT snap to nearest block; if y is in a gap between blocks,
@@ -294,8 +314,19 @@ uint32_t LayoutCache::PointToOffset(float x, float y) const {
 }
 
 uint32_t LayoutCache::PointToOffsetAtOrAfterBlock(float x, float y) const {
-    const int idx = FindBlockAtY(y);
-    if (idx < 0 || x < blocks_[static_cast<size_t>(idx)].x) return UINT32_MAX;
+    // Sibling blocks can share one y band (table cells of a row), so
+    // the y lookup alone always lands on the leftmost column. Resolve
+    // the x-span first and keep the row only as a fallback for clicks
+    // in the whitespace beside the block.
+    int idx = HitTestBlock(x, y);
+    if (idx < 0) {
+        // Between/around sibling spans: the click belongs to the block
+        // it is nearest to (cell padding belongs to that cell, not to
+        // the leftmost neighbor).
+        idx = FindNearestBlockInRow(x, y);
+        if (idx < 0) return UINT32_MAX;
+        if (x < blocks_[static_cast<size_t>(idx)].x) return UINT32_MAX;
+    }
     const uint32_t candidate = PointToOffsetInBlock(idx, x, y);
     if (candidate == UINT32_MAX) return UINT32_MAX;
     const uint32_t normalized = NormalizeToRenderedCaret(candidate);
