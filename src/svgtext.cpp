@@ -109,6 +109,10 @@ static bool TagIs(const std::string& tag, const char* name) {
     size_t i = 1; // skip '<'
     if (i < tag.size() && tag[i] == '/') ++i;
     size_t j = 0;
+    if (name[0] == '/') ++j;  // closing-tag name: skip its slash too
+    if (j == 1 && !(tag.size() > 1 && tag[1] == '/')) {
+        return false;  // open/close mismatch: name "/x" vs tag "<x"
+    }
     while (name[j] && i < tag.size()) {
         char a = tag[i];
         char b = name[j];
@@ -184,108 +188,226 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
     std::vector<TextRun> runs;
     XmlPos p(xml);
 
-    int defsDepth = 0;
-
-    // Stack of parent text attributes for <tspan> inheritance.
-    struct TextCtx {
-        float x = 0, y = 0, fontSize = 16;
+    // Column-style helpers: transform + style inheritance stack.
+    struct Ctx {
+        float m[6] = {1, 0, 0, 1, 0, 0};  // a b c d e f
+        float fontSize = 16;
         std::string fontFamily;
         std::string anchor;
         std::string fill;
         bool bold = false;
     };
-    std::vector<TextCtx> stack;
+    std::vector<Ctx> gStack;
+    Ctx root;
+    gStack.push_back(root);
+
+    // Compose: child = parent * op  (apply parent, then op).
+    auto ComposeOp = [](float out[6], const float parent[6],
+                        const float op[6]) {
+        out[0] = parent[0] * op[0] + parent[2] * op[1];
+        out[1] = parent[1] * op[0] + parent[3] * op[1];
+        out[2] = parent[0] * op[2] + parent[2] * op[3];
+        out[3] = parent[1] * op[2] + parent[3] * op[3];
+        out[4] = parent[0] * op[4] + parent[2] * op[5] + parent[4];
+        out[5] = parent[1] * op[4] + parent[3] * op[5] + parent[5];
+    };
+
+    // Parse a transform list; returns composed matrix in the LOCAL
+    // (not parent) space. ops: translate/scale/matrix.
+    auto ParseTransform = [&](const std::string& tf, float out[6]) {
+        out[0] = 1; out[1] = 0; out[2] = 0;
+        out[3] = 1; out[4] = 0; out[5] = 0;
+        size_t pos = 0;
+        while (pos < tf.size()) {
+            size_t nameStart = pos;
+            while (pos < tf.size() && tf[pos] >= 97 && tf[pos] <= 122) pos++;
+            if (pos == nameStart) { pos++; continue; }
+            std::string name = tf.substr(nameStart, pos - nameStart);
+            // skip to '('
+            while (pos < tf.size() && tf[pos] != 40) pos++;
+            if (pos >= tf.size()) break;
+            pos++;
+            float args[6] = {0, 0, 0, 0, 0, 0};
+            int argc = 0;
+            std::string num;
+            while (pos < tf.size() && tf[pos] != 41) {
+                char c = tf[pos];
+                if ((c >= 48 && c <= 57) || c == 46 || c == 45 ||
+                    c == 43 || c == 101 || c == 69) {
+                    num += c;
+                } else if (!num.empty()) {
+                    if (argc < 6) {
+                        try { args[argc++] = std::stof(num); }
+                        catch (...) { args[argc++] = 0; }
+                    }
+                    num.clear();
+                }
+                pos++;
+            }
+            if (!num.empty() && argc < 6) {
+                try { args[argc++] = std::stof(num); } catch (...) {}
+            }
+            pos++;  // consume )
+            float op[6] = {1, 0, 0, 1, 0, 0};
+            if (name == "translate") {
+                op[4] = args[0];
+                op[5] = (argc > 1) ? args[1] : 0;
+            } else if (name == "scale") {
+                op[0] = args[0];
+                op[3] = (argc > 1) ? args[1] : args[0];
+            } else if (name == "matrix" && argc >= 6) {
+                for (int mi = 0; mi < 6; mi++) op[mi] = args[mi];
+            } else { continue; }
+            float temp[6];
+            ComposeOp(temp, out, op);
+            for (int mi = 0; mi < 6; mi++) out[mi] = temp[mi];
+        }
+    };
+
+    int defsDepth = 0;
 
     while (true) {
         std::string tag = p.NextTag();
         if (tag.empty()) break;
 
         if (TagIs(tag, "defs")) {
-            if (tag.size() > 1 && tag[1] != '/') defsDepth++;
-            else defsDepth = (defsDepth > 0) ? defsDepth - 1 : 0;
+            if (tag.size() > 2 && tag[1] != 47) {
+                // Self-closing <defs .../> opens and closes at once.
+                // tag.back() is '>', check the char before it.
+                bool selfClosed = tag[tag.size() - 2] == 47;
+                if (!selfClosed) defsDepth++;
+            } else {
+                defsDepth = (defsDepth > 0) ? defsDepth - 1 : 0;
+            }
+            continue;
+        }
+        if (defsDepth > 0) continue;
+
+        // <g> open/close: transform + inheritable style props.
+        if (TagIs(tag, "g") && tag.size() > 1 && tag[1] != 47) {
+            Ctx child = gStack.back();
+            std::string tf = GetAttrOrStyle(tag, "transform");
+            if (!tf.empty() && tf != "none") {
+                float composed[6];
+                ParseTransform(tf, composed);
+                float out2[6];
+                ComposeOp(out2, child.m, composed);
+                for (int mi = 0; mi < 6; mi++) child.m[mi] = out2[mi];
+            }
+            std::string v;
+            v = GetAttrOrStyle(tag, "font-size");
+            if (!v.empty()) {
+                // ToFloat stops at the px/pt suffix; scale by the
+                // freshly composed vertical scale factor.
+                child.fontSize = ToFloat(v, child.fontSize) * child.m[3];
+            }
+            v = GetAttrOrStyle(tag, "font-family");
+            if (!v.empty()) child.fontFamily = v;
+            v = GetAttrOrStyle(tag, "text-anchor");
+            if (!v.empty()) child.anchor = v;
+            v = GetAttrOrStyle(tag, "fill");
+            if (!v.empty() && v != "none") child.fill = v;
+            v = GetAttrOrStyle(tag, "font-weight");
+            if (!v.empty()) child.bold = (v == "bold" || v == "700" || v == "bolder");
+            gStack.push_back(child);
+            // self-closing g?
+            if (!tag.empty() && tag.back() == 47) gStack.pop_back();
+            continue;
+        }
+        if (TagIs(tag, "/g")) {
+            if (gStack.size() > 1) gStack.pop_back();
             continue;
         }
 
-        // Skip everything inside <defs>
-        if (defsDepth > 0) continue;
-
         // Opening <text ...>
-        if (TagIs(tag, "text") && tag.size() > 1 && tag[1] != '/') {
-            TextCtx ctx;
-            ctx.x = ToFloat(GetAttrOrStyle(tag, "x"));
-            ctx.y = ToFloat(GetAttrOrStyle(tag, "y"));
-            ctx.fontSize = ToFloat(GetAttrOrStyle(tag, "font-size"), 16.0f);
-            ctx.fontFamily = GetAttrOrStyle(tag, "font-family");
-            ctx.anchor = GetAttrOrStyle(tag, "text-anchor");
-            ctx.fill = GetAttrOrStyle(tag, "fill");
-            std::string fw = GetAttrOrStyle(tag, "font-weight");
-            ctx.bold = (fw == "bold" || fw == "700" || fw == "bolder");
+        if (TagIs(tag, "text") && tag.size() > 1 && tag[1] != 47) {
+            Ctx ctx = gStack.back();
+            // First x/y value of possibly space-separated lists.
+            auto firstNum = [](const std::string& in, float def) -> float {
+                float outv = def;
+                size_t k = 0;
+                while (k < in.size() && !(in[k] >= 48 && in[k] <= 57) &&
+                       in[k] != 45 && in[k] != 46) k++;
+                if (k < in.size()) {
+                    std::string num;
+                    while (k < in.size() && ((in[k] >= 48 && in[k] <= 57) ||
+                           in[k] == 45 || in[k] == 46 || in[k] == 101 ||
+                           in[k] == 43)) { num += in[k]; k++; }
+                    try { outv = std::stof(num); } catch (...) {}
+                }
+                return outv;
+            };
+            std::string v;
+            v = GetAttrOrStyle(tag, "font-size");
+            if (!v.empty()) ctx.fontSize = ToFloat(v, ctx.fontSize) * ctx.m[3];
+            v = GetAttrOrStyle(tag, "font-family");
+            if (!v.empty()) ctx.fontFamily = v;
+            v = GetAttrOrStyle(tag, "text-anchor");
+            if (!v.empty()) ctx.anchor = v;
+            v = GetAttrOrStyle(tag, "fill");
+            if (!v.empty() && v != "none") ctx.fill = v;
+            v = GetAttrOrStyle(tag, "font-weight");
+            if (!v.empty()) ctx.bold = (v == "bold" || v == "700" || v == "bolder");
+            float xBase = firstNum(GetAttrOrStyle(tag, "x"), 0.0f);
+            float yBase = firstNum(GetAttrOrStyle(tag, "y"), 0.0f);
 
-            stack.push_back(ctx);
-
-            // Collect text content, handling tspan children
-            // Loop until matching </text>
-            while (!stack.empty()) {
+            while (true) {
                 std::string text = p.TextUntilTag();
-                // Trim whitespace
                 size_t a = text.find_first_not_of(" \t\n\r");
                 size_t z = text.find_last_not_of(" \t\n\r");
                 if (a != std::string::npos && z != std::string::npos && z >= a) {
                     std::string trimmed = text.substr(a, z - a + 1);
                     if (!trimmed.empty()) {
+                        // Transform position through composed ctx.m.
+                        Ctx use = gStack.back();
+                        // tspan overrides currently on stack top.
                         TextRun run;
-                        run.x = stack.back().x;
-                        run.y = stack.back().y;
-                        run.fontSize = stack.back().fontSize;
-                        run.fontFamily = stack.back().fontFamily;
-                        run.anchor = stack.back().anchor;
-                        run.fill = stack.back().fill;
-                        run.bold = stack.back().bold;
+                        float px = xBase, py = yBase;
+                        float lx = use.m[0] * px + use.m[2] * py + use.m[4];
+                        float ly = use.m[1] * px + use.m[3] * py + use.m[5];
+                        run.x = lx;
+                        run.y = ly;
+                        run.fontSize = use.fontSize;
+                        run.fontFamily = use.fontFamily;
+                        run.anchor = use.anchor;
+                        run.fill = use.fill;
+                        run.bold = use.bold;
                         run.text = DecodeEntities(trimmed);
                         runs.push_back(run);
                     }
                 }
-
                 std::string inner = p.NextTag();
                 if (inner.empty()) break;
-
-                if (TagIs(inner, "/text")) {
-                    stack.pop_back();
-                    break;
-                }
-                if (TagIs(inner, "tspan") && inner.size() > 1 && inner[1] != '/') {
-                    // Push inherited context with overrides
-                    TextCtx child = stack.back();
-                    std::string v;
-                    v = GetAttrOrStyle(inner, "x"); if (!v.empty()) child.x = ToFloat(v);
-                    v = GetAttrOrStyle(inner, "y"); if (!v.empty()) child.y = ToFloat(v);
-                    v = GetAttrOrStyle(inner, "font-size"); if (!v.empty()) child.fontSize = ToFloat(v);
-                    v = GetAttrOrStyle(inner, "font-family"); if (!v.empty()) child.fontFamily = v;
-                    v = GetAttrOrStyle(inner, "text-anchor"); if (!v.empty()) child.anchor = v;
-                    v = GetAttrOrStyle(inner, "fill"); if (!v.empty()) child.fill = v;
-                    v = GetAttrOrStyle(inner, "font-weight");
-                    if (!v.empty()) child.bold = (v == "bold" || v == "700" || v == "bolder");
-                    stack.push_back(child);
-                    // Self-closing tspan?
-                    if (!inner.empty() && inner.back() == '/') {
-                        stack.pop_back();
-                    }
+                if (TagIs(inner, "/text")) break;
+                if (TagIs(inner, "tspan") && inner.size() > 1 && inner[1] != 47) {
+                    Ctx child = gStack.back();
+                    std::string v2;
+                    v2 = GetAttrOrStyle(inner, "x");
+                    if (!v2.empty()) xBase = firstNum(v2, xBase);
+                    v2 = GetAttrOrStyle(inner, "y");
+                    std::string yv = GetAttrOrStyle(inner, "y");
+                    if (!yv.empty()) yBase = firstNum(yv, yBase);
+                    v2 = GetAttrOrStyle(inner, "font-size");
+                    if (!v2.empty()) child.fontSize = ToFloat(v2, child.fontSize) * child.m[3];
+                    v2 = GetAttrOrStyle(inner, "font-family");
+                    if (!v2.empty()) child.fontFamily = v2;
+                    v2 = GetAttrOrStyle(inner, "text-anchor");
+                    if (!v2.empty()) child.anchor = v2;
+                    v2 = GetAttrOrStyle(inner, "fill");
+                    if (!v2.empty() && v2 != "none") child.fill = v2;
+                    v2 = GetAttrOrStyle(inner, "font-weight");
+                    if (!v2.empty()) child.bold = (v2 == "bold" || v2 == "700" || v2 == "bolder");
+                    gStack.push_back(child);
+                    if (!inner.empty() && inner.back() == 47) gStack.pop_back();
                     continue;
                 }
                 if (TagIs(inner, "/tspan")) {
-                    if (stack.size() > 1) stack.pop_back();
+                    if (gStack.size() > 1) gStack.pop_back();
                     continue;
                 }
-                // Any other tag inside text: skip
-                // If it's an opening tag we don't recognize, look for its close
             }
             continue;
         }
-
-        // Skip everything else
-        // For opening tags we don't care about, just continue.
-        // For self-closing tags, just continue.
-        // For closing tags, just continue.
     }
 
     return runs;
