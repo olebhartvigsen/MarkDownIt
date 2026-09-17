@@ -806,24 +806,29 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 ApplyUndo(true);
             }
             break;
-        case VK_BACK:
+        case VK_BACK: {
             pending_run_active_ = false;
             pending_run_suffix_bytes_ = 0;
+            const size_t lengthBefore = buffer_.Length();
             if (ctrl) editor_.DeleteWordBackward();
-            else editor_.DeleteBackward();
-            OnBufferChanged();
+            else editor_.DeleteBackward(&doc_);
+            if (buffer_.Length() != lengthBefore) OnBufferChanged();
             break;
-        case VK_DELETE:
+        }
+        case VK_DELETE: {
             pending_run_active_ = false;
             pending_run_suffix_bytes_ = 0;
+            const size_t lengthBefore = buffer_.Length();
             if (ctrl) editor_.DeleteWordForward();
-            else editor_.DeleteForward();
-            OnBufferChanged();
+            else editor_.DeleteForward(&doc_);
+            if (buffer_.Length() != lengthBefore) OnBufferChanged();
             break;
+        }
         case VK_RETURN:
             pending_run_active_ = false;
             pending_run_suffix_bytes_ = 0;
-            if (editor_.InsertParagraphBreak(doc_)) {
+            if ((shift ? editor_.InsertSoftBreak(doc_)
+                       : editor_.InsertParagraphBreak(doc_))) {
                 OnBufferChanged();
                 // Force immediate visual update after Enter; don't wait
                 // for the debounced reparse timer.
@@ -1226,7 +1231,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     // Link-click behavior is suppressed when Shift is held.
     if (shiftDown) {
         // First, try to get a text offset at the click position.
-        uint32_t offset = layout_cache_.PointToOffset(docX, docY);
+        uint32_t offset = layout_cache_.PointToOffsetAtOrAfterBlock(docX, docY);
         if (offset != UINT32_MAX) {
             // Shift+click on text: extend selection to this offset.
             margin_selecting_ = false;
@@ -1284,7 +1289,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
         int blkIdx = layout_cache_.FindBlockAtY(docY);
         if (blkIdx < 0) {
             // Try via the offset.
-            uint32_t off = layout_cache_.PointToOffset(docX, docY);
+            uint32_t off = layout_cache_.PointToOffsetAtOrAfterBlock(docX, docY);
             if (off != UINT32_MAX)
                 blkIdx = layout_cache_.BlockForOffset(off);
         }
@@ -1320,7 +1325,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     // edit mode. In edit mode, if the click is NOT on a link, the
     // caret is placed as usual.
     {
-        uint32_t linkOffset = layout_cache_.PointToOffset(docX, docY);
+        uint32_t linkOffset = layout_cache_.PointToOffsetAtOrAfterBlock(docX, docY);
         if (linkOffset != UINT32_MAX) {
             std::string url = FindLinkAtOffset(linkOffset);
             if (!url.empty()) {
@@ -1334,7 +1339,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
 
     // Check if the click is in the left margin (no text block hit at x).
     // If so, select the visual line at that y position (like Word).
-    uint32_t offset = layout_cache_.PointToOffset(docX, docY);
+    uint32_t offset = layout_cache_.PointToOffsetAtOrAfterBlock(docX, docY);
     if (offset == UINT32_MAX) {
         // Click missed all text blocks; in the left margin.
         // Find the block at this y and select the single visual line.
@@ -1403,7 +1408,7 @@ void AppWindow::OnLButtonDblClk(HWND hwnd, int x, int y) {
     float scale = 96.0f / static_cast<float>(dpi_);
     float docX = static_cast<float>(x) * scale;
     float docY = static_cast<float>(y) * scale + scrollY_;
-    uint32_t offset = layout_cache_.PointToOffset(docX, docY);
+    uint32_t offset = layout_cache_.PointToOffsetAtOrAfterBlock(docX, docY);
     if (offset == UINT32_MAX) return;
 
     const std::string& text = buffer_.Text();
@@ -1521,7 +1526,7 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
         return;
     }
 
-    uint32_t offset = layout_cache_.PointToOffset(docX, docY);
+    uint32_t offset = layout_cache_.PointToOffsetAtOrAfterBlock(docX, docY);
     if (word_dragging_) {
         if (offset != UINT32_MAX) {
             if (offset >= word_anchor_caret_) {
@@ -1579,7 +1584,7 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
         return;
     }
 
-    offset = layout_cache_.PointToOffset(docX, docY);
+    offset = layout_cache_.PointToOffsetAtOrAfterBlock(docX, docY);
     if (offset != UINT32_MAX) {
         sel_.active = {offset};
     }
@@ -1592,7 +1597,7 @@ void AppWindow::FinishTextDrag() {
     float scale = 96.0f / static_cast<float>(dpi_);
     float docX = static_cast<float>(text_drag_last_x_) * scale;
     float docY = static_cast<float>(text_drag_last_y_) * scale + scrollY_;
-    uint32_t drop = layout_cache_.PointToOffset(docX, docY);
+    uint32_t drop = layout_cache_.PointToOffsetAtOrAfterBlock(docX, docY);
     if (drop == UINT32_MAX) return;
     drop = layout_cache_.NormalizeToRenderedCaret(drop);
     if (drop == UINT32_MAX) return;

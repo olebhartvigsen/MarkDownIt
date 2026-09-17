@@ -18,14 +18,19 @@ public:
                           const std::string& replacement,
                           EditType type = EditType::Other,
                           const Selection* undoSelectionBefore = nullptr);
-    void DeleteBackward();
-    void DeleteForward();
+    // Return true when the source buffer changed. Passing the parsed document
+    // lets paragraph-boundary deletion remove one complete paragraph separator.
+    bool DeleteBackward(const Document* doc = nullptr);
+    bool DeleteForward(const Document* doc = nullptr);
     void DeleteWordBackward();
     void DeleteWordForward();
     void DeleteSelection();
 
     // Insert a paragraph break, context-aware.
     bool InsertParagraphBreak(const Document& doc);
+
+    // Insert one Markdown soft line break without creating a new paragraph.
+    bool InsertSoftBreak(const Document& doc);
 
     // Undo/redo: apply inverse or re-apply an entry.
     bool Undo(UndoEntry* undone = nullptr);

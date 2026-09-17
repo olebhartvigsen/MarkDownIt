@@ -75,6 +75,11 @@ public:
     // Returns UINT32_MAX on failure.
     uint32_t PointToOffset(float x, float y) const;
 
+    // Screen point to a caret offset in the block at y, including the
+    // whitespace to the right of rendered text. Left-margin clicks still
+    // return UINT32_MAX so line selection keeps its Word-like behavior.
+    uint32_t PointToOffsetAtOrAfterBlock(float x, float y) const;
+
     // Source offset to a caret rectangle. Used to place the caret.
     // Returns false if no block owns the offset.
     bool OffsetToCaretRect(uint32_t offset,
@@ -82,6 +87,8 @@ public:
                             float* outH) const;
 
 private:
+    uint32_t PointToOffsetInBlock(int blockIndex, float x, float y) const;
+
     std::vector<BlockLayout> blocks_;
     const std::string* srcText_ = nullptr; // source text for offset calc
 };

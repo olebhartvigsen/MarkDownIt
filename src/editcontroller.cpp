@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cctype>
 #include <utility>
+#include <vector>
 
 namespace {
 struct CodePoint {
@@ -395,20 +396,69 @@ void EditController::DeleteSelection() {
     RecordAndApply(start, len, "", EditType::Delete);
 }
 
-void EditController::DeleteBackward() {
-    if (!sel_->Empty()) { DeleteSelection(); return; }
-    uint32_t at = sel_->active.offset;
-    if (at == 0) return;
-    uint32_t prev = PrevGraphemeBoundary(buf_->Text(), at);
-    RecordAndApply(prev, at - prev, "", EditType::Delete);
+namespace {
+
+uint32_t ParagraphSeparatorLengthAt(const std::string& text, uint32_t offset) {
+    if (offset > text.size()) return 0;
+    if (offset + 4 <= text.size() &&
+        text.compare(offset, 4, "\r\n\r\n") == 0) return 4;
+    if (offset + 2 <= text.size() && text.compare(offset, 2, "\n\n") == 0)
+        return 2;
+    return 0;
 }
 
-void EditController::DeleteForward() {
-    if (!sel_->Empty()) { DeleteSelection(); return; }
-    uint32_t at = sel_->active.offset;
-    if (at >= buf_->Length()) return;
-    uint32_t next = NextGraphemeBoundary(buf_->Text(), at);
+bool IsParagraphSeparator(const Document* doc, uint32_t offset,
+                          uint32_t separatorLength) {
+    if (!doc || separatorLength == 0) return false;
+    const uint32_t end = offset + separatorLength;
+    bool paragraphBefore = false;
+    bool paragraphAfter = false;
+    for (const auto& node : doc->nodes) {
+        if (node.block != BlockKind::Paragraph) continue;
+        const uint32_t nodeEnd = node.srcOffset + node.srcLength;
+        if (nodeEnd <= offset) paragraphBefore = true;
+        if (node.srcOffset >= end) paragraphAfter = true;
+    }
+    return paragraphBefore && paragraphAfter;
+}
+
+}  // namespace
+
+bool EditController::DeleteBackward(const Document* doc) {
+    if (!sel_->Empty()) { DeleteSelection(); return true; }
+    const uint32_t at = sel_->active.offset;
+    if (at == 0) return false;
+
+    const uint32_t separatorStart = at >= 4 &&
+        ParagraphSeparatorLengthAt(buf_->Text(), at - 4) == 4 ? at - 4 :
+        (at >= 2 && ParagraphSeparatorLengthAt(buf_->Text(), at - 2) == 2 ?
+             at - 2 : at);
+    const uint32_t separatorLength = separatorStart == at ? 0 :
+        ParagraphSeparatorLengthAt(buf_->Text(), separatorStart);
+    if (IsParagraphSeparator(doc, separatorStart, separatorLength)) {
+        RecordAndApply(separatorStart, separatorLength, "", EditType::Delete);
+        return true;
+    }
+
+    const uint32_t previous = PrevGraphemeBoundary(buf_->Text(), at);
+    RecordAndApply(previous, at - previous, "", EditType::Delete);
+    return true;
+}
+
+bool EditController::DeleteForward(const Document* doc) {
+    if (!sel_->Empty()) { DeleteSelection(); return true; }
+    const uint32_t at = sel_->active.offset;
+    if (at >= buf_->Length()) return false;
+
+    const uint32_t separatorLength = ParagraphSeparatorLengthAt(buf_->Text(), at);
+    if (IsParagraphSeparator(doc, at, separatorLength)) {
+        RecordAndApply(at, separatorLength, "", EditType::Delete);
+        return true;
+    }
+
+    const uint32_t next = NextGraphemeBoundary(buf_->Text(), at);
     RecordAndApply(at, next - at, "", EditType::Delete);
+    return true;
 }
 
 void EditController::DeleteWordBackward() {
@@ -427,6 +477,67 @@ void EditController::DeleteWordForward() {
     if (end > at) RecordAndApply(at, end - at, "", EditType::Delete);
 }
 
+static std::string InlineMarker(const InlineBlock& inlineBlock,
+                                const std::string& source) {
+    if (inlineBlock.code) {
+        uint32_t start = inlineBlock.srcOffset;
+        while (start > 0 && source[start - 1] == '`') --start;
+        const uint32_t length = inlineBlock.srcOffset - start;
+        return length == 0 ? "`" : source.substr(start, length);
+    }
+    if (inlineBlock.strong && inlineBlock.em) {
+        if (inlineBlock.srcOffset >= 3) {
+            const char marker = source[inlineBlock.srcOffset - 1];
+            if ((marker == '*' || marker == '_') &&
+                source[inlineBlock.srcOffset - 2] == marker &&
+                source[inlineBlock.srcOffset - 3] == marker)
+                return std::string(3, marker);
+        }
+        return "***";
+    }
+    if (inlineBlock.strong) {
+        if (inlineBlock.srcOffset >= 2) {
+            const char marker = source[inlineBlock.srcOffset - 1];
+            if ((marker == '*' || marker == '_') &&
+                source[inlineBlock.srcOffset - 2] == marker)
+                return std::string(2, marker);
+        }
+        return "**";
+    }
+    if (inlineBlock.em) {
+        if (inlineBlock.srcOffset > 0) {
+            const char marker = source[inlineBlock.srcOffset - 1];
+            if (marker == '*' || marker == '_') return std::string(1, marker);
+        }
+        return "*";
+    }
+    if (inlineBlock.strike) return "~~";
+    return {};
+}
+
+static std::string ParagraphSplitReplacement(const Document& doc,
+                                             const std::string& source,
+                                             uint32_t offset) {
+    for (const auto& node : doc.nodes) {
+        for (const auto& inlineBlock : node.children) {
+            const uint32_t inlineEnd = inlineBlock.srcOffset + inlineBlock.srcLength;
+            // Only an insertion inside rendered inline text needs balancing.
+            if (offset <= inlineBlock.srcOffset || offset >= inlineEnd) continue;
+            if (inlineBlock.kind == InlineKind::Image) return "\n\n";
+
+            const std::string marker = InlineMarker(inlineBlock, source);
+            std::string close = marker;
+            std::string open = marker;
+            if (inlineBlock.kind == InlineKind::Link) {
+                close += "](" + inlineBlock.url + ")";
+                open = "[" + open;
+            }
+            return close + "\n\n" + open;
+        }
+    }
+    return "\n\n";
+}
+
 bool EditController::InsertParagraphBreak(const Document& doc) {
     // A table cell is single-line Markdown syntax. Test the original
     // selection before deleting it, because Enter is a no-op in a table.
@@ -434,9 +545,11 @@ bool EditController::InsertParagraphBreak(const Document& doc) {
         (!sel_->Empty() && IsOffsetInTable(doc, sel_->Start()))) {
         return false;
     }
-    if (!sel_->Empty()) DeleteSelection();
-
-    uint32_t at = sel_->active.offset;
+    const Selection selectionBefore = *sel_;
+    const uint32_t at = sel_->Empty() ? sel_->active.offset : sel_->Start();
+    const uint32_t replacedLength = sel_->Empty() ? 0 : sel_->Length();
+    const std::string paragraphReplacement = replacedLength == 0
+        ? ParagraphSplitReplacement(doc, buf_->Text(), at) : "\n\n";
     ListLineInfo listLine;
     const bool hasListLine = GetListLineInfo(buf_->Text(), at, &listLine);
 
@@ -516,7 +629,8 @@ bool EditController::InsertParagraphBreak(const Document& doc) {
     }
 
     if (inCode) {
-        RecordAndApply(at, 0, "\n", EditType::ParagraphBreak);
+        RecordAndApply(at, replacedLength, "\n", EditType::ParagraphBreak,
+                       &selectionBefore);
         return true;
     }
 
@@ -526,19 +640,50 @@ bool EditController::InsertParagraphBreak(const Document& doc) {
             // Enter exits the list into a blank paragraph.
             RecordAndApply(listLine.lineStart,
                            listLine.lineEnd - listLine.lineStart,
-                           "", EditType::ParagraphBreak);
+                           "", EditType::ParagraphBreak, &selectionBefore);
             return true;
         }
         const std::string marker = ListContinuationPrefix(buf_->Text(), at);
         if (!marker.empty()) {
-            RecordAndApply(at, 0, marker, EditType::ParagraphBreak);
+            RecordAndApply(at, replacedLength, marker, EditType::ParagraphBreak,
+                           &selectionBefore);
             return true;
         }
-        RecordAndApply(at, 0, "\n", EditType::ParagraphBreak);
+        RecordAndApply(at, replacedLength, "\n", EditType::ParagraphBreak,
+                       &selectionBefore);
         return true;
     }
 
-    RecordAndApply(at, 0, "\n\n", EditType::ParagraphBreak);
+    RecordAndApply(at, replacedLength, paragraphReplacement,
+                   EditType::ParagraphBreak, &selectionBefore);
+    return true;
+}
+
+bool EditController::InsertSoftBreak(const Document& doc) {
+    // Tables use a one-line Markdown syntax, so a newline would corrupt the
+    // row. Keep Enter and Shift+Enter consistently disabled in table cells.
+    if (IsOffsetInTable(doc, sel_->active.offset) ||
+        (!sel_->Empty() && IsOffsetInTable(doc, sel_->Start()))) {
+        return false;
+    }
+    const Selection selectionBefore = *sel_;
+    const uint32_t at = sel_->Empty() ? sel_->active.offset : sel_->Start();
+    const uint32_t replacedLength = sel_->Empty() ? 0 : sel_->Length();
+    bool inCode = false;
+    for (const auto& node : doc.nodes) {
+        if (at < node.srcOffset || at > node.srcOffset + node.srcLength)
+            continue;
+        inCode = node.block == BlockKind::CodeBlock ||
+                 node.block == BlockKind::MermaidFlowchart ||
+                 node.block == BlockKind::MermaidPie ||
+                 node.block == BlockKind::MermaidSequence;
+        break;
+    }
+    // Markdown renders a lone newline as a space. Two preceding spaces make
+    // this a rendered hard line break while retaining one logical paragraph.
+    // Code fences retain their literal newlines without a Markdown marker.
+    RecordAndApply(at, replacedLength, inCode ? "\n" : "  \n",
+                   EditType::ParagraphBreak, &selectionBefore);
     return true;
 }
 

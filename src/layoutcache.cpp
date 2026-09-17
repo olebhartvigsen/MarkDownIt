@@ -249,9 +249,29 @@ uint32_t LayoutCache::NormalizeToRenderedCaret(uint32_t offset) const {
                 if (srcText_) {
                     while (normalized < srcText_->size() &&
                            ((*srcText_)[normalized] == '*' ||
+                            (*srcText_)[normalized] == '_' ||
                             (*srcText_)[normalized] == '`' ||
                             (*srcText_)[normalized] == '~')) {
                         ++normalized;
+                    }
+                    // Link text ends before `](destination)`. Keep a click at
+                    // that visual end outside the hidden link syntax as well.
+                    if (normalized + 1 < srcText_->size() &&
+                        (*srcText_)[normalized] == ']' &&
+                        (*srcText_)[normalized + 1] == '(') {
+                        uint32_t cursor = normalized + 2;
+                        int depth = 1;
+                        while (cursor < srcText_->size() && depth > 0) {
+                            const char c = (*srcText_)[cursor++];
+                            if (c == '\\' && cursor < srcText_->size()) {
+                                ++cursor;
+                            } else if (c == '(') {
+                                ++depth;
+                            } else if (c == ')') {
+                                --depth;
+                            }
+                        }
+                        if (depth == 0) normalized = cursor;
                     }
                 }
                 return normalized;
@@ -269,15 +289,31 @@ uint32_t LayoutCache::NormalizeToRenderedCaret(uint32_t offset) const {
 }
 
 uint32_t LayoutCache::PointToOffset(float x, float y) const {
-    int idx = HitTestBlock(x, y);
-    if (idx < 0) return UINT32_MAX;
+    const int idx = HitTestBlock(x, y);
+    return idx < 0 ? UINT32_MAX : PointToOffsetInBlock(idx, x, y);
+}
 
-    const auto& bl = blocks_[idx];
+uint32_t LayoutCache::PointToOffsetAtOrAfterBlock(float x, float y) const {
+    const int idx = FindBlockAtY(y);
+    if (idx < 0 || x < blocks_[static_cast<size_t>(idx)].x) return UINT32_MAX;
+    const uint32_t candidate = PointToOffsetInBlock(idx, x, y);
+    if (candidate == UINT32_MAX) return UINT32_MAX;
+    const uint32_t normalized = NormalizeToRenderedCaret(candidate);
+    return normalized == UINT32_MAX ? candidate : normalized;
+}
+
+uint32_t LayoutCache::PointToOffsetInBlock(int blockIndex, float x,
+                                            float y) const {
+    if (blockIndex < 0 || blockIndex >= static_cast<int>(blocks_.size()))
+        return UINT32_MAX;
+    const auto& bl = blocks_[static_cast<size_t>(blockIndex)];
     if (!bl.layout) return bl.textStartOffset;
 
-    // Convert screen coordinates to layout-local coordinates.
-    float localX = x - bl.x;
-    float localY = y - bl.y;
+    // DirectWrite clamps a point beyond a visual line to that line's final
+    // insertion position. This preserves a paragraph-end click instead of
+    // treating right-side whitespace as a left-margin line selection.
+    const float localX = x - bl.x;
+    const float localY = y - bl.y;
 
     DWRITE_HIT_TEST_METRICS htm = {};
     BOOL isTrailingHit = FALSE;

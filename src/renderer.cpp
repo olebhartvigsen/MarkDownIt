@@ -1097,19 +1097,26 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 break;
             }
         }
-        if (text16.empty() && marker16.empty() && !hasImage) {
+        if (text16.empty() && marker16.empty() && !hasImage &&
+            !n.virtualEmptyParagraph) {
             prevBlock = n.block;
             prevDepth = n.depth;
             continue;
         }
+
+        // DirectWrite needs one code unit to produce a line metric for an
+        // empty paragraph. A space paints nothing visible but gives its
+        // zero-width logical source position a stable caret rectangle.
+        const std::u16string layoutText16 =
+            text16.empty() && n.virtualEmptyParagraph ? u" " : text16;
 
         float textX = drawX + markerW;
         float textW = drawW - markerW;
 
         IDWriteTextLayout* layout = nullptr;
         HRESULT hr = dw->CreateTextLayout(
-            reinterpret_cast<const WCHAR*>(text16.data()),
-            static_cast<UINT32>(text16.size()),
+            reinterpret_cast<const WCHAR*>(layoutText16.data()),
+            static_cast<UINT32>(layoutText16.size()),
             fmt, textW > 0 ? textW : drawW, 1.0e9f, &layout);
         if (FAILED(hr) || !layout) {
             prevBlock = n.block;

@@ -18,6 +18,7 @@
 #include "mermaid/layout.h"
 #include <chrono>
 #include <memory>
+#include <iterator>
 #include <algorithm>
 
 #include <cstring>
@@ -439,6 +440,13 @@ uint32_t BlockLineStart(const char* input, uint32_t offset) {
     return offset;
 }
 
+uint32_t BlockLineEnd(const char* input, uint32_t inputSize, uint32_t offset) {
+    while (offset < inputSize && input[offset] != '\r' && input[offset] != '\n') {
+        ++offset;
+    }
+    return offset;
+}
+
 // --- md4c callbacks ---
 
 int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
@@ -599,7 +607,11 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
             if (noi.hasText) {
                 Node& node = ctx->doc->nodes[frame.node_index];
                 node.srcOffset = BlockLineStart(ctx->input, noi.firstTextOffset);
-                node.srcLength = noi.lastTextEnd - node.srcOffset;
+                // Keep trailing Markdown syntax in the block range. A caret
+                // after visible strong/link text is normalized past closing
+                // delimiters and must still resolve to this same block.
+                node.srcLength = BlockLineEnd(ctx->input, ctx->inputSize,
+                                              noi.lastTextEnd) - node.srcOffset;
                 node.contentOffset = noi.firstTextOffset;
                 node.contentLength = noi.lastTextEnd - noi.firstTextOffset;
             }
@@ -1047,6 +1059,82 @@ ib.strike = strike;
 
 }  // namespace
 
+static void AddVirtualEmptyParagraphs(const std::string& source,
+                                      Document& doc) {
+    if (source.empty()) {
+        Node blank;
+        blank.block = BlockKind::Paragraph;
+        blank.virtualEmptyParagraph = true;
+        doc.nodes.push_back(std::move(blank));
+        return;
+    }
+
+    std::vector<const Node*> sourceNodes;
+    sourceNodes.reserve(doc.nodes.size());
+    for (const auto& node : doc.nodes) {
+        if (node.srcLength > 0) sourceNodes.push_back(&node);
+    }
+    std::stable_sort(sourceNodes.begin(), sourceNodes.end(),
+        [](const Node* a, const Node* b) {
+            return a->srcOffset < b->srcOffset;
+        });
+
+    std::vector<Node> blanks;
+    size_t nextNode = 0;
+    for (uint32_t begin = 0; begin < source.size();) {
+        if (source[begin] != '\n' && source[begin] != '\r') {
+            ++begin;
+            continue;
+        }
+
+        const uint32_t runStart = begin;
+        std::vector<uint32_t> breakEnds;
+        while (begin < source.size()) {
+            if (source[begin] == '\r' && begin + 1 < source.size() &&
+                source[begin + 1] == '\n') {
+                begin += 2;
+            } else if (source[begin] == '\n') {
+                ++begin;
+            } else {
+                break;
+            }
+            breakEnds.push_back(begin);
+        }
+        const uint32_t runEnd = begin;
+        if (breakEnds.size() < 2) continue;
+
+        while (nextNode < sourceNodes.size() &&
+               sourceNodes[nextNode]->srcOffset + sourceNodes[nextNode]->srcLength <= runStart) {
+            ++nextNode;
+        }
+        const bool overlapsBlock = nextNode < sourceNodes.size() &&
+            sourceNodes[nextNode]->srcOffset < runEnd;
+        const bool hasPreviousBlock = nextNode > 0;
+        const bool hasNextBlock = nextNode < sourceNodes.size();
+        if (overlapsBlock || (!hasPreviousBlock && hasNextBlock)) continue;
+
+        const size_t pairs = breakEnds.size() / 2;
+        const size_t blankCount = hasPreviousBlock && hasNextBlock
+            ? (pairs > 0 ? pairs - 1 : 0) : pairs;
+        for (size_t i = 0; i < blankCount; ++i) {
+            Node blank;
+            blank.block = BlockKind::Paragraph;
+            blank.virtualEmptyParagraph = true;
+            blank.srcOffset = breakEnds[2 * i + 1];
+            blank.contentOffset = blank.srcOffset;
+            blanks.push_back(std::move(blank));
+        }
+    }
+
+    if (blanks.empty()) return;
+    doc.nodes.insert(doc.nodes.end(), std::make_move_iterator(blanks.begin()),
+                     std::make_move_iterator(blanks.end()));
+    std::stable_sort(doc.nodes.begin(), doc.nodes.end(),
+        [](const Node& a, const Node& b) {
+            return a.srcOffset < b.srcOffset;
+        });
+}
+
 static int ParseMarkdownInner(const std::string& utf8, Document& out) {
     ParserCtx ctx;
     ctx.doc = &out;
@@ -1082,8 +1170,10 @@ static int ParseMarkdownInner(const std::string& utf8, Document& out) {
 
 bool ParseMarkdown(const std::string& utf8, Document& out) {
     __try {
-        int rc = ParseMarkdownInner(utf8, out);
-        return rc == 0;
+        const int rc = ParseMarkdownInner(utf8, out);
+        if (rc != 0) return false;
+        AddVirtualEmptyParagraphs(utf8, out);
+        return true;
     } __except(EXCEPTION_EXECUTE_HANDLER) {
         // Crash in parser; log and return false instead of CTD. Write to
         // %LOCALAPPDATA%\MarkDownIt\parse_crash.log: a hardcoded user path
@@ -1181,6 +1271,7 @@ std::string DocumentToString(const Document& doc) {
         s += " off=" + std::to_string(n.srcOffset);
         s += " len=" + std::to_string(n.srcLength);
         s += " cOff=" + std::to_string(n.contentOffset);
+        s += " blank=" + std::to_string(n.virtualEmptyParagraph);
         s += " children=" + std::to_string(n.children.size());
         s += " ordered=" + std::to_string(n.ordered);
         s += "\n";

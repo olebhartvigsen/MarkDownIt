@@ -1,4 +1,28 @@
 
+## Implementeringsstatus
+
+Planen er gennemgået mod den native Win32-implementering. Afsnit 19 om browser-API'er gælder ikke for MarkDownIt.
+
+Der var en konflikt mellem afsnit 5 og acceptkriterium D. Afsnit 5 flytter caret'en til det eksisterende næste afsnit, mens D kræver et nyt tomt afsnit. Implementeringen følger acceptkriterium D: Return ved paragraph-end opretter et tomt, addressérbart afsnit efter det aktuelle afsnit.
+
+Følgende er implementeret og dækket af automatiske tests:
+
+- Virtuelle tomme paragraph-noder for et tomt dokument og ekstra paragraph-separatorer.
+- Et DirectWrite-layout med caret-position til virtuelle tomme paragraphs.
+- Klik til højre for et afsnits tekst fastholder den pågældende blok og dens paragraph-end.
+- Normalisering efter afsluttende formatteringsmarkører og link-destinationer.
+- Atomisk Selection + Return med korrekt Undo og Redo.
+- Shift+Return som en synlig Markdown-hard line break, uden at oprette et nyt paragraph.
+- Backspace og Delete, der samler almindelige paragraphs ved deres separator.
+- Balanceret Return-split inde i strong-formatering og linktekst.
+- Ingen dirty/reparse ved Backspace eller Delete, når handlingen ikke ændrer dokumentet.
+
+Følgende er stadig uden for denne afgrænsede rettelse og må ikke betragtes som godkendt uden en separat ændring:
+
+- Kompleks Selection + Return på tværs af flere indlejrede formatterings- og link-runs.
+- En selvstændig caret-position omkring et image uden tekst.
+- Manuel Windows-verifikation af DirectWrite-hit-test, caret-tegning og zoom.
+
 ## 1. Definér den grundlæggende dokumentmodel
 
 Før cursor- og Return-logikken implementeres, skal det være entydigt, hvad et afsnit er.

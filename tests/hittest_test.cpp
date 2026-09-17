@@ -73,3 +73,37 @@ TEST(Utf8Utf16, ClampPastEnd) {
     EXPECT_EQ(Utf8OffsetToUtf16(s, 100), 3u);
     EXPECT_EQ(Utf16OffsetToUtf8(s, 100), 3u);
 }
+
+
+TEST(HitTest, RightSideWhitespaceUsesOwningBlock) {
+    LayoutCache cache;
+    BlockLayout block;
+    block.x = 20.0f;
+    block.y = 10.0f;
+    block.width = 40.0f;
+    block.height = 20.0f;
+    block.textStartOffset = 7;
+    cache.Add(block);
+
+    EXPECT_EQ(cache.PointToOffset(100.0f, 15.0f), UINT32_MAX);
+    EXPECT_EQ(cache.PointToOffsetAtOrAfterBlock(100.0f, 15.0f), 7u);
+    EXPECT_EQ(cache.PointToOffsetAtOrAfterBlock(10.0f, 15.0f), UINT32_MAX);
+    EXPECT_EQ(cache.PointToOffsetAtOrAfterBlock(100.0f, 35.0f), UINT32_MAX);
+}
+
+
+TEST(HitTest, NormalizeParagraphEndPastInlineSyntax) {
+    std::string source = "**bold** [go](https://example.com/a_(b))";
+    LayoutCache cache;
+    cache.SetSourceText(&source);
+    BlockLayout block;
+    block.srcOffset = 0;
+    block.srcLength = static_cast<uint32_t>(source.size());
+    block.u16ToSrc = {2, 3, 4, 5, 10, 11};
+    block.u16ToSrcEnd = {3, 4, 5, 6, 11, 12};
+    cache.Add(block);
+
+    EXPECT_EQ(cache.NormalizeToRenderedCaret(6), 8u);
+    EXPECT_EQ(cache.NormalizeToRenderedCaret(12),
+              static_cast<uint32_t>(source.size()));
+}

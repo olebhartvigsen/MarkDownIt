@@ -281,3 +281,200 @@ TEST(Navigation, UnicodeWordBoundaries) {
     EXPECT_EQ(MoveWordLeft(b, static_cast<uint32_t>(b.Length())), 19u);
     EXPECT_EQ(MoveWordRight(b, 1u), 11u);
 }
+
+
+TEST(CaretParagraphBoundary, ReturnAtParagraphEndPreservesFollowingText) {
+    TextBuffer b;
+    b.SetText("first\n\nsecond");
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({5});
+    UndoStack undo;
+    EditController ec(&b, &s);
+    ec.SetUndoStack(&undo);
+
+    EXPECT_TRUE(ec.InsertParagraphBreak(doc));
+    EXPECT_EQ(b.Text(), "first\n\n\n\nsecond");
+    EXPECT_EQ(s.active.offset, 7u);
+    EXPECT_TRUE(ec.Undo());
+    EXPECT_EQ(b.Text(), "first\n\nsecond");
+    EXPECT_EQ(s.active.offset, 5u);
+}
+
+TEST(CaretParagraphBoundary, ReturnReplacesSelectionInOneUndoStep) {
+    TextBuffer b;
+    b.SetText("hello brave world");
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.anchor = {6};
+    s.active = {11};
+    UndoStack undo;
+    EditController ec(&b, &s);
+    ec.SetUndoStack(&undo);
+
+    EXPECT_TRUE(ec.InsertParagraphBreak(doc));
+    EXPECT_EQ(b.Text(), "hello \n\n world");
+    EXPECT_EQ(s.active.offset, 8u);
+    EXPECT_TRUE(ec.Undo());
+    EXPECT_EQ(b.Text(), "hello brave world");
+    EXPECT_EQ(s.anchor.offset, 6u);
+    EXPECT_EQ(s.active.offset, 11u);
+    EXPECT_FALSE(undo.CanUndo());
+    EXPECT_TRUE(ec.Redo());
+    EXPECT_EQ(b.Text(), "hello \n\n world");
+}
+
+TEST(CaretParagraphBoundary, ShiftReturnInsertsSoftBreakAtomically) {
+    TextBuffer b;
+    b.SetText("hello brave world");
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.anchor = {6};
+    s.active = {11};
+    UndoStack undo;
+    EditController ec(&b, &s);
+    ec.SetUndoStack(&undo);
+
+    EXPECT_TRUE(ec.InsertSoftBreak(doc));
+    EXPECT_EQ(b.Text(), "hello   \n world");
+    EXPECT_EQ(s.active.offset, 9u);
+    EXPECT_TRUE(ec.Undo());
+    EXPECT_EQ(b.Text(), "hello brave world");
+    EXPECT_EQ(s.anchor.offset, 6u);
+    EXPECT_EQ(s.active.offset, 11u);
+    EXPECT_FALSE(undo.CanUndo());
+}
+
+
+TEST(CaretParagraphBoundary, BackspaceMergesParagraphsInOneUndoStep) {
+    TextBuffer b;
+    b.SetText("one\n\ntwo");
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({5});
+    UndoStack undo;
+    EditController ec(&b, &s);
+    ec.SetUndoStack(&undo);
+
+    EXPECT_TRUE(ec.DeleteBackward(&doc));
+    EXPECT_EQ(b.Text(), "onetwo");
+    EXPECT_EQ(s.active.offset, 3u);
+    EXPECT_TRUE(ec.Undo());
+    EXPECT_EQ(b.Text(), "one\n\ntwo");
+    EXPECT_EQ(s.active.offset, 5u);
+    EXPECT_TRUE(ec.Redo());
+    EXPECT_EQ(b.Text(), "onetwo");
+}
+
+TEST(CaretParagraphBoundary, DeleteMergesParagraphsInOneUndoStep) {
+    TextBuffer b;
+    b.SetText("one\n\ntwo");
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({3});
+    UndoStack undo;
+    EditController ec(&b, &s);
+    ec.SetUndoStack(&undo);
+
+    EXPECT_TRUE(ec.DeleteForward(&doc));
+    EXPECT_EQ(b.Text(), "onetwo");
+    EXPECT_EQ(s.active.offset, 3u);
+    EXPECT_TRUE(ec.Undo());
+    EXPECT_EQ(b.Text(), "one\n\ntwo");
+    EXPECT_EQ(s.active.offset, 3u);
+}
+
+TEST(EditController, BoundaryDeletesAreNoOpsAtDocumentLimits) {
+    TextBuffer b;
+    b.SetText("text");
+    Selection s;
+    EditController ec(&b, &s);
+
+    s.Collapse({0});
+    EXPECT_FALSE(ec.DeleteBackward());
+    EXPECT_EQ(b.Text(), "text");
+    s.Collapse({4});
+    EXPECT_FALSE(ec.DeleteForward());
+    EXPECT_EQ(b.Text(), "text");
+}
+
+TEST(InsertSoftBreak, CodeBlockUsesLiteralNewline) {
+    TextBuffer b;
+    b.SetText("```\nabc\n```");
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({5});
+    EditController ec(&b, &s);
+
+    EXPECT_TRUE(ec.InsertSoftBreak(doc));
+    EXPECT_EQ(b.Text(), "```\na\nbc\n```");
+}
+
+
+TEST(CaretParagraphBoundary, ReturnAtParagraphEndCreatesVirtualParagraph) {
+    TextBuffer b;
+    b.SetText("first\n\nsecond");
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({5});
+    EditController ec(&b, &s);
+
+    ASSERT_TRUE(ec.InsertParagraphBreak(doc));
+    Document after;
+    ASSERT_TRUE(ParseMarkdown(b.Text(), after));
+    ASSERT_EQ(after.nodes.size(), 3u);
+    EXPECT_TRUE(after.nodes[1].virtualEmptyParagraph);
+    EXPECT_EQ(after.nodes[1].contentOffset, s.active.offset);
+}
+
+TEST(CaretParagraphBoundary, ReturnInEmptyDocumentCreatesAddressableParagraph) {
+    TextBuffer b;
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({0});
+    EditController ec(&b, &s);
+
+    ASSERT_TRUE(ec.InsertParagraphBreak(doc));
+    Document after;
+    ASSERT_TRUE(ParseMarkdown(b.Text(), after));
+    ASSERT_EQ(after.nodes.size(), 1u);
+    EXPECT_TRUE(after.nodes[0].virtualEmptyParagraph);
+    EXPECT_EQ(after.nodes[0].contentOffset, s.active.offset);
+}
+
+
+TEST(CaretParagraphBoundary, ReturnSplitsStrongRunWithBalancedMarkdown) {
+    TextBuffer b;
+    b.SetText("**hello**");
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({4});  // **he|llo**
+    EditController ec(&b, &s);
+
+    ASSERT_TRUE(ec.InsertParagraphBreak(doc));
+    EXPECT_EQ(b.Text(), "**he**\n\n**llo**");
+    EXPECT_EQ(s.active.offset, 10u);
+}
+
+TEST(CaretParagraphBoundary, ReturnSplitsLinkTextWithPreservedDestination) {
+    TextBuffer b;
+    b.SetText("[hello](https://example.com)");
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({3});  // [he|llo](...)
+    EditController ec(&b, &s);
+
+    ASSERT_TRUE(ec.InsertParagraphBreak(doc));
+    EXPECT_EQ(b.Text(), "[he](https://example.com)\n\n[llo](https://example.com)");
+    EXPECT_EQ(s.active.offset, 28u);
+}

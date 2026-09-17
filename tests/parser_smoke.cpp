@@ -86,12 +86,26 @@ TEST(ParserSmoke, Link) {
     EXPECT_TRUE(found_link);
 }
 
-// Empty string produces no nodes.
-TEST(ParserSmoke, Empty) {
+// Even an empty document owns one logical paragraph and caret position.
+TEST(ParserSmoke, EmptyDocumentHasVirtualParagraph) {
     Document doc;
-    bool ok = ParseMarkdown("", doc);
-    ASSERT_TRUE(ok);
-    EXPECT_EQ(doc.nodes.size(), 0u);
+    ASSERT_TRUE(ParseMarkdown("", doc));
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    EXPECT_EQ(static_cast<int>(doc.nodes[0].block),
+              static_cast<int>(BlockKind::Paragraph));
+    EXPECT_TRUE(doc.nodes[0].virtualEmptyParagraph);
+    EXPECT_EQ(doc.nodes[0].contentOffset, 0u);
+}
+
+TEST(ParserOffsets, ExtraBlankLinesCreateVirtualParagraph) {
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown("first\n\n\n\nsecond", doc));
+    ASSERT_EQ(doc.nodes.size(), 3u);
+    EXPECT_FALSE(doc.nodes[0].virtualEmptyParagraph);
+    EXPECT_TRUE(doc.nodes[1].virtualEmptyParagraph);
+    EXPECT_EQ(doc.nodes[1].contentOffset, 7u);
+    EXPECT_FALSE(doc.nodes[2].virtualEmptyParagraph);
+    EXPECT_EQ(doc.nodes[2].contentOffset, 9u);
 }
 
 // Source offsets on nodes.
@@ -168,3 +182,13 @@ TEST(ParserSmoke, TableCellSourceMapping) {
     EXPECT_TRUE(!link.links.empty());
 }
 
+
+
+TEST(ParserOffsets, ParagraphRangeIncludesTrailingInlineSyntax) {
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown("**bold** [link](https://example.com)", doc));
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    EXPECT_EQ(doc.nodes[0].srcOffset, 0u);
+    EXPECT_EQ(doc.nodes[0].srcLength, 36u);
+    EXPECT_TRUE(doc.nodes[0].srcOffset + doc.nodes[0].srcLength == 36u);
+}

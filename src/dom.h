@@ -110,6 +110,9 @@ struct Node {
     uint32_t                   srcLength = 0;  // byte length of this block in source
     uint32_t                   contentOffset = 0; // where editable text starts, after markers
     uint32_t                   contentLength = 0; // byte length of editable text
+    // A logical, addressable blank paragraph synthesized from a run of blank
+    // source lines. It has a zero-width source range but a real caret layout.
+    bool                       virtualEmptyParagraph = false;
     std::u32string             raw;          // code block raw text (UTF-32)
     std::string                lang;         // fence info string, e.g. "mermaid"
     std::vector<TableRow>     rows;         // table rows (for BlockKind::Table)
