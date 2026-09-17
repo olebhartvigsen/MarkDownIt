@@ -32,6 +32,15 @@ public:
     // Insert one Markdown soft line break without creating a new paragraph.
     bool InsertSoftBreak(const Document& doc);
 
+    // Table editing boundaries: each returns true when the buffer changed.
+    // Backspace at the start of a cell's content: extend left into hidden
+    // cell padding only; the cell boundary (pipe) and the neighboring cell
+    // are never consumed. Returns true when padding was removed.
+    bool DeleteBackwardInCell(const Document& doc);
+    // Delete at the end of a cell's content: consume that padding only.
+    // Returns true when padding was removed.
+    bool DeleteForwardInCell(const Document& doc);
+
     // Undo/redo: apply inverse or re-apply an entry.
     bool Undo(UndoEntry* undone = nullptr);
     bool Redo(UndoEntry* redone = nullptr);

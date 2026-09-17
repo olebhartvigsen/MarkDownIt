@@ -292,6 +292,7 @@ uint32_t MoveLineEnd(const LayoutCache& lc, uint32_t offset) {
 
 
 namespace {
+// Source byte length of a table cell's text content.
 static uint32_t TableCellSourceEnd(const TableCell& cell) {
     if (!cell.u16ToSrc.empty()) {
         const uint32_t last = cell.u16ToSrc.back();
@@ -368,4 +369,312 @@ bool MoveTableCell(const Document& doc, uint32_t offset, bool backwards,
         return true;
     }
     return false;
+}
+
+// ─── Table cell queries ───────────────────────────────────────────────
+
+// Source byte length of a table cell's text content (already trackable
+// through the u16ToSrc mapping; mirrored here for the query API).
+static uint32_t TableQueryCellEnd(const TableCell& cell) {
+    if (!cell.u16ToSrc.empty()) {
+        const uint32_t last = cell.u16ToSrc.back();
+        const char32_t cp = cell.text.empty() ? U' ' : cell.text.back();
+        const uint32_t length = cp <= 0x7F ? 1 : cp <= 0x7FF ? 2 :
+                                cp <= 0xFFFF ? 3 : 4;
+        return last + length;
+    }
+    uint32_t bytes = 0;
+    for (char32_t cp : cell.text) {
+        bytes += cp <= 0x7F ? 1 : cp <= 0x7FF ? 2 :
+                 cp <= 0xFFFF ? 3 : 4;
+    }
+    return cell.srcOffset + bytes;
+}
+
+size_t TableColumnCount(const Document& doc, size_t tableIndex) {
+    if (tableIndex >= doc.nodes.size()) return 0;
+    const Node& node = doc.nodes[tableIndex];
+    if (node.block != BlockKind::Table) return 0;
+    size_t cols = 0;
+    for (const TableRow& row : node.rows)
+        cols = row.cells.size() > cols ? row.cells.size() : cols;
+    return cols;
+}
+
+std::string TableBlankRow(int columnCount) {
+    std::string row = "|";
+    for (int c = 0; c < columnCount; ++c) row += "        |";
+    row += "\n";
+    return row;
+}
+
+std::string TableDelimitersFor(int columnCount) {
+    std::string row = "|";
+    for (int c = 0; c < columnCount; ++c) row += "--------|";
+    row += "\n";
+    return row;
+}
+
+bool TableDelimiterRange(const Document& doc, const std::string& source,
+                         size_t tableIndex, uint32_t* outStart,
+                         uint32_t* outEnd) {
+    if (tableIndex >= doc.nodes.size()) return false;
+    const Node& node = doc.nodes[tableIndex];
+    if (node.block != BlockKind::Table || node.rows.size() < 1) return false;
+    const uint32_t tblStart = node.srcOffset;
+    const uint32_t tblEnd = tblStart + node.srcLength;
+    // The delimiter row is the physical line whose cells are dashes only
+    // (md4c does not emit a TR for it, so rows[] has no entry). Scan the
+    // table block line by line.
+    uint32_t lineStart = tblStart;
+    while (lineStart < tblEnd) {
+        uint32_t lineEnd = lineStart;
+        while (lineEnd < tblEnd && source[lineEnd] != '\n') ++lineEnd;
+        // Trim indentation and trailing whitespace/CR.
+        uint32_t c = lineStart;
+        while (c < lineEnd && (source[c] == ' ' || source[c] == '\t')) ++c;
+        uint32_t e = lineEnd;
+        if (e > c && source[e - 1] == '\r') --e;
+        while (e > c && (source[e - 1] == ' ' || source[e - 1] == '\t')) --e;
+        bool looksDelimiter = (e > c) && (source[c] == '|' || source[c] == '-');
+        bool anyDash = false;
+        for (uint32_t k = c; looksDelimiter && k < e; ++k) {
+            const char ch = source[k];
+            if (ch == '-' || ch == ':' || ch == ' ' || ch == '|' ||
+                ch == '\t') {
+                if (ch == '-') anyDash = true;
+                continue;
+            }
+            looksDelimiter = false;
+        }
+        if (looksDelimiter && anyDash && lineEnd < tblEnd) {
+            // Full physical line including its newline terminator.
+            if (outStart) *outStart = lineStart;
+            if (outEnd) *outEnd = lineEnd + 1;
+            return true;
+        }
+        lineStart = lineEnd + 1;
+    }
+    return false;
+}
+
+bool TableCellAtOffset(const Document& doc, const std::string& source,
+                       uint32_t offset, TableCellRef* out) {
+    for (size_t ti = 0; ti < doc.nodes.size(); ++ti) {
+        const Node& node = doc.nodes[ti];
+        if (node.block != BlockKind::Table) continue;
+        const uint32_t tblStart = node.srcOffset;
+        const uint32_t tblEnd = tblStart + node.srcLength;
+
+        bool inTable = (offset >= tblStart && offset <= tblEnd);
+        if (!inTable) {
+            for (const TableRow& row : node.rows) {
+                for (const TableCell& cell : row.cells) {
+                    if (offset >= cell.srcOffset &&
+                        offset <= TableQueryCellEnd(cell)) {
+                        inTable = true;
+                        break;
+                    }
+                }
+                if (inTable) break;
+            }
+        }
+        if (!inTable) continue;
+
+        // Offsets inside the dashes-only delimiter line resolve to the
+        // special separator row (md4c emits no TR for it).
+        uint32_t delimStart = 0, delimEnd = 0;
+        const bool hasDelimiter =
+            TableDelimiterRange(doc, source, ti, &delimStart, &delimEnd);
+        if (hasDelimiter && offset >= delimStart && offset <= delimEnd) {
+            if (node.rows.empty() || node.rows.front().cells.empty()) {
+                // Degenerate table with no resolvable cell.
+                TableCellRef ref;
+                ref.tableIndex = ti;
+                ref.rowIndex = SIZE_MAX;
+                ref.columnIndex = 0;
+                ref.srcOffset = delimStart;
+                ref.srcEnd = delimEnd;
+                ref.separatorRow = true;
+                if (out) *out = ref;
+                return true;
+            }
+            const TableRow& row = node.rows.front();
+            TableCellRef ref;
+            ref.tableIndex = ti;
+            ref.rowIndex = SIZE_MAX;  // sentinel: not a data row
+            ref.columnIndex = 0;
+            ref.srcOffset = delimStart;
+            ref.srcEnd = delimEnd;
+            ref.isHeader = row.cells.front().isHeader;
+            ref.separatorRow = true;
+            if (out) *out = ref;
+            return true;
+        }
+
+        // Exact cell containment wins: this includes the zero-width
+        // ranges of empty cells (srcOffset == srcEnd).
+        for (size_t ri = 0; ri < node.rows.size(); ++ri) {
+            const TableRow& row = node.rows[ri];
+            for (size_t ci = 0; ci < row.cells.size(); ++ci) {
+                const TableCell& cell = row.cells[ci];
+                const uint32_t cellEnd = TableQueryCellEnd(cell);
+                if (offset >= cell.srcOffset && offset <= cellEnd) {
+                    TableCellRef ref;
+                    ref.tableIndex = ti;
+                    ref.rowIndex = ri;
+                    ref.columnIndex = ci;
+                    ref.srcOffset = cell.srcOffset;
+                    ref.srcEnd = cellEnd;
+                    ref.isHeader = cell.isHeader;
+                    ref.separatorRow = hasDelimiter &&
+                        offset >= delimStart && offset <= delimEnd;
+                    if (out) *out = ref;
+                    return true;
+                }
+            }
+        }
+
+        // Hidden syntax inside one row band (a pipe, the dash run of the
+        // delimiter row, trailing padding): snap to the nearest cell of
+        // that row, preferring the earlier cell of a tied distance.
+        for (size_t ri = 0; ri < node.rows.size(); ++ri) {
+            const TableRow& row = node.rows[ri];
+            if (row.cells.empty()) continue;
+            uint32_t rowStart = row.cells.front().srcOffset;
+            uint32_t rowEnd = TableQueryCellEnd(row.cells.back());
+            for (const TableCell& cell : row.cells) {
+                rowStart = std::min(rowStart, cell.srcOffset);
+                rowEnd = std::max(rowEnd, TableQueryCellEnd(cell));
+            }
+            // Click/caret may sit on the row's outer pipes or the
+            // padding around them (spaces, dashes): the physical row
+            // line up to its outer pipes is this row's surface, not
+            // neighboring syntax.
+            uint32_t bandStart = rowStart;
+            uint32_t bandEnd = rowEnd;
+            while (bandStart > node.srcOffset &&
+                   source[bandStart - 1] != '\n' &&
+                   source[bandStart - 1] != '|')
+                --bandStart;
+            if (bandStart > node.srcOffset &&
+                source[bandStart - 1] == '|')
+                --bandStart;
+            while (bandEnd < node.srcOffset + node.srcLength &&
+                   source[bandEnd] != '\n' &&
+                   source[bandEnd] != '|')
+                ++bandEnd;
+            if (bandEnd < node.srcOffset + node.srcLength &&
+                source[bandEnd] == '|')
+                ++bandEnd;
+            if (offset >= bandStart && offset <= bandEnd) {
+                size_t bestIdx = 0;
+                uint32_t bestDist = UINT32_MAX;
+                for (size_t ci = 0; ci < row.cells.size(); ++ci) {
+                    const TableCell& cell = row.cells[ci];
+                    const uint32_t cellEnd = TableQueryCellEnd(cell);
+                    // Distance from offset to the cell's [start, end) span.
+                    const uint32_t dist =
+                        offset < cell.srcOffset ? cell.srcOffset - offset :
+                        offset > cellEnd ? offset - cellEnd : 0;
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestIdx = ci;
+                    }
+                }
+                const TableCell& cell = row.cells[bestIdx];
+                TableCellRef ref;
+                ref.tableIndex = ti;
+                ref.rowIndex = ri;
+                ref.columnIndex = bestIdx;
+                ref.srcOffset = cell.srcOffset;
+                ref.srcEnd = TableQueryCellEnd(cell);
+                ref.isHeader = cell.isHeader;
+                ref.separatorRow = hasDelimiter &&
+                    offset >= delimStart && offset <= delimEnd;
+                if (out) *out = ref;
+                return true;
+            }
+        }
+
+        // In the table's leading/trailing syntax (between tables rows or
+        // outside the cell grid but inside the block): fall back to the
+        // first cell of the nearest row by offset.
+        size_t nearestRow = node.rows.size();
+        for (size_t ri = 0; ri < node.rows.size(); ++ri) {
+            const TableRow& row = node.rows[ri];
+            if (row.cells.empty()) continue;
+            nearestRow = ri;
+            uint32_t rowEnd = TableQueryCellEnd(row.cells.back());
+            for (const TableCell& cell : row.cells)
+                rowEnd = std::max(rowEnd, TableQueryCellEnd(cell));
+            if (offset <= rowEnd) break;
+        }
+        if (nearestRow == node.rows.size()) continue;
+        const TableRow& row = node.rows[nearestRow];
+        if (row.cells.empty()) continue;
+        TableCellRef ref;
+        ref.tableIndex = ti;
+        ref.rowIndex = nearestRow;
+        ref.columnIndex = 0;
+        ref.srcOffset = row.cells.front().srcOffset;
+        ref.srcEnd = TableQueryCellEnd(row.cells.front());
+        ref.isHeader = row.cells.front().isHeader;
+        ref.separatorRow = hasDelimiter &&
+            offset >= delimStart && offset <= delimEnd;
+        if (out) *out = ref;
+        return true;
+    }
+    return false;
+}
+
+std::string SanitizePasteForTableCell(const std::string& pasted) {
+    // A line of dashes (with optional pipes/colons) is a Markdown table
+    // delimiter row; inside a cell it is meaningless syntax. Drop it.
+    auto isDelimiterLine = [](const std::string& line) {
+        bool anyDash = false;
+        for (char c : line) {
+            if (c == '-') { anyDash = true; continue; }
+            if (c == '|' || c == ':' || c == ' ' || c == '\r' ||
+                c == '\t') continue;
+            return false;
+        }
+        return anyDash;
+    };
+
+    std::string out;
+    bool pendingSpace = false;
+    std::string pendingLine;
+    auto flushLine = [&](const std::string& line) {
+        if (isDelimiterLine(line)) return;
+        for (char c : line) {
+            if (c == '|' || c == '\t' || c == '\r') {
+                // A pipe separated outer cells; keep the words apart.
+                pendingSpace = true;
+                continue;
+            }
+            if (c == ' ') {
+                // While a fold is pending, extra spaces collapse into it;
+                // otherwise spacing is the user's own text.
+                if (!pendingSpace) out += ' ';
+                continue;
+            }
+            if (pendingSpace) {
+                if (!out.empty() && out.back() != ' ') out += ' ';
+                pendingSpace = false;
+            }
+            out += c;
+        }
+    };
+    for (char c : pasted) {
+        if (c == '\n') {
+            flushLine(pendingLine);
+            pendingLine.clear();
+            pendingSpace = true;
+        } else {
+            pendingLine += c;
+        }
+    }
+    flushLine(pendingLine);
+    return out;
 }

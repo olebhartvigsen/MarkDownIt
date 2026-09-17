@@ -226,6 +226,21 @@
         <Image Source="icons/table-remove-column_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
+
+    <Command Name="cmdRemoveTable" Symbol="IDC_CMD_REMOVE_TABLE" Id="10216">
+      <Command.LabelTitle>
+        <String>Delete Table</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Delete Table</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Remove the whole table containing the cursor</String>
+      </Command.TooltipDescription>
+      <Command.SmallImages>
+        <Image Source="icons/table-remove-row_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
     <Command Name="cmdBold" Symbol="IDC_CMD_BOLD" Id="10300">
       <Command.LabelTitle>
         <String>Bold</String>
@@ -542,6 +557,9 @@
                 <Button CommandName="cmdRemoveRow" />
                 <Button CommandName="cmdAddColumn" />
                 <Button CommandName="cmdRemoveColumn" />
+              </MenuGroup>
+              <MenuGroup>
+                <Button CommandName="cmdRemoveTable" />
               </MenuGroup>
             </DropDownButton>
           </Group>

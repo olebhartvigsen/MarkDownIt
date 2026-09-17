@@ -710,3 +710,47 @@ bool EditController::Redo(UndoEntry* redone) {
     if (redone) *redone = entry;
     return true;
 }
+
+bool EditController::DeleteBackwardInCell(const Document& doc) {
+    if (sel_ && !sel_->Empty()) { DeleteSelection(); return true; }
+    const uint32_t at = sel_ ? sel_->active.offset : 0;
+    const std::string& text = buf_->Text();
+    if (at == 0) return false;
+
+    TableCellRef cell;
+    if (!TableCellAtOffset(doc, text, at, &cell)) return false;
+
+    // A separator row is not editable text: no-op rather than eating
+    // the dashes into the surrounding pipes.
+    if (cell.separatorRow) return false;
+
+    // At the very start of the cell content: nothing may be removed
+    // without crossing the left cell boundary. The caret stays put.
+    if (at <= cell.srcOffset) return false;
+
+    // Removing text or hidden markers between the left boundary and
+    // the caret shrinks the cell only down to its content start.
+    const uint32_t start = std::max(PrevGraphemeBoundary(text, at),
+                                    cell.srcOffset);
+    RecordAndApply(start, at - start, "", EditType::Delete);
+    return true;
+}
+
+bool EditController::DeleteForwardInCell(const Document& doc) {
+    if (sel_ && !sel_->Empty()) { DeleteSelection(); return true; }
+    const uint32_t at = sel_ ? sel_->active.offset : 0;
+    const std::string& text = buf_->Text();
+
+    TableCellRef cell;
+    if (!TableCellAtOffset(doc, text, at, &cell)) return false;
+    if (cell.separatorRow) return false;
+
+    // At the very end of the cell content: a forward delete would
+    // consume the closing pipe and corrupt the row. No-op instead.
+    if (at >= cell.srcEnd) return false;
+
+    const uint32_t end = std::min(NextGraphemeBoundary(text, at),
+                                  cell.srcEnd);
+    RecordAndApply(at, end - at, "", EditType::Delete);
+    return true;
+}

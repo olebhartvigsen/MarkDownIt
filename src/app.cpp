@@ -3,6 +3,7 @@
 #include "ribbon.h"
 #include "fileassoc.h"
 #include "parser.h"
+#include "navigation.h"
 #include <commdlg.h>
 #include <windowsx.h>
 
@@ -392,6 +393,9 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
     if (vk == VK_INSERT && shift && !ctrl) {
         if (editing_) {
             std::string text = ClipboardPaste(hwnd_content_);
+            // Same in-cell paste rule as Ctrl+V: strip row syntax.
+            if (!text.empty() && IsOffsetInTable(doc_, sel_.active.offset))
+                text = SanitizePasteForTableCell(text);
             if (!text.empty()) {
                 pending_run_active_ = false;
                 pending_run_suffix_bytes_ = 0;
@@ -444,12 +448,24 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         if (!isNavigation && !isCopy && !isSelectAll) return;
     }
 
+    if (vk != 0x41) last_selectall_tier_ = 0;  // any other key ends the Ctrl+A escalation run
+
     switch (vk) {
         case VK_LEFT: {
             uint32_t newOffset = (!shift && !sel_.Empty())
                 ? sel_.Start()
                 : (ctrl ? MoveWordLeft(buffer_, sel_.active.offset)
                         : MoveLeft(buffer_, sel_.active.offset, &layout_cache_));
+            // Cell boundary rule (plan 12): the caret may not leave its
+            // cell with Left/Right; Tab owns structural cell movement.
+            TableCellRef fromCell;
+            if (TableCellAtOffset(doc_, buffer_.Text(), sel_.active.offset, &fromCell) &&
+                !fromCell.separatorRow && !ctrl) {
+                if (newOffset < fromCell.srcOffset)
+                    newOffset = fromCell.srcOffset;
+                else if (newOffset > fromCell.srcEnd)
+                    newOffset = fromCell.srcEnd;
+            }
             desiredX_ = -1.0f;
             if (!shift) editor_.BreakUndoCoalesce();
             if (shift) sel_.active = {newOffset};
@@ -463,6 +479,16 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 ? sel_.End()
                 : (ctrl ? MoveWordRight(buffer_, sel_.active.offset)
                         : MoveRight(buffer_, sel_.active.offset, &layout_cache_));
+            // Cell boundary rule (plan 12): the caret may not leave its
+            // cell with Left/Right; Tab owns structural cell movement.
+            TableCellRef fromCell;
+            if (TableCellAtOffset(doc_, buffer_.Text(), sel_.active.offset, &fromCell) &&
+                !fromCell.separatorRow && !ctrl) {
+                if (newOffset > fromCell.srcEnd)
+                    newOffset = fromCell.srcEnd;
+                else if (newOffset < fromCell.srcOffset)
+                    newOffset = fromCell.srcOffset;
+            }
             desiredX_ = -1.0f;
             if (!shift) editor_.BreakUndoCoalesce();
             if (shift) sel_.active = {newOffset};
@@ -656,13 +682,47 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             // between cells instead of inserting indentation or changing the
             // table prefix. Shift+Tab moves in the opposite direction.
             uint32_t tableOffset = 0;
-            if (IsOffsetInTable(doc_, sel_.active.offset)) {
+            if (IsOffsetInTable(doc_, sel_.active.offset) ||
+                (!sel_.Empty() && IsOffsetInTable(doc_, sel_.Start()))) {
+                // Tab with a selection replaces the selection like a
+                // normal editor: collapse to the cell boundary target.
                 if (MoveTableCell(doc_, sel_.active.offset, shift, &tableOffset)) {
                     sel_.Collapse({tableOffset});
                     editor_.BreakUndoCoalesce();
                     desiredX_ = -1.0f;
                     UpdateCaretPosition();
                     Repaint();
+                } else if (!shift) {
+                    // Tab from the last cell appends a blank row with the
+                    // active column count and puts the caret in its first
+                    // cell. One undo entry removes row and caret change.
+                    const std::string& text = buffer_.Text();
+                    for (size_t ti = 0; ti < doc_.nodes.size(); ++ti) {
+                        const Node& node = doc_.nodes[ti];
+                        if (node.block != BlockKind::Table) continue;
+                        const uint32_t tblStart = node.srcOffset;
+                        const uint32_t tblEnd = tblStart + node.srcLength;
+                        if (sel_.active.offset < tblStart ||
+                            sel_.active.offset > tblEnd) continue;
+                        const int cols =
+                            static_cast<int>(TableColumnCount(doc_, ti));
+                        if (cols <= 0) break;
+                        std::string row = TableBlankRow(cols);
+                        const uint32_t insertPos = tblEnd;
+                        const bool neededBreak =
+                            insertPos > 0 && text[insertPos - 1] != '\n';
+                        if (neededBreak) row.insert(0, "\n");
+                        SpliceWithUndo(insertPos, 0, row);
+                        editor_.BreakUndoCoalesce();
+                        // First cell content is after the leading pipe;
+                        // account for the optional separator line break.
+                        sel_.Collapse({insertPos + (neededBreak ? 2 : 1)});
+                        desiredX_ = -1.0f;
+                        UpdateCaretPosition();
+                        OnBufferChanged();
+                        ForceRepaintNow();
+                        break;
+                    }
                 }
                 break;
             }
@@ -775,10 +835,17 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             if (ctrl && !shift) {
                 std::string text = ClipboardPaste(hwnd_content_);
                 if (!text.empty()) {
-                    pending_run_active_ = false;
-                    pending_run_suffix_bytes_ = 0;
-                    editor_.InsertText(text);
-                    OnBufferChanged();
+                    // Tables are single-line Markdown syntax: a paste
+                    // inside a cell must never introduce pipes or row
+                    // breaks (nested tables are not expressible here).
+                    if (IsOffsetInTable(doc_, sel_.active.offset))
+                        text = SanitizePasteForTableCell(text);
+                    if (!text.empty()) {
+                        pending_run_active_ = false;
+                        pending_run_suffix_bytes_ = 0;
+                        editor_.InsertText(text);
+                        OnBufferChanged();
+                    }
                 }
             }
             break;
@@ -810,8 +877,15 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             pending_run_active_ = false;
             pending_run_suffix_bytes_ = 0;
             const size_t lengthBefore = buffer_.Length();
-            if (ctrl) editor_.DeleteWordBackward();
-            else editor_.DeleteBackward(&doc_);
+            if (ctrl) {
+                editor_.DeleteWordBackward();
+            } else if (IsOffsetInTable(doc_, sel_.active.offset)) {
+                // Inside a cell the boundary rule replaces the global
+                // one: the cell's left pipe is never consumed.
+                editor_.DeleteBackwardInCell(doc_);
+            } else {
+                editor_.DeleteBackward(&doc_);
+            }
             if (buffer_.Length() != lengthBefore) OnBufferChanged();
             break;
         }
@@ -819,8 +893,14 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             pending_run_active_ = false;
             pending_run_suffix_bytes_ = 0;
             const size_t lengthBefore = buffer_.Length();
-            if (ctrl) editor_.DeleteWordForward();
-            else editor_.DeleteForward(&doc_);
+            if (ctrl) {
+                editor_.DeleteWordForward();
+            } else if (IsOffsetInTable(doc_, sel_.active.offset)) {
+                // Inside a cell the closing pipe is never consumed.
+                editor_.DeleteForwardInCell(doc_);
+            } else {
+                editor_.DeleteForward(&doc_);
+            }
             if (buffer_.Length() != lengthBefore) OnBufferChanged();
             break;
         }
@@ -1199,6 +1279,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
         return;
     }
 
+    last_selectall_tier_ = 0;
     SetCapture(hwnd);
     float scale = 96.0f / static_cast<float>(dpi_);
     float docX = static_cast<float>(x) * scale;
@@ -1285,7 +1366,40 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
         (now - last_click_time_) <= dblClickTime &&
         abs(y - last_click_y_) < 5) {
         click_count_ = 0; // reset
-        // Triple-click: select the full block/paragraph.
+        // Triple-click: select the full block/paragraph. Inside a table
+        // cell the paragraph equivalent is the ROW (plan 19): the block
+        // is the whole table, which only Ctrl+A tier 3 expands to.
+        {
+            uint32_t off = layout_cache_.PointToOffsetAtOrAfterBlock(docX, docY);
+            if (off != UINT32_MAX) {
+                TableCellRef cellRef;
+                if (TableCellAtOffset(doc_, buffer_.Text(), off, &cellRef) &&
+                    !cellRef.separatorRow && cellRef.rowIndex != SIZE_MAX) {
+                    const Node& node = doc_.nodes[cellRef.tableIndex];
+                    const TableRow& row = node.rows[cellRef.rowIndex];
+                    uint32_t rowStart = UINT32_MAX;
+                    uint32_t rowEnd = 0;
+                    for (const TableCell& c : row.cells) {
+                        rowStart = std::min(rowStart, c.srcOffset);
+                        rowEnd = std::max(rowEnd, c.srcEnd);
+                    }
+                    const uint32_t textLen =
+                        static_cast<uint32_t>(buffer_.Text().size());
+                    if (rowEnd > rowStart) {
+                        sel_.anchor = {rowStart};
+                        sel_.active = {std::min(rowEnd, textLen)};
+                        margin_selecting_ = false;
+                        paragraph_dragging_ = true;
+                        selection_dragging_ = false;
+                        last_selectall_tier_ = 2;
+                        last_selectall_caret_ = std::min(rowEnd, textLen);
+                        if (editing_) UpdateCaretPosition();
+                        Repaint();
+                        return;
+                    }
+                }
+            }
+        }
         int blkIdx = layout_cache_.FindBlockAtY(docY);
         if (blkIdx < 0) {
             // Try via the offset.
@@ -1337,9 +1451,54 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
         }
     }
 
+    uint32_t offset = layout_cache_.PointToOffsetAtOrAfterBlock(docX, docY);
+
+    // Table projection (plan 51): identify the cell first, then the
+    // caret inside it. Whitespace, cell padding and the gap between the
+    // text and the pipes never move the caret to a neighbor cell.
+    if (offset == UINT32_MAX) {
+        // Missed all text blocks: if the click's y is inside the band of
+        // a cached table cell row, project into that row's nearest cell.
+        int rowBlock = layout_cache_.FindBlockAtY(docY);
+        if (rowBlock < 0) {
+            // Widen by one small tolerance to catch the padding rows.
+            for (float dy = 1.0f; dy <= 6.0f && rowBlock < 0; dy += 1.0f) {
+                rowBlock = layout_cache_.FindBlockAtY(docY - dy);
+                if (rowBlock < 0) rowBlock = layout_cache_.FindBlockAtY(docY + dy);
+            }
+        }
+        if (rowBlock >= 0) {
+            const auto& bl = layout_cache_.Blocks()[
+                static_cast<size_t>(rowBlock)];
+            TableCellRef cellRef;
+            if (TableCellAtOffset(doc_, buffer_.Text(), bl.srcOffset, &cellRef) &&
+                !cellRef.separatorRow) {
+                const std::string& text = buffer_.Text();
+                offset = (docX <= (bl.x + bl.width * 0.5f))
+                    ? std::min(cellRef.srcOffset,
+                               static_cast<uint32_t>(text.size()))
+                    : std::min(cellRef.srcEnd,
+                               static_cast<uint32_t>(text.size()));
+            }
+        }
+    } else {
+        // A resolved offset can still sit on hidden cell syntax (the
+        // closing pipe). Keep the caret inside the containing cell.
+        TableCellRef cellRef;
+        if (TableCellAtOffset(doc_, buffer_.Text(), offset, &cellRef) &&
+            !cellRef.separatorRow) {
+            const std::string& text = buffer_.Text();
+            if (offset < cellRef.srcOffset)
+                offset = std::min(cellRef.srcOffset,
+                                  static_cast<uint32_t>(text.size()));
+            else if (offset > cellRef.srcEnd)
+                offset = std::min(cellRef.srcEnd,
+                                  static_cast<uint32_t>(text.size()));
+        }
+    }
+
     // Check if the click is in the left margin (no text block hit at x).
     // If so, select the visual line at that y position (like Word).
-    uint32_t offset = layout_cache_.PointToOffsetAtOrAfterBlock(docX, docY);
     if (offset == UINT32_MAX) {
         // Click missed all text blocks; in the left margin.
         // Find the block at this y and select the single visual line.
@@ -1413,6 +1572,27 @@ void AppWindow::OnLButtonDblClk(HWND hwnd, int x, int y) {
 
     const std::string& text = buffer_.Text();
     if (offset > text.size()) return;
+    // Inside a table cell a double-click selects the whole cell
+    // (plan 19 tier 1); word granularity is for prose only.
+    TableCellRef cellRef;
+    if (TableCellAtOffset(doc_, buffer_.Text(), offset, &cellRef) &&
+        !cellRef.separatorRow && cellRef.srcEnd > cellRef.srcOffset) {
+        sel_.anchor = {cellRef.srcOffset};
+        sel_.active = {std::min(cellRef.srcEnd,
+                                static_cast<uint32_t>(text.size()))};
+        word_anchor_start_ = cellRef.srcOffset;
+        word_anchor_end_ = cellRef.srcEnd;
+        word_anchor_caret_ = offset;
+        word_dragging_ = true;
+        paragraph_dragging_ = false;
+        last_selectall_tier_ = 1;
+        last_selectall_caret_ = static_cast<uint32_t>(text.size()) < cellRef.srcEnd
+            ? static_cast<uint32_t>(text.size()) : cellRef.srcEnd;
+        SetCapture(hwnd);
+        if (editing_) UpdateCaretPosition();
+        Repaint();
+        return;
+    }
     // Use the same Unicode word boundaries as Ctrl+Left/Ctrl+Right.
     // This operates on grapheme boundaries, not UTF-8 bytes.
     uint32_t start = 0;
@@ -1586,6 +1766,22 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
 
     offset = layout_cache_.PointToOffsetAtOrAfterBlock(docX, docY);
     if (offset != UINT32_MAX) {
+        // Cell-boundary rule extended to drag (plan 18): when the
+        // selection's fixed end sits inside a cell, the dragged end
+        // never leaves that cell — text selection may not escape the
+        // cell walls the way a click cannot.
+        const uint32_t fixedEnd = sel_.anchor.offset <= offset
+            ? sel_.anchor.offset : sel_.active.offset;
+        TableCellRef dragCell;
+        if (TableCellAtOffset(doc_, buffer_.Text(), fixedEnd, &dragCell) &&
+            !dragCell.separatorRow) {
+            const uint32_t textLen =
+                static_cast<uint32_t>(buffer_.Text().size());
+            if (offset < dragCell.srcOffset)
+                offset = std::min(dragCell.srcOffset, textLen);
+            else if (offset > dragCell.srcEnd)
+                offset = std::min(dragCell.srcEnd, textLen);
+        }
         sel_.active = {offset};
     }
     if (editing_) UpdateCaretPosition();
@@ -1602,17 +1798,41 @@ void AppWindow::FinishTextDrag() {
     drop = layout_cache_.NormalizeToRenderedCaret(drop);
     if (drop == UINT32_MAX) return;
 
+    // Table guard (plan 57): a drop inside a cell may not carry table
+    // syntax — pipes or line breaks would corrupt the row, and a nested
+    // table is unrepresentable. Fold the segment for cell drops;
+    // anything that would still break the line is rejected outright.
+    TableCellRef dropRef;
+    const bool dropInTable = TableCellAtOffset(doc_, buffer_.Text(), drop,
+                                               &dropRef);
+    const bool dropInCell = dropInTable && !dropRef.separatorRow;
     std::string moved;
     uint32_t newStart = 0;
     if (!MoveTextRange(buffer_.Text(), text_drag_start_, text_drag_length_,
                        drop, &moved, &newStart)) return;
+
+    uint32_t segmentLen = text_drag_length_;
+    if (dropInTable && !dropInCell) {
+        // The delimiter row is table syntax, not editable text: any
+        // drop onto it is refused.
+        return;
+    }
+    if (dropInCell) {
+        std::string segment = moved.substr(newStart, segmentLen);
+        if (segment.find('|') != std::string::npos) return;  // reject
+        segment = SanitizePasteForTableCell(segment);
+        if (segment.size() != segmentLen) {
+            moved.replace(newStart, segmentLen, segment);
+            segmentLen = static_cast<uint32_t>(segment.size());
+        }
+    }
 
     Selection before = sel_;
     std::string original = buffer_.Text();
     buffer_.Splice(0, static_cast<uint32_t>(original.size()), moved);
     Selection after;
     after.anchor = {newStart};
-    after.active = {newStart + text_drag_length_};
+    after.active = {newStart + segmentLen};
     sel_ = after;
 
     UndoEntry entry{};
@@ -4029,6 +4249,9 @@ void AppWindow::InsertTableCmd() {
 // sent the selected rows x cols).
 void AppWindow::InsertTableFromGrid(int cols, int rows) {
     if (!editing_) return;
+    // Nested tables are not supported document structure: a table may
+    // never be created inside a table (menu, picker, paste, drag alike).
+    if (IsOffsetInTable(doc_, sel_.active.offset)) return;
 
     int dataRows = rows;
 
@@ -4076,8 +4299,10 @@ void AppWindow::InsertTableFromGrid(int cols, int rows) {
     SpliceWithUndo(insertPos, 0, insertText);
     editor_.BreakUndoCoalesce();
 
-    uint32_t newOffset = insertPos + static_cast<uint32_t>(insertText.size());
-    sel_.Collapse({newOffset});
+    // Caret goes to the first header cell's content (after its leading
+    // pipe), not past the whole table.
+    uint32_t firstCellOffset = insertPos + 1;  // past the leading '|'
+    sel_.Collapse({firstCellOffset});
 
     OnBufferChanged();
     ForceRepaintNow();
@@ -4183,6 +4408,50 @@ bool AppWindow::AddTableRow() {
     return true;
 }
 
+void AppWindow::RemoveTable() {
+    if (!editing_) return;
+    const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
+    if (!tbl) return;
+
+    const std::string& text = buffer_.Text();
+    const uint32_t start = tbl->srcOffset;
+    const uint32_t end = start + tbl->srcLength;
+
+    // Where does the block after the table begin (pre-splice offsets)?
+    // The table's trailing '
+' run is inside its span, so the next
+    // block's source starts at `end` plus any extra blank lines that
+    // follow (the run that belongs to the table was consumed with it).
+    uint32_t following = end;
+    {
+        const uint32_t tail = static_cast<uint32_t>(text.size());
+        uint32_t nl = end;
+        while (nl < tail && text[nl] == '\n') ++nl;
+        // Only trust a following block when a non-empty run points at
+        // one; otherwise the caret rests on the removal site.
+        bool found = false;
+        if (nl < tail) {
+            for (const Node& n : doc_.nodes) {
+                if (n.block != BlockKind::Table && n.srcOffset == nl) {
+                    following = nl;
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if (!found) following = start;
+    }
+
+    // A table is always its own paragraph-separated block, so removing
+    // its complete source span keeps the surrounding blank lines valid.
+    SpliceWithUndo(start, end - start, "");
+    editor_.BreakUndoCoalesce();
+
+    sel_.Collapse({following});
+    OnBufferChanged();
+    ForceRepaintNow();
+}
+
 bool AppWindow::RemoveTableRow() {
     if (!editing_) return false;
     const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
@@ -4192,10 +4461,10 @@ bool AppWindow::RemoveTableRow() {
     TableLocation loc;
     if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
 
-    // Don't remove the separator row (row 1 in a standard table).
-    // Row 0 = headers, row 1 = |---| separator, row 2+ = data.
-    if (loc.rowIndex <= 1 && loc.numRows <= 2) {
-        // Would remove header or separator from a minimal table.
+    // The caret's physical line sits on the header (line 0) or the
+    // delimiter (line 1): those lines carry the table's structure and
+    // are never removed by this command, whatever the table size.
+    if (loc.rowIndex <= 1) {
         return false;
     }
 
@@ -4722,6 +4991,64 @@ void AppWindow::ToggleWrap() {
 
 void AppWindow::SelectAll() {
     find_cursor_ = UINT32_MAX;
+
+    // Progressive selection tiers when the caret sits in a table cell
+    // (plan 19): cell, then row, then whole table, then whole document.
+    // The run escalates only while the caret has not moved between
+    // presses; the tier resets when any other key or click intervenes.
+    if (sel_.active.offset != last_selectall_caret_) {
+        last_selectall_tier_ = 0;
+    }
+    TableCellRef cell;
+    const bool inTable = TableCellAtOffset(doc_, buffer_.Text(), sel_.active.offset, &cell);
+    const uint32_t textLen = static_cast<uint32_t>(buffer_.Text().size());
+    const bool activeCell = inTable && !cell.separatorRow &&
+                            cell.srcEnd > cell.srcOffset;
+    if (activeCell && last_selectall_tier_ < 4) {
+        const Node& node = doc_.nodes[cell.tableIndex];
+        if (last_selectall_tier_ == 0) {
+            // Tier 1: the current cell.
+            last_selectall_tier_ = 1;
+            sel_.anchor = {cell.srcOffset};
+            sel_.active = {std::min(cell.srcEnd, textLen)};
+            last_selectall_caret_ = std::min(cell.srcEnd, textLen);
+            if (editing_) UpdateCaretPosition();
+            Repaint();
+            return;
+        }
+        if (last_selectall_tier_ == 1 && cell.rowIndex < node.rows.size()) {
+            // Tier 2: the entire row.
+            const TableRow& row = node.rows[cell.rowIndex];
+            uint32_t rowStart = UINT32_MAX;
+            uint32_t rowEnd = 0;
+            for (const TableCell& c : row.cells) {
+                rowStart = std::min(rowStart, c.srcOffset);
+                rowEnd = std::max(rowEnd, c.srcEnd);
+            }
+            if (rowEnd > rowStart) {
+                last_selectall_tier_ = 2;
+                sel_.anchor = {rowStart};
+                sel_.active = {std::min(rowEnd, textLen)};
+                last_selectall_caret_ = std::min(rowEnd, textLen);
+                if (editing_) UpdateCaretPosition();
+                Repaint();
+                return;
+            }
+        }
+        if (last_selectall_tier_ < 3) {
+            // Tier 3: the whole table.
+            last_selectall_tier_ = 3;
+            sel_.anchor = {node.srcOffset};
+            sel_.active = {std::min(node.srcOffset + node.srcLength, textLen)};
+            last_selectall_caret_ = std::min(node.srcOffset + node.srcLength, textLen);
+            if (editing_) UpdateCaretPosition();
+            Repaint();
+            return;
+        }
+    }
+    last_selectall_tier_ = 0;
+    last_selectall_caret_ = sel_.active.offset;
+
     sel_.anchor = {0};
     sel_.active = {static_cast<uint32_t>(buffer_.Length())};
     if (editing_) UpdateCaretPosition();
@@ -4743,6 +5070,7 @@ void AppWindow::SelectAll() {
 #define CM_WRAP     2012
 #define CM_ZOOMIN   2013
 #define CM_ZOOMOUT  2014
+#define CM_DELTABLE 2015
 
 void AppWindow::ShowContextMenu(int screenX, int screenY) {
     HMENU hMenu = CreatePopupMenu();
@@ -4773,6 +5101,10 @@ void AppWindow::ShowContextMenu(int screenX, int screenY) {
         AppendMenuW(hMenu, MF_STRING, CM_CODE,   L"Code\tCtrl+`");
         AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
 
+        if (IsOffsetInTable(doc_, sel_.active.offset)) {
+            AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+            AppendMenuW(hMenu, MF_STRING, CM_DELTABLE, L"Delete Table");
+        }
         AppendMenuW(hMenu, MF_STRING, CM_EDIT,
             L"Switch to View Mode\tCtrl+E");
     } else {
@@ -4822,12 +5154,16 @@ void AppWindow::ShowContextMenu(int screenX, int screenY) {
         break;
     case CM_PASTE: {
         std::string text = ClipboardPaste(hwnd_content_);
+        // Same in-cell paste rule as Ctrl+V: strip row syntax.
+        if (!text.empty() && IsOffsetInTable(doc_, sel_.active.offset))
+            text = SanitizePasteForTableCell(text);
         if (!text.empty()) {
             editor_.InsertText(text);
             OnBufferChanged();
         }
         break;
     }
+    case CM_DELTABLE: RemoveTable(); break;
     case CM_SELALL:  SelectAll(); break;
     case CM_BOLD:   ToggleBold();  break;
     case CM_ITALIC: ToggleItalic(); break;

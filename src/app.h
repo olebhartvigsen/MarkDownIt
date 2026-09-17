@@ -105,6 +105,7 @@ public:
     bool RemoveTableRow();
     bool AddTableColumn();
     bool RemoveTableColumn();
+    void RemoveTable();
     // Splice the buffer and record an undo entry in one step.
     void SpliceWithUndo(uint32_t offset, uint32_t length,
                         const std::string& replacement);
@@ -253,6 +254,12 @@ private:
     int            text_drag_last_y_ = 0;
     int            text_drag_down_x_ = 0;
     int            text_drag_down_y_ = 0;
+
+    // Ctrl+A escalation tier inside tables (0 = fresh, 1 = cell, 2 = table).
+    int last_selectall_tier_ = 0;
+    // Caret position captured at the last tier advance; a caret that
+    // moved since breaks the escalation run.
+    uint32_t last_selectall_caret_ = UINT32_MAX;
 
     // Find/replace state is kept between dialogs for Ctrl+F/Ctrl+H.
     std::string    find_query_;

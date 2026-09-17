@@ -224,6 +224,7 @@ if(BUILD_TESTS)
         tests/autoformat_test.cpp
         tests/inputfilter_test.cpp
         tests/editor_features_test.cpp
+        tests/table_interaction_test.cpp
         tests/mermaid_model_test.cpp
         tests/mermaid_parse_test.cpp
         tests/mermaid_class_golden_test.cpp

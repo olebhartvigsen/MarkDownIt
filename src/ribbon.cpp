@@ -475,6 +475,7 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_REMOVE_ROW:  m_pApp->RemoveTableRow(); break;
     case IDC_CMD_ADD_COLUMN:  m_pApp->AddTableColumn(); break;
     case IDC_CMD_REMOVE_COLUMN: m_pApp->RemoveTableColumn(); break;
+    case IDC_CMD_REMOVE_TABLE: m_pApp->RemoveTable(); break;
     case IDC_CMD_CLEARFORMAT: m_pApp->ClearFormat();  break;
     case IDC_CMD_H1:      m_pApp->SetHeading(1);       break;
     case IDC_CMD_H2:      m_pApp->SetHeading(2);       break;
