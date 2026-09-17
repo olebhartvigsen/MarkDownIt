@@ -4418,8 +4418,7 @@ void AppWindow::RemoveTable() {
     const uint32_t end = start + tbl->srcLength;
 
     // Where does the block after the table begin (pre-splice offsets)?
-    // The table's trailing '
-' run is inside its span, so the next
+    // The table's trailing newline run is inside its span, so the next
     // block's source starts at `end` plus any extra blank lines that
     // follow (the run that belongs to the table was consumed with it).
     uint32_t following = end;
