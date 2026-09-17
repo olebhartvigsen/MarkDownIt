@@ -350,6 +350,9 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
             if (!v.empty()) ctx.bold = (v == "bold" || v == "700" || v == "bolder");
             float xBase = firstNum(GetAttrOrStyle(tag, "x"), 0.0f);
             float yBase = firstNum(GetAttrOrStyle(tag, "y"), 0.0f);
+            // The text element itself is a level on the stack so the
+            // inner tspan loop and the run builder read one context.
+            gStack.push_back(ctx);
 
             while (true) {
                 std::string text = p.TextUntilTag();
@@ -377,8 +380,14 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                     }
                 }
                 std::string inner = p.NextTag();
-                if (inner.empty()) break;
-                if (TagIs(inner, "/text")) break;
+                if (inner.empty()) {
+                    if (gStack.size() > 1) gStack.pop_back();
+                    break;
+                }
+                if (TagIs(inner, "/text")) {
+                    if (gStack.size() > 1) gStack.pop_back();
+                    break;
+                }
                 if (TagIs(inner, "tspan") && inner.size() > 1 && inner[1] != 47) {
                     Ctx child = gStack.back();
                     std::string v2;
