@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include "colortext.h"
+#include "crash_trace.h"
 #include "imagehelper.h"
 #include "mermaid/model.h"
 #include "mermaid/layout_internal.h"
@@ -260,6 +261,9 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             uint32_t selEnd = selStart + sel->Length();
             uint32_t blockStart = n.srcOffset;
             uint32_t blockEnd = blockStart + n.srcLength;
+            diag::TraceFmt("PBLOCK kind=%d b=%u..%u sel=%u..%u",
+                           (int)n.block, blockStart, blockEnd,
+                           selStart, selEnd);
             if (selStart < blockEnd && selEnd > blockStart) {
                 // Map selection offsets to the raw text (contentOffset based).
                 uint32_t textStart = n.contentOffset;
@@ -889,6 +893,9 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     ID2D1SolidColorBrush* selBrush = nullptr;
     if (sel && !sel->Empty()) {
         rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
+        diag::TraceFmt("RENDER sel=[%u,%u) nodes=%zu",
+                       sel->Start(), sel->Start()+sel->Length(),
+                       doc.nodes.size());
     }
 
     // Clip to content area (below the ribbon).
@@ -1285,6 +1292,9 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             uint32_t selEnd = selStart + sel->Length();
             uint32_t blockStart = n.srcOffset;
             uint32_t blockEnd = blockStart + n.srcLength;
+            diag::TraceFmt("PBLOCK kind=%d b=%u..%u sel=%u..%u",
+                           (int)n.block, blockStart, blockEnd,
+                           selStart, selEnd);
             if (selStart < blockEnd && selEnd > blockStart) {
                 // Find UTF-16 positions for the selection boundaries
                 // by binary search on u16ToSrc.
@@ -1312,6 +1322,9 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     HRESULT hrHit = layout->HitTestTextRange(
                         u16Start, u16End - u16Start,
                         textX, curY, htm, 64, &hitCount);
+                    diag::TraceFmt("PSEL u16=[%u,%u) hits=%u hr=0x%lX",
+                                   u16Start, u16End, hitCount,
+                                   (long)hrHit);
                     if (SUCCEEDED(hrHit)) {
                         for (UINT32 h = 0; h < hitCount && h < 64; ++h) {
                             D2D1_RECT_F r = D2D1::RectF(
