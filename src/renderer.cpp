@@ -1707,7 +1707,11 @@ svg::SvgDoc* Renderer::GetSvgDoc(const Node& n, float availW) {
 
     SvgCacheEntry entry;
     entry.srcOffset = n.srcOffset;
-    if (!entry.doc.Load(d2d_ctx5_, utf8)) {
+    bool loaded = entry.doc.Load(d2d_ctx5_, utf8);
+    diag::TraceFmt("SVGLOAD off=%u bytes=%zu ok=%d w=%.1f h=%.1f",
+                   n.srcOffset, utf8.size(), loaded ? 1 : 0,
+                   entry.doc.Width(), entry.doc.Height());
+    if (!loaded) {
         return nullptr;
     }
     svg_cache_.push_back(std::move(entry));
@@ -1752,6 +1756,7 @@ void Renderer::DrawSvgBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
     if (caretInBlock) {
         // Fall back to code block rendering.
+        diag::TraceFmt("SVGDRAW off=%u caret-edit fallback", n.srcOffset);
         DrawCodeBlock(rt, dw, n, x, y, width, outH, sel);
         return;
     }
@@ -1759,9 +1764,12 @@ void Renderer::DrawSvgBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     svg::SvgDoc* doc = GetSvgDoc(n, availW);
     if (!doc || doc->Width() <= 0 || doc->Height() <= 0) {
         // Parse failed, fall back to code block.
+        diag::TraceFmt("SVGDRAW off=%u load-failed fallback", n.srcOffset);
         DrawCodeBlock(rt, dw, n, x, y, width, outH, sel);
         return;
     }
+    diag::TraceFmt("SVGDRAW off=%u painting w=%.1f h=%.1f",
+                   n.srcOffset, doc->Width(), doc->Height());
 
     // Compute scaled dimensions.
     float scale = availW / doc->Width();
