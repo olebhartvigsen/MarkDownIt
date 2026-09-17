@@ -308,8 +308,12 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
         rt->FillRectangle(rc, bgFill);
     }
 
-    // Loop / alt / par / opt / critical / break frames.
+    // Loop / alt / par / opt / critical / break frames. A rect loop
+    // renders as pure fill (backgrounds above): mermaid draws no
+    // frame and no label box, so the raw "rect rgb(...)" line stays
+    // invisible.
     for (const auto& l : ls.loops) {
+        if (l.kind == "rect") continue;
         D2D1_RECT_F rc = D2D1::RectF(P(l.startx), Q(l.starty),
                                      P(l.stopx), Q(l.stopy));
         rt->DrawRectangle(rc, ink, 1.0f * scale);
