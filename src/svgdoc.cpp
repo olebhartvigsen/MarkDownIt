@@ -8,6 +8,8 @@
 #pragma comment(lib, "shlwapi.lib")
 #include <shlwapi.h>
 
+#include <cctype>
+
 namespace svg {
 
 // --- Helper: parse a float from a string, stripping common SVG units ---
@@ -36,11 +38,29 @@ static void ReadViewBox(const std::string& xml, float& w, float& h) {
 
     // Extract attributes
     auto getAttr = [](const std::string& t, const std::string& name) -> std::string {
-        std::string pat = name + "=\"";
-        size_t a = t.find(pat);
-        if (a == std::string::npos) {
-            pat = name + "='";
-            a = t.find(pat);
+        // Attribute lookup with a word-boundary guard: a plain find
+        // matches suffixes too, e.g. width="1" inside
+        // stroke-width="1" (Batik SVGs), which parsed the diagram
+        // width as 1 px. Require a non-name char (the whitespace
+        // separator, or the tag start) before the attribute name.
+        std::string pat;
+        size_t a = std::string::npos;
+        const char qs[2] = {34, 39};
+        for (int qi = 0; qi < 2; ++qi) {
+            char q = qs[qi];
+            pat = name + "=" + std::string(1, q);
+            size_t p2 = 0;
+            while ((p2 = t.find(pat, p2)) != std::string::npos) {
+                if (p2 == 0 ||
+                    !(std::isalnum(static_cast<unsigned char>(t[p2 - 1])) ||
+                      t[p2 - 1] == '-' || t[p2 - 1] == '_' ||
+                      t[p2 - 1] == ':')) {
+                    a = p2;
+                    break;
+                }
+                p2 += pat.size();
+            }
+            if (a != std::string::npos) break;
         }
         if (a == std::string::npos) return {};
         a += pat.size();
@@ -54,7 +74,10 @@ static void ReadViewBox(const std::string& xml, float& w, float& h) {
     h = ParseDim(getAttr(tag, "height"));
 
     if (w <= 0 || h <= 0) {
+        // viewBox is case-sensitive per spec, but real files vary
+        // (Batik writes lowercase "viewbox"); try both spellings.
         std::string vb = getAttr(tag, "viewBox");
+        if (vb.empty()) vb = getAttr(tag, "viewbox");
         if (!vb.empty()) {
             // viewBox = "minX minY width height"
             // Extract width (3rd) and height (4th) tokens
