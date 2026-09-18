@@ -214,6 +214,31 @@ bool SvgDoc::Load(ID2D1DeviceContext5* ctx, const std::string& xml) {
         stream, D2D1::SizeF(width_, height_), &doc_);
     stream->Release();
 
+    if (SUCCEEDED(hr) && doc_) {
+        // Diagnostic dump: what does D2D think the root looks like?
+        // Mismatch between our parsed width_ and D2D's interpretation
+        // of root width/height/viewBox shows up as text offset.
+        ID2D1SvgElement* root = nullptr;
+        if (SUCCEEDED(doc_->GetRoot(&root)) && root) {
+            wchar_t tag[64] = {};
+            UINT32 len = 0;
+            if (SUCCEEDED(root->GetTagName(tag, 64, &len))) {
+                diag::TraceFmt("SVGDOC root tag=[%.32ls]", tag);
+            }
+            (void)len;
+            D2D1_SVG_VIEWBOX_LAYOUT vb = {};
+            BOOL specified = FALSE;
+            HRESULT vhr = root->GetAttributeValue(
+                L"viewBox", D2D1_SVG_ATTRIBUTE_POD_TYPE_VIEWBOX,
+                &vb, sizeof(vb), &specified);
+            diag::TraceFmt(
+                "SVGDOC root viewBox hr=0x%08lx spec=%d x=%g y=%g w=%g h=%g",
+                (unsigned long)vhr, (int)specified,
+                vb.x, vb.y, vb.width, vb.height);
+            root->Release();
+        }
+    }
+
     return SUCCEEDED(hr);
 }
 
