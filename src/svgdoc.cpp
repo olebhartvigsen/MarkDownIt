@@ -236,10 +236,12 @@ void SvgDoc::Draw(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
     D2D1_MATRIX_3X2_F prev;
     ctx->GetTransform(&prev);
 
-    // Compose: scale first, then translate. This keeps coordinates in
-    // SVG user space and maps to the document position.
+    // Compose so vector p maps to x + s*p: scale first (row-vector
+    // order applies the RIGHT factor first), then translate. With
+    // Translation(x,y) * Scale(s) the translation gets scaled too,
+    // which draws the whole diagram offset up/left from its card.
     D2D1::Matrix3x2F docT =
-        D2D1::Matrix3x2F::Translation(x, y) * D2D1::Matrix3x2F::Scale(s, s);
+        D2D1::Matrix3x2F::Scale(s, s) * D2D1::Matrix3x2F::Translation(x, y);
     ctx->SetTransform(PrevOff() ? docT : (prev * docT));
 
     if (doc_) {
@@ -406,7 +408,10 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
         tl->GetLineMetrics(&lm, 1, &lmCount);
         float baseline = (lmCount > 0) ? lm.baseline : tm.height * 0.8f;
         if (BaselineOff()) baseline = 0.0f;
-        float ty = run.y - baseline;
+        // dominant-baseline="central": x/y is the glyph center, not
+        // the baseline, so center the layout height on run.y.
+        float ty = run.central ? (run.y - tm.height / 2.0f)
+                               : (run.y - baseline);
 
         // Set color
         D2D1_COLOR_F color = ParseColor(run.fill, defaultColor);

@@ -17,6 +17,9 @@ struct TextRun {
     std::string anchor;      // "start", "middle", "end"
     std::string fill;        // color as "#rrggbb" or name
     bool bold = false;
+    // dominant-baseline="central"/"middle": y is the vertical CENTER
+    // of the glyphs, not the baseline (mermaid-exported SVGs).
+    bool central = false;
 };
 
 }  // namespace svg

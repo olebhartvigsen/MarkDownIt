@@ -213,6 +213,7 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
         std::string anchor;
         std::string fill;
         bool bold = false;
+        bool central = false;
     };
     std::vector<Ctx> gStack;
     Ctx root;
@@ -365,6 +366,11 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
             if (!v.empty() && v != "none") ctx.fill = v;
             v = GetAttrOrStyle(tag, "font-weight");
             if (!v.empty()) ctx.bold = (v == "bold" || v == "700" || v == "bolder");
+            // dominant-baseline / alignment-baseline modes that make
+            // y the vertical center of the glyphs.
+            std::string db = GetAttrOrStyle(tag, "dominant-baseline");
+            if (db.empty()) db = GetAttrOrStyle(tag, "alignment-baseline");
+            if (db == "central" || db == "middle") ctx.central = true;
             float xBase = firstNum(GetAttrOrStyle(tag, "x"), 0.0f);
             float yBase = firstNum(GetAttrOrStyle(tag, "y"), 0.0f);
             // The text element itself is a level on the stack so the
@@ -392,6 +398,7 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                         run.anchor = use.anchor;
                         run.fill = use.fill;
                         run.bold = use.bold;
+                        run.central = use.central;
                         run.text = DecodeEntities(trimmed);
                         runs.push_back(run);
                     }
