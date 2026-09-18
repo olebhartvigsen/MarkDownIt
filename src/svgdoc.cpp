@@ -219,7 +219,8 @@ bool SvgDoc::Load(ID2D1DeviceContext5* ctx, const std::string& xml) {
         // Mismatch between our parsed width_ and D2D's interpretation
         // of root width/height/viewBox shows up as text offset.
         ID2D1SvgElement* root = nullptr;
-        if (SUCCEEDED(doc_->GetRoot(&root)) && root) {
+        doc_->GetRoot(&root);
+        if (root) {
             wchar_t tag[64] = {};
             UINT32 len = 0;
             if (SUCCEEDED(root->GetTagName(tag, 64))) {
