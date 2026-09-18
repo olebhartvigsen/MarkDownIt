@@ -110,6 +110,7 @@ SvgDoc::~SvgDoc() {
 void SvgDoc::Release() {
     if (doc_) { doc_->Release(); doc_ = nullptr; }
     texts_.clear();
+    texts_original_.clear();
     width_ = 0.0f;
     height_ = 0.0f;
 }
@@ -186,6 +187,7 @@ bool SvgDoc::Load(ID2D1DeviceContext5* ctx, const std::string& xml) {
     if (!ctx || xml.empty()) return false;
 
     texts_ = ExtractTextRuns(xml);
+    texts_original_ = texts_;
     std::string shapes = StripTextElements(xml);
     if (textmode::Current() == textmode::kNative) {
         // Diagnostic: let D2D render <text> itself and skip our runs.
@@ -304,7 +306,9 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
     // run doc coordinates to page coordinates (docT =
     // Scale(s) * Translation(x,y)) and draw with only the page
     // transform, so any D2D SVG internal document matrix cannot
-    // make text behave differently from the shapes.
+    // make text behave differently from the shapes. Non-destructive:
+    // starts from the pristine copy every paint, then normalizes
+    // for the uniform-scale check below.
     static const bool kLayoutMode = MarkerExists("svg_text_layout.on");
     float sc = docTransform._11;
     float txl = docTransform._31;
@@ -312,12 +316,20 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
     D2D1_MATRIX_3X2_F textT = PrevOff()
         ? docTransform
         : (kLayoutMode ? prev : (prev * docTransform));
+    D2D1::Matrix3x2F pageM = D2D1::Matrix3x2F(prev._11, prev._12,
+                                              prev._21, prev._22,
+                                              prev._31, prev._32);
+    (void)pageM;
+    std::vector<TextRun> layoutRuns;
     if (kLayoutMode) {
-        for (auto& run : texts_) {
+        layoutRuns = texts_original_;
+        for (auto& run : layoutRuns) {
             run.x = txl + sc * run.x;
             run.y = tyl + sc * run.y;
         }
     }
+    const std::vector<TextRun>& drawRuns =
+        kLayoutMode ? layoutRuns : texts_;
     ctx->SetTransform(textT);
 
     // Cache text formats by (fontFamily, fontSize, bold)
@@ -335,7 +347,7 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
     };
     std::vector<FmtEntry> fmtCache;
 
-    for (const auto& run : texts_) {
+    for (const auto& run : drawRuns) {
         if (run.text.empty()) continue;
 
         // Find or create text format

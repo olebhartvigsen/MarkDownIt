@@ -25,6 +25,7 @@ public:
     SvgDoc() = default;
     SvgDoc(SvgDoc&& o) noexcept
         : doc_(o.doc_), texts_(std::move(o.texts_)),
+          texts_original_(std::move(o.texts_original_)),
           width_(o.width_), height_(o.height_) {
         o.doc_ = nullptr;
         o.width_ = 0.0f;
@@ -34,6 +35,7 @@ public:
         if (this != &o) {
             Release();
             doc_ = o.doc_; texts_ = std::move(o.texts_);
+            texts_original_ = std::move(o.texts_original_);
             width_ = o.width_; height_ = o.height_;
             o.doc_ = nullptr; o.width_ = 0.0f; o.height_ = 0.0f;
         }
@@ -61,6 +63,7 @@ private:
 
     ID2D1SvgDocument* doc_ = nullptr;
     std::vector<TextRun> texts_;
+    std::vector<TextRun> texts_original_;  // never mutated
     float width_ = 0.0f;
     float height_ = 0.0f;
 };
