@@ -268,102 +268,15 @@ void SvgDoc::Draw(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
 
     D2D1_MATRIX_3X2_F prev;
     ctx->GetTransform(&prev);
-
-    // Compose so vector p maps to x + s*p: scale first (row-vector
-    // order applies the RIGHT factor first), then translate. With
-    // Translation(x,y) * Scale(s) the translation gets scaled too,
-    // which draws the whole diagram offset up/left from its card.
-    D2D1::Matrix3x2F docT =
-        D2D1::Matrix3x2F::Scale(s, s) * D2D1::Matrix3x2F::Translation(x, y);
-    ctx->SetTransform(PrevOff() ? docT : (prev * docT));
-
-    if (doc_) {
-        ctx->DrawSvgDocument(doc_);
-    }
-
-    DrawTexts(ctx, dw, docT);
-
-    ctx->SetTransform(prev);
-}
-
-// RAII helpers for COM objects
-template <typename T>
-struct RelGuard {
-    T* p = nullptr;
-    ~RelGuard() { if (p) p->Release(); }
-};
-
-static D2D1_COLOR_F ParseColor(const std::string& s, D2D1_COLOR_F fallback) {
-    if (s.empty()) return fallback;
-    if (s[0] == '#' && s.size() >= 7) {
-        unsigned int r = 0, g = 0, b = 0;
-        if (sscanf(s.c_str() + 1, "%02x%02x%02x", &r, &g, &b) == 3) {
-            return D2D1::ColorF(r / 255.0f, g / 255.0f, b / 255.0f, 1.0f);
-        }
-        if (s.size() >= 4 && sscanf(s.c_str() + 1, "%1x%1x%1x", &r, &g, &b) == 3) {
-            return D2D1::ColorF(r / 15.0f, g / 15.0f, b / 15.0f, 1.0f);
-        }
-    }
-    // Named colors
-    if (s == "black") return D2D1::ColorF(0, 0, 0);
-    if (s == "white") return D2D1::ColorF(1, 1, 1);
-    if (s == "red") return D2D1::ColorF(1, 0, 0);
-    if (s == "green") return D2D1::ColorF(0, 0.5f, 0);
-    if (s == "blue") return D2D1::ColorF(0, 0, 1);
-    if (s == "none") return D2D1::ColorF(0, 0, 0, 0);
-    return fallback;
-}
-
-void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
-                       const D2D1_MATRIX_3X2_F& docTransform) {
-    if (texts_.empty() || !dw) return;
-
-    // Use default text color
-    D2D1_COLOR_F defaultColor = D2D1::ColorF(0.14f, 0.16f, 0.18f, 1.0f);
-
-    // Create a reusable brush
-    RelGuard<ID2D1SolidColorBrush> br;
-    ctx->CreateSolidColorBrush(defaultColor, &br.p);
-    if (!br.p) return;
-
-    // Restore the outer (page) transform: shapes compose prev*docT in
-    // Draw(), so text must do the same or it is drawn offset by the scroll
-    // translation whenever the document is scrolled.
-    D2D1_MATRIX_3X2_F prev;
-    ctx->GetTransform(&prev);
-    // Diagnostic 'layout' mode (marker svg_text_layout.on): convert
-    // run doc coordinates to page coordinates (docT =
-    // Scale(s) * Translation(x,y)) and draw with only the page
-    // transform, so any D2D SVG internal document matrix cannot
-    // make text behave differently from the shapes. Non-destructive:
-    // starts from the pristine copy every paint, then normalizes
-    // for the uniform-scale check below.
-    static const bool kLayoutMode = MarkerExists("svg_text_layout.on");
-    static const bool kDebugCross = MarkerExists("svg_text_debug.on");
-    float sc = docTransform._11;
-    float txl = docTransform._31;
-    float tyl = docTransform._32;
+    // Text is drawn in document space under prev*docTransform, the
+    // exact matrix the shapes draw with, so text cannot drift
+    // relative to the graphics. (An earlier page-space conversion
+    // mixed transforms and produced scroll/zoom tempo offsets.)
     D2D1_MATRIX_3X2_F textT = PrevOff()
         ? docTransform
-        : (kLayoutMode ? prev : (prev * docTransform));
-    D2D1::Matrix3x2F pageM = D2D1::Matrix3x2F(prev._11, prev._12,
-                                              prev._21, prev._22,
-                                              prev._31, prev._32);
-    (void)pageM;
-    std::vector<TextRun> layoutRuns;
-    if (kLayoutMode) {
-        layoutRuns = texts_original_;
-        for (auto& run : layoutRuns) {
-            run.x = txl + sc * run.x;
-            run.y = tyl + sc * run.y;
-            // The page transform carries no zoom (zoom lives in the
-            // layout metrics), so scale the font size explicitly to
-            // match how the shapes scale under docT.
-            run.fontSize *= sc;
-        }
-    }
-    const std::vector<TextRun>& drawRuns =
-        kLayoutMode ? layoutRuns : texts_;
+        : (prev * docTransform);
+    const std::vector<TextRun>& drawRuns = texts_;
+    static const bool kDebugCross = MarkerExists("svg_text_debug.on");
     ctx->SetTransform(textT);
 
     // Cache text formats by (fontFamily, fontSize, bold)
@@ -511,9 +424,7 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
             ctx->CreateSolidColorBrush(
                 D2D1::ColorF(1.0f, 0.0f, 1.0f, 1.0f), &cross);
             if (cross) {
-                float cy = kLayoutMode
-                    ? (run.central ? run.y : run.y)
-                    : run.y;
+                float cy = run.y;
                 D2D1_POINT_2F c = D2D1::Point2F(run.x, cy);
                 D2D1_POINT_2F a = D2D1::Point2F(run.x - 6, cy - 6);
                 D2D1_POINT_2F b = D2D1::Point2F(run.x + 6, cy + 6);
