@@ -326,6 +326,10 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
         for (auto& run : layoutRuns) {
             run.x = txl + sc * run.x;
             run.y = tyl + sc * run.y;
+            // The page transform carries no zoom (zoom lives in the
+            // layout metrics), so scale the font size explicitly to
+            // match how the shapes scale under docT.
+            run.fontSize *= sc;
         }
     }
     const std::vector<TextRun>& drawRuns =
