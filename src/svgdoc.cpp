@@ -13,6 +13,39 @@
 
 namespace svg {
 
+// Diagnostic marker helpers (inside namespace svg):
+//   svg_baseline_off.on  -> skip baseline correction in DrawTexts
+//   svg_prev_off.on      -> SetTransform(docT) ignoring page prev
+//   svg_text_layout.on   -> text drawn pre-converted to page coords
+static bool MarkerExists(const char* tail) {
+    char path[MAX_PATH] = {};
+    if (FAILED(SHGetFolderPathA(nullptr, CSIDL_LOCAL_APPDATA, nullptr,
+                                0, path))) return false;
+    std::string f = path;
+    f += std::string(1, 92) + "MarkDownIt" + std::string(1, 92) + tail;
+    DWORD at = GetFileAttributesA(f.c_str());
+    return at != INVALID_FILE_ATTRIBUTES;
+}
+static bool g_baseOffChecked = false;
+static bool g_baseOff = false;
+static bool BaselineOff() {
+    if (!g_baseOffChecked) {
+        g_baseOff = MarkerExists("svg_baseline_off.on");
+        g_baseOffChecked = true;
+    }
+    return g_baseOff;
+}
+static bool g_prevOffChecked = false;
+static bool g_prevOff = false;
+static bool PrevOff() {
+    if (!g_prevOffChecked) {
+        g_prevOff = MarkerExists("svg_prev_off.on");
+        g_prevOffChecked = true;
+    }
+    return g_prevOff;
+}
+
+
 // --- Helper: parse a float from a string, stripping common SVG units ---
 static float ParseDim(const std::string& s, float def = 0.0f) {
     if (s.empty()) return def;
