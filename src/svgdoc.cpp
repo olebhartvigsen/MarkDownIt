@@ -310,6 +310,7 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
     // starts from the pristine copy every paint, then normalizes
     // for the uniform-scale check below.
     static const bool kLayoutMode = MarkerExists("svg_text_layout.on");
+    static const bool kDebugCross = MarkerExists("svg_text_debug.on");
     float sc = docTransform._11;
     float txl = docTransform._31;
     float tyl = docTransform._32;
@@ -473,6 +474,27 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
         ctx->DrawTextLayout(
             D2D1::Point2F(tx, ty), tl, br.p,
             D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
+
+        if (kDebugCross) {
+            // Magenta cross at the run's anchored point (run.x,
+            // run.y): baseline/center anchor per the run flags.
+            ID2D1SolidColorBrush* cross = nullptr;
+            ctx->CreateSolidColorBrush(
+                D2D1::ColorF(1.0f, 0.0f, 1.0f, 1.0f), &cross);
+            if (cross) {
+                float cy = kLayoutMode
+                    ? (run.central ? run.y : run.y)
+                    : run.y;
+                D2D1_POINT_2F c = D2D1::Point2F(run.x, cy);
+                D2D1_POINT_2F a = D2D1::Point2F(run.x - 6, cy - 6);
+                D2D1_POINT_2F b = D2D1::Point2F(run.x + 6, cy + 6);
+                D2D1_POINT_2F d = D2D1::Point2F(run.x - 6, cy + 6);
+                D2D1_POINT_2F e = D2D1::Point2F(run.x + 6, cy - 6);
+                ctx->DrawLine(a, b, cross, 1.0f);
+                ctx->DrawLine(d, e, cross, 1.0f);
+                cross->Release();
+            }
+        }
 
         tl->Release();
     }
