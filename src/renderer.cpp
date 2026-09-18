@@ -1777,26 +1777,9 @@ void Renderer::DrawSvgBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     float renderedH = doc->Height() * scale;
     outH = renderedH + 2.0f * m.codePad;
 
-    // Draw background card.
-    ID2D1SolidColorBrush* bgBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.codeBg, &bgBrush);
-    ID2D1SolidColorBrush* borderBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.codeBorder, &borderBrush);
-
-    D2D1_RECT_F bgRect = D2D1::RectF(x, y, x + width, y + outH);
-    if (m.codeRadius > 0.5f) {
-        D2D1_ROUNDED_RECT rrect = D2D1::RoundedRect(bgRect,
-            m.codeRadius, m.codeRadius);
-        if (bgBrush) rt->FillRoundedRectangle(rrect, bgBrush);
-        if (borderBrush) rt->DrawRoundedRectangle(rrect, borderBrush, 1.0f);
-    } else {
-        if (bgBrush) rt->FillRectangle(bgRect, bgBrush);
-        if (borderBrush) rt->DrawRectangle(bgRect, borderBrush, 1.0f);
-    }
-    if (bgBrush) bgBrush->Release();
-    if (borderBrush) borderBrush->Release();
-
-    // Draw the SVG document.
+    // Draw the SVG document with no card: a standalone .svg file is
+    // a page image, not a code specimen, so no code background or
+    // border goes behind it.
     doc->Draw(d2d_ctx5_, dw, x + m.codePad, y + m.codePad,
               renderedW, renderedH);
 }

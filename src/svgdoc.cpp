@@ -332,6 +332,23 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
                     if (c == ',') break; // first font only
                     if (c != '\'' && c != '"') fam.push_back(static_cast<wchar_t>(c));
                 }
+                // Trim spaces before matching generic names.
+                while (!fam.empty() && fam.back() == 32) fam.pop_back();
+                size_t b = 0;
+                while (b < fam.size() && fam[b] == 32) ++b;
+                if (b) fam = fam.substr(b);
+                // Generic SVG families map to concrete Windows fonts;
+                // DirectWrite does not resolve "sans-serif"/"Dialog".
+                if (fam == L"sans-serif" || fam == L"Dialog" ||
+                    fam == L"helvetica" || fam == L"ArialMT") {
+                    fam = L"Arial";
+                } else if (fam == L"serif" || fam == L"Times" ||
+                           fam == L"Times-Roman") {
+                    fam = L"Times New Roman";
+                } else if (fam == L"monospace" || fam == L"Courier" ||
+                           fam == L"Courier-New") {
+                    fam = L"Consolas";
+                }
             }
             DWRITE_FONT_WEIGHT weight = run.bold
                 ? DWRITE_FONT_WEIGHT_BOLD
