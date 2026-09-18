@@ -268,15 +268,80 @@ void SvgDoc::Draw(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
 
     D2D1_MATRIX_3X2_F prev;
     ctx->GetTransform(&prev);
-    // Text is drawn in document space under prev*docTransform, the
-    // exact matrix the shapes draw with, so text cannot drift
-    // relative to the graphics. (An earlier page-space conversion
-    // mixed transforms and produced scroll/zoom tempo offsets.)
+
+    // Compose so vector p maps to x + s*p: scale first (row-vector
+    // order applies the RIGHT factor first), then translate. With
+    // Translation(x,y) * Scale(s) the translation gets scaled too,
+    // which draws the whole diagram offset up/left from its card.
+    D2D1::Matrix3x2F docT =
+        D2D1::Matrix3x2F::Scale(s, s) * D2D1::Matrix3x2F::Translation(x, y);
+    ctx->SetTransform(PrevOff() ? docT : (prev * docT));
+
+    if (doc_) {
+        ctx->DrawSvgDocument(doc_);
+    }
+
+    DrawTexts(ctx, dw, docT);
+
+    ctx->SetTransform(prev);
+}
+
+// RAII helpers for COM objects
+template <typename T>
+struct RelGuard {
+    T* p = nullptr;
+    ~RelGuard() { if (p) p->Release(); }
+};
+
+static D2D1_COLOR_F ParseColor(const std::string& s, D2D1_COLOR_F fallback) {
+    if (s.empty()) return fallback;
+    if (s[0] == '#' && s.size() >= 7) {
+        unsigned int r = 0, g = 0, b = 0;
+        if (sscanf(s.c_str() + 1, "%02x%02x%02x", &r, &g, &b) == 3) {
+            return D2D1::ColorF(r / 255.0f, g / 255.0f, b / 255.0f, 1.0f);
+        }
+        if (s.size() >= 4 && sscanf(s.c_str() + 1, "%1x%1x%1x", &r, &g, &b) == 3) {
+            return D2D1::ColorF(r / 15.0f, g / 15.0f, b / 15.0f, 1.0f);
+        }
+    }
+    // Named colors
+    if (s == "black") return D2D1::ColorF(0, 0, 0);
+    if (s == "white") return D2D1::ColorF(1, 1, 1);
+    if (s == "red") return D2D1::ColorF(1, 0, 0);
+    if (s == "green") return D2D1::ColorF(0, 0.5f, 0);
+    if (s == "blue") return D2D1::ColorF(0, 0, 1);
+    if (s == "none") return D2D1::ColorF(0, 0, 0, 0);
+    return fallback;
+}
+
+void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
+                       const D2D1_MATRIX_3X2_F& docTransform) {
+    if (texts_.empty() || !dw) return;
+
+    // Use default text color
+    D2D1_COLOR_F defaultColor = D2D1::ColorF(0.14f, 0.16f, 0.18f, 1.0f);
+
+    // Create a reusable brush
+    RelGuard<ID2D1SolidColorBrush> br;
+    ctx->CreateSolidColorBrush(defaultColor, &br.p);
+    if (!br.p) return;
+
+    // Restore the outer (page) transform: shapes compose prev*docT in
+    // Draw(), so text must do the same or it is drawn offset by the scroll
+    // translation whenever the document is scrolled.
+    D2D1_MATRIX_3X2_F prev;
+    ctx->GetTransform(&prev);
+    // Draw text under prev*docTransform, the exact matrix the shapes
+    // are drawn with, expressed in document space. Text therefore
+    // cannot drift relative to the graphics on scroll or zoom
+    // tempo. (An earlier page-space conversion mixed transforms
+    // and produced per-run offsets; the svg_text_layout.on marker
+    // is now a no-op, kept harmless if still present.)
+    static const bool kDebugCross = MarkerExists("svg_text_debug.on");
     D2D1_MATRIX_3X2_F textT = PrevOff()
         ? docTransform
         : (prev * docTransform);
     const std::vector<TextRun>& drawRuns = texts_;
-    static const bool kDebugCross = MarkerExists("svg_text_debug.on");
     ctx->SetTransform(textT);
 
     // Cache text formats by (fontFamily, fontSize, bold)
