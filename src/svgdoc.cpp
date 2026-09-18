@@ -222,11 +222,15 @@ bool SvgDoc::Load(ID2D1DeviceContext5* ctx, const std::string& xml) {
         if (SUCCEEDED(doc_->GetRoot(&root)) && root) {
             wchar_t tag[64] = {};
             UINT32 len = 0;
-            if (SUCCEEDED(root->GetTagName(tag, 64, &len))) {
-                diag::TraceFmt("SVGDOC root tag=[%.32ls]", tag);
+            if (SUCCEEDED(root->GetTagName(tag, 64))) {
+                tag[63] = 0;
+                char tagA[66] = {};
+                for (UINT32 ci = 0; ci < len && ci < 63; ++ci) {
+                    tagA[ci] = static_cast<char>(tag[ci]);
+                }
+                diag::TraceFmt("SVGDOC root tag=[%s]", tagA);
             }
-            (void)len;
-            D2D1_SVG_VIEWBOX_LAYOUT vb = {};
+            D2D1_SVG_VIEWBOX vb = {};
             BOOL specified = FALSE;
             HRESULT vhr = root->GetAttributeValue(
                 L"viewBox", D2D1_SVG_ATTRIBUTE_POD_TYPE_VIEWBOX,
