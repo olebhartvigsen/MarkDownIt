@@ -298,7 +298,25 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
     // translation whenever the document is scrolled.
     D2D1_MATRIX_3X2_F prev;
     ctx->GetTransform(&prev);
-    ctx->SetTransform(PrevOff() ? docTransform : (prev * docTransform));
+    // Diagnostic 'layout' mode (marker svg_text_layout.on): convert
+    // run doc coordinates to page coordinates (docT =
+    // Scale(s) * Translation(x,y)) and draw with only the page
+    // transform, so any D2D SVG internal document matrix cannot
+    // make text behave differently from the shapes.
+    static const bool kLayoutMode = MarkerExists("svg_text_layout.on");
+    float sc = docTransform._11;
+    float txl = docTransform._31;
+    float tyl = docTransform._32;
+    D2D1_MATRIX_3X2_F textT = PrevOff()
+        ? docTransform
+        : (kLayoutMode ? prev : (prev * docTransform));
+    if (kLayoutMode) {
+        for (auto& run : texts_) {
+            run.x = txl + sc * run.x;
+            run.y = tyl + sc * run.y;
+        }
+    }
+    ctx->SetTransform(textT);
 
     // Cache text formats by (fontFamily, fontSize, bold)
     struct FmtKey {
