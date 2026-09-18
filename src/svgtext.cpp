@@ -1,6 +1,7 @@
 #include "svgtext.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 
 namespace svg {
@@ -60,18 +61,34 @@ static std::string DecodeEntities(const std::string& s) {
 // --- Attribute parser ---
 
 static std::string GetAttr(const std::string& tag, const std::string& name) {
-    std::string pattern = name + "=\"";
-    size_t p = tag.find(pattern);
-    if (p == std::string::npos) {
-        pattern = name + "='";
-        p = tag.find(pattern);
+    // Attribute lookup with a word-boundary guard: a plain find
+    // matches suffixes too, e.g. y="0" inside dy="0", or width="1"
+    // inside stroke-width="1". Require a non-name char (the
+    // whitespace separator, or the tag start) before the name.
+    const char qs[2] = {34, 39};
+    std::string pat;
+    size_t a = std::string::npos;
+    for (int qi = 0; qi < 2 && a == std::string::npos; ++qi) {
+        char q2 = qs[qi];
+        pat = name + "=" + std::string(1, q2);
+        size_t p2 = 0;
+        while ((p2 = tag.find(pat, p2)) != std::string::npos) {
+            if (p2 == 0 ||
+                !(std::isalnum(static_cast<unsigned char>(tag[p2 - 1])) ||
+                  tag[p2 - 1] == 45 || tag[p2 - 1] == 95 ||
+                  tag[p2 - 1] == 58)) {
+                a = p2;
+                break;
+            }
+            p2 += pat.size();
+        }
     }
-    if (p == std::string::npos) return {};
-    p += pattern.size();
-    char quote = tag[p - 1];
-    size_t end = tag.find(quote, p);
+    if (a == std::string::npos) return {};
+    a += pat.size();
+    char q = tag[a - 1];
+    size_t end = tag.find(q, a);
     if (end == std::string::npos) return {};
-    return tag.substr(p, end - p);
+    return tag.substr(a, end - a);
 }
 
 static float ToFloat(const std::string& s, float def = 0.0f) {
