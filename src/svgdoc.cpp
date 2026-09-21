@@ -231,14 +231,25 @@ bool SvgDoc::Load(ID2D1DeviceContext5* ctx, const std::string& xml) {
                 }
                 diag::TraceFmt("SVGDOC root tag=[%s]", tagA);
             }
-            D2D1_SVG_VIEWBOX vb = {};
-            HRESULT vhr = root->GetAttributeValue(
-                L"viewBox", D2D1_SVG_ATTRIBUTE_POD_TYPE_VIEWBOX,
-                &vb, sizeof(vb));
-            diag::TraceFmt(
-                "SVGDOC root viewBox hr=0x%08lx x=%g y=%g w=%g h=%g",
-                (unsigned long)vhr,
-                vb.x, vb.y, vb.width, vb.height);
+            for (const wchar_t* vbName : {L"viewBox", L"viewbox"}) {
+                D2D1_SVG_VIEWBOX vb = {};
+                HRESULT vhr = root->GetAttributeValue(
+                    vbName, D2D1_SVG_ATTRIBUTE_POD_TYPE_VIEWBOX,
+                    &vb, sizeof(vb));
+                diag::TraceFmt(
+                    "SVGDOC root viewBox name=%ls hr=0x%08lx x=%g y=%g w=%g h=%g",
+                    vbName, (unsigned long)vhr,
+                    vb.x, vb.y, vb.width, vb.height);
+            }
+            for (const wchar_t* szName : {L"width", L"height"}) {
+                float sz = 0.0f;
+                HRESULT shr = root->GetAttributeValue(
+                    szName, D2D1_SVG_ATTRIBUTE_POD_TYPE_FLOAT,
+                    &sz, sizeof(sz));
+                diag::TraceFmt(
+                    "SVGDOC root %ls float hr=0x%08lx v=%g",
+                    szName, (unsigned long)shr, sz);
+            }
             root->Release();
         }
     }
