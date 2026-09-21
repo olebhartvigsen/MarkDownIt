@@ -113,3 +113,31 @@ TEST(SvgText, StripsPreservesComments) {
     EXPECT_TRUE(out.find("<!-- comment -->") != std::string::npos);
     EXPECT_TRUE(out.find("rect") != std::string::npos);
 }
+
+TEST(SvgText, BoxFromDataGroupCoversRects) {
+    std::string xml =
+        "<svg>"
+        "<g data=\"shape-A\">"
+        "<g transform=\"translate(10,10) scale(2,2)\">"
+        "<rect x=\"0\" y=\"0\" width=\"100\" height=\"50\"/>"
+        "</g>"
+        "<text x=\"60\" y=\"20\">Label</text>"
+        "</g>"
+        "</svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_TRUE(runs[0].boxValid);
+    EXPECT_TRUE(runs[0].bx > 9.9f && runs[0].bx < 10.1f);
+    EXPECT_TRUE(runs[0].by > 9.9f && runs[0].by < 10.1f);
+    EXPECT_TRUE(runs[0].bw > 199.9f && runs[0].bw < 200.1f);
+    EXPECT_TRUE(runs[0].bh > 99.9f && runs[0].bh < 100.1f);
+}
+
+TEST(SvgText, NoBoxWithoutDataGroup) {
+    std::string xml =
+        "<svg><g><rect x=\"0\" y=\"0\" width=\"8\" height=\"8\"/>"
+        "<text x=\"4\" y=\"4\">T</text></g></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_FALSE(runs[0].boxValid);
+}

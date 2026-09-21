@@ -468,10 +468,20 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
         DWRITE_TEXT_METRICS tm = {};
         tl->GetMetrics(&tm);
 
-        // Compute position based on text-anchor
+        // Compute position based on text-anchor. When the exporter
+        // gave a data-group box (no explicit anchor), center the
+        // glyph box on the box so font-width differences cannot
+        // shift the label sideways (Batik pre-computed start-edges
+        // with its own font metrics).
         float tx = run.x;
-        if (run.anchor == "middle") tx -= tm.width / 2.0f;
-        else if (run.anchor == "end") tx -= tm.width;
+        float centerY = -1.0f;
+        if (!run.anchor.empty() && run.anchor != "inherit") {
+            if (run.anchor == "middle") tx -= tm.width / 2.0f;
+            else if (run.anchor == "end") tx -= tm.width;
+        } else if (run.boxValid && run.bw > 0.0f && run.bh > 0.0f) {
+            tx = run.bx + run.bw / 2.0f - tm.width / 2.0f;
+            centerY = run.by + run.bh / 2.0f;
+        }
 
         // SVG y is the baseline, not the top.
         // Approximate: move up by ~80% of the font height.
@@ -482,8 +492,10 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
         if (BaselineOff()) baseline = 0.0f;
         // dominant-baseline="central": x/y is the glyph center, not
         // the baseline, so center the layout height on run.y.
-        float ty = run.central ? (run.y - tm.height / 2.0f)
-                               : (run.y - baseline);
+        float ty = (centerY >= 0.0f)
+            ? (centerY - tm.height / 2.0f)
+            : (run.central ? (run.y - tm.height / 2.0f)
+                           : (run.y - baseline));
 
         // Set color
         D2D1_COLOR_F color = ParseColor(run.fill, defaultColor);
@@ -500,12 +512,16 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
             ctx->CreateSolidColorBrush(
                 D2D1::ColorF(1.0f, 0.0f, 1.0f, 1.0f), &cross);
             if (cross) {
+                float cx = run.x;
                 float cy = run.y;
-                D2D1_POINT_2F c = D2D1::Point2F(run.x, cy);
-                D2D1_POINT_2F a = D2D1::Point2F(run.x - 6, cy - 6);
-                D2D1_POINT_2F b = D2D1::Point2F(run.x + 6, cy + 6);
-                D2D1_POINT_2F d = D2D1::Point2F(run.x - 6, cy + 6);
-                D2D1_POINT_2F e = D2D1::Point2F(run.x + 6, cy - 6);
+                if (centerY >= 0.0f) {
+                    cx = run.bx + run.bw / 2.0f;
+                    cy = run.by + run.bh / 2.0f;
+                }
+                D2D1_POINT_2F a = D2D1::Point2F(cx - 6, cy - 6);
+                D2D1_POINT_2F b = D2D1::Point2F(cx + 6, cy + 6);
+                D2D1_POINT_2F d = D2D1::Point2F(cx - 6, cy + 6);
+                D2D1_POINT_2F e = D2D1::Point2F(cx + 6, cy - 6);
                 ctx->DrawLine(a, b, cross, 1.0f);
                 ctx->DrawLine(d, e, cross, 1.0f);
                 cross->Release();

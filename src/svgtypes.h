@@ -20,6 +20,15 @@ struct TextRun {
     // dominant-baseline="central"/"middle": y is the vertical CENTER
     // of the glyphs, not the baseline (mermaid-exported SVGs).
     bool central = false;
+    // Enclosing data-<g> bounding box of all <rect> children, in
+    // document coordinates. Diagram exporters (Batik/Archi) position
+    // label text relative to their shape box; label placement can
+    // fall back to this box when no explicit text-anchor exists.
+    bool boxValid = false;
+    float bx = 0.0f;
+    float by = 0.0f;
+    float bw = 0.0f;
+    float bh = 0.0f;
 };
 
 }  // namespace svg

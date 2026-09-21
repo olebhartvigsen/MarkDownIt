@@ -219,6 +219,39 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
     Ctx root;
     gStack.push_back(root);
 
+    // Bounding boxes of <rect> children, grouped per enclosing
+    // <g data="..."> element (diagram exporters tag shape groups
+    // this way). Renderer can use the box for label placement.
+    struct BoxAcc {
+        size_t depth = 0;      // gStack.size() at push time
+        bool got = false;      // any rect seen?
+        float minX = 0, minY = 0, maxX = 0, maxY = 0;
+    };
+    struct FinBox { float minX, minY, maxX, maxY; };
+    std::vector<FinBox> boxes;   // all data-g boxes seen, doc coords
+    std::vector<BoxAcc> boxStack;
+    auto AddRectToBox = [&](const Ctx& m, float lx, float ly,
+                            float lw, float lh) {
+        if (boxStack.empty()) return;
+        float x0 = m.m[0] * lx + m.m[2] * ly + m.m[4];
+        float y0 = m.m[1] * lx + m.m[3] * ly + m.m[5];
+        float x1 = m.m[0] * (lx + lw) + m.m[2] * (ly + lh) + m.m[4];
+        float y1 = m.m[1] * (lx + lw) + m.m[3] * (ly + lh) + m.m[5];
+        BoxAcc& b = boxStack.back();
+        if (!b.got) {
+            b.got = true;
+            b.minX = x0 < x1 ? x0 : x1;
+            b.maxX = x0 > x1 ? x0 : x1;
+            b.minY = y0 < y1 ? y0 : y1;
+            b.maxY = y0 > y1 ? y0 : y1;
+        } else {
+            b.minX = (x0 < x1 ? x0 : x1) < b.minX ? (x0 < x1 ? x0 : x1) : b.minX;
+            b.maxX = (x0 > x1 ? x0 : x1) > b.maxX ? (x0 > x1 ? x0 : x1) : b.maxX;
+            b.minY = (y0 < y1 ? y0 : y1) < b.minY ? (y0 < y1 ? y0 : y1) : b.minY;
+            b.maxY = (y0 > y1 ? y0 : y1) > b.maxY ? (y0 > y1 ? y0 : y1) : b.maxY;
+        }
+    };
+
     // Compose: child = parent * op  (apply parent, then op).
     auto ComposeOp = [](float out[6], const float parent[6],
                         const float op[6]) {
@@ -303,6 +336,13 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
 
         // <g> open/close: transform + inheritable style props.
         if (TagIs(tag, "g") && tag.size() > 1 && tag[1] != 47) {
+            // Diagram exporters mark shape groups with data="...";
+            // rect bounds inside become the label box.
+            if (!GetAttrOrStyle(tag, "data").empty()) {
+                BoxAcc acc;
+                acc.depth = gStack.size();  // current depth BEFORE push
+                boxStack.push_back(acc);
+            }
             Ctx child = gStack.back();
             std::string tf = GetAttrOrStyle(tag, "transform");
             if (!tf.empty() && tf != "none") {
@@ -330,10 +370,44 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
             gStack.push_back(child);
             // self-closing g?
             if (!tag.empty() && tag.back() == 47) gStack.pop_back();
+            // Self-closing data-g: close the box right away? Runs
+            // come after; a self-closing shape group holds no text,
+            // so just drop an empty accumulator.
+            if (!tag.empty() && tag.back() == 47 && !boxStack.empty()) {
+                boxStack.pop_back();
+            }
             continue;
         }
         if (TagIs(tag, "/g")) {
             if (gStack.size() > 1) gStack.pop_back();
+            // Close every box whose data-g is at or above the new
+            // depth (nested unmarked <g></g> pairs do not close it).
+            while (!boxStack.empty() &&
+                   boxStack.back().depth >= gStack.size()) {
+                BoxAcc b = boxStack.back();
+                boxStack.pop_back();
+                if (b.got) {
+                    boxes.push_back({ b.minX, b.minY, b.maxX, b.maxY });
+                }
+            }
+            continue;
+        }
+
+        // <rect ...> feeds the enclosing data-g bounding box.
+        if (TagIs(tag, "rect") && tag.size() > 1 && tag[1] != 47 &&
+            !boxStack.empty()) {
+            Ctx cur = gStack.back();
+            std::string rv = GetAttrOrStyle(tag, "x");
+            float lx = rv.empty() ? 0.0f : ToFloat(rv, 0.0f);
+            rv = GetAttrOrStyle(tag, "y");
+            float ly = rv.empty() ? 0.0f : ToFloat(rv, 0.0f);
+            rv = GetAttrOrStyle(tag, "width");
+            float lw = rv.empty() ? 0.0f : ToFloat(rv, 0.0f);
+            rv = GetAttrOrStyle(tag, "height");
+            float lh = rv.empty() ? 0.0f : ToFloat(rv, 0.0f);
+            if (lw != 0.0f && lh != 0.0f) {
+                AddRectToBox(cur, lx, ly, lw, lh);
+            }
             continue;
         }
 
@@ -443,10 +517,52 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
         }
     }
 
+    // Pair each run with its box: Batik/Archi exporters put the
+    // label groups SIBLING to the shape group, so the enclosing
+    // data-g at text time is not the label box. The smallest
+    // box containing the run anchor wins; otherwise the box
+    // whose center is nearest the run anchor.
+    if (!boxes.empty()) {
+        for (auto& run : runs) {
+            const FinBox* contain = nullptr;
+            float bestArea = 0.0f;
+            const FinBox* nearest = nullptr;
+            float bestDist = 0.0f;
+            for (const auto& b : boxes) {
+                float plo = (b.minX < b.maxX) ? b.minX : b.maxX;
+                float phi = (b.minX < b.maxX) ? b.maxX : b.minX;
+                float qlo = (b.minY < b.maxY) ? b.minY : b.maxY;
+                float qhi = (b.minY < b.maxY) ? b.maxY : b.minY;
+                bool inside = run.x >= plo && run.x <= phi &&
+                              run.y >= qlo && run.y <= qhi;
+                float area = (phi - plo) * (qhi - qlo);
+                float cx = (b.minX + b.maxX) * 0.5f;
+                float cy = (b.minY + b.maxY) * 0.5f;
+                float dx = run.x - cx;
+                float dy = run.y - cy;
+                float dist = dx * dx + dy * dy;
+                if (inside && (!contain || area < bestArea)) {
+                    contain = &b;
+                    bestArea = area;
+                }
+                if (!nearest || dist < bestDist) {
+                    nearest = &b;
+                    bestDist = dist;
+                }
+            }
+            const FinBox* chosen = contain ? contain : nearest;
+            if (chosen) {
+                run.boxValid = true;
+                run.bx = chosen->minX;
+                run.by = chosen->minY;
+                run.bw = chosen->maxX - chosen->minX;
+                run.bh = chosen->maxY - chosen->minY;
+            }
+        }
+    }
+
     return runs;
 }
-
-// --- StripTextElements ---
 
 std::string StripTextElements(const std::string& xml) {
     std::string out;
