@@ -30,6 +30,10 @@ a.out
 node_modules/
 package-lock.json
 
+# Python oracle venv (office interop harness)
+.venv-oracle/
+__pycache__/
+
 # macOS resource forks
 desktop.ini
 .DS_Store
