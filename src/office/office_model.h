@@ -20,8 +20,14 @@ enum BlockKind {
     CodeBlock,
     Table,
     Image,
-    ThematicBreak
+    ThematicBreak,
+    Title,       // Word's "Title" style; the reference dump calls this a title block
+    PageBreak    // an explicit page break, carries no runs
 };
+
+// Heading levels use Word's numbering: Word "Heading 1" has level 1. The
+// markdown mapping emits one more "#" than that, because the document title
+// owns the first level.
 
 struct Run {
     std::string text;
@@ -29,7 +35,8 @@ struct Run {
     bool italic = false;
     bool mono = false;
     bool strike = false;
-    std::string link;
+    bool underline = false;
+    std::string link;   // target URL for a hyperlink run, empty otherwise
 };
 
 struct Cell {
@@ -49,6 +56,7 @@ struct PageSetup {
     double height_pt = 841.89;
     double margin_pt = 56.7;
     bool landscape = false;
+    bool footer_page_numbers = false;   // draw "Side N" in the footer of every page
 };
 
 struct CompatWarning {
