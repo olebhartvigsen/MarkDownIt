@@ -181,6 +181,7 @@ add_executable(MarkDownIt WIN32
     src/office/docx_import.cpp
     src/office/docx_export.cpp
     src/office/pdf_export.cpp
+    src/office/markdown_bridge.cpp
 )
 
 if(MSVC AND RIBBON_AVAILABLE)
@@ -305,6 +306,7 @@ if(BUILD_TESTS)
         tests/office_docx_import_test.cpp
         tests/office_docx_export_test.cpp
         tests/office_pdf_export_test.cpp
+        tests/office_markdown_bridge_test.cpp
         src/parser.cpp
         src/textbuffer.cpp
         src/layoutcache.cpp
@@ -339,6 +341,7 @@ if(BUILD_TESTS)
         src/office/docx_import.cpp
         src/office/docx_export.cpp
         src/office/pdf_export.cpp
+        src/office/markdown_bridge.cpp
     )
     target_link_libraries(MarkDownIt.tests PRIVATE
         md4c
