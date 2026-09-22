@@ -16,6 +16,56 @@ if(MSVC)
     target_compile_options(md4c PRIVATE /W1)
 endif()
 
+
+# miniz: vendored zlib-compatible compression (MIT, 3.0.2 amalgamation).
+# The zlib-compatible names stay enabled so pdfio's zlib include can be
+# routed to third_party/miniz/zlib.h.
+add_library(miniz STATIC third_party/miniz/miniz.c)
+target_include_directories(miniz PUBLIC third_party/miniz)
+if(MSVC)
+    target_compile_options(miniz PRIVATE /W1)
+endif()
+
+# pugixml: vendored XML parser for the OOXML parts of a .docx (MIT, 1.15).
+add_library(pugixml STATIC third_party/pugixml/pugixml.cpp)
+target_include_directories(pugixml PUBLIC third_party/pugixml)
+if(MSVC)
+    target_compile_options(pugixml PRIVATE /W1)
+endif()
+
+# pdfio: vendored PDF reader/writer (Apache-2.0, 1.6.5).
+# third_party/miniz is listed first so pdfio's unconditional zlib.h include
+# resolves to the vendored miniz shim instead of a system zlib.
+add_library(pdfio STATIC
+    third_party/pdfio/pdfio-aes.c
+    third_party/pdfio/pdfio-array.c
+    third_party/pdfio/pdfio-common.c
+    third_party/pdfio/pdfio-content.c
+    third_party/pdfio/pdfio-crypto.c
+    third_party/pdfio/pdfio-dict.c
+    third_party/pdfio/pdfio-file.c
+    third_party/pdfio/pdfio-md5.c
+    third_party/pdfio/pdfio-object.c
+    third_party/pdfio/pdfio-page.c
+    third_party/pdfio/pdfio-rc4.c
+    third_party/pdfio/pdfio-sha256.c
+    third_party/pdfio/pdfio-stream.c
+    third_party/pdfio/pdfio-string.c
+    third_party/pdfio/pdfio-token.c
+    third_party/pdfio/pdfio-value.c
+    third_party/pdfio/ttf.c
+)
+set_target_properties(pdfio PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
+target_include_directories(pdfio
+    PRIVATE third_party/miniz
+    PUBLIC third_party/pdfio
+)
+target_link_libraries(pdfio PRIVATE miniz)
+if(MSVC)
+    target_compile_options(pdfio PRIVATE /W1)
+    target_compile_definitions(pdfio PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 # Windows Ribbon Framework: compile ribbon.xml with UICC.exe
 if(MSVC)
     if(NOT UICC_EXE)
@@ -128,6 +178,9 @@ add_executable(MarkDownIt WIN32
     src/welcomescreen.cpp
     src/svgtext.cpp
     src/svgdoc.cpp
+    src/office/docx_import.cpp
+    src/office/docx_export.cpp
+    src/office/pdf_export.cpp
 )
 
 if(MSVC AND RIBBON_AVAILABLE)
@@ -180,6 +233,9 @@ endif() # MSVC AND RIBBON_AVAILABLE
 
 target_link_libraries(MarkDownIt PRIVATE
     md4c
+    miniz
+    pugixml
+    pdfio
     d2d1
     dwrite
     user32
@@ -242,6 +298,7 @@ if(BUILD_TESTS)
         tests/test_main.cpp
         tests/svgtext_test.cpp
         tests/zoommodel_test.cpp
+        tests/office_interop_smoke_test.cpp
         src/parser.cpp
         src/textbuffer.cpp
         src/layoutcache.cpp
@@ -273,13 +330,24 @@ if(BUILD_TESTS)
         src/mermaid/seq_layout.cpp
         src/mermaid/swimlanes.cpp
         src/svgtext.cpp
+        src/office/docx_import.cpp
+        src/office/docx_export.cpp
+        src/office/pdf_export.cpp
     )
-    target_link_libraries(MarkDownIt.tests PRIVATE md4c)
+    target_link_libraries(MarkDownIt.tests PRIVATE
+        md4c
+        miniz
+        pugixml
+        pdfio
+    )
     target_include_directories(MarkDownIt.tests PRIVATE
         src
         tests
         tests/mermaid
         third_party/md4c
+        third_party/miniz
+        third_party/pugixml
+        third_party/pdfio
     )
     target_compile_definitions(MarkDownIt.tests PRIVATE
         UNICODE
