@@ -88,10 +88,26 @@ jobs:
 
       - name: Build and run tests
         shell: bash
+        env:
+          # The office export tests write the files they produce here, so the
+          # verify-export job can open them with an independent reader.
+          MDI_OFFICE_OUT_DIR: ${{ github.workspace }}/office-output
         run: |
+          mkdir -p "$MDI_OFFICE_OUT_DIR"
           cmake -B build-tests -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTS=ON
           cmake --build build-tests --config Release
           build-tests/Release/MarkDownIt.tests.exe
+          ls -la "$MDI_OFFICE_OUT_DIR"
+
+      # The produced Word and PDF files are validated by an independent reader
+      # (python-docx, pypdf) in the verify-export job, not by MarkDownIt itself.
+      - name: Upload office output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: office-output
+          path: ${{ github.workspace }}/office-output/
+          if-no-files-found: warn
 
       # Upload AFTER the tests pass, so a red run never publishes a
       # downloadable exe that the deploy loop could pick up unverified.
@@ -150,6 +166,31 @@ jobs:
         with:
           name: mermaid-golden
           path: /tmp/golden/
+
+  verify-export:
+    name: Verify exported Word and PDF (independent reader)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install oracle deps
+        run: pip install -r tools/office-oracle/requirements.txt
+      - name: Download the files the Windows build produced
+        uses: actions/download-artifact@v4
+        with:
+          name: office-output
+          path: office-output
+      - name: List what the build produced
+        run: ls -la office-output
+      - name: Validate the exported .docx against the golden content model
+        run: python tools/office-oracle/check_docx.py office-output/reference_from_model.docx
+      - name: Validate the exported .pdf against the golden pages
+        run: python tools/office-oracle/check_pdf.py office-output/reference_from_model.pdf
+      - name: Validate the imported model against the golden model
+        run: python tools/office-oracle/check_model_json.py office-output/imported_docx_model.json
 
   office-oracle:
     name: Office oracle (Word/PDF fixtures and goldens)

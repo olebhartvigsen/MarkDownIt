@@ -299,6 +299,9 @@ if(BUILD_TESTS)
         tests/svgtext_test.cpp
         tests/zoommodel_test.cpp
         tests/office_interop_smoke_test.cpp
+        tests/office_docx_import_test.cpp
+        tests/office_docx_export_test.cpp
+        tests/office_pdf_export_test.cpp
         src/parser.cpp
         src/textbuffer.cpp
         src/layoutcache.cpp

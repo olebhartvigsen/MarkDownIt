@@ -59,8 +59,8 @@ def content_chars(text, strict=False):
     if strict:
         return "".join(body.split())
     lines = []
-    for raw_line in CONTROL_RE.sub("", body).splitlines():
-        line = raw_line.strip()
+    for raw_line in body.splitlines():
+        line = CONTROL_RE.sub("", raw_line).strip()
         if not line:
             continue
         stripped = LINE_MARKER_RE.sub("", line, count=1).strip()

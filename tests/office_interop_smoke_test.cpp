@@ -263,19 +263,25 @@ TEST(OfficeInterop, StubsReportNotImplemented) {
     CompatReport report;
     std::string error;
 
+    // The importer is implemented: a buffer that is not a .docx package is
+    // rejected with an error instead of reporting a missing feature.
     EXPECT_FALSE(DocxImport(std::string("PK"), doc, report, error));
-    EXPECT_EQ(error, std::string("not implemented"));
+    EXPECT_FALSE(error.empty());
 
+    // The writer is implemented: even an empty model produces a package.
     std::string docx_bytes;
-    EXPECT_FALSE(DocxExport(doc, docx_bytes, report, error));
-    EXPECT_EQ(error, std::string("not implemented"));
-    EXPECT_TRUE(docx_bytes.empty());
+    EXPECT_TRUE(DocxExport(doc, docx_bytes, report, error));
+    EXPECT_TRUE(error.empty());
+    EXPECT_FALSE(docx_bytes.empty());
 
+    // The PDF writer is implemented: even an empty model produces a valid,
+    // one page PDF.
     PdfExportOptions options;
     std::string pdf_bytes;
-    EXPECT_FALSE(PdfExport(doc, options, pdf_bytes, report, error));
-    EXPECT_EQ(error, std::string("not implemented"));
-    EXPECT_TRUE(pdf_bytes.empty());
+    EXPECT_TRUE(PdfExport(doc, options, pdf_bytes, report, error));
+    EXPECT_TRUE(error.empty());
+    EXPECT_FALSE(pdf_bytes.empty());
+    EXPECT_EQ(pdf_bytes.compare(0, 5, "%PDF-"), 0);
     EXPECT_TRUE(options.all_pages);
     EXPECT_EQ(options.first_page, 1);
     EXPECT_EQ(options.last_page, 0);
