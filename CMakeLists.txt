@@ -184,7 +184,10 @@ add_executable(MarkDownIt WIN32
 )
 
 if(MSVC AND RIBBON_AVAILABLE)
-    target_include_directories(MarkDownIt PRIVATE ${RIBBON_OUT_DIR})
+    target_include_directories(MarkDownIt PRIVATE
+        src
+        ${RIBBON_OUT_DIR}
+    )
     add_dependencies(MarkDownIt ribbon_markup)
 
     # Pass the .res file directly to the linker via LINK_FLAGS.

@@ -24,7 +24,7 @@
 //   * one body-level w:sectPr, so the reader reports a single section
 //   * every w:t carries xml:space="preserve", so spaces survive
 
-#include "office/docx_export.h"
+#include "docx_export.h"
 
 #include "miniz.h"
 
