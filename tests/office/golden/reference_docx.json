@@ -1,0 +1,367 @@
+{
+  "format": "markdownit-office-docx-dump",
+  "version": 1,
+  "blocks": [
+    {
+      "kind": "title",
+      "text": "MarkDownIt Office Interop Reference",
+      "runs": [
+        {
+          "text": "MarkDownIt Office Interop Reference",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        }
+      ]
+    },
+    {
+      "kind": "heading",
+      "level": 1,
+      "text": "Indledning",
+      "runs": [
+        {
+          "text": "Indledning",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        }
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "text": "Dette er fed tekst, kursiv tekst og monospace tekst. Understreget: understreget tekst. Danske tegn: æ ø å Æ Ø Å.",
+      "runs": [
+        {
+          "text": "Dette er ",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        },
+        {
+          "text": "fed tekst",
+          "bold": true,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        },
+        {
+          "text": ", ",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        },
+        {
+          "text": "kursiv tekst",
+          "bold": false,
+          "italic": true,
+          "mono": false,
+          "underline": false,
+          "link": null
+        },
+        {
+          "text": " og ",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        },
+        {
+          "text": "monospace tekst",
+          "bold": false,
+          "italic": false,
+          "mono": true,
+          "underline": false,
+          "link": null
+        },
+        {
+          "text": ". Understreget: ",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        },
+        {
+          "text": "understreget tekst",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": true,
+          "link": null
+        },
+        {
+          "text": ". Danske tegn: æ ø å Æ Ø Å.",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        }
+      ]
+    },
+    {
+      "kind": "heading",
+      "level": 2,
+      "text": "Punktliste",
+      "runs": [
+        {
+          "text": "Punktliste",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        }
+      ]
+    },
+    {
+      "kind": "list_item",
+      "text": "Første punkt",
+      "list": {
+        "kind": "bullet",
+        "level": 0,
+        "num_fmt": "bullet"
+      },
+      "runs": [
+        {
+          "text": "Første punkt",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        }
+      ]
+    },
+    {
+      "kind": "list_item",
+      "text": "Andet punkt",
+      "list": {
+        "kind": "bullet",
+        "level": 0,
+        "num_fmt": "bullet"
+      },
+      "runs": [
+        {
+          "text": "Andet punkt",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        }
+      ]
+    },
+    {
+      "kind": "list_item",
+      "text": "Underelement til andet punkt",
+      "list": {
+        "kind": "bullet",
+        "level": 1,
+        "num_fmt": "bullet"
+      },
+      "runs": [
+        {
+          "text": "Underelement til andet punkt",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        }
+      ]
+    },
+    {
+      "kind": "list_item",
+      "text": "Tredje punkt",
+      "list": {
+        "kind": "bullet",
+        "level": 0,
+        "num_fmt": "bullet"
+      },
+      "runs": [
+        {
+          "text": "Tredje punkt",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        }
+      ]
+    },
+    {
+      "kind": "list_item",
+      "text": "Trin et",
+      "list": {
+        "kind": "ordered",
+        "level": 0,
+        "num_fmt": "decimal"
+      },
+      "runs": [
+        {
+          "text": "Trin et",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        }
+      ]
+    },
+    {
+      "kind": "list_item",
+      "text": "Trin to",
+      "list": {
+        "kind": "ordered",
+        "level": 0,
+        "num_fmt": "decimal"
+      },
+      "runs": [
+        {
+          "text": "Trin to",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        }
+      ]
+    },
+    {
+      "kind": "list_item",
+      "text": "Trin tre",
+      "list": {
+        "kind": "ordered",
+        "level": 0,
+        "num_fmt": "decimal"
+      },
+      "runs": [
+        {
+          "text": "Trin tre",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        }
+      ]
+    },
+    {
+      "kind": "heading",
+      "level": 2,
+      "text": "Tabel",
+      "runs": [
+        {
+          "text": "Tabel",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        }
+      ]
+    },
+    {
+      "kind": "table",
+      "rows": [
+        [
+          {
+            "text": "Navn"
+          },
+          {
+            "text": "Antal"
+          },
+          {
+            "text": "Note"
+          }
+        ],
+        [
+          {
+            "text": "Æble"
+          },
+          {
+            "text": "3"
+          },
+          {
+            "text": "Moden"
+          }
+        ],
+        [
+          {
+            "text": "Øl"
+          },
+          {
+            "text": "12"
+          },
+          {
+            "text": "Kold"
+          }
+        ],
+        [
+          {
+            "text": "Ål"
+          },
+          {
+            "text": "1"
+          },
+          {
+            "text": "Fersk"
+          }
+        ]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "text": "Læs mere på example.com for detaljer.",
+      "runs": [
+        {
+          "text": "Læs mere på ",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        },
+        {
+          "text": "example.com",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": true,
+          "link": "https://example.com"
+        },
+        {
+          "text": " for detaljer.",
+          "bold": false,
+          "italic": false,
+          "mono": false,
+          "underline": false,
+          "link": null
+        }
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "page_width_pt": 595.3,
+      "page_height_pt": 841.9,
+      "margins_pt": {
+        "top": 56.7,
+        "right": 56.7,
+        "bottom": 56.7,
+        "left": 56.7
+      }
+    }
+  ]
+}

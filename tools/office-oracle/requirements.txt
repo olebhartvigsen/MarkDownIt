@@ -1,0 +1,7 @@
+# Pinned dependencies for the MarkDownIt office interop oracle.
+# Regenerate and validate the fixtures with exactly these versions so the
+# committed goldens stay reproducible.
+python-docx==1.2.0
+pypdf==6.19.0
+reportlab==5.0.1
+lxml==6.1.2

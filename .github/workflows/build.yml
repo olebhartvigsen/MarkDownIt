@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feat/mermaid-flowchart
+      - feat/pdf-word-support
   pull_request:
     branches:
       - main
@@ -149,3 +150,28 @@ jobs:
         with:
           name: mermaid-golden
           path: /tmp/golden/
+
+  office-oracle:
+    name: Office oracle (Word/PDF fixtures and goldens)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install oracle deps
+        run: pip install -r tools/office-oracle/requirements.txt
+      - name: Regenerate fixtures and goldens
+        run: |
+          python tools/office-oracle/make_fixtures.py \
+            --fixtures-dir /tmp/office-oracle/fixtures \
+            --golden-dir /tmp/office-oracle/golden
+          sha256sum /tmp/office-oracle/fixtures/* /tmp/office-oracle/golden/*
+      - name: Fail if committed fixtures or goldens drifted
+        run: |
+          python tools/office-oracle/check_drift.py tests/office /tmp/office-oracle
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: office-oracle
+          path: /tmp/office-oracle/
