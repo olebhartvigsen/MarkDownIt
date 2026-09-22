@@ -13,8 +13,11 @@ struct PdfExportOptions {
 
 // Render the shared document model to PDF bytes with pdfio.
 // Returns true on success. On failure it returns false and sets error, and
-// report lists any model features the writer had to drop.
+// report lists any model features the writer had to drop (it carries no
+// informational entries). When page_count is not null it receives the number
+// of pages in the produced file.
 bool PdfExport(const DocModel& doc, const PdfExportOptions& opt,
-               std::string& out_bytes, CompatReport& report, std::string& error);
+               std::string& out_bytes, CompatReport& report, std::string& error,
+               int* page_count = nullptr);
 
 }  // namespace office
