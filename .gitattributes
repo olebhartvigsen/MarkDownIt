@@ -1,0 +1,9 @@
+# Golden test data is read and compared BYTE FOR BYTE by the C++ tests, also on
+# the Windows runner. Without a pin, a CRLF checkout there fails those
+# comparisons for a checkout reason rather than a content reason.
+tests/office/golden/* text eol=lf
+tests/office/golden/** text eol=lf
+
+# Fixtures are binary containers (zip, pdf); they must never be converted.
+tests/office/fixtures/* binary
+tests/office/fixtures/** binary
