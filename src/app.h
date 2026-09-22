@@ -58,6 +58,10 @@ public:
     void ShowAbout();
     bool Save();
     bool SaveAs();
+    // Word / PDF interop (ribbon: Home tab, Office group).
+    void ImportWordDocx();
+    void ExportWordDocx();
+    void ExportPdf();
     bool IsDirty() const { return dirty_; }
     void SetEdit(bool on);
     bool IsEditing() const { return editing_; }
@@ -352,6 +356,19 @@ private:
     void UpdateTitleBar();
     std::wstring SaveDialog();
     int  PromptSaveDiscardCancel();
+    // Load UTF-8 markdown into the editor: the sequence OpenFile runs for
+    // text read from disk, shared with the .docx import. An empty path
+    // means the text has no file on disk: untitled document, nothing
+    // watched, and Save falls back to Save As.
+    void LoadDocumentText(const std::string& raw, const std::wstring& path);
+    // Save dialog for an export, pre-filled with a name derived from the
+    // current document. Empty result means the user cancelled.
+    std::wstring ExportSaveDialog(const wchar_t* filter, const wchar_t* defExt,
+                                  const std::wstring& defaultName);
+    // Default export file name: the current document's path with ext in
+    // place of its own extension, or "document" plus ext when it has no
+    // file on disk.
+    std::wstring ExportDefaultName(const wchar_t* ext) const;
     void RecreateRenderTarget();
     void EnsureRenderer();
     void UpdateDpi();         // Query monitor DPI and apply to render target.

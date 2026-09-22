@@ -493,6 +493,65 @@
         <Image Source="icons/code_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
+    <Command Name="cmdGroupOffice" Symbol="IDC_GROUP_OFFICE" Id="10060">
+      <Command.LabelTitle>
+        <String>Office</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdImportDocx" Symbol="IDC_CMD_IMPORT_DOCX" Id="10800">
+      <Command.LabelTitle>
+        <String>Import Word (.docx)</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Import Word</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Convert a Word .docx document to markdown in the editor</String>
+      </Command.TooltipDescription>
+      <Command.LargeImages>
+        <Image Source="icons/open_32.png" MinDPI="96"/>
+        <Image Source="icons/open_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/open_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
+    <Command Name="cmdExportDocx" Symbol="IDC_CMD_EXPORT_DOCX" Id="10801">
+      <Command.LabelTitle>
+        <String>Eksportér Word (.docx)</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Export Word</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Save the current document as a Word .docx file</String>
+      </Command.TooltipDescription>
+      <Command.LargeImages>
+        <Image Source="icons/save-as_32.png" MinDPI="96"/>
+        <Image Source="icons/save-as_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/save-as_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
+    <Command Name="cmdExportPdf" Symbol="IDC_CMD_EXPORT_PDF" Id="10802">
+      <Command.LabelTitle>
+        <String>Eksportér PDF</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Export PDF</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Save the current document as a PDF file</String>
+      </Command.TooltipDescription>
+      <Command.LargeImages>
+        <Image Source="icons/save_32.png" MinDPI="96"/>
+        <Image Source="icons/save_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/save_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
   </Application.Commands>
   <Application.Views>
     <Ribbon>
@@ -517,6 +576,11 @@
             <Button CommandName="cmdReload" />
             <Button CommandName="cmdSave" />
             <Button CommandName="cmdSaveAs" />
+          </Group>
+          <Group CommandName="cmdGroupOffice" SizeDefinition="ThreeButtons">
+            <Button CommandName="cmdImportDocx" />
+            <Button CommandName="cmdExportDocx" />
+            <Button CommandName="cmdExportPdf" />
           </Group>
           <Group CommandName="cmdGroupHistory" SizeDefinition="TwoButtons">
             <Button CommandName="cmdUndo" />
