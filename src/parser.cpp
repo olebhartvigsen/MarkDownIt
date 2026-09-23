@@ -851,6 +851,30 @@ int cb_leave_span(MD_SPANTYPE type, void* detail, void* userdata) {
     return 0;
 }
 
+// True when a raw-HTML text chunk consists only of <br> variants: any casing
+// of the tag name, optional whitespace and optional solidus before '>'.
+// Handles a lone tag (<br>, <BR>, <br/>, <br />, <Br   />) and adjacent
+// tags merged into one chunk (<br><br>).
+static bool IsBrHtmlChunk(const MD_CHAR* text, MD_SIZE size) {
+    if (size < 4) return false;
+    const unsigned char* s = reinterpret_cast<const unsigned char*>(text);
+    MD_SIZE k = 0;
+    while (k < size) {
+        while (k < size && (s[k] == ' ' || s[k] == 0x09)) k++;
+        if (k >= size) break;
+        if (s[k] != '<') return false;
+        if (k + 3 >= size) return false;
+        if (s[k + 1] != 'b' && s[k + 1] != 'B') return false;
+        if (s[k + 2] != 'r' && s[k + 2] != 'R') return false;
+        k += 3;
+        while (k < size && (s[k] == ' ' || s[k] == 0x09)) k++;
+        if (k < size && s[k] == '/') k++;
+        if (k >= size || s[k] != '>') return false;
+        k++;
+    }
+    return true;
+}
+
 int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata) {
     auto* ctx = static_cast<ParserCtx*>(userdata);
     if (size == 0) return 0;
@@ -891,18 +915,7 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
         // the raw tag text. Replace the whole chunk with one newline and
         // point the single u16ToSrc entry at the tag's first source byte,
         // so caret mapping stays aligned with the one u16 unit that follows.
-        bool is_br = (type == MD_TEXT_HTML) && (size >= 4);
-        if (is_br) {
-            const unsigned char* s = reinterpret_cast<const unsigned char*>(text);
-            if (_strnicmp(reinterpret_cast<const char*>(s), "<br", 3) != 0) {
-                is_br = false;
-            } else {
-                MD_SIZE k = 3;
-                while (k < size && (s[k] == ' ' || s[k] == 0x09)) k++;
-                if (k < size && s[k] == '/') k++;
-                if (k + 1 != size || s[k] != '>') is_br = false;
-            }
-        }
+        bool is_br = (type == MD_TEXT_HTML) && IsBrHtmlChunk(text, size);
         if (is_br) {
             if (ctx->cur_cell_obj) {
                 ctx->cur_cell_obj->u16ToSrc.push_back(thisOff);
@@ -996,6 +1009,17 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
         }
         case MD_TEXT_ENTITY:
             decode_entity(text, size, text32);
+            break;
+        case MD_TEXT_HTML:
+            // Raw inline HTML. A lone <br>/<BR> variant must render as a
+            // line break, not as literal tag text; other raw HTML passes
+            // through as text for v1 (unchanged behavior).
+            if (IsBrHtmlChunk(text, size)) {
+                text32.push_back(U'\n');
+            } else {
+                Utf8Decoder d;
+                d.decode(text, size, text32);
+            }
             break;
         case MD_TEXT_BR:
             text32.push_back(U'\n');

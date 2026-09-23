@@ -544,6 +544,26 @@ TEST(OfficeMarkdownBridge, AnImageKeepsItsAltTextAndIsReported) {
     EXPECT_EQ(OfficeModelToMarkdown(model), std::string("Text before alt text text after.\n"));
 }
 
+TEST(OfficeMarkdownBridge, BrHtmlTagBecomesLineBreakInExportModel) {
+    const std::string markdown = "First line<BR>second line<br />third line\n";
+
+    DocModel model;
+    CompatReport report;
+    std::string error;
+    ASSERT_TRUE(MarkdownToOfficeModel(markdown, model, report, error));
+    EXPECT_TRUE(error.empty());
+    EXPECT_TRUE(report.warnings.empty());
+
+    ASSERT_EQ(model.blocks.size(), 1u);
+    ASSERT_EQ(model.blocks[0].kind, BlockKind::Paragraph);
+    ASSERT_EQ(model.blocks[0].runs.size(), 1u);
+    EXPECT_EQ(model.blocks[0].runs[0].text,
+              std::string("First line\nsecond line\nthird line"));
+
+    EXPECT_EQ(OfficeModelToMarkdown(model),
+              std::string("First line\nsecond line\nthird line\n"));
+}
+
 // ---------------------------------------------------------------------------
 // Empty and malformed input
 // ---------------------------------------------------------------------------

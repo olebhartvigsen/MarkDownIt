@@ -118,6 +118,49 @@ TEST(ParserOffsets, HeadingCarriesSourceRange) {
     EXPECT_EQ(doc.nodes[1].srcOffset, 9u);
 }
 
+// Inline raw HTML <br> variants become a newline, not literal tag text.
+TEST(ParserSmoke, BrTagBreaksLine) {
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown("line one<BR>line two", doc));
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    // Text, newline, text: three inline children.
+    ASSERT_EQ(doc.nodes[0].children.size(), 3u);
+    EXPECT_EQ(doc.nodes[0].children[0].text, std::u32string(U"line one"));
+    EXPECT_EQ(doc.nodes[0].children[1].text, std::u32string(1, U'\n'));
+    EXPECT_EQ(doc.nodes[0].children[2].text, std::u32string(U"line two"));
+    // Source offsets stay on the tag itself: caret mapped at the tag start.
+    EXPECT_EQ(doc.nodes[0].children[1].srcOffset, 8u);
+    EXPECT_EQ(doc.nodes[0].children[1].srcLength, 4u);
+}
+
+TEST(ParserSmoke, BrVariantsBreakLines) {
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown("a<br>b<br />c", doc));
+    ASSERT_EQ(doc.nodes[0].children.size(), 5u);
+    EXPECT_EQ(doc.nodes[0].children[1].text, std::u32string(1, U'\n'));
+    EXPECT_EQ(doc.nodes[0].children[3].text, std::u32string(1, U'\n'));
+}
+
+// Br inside a heading breaks too.
+TEST(ParserSmoke, BrTagBreaksLineInHeading) {
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown("# Head<BR>Line", doc));
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    ASSERT_EQ(doc.nodes[0].children.size(), 3u);
+    EXPECT_EQ(doc.nodes[0].children[1].text, std::u32string(1, U'\n'));
+}
+
+// Raw HTML that is not a br variant still passes through as literal text.
+TEST(ParserSmoke, OtherRawHtmlStaysLiteral) {
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown("a <span>x</span> b", doc));
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    std::u32string text;
+    for (const auto& child : doc.nodes[0].children) text += child.text;
+    EXPECT_TRUE(text.find(U'<') != std::u32string::npos);
+    EXPECT_TRUE(text.find(U"span") != std::u32string::npos);
+}
+
 // Source offsets on inline spans.
 TEST(ParserOffsets, InlineSpanHasOffset) {
     Document doc;
