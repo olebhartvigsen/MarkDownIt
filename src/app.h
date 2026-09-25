@@ -105,9 +105,9 @@ public:
     void InsertLinkCmd();
     void InsertTableCmd();
     void InsertTableFromGrid(int cols, int rows);
-    bool AddTableRow();
+    bool AddTableRow(bool below = true);
     bool RemoveTableRow();
-    bool AddTableColumn();
+    bool AddTableColumn(bool right = true);
     bool RemoveTableColumn();
     void RemoveTable();
     // Splice the buffer and record an undo entry in one step.

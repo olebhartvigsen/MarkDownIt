@@ -235,6 +235,34 @@
         <Image Source="icons/table-add-column_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
+    <Command Name="cmdAddRowAbove" Symbol="IDC_CMD_ADD_ROW_ABOVE" Id="10217">
+      <Command.LabelTitle>
+        <String>Add Row Above</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Add Row Above</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Add a new row above the cursor in the current table</String>
+      </Command.TooltipDescription>
+      <Command.SmallImages>
+        <Image Source="icons/table-add-row-above_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
+    <Command Name="cmdAddColumnLeft" Symbol="IDC_CMD_ADD_COLUMN_LEFT" Id="10218">
+      <Command.LabelTitle>
+        <String>Add Column Left</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Add Column Left</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Add a new column to the left of the cursor in the current table</String>
+      </Command.TooltipDescription>
+      <Command.SmallImages>
+        <Image Source="icons/table-add-column-left_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
     <Command Name="cmdRemoveColumn" Symbol="IDC_CMD_REMOVE_COLUMN" Id="10215">
       <Command.LabelTitle>
         <String>Remove Column</String>
@@ -698,8 +726,10 @@
             <DropDownButton CommandName="cmdTableTools">
               <MenuGroup>
                 <Button CommandName="cmdAddRow" />
+                <Button CommandName="cmdAddRowAbove" />
                 <Button CommandName="cmdRemoveRow" />
                 <Button CommandName="cmdAddColumn" />
+                <Button CommandName="cmdAddColumnLeft" />
                 <Button CommandName="cmdRemoveColumn" />
               </MenuGroup>
               <MenuGroup>

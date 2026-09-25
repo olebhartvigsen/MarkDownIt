@@ -476,8 +476,10 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_LINK:    m_pApp->InsertLinkCmd();     break;
     case IDC_CMD_INSERT_TABLE: m_pApp->InsertTableCmd(); break;
     case IDC_CMD_ADD_ROW:     m_pApp->AddTableRow();     break;
+    case IDC_CMD_ADD_ROW_ABOVE: m_pApp->AddTableRow(false); break;
     case IDC_CMD_REMOVE_ROW:  m_pApp->RemoveTableRow(); break;
     case IDC_CMD_ADD_COLUMN:  m_pApp->AddTableColumn(); break;
+    case IDC_CMD_ADD_COLUMN_LEFT: m_pApp->AddTableColumn(false); break;
     case IDC_CMD_REMOVE_COLUMN: m_pApp->RemoveTableColumn(); break;
     case IDC_CMD_REMOVE_TABLE: m_pApp->RemoveTable(); break;
     case IDC_CMD_CLEARFORMAT: m_pApp->ClearFormat();  break;

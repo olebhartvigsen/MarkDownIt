@@ -4610,7 +4610,7 @@ static bool LocateInTable(const std::string& text, const Node* node,
     return false;
 }
 
-bool AppWindow::AddTableRow() {
+bool AppWindow::AddTableRow(bool below) {
     if (!editing_) return false;
     const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
     if (!tbl) return false;
@@ -4619,6 +4619,10 @@ bool AppWindow::AddTableRow() {
     TableLocation loc;
     if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
 
+    // A new row above the header, or between header and delimiter,
+    // would break the table structure: those lines carry the table.
+    if (!below && loc.rowIndex <= 1) return false;
+
     // Build a new row string with the same number of columns.
     std::string newRow = "|";
     for (int c = 0; c < loc.numCols; ++c) {
@@ -4626,16 +4630,23 @@ bool AppWindow::AddTableRow() {
     }
     newRow += "\n";
 
-    // Insert right after the current row's end.
-    uint32_t insertPos = loc.rowEnd;
-    // Move past newline if present
-    if (insertPos < text.size() && text[insertPos] == '\n')
+    // Below: insert right after the current row's end.
+    // Above: insert at the current row's start.
+    uint32_t insertPos = below ? loc.rowEnd : loc.rowStart;
+    if (below && insertPos < text.size() && text[insertPos] == '\n')
         insertPos += 1;
 
     SpliceWithUndo(insertPos, 0, newRow);
     editor_.BreakUndoCoalesce();
 
-    sel_.Collapse({insertPos + static_cast<uint32_t>(newRow.size())});
+    // Below keeps the shipped caret (start of the row after the new
+    // one). Above places the caret inside the new row's first cell,
+    // one position past its leading pipe.
+    if (below) {
+        sel_.Collapse({insertPos + static_cast<uint32_t>(newRow.size())});
+    } else {
+        sel_.Collapse({insertPos + 1});
+    }
     OnBufferChanged();
     ForceRepaintNow();
     return true;
@@ -4712,7 +4723,7 @@ bool AppWindow::RemoveTableRow() {
     return true;
 }
 
-bool AppWindow::AddTableColumn() {
+bool AppWindow::AddTableColumn(bool right) {
     if (!editing_) return false;
     const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
     if (!tbl) return false;
@@ -4721,9 +4732,13 @@ bool AppWindow::AddTableColumn() {
     TableLocation loc;
     if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
 
-    // Insert " |        " (or "|        " for first column) after the
-    // column-th pipe in each line of the table.
-    // We process lines from bottom to top so offsets don't shift.
+    // A column is delimited by pipes, so each line of the table gains
+    // one pipe. A new column right of the cursor's column inserts
+    // after the pipe that closes the cursor's cell (pipe index
+    // columnIndex+1, 0-based); left of it inserts after the pipe that
+    // opens it (pipe index columnIndex). The inserted cell carries its
+    // own trailing pipe, matching the row grammar "|" + "        |".
+    const int afterPipe = loc.columnIndex + (right ? 2 : 1);
     uint32_t tblStart = tbl->srcOffset;
     uint32_t tblEnd = tblStart + tbl->srcLength;
 
@@ -4735,33 +4750,33 @@ bool AppWindow::AddTableColumn() {
             lineStarts.push_back(i + 1);
     }
 
-    // Process from bottom to top.
-
+    // Process from bottom to top so earlier (lower) offsets stay valid.
+    uint32_t caretNew = sel_.active.offset;
     for (int li = static_cast<int>(lineStarts.size()) - 1; li >= 0; --li) {
         uint32_t lineS = lineStarts[li];
-        // Find end of this line
-        uint32_t lineE = lineStarts[li];
+        // Find end of this line.
+        uint32_t lineE = lineS;
         for (uint32_t j = lineS; j <= tblEnd; ++j) {
             if (j == tblEnd || text[j] == '\n') {
                 lineE = j;
                 break;
             }
         }
-        // Count pipes in the line to find insertion point for column.
-        // Insert after the (columnIndex+1)-th pipe. For the separator
-        // line, insert "|--------" instead of "|        ".
+        // Find the pipe that closes the new column's opening side.
         int pipeSeen = 0;
-        uint32_t insertAfter = lineS;
+        uint32_t insertAfter = 0;
+        bool found = false;
         for (uint32_t j = lineS; j < lineE; ++j) {
             if (text[j] == '|') {
                 ++pipeSeen;
-                if (pipeSeen == loc.columnIndex + 1) {
+                if (pipeSeen == afterPipe) {
                     insertAfter = j + 1;
+                    found = true;
                     break;
                 }
             }
         }
-        if (pipeSeen == 0) continue; // not a table line
+        if (!found) continue; // ragged line without that pipe: skip
 
         // Determine if this is the separator line (all dashes).
         bool isSep = true;
@@ -4772,18 +4787,14 @@ bool AppWindow::AddTableColumn() {
                 break;
             }
         }
-        std::string cell;
-        if (isSep)
-            cell = "--------";
-        else
-            cell = "        ";
+        std::string cell = isSep ? "--------|" : "        |";
 
-        // Insert at insertAfter.
         SpliceWithUndo(insertAfter, 0, cell);
+        if (insertAfter <= caretNew) caretNew += static_cast<uint32_t>(cell.size());
     }
 
     editor_.BreakUndoCoalesce();
-    sel_.Collapse({sel_.active.offset});
+    sel_.Collapse({caretNew});
     OnBufferChanged();
     ForceRepaintNow();
     return true;

@@ -14,8 +14,9 @@ from PIL import Image, ImageDraw
 ICON_DIR = "/workspace/MarkDownIt/src/icons"
 GLYPHS = [
     "find", "replace", "new",
-    "table", "table-add-row", "table-remove-row",
-    "table-add-column", "table-remove-column", "table-remove",
+    "table", "table-add-row", "table-add-row-above", "table-remove-row",
+    "table-add-column", "table-add-column-left", "table-remove-column",
+    "table-remove",
 ]
 STROKE = (0x33, 0x33, 0x33, 255)
 SS = 4            # supersample factor
