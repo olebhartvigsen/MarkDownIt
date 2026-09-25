@@ -492,6 +492,8 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_SOURCE: m_pApp->ToggleSourceView();  break;
     case IDC_CMD_UNDO:    m_pApp->UndoAction();       break;
     case IDC_CMD_REDO:    m_pApp->RedoAction();       break;
+    case IDC_CMD_FIND:    m_pApp->ShowFindReplace(false); break;
+    case IDC_CMD_REPLACE: m_pApp->ShowFindReplace(true);  break;
     case IDC_CMD_ASSOC_MD:    m_pApp->ToggleMdAssociation();         break;
     case IDC_CMD_WIDTH_STD:   diag::Trace("Execute width std");   m_pApp->SetContentWidthMode(0);        break;
     case IDC_CMD_WIDTH_960:   diag::Trace("Execute width 960");   m_pApp->SetContentWidthMode(1);        break;

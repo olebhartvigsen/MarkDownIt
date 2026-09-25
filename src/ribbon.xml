@@ -18,7 +18,7 @@
     </Command>
     <Command Name="cmdGroupEdit" Symbol="IDC_GROUP_EDIT" Id="10011">
       <Command.LabelTitle>
-        <String>Edit</String>
+        <String>Editing</String>
       </Command.LabelTitle>
     </Command>
     <Command Name="cmdGroupView" Symbol="IDC_GROUP_VIEW" Id="10020">
@@ -34,6 +34,11 @@
     <Command Name="cmdGroupParagraph" Symbol="IDC_GROUP_PARAGRAPH" Id="10040">
       <Command.LabelTitle>
         <String>Paragraph</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdGroupHeadings" Symbol="IDC_GROUP_HEADINGS" Id="10070">
+      <Command.LabelTitle>
+        <String>Headings</String>
       </Command.LabelTitle>
     </Command>
     <Command Name="cmdGroupTable" Symbol="IDC_GROUP_TABLE" Id="10050">
@@ -96,7 +101,7 @@
     </Command>
     <Command Name="cmdAppMenu" Symbol="IDC_CMD_APPMENU" Id="10000">
       <Command.LabelTitle>
-        <String>Fil</String>
+        <String>File</String>
       </Command.LabelTitle>
     </Command>
     <Command Name="cmdAbout" Symbol="IDC_CMD_ABOUT" Id="10102">
@@ -238,7 +243,7 @@
         <String>Remove the whole table containing the cursor</String>
       </Command.TooltipDescription>
       <Command.SmallImages>
-        <Image Source="icons/table-remove-row_16.png" MinDPI="96"/>
+        <Image Source="icons/table-remove_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
     <Command Name="cmdBold" Symbol="IDC_CMD_BOLD" Id="10300">
@@ -493,6 +498,47 @@
         <Image Source="icons/code_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
+    <Command Name="cmdFind" Symbol="IDC_CMD_FIND" Id="10703">
+      <Command.LabelTitle>
+        <String>Find</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Find</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Search the document (Ctrl+F)</String>
+      </Command.TooltipDescription>
+      <Command.LargeImages>
+        <Image Source="icons/find_32.png" MinDPI="96"/>
+        <Image Source="icons/find_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/find_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
+    <Command Name="cmdReplace" Symbol="IDC_CMD_REPLACE" Id="10704">
+      <Command.LabelTitle>
+        <String>Replace</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Replace</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Search and replace text (Ctrl+H)</String>
+      </Command.TooltipDescription>
+      <Command.LargeImages>
+        <Image Source="icons/replace_32.png" MinDPI="96"/>
+        <Image Source="icons/replace_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/replace_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
+    <Command Name="cmdQAT" Symbol="IDC_CMD_QAT" Id="10009">
+      <Command.LabelTitle>
+        <String>Quick Access Toolbar</String>
+      </Command.LabelTitle>
+    </Command>
     <Command Name="cmdGroupOffice" Symbol="IDC_GROUP_OFFICE" Id="10060">
       <Command.LabelTitle>
         <String>Office</String>
@@ -518,7 +564,7 @@
     </Command>
     <Command Name="cmdExportDocx" Symbol="IDC_CMD_EXPORT_DOCX" Id="10801">
       <Command.LabelTitle>
-        <String>Eksportér Word (.docx)</String>
+        <String>Export Word (.docx)</String>
       </Command.LabelTitle>
       <Command.TooltipTitle>
         <String>Export Word</String>
@@ -536,7 +582,7 @@
     </Command>
     <Command Name="cmdExportPdf" Symbol="IDC_CMD_EXPORT_PDF" Id="10802">
       <Command.LabelTitle>
-        <String>Eksportér PDF</String>
+        <String>Export PDF</String>
       </Command.LabelTitle>
       <Command.TooltipTitle>
         <String>Export PDF</String>
@@ -569,6 +615,15 @@
           </MenuGroup>
         </ApplicationMenu>
       </Ribbon.ApplicationMenu>
+      <Ribbon.QuickAccessToolbar>
+        <QuickAccessToolbar CommandName="cmdQAT">
+          <QuickAccessToolbar.ApplicationDefaults>
+            <Button CommandName="cmdSave" ApplicationDefaults.IsChecked="true" />
+            <Button CommandName="cmdUndo" ApplicationDefaults.IsChecked="true" />
+            <Button CommandName="cmdRedo" ApplicationDefaults.IsChecked="true" />
+          </QuickAccessToolbar.ApplicationDefaults>
+        </QuickAccessToolbar>
+      </Ribbon.QuickAccessToolbar>
       <Ribbon.Tabs>
         <Tab CommandName="cmdTabHome">
           <Group CommandName="cmdGroupFile" SizeDefinition="FourButtons">
@@ -593,9 +648,11 @@
           </Group>
         </Tab>
         <Tab CommandName="cmdTabInsert">
-          <Group CommandName="cmdGroupEdit" SizeDefinition="TwoButtons">
+          <Group CommandName="cmdGroupEdit" SizeDefinition="FourButtons">
             <ToggleButton CommandName="cmdEditToggle" />
             <ToggleButton CommandName="cmdViewSource" />
+            <Button CommandName="cmdFind" />
+            <Button CommandName="cmdReplace" />
           </Group>
           <Group CommandName="cmdGroupFormat" SizeDefinition="SixButtons">
             <ToggleButton CommandName="cmdBold" />
@@ -605,13 +662,17 @@
             <Button CommandName="cmdLink" />
             <Button CommandName="cmdClearFormat" />
           </Group>
-          <Group CommandName="cmdGroupParagraph" SizeDefinition="SixButtons">
-            <ToggleButton CommandName="cmdHeading1" />
-            <ToggleButton CommandName="cmdHeading2" />
-            <ToggleButton CommandName="cmdHeading3" />
+          <Group CommandName="cmdGroupParagraph" SizeDefinition="FiveButtons">
             <ToggleButton CommandName="cmdBullets" />
             <ToggleButton CommandName="cmdNumbering" />
             <ToggleButton CommandName="cmdQuote" />
+            <Button CommandName="cmdIndent" />
+            <Button CommandName="cmdOutdent" />
+          </Group>
+          <Group CommandName="cmdGroupHeadings" SizeDefinition="ThreeButtons">
+            <ToggleButton CommandName="cmdHeading1" />
+            <ToggleButton CommandName="cmdHeading2" />
+            <ToggleButton CommandName="cmdHeading3" />
           </Group>
           <Group CommandName="cmdGroupTable" SizeDefinition="TwoButtons">
             <Button CommandName="cmdInsertTable" />
