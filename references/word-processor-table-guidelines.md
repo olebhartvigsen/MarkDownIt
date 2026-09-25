@@ -1832,3 +1832,37 @@ blev fundet og rettet:
   selvom klik var klemmet; drag bruger nu samme regel.
 * Backspace på tabellens afsluttende pipe var stille no-op;
   celleopslagningen omfatter nu rækkens yderste pipes.
+
+### Status 2026-09-25
+
+Følgende huller er lukket siden 2026-09-17:
+
+* **Indsæt række over (§23):** `AddTableRow(below)` understøtter nu
+  begge retninger. En ny række over overskriften eller mellem
+  overskrift og separatorlinje afvises, fordi disse linjer bærer
+  tabellens struktur. Caret placeres i den nye rækkes første celle.
+* **Indsæt kolonne til venstre (§4):** `AddTableColumn(right)`
+  understøtter nu begge retninger med Tabler-ikoner
+  (`table-add-row-above`, `table-add-column-left`) i
+  Table Tools-dropdownen.
+* **Add Column var defekt:** den gamle kode indsatte otte mellemrum
+  uden en pipe og kunne derfor aldrig oprette en ny kolonne
+  (md4c afgrænser kolonner med pipes; kommentaren i koden matchedede
+  ikke koden). Den indsætter nu `"        |"` hhv. `"--------|"`;
+  højre indsættes efter pipen der lukker cursor-cellen, venstre efter
+  pipen der åbner den. Caret-forskydning akkumuleres pr. linje, så
+  caret lander deterministisk.
+* **Dokumentvalidator (§60):** `ValidateDocument(doc, errors)` i
+  parser.cpp checker tabelinvarianter: rækker og celler ikke-tomme,
+  ens kolonneantal på tværs af rækker, og celle-kildeomspænd inden for
+  tabellens eget kildeområde. Dækket af tre nye parser-tests
+  (velformet tabel, jagged kilde efter md4c-udjævning, og
+  håndkonstruerede brud på invarianterne). Nested tables forbliver
+  urepræsentable i dokumentmodellen (en `TableCell` kan kun holde
+  tekst og inline-spans), så invarianten håndhæves strukturelt.
+
+Stadig åbne krav: fletning og opdeling af celler (§21-22),
+kolonnebredde-drag (§31), cellejustering (§29-30), cellebaggrund
+(§35), Excel-paste som tabel (§40), tabel-til-tekst og
+tekst-til-tabel (§41-42), og en dokumentvalidator ud over tabeller
+(§60). De kræver den mere omfattende tabelmodel, som nævnt ovenfor.
