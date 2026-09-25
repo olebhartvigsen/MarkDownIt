@@ -431,6 +431,10 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         ShowFindReplace(true);
         return;
     }
+    if (ctrl && !shift && vk == 0x4E) {
+        NewDocument();
+        return;
+    }
 
     // Any direct keyboard action can move or replace the caret. Invalidate
     // the previous Find origin; ShowFindReplace will restart at the current
@@ -3105,7 +3109,7 @@ std::wstring AppWindow::ExportDefaultName(const wchar_t* ext) const {
 
 int AppWindow::PromptSaveDiscardCancel() {
     return MessageBoxW(hwnd_,
-        L"The document has unsaved changes. Save before closing?",
+        L"The document has unsaved changes. Save before continuing?",
         L"MarkDownIt", MB_YESNOCANCEL | MB_ICONQUESTION);
 }
 
@@ -3119,6 +3123,27 @@ void AppWindow::OnClose() {
         // IDNO: discard, proceed to close
     }
     DestroyWindow(hwnd_);
+}
+
+void AppWindow::NewDocument() {
+    if (dirty_) {
+        int result = PromptSaveDiscardCancel();
+        if (result == IDCANCEL) return;
+        if (result == IDYES) {
+            if (!Save()) return; // save failed or cancelled, keep document
+        }
+        // IDNO: discard changes, continue with the new document
+    }
+    // Exit edit mode like OpenFile does: destroys the caret and
+    // invalidates the ribbon format state.
+    if (editing_) SetEdit(false);
+    // Empty path means untitled: nothing watched, Save falls back to
+    // Save As, title shows no file name (LoadDocumentText handles all
+    // of this: buffer swap, view reset, watcher, title).
+    LoadDocumentText("", L"");
+    // A new document is for writing; enter edit mode so the caret is
+    // ready without a trip to the Edit toggle first.
+    SetEdit(true);
 }
 
 void AppWindow::SetEdit(bool on) {

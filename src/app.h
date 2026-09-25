@@ -123,6 +123,7 @@ public:
     void UndoAction();
     void RedoAction();
     void ShowFindReplace(bool replaceMode);
+    void NewDocument();
 
     // Called by CRibbonApplication::OnViewChanged when ribbon height changes.
     void OnRibbonHeightChanged();
