@@ -46,6 +46,9 @@ visual hacks.
 - Do NOT commit or push without explicit permission from the user.
 - Do NOT read or print secrets. Leave .env and credential files alone.
 - Verify with `git status` / `git branch` before trusting workspace snapshots.
+- All ribbon and menu work must follow references/ribbon-menu-guidelines.md.
+  Read it before changing ribbon.xml or adding, moving, or renaming tabs,
+  groups, or commands, and use it as the checklist when reviewing the menu.
 
 ## Build and deploy
 
@@ -82,3 +85,4 @@ get raw bytes on disk. Verify with raw byte inspection, not the display.
 | tests/ | gtest_lite.h + parser_smoke.cpp |
 | .github/workflows/ | build.yml CI pipeline |
 | .hermes/plans/ | implementation plan (14 tasks) |
+| references/ | standing design docs (ribbon menu guidelines, dagre port, macos pipeline, text editing spec) |
