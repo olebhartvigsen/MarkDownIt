@@ -235,3 +235,86 @@ TEST(ParserOffsets, ParagraphRangeIncludesTrailingInlineSyntax) {
     EXPECT_EQ(doc.nodes[0].srcLength, 36u);
     EXPECT_TRUE(doc.nodes[0].srcOffset + doc.nodes[0].srcLength == 36u);
 }
+
+// Table guidelines §60: the validator accepts a wellformed table.
+TEST(ParserSmoke, ValidateDocumentAcceptsWellformedTable) {
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown("| A | B | C |\n|---|---|---|\n| 1 | 2 | 3 |\n| 4 | 5 | 6 |", doc));
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    ASSERT_TRUE(doc.nodes[0].block == BlockKind::Table);
+    std::vector<std::string> errors;
+    EXPECT_TRUE(ValidateDocument(doc, &errors));
+    EXPECT_TRUE(errors.empty());
+    // Null errors pointer is allowed.
+    EXPECT_TRUE(ValidateDocument(doc, nullptr));
+}
+
+// Table guidelines §60: md4c pads ragged source rows, so a ragged
+// source table still parses into a uniform, valid model.
+TEST(ParserSmoke, ValidateDocumentAcceptsRaggedSourceAfterParse) {
+    Document doc;
+    // Middle row has one column in source; the parser must normalize.
+    ASSERT_TRUE(ParseMarkdown("| A | B |\n|---|---|\n| only |\n| 1 | 2 |", doc));
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    std::vector<std::string> errors;
+    EXPECT_TRUE(ValidateDocument(doc, &errors));
+    EXPECT_EQ(errors.size(), 0u);
+}
+
+// Table guidelines §60: hand-built model violations are rejected, so
+// the validator guards the invariants against future model changes.
+TEST(ParserSmoke, ValidateDocumentRejectsBrokenTableInvariants) {
+    // Ragged model: second row has one cell fewer.
+    {
+        Document doc;
+        Node tbl;
+        tbl.block = BlockKind::Table;
+        tbl.srcOffset = 0;
+        tbl.srcLength = 64;
+        TableRow header;
+        header.cells.resize(2);
+        header.cells[0].srcOffset = 2; header.cells[0].srcEnd = 5;
+        header.cells[1].srcOffset = 8; header.cells[1].srcEnd = 11;
+        TableRow ragged;
+        ragged.cells.resize(1);
+        ragged.cells[0].srcOffset = 20; ragged.cells[0].srcEnd = 24;
+        tbl.rows.push_back(header);
+        tbl.rows.push_back(ragged);
+        doc.nodes.push_back(tbl);
+        std::vector<std::string> errors;
+        EXPECT_FALSE(ValidateDocument(doc, &errors));
+        ASSERT_GE(errors.size(), 1u);
+        EXPECT_TRUE(errors[0].find("expected 2") != std::string::npos);
+    }
+    // Cell source span outside the table's own range.
+    {
+        Document doc;
+        Node tbl;
+        tbl.block = BlockKind::Table;
+        tbl.srcOffset = 0;
+        tbl.srcLength = 32;
+        TableRow row;
+        row.cells.resize(1);
+        row.cells[0].srcOffset = 40;
+        row.cells[0].srcEnd = 48;
+        tbl.rows.push_back(row);
+        doc.nodes.push_back(tbl);
+        std::vector<std::string> errors;
+        EXPECT_FALSE(ValidateDocument(doc, &errors));
+        ASSERT_GE(errors.size(), 1u);
+        EXPECT_TRUE(errors[0].find("outside the table range") != std::string::npos);
+    }
+    // Table without rows.
+    {
+        Document doc;
+        Node tbl;
+        tbl.block = BlockKind::Table;
+        tbl.srcOffset = 0;
+        tbl.srcLength = 16;
+        doc.nodes.push_back(tbl);
+        std::vector<std::string> errors;
+        EXPECT_FALSE(ValidateDocument(doc, &errors));
+        ASSERT_GE(errors.size(), 1u);
+        EXPECT_TRUE(errors[0].find("has no rows") != std::string::npos);
+    }
+}

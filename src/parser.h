@@ -29,3 +29,14 @@ double MeasureParseMs(const std::string& utf8);
 
 // Serialize a Document to a comparable string for testing.
 std::string DocumentToString(const Document& doc);
+
+// Structural validation of a parsed document (table guidelines §60):
+// every table must have rows and cells, a uniform column count across
+// all rows, and cell source spans inside the table's own source range.
+// Returns true when all invariants hold; otherwise false with one
+// message per violation appended to errors (errors may be null).
+// Nested tables are unrepresentable in this model (a TableCell holds
+// text and inline spans only, never block children), so the checker
+// guards the invariants the model can express and any future model
+// change must keep them true.
+bool ValidateDocument(const Document& doc, std::vector<std::string>* errors);

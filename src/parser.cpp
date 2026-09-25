@@ -1326,3 +1326,54 @@ bool ParseMarkdownIncremental(const std::string& utf8,
     (void)oldDoc; (void)editOffset; (void)oldLen; (void)newLen;
     return ParseMarkdown(utf8, out);
 }
+
+bool ValidateDocument(const Document& doc, std::vector<std::string>* errors) {
+    std::vector<std::string> local;
+    std::vector<std::string>& errs = errors ? *errors : local;
+    errs.clear();
+    bool ok = true;
+
+    for (size_t ni = 0; ni < doc.nodes.size(); ++ni) {
+        const Node& n = doc.nodes[ni];
+        if (n.block != BlockKind::Table) continue;
+
+        const uint32_t tblStart = n.srcOffset;
+        const uint32_t tblEnd = tblStart + n.srcLength;
+
+        if (n.rows.empty()) {
+            errs.push_back("table at offset " + std::to_string(tblStart) +
+                           " has no rows");
+            ok = false;
+            continue;
+        }
+
+        const int columns = static_cast<int>(n.rows[0].cells.size());
+        for (size_t r = 0; r < n.rows.size(); ++r) {
+            const TableRow& row = n.rows[r];
+            if (row.cells.empty()) {
+                errs.push_back("table row " + std::to_string(r) +
+                               " at offset " + std::to_string(tblStart) +
+                               " has no cells");
+                ok = false;
+                continue;
+            }
+            if (static_cast<int>(row.cells.size()) != columns) {
+                errs.push_back("table row " + std::to_string(r) + " has " +
+                               std::to_string(row.cells.size()) +
+                               " cells, expected " + std::to_string(columns));
+                ok = false;
+            }
+            for (size_t c = 0; c < row.cells.size(); ++c) {
+                const TableCell& cell = row.cells[c];
+                if (cell.srcOffset > cell.srcEnd ||
+                    cell.srcOffset < tblStart || cell.srcEnd > tblEnd) {
+                    errs.push_back("table cell (row " + std::to_string(r) +
+                                   ", column " + std::to_string(c) +
+                                   ") source span outside the table range");
+                    ok = false;
+                }
+            }
+        }
+    }
+    return ok;
+}
