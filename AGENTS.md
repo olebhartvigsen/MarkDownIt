@@ -49,6 +49,32 @@ visual hacks.
 - All ribbon and menu work must follow references/ribbon-menu-guidelines.md.
   Read it before changing ribbon.xml or adding, moving, or renaming tabs,
   groups, or commands, and use it as the checklist when reviewing the menu.
+- All text editing work must follow
+  references/windows-standardtekstredigering-specifikation.md. Read it before
+  changing the text model, caret, selection, mouse or keyboard input,
+  clipboard, undo/redo, scroll, inline formatting (bold, italic, link),
+  find/replace, Tab/Enter handling, or link activation. Treat its acceptance
+  criteria as the test list for those areas, and keep behavior inside its
+  scope rules (plain typing must never auto-format Markdown).
+- All caret and paragraph model work must follow
+  references/word-processor-guidelines.md. Read it before changing caret
+  positioning, mouse hit-testing, Return/Shift+Return handling, paragraph
+  splitting or merging, Backspace/Delete paragraph behavior, or the canonical
+  position model. Its architectural rules are binding: one canonical caret
+  representation shared by mouse, keyboard, and clipboard paths, and mouse
+  hit-testing must never decide document semantics on its own. Treat its
+  acceptance criteria (A-H) as the regression test list.
+- All table editing work must follow
+  references/word-processor-table-guidelines.md. Read it before changing the
+  table document model, cell caret or selection, Tab/Shift+Tab cell
+  navigation, Enter behavior in cells, or row and column operations. Tables
+  are structural blocks: cell navigation follows the same canonical position
+  model as the rest of the editor.
+- All Office import/export work must follow
+  references/office-import-export-spec.md. Read it before changing docx or
+  PDF import, docx or PDF export, or the office bridge. Changes are measured
+  against the CI oracle goldens (tools/office-oracle); goldens never change
+  to match new output.
 
 ## Build and deploy
 
@@ -84,5 +110,5 @@ get raw bytes on disk. Verify with raw byte inspection, not the display.
 | third_party/md4c/ | vendored md4c parser (md4c.c, md4c.h, LICENSE) |
 | tests/ | gtest_lite.h + parser_smoke.cpp |
 | .github/workflows/ | build.yml CI pipeline |
-| .hermes/plans/ | implementation plan (14 tasks) |
-| references/ | standing design docs (ribbon menu guidelines, dagre port, macos pipeline, text editing spec) |
+| .hermes/plans/ | one-time task plans (viewer, typography, wysiwyg, svg/mermaid, mermaid flowchart closed, macos port, office implementation) |
+| references/ | standing design docs: ribbon menu, text editing spec, caret model, table model, office import/export spec, dagre port, macos pipeline |
