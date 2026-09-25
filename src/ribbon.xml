@@ -99,6 +99,24 @@
         <Image Source="icons/save-as_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
+    <Command Name="cmdNew" Symbol="IDC_CMD_NEW" Id="10105">
+      <Command.LabelTitle>
+        <String>New</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>New Document</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Start a new empty document (Ctrl+N)</String>
+      </Command.TooltipDescription>
+      <Command.LargeImages>
+        <Image Source="icons/new_32.png" MinDPI="96"/>
+        <Image Source="icons/new_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/new_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
     <Command Name="cmdAppMenu" Symbol="IDC_CMD_APPMENU" Id="10000">
       <Command.LabelTitle>
         <String>File</String>
@@ -603,6 +621,18 @@
     <Ribbon>
       <Ribbon.ApplicationMenu>
         <ApplicationMenu CommandName="cmdAppMenu">
+          <MenuGroup CommandName="cmdGroupFile" Class="StandardItems">
+            <Button CommandName="cmdNew" />
+            <Button CommandName="cmdOpen" />
+            <Button CommandName="cmdReload" />
+            <Button CommandName="cmdSave" />
+            <Button CommandName="cmdSaveAs" />
+          </MenuGroup>
+          <MenuGroup CommandName="cmdGroupOffice" Class="StandardItems">
+            <Button CommandName="cmdImportDocx" />
+            <Button CommandName="cmdExportDocx" />
+            <Button CommandName="cmdExportPdf" />
+          </MenuGroup>
           <MenuGroup Class="StandardItems">
             <Button CommandName="cmdAbout" />
             <Button CommandName="cmdAssocMd" />
@@ -626,17 +656,6 @@
       </Ribbon.QuickAccessToolbar>
       <Ribbon.Tabs>
         <Tab CommandName="cmdTabHome">
-          <Group CommandName="cmdGroupFile" SizeDefinition="FourButtons">
-            <Button CommandName="cmdOpen" />
-            <Button CommandName="cmdReload" />
-            <Button CommandName="cmdSave" />
-            <Button CommandName="cmdSaveAs" />
-          </Group>
-          <Group CommandName="cmdGroupOffice" SizeDefinition="ThreeButtons">
-            <Button CommandName="cmdImportDocx" />
-            <Button CommandName="cmdExportDocx" />
-            <Button CommandName="cmdExportPdf" />
-          </Group>
           <Group CommandName="cmdGroupHistory" SizeDefinition="TwoButtons">
             <Button CommandName="cmdUndo" />
             <Button CommandName="cmdRedo" />

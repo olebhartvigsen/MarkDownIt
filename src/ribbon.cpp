@@ -457,6 +457,7 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     // Dispatch to AppWindow action methods based on command ID.
     switch (nCmdID)
     {
+    case IDC_CMD_NEW:     m_pApp->NewDocument();       break;
     case IDC_CMD_OPEN:    m_pApp->OpenFileDialog();    break;
     case IDC_CMD_RELOAD:  m_pApp->Reload();            break;
     case IDC_CMD_SAVE:    m_pApp->Save();              break;

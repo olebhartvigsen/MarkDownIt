@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw
 
 ICON_DIR = "/workspace/MarkDownIt/src/icons"
 GLYPHS = [
-    "find", "replace",
+    "find", "replace", "new",
     "table", "table-add-row", "table-remove-row",
     "table-add-column", "table-remove-column", "table-remove",
 ]
