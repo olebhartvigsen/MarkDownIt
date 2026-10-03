@@ -540,18 +540,22 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 // inside the cell, so the selection highlight below follows
                 // the same alignment automatically.
                 if (c < n.aligns.size()) {
+                    // DWRITE_TEXT_ALIGNMENT is the horizontal one:
+                    // LEADING is left, TRAILING is right. The paragraph
+                    // enum only has NEAR, FAR and CENTER, and NEAR/FAR are
+                    // vertical.
                     switch (n.aligns[c]) {
                         case ColumnAlign::Left:
-                            layout->SetParagraphAlignment(
-                                DWRITE_PARAGRAPH_ALIGNMENT_LEADING);
+                            layout->SetTextAlignment(
+                                DWRITE_TEXT_ALIGNMENT_LEADING);
                             break;
                         case ColumnAlign::Center:
-                            layout->SetParagraphAlignment(
-                                DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                            layout->SetTextAlignment(
+                                DWRITE_TEXT_ALIGNMENT_CENTER);
                             break;
                         case ColumnAlign::Right:
-                            layout->SetParagraphAlignment(
-                                DWRITE_PARAGRAPH_ALIGNMENT_TRAILING);
+                            layout->SetTextAlignment(
+                                DWRITE_TEXT_ALIGNMENT_TRAILING);
                             break;
                         case ColumnAlign::Default:
                             break;

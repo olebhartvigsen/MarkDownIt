@@ -36,6 +36,10 @@
 
 
 
+// Defined below, near the table commands. The key handler needs it too, so it
+// is declared here rather than moving the definition up.
+static const Node* FindContainingTable(const Document& doc, uint32_t offset);
+
 const wchar_t* AppWindow::kClassName = L"MarkDownItWindow";
 const wchar_t* AppWindow::kContentClassName = L"MarkDownItContent";
 
@@ -2096,7 +2100,7 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
         has_surrogate_ = false;
         std::string ins(utf8);
         ins = EscapeForInsert(buffer_, sel_.active.offset, ins,
-                          IsOffsetInTable(doc_, sel_.active.offset));
+                              IsOffsetInTable(doc_, sel_.active.offset));
         ApplyPendingTypingFormat(ins);
         OnBufferChanged();
         return;
@@ -2122,7 +2126,7 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
     std::string ins2(utf8);
     // Escape markdown metacharacters in the typed text.
     ins2 = EscapeForInsert(buffer_, sel_.active.offset, ins2,
-                          IsOffsetInTable(doc_, sel_.active.offset));
+                           IsOffsetInTable(doc_, sel_.active.offset));
     ApplyPendingTypingFormat(ins2);
     if (!ins2.empty() && !ins2.empty()) CheckAutoformat(&buffer_, &sel_, ins2[0]);
     OnBufferChanged();
