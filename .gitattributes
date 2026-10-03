@@ -7,3 +7,9 @@ tests/office/golden/** text eol=lf
 # Fixtures are binary containers (zip, pdf); they must never be converted.
 tests/office/fixtures/* binary
 tests/office/fixtures/** binary
+
+# The perf harness measures this fixture and asserts its size is near 1 MB. A
+# CRLF checkout on the Windows runner would grow it by one byte per line and
+# change both the measured document and the size assertion, so pin it like the
+# goldens above.
+tests/fixtures/large-document.md text eol=lf
