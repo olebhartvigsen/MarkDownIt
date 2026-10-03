@@ -4939,6 +4939,41 @@ bool AppWindow::SetTableColumnAlign(TableAlignMark mark) {
     return true;
 }
 
+// Split the caret's cell in two (table guidelines section 22). Markdown has
+// no syntax for a merged cell, so there is no merge to pair this with.
+bool AppWindow::SplitTableCell() {
+    if (!editing_) return false;
+    const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
+    if (!tbl) return false;
+
+    const std::string& text = buffer_.Text();
+    TableLocation loc;
+    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
+
+    if (!TableCapabilitiesFor(loc.rowIndex, loc.numCols).splitCell)
+        return false; // header and delimiter rows carry the table's shape
+
+    const uint32_t tblStart = tbl->srcOffset;
+    const uint32_t tblEnd = tblStart + tbl->srcLength;
+
+    std::string rebuilt;
+    uint32_t caret = 0;
+    if (!TableSplitCell(text, tblStart, tblEnd, loc.columnIndex,
+                        loc.rowIndex, 2, sel_.active.offset,
+                        &rebuilt, &caret)) {
+        return false;
+    }
+
+    // One splice for the whole table, so one Ctrl+Z undoes the whole split
+    // rather than one row (guidelines section 46).
+    SpliceWithUndo(tblStart, tblEnd - tblStart, rebuilt);
+    editor_.BreakUndoCoalesce();
+    sel_.Collapse({caret});
+    OnBufferChanged();
+    ForceRepaintNow();
+    return true;
+}
+
 void AppWindow::ClearFormat() {
     if (!editing_) return;
     if (sel_.Empty()) return; // Need a selection to clear formatting.

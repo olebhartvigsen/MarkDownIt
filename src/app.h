@@ -112,6 +112,10 @@ public:
     // Write an alignment marker into the caret column's delimiter cell.
     // TableAlignMark::None clears it.
     bool SetTableColumnAlign(TableAlignMark mark);
+
+    // Split the caret's cell into two. Refused on the header and delimiter
+    // rows. Markdown cannot express a merged cell, so there is no merge.
+    bool SplitTableCell();
     void RemoveTable();
     // True when the caret (or the start of a selection) sits inside a
     // Markdown table. Table Tools use it to enable only the commands that

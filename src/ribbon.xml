@@ -311,6 +311,17 @@
       </Command.TooltipDescription>
     </Command>
 
+    <Command Name="cmdSplitCell" Symbol="IDC_CMD_SPLIT_CELL" Id="10223">
+      <Command.LabelTitle>
+        <String>Split Cell</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Split Cell</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Split this cell into two columns. Markdown cannot merge cells, so there is no merge command.</String>
+      </Command.TooltipDescription>
+    </Command>
     <Command Name="cmdRemoveTable" Symbol="IDC_CMD_REMOVE_TABLE" Id="10216">
       <Command.LabelTitle>
         <String>Delete Table</String>
@@ -764,6 +775,7 @@
                 <Button CommandName="cmdAddColumn" />
                 <Button CommandName="cmdAddColumnLeft" />
                 <Button CommandName="cmdRemoveColumn" />
+                <Button CommandName="cmdSplitCell" />
               </MenuGroup>
               <MenuGroup>
                 <Button CommandName="cmdAlignLeft" />

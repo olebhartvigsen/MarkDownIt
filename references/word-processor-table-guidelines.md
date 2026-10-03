@@ -1861,7 +1861,7 @@ Følgende huller er lukket siden 2026-09-17:
   urepræsentable i dokumentmodellen (en `TableCell` kan kun holde
   tekst og inline-spans), så invarianten håndhæves strukturelt.
 
-Stadig åbne krav: fletning og opdeling af celler (§21-22),
+Stadig åbne krav: fletning af celler (§21),
 kolonnebredde-drag (§31), cellejustering (§29-30), cellebaggrund
 (§35), Excel-paste som tabel (§40), tabel-til-tekst og
 tekst-til-tabel (§41-42), og en dokumentvalidator ud over tabeller
@@ -2010,3 +2010,36 @@ Uden for en tabel er det et helt almindeligt tegn, og det undvies ikke
 længere, så brugerens markdown ikke fyldes med skråstreger, der aldrig
 blev bedt om. `EscapeForInsert` og `EscapeForPaste` tager derfor et
 `inTableCell`-flag, som appen sætter fra `IsOffsetInTable`.
+
+### Opdel celle (§22)
+
+Markdown kan ikke udtrykke en flettet celle, så `| a | b |` har ingen
+repræsentation for "én celle der spænder to kolonner". Derfor er der kun
+denne ene retning: opdel. En sammenlægning ville kræve HTML (`colspan`)
+eller opgive cellens struktur, og begge dele ville bryde med at
+`.md`-filen forbliver ren Markdown.
+
+`TableSplitCell` deler caretens celle i to (eller flere) celler:
+
+* Kun caretens **egen række** får tekst. Alle andre rækker får en
+  tom ledsager-celle, så tabellen bevarer ens kolonneantal på tværs
+  af rækker (validatoren i §60).
+* Teksten fordeles venstre mod højre i hele tegn, og resten lægges i
+  den sidste celle, så ingen celle ender midt i en UTF-8-sekvens.
+* Ledsagerne får samme bredde som cellen der deles, så rækken beholder
+  sit rytme. Deler man kun én celle og lader resten af tabellen stå,
+  får den række én celle mere end de andre, og md4c fylder korte
+  rækker op på vej tilbage.
+* Hver celle skrives `[padding][indhold][padding]`. En tom celle skal
+  derfor stadig skrive sine mellemrum: `||` læses som to tomme
+  celler og ændrer kolonnetallet ved gensparsing.
+* Række 0 (overskrift) og række 1 (skillelinje) afvises. Overskriften
+  og skillelinjen definerer tabellens form, og skillelinjen skal
+  ligge umiddelbart efter overskriften.
+
+Båndet fik knappen *Split Cell*, aktiv i brødtextrækker.
+
+Kendte afvigelser: opdeling i mere end to celler er implementeret i
+`TableSplitCell` (`pieces`-parameteren), men båndet tilbyder kun to,
+fordi der ikke er nogen dialog til at vælge antallet. §22's krav om at
+"brugeren kan vælge antal celler" er dermed ikke opfyldt i UI'en.

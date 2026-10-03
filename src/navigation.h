@@ -134,6 +134,7 @@ struct TableCapabilities {
     bool addColumnLeft = false;
     bool addColumnRight = false;
     bool removeColumn = false;  // false when only one column remains
+    bool splitCell = false;     // false on header and delimiter rows
 };
 
 // `rowIndex` is the caret's physical line within the table (0 = header,
@@ -141,6 +142,16 @@ struct TableCapabilities {
 TableCapabilities TableCapabilitiesFor(int rowIndex, int numCols);
 
 // Alignment marker to write into a table's delimiter row. None clears it.
+// Split the caret's cell into `pieces` columns (table guidelines section 22).
+// Returns false for the header and delimiter rows, for pieces < 2, and for a
+// row without the caret column's delimiters. On success *outText receives only
+// the rewritten table span and *outCaret the shifted caret; the caller splices
+// that span exactly once so the whole split is one undo step.
+bool TableSplitCell(const std::string& source, uint32_t tableStart,
+                    uint32_t tableEnd, int caretColumn, int caretRow,
+                    int pieces, uint32_t caretOffset, std::string* outText,
+                    uint32_t* outCaret);
+
 enum class TableAlignMark { None, Left, Center, Right };
 
 // Rewrite only cell `column` of the delimiter row of the table spanning

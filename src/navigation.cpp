@@ -886,6 +886,153 @@ bool TableStartsAt(const Document& doc, const std::string& source,
     return false;
 }
 
+// Split the caret's cell into `pieces` columns (table guidelines section 22).
+// Only the caret's own ROW carries text; every other row of the table gains
+// empty companions of the same width, so the table keeps a uniform column
+// count (section 60's invariant).
+//
+// Splitting one cell while the rest of the table kept its shape would leave
+// the row with one more cell than the others, and md4c pads short rows on the
+// way back in. Mirroring the width is what makes the result reparse to exactly
+// the intended geometry.
+//
+// Markdown cannot express a merged cell, so this has no inverse here. One
+// direction is all the format supports, and this is it.
+bool TableSplitCell(const std::string& source, uint32_t tableStart,
+                    uint32_t tableEnd, int caretColumn, int caretRow,
+                    int pieces, uint32_t caretOffset, std::string* outText,
+                    uint32_t* outCaret) {
+    if (!outText || !outCaret) return false;
+    if (tableStart > tableEnd || tableEnd > source.size()) return false;
+    // A cell cannot be split into fewer than two pieces.
+    if (pieces < 2) return false;
+    // Rows 0 and 1 are the header and the dash delimiter. They must keep the
+    // same column count as each other and as the body, and the delimiter must
+    // stay immediately after the header, so neither is a split candidate.
+    if (caretRow < 2) return false;
+
+    const std::vector<uint32_t> starts =
+        TableLineStarts(source, tableStart, tableEnd);
+    if (caretRow >= static_cast<int>(starts.size())) return false;
+
+    std::string rebuilt;
+    rebuilt.reserve(source.size() + 64);
+    uint32_t insertedBeforeCaret = 0;
+    bool changed = false;
+
+    for (size_t rowIdx = 0; rowIdx < starts.size(); ++rowIdx) {
+        const uint32_t lineS = starts[rowIdx];
+        const uint32_t lineE = TableLineEnd(source, lineS, tableEnd);
+        const uint32_t lineStop = TableLineStop(source, lineE, tableEnd);
+        const bool isCaretRow = static_cast<int>(rowIdx) == caretRow;
+
+        // Opening and closing pipe of the caret column. A hand-edited ragged
+        // row may lack them; that row is copied through rather than guessed at.
+        int pipeSeen = 0;
+        uint32_t openPipe = 0, closePipe = 0;
+        bool found = false;
+        for (uint32_t j = lineS; j < lineE; ++j) {
+            if (source[j] != '|') continue;
+            ++pipeSeen;
+            if (pipeSeen == caretColumn + 1) openPipe = j;
+            if (pipeSeen == caretColumn + 2) { closePipe = j; found = true; break; }
+        }
+        if (!found) {
+            rebuilt.append(source, lineS, lineStop - lineS);
+            continue;
+        }
+        changed = true;
+
+        // The cell's content, padding trimmed. Only the caret row has any.
+        uint32_t coreStart = openPipe + 1;
+        uint32_t coreEnd = closePipe;
+        while (coreStart < coreEnd &&
+               (source[coreStart] == ' ' || source[coreStart] == '\t'))
+            ++coreStart;
+        while (coreEnd > coreStart &&
+               (source[coreEnd - 1] == ' ' || source[coreEnd - 1] == '\t'))
+            --coreEnd;
+        const uint32_t coreLen = coreEnd - coreStart;
+
+        // Width the cell occupied, padding included, so the row keeps its
+        // rhythm. The empty companions are drawn at this width. On the
+        // delimiter row the same width is spent on dashes instead of spaces,
+        // which keeps every delimiter cell the same length.
+        uint32_t width = closePipe - (openPipe + 1);
+        if (width < 3) width = 3;  // " ---" is the smallest readable cell
+
+        // Build the replacement for this row's caret column: `pieces` cells
+        // laid end to end, each exactly `width` wide, with a `|` between each
+        // pair. Every cell is written as [padding][content][padding], which is
+        // why an empty cell must still emit its spaces: `||` would read as two
+        // adjacent empty cells and change the column count on reparse.
+        const size_t n = static_cast<size_t>(pieces);
+        const bool isDelimiter = TableLineIsSeparator(source, lineS, lineE);
+
+        // One cell, exactly `width` wide, carrying `content` with a space of
+        // padding on each side. The padding is what makes the source read as
+        // markdown (`| content |`) rather than as a bare `|content|`, and it is
+        // what the rest of this file's helpers assume a cell looks like.
+        auto makeCell = [&](const std::string& content) {
+            std::string c(static_cast<size_t>(width), ' ');
+            const size_t room = width >= 2 ? static_cast<size_t>(width) - 2 : 0;
+            const size_t take = content.size() < room ? content.size() : room;
+            if (take > 0) c.replace(1, take, content, 0, take);
+            return c;
+        };
+
+        // Divide the text for the caret row: whole characters left to right,
+        // and any remainder into the last piece, so no piece ever ends mid
+        // UTF-8 sequence.
+        std::vector<std::string> content;
+        content.reserve(n);
+        if (isCaretRow && coreLen > 0) {
+            const uint32_t per = coreLen / static_cast<uint32_t>(n);
+            uint32_t used = 0;
+            for (size_t p = 0; p + 1 < n; ++p) {
+                content.push_back(std::string(source, coreStart + used, per));
+                used += per;
+            }
+            content.push_back(std::string(source, coreStart + used, coreLen - used));
+        } else if (isDelimiter) {
+            for (size_t p = 0; p < n; ++p) content.push_back(std::string());
+        } else if (!isCaretRow) {
+            // Not the caret row and not the delimiter: the original cell text
+            // stays in the first piece, the rest are empty. coreStart/coreEnd
+            // are the padding-trimmed bounds, so pass the content and let
+            // makeCell re-pad it. Passing the raw body instead would double the
+            // padding, which truncates the text: " eee " in a 5 wide cell has
+            // room for three characters, so " eee " loses its last letter.
+            content.push_back(std::string(source, coreStart, coreLen));
+            for (size_t p = 1; p < n; ++p) content.push_back(std::string());
+        } else {
+            for (size_t p = 0; p < n; ++p) content.push_back(std::string());
+        }
+
+        std::string replacement;
+        for (size_t p = 0; p < n; ++p) {
+            if (p > 0) replacement += '|';
+            if (isDelimiter) replacement.append(static_cast<size_t>(width), '-');
+            else replacement += makeCell(content[p]);
+        }
+        const std::string companions = replacement;
+
+        rebuilt.append(source, lineS, openPipe + 1 - lineS);
+        rebuilt += companions;
+        rebuilt.append(source, closePipe, lineStop - closePipe);
+
+        if (lineS <= caretOffset && caretOffset <= lineStop) {
+            insertedBeforeCaret += static_cast<uint32_t>(companions.size());
+        }
+    }
+    if (!changed) return false;
+
+    // Return only the rewritten table fragment; see TableInsertColumn.
+    *outText = rebuilt;
+    *outCaret = caretOffset + insertedBeforeCaret;
+    return true;
+}
+
 TableCapabilities TableCapabilitiesFor(int rowIndex, int numCols) {
     TableCapabilities caps;
     // Row 0 is the header and row 1 the dash delimiter; together they are
@@ -903,6 +1050,9 @@ TableCapabilities TableCapabilitiesFor(int rowIndex, int numCols) {
     caps.addColumnRight = true;
     // Removing the last column would leave an invalid zero-column table.
     caps.removeColumn = numCols > 1;
+    // A split adds a column, so every row must gain a cell. The header and
+    // delimiter carry the table's shape and stay as they are.
+    caps.splitCell = !headerRow && !delimiterRow;
     return caps;
 }
 

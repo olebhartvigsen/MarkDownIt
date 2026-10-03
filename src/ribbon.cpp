@@ -277,6 +277,7 @@ static bool IsTableCommand(UINT nCmdID) {
     case IDC_CMD_ADD_COLUMN_LEFT:
     case IDC_CMD_REMOVE_COLUMN:
     case IDC_CMD_REMOVE_TABLE:
+    case IDC_CMD_SPLIT_CELL:
     case IDC_CMD_ALIGN_LEFT:
     case IDC_CMD_ALIGN_CENTER:
     case IDC_CMD_ALIGN_RIGHT:
@@ -449,6 +450,7 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
             case IDC_CMD_ADD_COLUMN_LEFT: on = caps.addColumnLeft;  break;
             case IDC_CMD_REMOVE_COLUMN:   on = caps.removeColumn;   break;
             case IDC_CMD_REMOVE_TABLE:    on = true;                break;
+            case IDC_CMD_SPLIT_CELL:      on = caps.splitCell;      break;
             // Alignment rewrites the delimiter row of any table the caret is
             // in, so it is available wherever the caret is.
             case IDC_CMD_ALIGN_LEFT:
@@ -558,6 +560,7 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_ALIGN_RIGHT:
         m_pApp->SetTableColumnAlign(TableAlignMark::Right); break;
     case IDC_CMD_REMOVE_TABLE: m_pApp->RemoveTable(); break;
+    case IDC_CMD_SPLIT_CELL:   m_pApp->SplitTableCell(); break;
     case IDC_CMD_CLEARFORMAT: m_pApp->ClearFormat();  break;
     case IDC_CMD_H1:      m_pApp->SetHeading(1);       break;
     case IDC_CMD_H2:      m_pApp->SetHeading(2);       break;

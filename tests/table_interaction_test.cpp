@@ -13,6 +13,23 @@ Document ParseDoc(const std::string& md) {
     ParseMarkdown(md, doc);
     return doc;
 }
+// Cell text is stored as UTF-32; tests assert on readable strings.
+std::string ToUtf8(const std::u32string& s) {
+    std::string out;
+    for (char32_t cp : s) {
+        if (cp <= 0x7F) {
+            out.push_back(static_cast<char>(cp));
+        } else if (cp <= 0x7FF) {
+            out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        } else {
+            out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        }
+    }
+    return out;
+}
 size_t TableIndexOf(const Document& doc) {
     for (size_t i = 0; i < doc.nodes.size(); ++i)
         if (doc.nodes[i].block == BlockKind::Table) return i;
@@ -912,4 +929,141 @@ TEST(TableVertical, LongerTargetCellKeepsTheRelativeOffset) {
                                   8, +1, &out));
     EXPECT_EQ(out, 29u);   // second 'b' of "bbbb"
     EXPECT_EQ(md[out], 'b');
+}
+
+// ─── Split cell (table guidelines section 22) ──────────────────────────────
+//
+// Markdown cannot express a merged cell, so split has no inverse. Only the
+// caret's row carries text; the other rows gain empty companions so the table
+// keeps a uniform column count.
+
+static std::string EscapeNewlines(const std::string& s) {
+    std::string out;
+    for (char c : s) {
+        if (c == '\n') out += "\\n";
+        else out.push_back(c);
+    }
+    return out;
+}
+
+// Split cell column `col` on row `row` of the table spanning [0, size).
+static std::string SplitRow(const std::string& md, int col, int row,
+                            int pieces, uint32_t* outCaret = nullptr) {
+    std::string out;
+    uint32_t caret = 0;
+    const bool ok = TableSplitCell(md, 0, static_cast<uint32_t>(md.size()),
+                                   col, row, pieces,
+                                   static_cast<uint32_t>(md.size() / 2),
+                                   &out, &caret);
+    if (!ok) return "<REFUSED>";
+    if (outCaret) *outCaret = caret;
+    return out;
+}
+
+TEST(TableSplit, TwoPiecesWidensEveryRow) {
+    const std::string md =
+        "| aa | bb |\n|---|---|\n| ccc | ddd |\n| eee | fff |\n";
+    const std::string out = SplitRow(md, 0, 2, 2);
+    printf("SPLIT2 [%s]\n", EscapeNewlines(out).c_str());
+    // The caret row's "ccc" becomes two cells; every other row gains an empty
+    // one, so all four rows must end up with the same column count.
+    const Document d = ParseDoc(out);
+    ASSERT_EQ(d.nodes.size(), 1u);
+    ASSERT_EQ(d.nodes[0].rows.size(), 3u);   // md4c excludes the delimiter
+    for (size_t r = 0; r < d.nodes[0].rows.size(); ++r) {
+        EXPECT_EQ(d.nodes[0].rows[r].cells.size(), 3u);
+    }
+}
+
+TEST(TableSplit, ReparsesAsAValidTable) {
+    const std::string md =
+        "| aa | bb |\n|---|---|\n| ccc | ddd |\n| eee | fff |\n";
+    const std::string out = SplitRow(md, 0, 2, 2);
+    printf("SPLITVALID [%s]\n", EscapeNewlines(out).c_str());
+    // The whole point: the result must still parse as one table, not as a
+    // table-shaped paragraph. ValidateDocument checks exactly that.
+    const Document d = ParseDoc(out);
+    std::vector<std::string> errors;
+    EXPECT_TRUE(ValidateDocument(d, &errors));
+    for (const auto& e : errors) printf("    error: %s\n", e.c_str());
+}
+
+TEST(TableSplit, SplitCellsCarryTheExpectedText) {
+    // The rendered text matters more than the spacing: "ccc" split in two
+    // must yield "c" and "cc", not "c" and "ccc".
+    const std::string md = "| aa | bb |\n|---|---|\n| ccc | ddd |\n";
+    const std::string out = SplitRow(md, 0, 2, 2);
+    const Document d = ParseDoc(out);
+    ASSERT_EQ(d.nodes.size(), 1u);
+    ASSERT_EQ(d.nodes[0].rows.size(), 2u);   // header + one body row
+    const TableRow& body = d.nodes[0].rows[1];
+    ASSERT_EQ(body.cells.size(), 3u);
+    printf("CELLS: [%s] [%s] [%s]\n", ToUtf8(body.cells[0].text).c_str(),
+           ToUtf8(body.cells[1].text).c_str(), ToUtf8(body.cells[2].text).c_str());
+    EXPECT_EQ(ToUtf8(body.cells[0].text), std::string("c"));
+    EXPECT_EQ(ToUtf8(body.cells[1].text), std::string("cc"));
+    // The untouched second column keeps its text.
+    EXPECT_EQ(ToUtf8(body.cells[2].text), std::string("ddd"));
+}
+
+TEST(TableSplit, EveryRowKeepsItsOriginalText) {
+    // A split must not disturb the text in rows it did not touch. "eee"
+    // carries a leading space in the source cell; what matters is that it
+    // still parses back as "eee".
+    const std::string md = "| aa | bb |\n|---|---|\n| ccc | ddd |\n| eee | fff |\n";
+    const std::string out = SplitRow(md, 0, 2, 2);
+    printf("KEEP [%s]\n", EscapeNewlines(out).c_str());
+    const Document d = ParseDoc(out);
+    ASSERT_EQ(d.nodes.size(), 1u);
+    ASSERT_EQ(d.nodes[0].rows.size(), 3u);
+    EXPECT_EQ(ToUtf8(d.nodes[0].rows[1].cells[0].text), std::string("c"));
+    EXPECT_EQ(ToUtf8(d.nodes[0].rows[1].cells[1].text), std::string("cc"));
+    EXPECT_EQ(ToUtf8(d.nodes[0].rows[2].cells[0].text), std::string("eee"));
+    EXPECT_EQ(ToUtf8(d.nodes[0].rows[2].cells[1].text), std::string(""));
+    EXPECT_EQ(ToUtf8(d.nodes[0].rows[2].cells[2].text), std::string("fff"));
+}
+
+TEST(TableSplit, ThreePieces) {
+    const std::string md = "| aa | bb |\n|---|---|\n| ccc | ddd |\n";
+    const std::string out = SplitRow(md, 1, 2, 3);
+    printf("SPLIT3 [%s]\n", EscapeNewlines(out).c_str());
+    const Document d = ParseDoc(out);
+    ASSERT_EQ(d.nodes.size(), 1u);
+    for (size_t r = 0; r < d.nodes[0].rows.size(); ++r) {
+        EXPECT_EQ(d.nodes[0].rows[r].cells.size(), 4u);
+    }
+}
+
+TEST(TableSplit, RefusedOnHeaderAndDelimiter) {
+    const std::string md = "| aa | bb |\n|---|---|\n| ccc | ddd |\n";
+    // Row 0 is the header, row 1 the delimiter. Splitting either breaks the
+    // table's structure, so both are refused.
+    EXPECT_EQ(SplitRow(md, 0, 0, 2), std::string("<REFUSED>"));
+    EXPECT_EQ(SplitRow(md, 0, 1, 2), std::string("<REFUSED>"));
+}
+
+TEST(TableSplit, RefusedForOnePiece) {
+    const std::string md = "| aa | bb |\n|---|---|\n| ccc | ddd |\n";
+    EXPECT_EQ(SplitRow(md, 0, 2, 1), std::string("<REFUSED>"));
+    EXPECT_EQ(SplitRow(md, 0, 2, 0), std::string("<REFUSED>"));
+}
+
+TEST(TableSplit, SurroundingTextIsNotDuplicated) {
+    const std::string md =
+        "Intro.\n\n| aa | bb |\n|---|---|\n| ccc | ddd |\n\nOutro.\n";
+    std::string out;
+    uint32_t caret = 0;
+    const uint32_t ts = static_cast<uint32_t>(md.find("| aa"));
+    const uint32_t te = static_cast<uint32_t>(md.find("| ccc | ddd |") +
+                                              std::string("| ccc | ddd |").size());
+    ASSERT_TRUE(TableSplitCell(md, ts, te, 0, 2, 2, ts + 20, &out, &caret));
+    // The helper returns only the table span, so splicing it back reproduces
+    // the document with the split applied and nothing duplicated.
+    std::string whole = md;
+    whole.replace(ts, te - ts, out);
+    EXPECT_EQ(whole.substr(0, 6), std::string("Intro."));
+    EXPECT_TRUE(whole.size() > md.size());
+    printf("SPLITSUR [%s]\n", EscapeNewlines(whole).c_str());
+    const Document d = ParseDoc(whole);
+    EXPECT_TRUE(d.nodes.size() >= 3u);
 }
