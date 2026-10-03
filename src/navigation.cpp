@@ -1,6 +1,7 @@
 #include "navigation.h"
 #include "editcontroller.h"
 #include <algorithm>
+#include <vector>
 
 // Check if a source offset is a hidden markdown marker character
 // (not part of the rendered text) using the layout cache's u16ToSrc
@@ -315,7 +316,11 @@ static uint32_t TableCellSourceEnd(const TableCell& cell) {
 bool IsOffsetInTable(const Document& doc, uint32_t offset) {
     for (const Node& node : doc.nodes) {
         if (node.block != BlockKind::Table) continue;
-        if (offset >= node.srcOffset && offset <= node.srcOffset + node.srcLength)
+        // srcOffset + srcLength is the first byte AFTER the table, so the
+        // span is half-open. Treating the end as inside made a caret
+        // resting just past the table paste through the in-cell sanitizer
+        // and run table commands against a table it was not in.
+        if (offset >= node.srcOffset && offset < node.srcOffset + node.srcLength)
             return true;
         for (const TableRow& row : node.rows) {
             for (const TableCell& cell : row.cells) {
@@ -677,4 +682,419 @@ std::string SanitizePasteForTableCell(const std::string& pasted) {
     }
     flushLine(pendingLine);
     return out;
+}
+
+// ---------------------------------------------------------------------------
+// Column insertion and removal over a table's source span.
+//
+// A Markdown table row is "| cell | cell |" and md4c delimits columns with
+// pipes, so a column is added or removed by rewriting each physical line of
+// the table's span. Both helpers build the whole replacement text and hand it
+// back with a caret offset, which lets the caller apply one buffer edit and
+// record one undo entry (spec section 46). Rewriting line by line with
+// separate edits pushed an undo entry per row, so a single Ctrl+Z undid one
+// line and left the table ragged.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Source offsets of every physical line start inside [tableStart, tableEnd).
+std::vector<uint32_t> TableLineStarts(const std::string& s, uint32_t tableStart,
+                                      uint32_t tableEnd) {
+    std::vector<uint32_t> starts;
+    if (tableStart >= s.size() || tableStart > tableEnd) return starts;
+    starts.push_back(tableStart);
+    for (uint32_t i = tableStart; i < tableEnd && i < s.size(); ++i)
+        if (s[i] == '\n' && i + 1 < tableEnd) starts.push_back(i + 1);
+    return starts;
+}
+
+// One past the last byte of the line, excluding its newline.
+uint32_t TableLineEnd(const std::string& s, uint32_t lineStart,
+                      uint32_t tableEnd) {
+    uint32_t j = lineStart;
+    while (j <= tableEnd && j < s.size()) {
+        if (j == tableEnd || s[j] == '\n') break;
+        ++j;
+    }
+    return j;
+}
+
+// A line's source span including its newline terminator, so copying it
+// through a rewrite preserves the line breaks between rows.
+uint32_t TableLineStop(const std::string& s, uint32_t lineEnd,
+                       uint32_t tableEnd) {
+    return (lineEnd < tableEnd) ? lineEnd + 1 : lineEnd;
+}
+
+// True when the line carries no cell content, only the dash run and pipes
+// (the delimiter row), which needs a dash cell rather than a blank one.
+bool TableLineIsSeparator(const std::string& s, uint32_t lineStart,
+                          uint32_t lineEnd) {
+    for (uint32_t j = lineStart; j < lineEnd; ++j) {
+        const char c = s[j];
+        if (c != '|' && c != '-' && c != ' ' && c != ':' && c != '\r')
+            return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+bool TableInsertColumn(const std::string& source, uint32_t tableStart,
+                       uint32_t tableEnd, int caretColumn, bool right,
+                       uint32_t caretOffset, std::string* outText,
+                       uint32_t* outCaret) {
+    if (!outText || !outCaret) return false;
+    if (tableStart > tableEnd || tableEnd > source.size()) return false;
+
+    // Right inserts after the pipe closing the caret's cell, left after the
+    // pipe that opens it. The new cell carries its own trailing pipe, so the
+    // row grammar "|" + "        |" gains exactly one delimiter.
+    const int afterPipe = caretColumn + (right ? 2 : 1);
+
+    const std::vector<uint32_t> starts =
+        TableLineStarts(source, tableStart, tableEnd);
+    std::string rebuilt;
+    rebuilt.reserve(source.size() + starts.size() * 16);
+    uint32_t insertedBeforeCaret = 0;
+    bool changed = false;
+
+    for (const uint32_t lineS : starts) {
+        const uint32_t lineE = TableLineEnd(source, lineS, tableEnd);
+        const uint32_t lineStop = TableLineStop(source, lineE, tableEnd);
+
+        int pipeSeen = 0;
+        uint32_t insertAfter = 0;
+        bool found = false;
+        for (uint32_t j = lineS; j < lineE; ++j) {
+            if (source[j] == '|') {
+                ++pipeSeen;
+                if (pipeSeen == afterPipe) {
+                    insertAfter = j + 1;
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if (!found) {
+            // Ragged line without that pipe: copy it through unchanged so a
+            // short row keeps its own shape instead of gaining a cell.
+            rebuilt.append(source, lineS, lineStop - lineS);
+            continue;
+        }
+        changed = true;
+
+        const std::string cell = TableLineIsSeparator(source, lineS, lineE)
+            ? "--------|" : "        |";
+        rebuilt.append(source, lineS, insertAfter - lineS);
+        rebuilt += cell;
+        rebuilt.append(source, insertAfter, lineStop - insertAfter);
+        if (insertAfter <= caretOffset) {
+            insertedBeforeCaret += static_cast<uint32_t>(cell.size());
+        }
+    }
+    if (!changed) return false;
+
+    // Return only the rewritten table fragment. The caller splices it over
+    // the table's own span; returning the whole document here would paste
+    // the surrounding text into the span and duplicate it.
+    *outText = rebuilt;
+    *outCaret = caretOffset + insertedBeforeCaret;
+    return true;
+}
+
+bool TableRemoveColumn(const std::string& source, uint32_t tableStart,
+                       uint32_t tableEnd, int caretColumn,
+                       uint32_t caretOffset, std::string* outText,
+                       uint32_t* outCaret) {
+    if (!outText || !outCaret) return false;
+    if (tableStart > tableEnd || tableEnd > source.size()) return false;
+
+    const std::vector<uint32_t> starts =
+        TableLineStarts(source, tableStart, tableEnd);
+    std::string rebuilt;
+    rebuilt.reserve(source.size());
+    uint32_t removedBeforeCaret = 0;
+    bool changed = false;
+
+    for (const uint32_t lineS : starts) {
+        const uint32_t lineE = TableLineEnd(source, lineS, tableEnd);
+        const uint32_t lineStop = TableLineStop(source, lineE, tableEnd);
+
+        int pipeSeen = 0;
+        uint32_t openPipe = 0, closePipe = 0;
+        bool found = false;
+        for (uint32_t j = lineS; j < lineE; ++j) {
+            if (source[j] == '|') {
+                ++pipeSeen;
+                if (pipeSeen == caretColumn + 1) openPipe = j;
+                if (pipeSeen == caretColumn + 2) {
+                    closePipe = j;
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if (!found) {
+            rebuilt.append(source, lineS, lineStop - lineS);
+            continue;
+        }
+        changed = true;
+
+        // Keep the pipe that opens the column and drop the one that closes
+        // it. Removing both would delete a second column's worth of
+        // delimiter and merge the neighbouring cells.
+        const uint32_t cutStart = openPipe + 1;
+        const uint32_t cutEnd = closePipe + 1;
+        rebuilt.append(source, lineS, cutStart - lineS);
+        rebuilt.append(source, cutEnd, lineStop - cutEnd);
+
+        // Bytes removed ahead of the caret shift it left, so the caret stays
+        // in the same cell instead of jumping a column to the right.
+        if (cutStart < caretOffset) {
+            const uint32_t removed = cutEnd - cutStart;
+            removedBeforeCaret += (caretOffset <= cutEnd)
+                ? (caretOffset - cutStart)
+                : removed;
+        }
+    }
+    if (!changed) return false;
+
+    // Return only the rewritten table fragment; see TableInsertColumn.
+    *outCaret = caretOffset > removedBeforeCaret
+        ? caretOffset - removedBeforeCaret
+        : tableStart;
+    if (*outCaret < tableStart) *outCaret = tableStart;
+    *outText = rebuilt;
+    return true;
+}
+
+bool TableStartsAt(const Document& doc, const std::string& source,
+                   uint32_t offset) {
+    for (const Node& node : doc.nodes) {
+        if (node.block != BlockKind::Table) continue;
+        if (node.srcOffset != offset) continue;
+        // Require real separation in front of the table: a table that
+        // begins the document has nothing to protect.
+        if (offset == 0) return false;
+        // The blank line run before the table is what makes it a table
+        // rather than table text. When the previous non-newline byte is a
+        // pipe the table is directly under a row it extends, so no guard.
+        return offset > 0 && source[offset - 1] == '\n';
+    }
+    return false;
+}
+
+TableCapabilities TableCapabilitiesFor(int rowIndex, int numCols) {
+    TableCapabilities caps;
+    // Row 0 is the header and row 1 the dash delimiter; together they are
+    // what makes the block a table. md4c requires the delimiter to sit
+    // IMMEDIATELY after the header, so:
+    //  - inserting above the header or between header and delimiter breaks it
+    //  - inserting below the header would land between header and delimiter
+    //  - inserting below the delimiter is fine, and so is any body row
+    const bool headerRow = rowIndex == 0;
+    const bool delimiterRow = rowIndex == 1;
+    caps.addRowAbove = !headerRow && !delimiterRow;
+    caps.addRowBelow = !headerRow;
+    caps.removeRow = !headerRow && !delimiterRow;
+    caps.addColumnLeft = true;
+    caps.addColumnRight = true;
+    // Removing the last column would leave an invalid zero-column table.
+    caps.removeColumn = numCols > 1;
+    return caps;
+}
+
+// Set or clear the alignment marker on one column of a table's delimiter
+// row. Only that one cell of that one row changes: the dash run keeps its
+// length and every other line is copied byte for byte, so the user's table
+// formatting survives a change of alignment. Returns false when the target
+// column has no cell in the delimiter row.
+bool TableSetColumnAlign(const std::string& source, uint32_t tableStart,
+                         uint32_t tableEnd, int column,
+                         TableAlignMark mark, uint32_t caretOffset,
+                         std::string* outText, uint32_t* outCaret) {
+    if (!outText || !outCaret) return false;
+    if (tableStart > tableEnd || tableEnd > source.size()) return false;
+    if (column < 0) return false;
+
+    const std::vector<uint32_t> starts =
+        TableLineStarts(source, tableStart, tableEnd);
+    if (starts.empty()) return false;
+
+    // The delimiter row is the one whose cells are all dashes. md4c accepts
+    // a table only when header and delimiter are adjacent, so exactly one
+    // such line exists and it is line index 1.
+    const uint32_t lineS = starts[1];
+    const uint32_t lineE = TableLineEnd(source, lineS, tableEnd);
+    const uint32_t lineStop = TableLineStop(source, lineE, tableEnd);
+    if (!TableLineIsSeparator(source, lineS, lineE)) return false;
+
+    // Locate cell `column` in the delimiter row: it spans from just after
+    // the (column+1)-th pipe to just before the (column+2)-th pipe.
+    uint32_t cellStart = 0, cellEnd = 0;
+    int pipeSeen = 0;
+    bool haveStart = false, haveEnd = false;
+    for (uint32_t j = lineS; j < lineE; ++j) {
+        if (source[j] != '|') continue;
+        ++pipeSeen;
+        if (pipeSeen == column + 1) { cellStart = j + 1; haveStart = true; }
+        else if (pipeSeen == column + 2) { cellEnd = j; haveEnd = true; }
+        if (haveStart && haveEnd) break;
+    }
+    if (!haveStart || !haveEnd || cellEnd < cellStart) return false;
+
+    // Only emit a colon where the marker calls for one. No substitute space:
+    // a compact cell like `---` must stay compact, and `:---` needs no pad.
+    const char lead  = (mark == TableAlignMark::Left ||
+                        mark == TableAlignMark::Center) ? ':' : '\0';
+    const char trail = (mark == TableAlignMark::Right ||
+                        mark == TableAlignMark::Center) ? ':' : '\0';
+
+    // Replace the whole cell content between its pipes: `[coreStart,
+    // coreEnd)`. Order matters. Strip the marker colons first from the
+    // outer edges, then the padding spaces, then any remaining colons.
+    // Doing it in this order keeps a cell like `:---:` down to its dash run
+    // and leaves a compact `---` compact.
+    uint32_t coreStart = cellStart;
+    uint32_t coreEnd   = cellEnd;
+    while (coreStart < coreEnd && source[coreStart] == ':') ++coreStart;
+    while (coreEnd > coreStart && source[coreEnd - 1] == ':') --coreEnd;
+    while (coreStart < coreEnd &&
+           (source[coreStart] == ' ' || source[coreStart] == '\t'))
+        ++coreStart;
+    while (coreEnd > coreStart &&
+           (source[coreEnd - 1] == ' ' || source[coreEnd - 1] == '\t'))
+        --coreEnd;
+    while (coreStart < coreEnd && source[coreStart] == ':') ++coreStart;
+    while (coreEnd > coreStart && source[coreEnd - 1] == ':') --coreEnd;
+
+    // Keep the run of dashes, but never fewer than three: `:-` is not a cell
+    // md4c reads back as a delimiter.
+    uint32_t dashCount = 0;
+    for (uint32_t j = coreStart; j < coreEnd; ++j)
+        if (source[j] == '-') ++dashCount;
+    if (dashCount < 3) dashCount = 3;
+
+    std::string rebuilt;
+    rebuilt.reserve(source.size() + 4);
+    rebuilt.append(source, tableStart, cellStart - tableStart);
+    if (lead) rebuilt.push_back(lead);
+    rebuilt.append(dashCount, '-');
+    if (trail) rebuilt.push_back(trail);
+    rebuilt.append(source, cellEnd, tableEnd - cellEnd);
+
+    *outText = rebuilt;
+    *outCaret = caretOffset;
+    return true;
+}
+
+// Move the caret one table row up (direction -1) or down (+1), staying in the
+// same column. Returns false when the caret is not in a table, or when the
+// move would leave it: Up from the first row and Down from the last row stay
+// put rather than escaping the table, because escaping a grid with an arrow
+// key is almost never what the user meant. The byte offset within the cell is
+// preserved where possible, and clamped to the target cell's text.
+bool TableVerticalMove(const std::string& source, uint32_t tableStart,
+                       uint32_t tableEnd, uint32_t caretOffset, int direction,
+                       uint32_t* outOffset) {
+    if (!outOffset) return false;
+    if (tableStart > tableEnd || tableEnd > source.size()) return false;
+    if (direction != -1 && direction != 1) return false;
+
+    // Split the block into its physical lines and locate the caret's line.
+    std::vector<uint32_t> lineStart, lineEnd;
+    for (uint32_t s = tableStart; s < tableEnd;) {
+        uint32_t e = s;
+        while (e < tableEnd && source[e] != '\n') ++e;
+        lineStart.push_back(s);
+        lineEnd.push_back(e);
+        s = (e < tableEnd) ? e + 1 : tableEnd;
+    }
+    if (lineStart.size() < 3) return false;  // header + delimiter + body
+
+    int row = -1;
+    for (size_t i = 0; i < lineStart.size(); ++i) {
+        if (caretOffset >= lineStart[i] && caretOffset <= lineEnd[i]) {
+            row = static_cast<int>(i);
+            break;
+        }
+    }
+    if (row < 0) return false;
+
+    // Row 1 is the dash delimiter. It carries no text and has no caret, so a
+    // caret that lands on it (the caret is inclusive of both line ends) is
+    // treated as belonging to the row above it, the header.
+    if (row == 1) row = 0;
+
+    // The header row is a legitimate caret row, so row 0 is a valid target.
+    // Row 1 is the dash delimiter and has no caret of its own, so it is
+    // skipped by stepping over it rather than by forbidding the move.
+    int target = row + direction;
+    if (target == 1) target = direction > 0 ? 2 : 0;
+    if (target < 0 || target >= static_cast<int>(lineStart.size())) return false;
+    if (target == 1) return false;
+
+    // Count pipes on the current line to learn the column, then keep the same
+    // byte offset inside that column of the target line.
+    const uint32_t curS = lineStart[static_cast<size_t>(row)];
+    const uint32_t curE = lineEnd[static_cast<size_t>(row)];
+    // The caret sits inside cell N, where N is the number of pipes that open
+    // it. A caret sitting exactly on a pipe belongs to the cell it closes.
+    int pipesBefore = 0;
+    for (uint32_t j = curS; j < caretOffset && j < curE; ++j)
+        if (source[j] == '|') ++pipesBefore;
+    // Pipes before the caret open its cell, so the cell is opened by pipe
+    // number `pipesBefore` (1-based). A caret before the row's first pipe has
+    // no cell.
+    const int column = pipesBefore;
+    if (column < 1) return false;
+    // Byte offset of the caret inside its cell text.
+    uint32_t cellTextStart = 0;
+    {
+        int ps = 0;
+        bool found = false;
+        for (uint32_t j = curS; j < curE; ++j) {
+            if (source[j] != '|') continue;
+            ++ps;
+            if (ps == column) { cellTextStart = j + 1; found = true; break; }
+        }
+        if (!found) return false;  // caret is not inside a real cell
+    }
+    // Skip the cell's leading padding so the offset is measured from the first
+    // real character, matching the target cell, which is trimmed below.
+    while (cellTextStart < curE &&
+           (source[cellTextStart] == ' ' || source[cellTextStart] == '\t'))
+        ++cellTextStart;
+    if (cellTextStart > caretOffset) cellTextStart = caretOffset;
+    const uint32_t offsetInCell = caretOffset - cellTextStart;
+
+    const uint32_t tgtS = lineStart[static_cast<size_t>(target)];
+    const uint32_t tgtE = lineEnd[static_cast<size_t>(target)];
+    uint32_t tgtCellStart = tgtS, tgtCellEnd = tgtE;
+    {
+        int ps = 0;
+        bool gotStart = false;
+        for (uint32_t j = tgtS; j < tgtE; ++j) {
+            if (source[j] != '|') continue;
+            ++ps;
+            if (ps == column && !gotStart) { tgtCellStart = j + 1; gotStart = true; }
+            else if (ps == column + 1) { tgtCellEnd = j; break; }
+        }
+        if (!gotStart) return false;  // target row is short: stay put
+    }
+
+    // Trim the target cell's padding so the offset lands on real text.
+    while (tgtCellStart < tgtCellEnd &&
+           (source[tgtCellStart] == ' ' || source[tgtCellStart] == '\t'))
+        ++tgtCellStart;
+    while (tgtCellEnd > tgtCellStart &&
+           (source[tgtCellEnd - 1] == ' ' || source[tgtCellEnd - 1] == '\t'))
+        --tgtCellEnd;
+    const uint32_t cellLen = tgtCellEnd - tgtCellStart;
+    const uint32_t clamped = offsetInCell < cellLen ? offsetInCell : cellLen;
+
+    *outOffset = tgtCellStart + clamped;
+    return true;
 }

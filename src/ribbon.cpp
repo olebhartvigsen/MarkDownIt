@@ -263,6 +263,29 @@ STDMETHODIMP CRibbonCommandHandler::QueryInterface(REFIID iid, void** ppv)
     return S_OK;
 }
 
+// The nine table commands. Shared by the enabled-state handler and by the
+// invalidation lists so a new table command cannot be wired into one and
+// forgotten in the other.
+static bool IsTableCommand(UINT nCmdID) {
+    switch (nCmdID) {
+    case IDC_CMD_INSERT_TABLE:
+    case IDC_CMD_TABLE_TOOLS:
+    case IDC_CMD_ADD_ROW:
+    case IDC_CMD_ADD_ROW_ABOVE:
+    case IDC_CMD_REMOVE_ROW:
+    case IDC_CMD_ADD_COLUMN:
+    case IDC_CMD_ADD_COLUMN_LEFT:
+    case IDC_CMD_REMOVE_COLUMN:
+    case IDC_CMD_REMOVE_TABLE:
+    case IDC_CMD_ALIGN_LEFT:
+    case IDC_CMD_ALIGN_CENTER:
+    case IDC_CMD_ALIGN_RIGHT:
+        return true;
+    default:
+        return false;
+    }
+}
+
 // Allocate a VT_LPWSTR value with CoTaskMemAlloc. The Ribbon framework frees
 // UI_PKEY_Label strings through PropVariantClear, which calls CoTaskMemFree;
 // SysAllocString-backed memory freed that way is an allocator mismatch with a
@@ -403,6 +426,53 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
                 return S_OK;
             }
         }
+
+        // Table commands mutate the document, so they follow edit mode.
+        // Within edit mode they are gated on caret context, then narrowed
+        // further by what the command can actually do here: the header and
+        // delimiter rows are structural, and the last column cannot be
+        // removed. Without this the ribbon offers a live button that
+        // silently does nothing.
+        if (IsTableCommand(nCmdID) && m_pApp && m_pApp->IsEditing()) {
+            if (!m_pApp->CaretInTable()) {
+                ppropvarNewValue->vt = VT_BOOL;
+                ppropvarNewValue->boolVal = VARIANT_FALSE;
+                return S_OK;
+            }
+            const TableCapabilities caps = m_pApp->CaretTableCapabilities();
+            bool on = true;
+            switch (nCmdID) {
+            case IDC_CMD_ADD_ROW:         on = caps.addRowBelow;   break;
+            case IDC_CMD_ADD_ROW_ABOVE:   on = caps.addRowAbove;   break;
+            case IDC_CMD_REMOVE_ROW:      on = caps.removeRow;     break;
+            case IDC_CMD_ADD_COLUMN:      on = caps.addColumnRight; break;
+            case IDC_CMD_ADD_COLUMN_LEFT: on = caps.addColumnLeft;  break;
+            case IDC_CMD_REMOVE_COLUMN:   on = caps.removeColumn;   break;
+            case IDC_CMD_REMOVE_TABLE:    on = true;                break;
+            // Alignment rewrites the delimiter row of any table the caret is
+            // in, so it is available wherever the caret is.
+            case IDC_CMD_ALIGN_LEFT:
+            case IDC_CMD_ALIGN_CENTER:
+            case IDC_CMD_ALIGN_RIGHT:     on = true;                break;
+            // The DropDownButton's own enabled state is derived by the
+            // framework from its children. Inside a table Delete Table is
+            // always available, so the menu always has at least one live
+            // item and the button itself stays enabled.
+            case IDC_CMD_TABLE_TOOLS:     on = true;                break;
+            default: break;
+            }
+            ppropvarNewValue->vt = VT_BOOL;
+            ppropvarNewValue->boolVal = on ? VARIANT_TRUE : VARIANT_FALSE;
+            return S_OK;
+        }
+        if (nCmdID == IDC_CMD_INSERT_TABLE) {
+            ppropvarNewValue->vt = VT_BOOL;
+            // Disabled inside a cell: a table may never contain a table.
+            const bool on = m_pApp && m_pApp->IsEditing() &&
+                            !m_pApp->CaretInTable();
+            ppropvarNewValue->boolVal = on ? VARIANT_TRUE : VARIANT_FALSE;
+            return S_OK;
+        }
     }
 
     // Formatting toggle buttons: query the caret's format state.
@@ -481,6 +551,12 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_ADD_COLUMN:  m_pApp->AddTableColumn(); break;
     case IDC_CMD_ADD_COLUMN_LEFT: m_pApp->AddTableColumn(false); break;
     case IDC_CMD_REMOVE_COLUMN: m_pApp->RemoveTableColumn(); break;
+    case IDC_CMD_ALIGN_LEFT:
+        m_pApp->SetTableColumnAlign(TableAlignMark::Left); break;
+    case IDC_CMD_ALIGN_CENTER:
+        m_pApp->SetTableColumnAlign(TableAlignMark::Center); break;
+    case IDC_CMD_ALIGN_RIGHT:
+        m_pApp->SetTableColumnAlign(TableAlignMark::Right); break;
     case IDC_CMD_REMOVE_TABLE: m_pApp->RemoveTable(); break;
     case IDC_CMD_CLEARFORMAT: m_pApp->ClearFormat();  break;
     case IDC_CMD_H1:      m_pApp->SetHeading(1);       break;

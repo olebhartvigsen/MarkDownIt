@@ -277,6 +277,21 @@
         <Image Source="icons/table-remove-column_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
+    <Command Name="cmdAlignLeft" Symbol="IDC_CMD_ALIGN_LEFT" Id="10220">
+      <Command.Label>Align Left</Command.Label>
+      <Command.Symbol>W</Command.Symbol>
+      <Command.Comment>Left-align this column</Command.Comment>
+    </Command>
+    <Command Name="cmdAlignCenter" Symbol="IDC_CMD_ALIGN_CENTER" Id="10221">
+      <Command.Label>Align Centre</Command.Label>
+      <Command.Symbol>W</Command.Symbol>
+      <Command.Comment>Centre this column</Command.Comment>
+    </Command>
+    <Command Name="cmdAlignRight" Symbol="IDC_CMD_ALIGN_RIGHT" Id="10222">
+      <Command.Label>Align Right</Command.Label>
+      <Command.Symbol>W</Command.Symbol>
+      <Command.Comment>Right-align this column</Command.Comment>
+    </Command>
 
     <Command Name="cmdRemoveTable" Symbol="IDC_CMD_REMOVE_TABLE" Id="10216">
       <Command.LabelTitle>
@@ -731,6 +746,11 @@
                 <Button CommandName="cmdAddColumn" />
                 <Button CommandName="cmdAddColumnLeft" />
                 <Button CommandName="cmdRemoveColumn" />
+              </MenuGroup>
+              <MenuGroup>
+                <Button CommandName="cmdAlignLeft" />
+                <Button CommandName="cmdAlignCenter" />
+                <Button CommandName="cmdAlignRight" />
               </MenuGroup>
               <MenuGroup>
                 <Button CommandName="cmdRemoveTable" />

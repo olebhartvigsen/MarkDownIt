@@ -77,6 +77,10 @@ struct TableLink {
 };
 
 // A table cell: text plus inline formatting spans.
+// Horizontal alignment of a table column, as written in the delimiter row
+// (`:---`, `:---:`, `---:`). Parsed from md4c's MD_BLOCK_TD_DETAIL.align.
+enum class ColumnAlign { Default, Left, Center, Right };
+
 struct TableCell {
     std::u32string text;
     bool isHeader = false;
@@ -116,6 +120,10 @@ struct Node {
     std::u32string             raw;          // code block raw text (UTF-32)
     std::string                lang;         // fence info string, e.g. "mermaid"
     std::vector<TableRow>     rows;         // table rows (for BlockKind::Table)
+    // Column alignment, one entry per column, read from the delimiter row.
+    // Empty when the table declares no alignment anywhere, so a plain table
+    // costs nothing.
+    std::vector<ColumnAlign>   aligns;
     // Parsed source and a provisional layout. The renderer replaces the layout
     // with a DirectWrite-measured cached snapshot when its text services exist.
     std::shared_ptr<mermaid::Flowchart> mermaid_flowchart;

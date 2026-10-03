@@ -429,6 +429,12 @@ bool EditController::DeleteBackward(const Document* doc) {
     const uint32_t at = sel_->active.offset;
     if (at == 0) return false;
 
+    // A table is a structural block: the blank lines around it are part of
+    // what makes it a table. Deleting the separator just before it would
+    // pull the table up into the preceding paragraph and destroy it
+    // (spec section 45, "backspaceBeforeTable"). Refuse at that boundary.
+    if (doc && TableStartsAt(*doc, buf_->Text(), at)) return false;
+
     const uint32_t separatorStart = at >= 4 &&
         ParagraphSeparatorLengthAt(buf_->Text(), at - 4) == 4 ? at - 4 :
         (at >= 2 && ParagraphSeparatorLengthAt(buf_->Text(), at - 2) == 2 ?

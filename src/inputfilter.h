@@ -8,9 +8,9 @@
 // The set is: * _ ` # > [ ] ( ) ! \ and only when the position
 // makes it meaningful (at line start for #, >, etc.).
 std::string EscapeForInsert(const TextBuffer& buf, uint32_t offset,
-                            const std::string& typed);
+                            const std::string& typed,
+                            bool inTableCell = false);
 
-// Escape a full pasted text block, applying the same rules
-// position-aware to each character.
 std::string EscapeForPaste(const TextBuffer& buf, uint32_t offset,
-                           const std::string& text);
+                           const std::string& text,
+                           bool inTableCell = false);

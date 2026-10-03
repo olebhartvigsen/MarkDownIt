@@ -571,6 +571,28 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
         }
         case MD_BLOCK_TH:
         case MD_BLOCK_TD: {
+            // md4c reports the column alignment on every TH and TD, derived
+            // from the delimiter row. Record it per column so the renderer
+            // can honour `---:` and `:---:`.
+            if (type == MD_BLOCK_TH || type == MD_BLOCK_TD) {
+                auto* td = static_cast<MD_BLOCK_TD_DETAIL*>(detail);
+                if (td) {
+                    const size_t col =
+                        ctx->cur_row ? ctx->cur_row->cells.size() : 0;
+                    std::vector<ColumnAlign>& aligns =
+                        ctx->doc->nodes[ctx->table_node_idx].aligns;
+                    if (aligns.size() <= col) aligns.resize(col + 1,
+                                                            ColumnAlign::Default);
+                    const ColumnAlign a =
+                        td->align == MD_ALIGN_LEFT     ? ColumnAlign::Left
+                        : td->align == MD_ALIGN_CENTER ? ColumnAlign::Center
+                        : td->align == MD_ALIGN_RIGHT  ? ColumnAlign::Right
+                                                       : ColumnAlign::Default;
+                    // Only an explicit marker counts. MD_ALIGN_DEFAULT would
+                    // otherwise overwrite a `:---:` seen on the header cell.
+                    if (a != ColumnAlign::Default) aligns[col] = a;
+                }
+            }
             if (ctx->cur_row) {
                 ctx->cur_row->cells.push_back(TableCell{});
                 TableCell& cell = ctx->cur_row->cells.back();

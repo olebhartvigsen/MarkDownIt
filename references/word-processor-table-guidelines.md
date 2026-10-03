@@ -1866,3 +1866,147 @@ kolonnebredde-drag (§31), cellejustering (§29-30), cellebaggrund
 (§35), Excel-paste som tabel (§40), tabel-til-tekst og
 tekst-til-tabel (§41-42), og en dokumentvalidator ud over tabeller
 (§60). De kræver den mere omfattende tabelmodel, som nævnt ovenfor.
+
+### Status 2026-10-03
+
+Fire fejl i tabelkommandoerne er rettet. De er fundet ved at
+transkribere råforslags-aritmetikken fra `app.cpp` og køre den, så
+hver påstand nedenfor er verificeret mod faktisk output:
+
+* **Slet kolonne fjernede to pipes i stedet for én.** Den gamle kode
+  slettede fra den pipe der åbnede kolonnen til og med den pipe der
+  lukkede den, så en tredjekolonnetabel faldt sammen til én kolonne,
+  og naborcellerne blev fusioneret (`| a | b | c |` → `| a  c |`).
+  `TableRemoveColumn` i `navigation.cpp` bevarer nu den åbnende pipe
+  og fjerner kun den lukkende, så tabellen mister præcis én kolonne.
+* **Caret blev ikke justeret ved slet kolonne.** Den stod tilbage på
+  sin gamle offset og kunne lande forbi slutningen af den kortere
+  tekst. Helperen modregner nu de fjernede bytes foran caret, så den
+  bliver i samme celle.
+* **Undo var delt op pr. linje (§46).** `AddTableColumn` og
+  `RemoveTableColumn` kaldte `SpliceWithUndo` én gang pr. linje, så ét
+  Ctrl+Z fjernede én linje og efterlod tabellen takket. Begge bygger
+  nu hele tabellen og anvender ét splice, så kommandoen er ét
+  historiktrin.
+* **Indsæt række under ødelagde den sidste linje.** En tabel der
+  ender ved EOF uden afsluttende newline fik den nye række sat direkte
+  på den foregående rækkes linje (`| c | d ||        |        |`).
+  Der indsættes nu et linjeskift før den nye række.
+
+Logikken er flyttet ud af `app.cpp` til to bærbare funktioner,
+`TableInsertColumn` og `TableRemoveColumn`, så den er dækket af
+`tests/table_interaction_test.cpp` uden Windows-værktøjer.
+
+Ribbonens tabelknapper var heller ikke med i `UI_PKEY_Enabled`-svaret
+i `ribbon.cpp`, og `SetEdit` invaliderede dem ikke, så de var aktive
+mens redigering var slået fra. De er nu tilføjet begge steder.
+Enabling følger desuden caretens kontekst: række- og kolonnekommandoer
+kræver en caret i en tabel, og *Indsæt tabel* deaktiveres i en celle,
+fordi en tabel aldrig må indeholde en tabel (§54, §58).
+
+Pop-up'en til *Indsæt tabel* lå fast på en venstreposition i
+vinduet uanset hvor careten stod. Den forankres nu til caretens
+skærmposition, skaleres efter DPI og holdes inden for skærmens
+arbejdsområde.
+
+En uafhængig kodegennemgang fandt desuden fire fejl, som nu er rettet
+og dækket af `tests/table_interaction_test.cpp`:
+
+* **En regression fra den første rettelse:** de nye hjælpefunktioner
+  returnerede hele dokumentet, mens kaldet indsatte dem kun over
+  tabellens eget område. På ethvert dokument med tekst før eller efter
+  tabellen blev denne tekst derfor duplikeret. Hjælpefunktionerne
+  returnerer nu tabellens egen omskrevne stræk.
+* **Tab fra sidste celle satte caret uden for tabellen** (§10). Careten
+  landede efter den nye rækkes newline, så det næste tastetryk skrev på
+  rækkens ledende pipe i stedet for i en celle.
+* **Slet tabel brugte offsets fra før sletningen som om de var efter**
+  (§27), så caret kunne ende forbi slutningen af dokumentet.
+* **Tabellenes slutoffset blev regnet som inde i tabellen.** Careten lige
+  efter en tabel fik derfor indhold indsat med celle-saniteringen, så
+  indsættelse af en tabel efter en tabel degraderede til tekst.
+* **Backspace lige før en tabel slettede den blanklinje, der gør den til
+  en tabel** (§45, `backspaceBeforeTable`). Der sættes nu en grænse, så
+  tabellen ikke trækkes op i afsnittet oven over.
+
+Den bærbare del af målsættet kan compiles og køres direkte på Linux med
+`pip install ziglang` (fuld clang, ingen root). Se skillet
+`markdownit-linux-portable-tests`. Det dækker parser, navigation,
+editcontroller, textbuffer, undostack, formatting, inputfilter og
+textdrag, men ikke `app.cpp` eller `ribbon.cpp`: båndets
+enable/disable, popup-placering og DPI er fortsat Windows CI's
+ansvar.
+
+### Række- og kolonnekommandoer følger caretens række (§23-26)
+
+Båndet viste tidligere *Fjern række* og *Indsæt række over* som
+aktive, selv når de ville afvise handlingen, fordi enable-logikken kun
+spurgte, om careten overhovedet stod i en tabel. Der er nu én
+kilde til sandheden:
+
+* `TableCapabilitiesFor(rowIndex, numCols)` i `navigation.cpp` svarer
+  på, hvad der kan gøres. Båndet spørger den via
+  `CaretTableCapabilities()`, og kommandoerne selv (`AddTableRow`,
+  `RemoveTableRow`, `RemoveTableColumn`) spørger den samme funktion i
+  deres egne guards. En aktiveret knap kan derfor ikke være en knap,
+  der intet gør.
+
+Reglerne er:
+
+| Caret i | Tilføj række over | Tilføj række under | Fjern række |
+|---|---|---|---|
+| overskrift (række 0) | nej | **nej** | nej |
+| skillelinje (række 1) | nej | ja | nej |
+| brødtekst (række 2+) | ja | ja | ja |
+
+*Indsæt række under* på overskriftsrækken var en rigtig fejl, ikke
+bare en død knap: md4c kræver, at skillelinjen står umiddelbart
+efter overskriften, så en række indsat mellem dem reparses som **nul**
+tabeller, og tabellen forsvinder som tabel. Det er dækket af
+`TableRowGuards.InsertingBelowHeaderDestroysTheTable`, som indsætter
+og reparserer for at bevise det.
+
+Kolonnefjernelse afvises på den eneste kolonne (`numCols <= 1`), fordi
+resultatet ellers ville være en tabel uden kolonner.
+
+### Kolonnejustering (§28)
+
+`:---`, `:---:` og `---:` læses fra skillelinjen (md4c's
+`MD_BLOCK_TD_DETAIL.align`) og gemmes i `Node::aligns`. Før dette blev
+de hængt venstrestillet uanset hvad kilden sagde, så et dokument med en
+højrestillet kolonne tegnede forkert. Rendererens tegneflade sætter nu
+`SetParagraphAlignment`, hvilket også får markeringsrektet til at følge
+justeringen, da DirectWrite laver layouten inden i cellen.
+
+`TableSetColumnAlign` skriver kun én celle i skillelinjen og bevarer
+bindestregetallet, så en luftet tabel (`| ---: |`) forbliver luftet og en
+kompakt (`|---|`) forbliver kompakt. `TableAlignMark::None` fjerner
+markeringen igen. En celle med færre end tre bindestreger fyldes op til
+tre, fordi `:-` ikke læses som skillelinje af md4c.
+
+Båndet fik tre knapper, *Venstrestil*, *Centreret* og *Højrestil*. De er
+aktive i enhver tabel, fordi de skriver i skillelinjen uanset caretens
+placering.
+
+### Op og ned i en tabel (§27)
+
+Pile-tasten går én række op eller ned og bevarer kolonnen, via den
+bærbare `TableVerticalMove`. Uden for en tabel forbliver den en visuel
+linjebevægelse.
+
+* Caret på skillelinjen læses som overskriftsrækken, fordi skillelinjen
+  ikke har tekst at placere en caret i. Ned fra den lander i første
+  brødtextrække, op forbliver den.
+* Rækken må ikke forlades med pile-tasten. Bevægelsen afvises, så kalderen
+  falder tilbage til visuel linjebevægelse, i stedet for at sende careten
+  ud af tabellen.
+* Byte-forskydningen i cellen bevares, men klemmes til målcellens længde, så
+  careten aldrig lander i næste kolonne.
+
+### Rør-tegnet kun undviges i tabelceller (§24)
+
+Et `|` i en tabelcelle ville dele cellen og er derfor undviet som `\|`.
+Uden for en tabel er det et helt almindeligt tegn, og det undvies ikke
+længere, så brugerens markdown ikke fyldes med skråstreger, der aldrig
+blev bedt om. `EscapeForInsert` og `EscapeForPaste` tager derfor et
+`inTableCell`-flag, som appen sætter fra `IsOffsetInTable`.

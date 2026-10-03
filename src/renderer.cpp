@@ -535,6 +535,28 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 static_cast<UINT32>(text16.size()),
                 body_fmt_, colW - 2.0f * m.cellPadX, 1.0e9f, &layout);
             if (SUCCEEDED(hr) && layout) {
+                // Honour the column alignment written in the delimiter row
+                // (`:---`, `:---:`, `---:`). DirectWrite lays the text out
+                // inside the cell, so the selection highlight below follows
+                // the same alignment automatically.
+                if (c < n.aligns.size()) {
+                    switch (n.aligns[c]) {
+                        case ColumnAlign::Left:
+                            layout->SetParagraphAlignment(
+                                DWRITE_PARAGRAPH_ALIGNMENT_LEADING);
+                            break;
+                        case ColumnAlign::Center:
+                            layout->SetParagraphAlignment(
+                                DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                            break;
+                        case ColumnAlign::Right:
+                            layout->SetParagraphAlignment(
+                                DWRITE_PARAGRAPH_ALIGNMENT_TRAILING);
+                            break;
+                        case ColumnAlign::Default:
+                            break;
+                    }
+                }
                 if (row.cells[c].isHeader) {
                     DWRITE_TEXT_RANGE r = {0,
                         static_cast<UINT32>(text16.size())};

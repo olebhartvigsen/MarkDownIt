@@ -109,7 +109,18 @@ public:
     bool RemoveTableRow();
     bool AddTableColumn(bool right = true);
     bool RemoveTableColumn();
+    // Write an alignment marker into the caret column's delimiter cell.
+    // TableAlignMark::None clears it.
+    bool SetTableColumnAlign(TableAlignMark mark);
     void RemoveTable();
+    // True when the caret (or the start of a selection) sits inside a
+    // Markdown table. Table Tools use it to enable only the commands that
+    // act on the current table.
+    bool CaretInTable() const;
+    // What the table commands can currently do at the caret. The ribbon
+    // uses this to grey out a command rather than offer a live button that
+    // silently does nothing.
+    TableCapabilities CaretTableCapabilities() const;
     // Splice the buffer and record an undo entry in one step.
     void SpliceWithUndo(uint32_t offset, uint32_t length,
                         const std::string& replacement);

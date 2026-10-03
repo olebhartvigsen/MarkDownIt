@@ -87,3 +87,76 @@ bool TableDelimiterRange(const Document& doc, const std::string& source,
 // single-line Markdown syntax, so pipes are dropped and row breaks fold
 // to single spaces (a nested table cannot be expressed).
 std::string SanitizePasteForTableCell(const std::string& pasted);
+
+// Insert or remove a column across every line of a table's source span.
+//
+// Both rewrite the whole span in one pass and report the caret to restore,
+// so the caller can apply the result as a single buffer edit (one undo
+// step, spec section 46). The returned text is the table's REWRITTEN SPAN
+// ONLY, not the whole document: the caller splices it over [tableStart,
+// tableEnd). Returning the full document here would paste the surrounding
+// text into the span and duplicate it. `caretColumn` selects the insertion
+// point:
+//   AddColumn:   right inserts after the pipe closing the caret's cell,
+//                left after the pipe that opens it.
+//   RemoveColumn: the opening pipe is kept and only the closing pipe is
+//                dropped, so the table loses exactly one column.
+// Returns false (leaving *outText/*outCaret untouched) when no line carries
+// the required pipe, so a ragged table is never half-rewritten.
+bool TableInsertColumn(const std::string& source, uint32_t tableStart,
+                       uint32_t tableEnd, int caretColumn, bool right,
+                       uint32_t caretOffset, std::string* outText,
+                       uint32_t* outCaret);
+
+bool TableRemoveColumn(const std::string& source, uint32_t tableStart,
+                       uint32_t tableEnd, int caretColumn,
+                       uint32_t caretOffset, std::string* outText,
+                       uint32_t* outCaret);
+
+// True when a table block begins exactly at `offset`, so the blank-line
+// separation in front of it must not be deleted (spec section 45). Used by
+// Backspace to keep a table from being merged into the paragraph above.
+bool TableStartsAt(const Document& doc, const std::string& source,
+                   uint32_t offset);
+
+// Which table commands can act on the caret's current row.
+//
+// The header line and the dash delimiter are what MAKE a Markdown table:
+// inserting a row above the header, between header and delimiter, or
+// removing either line turns the block into ordinary text. The ribbon asks
+// this so it greys out a command instead of showing a live button that
+// silently does nothing, and the commands themselves call it so the button
+// and the behaviour can never disagree.
+struct TableCapabilities {
+    bool addRowAbove = false;   // header and delimiter rows are structural
+    bool addRowBelow = false;   // never blocked: a row below is always valid
+    bool removeRow = false;     // false on header and delimiter
+    bool addColumnLeft = false;
+    bool addColumnRight = false;
+    bool removeColumn = false;  // false when only one column remains
+};
+
+// `rowIndex` is the caret's physical line within the table (0 = header,
+// 1 = delimiter), `numCols` the table's column count.
+TableCapabilities TableCapabilitiesFor(int rowIndex, int numCols);
+
+// Alignment marker to write into a table's delimiter row. None clears it.
+enum class TableAlignMark { None, Left, Center, Right };
+
+// Rewrite only cell `column` of the delimiter row of the table spanning
+// [tableStart, tableEnd). `*outText` receives the rewritten table span only,
+// not the whole document. Returns false when the column has no delimiter
+// cell. Single-call friendly: the caller splices once, so one table
+// operation stays one undo step.
+bool TableSetColumnAlign(const std::string& source, uint32_t tableStart,
+                         uint32_t tableEnd, int column,
+                         TableAlignMark mark, uint32_t caretOffset,
+                         std::string* outText, uint32_t* outCaret);
+
+// Move the caret one table row up or down, staying in the same column and
+// preserving the byte offset within the cell where the target cell allows it.
+// Returns false when the caret is not in a table or the move would leave it,
+// so the caller can fall back to visual line motion.
+bool TableVerticalMove(const std::string& source, uint32_t tableStart,
+                       uint32_t tableEnd, uint32_t caretOffset,
+                       int direction, uint32_t* outOffset);

@@ -552,10 +552,23 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 lineHeight = sz.height / 40.0f;
                 if (lineHeight < 16.0f) lineHeight = 16.0f;
             }
-            uint32_t newOffset = (!shift && !sel_.Empty())
-                ? sel_.End()
-                : MoveVertical(layout_cache_, sel_.active.offset,
-                               1, &desiredX_, scrollY_, lineHeight);
+            // Inside a table, Down walks rows and keeps the column
+            // (plan Task 16b step 5). Outside one, it stays a visual line.
+            uint32_t newOffset = 0;
+            bool handled = false;
+            const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
+            if (tbl && sel_.Empty()) {
+                const uint32_t tblEnd = tbl->srcOffset + tbl->srcLength;
+                handled = TableVerticalMove(buffer_.Text(), tbl->srcOffset,
+                                            tblEnd, sel_.active.offset,
+                                            1, &newOffset);
+            }
+            if (!handled) {
+                newOffset = (!shift && !sel_.Empty())
+                    ? sel_.End()
+                    : MoveVertical(layout_cache_, sel_.active.offset,
+                                   1, &desiredX_, scrollY_, lineHeight);
+            }
             if (shift) sel_.active = {newOffset};
             else sel_.Collapse({newOffset});
             UpdateCaretPosition();
@@ -723,9 +736,11 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                         if (neededBreak) row.insert(0, "\n");
                         SpliceWithUndo(insertPos, 0, row);
                         editor_.BreakUndoCoalesce();
-                        // First cell content is after the leading pipe;
-                        // account for the optional separator line break.
-                        sel_.Collapse({insertPos + (neededBreak ? 2 : 1)});
+                        // The caret belongs in the new row's first cell,
+                        // which starts after its leading pipe. The row text
+                        // begins with the optional separator break, so the
+                        // cell is one further in than that break.
+                        sel_.Collapse({insertPos + (neededBreak ? 2u : 1u)});
                         desiredX_ = -1.0f;
                         UpdateCaretPosition();
                         OnBufferChanged();
@@ -2080,7 +2095,8 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
         }
         has_surrogate_ = false;
         std::string ins(utf8);
-        ins = EscapeForInsert(buffer_, sel_.active.offset, ins);
+        ins = EscapeForInsert(buffer_, sel_.active.offset, ins,
+                          IsOffsetInTable(doc_, sel_.active.offset));
         ApplyPendingTypingFormat(ins);
         OnBufferChanged();
         return;
@@ -2105,7 +2121,8 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
     }
     std::string ins2(utf8);
     // Escape markdown metacharacters in the typed text.
-    ins2 = EscapeForInsert(buffer_, sel_.active.offset, ins2);
+    ins2 = EscapeForInsert(buffer_, sel_.active.offset, ins2,
+                          IsOffsetInTable(doc_, sel_.active.offset));
     ApplyPendingTypingFormat(ins2);
     if (!ins2.empty() && !ins2.empty()) CheckAutoformat(&buffer_, &sel_, ins2[0]);
     OnBufferChanged();
@@ -3187,6 +3204,15 @@ void AppWindow::SetEdit(bool on) {
         static const UINT enableOnlyCmds[] = {
             IDC_CMD_UNDO, IDC_CMD_REDO
         };
+        // Table commands are gated on edit mode AND caret context, so the
+        // ribbon must re-ask for them whenever either changes.
+        static const UINT tableCmds[] = {
+            IDC_CMD_INSERT_TABLE, IDC_CMD_TABLE_TOOLS,
+            IDC_CMD_ADD_ROW, IDC_CMD_ADD_ROW_ABOVE, IDC_CMD_REMOVE_ROW,
+            IDC_CMD_ADD_COLUMN, IDC_CMD_ADD_COLUMN_LEFT,
+            IDC_CMD_REMOVE_COLUMN, IDC_CMD_REMOVE_TABLE,
+            IDC_CMD_ALIGN_LEFT, IDC_CMD_ALIGN_CENTER, IDC_CMD_ALIGN_RIGHT
+        };
         for (auto cmd : toggleCmds) {
             g_pRibbonFramework->InvalidateUICommand(cmd,
                 UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
@@ -3194,6 +3220,10 @@ void AppWindow::SetEdit(bool on) {
                 UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
         }
         for (auto cmd : enableOnlyCmds) {
+            g_pRibbonFramework->InvalidateUICommand(cmd,
+                UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
+        }
+        for (auto cmd : tableCmds) {
             g_pRibbonFramework->InvalidateUICommand(cmd,
                 UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
         }
@@ -3402,6 +3432,19 @@ void AppWindow::InvalidateFormatButtons() {
             UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
         g_pRibbonFramework->InvalidateUICommand(IDC_CMD_REDO,
             UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
+        // Table commands are enabled per caret context, so a caret move
+        // into or out of a table must re-ask for their enabled state.
+        static const UINT tableCmds[] = {
+            IDC_CMD_INSERT_TABLE, IDC_CMD_TABLE_TOOLS,
+            IDC_CMD_ADD_ROW, IDC_CMD_ADD_ROW_ABOVE, IDC_CMD_REMOVE_ROW,
+            IDC_CMD_ADD_COLUMN, IDC_CMD_ADD_COLUMN_LEFT,
+            IDC_CMD_REMOVE_COLUMN, IDC_CMD_REMOVE_TABLE,
+            IDC_CMD_ALIGN_LEFT, IDC_CMD_ALIGN_CENTER, IDC_CMD_ALIGN_RIGHT
+        };
+        for (auto cmd : tableCmds) {
+            g_pRibbonFramework->InvalidateUICommand(cmd,
+                UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
+        }
     }
 }
 
@@ -4274,12 +4317,18 @@ void AppWindow::SpliceWithUndo(uint32_t offset, uint32_t length,
 struct TableGridPicker {
     static constexpr int kMaxCols = 10;
     static constexpr int kMaxRows = 8;
-    static constexpr int kCellSize = 16;   // pixels per cell
+    static constexpr int kCellSize = 16;   // logical pixels per cell
     static constexpr int kMargin = 6;      // padding around grid
     static constexpr int kLabelH = 22;     // bottom label "3 x 3 Table"
 
     int selCols = 3;
     int selRows = 3;
+    // Geometry in physical pixels, scaled from the logical constants
+    // above by the content window DPI when the popup is created. Paint
+    // and mouse hit-testing both read these so they cannot drift apart.
+    int cell = kCellSize;
+    int margin = kMargin;
+    int labelH = kLabelH;
     HWND hPopup = nullptr;
     HWND hParent = nullptr;
     bool tracking = false;
@@ -4295,9 +4344,9 @@ static LRESULT CALLBACK GridPickerProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 
         int n = TableGridPicker::kMaxCols;
         int m = TableGridPicker::kMaxRows;
-        int cs = TableGridPicker::kCellSize;
-        int margin = TableGridPicker::kMargin;
-        int labelH = TableGridPicker::kLabelH;
+        int cs = g_gridPicker.cell;
+        int margin = g_gridPicker.margin;
+        int labelH = g_gridPicker.labelH;
 
         // Draw background
         RECT rc;
@@ -4344,8 +4393,8 @@ static LRESULT CALLBACK GridPickerProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_MOUSEMOVE: {
         int x = GET_X_LPARAM(lp);
         int y = GET_Y_LPARAM(lp);
-        int cs = TableGridPicker::kCellSize;
-        int margin = TableGridPicker::kMargin;
+        int cs = g_gridPicker.cell;
+        int margin = g_gridPicker.margin;
         int col = (x - margin) / cs + 1;
         int row = (y - margin) / cs + 1;
         if (col < 1) col = 1;
@@ -4385,8 +4434,8 @@ static LRESULT CALLBACK GridPickerProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         // User clicked: insert this table size
         int x = GET_X_LPARAM(lp);
         int y = GET_Y_LPARAM(lp);
-        int cs = TableGridPicker::kCellSize;
-        int margin = TableGridPicker::kMargin;
+        int cs = g_gridPicker.cell;
+        int margin = g_gridPicker.margin;
         int col = (x - margin) / cs + 1;
         int row = (y - margin) / cs + 1;
         if (col < 1) col = 1;
@@ -4447,25 +4496,61 @@ void AppWindow::InsertTableCmd() {
     g_gridPicker.selRows = 3;
     g_gridPicker.tracking = false;
 
-    // Position the popup at the top of the content window.
+    // Scale the popup from logical pixels to physical pixels so the grid
+    // keeps its intended size on a high-DPI display. Paint and hit-testing
+    // read these same fields.
+    const float dpix = static_cast<float>(dpi_ > 0 ? dpi_ : 96) / 96.0f;
+    g_gridPicker.cell = MulDiv(TableGridPicker::kCellSize, dpi_, 96);
+    g_gridPicker.margin = MulDiv(TableGridPicker::kMargin, dpi_, 96);
+    g_gridPicker.labelH = MulDiv(TableGridPicker::kLabelH, dpi_, 96);
+    if (g_gridPicker.cell < 4) g_gridPicker.cell = 4;
+    if (g_gridPicker.margin < 2) g_gridPicker.margin = 2;
+    if (g_gridPicker.labelH < 8) g_gridPicker.labelH = 8;
+
+    int w = g_gridPicker.margin * 2 +
+            g_gridPicker.cell * TableGridPicker::kMaxCols;
+    int h = g_gridPicker.margin * 2 +
+            g_gridPicker.cell * TableGridPicker::kMaxRows +
+            g_gridPicker.labelH;
+
+    // Anchor the popup to the caret: its left edge lines up with the
+    // insertion point and it opens just below the caret line. Opening at a
+    // fixed window offset put the grid far to the left of the text the
+    // table is inserted at.
     POINT pt = {0, 0};
+    bool anchored = false;
     if (hwnd_content_) {
+        float cx = 0.0f, cy = 0.0f, ch = 0.0f;
+        if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &cx, &cy, &ch)) {
+            POINT c = {static_cast<int>(cx * dpix),
+                       static_cast<int>((cy - scrollY_) * dpix)};
+            ClientToScreen(hwnd_content_, &c);
+            pt = c;
+            pt.y += std::max(1, static_cast<int>(ch * dpix));
+            anchored = true;
+        }
+    }
+    if (!anchored) {
+        // No laid-out caret yet (empty document, or the layout cache has
+        // not run): fall back to the content window's top-left.
         RECT rc;
-        GetWindowRect(hwnd_content_, &rc);
+        HWND host = hwnd_content_ ? hwnd_content_ : hwnd_;
+        GetWindowRect(host, &rc);
         pt.x = rc.left + 20;
         pt.y = rc.top + 10;
-    } else {
-        RECT rc;
-        GetWindowRect(hwnd_, &rc);
-        pt.x = rc.left + 60;
-        pt.y = rc.top + 120;
     }
 
-    int w = TableGridPicker::kMargin * 2 +
-            TableGridPicker::kMaxCols * TableGridPicker::kCellSize;
-    int h = TableGridPicker::kMargin * 2 +
-            TableGridPicker::kMaxRows * TableGridPicker::kCellSize +
-            TableGridPicker::kLabelH;
+    // Keep the whole popup on the monitor. Clamp against the work area so
+    // the grid never opens off-screen or under the taskbar.
+    HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = {};
+    mi.cbSize = sizeof(mi);
+    if (GetMonitorInfoW(mon, &mi)) {
+        if (pt.x + w > mi.rcWork.right)  pt.x = mi.rcWork.right - w;
+        if (pt.y + h > mi.rcWork.bottom) pt.y = mi.rcWork.bottom - h;
+        if (pt.x < mi.rcWork.left)   pt.x = mi.rcWork.left;
+        if (pt.y < mi.rcWork.top)    pt.y = mi.rcWork.top;
+    }
 
     g_gridPicker.hPopup = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
@@ -4541,6 +4626,15 @@ void AppWindow::InsertTableFromGrid(int cols, int rows) {
     ForceRepaintNow();
 }
 
+// True when the caret sits inside a Markdown table. A selection counts as
+// in-table when its anchor side is in a table, matching the rule the Tab
+// handler uses to decide whether Tab is structural navigation.
+bool AppWindow::CaretInTable() const {
+    if (IsOffsetInTable(doc_, sel_.active.offset)) return true;
+    if (!sel_.Empty() && IsOffsetInTable(doc_, sel_.Start())) return true;
+    return false;
+}
+
 // Find the table node containing the cursor offset.
 // Returns nullptr if cursor is not inside a table.
 static const Node* FindContainingTable(const Document& doc, uint32_t offset) {
@@ -4548,7 +4642,9 @@ static const Node* FindContainingTable(const Document& doc, uint32_t offset) {
         if (n.block != BlockKind::Table) continue;
         uint32_t start = n.srcOffset;
         uint32_t end = start + n.srcLength;
-        if (offset >= start && offset <= end)
+        // Half-open span: `end` is the first byte after the table, so a
+        // caret resting there is not inside this table.
+        if (offset >= start && offset < end)
             return &n;
     }
     return nullptr;
@@ -4610,6 +4706,17 @@ static bool LocateInTable(const std::string& text, const Node* node,
     return false;
 }
 
+TableCapabilities AppWindow::CaretTableCapabilities() const {
+    // Resolve the caret against the same LocateInTable the commands use, so
+    // an enabled ribbon button always corresponds to a command that runs.
+    const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
+    if (!tbl) return TableCapabilities();
+    TableLocation loc;
+    if (!LocateInTable(buffer_.Text(), tbl, sel_.active.offset, loc))
+        return TableCapabilities();
+    return TableCapabilitiesFor(loc.rowIndex, loc.numCols);
+}
+
 bool AppWindow::AddTableRow(bool below) {
     if (!editing_) return false;
     const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
@@ -4619,9 +4726,12 @@ bool AppWindow::AddTableRow(bool below) {
     TableLocation loc;
     if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
 
-    // A new row above the header, or between header and delimiter,
-    // would break the table structure: those lines carry the table.
-    if (!below && loc.rowIndex <= 1) return false;
+    // The header line and the dash delimiter are what make this a table.
+    // Inserting above the header, or between header and delimiter, would
+    // leave a block md4c no longer parses as a table.
+    const TableCapabilities caps =
+        TableCapabilitiesFor(loc.rowIndex, loc.numCols);
+    if (below ? !caps.addRowBelow : !caps.addRowAbove) return false;
 
     // Build a new row string with the same number of columns.
     std::string newRow = "|";
@@ -4636,16 +4746,24 @@ bool AppWindow::AddTableRow(bool below) {
     if (below && insertPos < text.size() && text[insertPos] == '\n')
         insertPos += 1;
 
-    SpliceWithUndo(insertPos, 0, newRow);
+    // A table at the end of the document may have no trailing newline, in
+    // which case loc.rowEnd is already the text end and the row would be
+    // appended onto the last row's line. Start the new row on its own line.
+    std::string prefix;
+    if (insertPos > 0 && text[insertPos - 1] != '\n') prefix = "\n";
+
+    SpliceWithUndo(insertPos, 0, prefix + newRow);
     editor_.BreakUndoCoalesce();
 
     // Below keeps the shipped caret (start of the row after the new
     // one). Above places the caret inside the new row's first cell,
     // one position past its leading pipe.
+    const uint32_t caretBase = insertPos +
+        static_cast<uint32_t>(prefix.size() + newRow.size());
     if (below) {
-        sel_.Collapse({insertPos + static_cast<uint32_t>(newRow.size())});
+        sel_.Collapse({caretBase});
     } else {
-        sel_.Collapse({insertPos + 1});
+        sel_.Collapse({insertPos + static_cast<uint32_t>(prefix.size()) + 1});
     }
     OnBufferChanged();
     ForceRepaintNow();
@@ -4687,10 +4805,17 @@ void AppWindow::RemoveTable() {
 
     // A table is always its own paragraph-separated block, so removing
     // its complete source span keeps the surrounding blank lines valid.
-    SpliceWithUndo(start, end - start, "");
+    // The table's length is known before the splice, so `following` (a
+    // pre-splice offset) must be shifted left by that length before it is
+    // used as a post-splice caret offset.
+    const uint32_t removed = end - start;
+    SpliceWithUndo(start, removed, "");
     editor_.BreakUndoCoalesce();
 
-    sel_.Collapse({following});
+    uint32_t caret = following - removed;
+    const uint32_t newLen = static_cast<uint32_t>(buffer_.Text().size());
+    if (caret > newLen) caret = newLen;
+    sel_.Collapse({caret});
     OnBufferChanged();
     ForceRepaintNow();
 }
@@ -4707,7 +4832,7 @@ bool AppWindow::RemoveTableRow() {
     // The caret's physical line sits on the header (line 0) or the
     // delimiter (line 1): those lines carry the table's structure and
     // are never removed by this command, whatever the table size.
-    if (loc.rowIndex <= 1) {
+    if (!TableCapabilitiesFor(loc.rowIndex, loc.numCols).removeRow) {
         return false;
     }
 
@@ -4732,69 +4857,21 @@ bool AppWindow::AddTableColumn(bool right) {
     TableLocation loc;
     if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
 
-    // A column is delimited by pipes, so each line of the table gains
-    // one pipe. A new column right of the cursor's column inserts
-    // after the pipe that closes the cursor's cell (pipe index
-    // columnIndex+1, 0-based); left of it inserts after the pipe that
-    // opens it (pipe index columnIndex). The inserted cell carries its
-    // own trailing pipe, matching the row grammar "|" + "        |".
-    const int afterPipe = loc.columnIndex + (right ? 2 : 1);
-    uint32_t tblStart = tbl->srcOffset;
-    uint32_t tblEnd = tblStart + tbl->srcLength;
+    const uint32_t tblStart = tbl->srcOffset;
+    const uint32_t tblEnd = tblStart + tbl->srcLength;
 
-    // Collect line boundaries (start offsets).
-    std::vector<uint32_t> lineStarts;
-    lineStarts.push_back(tblStart);
-    for (uint32_t i = tblStart; i < tblEnd; ++i) {
-        if (text[i] == '\n' && i + 1 < tblEnd)
-            lineStarts.push_back(i + 1);
+    // The rewrite covers the whole table span and lands as a single splice,
+    // so one Ctrl+Z removes the whole column (spec section 46).
+    std::string rebuilt;
+    uint32_t caret = 0;
+    if (!TableInsertColumn(text, tblStart, tblEnd, loc.columnIndex, right,
+                           sel_.active.offset, &rebuilt, &caret)) {
+        return false;
     }
 
-    // Process from bottom to top so earlier (lower) offsets stay valid.
-    uint32_t caretNew = sel_.active.offset;
-    for (int li = static_cast<int>(lineStarts.size()) - 1; li >= 0; --li) {
-        uint32_t lineS = lineStarts[li];
-        // Find end of this line.
-        uint32_t lineE = lineS;
-        for (uint32_t j = lineS; j <= tblEnd; ++j) {
-            if (j == tblEnd || text[j] == '\n') {
-                lineE = j;
-                break;
-            }
-        }
-        // Find the pipe that closes the new column's opening side.
-        int pipeSeen = 0;
-        uint32_t insertAfter = 0;
-        bool found = false;
-        for (uint32_t j = lineS; j < lineE; ++j) {
-            if (text[j] == '|') {
-                ++pipeSeen;
-                if (pipeSeen == afterPipe) {
-                    insertAfter = j + 1;
-                    found = true;
-                    break;
-                }
-            }
-        }
-        if (!found) continue; // ragged line without that pipe: skip
-
-        // Determine if this is the separator line (all dashes).
-        bool isSep = true;
-        for (uint32_t j = lineS; j < lineE; ++j) {
-            if (text[j] != '|' && text[j] != '-' && text[j] != ' ' &&
-                text[j] != '\n' && text[j] != ':' && text[j] != '\r') {
-                isSep = false;
-                break;
-            }
-        }
-        std::string cell = isSep ? "--------|" : "        |";
-
-        SpliceWithUndo(insertAfter, 0, cell);
-        if (insertAfter <= caretNew) caretNew += static_cast<uint32_t>(cell.size());
-    }
-
+    SpliceWithUndo(tblStart, tblEnd - tblStart, rebuilt);
     editor_.BreakUndoCoalesce();
-    sel_.Collapse({caretNew});
+    sel_.Collapse({caret});
     OnBufferChanged();
     ForceRepaintNow();
     return true;
@@ -4809,56 +4886,50 @@ bool AppWindow::RemoveTableColumn() {
     TableLocation loc;
     if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
 
-    if (loc.numCols <= 1) return false; // don't remove the last column
+    if (!TableCapabilitiesFor(loc.rowIndex, loc.numCols).removeColumn)
+        return false; // don't remove the last column
 
-    uint32_t tblStart = tbl->srcOffset;
-    uint32_t tblEnd = tblStart + tbl->srcLength;
+    const uint32_t tblStart = tbl->srcOffset;
+    const uint32_t tblEnd = tblStart + tbl->srcLength;
 
-    // Collect line boundaries.
-    std::vector<uint32_t> lineStarts;
-    lineStarts.push_back(tblStart);
-    for (uint32_t i = tblStart; i < tblEnd; ++i) {
-        if (text[i] == '\n' && i + 1 < tblEnd)
-            lineStarts.push_back(i + 1);
+    std::string rebuilt;
+    uint32_t caret = 0;
+    if (!TableRemoveColumn(text, tblStart, tblEnd, loc.columnIndex,
+                           sel_.active.offset, &rebuilt, &caret)) {
+        return false;
     }
 
-    // Process from bottom to top, removing the columnIndex-th column
-    // from each line. The column's text spans from after pipe #col to
-    // including pipe #(col+1).
-    for (int li = static_cast<int>(lineStarts.size()) - 1; li >= 0; --li) {
-        uint32_t lineS = lineStarts[li];
-        uint32_t lineE = lineS;
-        for (uint32_t j = lineS; j <= tblEnd; ++j) {
-            if (j == tblEnd || text[j] == '\n') {
-                lineE = j;
-                break;
-            }
-        }
-        // Find the columnIndex-th and (columnIndex+1)-th pipe.
-        int pipeSeen = 0;
-        uint32_t colStart = 0, colEnd = 0;
-        bool found = false;
-        for (uint32_t j = lineS; j < lineE; ++j) {
-            if (text[j] == '|') {
-                ++pipeSeen;
-                if (pipeSeen == loc.columnIndex + 1) {
-                    colStart = j; // the pipe before this column
-                }
-                if (pipeSeen == loc.columnIndex + 2) {
-                    colEnd = j + 1; // include the pipe after this column
-                    found = true;
-                    break;
-                }
-            }
-        }
-        if (!found) continue;
-
-        // Remove from colStart to colEnd (the pipe + cell + trailing pipe).
-        SpliceWithUndo(colStart, colEnd - colStart, "");
-    }
-
+    SpliceWithUndo(tblStart, tblEnd - tblStart, rebuilt);
     editor_.BreakUndoCoalesce();
-    sel_.Collapse({sel_.active.offset});
+    sel_.Collapse({caret});
+    OnBufferChanged();
+    ForceRepaintNow();
+    return true;
+}
+
+bool AppWindow::SetTableColumnAlign(TableAlignMark mark) {
+    if (!editing_) return false;
+    const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
+    if (!tbl) return false;
+
+    const std::string& text = buffer_.Text();
+    TableLocation loc;
+    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
+
+    const uint32_t tblStart = tbl->srcOffset;
+    const uint32_t tblEnd = tblStart + tbl->srcLength;
+
+    std::string rebuilt;
+    uint32_t caret = 0;
+    if (!TableSetColumnAlign(text, tblStart, tblEnd, loc.columnIndex, mark,
+                             sel_.active.offset, &rebuilt, &caret)) {
+        return false;
+    }
+
+    // One splice, so one table operation is one undo step.
+    SpliceWithUndo(tblStart, tblEnd - tblStart, rebuilt);
+    editor_.BreakUndoCoalesce();
+    sel_.Collapse({caret});
     OnBufferChanged();
     ForceRepaintNow();
     return true;

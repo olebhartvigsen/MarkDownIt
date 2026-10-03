@@ -8,7 +8,8 @@ static bool IsAtLineStart(const std::string& text, uint32_t offset) {
     return i == 0 || text[i - 1] == 0x0A;  // start of line or start of file
 }
 
-static bool NeedsEscape(char c, const std::string& text, uint32_t offset) {
+static bool NeedsEscape(char c, const std::string& text, uint32_t offset,
+                        bool inTableCell) {
     switch (c) {
         case '*':
         case '_':
@@ -47,22 +48,25 @@ static bool NeedsEscape(char c, const std::string& text, uint32_t offset) {
             // Tilde creates strikethrough and horizontal rules.
             return true;
         case '|':
-            // Pipe creates tables. Escape always.
-            return true;
+            // A pipe creates a table at the start of a line, but inside an
+            // existing table cell it splits the cell instead. Only the cell
+            // case is worth escaping; outside a table a typed `|` is an
+            // ordinary character and escaping it litters the source.
+            return inTableCell;
         default:
             return false;
     }
 }
 
 std::string EscapeForInsert(const TextBuffer& buf, uint32_t offset,
-                            const std::string& typed) {
+                            const std::string& typed, bool inTableCell) {
     const std::string& text = buf.Text();
     std::string result;
     result.reserve(typed.size() * 2);
 
     for (size_t i = 0; i < typed.size(); i++) {
         char c = typed[i];
-        if (NeedsEscape(c, text, offset + i)) {
+        if (NeedsEscape(c, text, offset + i, inTableCell)) {
             result += '\\';
         }
         result += c;
@@ -71,7 +75,7 @@ std::string EscapeForInsert(const TextBuffer& buf, uint32_t offset,
 }
 
 std::string EscapeForPaste(const TextBuffer& buf, uint32_t offset,
-                           const std::string& text) {
+                           const std::string& text, bool inTableCell) {
     // Same logic as EscapeForInsert, but for a multi-character block.
-    return EscapeForInsert(buf, offset, text);
+    return EscapeForInsert(buf, offset, text, inTableCell);
 }
