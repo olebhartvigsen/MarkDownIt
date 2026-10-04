@@ -6,6 +6,13 @@
 #include <cstdio>
 #include <cstring>
 
+#ifdef _WIN32
+#include <pshlib4.h>
+#include <windows.h>
+#else
+#include <sys/resource.h>
+#endif
+
 TEST(SvgText, FindsSingleText) {
     std::string xml =
         "<svg><text x=\"10\" y=\"20\" font-size=\"14\">Hej</text></svg>";
@@ -768,4 +775,121 @@ TEST(SvgWhitespaceTrim, AttributeStillBeatsPaddedRule) {
     auto runs = svg::ExtractTextRuns(xml);
     ASSERT_EQ(runs.size(), 1u);
     EXPECT_NE(runs[0].fill.find("#222"), std::string::npos);
+}
+
+
+// --- Self-closing tags must not leak context ---------------------------
+// NextTag() returns the tag text including its '>', so tag.back() is always '>'
+// and can never be the self-closing slash. Testing tag.back() was therefore
+// always false: every <g/> pushed a level and never popped it, which both grew
+// the stack with the input and passed the element's transform on to every later
+// sibling. IsSelfClosed() already checked the right character.
+
+TEST(SvgSelfClosing, GWithTransformDoesNotLeak) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'>"
+        "<g transform='translate(1000,0)'/>"
+        "<text x='1' y='2'>A</text></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    // Identical to the explicitly closed form: the group is not an ancestor.
+    EXPECT_NEAR(runs[0].x, 1.0f, 0.01f);
+    EXPECT_NEAR(runs[0].y, 2.0f, 0.01f);
+}
+
+// The control for the above, so a regression in either direction is visible.
+TEST(SvgSelfClosing, ClosedGWithTransformIsUnchanged) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'>"
+        "<g transform='translate(1000,0)'></g>"
+        "<text x='1' y='2'>A</text></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].x, 1.0f, 0.01f);
+}
+
+// A self-closed <switch/> opens and closes at once. Treating it as an opening
+// one put the scanner into the waiting-for-first-child state, and it then
+// treated the next element as the chosen branch and dropped every later sibling.
+TEST(SvgSelfClosing, SwitchDoesNotSwallowSiblings) {
+    std::string bad =
+        "<svg xmlns='http://www.w3.org/2000/svg'><switch/>"
+        "<text x='1' y='1'>VISIBLE</text><text x='2' y='2'>ALSO</text></svg>";
+    std::string control =
+        "<svg xmlns='http://www.w3.org/2000/svg'><g/>"
+        "<text x='1' y='1'>VISIBLE</text><text x='2' y='2'>ALSO</text></svg>";
+    auto runs = svg::ExtractTextRuns(bad);
+    auto ctl = svg::ExtractTextRuns(control);
+    ASSERT_EQ(ctl.size(), 2u);
+    ASSERT_EQ(runs.size(), 2u);
+    EXPECT_EQ(runs[0].text, ctl[0].text);
+    EXPECT_EQ(runs[1].text, ctl[1].text);
+    EXPECT_NEAR(runs[1].x, 2.0f, 0.01f);
+}
+
+// A self-closed <svg/> must not leave its x/y shift on the stack either.
+TEST(SvgSelfClosing, NestedSvgWithOffsetDoesNotLeak) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'><svg x='1000'/>"
+        "<text x='1' y='2'>A</text></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].x, 1.0f, 0.01f);
+}
+
+// </textPath> popped a level that its opening tag never pushed. The <text>
+// element pushed one level, so the close consumed it and the following </text>
+// then consumed the enclosing group's, losing that group's transform for every
+// later sibling.
+TEST(SvgSelfClosing, TextPathCloseDoesNotStealEnclosingContext) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'>"
+        "<g transform='translate(1000,0)'>"
+        "<text><textPath href='#p'>L</textPath></text>"
+        "<text x='1' y='1'>B</text>"
+        "</g></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 2u);
+    // B sits inside the group, so its x composes to 1 + 1000. Before the fix
+    // the group had been popped and B landed at 1.
+    EXPECT_NEAR(runs[1].x, 1001.0f, 0.01f);
+}
+
+// The leak is a memory amplifier as well as a correctness bug: each leaked
+// level carries three std::strings. Peak RSS must stay near the input size
+// instead of growing at roughly 50x.
+TEST(SvgSelfClosing, SelfClosedGroupsDoNotAmplifyMemory) {
+    // Deliberately modest so the test stays fast; the old code needed ~16x this
+    // much to tell the difference, and the ratio rather than the absolute is
+    // what matters.
+    std::string xml = "<svg>";
+    for (int i = 0; i < 200000; ++i) xml += "<g/>";
+    xml += "<text x='1' y='2'>A</text></svg>";
+
+#ifdef _WIN32
+    // Peak-working-set size is the Windows equivalent of ru_maxrss.
+    PROCESS_MEMORY_COUNTERS pmc;
+    auto peakKB = [](PROCESS_MEMORY_COUNTERS& c) -> long {
+        return static_cast<long>(c.PeakWorkingSetSize / 1024);
+    };
+    GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
+    const long beforeKB = peakKB(pmc);
+#else
+    struct rusage ru;
+    getrusage(RUSAGE_SELF, &ru);
+    const long beforeKB = ru.ru_maxrss;
+#endif
+    auto runs = svg::ExtractTextRuns(xml);
+#ifdef _WIN32
+    GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
+    const long afterKB = peakKB(pmc);
+#else
+    getrusage(RUSAGE_SELF, &ru);
+    const long afterKB = ru.ru_maxrss;
+#endif
+    ASSERT_EQ(runs.size(), 1u);
+    // 200000 leaked Ctx values cost tens of megabytes; with the fix the whole
+    // parse stays well under 32 MB above the baseline. ru_maxrss is a high-water
+    // mark in KB on Linux, so this is a ceiling rather than a delta.
+    EXPECT_LT(afterKB - beforeKB, 32 * 1024);
 }

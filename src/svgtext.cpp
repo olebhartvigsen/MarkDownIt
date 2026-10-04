@@ -726,7 +726,11 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
         if (skipThisTag) continue;
         if (TagIs(tag, "/switch")) { switchSkip = 0; continue; }
         if (TagIs(tag, "switch") && tag.size() > 1 && tag[1] != 47) {
-            if (tag.back() != 47) switchSkip = kSwWantChild;
+            // NextTag() keeps the '>', so the self-closing slash is the
+            // character before it. Testing tag.back() here was always true,
+            // which put a self-closed <switch/> into the waiting state and
+            // made it swallow the rest of the document.
+            if (!IsSelfClosed(tag)) switchSkip = kSwWantChild;
             continue;
         }
 
@@ -764,12 +768,16 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
             v = GetAttrOrStyle(tag, "font-weight", &styleSheet);
             if (!v.empty()) child.bold = (v == "bold" || v == "700" || v == "bolder");
             gStack.push_back(child);
-            // self-closing g?
-            if (!tag.empty() && tag.back() == 47) gStack.pop_back();
+            // Self-closing <g/>: open and close at once. The slash is the
+            // character before the '>', never tag.back(). When this test was
+            // permanently false every <g/> leaked a level, so its transform
+            // was inherited by all later siblings and the stack grew with
+            // the input.
+            if (IsSelfClosed(tag)) gStack.pop_back();
             // Self-closing data-g: close the box right away? Runs
             // come after; a self-closing shape group holds no text,
             // so just drop an empty accumulator.
-            if (!tag.empty() && tag.back() == 47 && !boxStack.empty()) {
+            if (IsSelfClosed(tag) && !boxStack.empty()) {
                 boxStack.pop_back();
             }
             continue;
@@ -805,7 +813,7 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                 for (int mi = 0; mi < 6; mi++) child.m[mi] = out2[mi];
             }
             gStack.push_back(child);
-            if (tag.back() == 47) gStack.pop_back();
+            if (IsSelfClosed(tag)) gStack.pop_back();
             continue;
         }
         if (TagIs(tag, "/svg")) {
@@ -1001,7 +1009,10 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                 // we already applied, and its own content is not a run.
                 if (TagIs(inner, "textpath")) {
                     if (inner.size() > 1 && inner[1] == 47) {
-                        if (gStack.size() > 1) gStack.pop_back();
+                        // The opening <textPath> deliberately pushed nothing, so
+                        // its close must pop nothing. Popping here consumed the
+                        // <text> level and then the enclosing group's, so every
+                        // later sibling in that group lost its transform.
                         continue;
                     }
                     if (inner.back() == 47) continue;  // empty, self-closed
@@ -1033,7 +1044,7 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                     v2 = GetAttrOrStyle(inner, "font-weight", &styleSheet);
                     if (!v2.empty()) child.bold = (v2 == "bold" || v2 == "700" || v2 == "bolder");
                     gStack.push_back(child);
-                    if (!inner.empty() && inner.back() == 47) gStack.pop_back();
+                    if (IsSelfClosed(inner)) gStack.pop_back();
                     continue;
                 }
                 if (TagIs(inner, "/tspan")) {
@@ -1261,7 +1272,7 @@ std::string StripTextElements(const std::string& xml) {
 
         if (stripDepth > 0) {
             // We are inside a stripped element
-            if (isOpen && isText && tag.back() != '/') stripDepth++;
+            if (isOpen && isText && !IsSelfClosed(tag)) stripDepth++;
             else if (!isOpen) {
                 // Closing tag
                 if (isText || TagIs(tag, "/text") || TagIs(tag, "/tspan")
@@ -1271,7 +1282,7 @@ std::string StripTextElements(const std::string& xml) {
             }
         } else {
             if (isOpen && isText) {
-                if (tag.back() == '/') {
+                if (IsSelfClosed(tag)) {
                     // Self-closing, nothing to strip
                 } else {
                     stripDepth = 1;
