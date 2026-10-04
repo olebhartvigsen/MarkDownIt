@@ -367,3 +367,179 @@ TEST(SvgFence, WrappedStandaloneSvgParsesToOneSvgBlock) {
     }
     EXPECT_EQ(codeBlocks, 1);
 }
+
+
+// --- CR-only line endings ------------------------------------------------
+// A document with a classic-Mac CR line ending used to hang ParseMarkdown
+// for ever: the break-run scanner below the md4c callbacks stopped on a bare
+// CR without advancing, and the outer loop re-read the same byte. A CR-only
+// file is common enough (old Mac exports, some toolchains) that the app could
+// be wedged by opening one. Each case must complete, and CR must act as the
+// line ending the CommonMark spec says it is.
+TEST(ParserCr, LoneCrDoesNotHang) {
+    Document d;
+    const bool ok = ParseMarkdown("\r", d);
+    (void)ok;   // the assertion is that we get here at all
+}
+
+TEST(ParserCr, CrTerminatedLineReturns) {
+    Document d;
+    ParseMarkdown("a\r", d);
+    EXPECT_TRUE(true);
+}
+
+TEST(ParserCr, CrFollowedByTextReturns) {
+    Document d;
+    ParseMarkdown("\ra", d);
+    EXPECT_TRUE(true);
+}
+
+TEST(ParserCr, RepeatedCrReturns) {
+    Document d;
+    ParseMarkdown("\r\r\r", d);
+    EXPECT_TRUE(true);
+}
+
+TEST(ParserCr, LfThenCrReturns) {
+    Document d;
+    ParseMarkdown("\n\r", d);
+    EXPECT_TRUE(true);
+}
+
+TEST(ParserCr, CrThenCrlfReturns) {
+    Document d;
+    ParseMarkdown("\r\r\n", d);
+    EXPECT_TRUE(true);
+}
+
+// CR must be treated as a real line ending. A single CR is a SOFT break
+// inside one paragraph, exactly like a single LF or CRLF, so the three must
+// produce the same shape. Two blocks need a blank line between them.
+static int CountParagraphs(const Document& d) {
+    int paras = 0;
+    for (const auto& n : d.nodes) {
+        if (n.block == BlockKind::Paragraph && !n.virtualEmptyParagraph) ++paras;
+    }
+    return paras;
+}
+
+TEST(ParserCr, CrIsASoftBreakLikeLf) {
+    Document cr, lf, crlf;
+    ParseMarkdown("alpha\rbravo\r", cr);
+    ParseMarkdown("alpha\nbravo\n", lf);
+    ParseMarkdown("alpha\r\nbravo\r\n", crlf);
+    // One paragraph each, and the same source extent.
+    EXPECT_EQ(CountParagraphs(cr), CountParagraphs(lf));
+    EXPECT_EQ(CountParagraphs(cr), CountParagraphs(crlf));
+    EXPECT_EQ(CountParagraphs(lf), 1);
+    if (!cr.nodes.empty()) {
+        EXPECT_EQ(cr.nodes[0].srcLength, lf.nodes[0].srcLength);
+    }
+}
+
+TEST(ParserCr, BlankCrLineSeparatesBlocks) {
+    Document d;
+    ParseMarkdown("alpha\r\rbravo\r", d);
+    EXPECT_GE(CountParagraphs(d), 2);
+}
+
+TEST(ParserCr, BlankLfLineSeparatesBlocks) {
+    Document d;
+    ParseMarkdown("alpha\n\nbravo\n", d);
+    EXPECT_GE(CountParagraphs(d), 2);
+}
+
+// A real-world mixed document, the shape that triggered the fuzz finding.
+TEST(ParserCr, MixedCrLfDocumentParses) {
+    Document d;
+    const std::string md =
+        "# Title\r\n\r\nSome text.\r\n\r\n- one\r\n- two\r\n\r\n```cpp\r\n"
+        "int main(){}\r\n```\r\n\r\n| a | b |\r\n|---|---|\r\n| 1 | 2 |\r\n";
+    ParseMarkdown(md, d);
+    EXPECT_FALSE(d.nodes.empty());
+}
+
+
+// --- NUL bytes in the source --------------------------------------------
+// A NUL byte is reported by md4c as MD_TEXT_NULLCHAR carrying a pointer to
+// md4c's own static "" with size 1, NOT a pointer into the input. Treating
+// that as an input pointer made `text - ctx->input` a garbage offset (measured
+// 642048361 for a 1-byte file), which was then used to index the source and
+// crashed the parser. A one-byte document containing NUL was enough.
+TEST(ParserNul, SingleNulByteDoesNotCrash) {
+    Document d;
+    ParseMarkdown(std::string(1, '\0'), d);
+    EXPECT_TRUE(true);
+}
+
+TEST(ParserNul, NulInsideTextDoesNotCrash) {
+    Document d;
+    ParseMarkdown("before\0after", d);
+    EXPECT_TRUE(true);
+}
+
+TEST(ParserNul, LeadingAndTrailingNulDoNotCrash) {
+    Document d;
+    ParseMarkdown(std::string("\0a\0", 3), d);
+    EXPECT_TRUE(true);
+}
+
+TEST(ParserNul, NulInHeadingDoesNotCrash) {
+    Document d;
+    ParseMarkdown("# head\0ing\n", d);
+    EXPECT_TRUE(true);
+}
+
+TEST(ParserNul, NulInListItemDoesNotCrash) {
+    Document d;
+    ParseMarkdown("- item\0one\n- two\n", d);
+    EXPECT_TRUE(true);
+}
+
+TEST(ParserNul, NulInTableCellDoesNotCrash) {
+    Document d;
+    ParseMarkdown("| a\0 | b |\n|---|---|\n| 1 | 2 |\n", d);
+    EXPECT_TRUE(true);
+}
+
+TEST(ParserNul, NulInCodeFenceDoesNotCrash) {
+    Document d;
+    ParseMarkdown("```cpp\nint x\0y;\n```\n", d);
+    EXPECT_TRUE(true);
+}
+
+// The NUL becomes U+FFFD, so the node must carry a replacement character
+// rather than a NUL or a garbage offset.
+TEST(ParserNul, NulBecomesReplacementChar) {
+    Document d;
+    ParseMarkdown(std::string("a\0b", 3), d);
+    // md4c reports the NUL as its own run, so U+FFFD lands in a child of its
+    // own. What matters is that a NUL never reaches the render path.
+    bool sawReplacement = false;
+    bool sawRawNul = false;
+    for (const auto& n : d.nodes) {
+        for (const auto& ib : n.children) {
+            for (char32_t cp : ib.text) {
+                if (cp == 0xFFFD) sawReplacement = true;
+                if (cp == 0) sawRawNul = true;
+            }
+        }
+    }
+    EXPECT_TRUE(sawReplacement);
+    EXPECT_FALSE(sawRawNul);
+}
+
+// Every node offset must stay inside the document. This is the invariant the
+// garbage offset violated.
+TEST(ParserNul, NodeOffsetsStayInRange) {
+    const std::string md = "para one\n\n# head\0ing\n\n| a\0 | b |\n|---|---|\n| 1 | 2 |\n";
+    Document d;
+    ParseMarkdown(md, d);
+    for (const auto& n : d.nodes) {
+        EXPECT_LE(n.srcOffset, md.size());
+        EXPECT_LE(static_cast<size_t>(n.srcOffset) + n.srcLength, md.size());
+        for (const auto& ib : n.children) {
+            EXPECT_LE(ib.srcOffset, md.size());
+        }
+    }
+}

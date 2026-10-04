@@ -908,8 +908,24 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
     Node& node = ctx->doc->nodes[idx];
 
     // Track source offsets for this node.
-    if (ctx->input) {
-        uint32_t off = static_cast<uint32_t>(text - ctx->input);
+    //
+    // Not every text callback points into the input buffer. md4c reports a NUL
+    // byte as MD_TEXT_NULLCHAR with a pointer to its own static "" and a size
+    // of 1 (md4c.c line 404), so `text - ctx->input` is whatever the distance
+    // happens to be between two unrelated objects, hundreds of millions for a
+    // one-byte document. That garbage offset was stored as firstTextOffset /
+    // lastTextEnd and then indexed the input, crashing the parser. Only accept
+    // a run that really lies inside [input, input + inputSize].
+    uint32_t textOffset = 0;
+    bool textInInput = false;
+    if (ctx->input && text >= ctx->input &&
+        text <= ctx->input + ctx->inputSize) {
+        textOffset = static_cast<uint32_t>(text - ctx->input);
+        textInInput = (textOffset <= ctx->inputSize &&
+                       size <= ctx->inputSize - textOffset);
+    }
+    if (ctx->input && textInInput) {
+        uint32_t off = textOffset;
         auto& noi = ctx->nodeOffsets[idx];
         if (!noi.hasText) {
             noi.firstTextOffset = off;
@@ -920,7 +936,10 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
 
     // Table cells: raw text goes to cur_cell (UTF-32).
     if (ctx->cur_cell) {
-        uint32_t thisOff = static_cast<uint32_t>(text - ctx->input);
+        // Same guard as above: a synthetic run (md4c's NULLCHAR pointer) has no
+        // position in the source, so it must not move the cell's source cursor.
+        uint32_t thisOff = textInInput ? textOffset
+                                       : ctx->cur_cell_last_end;
         // Set srcOffset on first text for this cell.
         if (ctx->cur_cell_obj && ctx->cur_cell_obj->text.empty()) {
             ctx->cur_cell_obj->srcOffset = thisOff;
@@ -1086,9 +1105,11 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
     ib.code = code;
 ib.strike = strike;
 
-    // Set source offset for this inline span.
-    if (ctx->input) {
-        ib.srcOffset = static_cast<uint32_t>(text - ctx->input);
+    // Set source offset for this inline span. A synthetic run has no place in
+    // the source, so leave the offsets at zero rather than recording the
+    // distance to md4c's static string.
+    if (ctx->input && textInInput) {
+        ib.srcOffset = textOffset;
         ib.srcLength = static_cast<uint32_t>(size);
     }
 
@@ -1139,7 +1160,13 @@ static void AddVirtualEmptyParagraphs(const std::string& source,
             if (source[begin] == '\r' && begin + 1 < source.size() &&
                 source[begin + 1] == '\n') {
                 begin += 2;
-            } else if (source[begin] == '\n') {
+            } else if (source[begin] == '\n' || source[begin] == '\r') {
+                // A bare CR is a line ending too: classic-Mac files use it
+                // alone. Without this branch a lone CR hit the else below,
+                // broke out with breakEnds empty, and the outer for re-read
+                // the same character for ever, so one CR-only line ending
+                // anywhere in a document hung the whole app. Consuming it
+                // here also guarantees begin advances every iteration.
                 ++begin;
             } else {
                 break;
@@ -1147,6 +1174,7 @@ static void AddVirtualEmptyParagraphs(const std::string& source,
             breakEnds.push_back(begin);
         }
         const uint32_t runEnd = begin;
+        if (begin == runStart) continue;   // no progress: never spin
         if (breakEnds.size() < 2) continue;
 
         while (nextNode < sourceNodes.size() &&
