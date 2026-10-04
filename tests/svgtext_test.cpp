@@ -1,6 +1,10 @@
 #include "gtest_lite.h"
 #include "svgtext.h"
 
+#include <algorithm>
+#include <chrono>
+#include <cstdio>
+
 TEST(SvgText, FindsSingleText) {
     std::string xml =
         "<svg><text x=\"10\" y=\"20\" font-size=\"14\">Hej</text></svg>";
@@ -403,4 +407,103 @@ TEST(SvgText, ScaleStillPositionsText) {
     ASSERT_EQ(runs.size(), 1u);
     EXPECT_NEAR(runs[0].x, 200.0f, 0.01f);
     EXPECT_NEAR(runs[0].y, 200.0f, 0.01f);
+}
+
+
+// --- Label/shape pairing must not be quadratic -------------------------
+// Each <g data='..'> with a <rect> becomes a box; each <text> a run. The
+// pairing pass compared every run against every box, which is O(runs*boxes):
+// 16000 shapes plus 16000 labels took 1.2 s and grew 3.9x per doubling, so a
+// large but ordinary diagram stalled. It now uses a uniform grid and stops
+// expanding rings once no further cell can hold a closer centre.
+TEST(SvgBoxPairing, LargeDiagramStaysLinear) {
+    // Two sizes, 2x apart. A quadratic pass grows ~4x, a linear one ~2x.
+    auto timeIt = [](size_t n) {
+        std::string xml = "<svg xmlns='http://www.w3.org/2000/svg'>";
+        char buf[256];
+        for (size_t i = 0; i < n; ++i) {
+            const double x = 100.0 * static_cast<double>(i % 100);
+            const double y = 100.0 * static_cast<double>(i / 100);
+            snprintf(buf, sizeof buf,
+                     "<g data='s%zu'><rect x='%.1f' y='%.1f' width='40' height='20'/></g>", i, x, y);
+            xml += buf;
+            snprintf(buf, sizeof buf, "<text x='%.1f' y='%.1f'>node %zu</text>", x + 5, y + 14, i);
+            xml += buf;
+        }
+        xml += "</svg>";
+        const auto t0 = std::chrono::steady_clock::now();
+        auto runs = svg::ExtractTextRuns(xml);
+        const auto t1 = std::chrono::steady_clock::now();
+        EXPECT_EQ(runs.size(), n);
+        return std::chrono::duration<double>(t1 - t0).count();
+    };
+    // Take the best of three at each size: a single run on a shared CI box is
+    // noisy enough to swamp the ratio. Measured here, doubling the diagram
+    // costs the old linear scan 3.4x and the grid 2.0x, so 2.8x separates
+    // them with room for scheduling noise on both sides.
+    auto best = [&timeIt](size_t n) {
+        double b = 1e9;
+        for (int i = 0; i < 3; ++i) b = std::min(b, timeIt(n));
+        return b;
+    };
+    const double t1 = best(2000);
+    const double t2 = best(4000);
+    // The floor keeps a fast machine from failing on a near-zero measurement;
+    // it is well under the ~16 ms the old code needs at 4000.
+    EXPECT_LT(t2, std::max(t1 * 2.8, 0.030));
+}
+
+// Every label must still find its shape, and find the NEAREST one. A grid that
+// searched too few cells would silently pair labels with the wrong box.
+TEST(SvgBoxPairing, EachRunFindsItsContainingBox) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'>"
+        "<g data='a'><rect x='0' y='0' width='100' height='100'/></g>"
+        "<g data='b'><rect x='500' y='500' width='20' height='20'/></g>"
+        "<text x='50' y='50'>inside a</text>"
+        "<text x='510' y='510'>inside b</text>"
+        "</svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 2u);
+    EXPECT_TRUE(runs[0].boxValid);
+    EXPECT_TRUE(runs[1].boxValid);
+    EXPECT_NEAR(runs[0].bx, 0.0f, 0.01f);
+    EXPECT_NEAR(runs[0].bw, 100.0f, 0.01f);
+    EXPECT_NEAR(runs[1].bx, 500.0f, 0.01f);
+    EXPECT_NEAR(runs[1].bw, 20.0f, 0.01f);
+}
+
+// A run outside every box must still be paired with the nearest centre. An
+// early exit that fires before any candidate is seen leaves boxValid false.
+TEST(SvgBoxPairing, RunOutsideAllBoxesFindsNearest) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'>"
+        "<g data='a'><rect x='0' y='0' width='10' height='10'/></g>"
+        "<g data='b'><rect x='4000' y='4000' width='10' height='10'/></g>"
+        "<text x='3900' y='3900'>near b</text>"
+        "</svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_TRUE(runs[0].boxValid);
+    EXPECT_NEAR(runs[0].bx, 4000.0f, 0.01f);
+}
+
+// Two equally good boxes must resolve the same way every time, whatever order
+// the search visits them in. Otherwise a label jumps between shapes.
+TEST(SvgBoxPairing, EqualAreaTieIsStable) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'>"
+        "<g data='first'><rect x='0' y='0' width='50' height='50'/></g>"
+        "<g data='second'><rect x='20' y='20' width='50' height='50'/></g>"
+        "<text x='30' y='30'>t</text>"
+        "</svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_TRUE(runs[0].boxValid);
+    // Equal areas: the earlier box wins, both on the first call and after a
+    // rebuild, so the choice cannot depend on scan order.
+    EXPECT_NEAR(runs[0].bx, 0.0f, 0.01f);
+    auto again = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(again.size(), 1u);
+    EXPECT_NEAR(again[0].bx, runs[0].bx, 0.001f);
 }

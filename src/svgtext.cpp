@@ -1008,13 +1008,85 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
     // data-g at text time is not the label box. The smallest
     // box containing the run anchor wins; otherwise the box
     // whose center is nearest the run anchor.
+    //
+    // Scanning every box for every run is O(runs * boxes), which is quadratic:
+    // a diagram with 2000 shapes and 2000 labels spent 24 ms, but 8000 of
+    // each took 307 ms, and the growth is 3.8x per doubling of both. That is
+    // a hang on a large but entirely ordinary diagram, so the boxes go into
+    // a uniform grid first and each run only visits the cells it can reach.
+    //
+    // Containment and nearest-centre both need every box whose extent covers
+    // the run anchor, so a box is filed into all the cells it overlaps and
+    // searched through those. The nearest-centre fallback still has to see
+    // every box in the worst case (a run outside all cells), so it is
+    // computed over the same candidate set: any box closer than the best
+    // candidate found must overlap a cell the run visited, because a box
+    // containing or surrounding the anchor always overlaps its cell.
     if (!boxes.empty()) {
+        // One cell per ~64 units of extent, clamped so a tiny or huge drawing
+        // cannot produce a useless or enormous grid.
+        float minX = boxes[0].minX, maxX = boxes[0].maxX;
+        float minY = boxes[0].minY, maxY = boxes[0].maxY;
+        for (const auto& b : boxes) {
+            if (b.minX < minX) minX = b.minX;
+            if (b.maxX > maxX) maxX = b.maxX;
+            if (b.minY < minY) minY = b.minY;
+            if (b.maxY > maxY) maxY = b.maxY;
+        }
+        const float spanX = (maxX - minX);
+        const float spanY = (maxY - minY);
+        size_t cols = static_cast<size_t>(spanX / 64.0f) + 1;
+        size_t rows = static_cast<size_t>(spanY / 64.0f) + 1;
+        // Cap the cell count: past this point a linear scan over a bucket is
+        // no worse than the grid lookup, and the memory stops being free.
+        constexpr size_t kMaxCells = 1u << 16;
+        while (cols * rows > kMaxCells && (cols > 1 || rows > 1)) {
+            if (cols >= rows && cols > 1) cols = (cols + 1) / 2;
+            else if (rows > 1) rows = (rows + 1) / 2;
+        }
+        const float cellW = spanX / static_cast<float>(cols) + 1e-6f;
+        const float cellH = spanY / static_cast<float>(rows) + 1e-6f;
+        auto colOf = [&](float x) -> long {
+            long c = static_cast<long>((x - minX) / cellW);
+            if (c < 0) c = 0;
+            if (c >= static_cast<long>(cols)) c = static_cast<long>(cols) - 1;
+            return c;
+        };
+        auto rowOf = [&](float y) -> long {
+            long r = static_cast<long>((y - minY) / cellH);
+            if (r < 0) r = 0;
+            if (r >= static_cast<long>(rows)) r = static_cast<long>(rows) - 1;
+            return r;
+        };
+
+        std::vector<std::vector<const FinBox*>> grid(cols * rows);
+        for (const auto& b : boxes) {
+            const long c0 = colOf(b.minX), c1 = colOf(b.maxX);
+            const long r0 = rowOf(b.minY), r1 = rowOf(b.maxY);
+            for (long r = r0; r <= r1; ++r) {
+                for (long c = c0; c <= c1; ++c) {
+                    grid[static_cast<size_t>(r * static_cast<long>(cols) + c)]
+                        .push_back(&b);
+                }
+            }
+        }
+
         for (auto& run : runs) {
             const FinBox* contain = nullptr;
             float bestArea = 0.0f;
+            size_t bestContainIdx = 0;
             const FinBox* nearest = nullptr;
             float bestDist = 0.0f;
-            for (const auto& b : boxes) {
+            size_t bestNearIdx = 0;
+            const long cr = rowOf(run.y);
+            const long cc = colOf(run.x);
+            // Visit cells in expanding square rings around the run and stop as
+            // soon as no further ring can hold a closer centre. Containment
+            // and nearest-centre are both decided within a bounded radius, so
+            // the result matches the old full scan exactly while touching only
+            // a handful of cells instead of every box.
+            auto consider = [&](const FinBox* bp) {
+                const FinBox& b = *bp;
                 float plo = (b.minX < b.maxX) ? b.minX : b.maxX;
                 float phi = (b.minX < b.maxX) ? b.maxX : b.minX;
                 float qlo = (b.minY < b.maxY) ? b.minY : b.maxY;
@@ -1027,13 +1099,70 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                 float dx = run.x - cx;
                 float dy = run.y - cy;
                 float dist = dx * dx + dy * dy;
-                if (inside && (!contain || area < bestArea)) {
+                // The grid visits boxes in a different order than the old
+                // full scan, so a tie must be broken on the box's own
+                // position in `boxes`, not on which one happened to be seen
+                // first. Without this, two equally good candidates swapped
+                // places and the rendered label moved to a different shape.
+                const size_t idx = static_cast<size_t>(bp - boxes.data());
+                if (inside && (!contain || area < bestArea ||
+                               (area == bestArea && idx < bestContainIdx))) {
                     contain = &b;
                     bestArea = area;
+                    bestContainIdx = idx;
                 }
-                if (!nearest || dist < bestDist) {
+                if (!nearest || dist < bestDist ||
+                    (dist == bestDist && idx < bestNearIdx)) {
                     nearest = &b;
                     bestDist = dist;
+                    bestNearIdx = idx;
+                }
+            };
+            const long maxRing = static_cast<long>(
+                std::max(cols, rows));
+            for (long ring = 0; ring <= maxRing; ++ring) {
+                // After this ring, every cell that has not been visited yet is
+                // at least `ring` cells away, so its NEAR EDGE is at least
+                // ring * cell from the run's own cell edge. A box centre lies
+                // inside its box, so it cannot be nearer than that. Once both
+                // axes are beyond the best distance found, no later ring can
+                // improve on it.
+                //
+                // The bound is deliberately loose by one cell: a run sitting
+                // anywhere inside its own cell can be almost a full cell away
+                // from the near edge of the next ring. Using the near edge of
+                // the NEXT ring (ring, not ring+1) is what keeps the search
+                // exhaustive; an earlier version stopped one ring too soon and
+                // picked the wrong shape for runs near a cell boundary.
+                //
+                // Only meaningful once a box has actually been seen: bestDist is
+                // 0 until then, which would otherwise read as "already
+                // unbeatable" and abandon the search before any candidate.
+                if (ring > 0 && nearest) {
+                    const float reachX =
+                        static_cast<float>(ring - 1) * cellW;
+                    const float reachY =
+                        static_cast<float>(ring - 1) * cellH;
+                    if (reachX * reachX >= bestDist &&
+                        reachY * reachY >= bestDist) {
+                        break;
+                    }
+                }
+                const long r0 = cr - ring, r1 = cr + ring;
+                const long c0 = cc - ring, c1 = cc + ring;
+                for (long r = r0; r <= r1; ++r) {
+                    if (r < 0 || r >= static_cast<long>(rows)) continue;
+                    const bool edgeRow = (r == r0 || r == r1);
+                    for (long c = c0; c <= c1; ++c) {
+                        if (c < 0 || c >= static_cast<long>(cols)) continue;
+                        // The interior of a thick ring was already done.
+                        if (ring > 0 && !edgeRow && c != c0 && c != c1) continue;
+                        for (const FinBox* bp :
+                             grid[static_cast<size_t>(
+                                 r * static_cast<long>(cols) + c)]) {
+                            consider(bp);
+                        }
+                    }
                 }
             }
             const FinBox* chosen = contain ? contain : nearest;
