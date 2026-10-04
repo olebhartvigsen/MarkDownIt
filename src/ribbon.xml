@@ -770,7 +770,7 @@
             <Button CommandName="cmdZoomIn" />
             <Button CommandName="cmdZoomOut" />
           </Group>
-          <Group CommandName="cmdGroupZoom" SizeDefinition="ThreeButtons">
+          <Group CommandName="cmdGroupZoom" SizeDefinition="TwoButtons">
             <Button CommandName="cmdZoomLevel" />
             <Button CommandName="cmdZoomFitWidth" />
           </Group>
