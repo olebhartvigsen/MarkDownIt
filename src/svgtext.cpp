@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 
 namespace svg {
@@ -94,13 +95,109 @@ static std::string GetAttr(const std::string& tag, const std::string& name) {
 static float ToFloat(const std::string& s, float def = 0.0f) {
     if (s.empty()) return def;
     try {
-        return std::stof(s);
+        const float v = std::stof(s);
+        // std::stof stops at the first non-numeric character, so "12pt" came
+        // back as a bare 12. These are the CSS/SVG absolute conversions at the
+        // usual 96dpi; unitless values stay as they are.
+        size_t p = 0;
+        while (p < s.size() && (std::isdigit(static_cast<unsigned char>(s[p])) ||
+                                s[p] == '.' || s[p] == '-' || s[p] == '+')) ++p;
+        std::string unit;
+        for (size_t k = p; k < s.size(); ++k) {
+            const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(s[k])));
+            if (std::isalpha(static_cast<unsigned char>(c))) unit.push_back(c);
+            else if (c != '%' ) break;
+            else unit.push_back('%');
+        }
+        if (unit == "pt") return v * 1.25f;
+        if (unit == "pc") return v * 16.0f;
+        if (unit == "in") return v * 96.0f;
+        if (unit == "cm") return v * 96.0f / 2.54f;
+        if (unit == "mm") return v * 96.0f / 25.4f;
+        if (unit == "em" || unit == "rem") return v * 16.0f;  // ~1em default
+        return v;
     } catch (...) {
         return def;
     }
 }
 
-// Parse style attribute for font-size, font-family, etc.
+// A parsed <style> rule set: selector suffix ("lab" for ".lab") to the
+// declaration body. Only class selectors are handled, which is what Inkscape,
+// Graphviz and hand-written files actually use.
+struct StyleSheet { std::vector<std::pair<std::string, std::string>> rules; };
+
+// Pull ".name { prop: value; ... }" pairs out of a <style> body. Element and
+// id selectors are ignored rather than misapplied.
+static StyleSheet ParseStyleSheet(const std::string& css) {
+    StyleSheet sheet;
+    size_t i = 0;
+    while (i < css.size()) {
+        const size_t brace = css.find('{', i);
+        if (brace == std::string::npos) break;
+        std::string selector = css.substr(i, brace - i);
+        // Trim and keep only the last simple selector.
+        while (!selector.empty() && std::isspace(static_cast<unsigned char>(selector.front())))
+            selector.erase(selector.begin());
+        while (!selector.empty() && std::isspace(static_cast<unsigned char>(selector.back())))
+            selector.pop_back();
+        const size_t close = css.find('}', brace);
+        if (close == std::string::npos) break;
+        std::string body = css.substr(brace + 1, close - brace - 1);
+        // Selector must be a plain ".class", optionally with other selectors we
+        // do not understand; only apply when it is exactly one class.
+        if (selector.size() >= 2 && selector[0] == '.' &&
+            selector.find_first_of(" ,>+~:") == std::string::npos &&
+            selector.find('.', 1) == std::string::npos) {
+            sheet.rules.emplace_back(selector.substr(1), body);
+        }
+        i = close + 1;
+    }
+    return sheet;
+}
+
+// The declaration body for a class attribute's first matching class, if any.
+static std::string ClassRule(const StyleSheet& sheet, const std::string& tag) {
+    const std::string cls = GetAttr(tag, "class");
+    if (cls.empty() || sheet.rules.empty()) return {};
+    std::string pick;
+    size_t start = 0;
+    while (start <= cls.size()) {
+        size_t sp = cls.find_first_of(" \t\n\r", start);
+        const std::string name = cls.substr(start, sp == std::string::npos ? std::string::npos
+                                                                          : sp - start);
+        if (!name.empty()) {
+            for (const auto& r : sheet.rules) {
+                if (r.first == name) { pick = r.second; break; }
+            }
+            if (!pick.empty()) return pick;
+        }
+        if (sp == std::string::npos) break;
+        start = sp + 1;
+    }
+    return {};
+}
+
+// Declaration lookup inside a rule body such as "fill:#f00;font-size:9px".
+static std::string RuleValue(const std::string& body, const std::string& prop) {
+    size_t p = 0;
+    while (p < body.size()) {
+        const size_t colon = body.find(':', p);
+        if (colon == std::string::npos) return {};
+        std::string key = body.substr(p, colon - p);
+        while (!key.empty() && std::isspace(static_cast<unsigned char>(key.front()))) key.erase(key.begin());
+        while (!key.empty() && std::isspace(static_cast<unsigned char>(key.back()))) key.pop_back();
+        const size_t semi = body.find(';', colon);
+        std::string val = body.substr(colon + 1, semi == std::string::npos
+                                                     ? std::string::npos : semi - colon - 1);
+        while (!val.empty() && std::isspace(static_cast<unsigned char>(val.front()))) val.erase(val.begin());
+        while (!val.empty() && std::isspace(static_cast<unsigned char>(val.back()))) val.pop_back();
+        if (key == prop) return val;
+        if (semi == std::string::npos) return {};
+        p = semi + 1;
+    }
+    return {};
+}
+
 static std::string GetStyleValue(const std::string& tag, const std::string& prop) {
     std::string style = GetAttr(tag, "style");
     if (style.empty()) return {};
@@ -114,14 +211,32 @@ static std::string GetStyleValue(const std::string& tag, const std::string& prop
     return style.substr(p, end - p);
 }
 
-// Get an attribute, falling back to the style attribute.
-static std::string GetAttrOrStyle(const std::string& tag, const std::string& name) {
+// Get an attribute, then the inline style attribute, then a matching class
+// rule from any <style> block. Presentation attributes and inline styles win
+// over the stylesheet, which is the CSS cascade order.
+static std::string GetAttrOrStyle(const std::string& tag, const std::string& name,
+                                  const StyleSheet* sheet = nullptr) {
     std::string v = GetAttr(tag, name);
     if (!v.empty()) return v;
-    return GetStyleValue(tag, name);
+    v = GetStyleValue(tag, name);
+    if (!v.empty()) return v;
+    if (sheet && !sheet->rules.empty()) {
+        const std::string body = ClassRule(*sheet, tag);
+        if (!body.empty()) {
+            v = RuleValue(body, name);
+            if (!v.empty()) return v;
+        }
+    }
+    return {};
 }
 
 // Check if the tag name matches (case-insensitive).
+// True for "<rect .../>" as NextTag returns it: the tag text keeps its
+// trailing '/>' rather than just the name.
+static bool IsSelfClosed(const std::string& tag) {
+    return tag.size() >= 2 && tag[tag.size() - 1] == '>' && tag[tag.size() - 2] == '/';
+}
+
 static bool TagIs(const std::string& tag, const char* name) {
     size_t i = 1; // skip '<'
     if (i < tag.size() && tag[i] == '/') ++i;
@@ -170,6 +285,15 @@ struct XmlPos {
                 pos = end + 3;
                 continue;
             }
+            // CDATA is literal character data and may itself contain '>',
+            // so it must be consumed by its own terminator rather than by the
+            // first '>'.
+            if (xml.compare(lt, 9, "<![CDATA[") == 0) {
+                const size_t end = xml.find("]]>", lt + 9);
+                if (end == std::string::npos) { pos = xml.size(); return {}; }
+                pos = end + 3;
+                continue;
+            }
             // Processing instruction or DOCTYPE
             if (lt + 1 < xml.size() && (xml[lt + 1] == '?' || xml[lt + 1] == '!')) {
                 size_t end = xml.find('>', lt + 2);
@@ -186,6 +310,31 @@ struct XmlPos {
             return tag;
         }
         return {};
+    }
+
+    // True when the next thing is a <![CDATA[ block.
+    bool AtCData() const {
+        return pos + 9 <= xml.size() && xml.compare(pos, 9, "<![CDATA[") == 0;
+    }
+
+    // Consume a <![CDATA[ ... ]]> block and return its contents verbatim.
+    std::string TakeCData() {
+        if (!AtCData()) return {};
+        const size_t end = xml.find("]]>", pos + 9);
+        const std::string body = xml.substr(pos + 9,
+            (end == std::string::npos ? xml.size() : end) - (pos + 9));
+        pos = (end == std::string::npos) ? xml.size() : end + 3;
+        return body;
+    }
+
+    // The next tag, without consuming it. Used to look ahead for a
+    // <textPath> that is the first child of a <text> without committing to
+    // the lookahead.
+    std::string PeekTag() {
+        const size_t save = pos;
+        std::string t = NextTag();
+        pos = save;
+        return t;
     }
 
     // Extract text content between current pos and next '<'.
@@ -230,6 +379,41 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
     struct FinBox { float minX, minY, maxX, maxY; };
     std::vector<FinBox> boxes;   // all data-g boxes seen, doc coords
     std::vector<BoxAcc> boxStack;
+    // Start point of every <path id="...">, in that path's own coordinates,
+    // for anchoring <textPath>. A textPath carries no x/y of its own, so
+    // without this its label has no position at all and is drawn at (0,0).
+    struct PathStart { std::string id; float x, y; };
+    std::vector<PathStart> pathStarts;
+    StyleSheet styleSheet;   // class rules from <style> blocks
+
+    // First coordinate pair of a path's "d" attribute, which is the start of
+    // the first subpath. Handles "M x,y" and "m x,y"; more elaborate path
+    // data still yields its first point, which is what textPath needs.
+    auto FirstMoveTo = [](const std::string& d, float* ox, float* oy) -> bool {
+        size_t i = 0;
+        while (i < d.size() && std::isspace(static_cast<unsigned char>(d[i]))) ++i;
+        if (i >= d.size() || (d[i] != 'M' && d[i] != 'm')) return false;
+        ++i;
+        float vals[2] = {0.0f, 0.0f};
+        int got = 0;
+        while (i < d.size() && got < 2) {
+            while (i < d.size() && (d[i] == ',' || d[i] == ' ' ||
+                                    d[i] == '\t' || d[i] == '\n')) ++i;
+            if (i >= d.size()) break;
+            const size_t start = i;
+            if (d[i] == '-' || d[i] == '+') ++i;
+            while (i < d.size() && (std::isdigit(static_cast<unsigned char>(d[i])) ||
+                                    d[i] == '.' || d[i] == 'e' || d[i] == 'E')) ++i;
+            if (i == start) return false;
+            try { vals[got++] = std::stof(d.substr(start, i - start)); }
+            catch (...) { return false; }
+        }
+        if (got < 1) return false;
+        *ox = vals[0];
+        *oy = vals[1];
+        return true;
+    };
+
     auto AddRectToBox = [&](const Ctx& m, float lx, float ly,
                             float lw, float lh) {
         if (boxStack.empty()) return;
@@ -270,10 +454,18 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
         out[3] = 1; out[4] = 0; out[5] = 0;
         size_t pos = 0;
         while (pos < tf.size()) {
+            // Transform names are case-sensitive in SVG ("skewX" is not
+            // "skew"), so accept letters in either case and compare against
+            // the lowercase spelling.
             size_t nameStart = pos;
-            while (pos < tf.size() && tf[pos] >= 97 && tf[pos] <= 122) pos++;
+            while (pos < tf.size() &&
+                   ((tf[pos] >= 'a' && tf[pos] <= 'z') ||
+                    (tf[pos] >= 'A' && tf[pos] <= 'Z'))) pos++;
             if (pos == nameStart) { pos++; continue; }
             std::string name = tf.substr(nameStart, pos - nameStart);
+            for (char& nc : name) {
+                if (nc >= 'A' && nc <= 'Z') nc = static_cast<char>(nc + 32);
+            }
             // skip to '('
             while (pos < tf.size() && tf[pos] != 40) pos++;
             if (pos >= tf.size()) break;
@@ -308,6 +500,23 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                 op[3] = (argc > 1) ? args[1] : args[0];
             } else if (name == "matrix" && argc >= 6) {
                 for (int mi = 0; mi < 6; mi++) op[mi] = args[mi];
+            } else if (name == "rotate" && argc >= 1) {
+                // rotate(a) spins about the origin. rotate(a cx cy) spins
+                // about (cx,cy), which is translate(cx,cy) rotate(a)
+                // translate(-cx,-cy) collapsed into one matrix here.
+                const float rad = args[0] * 3.14159265358979f / 180.0f;
+                const float cs = std::cos(rad), sn = std::sin(rad);
+                op[0] = cs;  op[1] = sn;
+                op[2] = -sn; op[3] = cs;
+                if (argc >= 3) {
+                    const float cx = args[1], cy = args[2];
+                    op[4] = cx - cx * cs + cy * sn;
+                    op[5] = cy - cx * sn - cy * cs;
+                }
+            } else if (name == "skewx" && argc >= 1) {
+                op[2] = std::tan(args[0] * 3.14159265358979f / 180.0f);
+            } else if (name == "skewy" && argc >= 1) {
+                op[1] = std::tan(args[0] * 3.14159265358979f / 180.0f);
             } else { continue; }
             float temp[6];
             ComposeOp(temp, out, op);
@@ -316,6 +525,25 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
     };
 
     int defsDepth = 0;
+    // <switch> renders its first child whose requiredFeatures/
+    // requiredExtensions/systemLanguage all pass. We cannot evaluate those
+    // tests, so we take the first child and skip the rest; drawing every
+    // branch stamps each fallback label on top of the others.
+    // Skipping a <switch> fallback means skipping a whole subtree, closing tag
+    // included, so the depth counter must distinguish the three situations.
+    // Collapsing "waiting for the first child" into "inside the chosen child"
+    // made the first branch get skipped and the second drawn, which is the
+    // opposite of what <switch> means.
+    const int kSwWantChild = -1;   // inside a switch, chosen branch not entered
+    const int kSwInChosen  = -2;   // inside the chosen branch, drawing it
+    const int kSwAfterBranch = -3; // chosen branch done, skipping siblings
+    int chosenDepth = 0;         // nesting depth within the chosen element
+    bool chosenWasText = false;   // the chosen branch is a bare <text>
+    int switchDepthSave = 0;     // chosenDepth to resume after a nested switch
+    int switchSkip = 0;            // 0 = outside; >0 = depth inside a fallback
+    int switchSkipRestore = 0;    // branch state to resume after a nested switch
+    bool chainNext = false; // set by a tspan carrying its own x
+    bool tspanHadX = false;  // the tspan currently open set its own x
 
     while (true) {
         std::string tag = p.NextTag();
@@ -332,7 +560,129 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
             }
             continue;
         }
-        if (defsDepth > 0) continue;
+        if (defsDepth > 0) {
+            // <defs> holds no renderable content, but it is exactly where a
+            // reusable <path id="..."> lives for a <textPath> to reference.
+            // Skipping it wholesale left such labels anchored at (0,0).
+            if (TagIs(tag, "path") && tag.size() > 1 && tag[1] != 47) {
+                const std::string pid = GetAttrOrStyle(tag, "id");
+                const std::string dd = GetAttrOrStyle(tag, "d");
+                float px = 0.0f, py = 0.0f;
+                if (!pid.empty() && !dd.empty() && FirstMoveTo(dd, &px, &py)) {
+                    pathStarts.push_back({pid, px, py});
+                }
+            }
+            continue;
+        }
+
+        // <switch> renders its first child whose feature tests pass. We cannot
+        // evaluate systemLanguage or requiredExtensions, so we take the first
+        // child and skip the rest. Drawing every branch stamps each fallback
+        // label directly on top of the others.
+        // <style> holds CSS, not content. Collect its rules so class-based
+        // styling applies, then skip the body. Hand-authored and Inkscape
+        // files rely on this heavily.
+        if (TagIs(tag, "style") && tag.size() > 1 && tag[1] != 47) {
+            // The body may be plain text or wrapped in CDATA.
+            std::string cssBody;
+            if (p.AtCData()) cssBody = p.TakeCData();
+            else cssBody = p.TextUntilTag();
+            const StyleSheet sheet = ParseStyleSheet(cssBody);
+            for (const auto& r : sheet.rules) styleSheet.rules.push_back(r);
+            continue;
+        }
+
+        // <switch> draws its first child whose feature tests pass; the rest
+        // are fallbacks. Drawing every branch stamps each fallback label
+        // directly on top of the others at the same coordinates. We cannot
+        // evaluate systemLanguage or requiredExtensions, so the first child
+        // with content wins and the remainder is skipped whole.
+        //
+        // The decision must not consume the chosen element: it is usually a
+        // <g> whose transform still has to be pushed, and any leaf inside it
+        // (a <text>, a <rect>) still has to be drawn. So this only updates
+        // state and marks whether the tag itself is discarded.
+        bool skipThisTag = false;
+        if (switchSkip != 0) {
+            const bool isClose = tag.size() > 1 && tag[1] == 47;
+            const bool selfClosed = IsSelfClosed(tag);
+            if (TagIs(tag, "/switch") && switchSkipRestore != 0) {
+                // A nested switch closed, so the branch that held it is
+                // finished: everything after it is a fallback of the enclosing
+                // switch. Restoring "inside the chosen branch" here instead let
+                // the outer fallback draw, because the chosen element was the
+                // nested switch itself and its depth had already unwound.
+                switchSkip = kSwAfterBranch;
+                switchSkipRestore = 0;
+                chosenDepth = 0;
+                switchDepthSave = 0;
+                continue;
+            }
+            if (switchSkip == kSwWantChild) {
+                if (isClose || selfClosed) {
+                    skipThisTag = true;
+                } else if (TagIs(tag, "switch")) {
+                    // A nested switch decides for itself; resume this branch
+                    // when it closes.
+                    switchSkipRestore = kSwInChosen;
+                    switchDepthSave = chosenDepth;
+                    skipThisTag = true;
+                } else {
+                    // This element is the chosen branch: handle it normally
+                    // below and draw its subtree at depth 1.
+                    switchSkip = kSwInChosen;
+                    chosenDepth = 1;
+                    chosenWasText = TagIs(tag, "text");
+                }
+            } else if (switchSkip == kSwInChosen) {
+                // Inside the chosen branch. A nested switch re-decides; any
+                // other open tag nests one level. Nothing is discarded, so the
+                // leaf handlers below still see <text>, <rect> and friends.
+                // A <text> subtree is consumed whole by the inner text loop,
+                // so counting it here would raise the depth that its own
+                // </text> never lowers, and the branch would never close.
+                // A self-closing element has no matching close tag, so it
+                // must not raise the depth: counting <rect/> left the depth
+                // one too high and the branch never ended.
+                const bool countsAsLevel = !TagIs(tag, "text") && !selfClosed;
+                if (!isClose && !selfClosed) {
+                    if (TagIs(tag, "switch")) {
+                        switchSkipRestore = kSwInChosen;
+                        switchDepthSave = chosenDepth;
+                        switchSkip = kSwWantChild;
+                        skipThisTag = true;
+                    } else if (countsAsLevel) {
+                        ++chosenDepth;
+                    }
+                } else if (isClose) {
+                    // The chosen element's own close ends the branch, so its
+                    // following siblings are fallbacks. Not while a nested
+                    // switch is pending: that switch owns the branch until its
+                    // own </switch> hands control back, and ending it here would
+                    // discard the nested choice.
+                    if (!TagIs(tag, "/text") && --chosenDepth == 0 &&
+                        switchSkipRestore == 0) {
+                        switchSkip = kSwAfterBranch;
+                    }
+                }
+            } else if (switchSkip == kSwAfterBranch) {
+                // Between branches: skip everything up to this </switch>.
+                if (TagIs(tag, "/switch")) switchSkip = 0;
+                else if (!isClose && !selfClosed) switchSkip = 1;
+                continue;
+            } else {
+                // Inside a skipped fallback: track nesting to skip it whole.
+                if (!isClose && !selfClosed) ++switchSkip;
+                else if (isClose) --switchSkip;
+                continue;
+            }
+        }
+        if (skipThisTag) continue;
+        if (TagIs(tag, "/switch")) { switchSkip = 0; continue; }
+        if (TagIs(tag, "switch") && tag.size() > 1 && tag[1] != 47) {
+            if (tag.back() != 47) switchSkip = kSwWantChild;
+            continue;
+        }
 
         // <g> open/close: transform + inheritable style props.
         if (TagIs(tag, "g") && tag.size() > 1 && tag[1] != 47) {
@@ -353,19 +703,19 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                 for (int mi = 0; mi < 6; mi++) child.m[mi] = out2[mi];
             }
             std::string v;
-            v = GetAttrOrStyle(tag, "font-size");
+            v = GetAttrOrStyle(tag, "font-size", &styleSheet);
             if (!v.empty()) {
                 // ToFloat stops at the px/pt suffix; scale by the
                 // freshly composed vertical scale factor.
                 child.fontSize = ToFloat(v, child.fontSize) * child.m[3];
             }
-            v = GetAttrOrStyle(tag, "font-family");
+            v = GetAttrOrStyle(tag, "font-family", &styleSheet);
             if (!v.empty()) child.fontFamily = v;
-            v = GetAttrOrStyle(tag, "text-anchor");
+            v = GetAttrOrStyle(tag, "text-anchor", &styleSheet);
             if (!v.empty()) child.anchor = v;
-            v = GetAttrOrStyle(tag, "fill");
+            v = GetAttrOrStyle(tag, "fill", &styleSheet);
             if (!v.empty() && v != "none") child.fill = v;
-            v = GetAttrOrStyle(tag, "font-weight");
+            v = GetAttrOrStyle(tag, "font-weight", &styleSheet);
             if (!v.empty()) child.bold = (v == "bold" || v == "700" || v == "bolder");
             gStack.push_back(child);
             // self-closing g?
@@ -389,6 +739,44 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                 if (b.got) {
                     boxes.push_back({ b.minX, b.minY, b.maxX, b.maxY });
                 }
+            }
+            continue;
+        }
+
+        // A nested <svg x=".." y=".."> shifts its whole subtree. Treat it as
+        // a translate so labels inside a nested viewport do not land at the
+        // parent's origin.
+        if (TagIs(tag, "svg") && tag.size() > 1 && tag[1] != 47) {
+            Ctx child = gStack.back();
+            const std::string nx = GetAttrOrStyle(tag, "x");
+            const std::string ny = GetAttrOrStyle(tag, "y");
+            if (!nx.empty() || !ny.empty()) {
+                float op[6] = {1, 0, 0, 1, 0, 0};
+                op[4] = nx.empty() ? 0.0f : ToFloat(nx, 0.0f);
+                op[5] = ny.empty() ? 0.0f : ToFloat(ny, 0.0f);
+                float out2[6];
+                ComposeOp(out2, child.m, op);
+                for (int mi = 0; mi < 6; mi++) child.m[mi] = out2[mi];
+            }
+            gStack.push_back(child);
+            if (tag.back() == 47) gStack.pop_back();
+            continue;
+        }
+        if (TagIs(tag, "/svg")) {
+            if (gStack.size() > 1) gStack.pop_back();
+            continue;
+        }
+
+        // <path id=".."> records a start point for <textPath> anchoring.
+        // Collected before the defs skip would matter, but paths used by a
+        // textPath are normally declared outside <defs> too, and this branch
+        // runs for any <path> the scanner reaches.
+        if (TagIs(tag, "path") && tag.size() > 1 && tag[1] != 47) {
+            const std::string pid = GetAttrOrStyle(tag, "id");
+            const std::string dd = GetAttrOrStyle(tag, "d");
+            float px = 0.0f, py = 0.0f;
+            if (!pid.empty() && !dd.empty() && FirstMoveTo(dd, &px, &py)) {
+                pathStarts.push_back({pid, px, py});
             }
             continue;
         }
@@ -430,79 +818,173 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                 return outv;
             };
             std::string v;
-            v = GetAttrOrStyle(tag, "font-size");
+            v = GetAttrOrStyle(tag, "font-size", &styleSheet);
             if (!v.empty()) ctx.fontSize = ToFloat(v, ctx.fontSize) * ctx.m[3];
-            v = GetAttrOrStyle(tag, "font-family");
+            v = GetAttrOrStyle(tag, "font-family", &styleSheet);
             if (!v.empty()) ctx.fontFamily = v;
-            v = GetAttrOrStyle(tag, "text-anchor");
+            v = GetAttrOrStyle(tag, "text-anchor", &styleSheet);
             if (!v.empty()) ctx.anchor = v;
-            v = GetAttrOrStyle(tag, "fill");
+            v = GetAttrOrStyle(tag, "fill", &styleSheet);
             if (!v.empty() && v != "none") ctx.fill = v;
-            v = GetAttrOrStyle(tag, "font-weight");
+            v = GetAttrOrStyle(tag, "font-weight", &styleSheet);
             if (!v.empty()) ctx.bold = (v == "bold" || v == "700" || v == "bolder");
             // dominant-baseline / alignment-baseline modes that make
             // y the vertical center of the glyphs.
-            std::string db = GetAttrOrStyle(tag, "dominant-baseline");
-            if (db.empty()) db = GetAttrOrStyle(tag, "alignment-baseline");
+            std::string db = GetAttrOrStyle(tag, "dominant-baseline", &styleSheet);
+            if (db.empty()) db = GetAttrOrStyle(tag, "alignment-baseline", &styleSheet);
             if (db == "central" || db == "middle") ctx.central = true;
-            float xBase = firstNum(GetAttrOrStyle(tag, "x"), 0.0f);
-            float yBase = firstNum(GetAttrOrStyle(tag, "y"), 0.0f);
+            float xBase = firstNum(GetAttrOrStyle(tag, "x", &styleSheet), 0.0f);
+            float yBase = firstNum(GetAttrOrStyle(tag, "y", &styleSheet), 0.0f);
+            // dy with no y is the only way to place such text: Batik and
+            // Graphviz emit <text x="10" dy="12">. Ignoring it drops the
+            // label onto the top edge of the drawing.
+            const std::string dyStr = GetAttrOrStyle(tag, "dy", &styleSheet);
+            if (!dyStr.empty() && GetAttrOrStyle(tag, "y", &styleSheet).empty()) {
+                yBase = firstNum(dyStr, yBase);
+            }
+            // <text><textPath href="#id"> carries no x/y of its own, so its
+            // label had no position and was drawn at the document origin, on
+            // top of unrelated content. Anchor at the start of the referenced
+            // path instead. Start is an approximation (a faithful version
+            // measures along the curve and honours startOffset), but it puts
+            // the label on its path rather than at 0,0.
+            bool onTextPath = false;
+            {
+                // A <textPath> is the first child of its <text>, so peek at
+                // it without consuming: look for the tag right after this
+                // <text>'s own attributes.
+                const std::string probe = p.PeekTag();
+                if (TagIs(probe, "textpath")) {
+                    std::string href = GetAttrOrStyle(probe, "href");
+                    if (href.empty()) href = GetAttrOrStyle(probe, "xlink:href");
+                    std::string wanted = href;
+                    if (!wanted.empty() && wanted[0] == '#')
+                        wanted = wanted.substr(1);
+                    for (const auto& ps : pathStarts) {
+                        if (ps.id != wanted) continue;
+                        // Compose the path's start through the current
+                        // transform so nested groups place it correctly.
+                        const float lx = ctx.m[0] * ps.x + ctx.m[2] * ps.y + ctx.m[4];
+                        const float ly = ctx.m[1] * ps.x + ctx.m[3] * ps.y + ctx.m[5];
+                        xBase = lx;
+                        yBase = ly;
+                        onTextPath = true;
+                        break;
+                    }
+                }
+            }
+
             // The text element itself is a level on the stack so the
             // inner tspan loop and the run builder read one context.
             gStack.push_back(ctx);
 
             while (true) {
-                std::string text = p.TextUntilTag();
-                size_t a = text.find_first_not_of(" \t\n\r");
-                size_t z = text.find_last_not_of(" \t\n\r");
-                if (a != std::string::npos && z != std::string::npos && z >= a) {
-                    std::string trimmed = text.substr(a, z - a + 1);
-                    if (!trimmed.empty()) {
-                        // Transform position through composed ctx.m.
+                // CDATA inside <text> is literal content, not markup, so it
+                // becomes a run instead of being skipped as a tag.
+                if (p.AtCData()) {
+                    const std::string lit = p.TakeCData();
+                    if (!lit.empty()) {
                         Ctx use = gStack.back();
-                        // tspan overrides currently on stack top.
+                        TextRun cr;
+                        cr.x = use.m[0] * xBase + use.m[2] * yBase + use.m[4];
+                        cr.y = use.m[1] * xBase + use.m[3] * yBase + use.m[5];
+                        cr.fontSize = use.fontSize;
+                        cr.fontFamily = use.fontFamily;
+                        cr.anchor = use.anchor;
+                        cr.fill = use.fill;
+                        cr.bold = use.bold;
+                        cr.central = use.central;
+                        cr.chained = chainNext;
+                        chainNext = false;
+                        cr.text = lit;
+                        runs.push_back(cr);
+                    }
+                    continue;
+                }
+                // Text between tags is the run content.
+                {
+                    const std::string raw = p.TextUntilTag();
+                    const size_t a = raw.find_first_not_of(" \t\n\r");
+                    const size_t z = raw.find_last_not_of(" \t\n\r");
+                    if (a != std::string::npos && z != std::string::npos && z >= a) {
+                        Ctx use = gStack.back();
                         TextRun run;
-                        float px = xBase, py = yBase;
-                        float lx = use.m[0] * px + use.m[2] * py + use.m[4];
-                        float ly = use.m[1] * px + use.m[3] * py + use.m[5];
-                        run.x = lx;
-                        run.y = ly;
+                        run.x = use.m[0] * xBase + use.m[2] * yBase + use.m[4];
+                        run.y = use.m[1] * xBase + use.m[3] * yBase + use.m[5];
                         run.fontSize = use.fontSize;
                         run.fontFamily = use.fontFamily;
                         run.anchor = use.anchor;
                         run.fill = use.fill;
                         run.bold = use.bold;
                         run.central = use.central;
-                        run.text = DecodeEntities(trimmed);
+                        // A rotate or skew travels with the run so the
+                        // renderer turns the glyphs with their shape.
+                        if (use.m[0] != 1.0f || use.m[1] != 0.0f ||
+                            use.m[2] != 0.0f || use.m[3] != 1.0f) {
+                            run.transformed = true;
+                            run.ma = use.m[0]; run.mb = use.m[1];
+                            run.mc = use.m[2]; run.md = use.m[3];
+                        }
+                        run.chained = chainNext;
+                        chainNext = false;
+                        run.text = DecodeEntities(raw.substr(a, z - a + 1));
                         runs.push_back(run);
                     }
                 }
                 std::string inner = p.NextTag();
                 if (inner.empty()) {
                     if (gStack.size() > 1) gStack.pop_back();
+                    // Only when this <text> was itself the branch the switch
+                    // chose. A <text> nested inside a chosen <g> must not end
+                    // the branch, or the rest of that group is skipped.
+                    if (chosenWasText && switchSkip == kSwInChosen) {
+                        switchSkip = kSwAfterBranch;
+                        chosenWasText = false;
+                    }
                     break;
                 }
                 if (TagIs(inner, "/text")) {
                     if (gStack.size() > 1) gStack.pop_back();
+                    if (chosenWasText && switchSkip == kSwInChosen) {
+                        switchSkip = kSwAfterBranch;
+                        chosenWasText = false;
+                    }
                     break;
+                }
+                // Skip the <textPath> wrapper itself: it carries the anchor
+                // we already applied, and its own content is not a run.
+                if (TagIs(inner, "textpath")) {
+                    if (inner.size() > 1 && inner[1] == 47) {
+                        if (gStack.size() > 1) gStack.pop_back();
+                        continue;
+                    }
+                    if (inner.back() == 47) continue;  // empty, self-closed
+                    continue;
                 }
                 if (TagIs(inner, "tspan") && inner.size() > 1 && inner[1] != 47) {
                     Ctx child = gStack.back();
                     std::string v2;
-                    v2 = GetAttrOrStyle(inner, "x");
-                    if (!v2.empty()) xBase = firstNum(v2, xBase);
-                    v2 = GetAttrOrStyle(inner, "y");
-                    std::string yv = GetAttrOrStyle(inner, "y");
+                    v2 = GetAttrOrStyle(inner, "x", &styleSheet);
+                    if (!v2.empty()) {
+                        xBase = firstNum(v2, xBase);
+                        // An explicit x repositions the pen, so this tspan's
+                        // text continues from the previous run instead of
+                        // restarting at xBase.
+                        chainNext = true;
+                        tspanHadX = true;
+                    }
+                    v2 = GetAttrOrStyle(inner, "y", &styleSheet);
+                    std::string yv = GetAttrOrStyle(inner, "y", &styleSheet);
                     if (!yv.empty()) yBase = firstNum(yv, yBase);
-                    v2 = GetAttrOrStyle(inner, "font-size");
+                    v2 = GetAttrOrStyle(inner, "font-size", &styleSheet);
                     if (!v2.empty()) child.fontSize = ToFloat(v2, child.fontSize) * child.m[3];
-                    v2 = GetAttrOrStyle(inner, "font-family");
+                    v2 = GetAttrOrStyle(inner, "font-family", &styleSheet);
                     if (!v2.empty()) child.fontFamily = v2;
-                    v2 = GetAttrOrStyle(inner, "text-anchor");
+                    v2 = GetAttrOrStyle(inner, "text-anchor", &styleSheet);
                     if (!v2.empty()) child.anchor = v2;
-                    v2 = GetAttrOrStyle(inner, "fill");
+                    v2 = GetAttrOrStyle(inner, "fill", &styleSheet);
                     if (!v2.empty() && v2 != "none") child.fill = v2;
-                    v2 = GetAttrOrStyle(inner, "font-weight");
+                    v2 = GetAttrOrStyle(inner, "font-weight", &styleSheet);
                     if (!v2.empty()) child.bold = (v2 == "bold" || v2 == "700" || v2 == "bolder");
                     gStack.push_back(child);
                     if (!inner.empty() && inner.back() == 47) gStack.pop_back();
@@ -510,6 +992,10 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                 }
                 if (TagIs(inner, "/tspan")) {
                     if (gStack.size() > 1) gStack.pop_back();
+                    // Text after the tspan continues from the tspan's end, so
+                    // it is chained too when that tspan carried its own x.
+                    chainNext = tspanHadX;
+                    tspanHadX = false;
                     continue;
                 }
             }

@@ -141,3 +141,266 @@ TEST(SvgText, NoBoxWithoutDataGroup) {
     ASSERT_EQ(runs.size(), 1u);
     EXPECT_FALSE(runs[0].boxValid);
 }
+
+// --- Regression tests for the SVG text viewer review ---------------------
+// Each of these reproduced a visible defect: wrong glyph position, missing
+// transform, duplicated fallback label, or ignored styling.
+
+// A <textPath> carries no x/y, so the label used to be drawn at the document
+// origin on top of unrelated content.
+TEST(SvgText, TextPathAnchorsToPathStart) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"200\">"
+        "<path id=\"p\" d=\"M40,150 C80,60 140,60 180,150\"/>"
+        "<text><textPath href=\"#p\">Mid</textPath></text></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].x, 40.0f, 0.01f);
+    EXPECT_NEAR(runs[0].y, 150.0f, 0.01f);
+}
+
+// The reusable path usually lives in <defs>, which is skipped wholesale.
+TEST(SvgText, TextPathFindsPathInsideDefs) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"200\"><defs>"
+        "<path id=\"p\" d=\"M40,150 L180,150\"/></defs>"
+        "<text><textPath href=\"#p\">Mid</textPath></text></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].x, 40.0f, 0.01f);
+    EXPECT_NEAR(runs[0].y, 150.0f, 0.01f);
+}
+
+// rotate/skew were dropped, so shapes turned and their labels stayed put.
+TEST(SvgText, RotateMovesAndMarksRun) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"200\">"
+        "<g transform=\"rotate(90 100 100)\">"
+        "<text x=\"100\" y=\"50\">Sideways</text></g></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_TRUE(runs[0].transformed);
+    EXPECT_NEAR(runs[0].x, 150.0f, 0.01f);
+    EXPECT_NEAR(runs[0].y, 100.0f, 0.01f);
+}
+
+TEST(SvgText, SkewXMovesAndMarksRun) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"200\">"
+        "<g transform=\"skewX(20)\"><text x=\"20\" y=\"20\">S</text></g></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_TRUE(runs[0].transformed);
+    EXPECT_NEAR(runs[0].x, 27.3f, 0.1f);
+}
+
+// A transform name is case-sensitive in SVG: skewX is not skew.
+TEST(SvgText, SkewIsCaseInsensitiveInName) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"200\">"
+        "<g transform=\"skewX(20)\"><text x=\"0\" y=\"20\">S</text></g></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_TRUE(runs[0].transformed);
+}
+
+TEST(SvgText, PlainTextIsNotMarkedTransformed) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"100\" height=\"50\"><text x=\"5\" y=\"20\">P</text></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_FALSE(runs[0].transformed);
+    EXPECT_FALSE(runs[0].chained);
+}
+
+// <switch> drew every branch, stamping fallback labels on top of each other.
+TEST(SvgText, SwitchDrawsOnlyFirstBranch) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"100\"><switch>"
+        "<g systemLanguage=\"en\"><text x=\"20\" y=\"30\">Hello</text></g>"
+        "<g systemLanguage=\"fr\"><text x=\"20\" y=\"30\">Bonjour</text></g>"
+        "</switch></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_EQ(runs[0].text, "Hello");
+}
+
+TEST(SvgText, SwitchWithBareTextBranches) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"100\"><switch>"
+        "<text x=\"20\" y=\"30\">A</text>"
+        "<text x=\"20\" y=\"30\">B</text></switch></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_EQ(runs[0].text, "A");
+}
+
+TEST(SvgText, SwitchSkipsSelfClosingFirstBranch) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"100\"><switch><g/>"
+        "<g><text x=\"20\" y=\"30\">B</text></g></switch></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_EQ(runs[0].text, "B");
+}
+
+// A nested switch decides for itself; its choice stands.
+TEST(SvgText, NestedSwitchKeepsInnerChoice) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"100\"><switch>"
+        "<switch><g><text x=\"20\" y=\"30\">Inner</text></g></switch>"
+        "<g><text x=\"20\" y=\"30\">Outer</text></g></switch></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_EQ(runs[0].text, "Inner");
+}
+
+// A self-closing child must not raise the nesting depth, or the chosen branch
+// never ends and the next sibling is drawn.
+TEST(SvgText, SwitchBranchWithSelfClosingChild) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"100\"><switch>"
+        "<g><rect x=\"0\" y=\"0\" width=\"10\" height=\"10\"/>"
+        "<text x=\"20\" y=\"30\">Lab</text></g>"
+        "<g><text x=\"99\" y=\"99\">No</text></g></switch></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_EQ(runs[0].text, "Lab");
+}
+
+TEST(SvgText, EmptySwitchDoesNotSwallowSiblings) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"100\" height=\"50\"><switch></switch>"
+        "<text x=\"5\" y=\"20\">After</text></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_EQ(runs[0].text, "After");
+}
+
+TEST(SvgText, NoSwitchIsUnaffected) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"100\" height=\"50\"><text x=\"5\" y=\"20\">Plain</text></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_EQ(runs[0].text, "Plain");
+}
+
+// <style> class rules were ignored, so Inkscape and hand-written files lost
+// every size and colour that was not repeated on the element.
+TEST(SvgText, CssClassSetsFontSizeAndFill) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"60\"><style>"
+        ".lab{font-size:9px;fill:#ff0000}</style>"
+        "<text class=\"lab\" x=\"10\" y=\"20\">Red</text></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].fontSize, 9.0f, 0.01f);
+    EXPECT_EQ(runs[0].fill, "#ff0000");
+}
+
+TEST(SvgText, CssClassOnGroupInherits) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"60\"><style>.big{font-size:24px}</style>"
+        "<g class=\"big\"><text x=\"10\" y=\"30\">Big</text></g></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].fontSize, 24.0f, 0.01f);
+}
+
+TEST(SvgText, CssClassMatchesAnyNameInList) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"60\"><style>.b{font-size:7px}</style>"
+        "<text class=\"a b\" x=\"10\" y=\"20\">T</text></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].fontSize, 7.0f, 0.01f);
+}
+
+// Presentation attributes outrank the stylesheet.
+TEST(SvgText, AttributeBeatsStylesheet) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"60\"><style>.lab{font-size:9px}</style>"
+        "<text class=\"lab\" font-size=\"30\" x=\"10\" y=\"20\">A</text></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].fontSize, 30.0f, 0.01f);
+}
+
+// Element selectors are not applied rather than misapplied.
+TEST(SvgText, ElementSelectorIsIgnoredNotMisapplied) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"60\"><style>text{font-size:99px}</style>"
+        "<text x=\"10\" y=\"20\">El</text></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].fontSize, 16.0f, 0.01f);
+}
+
+// dy with no y is the only placement such text has.
+TEST(SvgText, DyWithoutYPositionsText) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"100\" height=\"50\"><text x=\"10\" dy=\"12\">Mid</text></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].y, 12.0f, 0.01f);
+}
+
+// ToFloat stopped at the unit suffix, so "9pt" was treated as 9px.
+TEST(SvgText, PtUnitIsConverted) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"60\">"
+        "<text x=\"10\" y=\"20\" font-size=\"9pt\">Pt</text></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].fontSize, 11.25f, 0.01f);
+}
+
+TEST(SvgText, PxUnitIsUnchanged) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"60\">"
+        "<text x=\"10\" y=\"20\" font-size=\"12px\">P</text></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].fontSize, 12.0f, 0.01f);
+}
+
+// Text after a <tspan x="..."> continues from the tspan's end.
+TEST(SvgText, TextAfterTspanXIsChained) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"100\" height=\"50\"><text x=\"1\" y=\"9\">"
+        "AB<tspan x=\"50\">CD</tspan>EF</text></svg>");
+    ASSERT_EQ(runs.size(), 3u);
+    EXPECT_EQ(runs[0].text, "AB");
+    EXPECT_FALSE(runs[0].chained);
+    EXPECT_EQ(runs[1].text, "CD");
+    EXPECT_TRUE(runs[1].chained);
+    EXPECT_EQ(runs[2].text, "EF");
+    EXPECT_TRUE(runs[2].chained);
+}
+
+// A nested <svg x/y> shifts its subtree; the text used to land at the origin.
+TEST(SvgText, NestedSvgOffsetApplies) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"100\" height=\"50\"><svg x=\"10\" y=\"20\" "
+        "width=\"50\" height=\"20\"><text x=\"1\" y=\"9\">In</text></svg></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].x, 11.0f, 0.01f);
+    EXPECT_NEAR(runs[0].y, 29.0f, 0.01f);
+}
+
+// CDATA is literal text and may contain '>'.
+TEST(SvgText, CDataInsideTextBecomesRun) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"60\">"
+        "<text x=\"10\" y=\"20\"><![CDATA[A > B]]></text></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_EQ(runs[0].text, "A > B");
+}
+
+TEST(SvgText, CDataWrappedStyleIsParsed) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"60\"><style>"
+        "<![CDATA[.lab{font-size:11px}]]></style>"
+        "<text class=\"lab\" x=\"10\" y=\"20\">C</text></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].fontSize, 11.0f, 0.01f);
+}
+
+// translate and scale were already handled; keep them working.
+TEST(SvgText, TranslateStillPositionsText) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"200\">"
+        "<g transform=\"translate(5,5)\"><text x=\"100\" y=\"100\">T</text></g></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].x, 105.0f, 0.01f);
+    EXPECT_NEAR(runs[0].y, 105.0f, 0.01f);
+    EXPECT_FALSE(runs[0].transformed);
+}
+
+TEST(SvgText, ScaleStillPositionsText) {
+    auto runs = svg::ExtractTextRuns(
+        "<svg width=\"200\" height=\"200\">"
+        "<g transform=\"scale(2)\"><text x=\"100\" y=\"100\">S</text></g></svg>");
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].x, 200.0f, 0.01f);
+    EXPECT_NEAR(runs[0].y, 200.0f, 0.01f);
+}

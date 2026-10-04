@@ -370,6 +370,10 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
     };
     std::vector<FmtEntry> fmtCache;
 
+    // Pen position across runs, for text continuing after a <tspan x="...">.
+    float chainAdvance = 0.0f;
+    bool  chainValid = false;
+
     for (const auto& run : drawRuns) {
         if (run.text.empty()) continue;
 
@@ -501,9 +505,41 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
         D2D1_COLOR_F color = ParseColor(run.fill, defaultColor);
         br.p->SetColor(color);
 
-        ctx->DrawTextLayout(
-            D2D1::Point2F(tx, ty), tl, br.p,
-            D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
+        // Text that follows a <tspan x="..."> continues from where the
+        // previous run ended. The extractor has no font metrics, so it marks
+        // the run instead of computing an x, and the advance happens here
+        // where tm.width is known.
+        if (run.chained && chainValid) {
+            tx += chainAdvance;
+        }
+
+        // A rotate or skew on an ancestor must turn the glyphs too. D2D draws
+        // the shapes rotated, so unrotated text sits visibly off its own shape.
+        // Compose translate(anchor) * linear * translate(-anchor) around the
+        // run's position so it spins in place.
+        if (run.transformed) {
+            const float ax = tx, ay = ty;
+            // translate(anchor) * linear * translate(-anchor): the linear part
+            // is (ma, mb, mc, md) and the translation part re-anchors it.
+            D2D1_MATRIX_3X2_F rot;
+            rot._11 = run.ma; rot._12 = run.mb;
+            rot._21 = run.mc; rot._22 = run.md;
+            rot._31 = ax - (run.ma * ax + run.mc * ay);
+            rot._32 = ay - (run.mb * ax + run.md * ay);
+            ctx->SetTransform(rot * textT);
+            ctx->DrawTextLayout(
+                D2D1::Point2F(tx, ty), tl, br.p,
+                D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
+            ctx->SetTransform(textT);
+        } else {
+            ctx->DrawTextLayout(
+                D2D1::Point2F(tx, ty), tl, br.p,
+                D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
+        }
+
+        // Remember where this run ended for the next chained run.
+        chainAdvance = tm.width;
+        chainValid = true;
 
         if (kDebugCross) {
             // Magenta cross at the run's anchored point (run.x,
