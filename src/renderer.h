@@ -34,7 +34,6 @@ public:
     // zoom survives a restart as well.
     static constexpr float kMinZoom     = zoom::kMinZoom;
     static constexpr float kMaxZoom     = zoom::kMaxZoom;
-    static constexpr float kZoomStep    = zoom::kZoomStep;
     static constexpr float kDefaultZoom = zoom::kDefaultZoom;
 
     // Set a specific zoom factor. The value is clamped to
@@ -42,15 +41,17 @@ public:
     void SetZoom(float z);
     float GetZoom() const { return zoom_; }
     float Zoom() const { return zoom_; }  // legacy alias for GetZoom
-    void ZoomIn();     // multiply by kZoomStep, clamped
-    void ZoomOut();    // divide by kZoomStep, clamped
-    void ResetZoom();  // back to kDefaultZoom (100%)
     void SetWrap(bool w);
     bool Wrap() const { return wrapEnabled_; }
 
     // Content width mode: 0=Standard(800), 1=960, 2=1600, 3=Full width.
     void SetContentWidthMode(int mode);
     int  ContentWidthMode() const { return contentWidthMode_; }
+
+    // Width of the content column in DIPs at the current zoom, which is
+    // the horizontal scroll range. Mode 3 has no cap, so it reports the
+    // viewport's own width and therefore never scrolls horizontally.
+    float ContentWidthDip() const { return ComputeMetrics().maxContentWidth; }
 
     // True when the document on screen is a standalone .svg file, not
     // markdown. Only then is a ```svg fence drawn as a picture; inside a
@@ -66,9 +67,11 @@ public:
     // Draw the document. scrollY is the vertical offset in DIPs.
     // widthDip is the client width in DIPs.
     // Returns the total rendered height in DIPs (unscrolled).
+    // scrollX scrolls the content column horizontally; it is zero unless
+    // the column is wider than the viewport, which happens at high zoom.
     float Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                  const Document& doc, float widthDip, float scrollY,
-                 float topOffsetDip,
+                 float topOffsetDip, float scrollX = 0.0f,
                  const Selection* sel = nullptr);
 
     // Measure the total content height in DIPs without drawing.
@@ -81,7 +84,8 @@ public:
     float RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                            const std::string& src, float widthDip,
                            float scrollY, float topOffsetDip,
-                           const Selection* sel);
+                           float scrollX = 0.0f,
+                           const Selection* sel = nullptr);
     // Measure the source view height without drawing.
     float MeasureSourceView(IDWriteFactory* dw, const std::string& src,
                             float widthDip, float topOffsetDip);

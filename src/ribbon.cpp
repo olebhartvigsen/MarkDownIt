@@ -400,12 +400,36 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
                 return hrWidth;
             }
         }
+        // Zoom readout: the current level as a whole percentage. The zoom
+        // guide requires a visible percentage that updates on every change.
+        if (nCmdID == IDC_CMD_ZOOMLEVEL) {
+            wchar_t buf[16] = {};
+            swprintf_s(buf, _countof(buf), L"%d%%",
+                       m_pApp ? m_pApp->ZoomPercent() : 100);
+            return SetCmdLabel(buf, ppropvarNewValue);
+        }
     }
 
     // Enable/disable format buttons based on edit mode.
     if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_Enabled))
     {
         diag::TraceFmt("UpdateProperty enabled branch cmd=%u", nCmdID);
+
+        // Zoom is available in both view and edit mode, so it must not go
+        // through the editing gate below. At either end of the range the
+        // button that cannot act is disabled, which the zoom guide asks
+        // for; a live-looking button that silently does nothing reads as a
+        // broken control.
+        if (m_pApp &&
+            (nCmdID == IDC_CMD_ZOOMIN || nCmdID == IDC_CMD_ZOOMOUT)) {
+            ppropvarNewValue->vt = VT_BOOL;
+            const bool on = (nCmdID == IDC_CMD_ZOOMIN)
+                ? m_pApp->CanZoomIn()
+                : m_pApp->CanZoomOut();
+            ppropvarNewValue->boolVal = on ? VARIANT_TRUE : VARIANT_FALSE;
+            return S_OK;
+        }
+
         static const UINT fmtCmds[] = {
             IDC_CMD_BOLD, IDC_CMD_ITALIC, IDC_CMD_CODE, IDC_CMD_STRIKE,
             IDC_CMD_H1, IDC_CMD_H2, IDC_CMD_H3,
@@ -540,6 +564,10 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_WRAP:    m_pApp->ToggleWrap();        break;
     case IDC_CMD_ZOOMIN:  m_pApp->ZoomIn();            break;
     case IDC_CMD_ZOOMOUT: m_pApp->ZoomOut();           break;
+    // Clicking the percentage readout returns to 100%, which is the one
+    // numeric preset a viewer always needs.
+    case IDC_CMD_ZOOMLEVEL:      m_pApp->ResetZoom();        break;
+    case IDC_CMD_ZOOM_FIT_WIDTH: m_pApp->FitZoomToWidth();   break;
     case IDC_CMD_ABOUT:   m_pApp->ShowAbout();         break;
     case IDC_CMD_BOLD:    m_pApp->ToggleBold();        break;
     case IDC_CMD_ITALIC: m_pApp->ToggleItalic();      break;

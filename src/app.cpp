@@ -2450,7 +2450,7 @@ void AppWindow::OnCreate(HWND hwnd) {
     // the D2D Present() from overwriting the ribbon's rendering.
     hwnd_content_ = CreateWindowExW(
         0, kContentClassName, L"",
-        WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_CLIPSIBLINGS,
+        WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | WS_CLIPSIBLINGS,
         0, 0, 0, 0,
         hwnd, nullptr, hinst_, this);
     if (!hwnd_content_) {
@@ -2514,6 +2514,23 @@ void AppWindow::UpdateScrollInfo() {
     if (scrollY_ < 0.0f) scrollY_ = 0.0f;
     if (scrollY_ > maxScroll) scrollY_ = maxScroll;
 
+    // Horizontal range: the content column's width at the current zoom
+    // against the viewport width. Content narrower than the viewport
+    // means no horizontal scrolling at all, which is what keeps the page
+    // centred at low zoom.
+    float clientWDip = static_cast<float>(clientW_);
+    if (rt_) {
+        D2D1_SIZE_F rtSize = rt_->GetSize();
+        clientWDip = rtSize.width;
+    }
+    const float contentW = renderer_.ContentWidthDip();
+    float maxScrollX = 0.0f;
+    if (contentW > clientWDip && clientWDip > 0.0f) {
+        maxScrollX = contentW - clientWDip;
+    }
+    if (scrollX_ < 0.0f) scrollX_ = 0.0f;
+    if (scrollX_ > maxScrollX) scrollX_ = maxScrollX;
+
     SCROLLINFO si = {};
     si.cbSize = sizeof(si);
     si.fMask  = SIF_RANGE | SIF_PAGE | SIF_POS;
@@ -2522,6 +2539,15 @@ void AppWindow::UpdateScrollInfo() {
     si.nPage  = static_cast<UINT>(clientHDip > 0 ? clientHDip : 1);
     si.nPos   = static_cast<int>(scrollY_);
     SetScrollInfo(hwnd_content_, SB_VERT, &si, TRUE);
+
+    SCROLLINFO sih = {};
+    sih.cbSize = sizeof(sih);
+    sih.fMask  = SIF_RANGE | SIF_PAGE | SIF_POS;
+    sih.nMin   = 0;
+    sih.nMax   = static_cast<int>(contentW);
+    sih.nPage  = static_cast<UINT>(clientWDip > 0.0f ? clientWDip : 1);
+    sih.nPos   = static_cast<int>(scrollX_);
+    SetScrollInfo(hwnd_content_, SB_HORZ, &sih, TRUE);
 }
 
 void AppWindow::ResizeContentWindow() {
@@ -2548,6 +2574,7 @@ void AppWindow::OnSize(HWND hwnd, int width, int height) {
 
 void AppWindow::OnContentSize(HWND hwnd, int width, int height) {
     clientH_ = height;
+    clientW_ = width;
     if (rt_) {
         D2D1_SIZE_U size = D2D1::SizeU(
             width > 0 ? width : 1, height > 0 ? height : 1);
@@ -2801,6 +2828,47 @@ void AppWindow::OnContentVScroll(HWND hwnd, int code, int pos) {
     StartSpring(targetY);
 }
 
+// Horizontal scrolling. No spring: a horizontal drag maps straight to an
+// offset, and the vertical spring is tuned for wheel momentum, which would
+// feel wrong when dragging a scrollbar thumb sideways.
+void AppWindow::OnContentHScroll(HWND hwnd, int code, int pos) {
+    (void)pos;
+    float page = static_cast<float>(clientW_ > 0 ? clientW_ : 1);
+    if (rt_) {
+        D2D1_SIZE_F rtSize = rt_->GetSize();
+        page = rtSize.width;
+    }
+
+    float targetX = scrollX_;
+    switch (code) {
+        case SB_LINEUP:        targetX = scrollX_ - 40.0f; break;
+        case SB_LINEDOWN:      targetX = scrollX_ + 40.0f; break;
+        case SB_PAGEUP:        targetX = scrollX_ - page * 0.9f; break;
+        case SB_PAGEDOWN:      targetX = scrollX_ + page * 0.9f; break;
+        case SB_THUMBTRACK:
+        case SB_THUMBPOSITION: {
+            SCROLLINFO si = {};
+            si.cbSize = sizeof(si);
+            si.fMask = SIF_TRACKPOS;
+            GetScrollInfo(hwnd, SB_HORZ, &si);
+            scrollX_ = static_cast<float>(si.nTrackPos);
+            if (scrollX_ < 0.0f) scrollX_ = 0.0f;
+            UpdateScrollInfo();
+            Repaint();
+            UpdateCaretPosition();
+            return;
+        }
+        case SB_LEFT:  targetX = 0.0f; break;
+        case SB_RIGHT: targetX = renderer_.ContentWidthDip(); break;
+    }
+
+    if (targetX < 0.0f) targetX = 0.0f;
+    scrollX_ = targetX;
+    UpdateScrollInfo();
+    Repaint();
+    UpdateCaretPosition();
+}
+
 // ── Mouse wheel / trackpad ────────────────────────────────────────
 void AppWindow::OnContentMouseWheel(HWND hwnd, int delta) {
     DWORD now = GetTickCount();
@@ -2925,9 +2993,10 @@ void AppWindow::OnContentPaint(HWND hwnd) {
             // RenderSourceView doesn't clear the cache itself.
             layout_cache_.Clear();
             renderer_.RenderSourceView(rt_, dw_factory_, buffer_.Text(),
-                size.width, scrollY_, 0.0f, &sel_);
+                size.width, scrollY_, 0.0f, scrollX_, &sel_);
         } else {
-            renderer_.Render(rt_, dw_factory_, doc_, size.width, scrollY_, 0.0f, &sel_);
+            renderer_.Render(rt_, dw_factory_, doc_, size.width, scrollY_,
+                0.0f, scrollX_, &sel_);
         }
     }
 
@@ -5545,7 +5614,7 @@ void AppWindow::ExportPdf() {
 // scale linearly with zoom, so a doc point at scrollY_ + anchorY sits
 // at (scrollY_ + anchorY) * newZoom/oldZoom after the change; solve
 // for the scroll offset that puts it back under the anchor.
-void AppWindow::ApplyZoom(float newZoom) {
+void AppWindow::ApplyZoom(float newZoom, float focusYdip, float focusXdip) {
     float oldZoom = renderer_.GetZoom();
     renderer_.SetZoom(newZoom);  // clamps to kMinZoom..kMaxZoom
     const float newZoomClamped = renderer_.GetZoom();
@@ -5558,19 +5627,12 @@ void AppWindow::ApplyZoom(float newZoom) {
     settings_.zoomFactor = renderer_.GetZoom();
     SaveSettings(settings_);
 
-    // Anchor Y inside the content viewport (DIPs): the cursor when it
-    // is over the document, otherwise the viewport center.
-    float anchorY = 0.0f;
-    if (rt_) anchorY = rt_->GetSize().height * 0.5f;
-    POINT pt = {};
-    if (hwnd_content_ && GetCursorPos(&pt)) {
-        ScreenToClient(hwnd_content_, &pt);
-        RECT rc = {};
-        GetClientRect(hwnd_content_, &rc);
-        if (pt.x >= 0 && pt.y >= 0 && pt.x < rc.right && pt.y < rc.bottom) {
-            anchorY = static_cast<float>(pt.y);
-        }
-    }
+    // The focus point comes from the caller: the pointer for a wheel
+    // gesture, the viewport centre for a button or a keyboard shortcut.
+    // Probing the cursor here instead made a ribbon click anchor on an
+    // arbitrary point whenever the mouse happened to be over the text.
+    const float anchorY = focusYdip;
+    const float anchorX = focusXdip;
 
     // Stop any in-flight scroll animation so it cannot fight the jump.
     StopScrollAnimation();
@@ -5583,7 +5645,11 @@ void AppWindow::ApplyZoom(float newZoom) {
 
     if (oldZoom > 0.001f) {
         const float k = newZoomClamped / oldZoom;
+        // Same formula the zoom guide gives, applied per axis:
+        // t' = a - s'((a - t) / s), written to keep the factor explicit.
         scrollY_ = (scrollY_ + anchorY) * k - anchorY;
+        scrollX_ = (scrollX_ + anchorX) * k - anchorX;
+        if (scrollX_ < 0.0f) scrollX_ = 0.0f;
     }
 
     // Re-measure at the new zoom so the clamp below uses the new total
@@ -5599,18 +5665,64 @@ void AppWindow::ApplyZoom(float newZoom) {
     }
     UpdateScrollInfo();
     Repaint();
+
+    // Re-query the zoom controls. Without this the + and - buttons keep
+    // whatever enabled state they were given at startup, so they stay live
+    // at the maximum and disabled below the minimum. The percentage readout
+    // needs the same call or it keeps showing the pre-zoom level.
+    if (g_pRibbonFramework) {
+        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_ZOOMIN,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
+        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_ZOOMOUT,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
+        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_ZOOMLEVEL,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Label);
+    }
+}
+
+// Viewport centre, in content-window DIPs. A button or keyboard zoom uses
+// this as its focus point; a wheel gesture uses the pointer instead.
+static float CenterYDip(ID2D1RenderTarget* rt) {
+    if (!rt) return 0.0f;
+    return rt->GetSize().height * 0.5f;
+}
+static float CenterXDip(ID2D1RenderTarget* rt) {
+    if (!rt) return 0.0f;
+    return rt->GetSize().width * 0.5f;
 }
 
 void AppWindow::ZoomIn() {
-    ApplyZoom(renderer_.GetZoom() * renderer_.kZoomStep);
+    ApplyZoom(zoom::Step(renderer_.GetZoom(), true),
+              CenterYDip(rt_), CenterXDip(rt_));
 }
 
 void AppWindow::ZoomOut() {
-    ApplyZoom(renderer_.GetZoom() / renderer_.kZoomStep);
+    ApplyZoom(zoom::Step(renderer_.GetZoom(), false),
+              CenterYDip(rt_), CenterXDip(rt_));
 }
 
 void AppWindow::ResetZoom() {
-    ApplyZoom(renderer_.kDefaultZoom);
+    ApplyZoom(renderer_.kDefaultZoom, CenterYDip(rt_), CenterXDip(rt_));
+}
+
+bool AppWindow::CanZoomIn() const {
+    return renderer_.GetZoom() < renderer_.kMaxZoom - 1e-4f;
+}
+
+bool AppWindow::CanZoomOut() const {
+    return renderer_.GetZoom() > renderer_.kMinZoom + 1e-4f;
+}
+
+void AppWindow::FitZoomToWidth() {
+    // The content column is 800 DIPs at 100% in the default width mode
+    // (renderer.cpp ComputeMetrics). Scaling the factor by the ratio of
+    // available width to that base width makes the column fill the
+    // viewport, and the model clamps the result to the zoom range.
+    if (!rt_) return;
+    const float available = rt_->GetSize().width;
+    const float base = 800.0f;
+    ApplyZoom(zoom::FitWidth(available, base),
+              CenterYDip(rt_), CenterXDip(rt_));
 }
 
 bool AppWindow::IsWrapEnabled() const {
@@ -6020,6 +6132,7 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_SETFOCUS:  OnSetFocus(hwnd);  return 0;
         case WM_KILLFOCUS: OnKillFocus(hwnd); return 0;
         case WM_VSCROLL:    OnContentVScroll(hwnd, (int)LOWORD(wp), (int)HIWORD(wp)); return 0;
+        case WM_HSCROLL:    OnContentHScroll(hwnd, (int)LOWORD(wp), (int)HIWORD(wp)); return 0;
         case WM_MOUSEWHEEL: {
             int delta = GET_WHEEL_DELTA_WPARAM(wp);
             // Ctrl+wheel zooms instead of scrolling; ApplyZoom anchors on
@@ -6028,18 +6141,49 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             // step once per 120 WHEEL_DELTA notch. Returns early: no
             // scrolling path runs for the same event.
             if (GET_KEYSTATE_WPARAM(wp) & MK_CONTROL) {
+                // WM_MOUSEWHEEL packs the cursor position in screen
+                // coordinates; the zoom has to keep whatever content point
+                // sits under it in the same place on screen.
+                float focusX = CenterXDip(rt_);
+                float focusY = CenterYDip(rt_);
+                POINT pt = {};
+                if (hwnd_content_ && GetCursorPos(&pt)) {
+                    ScreenToClient(hwnd_content_, &pt);
+                    RECT rc = {};
+                    GetClientRect(hwnd_content_, &rc);
+                    if (pt.x >= 0 && pt.y >= 0 &&
+                        pt.x < rc.right && pt.y < rc.bottom) {
+                        focusX = static_cast<float>(pt.x);
+                        focusY = static_cast<float>(pt.y);
+                    }
+                }
                 wheel_zoom_acc_ += static_cast<float>(delta);
                 while (wheel_zoom_acc_ >= WHEEL_DELTA) {
-                    ZoomIn();
+                    ApplyZoom(zoom::Step(renderer_.GetZoom(), true),
+                              focusY, focusX);
                     wheel_zoom_acc_ -= WHEEL_DELTA;
                 }
                 while (wheel_zoom_acc_ <= -WHEEL_DELTA) {
-                    ZoomOut();
+                    ApplyZoom(zoom::Step(renderer_.GetZoom(), false),
+                              focusY, focusX);
                     wheel_zoom_acc_ += WHEEL_DELTA;
                 }
                 return 0;
             }
             wheel_zoom_acc_ = 0.0f;
+            // Shift+wheel scrolls sideways. The guide asks for this where
+            // horizontal scrolling exists, which it now does at high zoom.
+            // Natural direction is preserved: shift+wheel down still moves
+            // content down, it just moves the window right.
+            if (GET_KEYSTATE_WPARAM(wp) & MK_SHIFT) {
+                float shift = -static_cast<float>(delta) / 40.0f;
+                scrollX_ += shift;
+                if (scrollX_ < 0.0f) scrollX_ = 0.0f;
+                UpdateScrollInfo();
+                Repaint();
+                UpdateCaretPosition();
+                return 0;
+            }
             OnContentMouseWheel(hwnd, delta);
             return 0;
         }

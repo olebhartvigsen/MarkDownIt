@@ -155,18 +155,6 @@ void Renderer::SetZoom(float z) {
     zoom_ = zoom::Clamp(z);
 }
 
-void Renderer::ZoomIn() {
-    zoom_ = zoom::Clamp(zoom_ * zoom::kZoomStep);
-}
-
-void Renderer::ZoomOut() {
-    zoom_ = zoom::Clamp(zoom_ / zoom::kZoomStep);
-}
-
-void Renderer::ResetZoom() {
-    zoom_ = zoom::kDefaultZoom;
-}
-
 void Renderer::SetWrap(bool w) {
     wrapEnabled_ = w;
 }
@@ -885,7 +873,7 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
 
 float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                        const Document& doc, float widthDip, float scrollY,
-                       float topOffsetDip,
+                       float topOffsetDip, float scrollX,
                        const Selection* sel) {
     if (!rt || !dw) return 0.0f;
     LayoutMetrics m = ComputeMetrics();
@@ -933,7 +921,10 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         D2D1::RectF(0.0f, topOffsetDip, clipSize.width, clipSize.height),
         (D2D1_ANTIALIAS_MODE)0);
 
-    rt->SetTransform(D2D1::Matrix3x2F::Translation(0.0f, -scrollY));
+    // Scroll both axes: the content column exceeds the viewport width at
+    // high zoom, so a vertical-only offset left the right-hand part of
+    // every line unreachable.
+    rt->SetTransform(D2D1::Matrix3x2F::Translation(-scrollX, -scrollY));
 
     // Clear the layout cache before rebuilding.
     if (cache_) cache_->Clear();
@@ -1547,6 +1538,7 @@ float Renderer::MeasureSourceView(IDWriteFactory* dw, const std::string& src,
 float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                   const std::string& src, float widthDip,
                                   float scrollY, float topOffsetDip,
+                                  float scrollX,
                                   const Selection* sel) {
     if (!rt || !dw || !code_fmt_) return topOffsetDip;
 
@@ -1589,7 +1581,7 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     rt->PushAxisAlignedClip(clipRect, D2D1_ANTIALIAS_MODE_ALIASED);
 
     // Translate for scrolling.
-    rt->SetTransform(D2D1::Matrix3x2F::Translation(0, -scrollY));
+    rt->SetTransform(D2D1::Matrix3x2F::Translation(-scrollX, -scrollY));
 
     // Draw text.
     ID2D1SolidColorBrush* textBrush = nullptr;

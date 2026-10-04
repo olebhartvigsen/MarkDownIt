@@ -26,6 +26,11 @@
         <String>View</String>
       </Command.LabelTitle>
     </Command>
+    <Command Name="cmdGroupZoom" Symbol="IDC_GROUP_ZOOM" Id="10021">
+      <Command.LabelTitle>
+        <String>Zoom</String>
+      </Command.LabelTitle>
+    </Command>
     <Command Name="cmdGroupFormat" Symbol="IDC_GROUP_FORMAT" Id="10030">
       <Command.LabelTitle>
         <String>Format</String>
@@ -146,7 +151,7 @@
         <Image Source="icons/wrap_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
-    <Command Name="cmdZoomIn" Symbol="IDC_CMD_ZOOMIN" Id="10201">
+    <Command Name="cmdZoomIn" Symbol="IDC_CMD_ZOOMIN" Id="10201" KeyTip="I">
       <Command.LabelTitle>
         <String>Zoom In</String>
       </Command.LabelTitle>
@@ -158,7 +163,7 @@
         <Image Source="icons/zoom-in_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
-    <Command Name="cmdZoomOut" Symbol="IDC_CMD_ZOOMOUT" Id="10202">
+    <Command Name="cmdZoomOut" Symbol="IDC_CMD_ZOOMOUT" Id="10202" KeyTip="O">
       <Command.LabelTitle>
         <String>Zoom Out</String>
       </Command.LabelTitle>
@@ -166,6 +171,31 @@
         <Image Source="icons/zoom-out_32.png" MinDPI="96"/>
         <Image Source="icons/zoom-out_64.png" MinDPI="192"/>
       </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/zoom-out_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
+    <Command Name="cmdZoomLevel" Symbol="IDC_CMD_ZOOMLEVEL" Id="10203" KeyTip="1">
+      <Command.LabelTitle>
+        <String>100%</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Zoom level</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Shows the current zoom. Click to return to 100%.</String>
+      </Command.TooltipDescription>
+    </Command>
+    <Command Name="cmdZoomFitWidth" Symbol="IDC_CMD_ZOOM_FIT_WIDTH" Id="10204" KeyTip="W">
+      <Command.LabelTitle>
+        <String>Fit Width</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Fit Width</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Scale the page so its full width fits the window.</String>
+      </Command.TooltipDescription>
       <Command.SmallImages>
         <Image Source="icons/zoom-out_16.png" MinDPI="96"/>
       </Command.SmallImages>
@@ -736,6 +766,10 @@
             <ToggleButton CommandName="cmdWrap" />
             <Button CommandName="cmdZoomIn" />
             <Button CommandName="cmdZoomOut" />
+          </Group>
+          <Group CommandName="cmdGroupZoom" SizeDefinition="ThreeButtons">
+            <Label CommandName="cmdZoomLevel" />
+            <Button CommandName="cmdZoomFitWidth" />
           </Group>
         </Tab>
         <Tab CommandName="cmdTabInsert">

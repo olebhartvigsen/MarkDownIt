@@ -53,6 +53,14 @@ public:
     void ZoomIn();
     void ZoomOut();
     void ResetZoom();
+    // Current zoom as a whole percentage, for the ribbon's zoom readout.
+    int  ZoomPercent() const { return zoom::Percent(renderer_.GetZoom()); }
+    // Scale so the content column fills the viewport width.
+    void FitZoomToWidth();
+    // True when + and - would still change the zoom. The ribbon greys the
+    // buttons out at the limits rather than letting them do nothing.
+    bool CanZoomIn() const;
+    bool CanZoomOut() const;
     void ToggleWrap();
     bool IsWrapEnabled() const;
     void ShowAbout();
@@ -166,8 +174,14 @@ private:
 
     // Scroll state (in DIPs)
     float  scrollY_    = 0.0f;  // current scroll position (animated)
+    // Horizontal offset in DIPs. The content column is 800 DIPs wide at
+    // 100% and scales with zoom, so above roughly 150% on a typical
+    // window the right-hand part of the text is outside the viewport
+    // unless it can be scrolled to.
+    float  scrollX_    = 0.0f;
     float  totalH_     = 0.0f;
     int    clientH_    = 0;
+    int    clientW_    = 0;  // viewport width, for horizontal scroll range
     UINT   dpi_        = 96;   // current monitor DPI (for DIP↔pixel conversion)
 
     // ── Smooth scroll physics engine ──────────────────────────────
@@ -204,7 +218,12 @@ private:
     // Change the zoom factor and keep the point under the cursor (or the
     // viewport center) anchored on screen; updates scroll, scrollbars,
     // and repaints.
-    void ApplyZoom(float newZoom);
+    // focusDip is the viewport Y (and X once horizontal scrolling exists)
+    // that stays fixed across the zoom. Callers pass the pointer position
+    // for a wheel gesture and the viewport centre for a button or
+    // shortcut, which is what the zoom guide asks for.
+    void ApplyZoom(float newZoom, float focusYdip, float focusXdip);
+    void OnContentHScroll(HWND hwnd, int code, int pos);
 
     // Editor state
     TextBuffer   buffer_;
