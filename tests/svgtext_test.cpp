@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 
 TEST(SvgText, FindsSingleText) {
     std::string xml =
@@ -506,4 +507,150 @@ TEST(SvgBoxPairing, EqualAreaTieIsStable) {
     auto again = svg::ExtractTextRuns(xml);
     ASSERT_EQ(again.size(), 1u);
     EXPECT_NEAR(again[0].bx, runs[0].bx, 0.001f);
+}
+
+
+// --- CSS rule lookup and textPath lookup must not be linear ------------
+// Both used to scan every rule, respectively every declared path, for each
+// styled element. That is quadratic in rules times elements, and the stress
+// pass lost its largest case to it.
+TEST(SvgStyleLookup, ManyRulesStayLinear) {
+    // A lookup that always resolves to the LAST rule is the worst case: a scan
+    // can never exit early. Doubling costs the old scan ~4.3x, a hash ~2x.
+    // The quadratic is rules TIMES styled elements, so both have to grow: with
+    // a single <text> the lookup runs once and the old code is linear too.
+    // Both dimensions double together, each element carrying a class that
+    // resolves to the LAST rule, so a scan can never exit early.
+    auto timeIt = [](size_t n) {
+        std::string xml = "<style>";
+        char buf[64];
+        for (size_t i = 0; i < n; ++i) {
+            snprintf(buf, sizeof buf, ".c%zu{fill:red}", i);
+            xml += buf;
+        }
+        xml += "</style>";
+        for (size_t i = 0; i < n; ++i)
+            xml += "<text class='cLAST' x='1' y='2'>A</text>";
+        const auto t0 = std::chrono::steady_clock::now();
+        auto runs = svg::ExtractTextRuns(xml);
+        const auto t1 = std::chrono::steady_clock::now();
+        EXPECT_EQ(runs.size(), n);
+        return std::chrono::duration<double>(t1 - t0).count();
+    };
+    auto best = [&timeIt](size_t n) {
+        double b = 1e9;
+        for (int i = 0; i < 3; ++i) b = std::min(b, timeIt(n));
+        return b;
+    };
+    // Start where the quadratic term dominates. At 1000 rules the whole
+    // stylesheet parse is only a few ms, which a fixed floor would swallow and
+    // let the regression through. At 2000 rules the old scan costs 40 ms and
+    // the index 5 ms, so an 8 ms ceiling separates them with room either way.
+    const double t1 = best(500);
+    const double t2 = best(1000);
+    EXPECT_LT(t2, std::max(t1 * 3.0, 0.020));
+}
+
+// The first declaration for a class must still win. Indexing the rules must
+// not change which of two declarations for the same class applies.
+TEST(SvgStyleLookup, FirstDeclarationStillWins) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'>"
+        "<style>.c{fill:#111}.c{fill:#222}</style>"
+        "<text class='c' x='1' y='2'>A</text>"
+        "</svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    // #111 is the first declaration, so it is the one that applies.
+    EXPECT_NE(runs[0].fill.find("#111"), std::string::npos);
+}
+
+// A later <style> block must not displace an earlier declaration, which is the
+// cascade order the old scan produced.
+TEST(SvgStyleLookup, EarlierBlockWinsAcrossStylesheets) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'>"
+        "<style>.c{fill:#111}</style>"
+        "<style>.c{fill:#222}</style>"
+        "<text class='c' x='1' y='2'>A</text>"
+        "</svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NE(runs[0].fill.find("#111"), std::string::npos);
+}
+
+// With several classes on one element the first matching one applies.
+TEST(SvgStyleLookup, FirstMatchingClassWins) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'>"
+        "<style>.a{fill:#aaa}.b{fill:#bbb}</style>"
+        "<text class='a b' x='1' y='2'>A</text>"
+        "</svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NE(runs[0].fill.find("#aaa"), std::string::npos);
+}
+
+// A textPath lookup resolves to the declared path start, first id wins.
+TEST(SvgTextPathLookup, ResolvesFirstAndLastPath) {
+    auto xOf = [](int target) {
+        std::string xml = "<svg xmlns='http://www.w3.org/2000/svg'><defs>";
+        char buf[128];
+        for (int i = 0; i < 12; ++i) {
+            snprintf(buf, sizeof buf, "<path id='p%d' d='M %d 0'/>", i, i * 100);
+            xml += buf;
+        }
+        xml += "</defs>";
+        snprintf(buf, sizeof buf, "<text><textPath href='#p%d'>L</textPath></text>", target);
+        xml += buf;
+        xml += "</svg>";
+        auto runs = svg::ExtractTextRuns(xml);
+        if (runs.size() != 1) return -1.0f;
+        return runs[0].x;
+    };
+    EXPECT_NEAR(xOf(0), 0.0f, 0.01f);
+    EXPECT_NEAR(xOf(5), 500.0f, 0.01f);
+    EXPECT_NEAR(xOf(11), 1100.0f, 0.01f);
+}
+
+// Many paths, many labels referencing the last one: the worst case for a scan.
+TEST(SvgTextPathLookup, ManyPathsManyLabelsStayLinear) {
+    auto timeIt = [](size_t n) {
+        std::string xml;
+        char buf[128];
+        for (size_t i = 0; i < n; ++i) {
+            snprintf(buf, sizeof buf, "<path id='p%zu' d='M0 0'/>", i);
+            xml += buf;
+        }
+        for (size_t i = 0; i < n; ++i)
+            xml += "<text><textPath href='#pLAST'>a</textPath></text>";
+        snprintf(buf, sizeof buf, "p%zu", n - 1);
+        size_t at = xml.find("pLAST");
+        for (size_t k = 0; k < strlen(buf); ++k) xml[at + k] = buf[k];
+        const auto t0 = std::chrono::steady_clock::now();
+        auto runs = svg::ExtractTextRuns(xml);
+        const auto t1 = std::chrono::steady_clock::now();
+        EXPECT_EQ(runs.size(), n);
+        return std::chrono::duration<double>(t1 - t0).count();
+    };
+    auto best = [&timeIt](size_t n) {
+        double b = 1e9;
+        for (int i = 0; i < 3; ++i) b = std::min(b, timeIt(n));
+        return b;
+    };
+    const double t1 = best(4000);
+    const double t2 = best(8000);
+    EXPECT_LT(t2, std::max(t1 * 2.8, 0.020));
+}
+
+// A textPath naming an id that was never declared leaves the run unpositioned,
+// exactly as before.
+TEST(SvgTextPathLookup, MissingIdLeavesRunUnpositioned) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'>"
+        "<text><textPath href='#nope'>L</textPath></text></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NEAR(runs[0].x, 0.0f, 0.01f);
+    EXPECT_NEAR(runs[0].y, 0.0f, 0.01f);
 }
