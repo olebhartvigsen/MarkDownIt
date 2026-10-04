@@ -318,3 +318,52 @@ TEST(ParserSmoke, ValidateDocumentRejectsBrokenTableInvariants) {
         EXPECT_TRUE(errors[0].find("has no rows") != std::string::npos);
     }
 }
+
+
+// --- Standalone-SVG fence behaviour -------------------------------------
+// A ```svg fence is a picture only when the document is a standalone .svg
+// file. In a .md file it is code the author wrote, so it must stay code.
+// The renderer gates on Renderer::StandaloneSvg(), which the app sets from
+// the file extension in LoadDocumentText.
+
+TEST(SvgFence, SvgFenceParsesAsCodeBlock) {
+    const std::string md =
+        "Before\n\n```svg\n<svg width=\"10\" height=\"10\"/>\n```\n\nAfter\n";
+    Document d;
+    ParseMarkdown(md, d);
+    int codeBlocks = 0;
+    for (const auto& n : d.nodes) {
+        if (n.block == BlockKind::CodeBlock) ++codeBlocks;
+    }
+    // It stays a code block either way; only the drawing differs. This
+    // guards against a future change that promotes the fence to a
+    // non-code block kind, which would bypass the gate entirely.
+    EXPECT_TRUE(codeBlocks >= 1);
+}
+
+TEST(SvgFence, SvgFenceCarriesSvgLang) {
+    const std::string md = "```svg\n<svg/>\n```\n";
+    Document d;
+    ParseMarkdown(md, d);
+    bool sawSvgLang = false;
+    for (const auto& n : d.nodes) {
+        if (n.block == BlockKind::CodeBlock && n.lang == "svg") sawSvgLang = true;
+    }
+    EXPECT_TRUE(sawSvgLang);
+}
+
+// A standalone .svg is wrapped in a fence so the markdown pipeline can
+// parse it; the raw content is what gets rendered. Mirrors the
+// WrapLangFence/HasLangFence pair in app.cpp.
+TEST(SvgFence, WrappedStandaloneSvgParsesToOneSvgBlock) {
+    const std::string svgFile =
+        "<svg width=\"120\" height=\"60\"><text x=\"5\" y=\"20\">Hi</text></svg>";
+    const std::string wrapped = "```svg\n" + svgFile + "\n```\n";
+    Document d;
+    ParseMarkdown(wrapped, d);
+    int codeBlocks = 0;
+    for (const auto& n : d.nodes) {
+        if (n.block == BlockKind::CodeBlock) ++codeBlocks;
+    }
+    EXPECT_EQ(codeBlocks, 1);
+}

@@ -762,9 +762,11 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
         }
 
         if (n.block == BlockKind::CodeBlock) {
-            // SVG blocks (and only those) measure via the SVG document.
+            // SVG blocks (and only those) measure via the SVG document, and
+            // only in a standalone .svg file. Measure and draw must agree,
+            // or the page height and the painted content drift apart.
             float svgH = 0.0f;
-            if (n.lang == "svg") {
+            if (n.lang == "svg" && standaloneSvg_) {
                 svgH = MeasureSvgBlock(dw, n, drawX, drawW);
             }
             if (svgH > 0.0f) {
@@ -968,7 +970,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         curY += gap;
 
         if (n.block == BlockKind::CodeBlock &&
-            n.lang == "svg") {
+            n.lang == "svg" && standaloneSvg_) {
             float blockH = 0.0f;
             DrawSvgBlock(rt, dw, n, drawX, curY, drawW, blockH, sel);
             curY += blockH;

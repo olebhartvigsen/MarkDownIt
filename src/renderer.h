@@ -52,6 +52,12 @@ public:
     void SetContentWidthMode(int mode);
     int  ContentWidthMode() const { return contentWidthMode_; }
 
+    // True when the document on screen is a standalone .svg file, not
+    // markdown. Only then is a ```svg fence drawn as a picture; inside a
+    // .md file a ```svg fence is code the author wrote, so it stays code.
+    void SetStandaloneSvg(bool v) { standaloneSvg_ = v; }
+    bool StandaloneSvg() const { return standaloneSvg_; }
+
     void SetLayoutCache(LayoutCache* cache) { cache_ = cache; }
 
     // Set pointer to the source text for offset calculations.
@@ -88,6 +94,7 @@ private:
     IDWriteTextFormat* heading_fmt_[7] = {};
     float zoom_ = kDefaultZoom;  // 100%
     bool wrapEnabled_ = true;
+    bool standaloneSvg_ = false;
     int  contentWidthMode_ = 0;  // 0=Standard(800), 1=960, 2=1600, 3=Full
     LayoutCache* cache_ = nullptr;
     const std::string* srcText_ = nullptr;  // source text for offset calc

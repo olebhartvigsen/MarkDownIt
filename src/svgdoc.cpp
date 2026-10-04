@@ -2,7 +2,6 @@
 #include "svgtext.h"
 #include "crash_trace.h"
 
-#include <algorithm>
 #include <cmath>
 
 // SHCreateMemStream from shlwapi
@@ -110,93 +109,18 @@ SvgDoc::~SvgDoc() {
 void SvgDoc::Release() {
     if (doc_) { doc_->Release(); doc_ = nullptr; }
     texts_.clear();
-    texts_original_.clear();
     width_ = 0.0f;
     height_ = 0.0f;
 }
 
 
-// --- Text pipeline mode (diagnostic; remove after alignment fix) ---
-// Marker file %LOCALAPPDATA%\MarkDownIt\svg_text_mode.on:
-//   content "native" -> D2D renders <text> itself (no strip, no
-//                        custom DrawTexts).
-//   anything else     -> strip text, draw runs via DrawTexts.
-namespace textmode {
-enum Mode { kUnknown, kStrip, kNative };
-static Mode g_mode = kUnknown;
-static Mode Current() {
-    if (g_mode != kUnknown) return g_mode;
-    char path[MAX_PATH] = {};
-    if (FAILED(SHGetFolderPathA(nullptr, CSIDL_LOCAL_APPDATA, nullptr,
-                                0, path))) {
-        g_mode = kStrip;
-        return g_mode;
-    }
-    std::string f = path;
-    f += "\x5cMarkDownIt\x5csvg_text_mode.on";
-    HANDLE h = CreateFileA(f.c_str(), GENERIC_READ, FILE_SHARE_READ,
-                           nullptr, OPEN_EXISTING,
-                           FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (h == INVALID_HANDLE_VALUE) { g_mode = kStrip; return g_mode; }
-    char buf[16] = {};
-    DWORD got = 0;
-    ReadFile(h, buf, sizeof(buf) - 1, &got, nullptr);
-    CloseHandle(h);
-    std::string v(buf, got);
-    // trim
-    while (!v.empty() && (v.back() == 13 || v.back() == 10 || v.back() == 32)) v.pop_back();
-    g_mode = (v == "native") ? kNative : kStrip;
-    return g_mode;
-}
-}  // namespace textmode
-
-// Diagnostic offset experiments, marker-gated:
-//   svg_baseline_off.on  -> skip baseline correction in DrawTexts
-//   svg_prev_off.on      -> SetTransform(docT) ignoring page prev
-static bool MarkerExists(const char* tail) {
-    char path[MAX_PATH] = {};
-    if (FAILED(SHGetFolderPathA(nullptr, CSIDL_LOCAL_APPDATA, nullptr,
-                                0, path))) return false;
-    std::string f = path;
-    f += std::string(1, 92) + "MarkDownIt" + std::string(1, 92) + tail;
-    DWORD at = GetFileAttributesA(f.c_str());
-    return at != INVALID_FILE_ATTRIBUTES;
-}
-static bool g_baseOffChecked = false;
-static bool g_baseOff = false;
-static bool BaselineOff() {
-    if (!g_baseOffChecked) {
-        g_baseOff = MarkerExists("svg_baseline_off.on");
-        g_baseOffChecked = true;
-        diag::TraceFmt("SVGDOC baseline_off=%d", g_baseOff ? 1 : 0);
-    }
-    return g_baseOff;
-}
-static bool g_prevOffChecked = false;
-static bool g_prevOff = false;
-static bool PrevOff() {
-    if (!g_prevOffChecked) {
-        g_prevOff = MarkerExists("svg_prev_off.on");
-        g_prevOffChecked = true;
-        diag::TraceFmt("SVGDOC prev_off=%d", g_prevOff ? 1 : 0);
-    }
-    return g_prevOff;
-}
 bool SvgDoc::Load(ID2D1DeviceContext5* ctx, const std::string& xml) {
     Release();
     if (!ctx || xml.empty()) return false;
 
     texts_ = ExtractTextRuns(xml);
-    texts_original_ = texts_;
     std::string shapes = StripTextElements(xml);
-    if (textmode::Current() == textmode::kNative) {
-        // Diagnostic: let D2D render <text> itself and skip our runs.
-        texts_.clear();
-        shapes = xml;
-        diag::TraceFmt("SVGDOC mode=native");
-    } else {
-        diag::TraceFmt("SVGDOC mode=strip runs=%zu", texts_.size());
-    }
+    diag::TraceFmt("SVGDOC mode=strip runs=%zu", texts_.size());
 
     ReadViewBox(xml, width_, height_);
     if (width_ <= 0.0f) width_ = 300.0f;
@@ -286,7 +210,7 @@ void SvgDoc::Draw(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
     // which draws the whole diagram offset up/left from its card.
     D2D1::Matrix3x2F docT =
         D2D1::Matrix3x2F::Scale(s, s) * D2D1::Matrix3x2F::Translation(x, y);
-    ctx->SetTransform(PrevOff() ? docT : (prev * docT));
+    ctx->SetTransform(prev * docT);
 
     if (doc_) {
         ctx->DrawSvgDocument(doc_);
@@ -344,14 +268,11 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
     ctx->GetTransform(&prev);
     // Draw text under prev*docTransform, the exact matrix the shapes
     // are drawn with, expressed in document space. Text therefore
-    // cannot drift relative to the graphics on scroll or zoom
-    // tempo. (An earlier page-space conversion mixed transforms
-    // and produced per-run offsets; the svg_text_layout.on marker
-    // is now a no-op, kept harmless if still present.)
-    static const bool kDebugCross = MarkerExists("svg_text_debug.on");
-    D2D1_MATRIX_3X2_F textT = PrevOff()
-        ? docTransform
-        : (prev * docTransform);
+    // cannot drift relative to the graphics on scroll or zoom tempo.
+    // (An earlier page-space conversion mixed transforms and produced
+    // per-run offsets; that was the bug the svg_text_layout.on marker
+    // was diagnosing. It is gone, so the marker went with it.)
+    D2D1_MATRIX_3X2_F textT = prev * docTransform;
     const std::vector<TextRun>& drawRuns = texts_;
     ctx->SetTransform(textT);
 
@@ -492,8 +413,9 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
         DWRITE_LINE_METRICS lm = {};
         UINT32 lmCount = 0;
         tl->GetLineMetrics(&lm, 1, &lmCount);
+        // Real value when DirectWrite reports it; the 80% guess is only a
+        // fallback for a layout that reports no line metrics.
         float baseline = (lmCount > 0) ? lm.baseline : tm.height * 0.8f;
-        if (BaselineOff()) baseline = 0.0f;
         // dominant-baseline="central": x/y is the glyph center, not
         // the baseline, so center the layout height on run.y.
         float ty = (centerY >= 0.0f)
@@ -540,29 +462,6 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
         // Remember where this run ended for the next chained run.
         chainAdvance = tm.width;
         chainValid = true;
-
-        if (kDebugCross) {
-            // Magenta cross at the run's anchored point (run.x,
-            // run.y): baseline/center anchor per the run flags.
-            ID2D1SolidColorBrush* cross = nullptr;
-            ctx->CreateSolidColorBrush(
-                D2D1::ColorF(1.0f, 0.0f, 1.0f, 1.0f), &cross);
-            if (cross) {
-                float cx = run.x;
-                float cy = run.y;
-                if (centerY >= 0.0f) {
-                    cx = run.bx + run.bw / 2.0f;
-                    cy = run.by + run.bh / 2.0f;
-                }
-                D2D1_POINT_2F a = D2D1::Point2F(cx - 6, cy - 6);
-                D2D1_POINT_2F b = D2D1::Point2F(cx + 6, cy + 6);
-                D2D1_POINT_2F d = D2D1::Point2F(cx - 6, cy + 6);
-                D2D1_POINT_2F e = D2D1::Point2F(cx + 6, cy - 6);
-                ctx->DrawLine(a, b, cross, 1.0f);
-                ctx->DrawLine(d, e, cross, 1.0f);
-                cross->Release();
-            }
-        }
 
         tl->Release();
     }

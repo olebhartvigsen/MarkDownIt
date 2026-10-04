@@ -2272,6 +2272,9 @@ void AppWindow::LoadDocumentText(const std::string& raw, const std::wstring& pat
     // the fence again so the file on disk keeps its original form.
     is_mmd_ = !path.empty() && EndsWithExtension(path, L".mmd");
     is_svg_ = !path.empty() && EndsWithExtension(path, L".svg");
+    // A ```svg fence is a picture only in a standalone .svg file. In a .md
+    // file the author wrote that fence as code, so it renders as code.
+    renderer_.SetStandaloneSvg(is_svg_);
     mmd_wrapped_ = false;
     if (is_mmd_ && !HasLangFence(utf8, "mermaid")) {
         utf8 = WrapLangFence("mermaid", utf8);
