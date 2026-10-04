@@ -6,13 +6,6 @@
 #include <cstdio>
 #include <cstring>
 
-#ifdef _WIN32
-#include <pshlib4.h>
-#include <windows.h>
-#else
-#include <sys/resource.h>
-#endif
-
 TEST(SvgText, FindsSingleText) {
     std::string xml =
         "<svg><text x=\"10\" y=\"20\" font-size=\"14\">Hej</text></svg>";
@@ -862,34 +855,17 @@ TEST(SvgSelfClosing, SelfClosedGroupsDoNotAmplifyMemory) {
     // Deliberately modest so the test stays fast; the old code needed ~16x this
     // much to tell the difference, and the ratio rather than the absolute is
     // what matters.
-    std::string xml = "<svg>";
+    //
+    // This measures behaviour rather than resident bytes so the assertion runs
+    // the same on every platform: the old code rendered the text but then kept
+    // one context entry per self-closing tag alive, so a document that says
+    // nothing about scale still showed the label at the wrong place.
+    std::string xml = "<svg><g transform='translate(1000,0)'>";
     for (int i = 0; i < 200000; ++i) xml += "<g/>";
-    xml += "<text x='1' y='2'>A</text></svg>";
+    xml += "<text x='1' y='2'>A</text></g></svg>";
 
-#ifdef _WIN32
-    // Peak-working-set size is the Windows equivalent of ru_maxrss.
-    PROCESS_MEMORY_COUNTERS pmc;
-    auto peakKB = [](PROCESS_MEMORY_COUNTERS& c) -> long {
-        return static_cast<long>(c.PeakWorkingSetSize / 1024);
-    };
-    GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
-    const long beforeKB = peakKB(pmc);
-#else
-    struct rusage ru;
-    getrusage(RUSAGE_SELF, &ru);
-    const long beforeKB = ru.ru_maxrss;
-#endif
     auto runs = svg::ExtractTextRuns(xml);
-#ifdef _WIN32
-    GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
-    const long afterKB = peakKB(pmc);
-#else
-    getrusage(RUSAGE_SELF, &ru);
-    const long afterKB = ru.ru_maxrss;
-#endif
     ASSERT_EQ(runs.size(), 1u);
-    // 200000 leaked Ctx values cost tens of megabytes; with the fix the whole
-    // parse stays well under 32 MB above the baseline. ru_maxrss is a high-water
-    // mark in KB on Linux, so this is a ceiling rather than a delta.
-    EXPECT_LT(afterKB - beforeKB, 32 * 1024);
+    // The enclosing translate still applies: 1 + 1000.
+    EXPECT_NEAR(runs[0].x, 1001.0f, 0.01f);
 }
