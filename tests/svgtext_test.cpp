@@ -654,3 +654,118 @@ TEST(SvgTextPathLookup, MissingIdLeavesRunUnpositioned) {
     EXPECT_NEAR(runs[0].x, 0.0f, 0.01f);
     EXPECT_NEAR(runs[0].y, 0.0f, 0.01f);
 }
+
+
+// --- Whitespace trimming must not be quadratic --------------------------
+// The trims erased one leading character at a time from a std::string, and
+// each erase shifts the rest, so trimming N spaces cost O(N^2). 20000 spaces
+// took 24 ms and grew about 4x per doubling; 160000 spaces took 1.5 s for a
+// 160 KB file.
+TEST(SvgWhitespaceTrim, LongLeadingSpacesStayLinear) {
+    auto timeIt = [](size_t n) {
+        std::string xml = "<style>.c{" + std::string(n, ' ') +
+                          "fill:red}</style><text class='c' x='1' y='2'>A</text>";
+        const auto t0 = std::chrono::steady_clock::now();
+        auto runs = svg::ExtractTextRuns(xml);
+        const auto t1 = std::chrono::steady_clock::now();
+        EXPECT_EQ(runs.size(), 1u);
+        return std::chrono::duration<double>(t1 - t0).count();
+    };
+    auto best = [&timeIt](size_t n) {
+        double b = 1e9;
+        for (int i = 0; i < 3; ++i) b = std::min(b, timeIt(n));
+        return b;
+    };
+    const double t1 = best(20000);
+    const double t2 = best(40000);
+    EXPECT_LT(t2, std::max(t1 * 3.0, 0.010));
+}
+
+// The same trim runs on the selector, so it needs the same bound.
+TEST(SvgWhitespaceTrim, LongSelectorPaddingStaysLinear) {
+    auto timeIt = [](size_t n) {
+        std::string xml = "<style>" + std::string(n, ' ') +
+                          ".c{fill:red}</style><text class='c' x='1' y='2'>A</text>";
+        const auto t0 = std::chrono::steady_clock::now();
+        auto runs = svg::ExtractTextRuns(xml);
+        const auto t1 = std::chrono::steady_clock::now();
+        EXPECT_EQ(runs.size(), 1u);
+        return std::chrono::duration<double>(t1 - t0).count();
+    };
+    auto best = [&timeIt](size_t n) {
+        double b = 1e9;
+        for (int i = 0; i < 3; ++i) b = std::min(b, timeIt(n));
+        return b;
+    };
+    const double t1 = best(20000);
+    const double t2 = best(40000);
+    EXPECT_LT(t2, std::max(t1 * 3.0, 0.010));
+}
+
+// Padding around a declaration and a value must be ignored, at both ends, for
+// every kind of CSS whitespace.
+TEST(SvgWhitespaceTrim, PaddingIsIgnoredAtBothEnds) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'>"
+        "<style>.c{   fill:red   ;  font-size:12px  }</style>"
+        "<text class='c' x='1' y='2'>A</text></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NE(runs[0].fill.find("red"), std::string::npos);
+    EXPECT_NEAR(runs[0].fontSize, 12.0f, 0.01f);
+}
+
+TEST(SvgWhitespaceTrim, MixedWhitespaceKindsAreIgnored) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'>"
+        "<style>.c{\t\r\n\f\v fill:\tred \t}</style>"
+        "<text class='c' x='1' y='2'>A</text></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NE(runs[0].fill.find("red"), std::string::npos);
+}
+
+// A body that is nothing but whitespace yields no value rather than a crash.
+TEST(SvgWhitespaceTrim, WhitespaceOnlyBodyIsEmpty) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'><style>.c{     }</style>"
+        "<text class='c' x='1' y='2'>A</text></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_TRUE(runs[0].fill.empty());
+}
+
+// Whitespace before or after the selector must not stop it being recognised.
+TEST(SvgWhitespaceTrim, PaddedSelectorStillMatches) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'><style>   .c   {fill:red}</style>"
+        "<text class='c' x='1' y='2'>A</text></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NE(runs[0].fill.find("red"), std::string::npos);
+}
+
+// The inline style attribute is trimmed the same way. Note the property name is
+// written without a space before the colon: GetStyleValue looks for the literal
+// "fill:" and does not tolerate "fill : ", which is a separate pre-existing gap
+// in inline-style parsing and not something the trim change touches.
+TEST(SvgWhitespaceTrim, InlineStyleIsTrimmed) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'>"
+        "<text style='   fill:#abc   ;  font-size:11px ' x='1' y='2'>A</text></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NE(runs[0].fill.find("#abc"), std::string::npos);
+    EXPECT_NEAR(runs[0].fontSize, 11.0f, 0.01f);
+}
+
+// A presentation attribute still beats the stylesheet after trimming.
+TEST(SvgWhitespaceTrim, AttributeStillBeatsPaddedRule) {
+    std::string xml =
+        "<svg xmlns='http://www.w3.org/2000/svg'>"
+        "<style>.c{   fill:#111   }</style>"
+        "<text class='c' fill='#222' x='1' y='2'>A</text></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_NE(runs[0].fill.find("#222"), std::string::npos);
+}
