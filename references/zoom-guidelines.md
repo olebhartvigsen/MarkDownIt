@@ -155,14 +155,23 @@ same range as every other entry point. The content-width modes (Standard, 960,
 1600, Full) are a line-length setting, not a fit mode: they cap the column
 rather than scaling it to the viewport.
 
-**KeyTips:** zoom in is `I`, zoom out `O`, fit width is `W`. Section 9 of
-`references/ribbon-menu-guidelines.md` reserves `J`, `Y` and `Z`.
+**No KeyTips on the zoom controls.** The project's own ribbon guidelines ask
+for KeyTips, and they are not implemented for any command yet. Attempts to add
+them here failed three CI runs in a row, and the reason is worth recording so
+nobody retries the same thing:
 
-The attribute is lowercase `keytip`, and it goes on the `Button` or
-`ToggleButton` that places the command, never on the `Command` definition.
-The markup compiler rejects both mistakes. `Label` has no `keytip` in the
-schema at all, so the percentage readout has none either: it is reached with
-Tab, and `Ctrl+0` returns to 100% from the keyboard regardless.
+- `keytip` is not accepted on `Command` or on `Button` by the schema `uicc`
+  validates against (`error SC1053`).
+- The published 2006/01 XSD does declare it, on `tab` and `group` only, but
+  the 2009/07 schema this project uses rejects it there too.
+- `Label` is not in the 2006/01 XSD at all, and there is no local copy of the
+  2009/07 schema to check it against.
+
+So the readout is a plain `Button` rather than a `Label`, and no keytip is
+declared anywhere. Keyboard operation does not depend on it: `Ctrl`+`+`,
+`Ctrl`+`-` and `Ctrl+0` cover zoom in, zoom out and back to 100%, which is what
+the zoom guide requires of these controls. Adding KeyTips properly means
+validating against the 2009/07 schema first, not guessing the spelling.
 
 ### Deliberately not implemented
 

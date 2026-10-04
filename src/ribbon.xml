@@ -176,6 +176,9 @@
       </Command.SmallImages>
     </Command>
     <Command Name="cmdZoomLevel" Symbol="IDC_CMD_ZOOMLEVEL" Id="10203">
+      <Command.SmallImages>
+        <Image Source="icons/zoom-out_16.png" MinDPI="96"/>
+      </Command.SmallImages>
       <Command.LabelTitle>
         <String>100%</String>
       </Command.LabelTitle>
@@ -767,8 +770,8 @@
             <Button CommandName="cmdZoomIn" />
             <Button CommandName="cmdZoomOut" />
           </Group>
-          <Group CommandName="cmdGroupZoom" SizeDefinition="ThreeButtons" keytip="ZM">
-            <Label CommandName="cmdZoomLevel" />
+          <Group CommandName="cmdGroupZoom" SizeDefinition="ThreeButtons">
+            <Button CommandName="cmdZoomLevel" />
             <Button CommandName="cmdZoomFitWidth" />
           </Group>
         </Tab>
