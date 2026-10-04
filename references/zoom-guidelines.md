@@ -155,9 +155,14 @@ same range as every other entry point. The content-width modes (Standard, 960,
 1600, Full) are a line-length setting, not a fit mode: they cap the column
 rather than scaling it to the viewport.
 
-**KeyTips:** zoom in is `I`, zoom out `O`, the readout is `1`, fit width is
-`W`. Section 9 of `references/ribbon-menu-guidelines.md` reserves `J`, `Y`
-and `Z`, so the readout does not use `Z`.
+**KeyTips:** zoom in is `I`, zoom out `O`, fit width is `W`. Section 9 of
+`references/ribbon-menu-guidelines.md` reserves `J`, `Y` and `Z`.
+
+The attribute is lowercase `keytip`, and it goes on the `Button` or
+`ToggleButton` that places the command, never on the `Command` definition.
+The markup compiler rejects both mistakes. `Label` has no `keytip` in the
+schema at all, so the percentage readout has none either: it is reached with
+Tab, and `Ctrl+0` returns to 100% from the keyboard regardless.
 
 ### Deliberately not implemented
 

@@ -764,12 +764,12 @@
           </Group>
           <Group CommandName="cmdGroupView" SizeDefinition="ThreeButtons">
             <ToggleButton CommandName="cmdWrap" />
-            <Button CommandName="cmdZoomIn" KeyTip="I" />
-            <Button CommandName="cmdZoomOut" KeyTip="O" />
+            <Button CommandName="cmdZoomIn" keytip="I" />
+            <Button CommandName="cmdZoomOut" keytip="O" />
           </Group>
           <Group CommandName="cmdGroupZoom" SizeDefinition="ThreeButtons">
-            <Label CommandName="cmdZoomLevel" KeyTip="1" />
-            <Button CommandName="cmdZoomFitWidth" KeyTip="W" />
+            <Label CommandName="cmdZoomLevel" />
+            <Button CommandName="cmdZoomFitWidth" keytip="W" />
           </Group>
         </Tab>
         <Tab CommandName="cmdTabInsert">
