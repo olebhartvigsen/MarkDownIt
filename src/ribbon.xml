@@ -151,7 +151,7 @@
         <Image Source="icons/wrap_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
-    <Command Name="cmdZoomIn" Symbol="IDC_CMD_ZOOMIN" Id="10201" KeyTip="I">
+    <Command Name="cmdZoomIn" Symbol="IDC_CMD_ZOOMIN" Id="10201">
       <Command.LabelTitle>
         <String>Zoom In</String>
       </Command.LabelTitle>
@@ -163,7 +163,7 @@
         <Image Source="icons/zoom-in_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
-    <Command Name="cmdZoomOut" Symbol="IDC_CMD_ZOOMOUT" Id="10202" KeyTip="O">
+    <Command Name="cmdZoomOut" Symbol="IDC_CMD_ZOOMOUT" Id="10202">
       <Command.LabelTitle>
         <String>Zoom Out</String>
       </Command.LabelTitle>
@@ -175,7 +175,7 @@
         <Image Source="icons/zoom-out_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
-    <Command Name="cmdZoomLevel" Symbol="IDC_CMD_ZOOMLEVEL" Id="10203" KeyTip="1">
+    <Command Name="cmdZoomLevel" Symbol="IDC_CMD_ZOOMLEVEL" Id="10203">
       <Command.LabelTitle>
         <String>100%</String>
       </Command.LabelTitle>
@@ -186,7 +186,7 @@
         <String>Shows the current zoom. Click to return to 100%.</String>
       </Command.TooltipDescription>
     </Command>
-    <Command Name="cmdZoomFitWidth" Symbol="IDC_CMD_ZOOM_FIT_WIDTH" Id="10204" KeyTip="W">
+    <Command Name="cmdZoomFitWidth" Symbol="IDC_CMD_ZOOM_FIT_WIDTH" Id="10204">
       <Command.LabelTitle>
         <String>Fit Width</String>
       </Command.LabelTitle>
@@ -764,12 +764,12 @@
           </Group>
           <Group CommandName="cmdGroupView" SizeDefinition="ThreeButtons">
             <ToggleButton CommandName="cmdWrap" />
-            <Button CommandName="cmdZoomIn" />
-            <Button CommandName="cmdZoomOut" />
+            <Button CommandName="cmdZoomIn" KeyTip="I" />
+            <Button CommandName="cmdZoomOut" KeyTip="O" />
           </Group>
           <Group CommandName="cmdGroupZoom" SizeDefinition="ThreeButtons">
-            <Label CommandName="cmdZoomLevel" />
-            <Button CommandName="cmdZoomFitWidth" />
+            <Label CommandName="cmdZoomLevel" KeyTip="1" />
+            <Button CommandName="cmdZoomFitWidth" KeyTip="W" />
           </Group>
         </Tab>
         <Tab CommandName="cmdTabInsert">
