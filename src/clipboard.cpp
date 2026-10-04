@@ -1,6 +1,7 @@
 #include "clipboard.h"
 #include <vector>
 #include <algorithm>
+#include <climits>
 #include <cstring>
 
 #ifdef _WIN32
@@ -8,6 +9,49 @@
 #endif
 
 const char* kMarkdownFormatName = "MarkDownIt Markdown";
+
+// Read clipboard memory into a std::string without trusting it to be
+// NUL-terminated.
+//
+// GetClipboardData hands back memory this process did not allocate and that
+// the clipboard contract does not require to be terminated. Constructing a
+// std::string from it, or calling strlen on it, scans past the end of the
+// allocation until it happens to find a zero byte: a crash at best, and at
+// worst adjacent heap bytes copied into the document and then written to disk
+// by the next save. Any process can also claim our own registered format name
+// and supply a handle that is not an HGLOBAL at all, for which GlobalLock is
+// undefined.
+//
+// GlobalSize gives the real extent, so the terminator is only accepted inside
+// it. A handle that is not a moveable global reports a size of zero and is
+// rejected here rather than dereferenced.
+static bool ReadClipboardBytes(HGLOBAL hData, std::string* out) {
+    if (!hData || !out) return false;
+    const SIZE_T size = GlobalSize(hData);
+    if (size == 0) return false;   // not an HGLOBAL, or empty
+    const char* data = static_cast<const char*>(GlobalLock(hData));
+    if (!data) return false;
+    size_t len = 0;
+    while (len < size && data[len] != '\0') ++len;
+    out->assign(data, len);
+    GlobalUnlock(hData);
+    return true;
+}
+
+// Same for wide text, bounded by the allocation in wchar_t units.
+static bool ReadClipboardWide(HGLOBAL hData, std::wstring* out) {
+    if (!hData || !out) return false;
+    const SIZE_T bytes = GlobalSize(hData);
+    if (bytes < sizeof(wchar_t)) return false;
+    const wchar_t* data = static_cast<const wchar_t*>(GlobalLock(hData));
+    if (!data) return false;
+    const size_t maxLen = bytes / sizeof(wchar_t);
+    size_t len = 0;
+    while (len < maxLen && data[len] != L'\0') ++len;
+    out->assign(data, len);
+    GlobalUnlock(hData);
+    return true;
+}
 
 // --- Escape markdown metacharacters ---
 std::string EscapeMarkdown(const std::string& text) {
@@ -308,13 +352,7 @@ std::string ClipboardPaste(HWND hwnd) {
     UINT customFmt = RegisterClipboardFormatA(kMarkdownFormatName);
     if (customFmt && IsClipboardFormatAvailable(customFmt)) {
         HGLOBAL hData = GetClipboardData(customFmt);
-        if (hData) {
-            const char* data = static_cast<const char*>(GlobalLock(hData));
-            if (data) {
-                result = data;
-                GlobalUnlock(hData);
-            }
-        }
+        ReadClipboardBytes(hData, &result);
     }
 
     // 2. Try CF_HTML -> convert to markdown
@@ -323,17 +361,30 @@ std::string ClipboardPaste(HWND hwnd) {
         if (htmlFmt && IsClipboardFormatAvailable(htmlFmt)) {
             HGLOBAL hData = GetClipboardData(htmlFmt);
             if (hData) {
-                const char* data = static_cast<const char*>(GlobalLock(hData));
-                if (data) {
-                    std::string html(data);
-                    GlobalUnlock(hData);
+                std::string html;
+                if (ReadClipboardBytes(hData, &html)) {
                     // Extract the fragment from the clipboard HTML.
                     // CF_HTML has headers like "Version:0.9\nStartHTML:xxx\nEndHTML:yyy\n..."
-                    size_t fragStart = html.find("<!StartFragment>");
-                    size_t fragEnd = html.find("<!EndFragment>");
-                    if (fragStart != std::string::npos && fragEnd != std::string::npos) {
-                        fragStart += 16; // skip the marker
-                        result = HtmlToMarkdown(html.substr(fragStart, fragEnd - fragStart));
+                    //
+                    // The two markers are found independently, so a producer that
+                    // emits them the other way round leaves fragEnd before
+                    // fragStart. Subtracting those size_t values wraps to a huge
+                    // length; substr then clamps and silently yields nothing
+                    // rather than the fragment. Order them explicitly instead,
+                    // and fall back to the whole document when either marker is
+                    // missing or mislaid.
+                    constexpr size_t kStartMarker = 16; // strlen("<!StartFragment>")
+                    constexpr size_t kEndMarker   = 15; // strlen("<!EndFragment>")
+                    const size_t startAt = html.find("<!StartFragment>");
+                    const size_t endAt   = html.find("<!EndFragment>");
+                    const size_t bodyStart =
+                        (startAt == std::string::npos) ? std::string::npos
+                                                       : startAt + kStartMarker;
+                    if (bodyStart != std::string::npos && endAt != std::string::npos &&
+                        endAt >= bodyStart) {
+                        result = HtmlToMarkdown(html.substr(bodyStart, endAt - bodyStart));
+                    } else if (bodyStart != std::string::npos) {
+                        result = HtmlToMarkdown(html.substr(bodyStart));
                     } else {
                         result = HtmlToMarkdown(html);
                     }
@@ -346,13 +397,15 @@ std::string ClipboardPaste(HWND hwnd) {
     if (result.empty() && IsClipboardFormatAvailable(CF_UNICODETEXT)) {
         HGLOBAL hData = GetClipboardData(CF_UNICODETEXT);
         if (hData) {
-            const wchar_t* data = static_cast<const wchar_t*>(GlobalLock(hData));
-            if (data) {
-                int len = 0;
-                while (data[len]) len++;
-                std::string utf8 = WideToUtf8(data, len);
-                GlobalUnlock(hData);
-                result = EscapeMarkdown(utf8);
+            std::wstring wide;
+            if (ReadClipboardWide(hData, &wide)) {
+                // Clamp before narrowing: WideToUtf8 takes an int and rejects a
+                // negative length by returning empty, which would turn an
+                // oversized clipboard into a silent no-op instead of an error.
+                if (wide.size() > static_cast<size_t>(INT_MAX))
+                    wide.resize(static_cast<size_t>(INT_MAX));
+                result = EscapeMarkdown(WideToUtf8(wide.c_str(),
+                                                  static_cast<int>(wide.size())));
             }
         }
     }
