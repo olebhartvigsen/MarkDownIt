@@ -48,6 +48,21 @@ static bool DownloadImage(const std::wstring& url, std::vector<BYTE>& out) {
         return false;
     }
 
+    // The defaults are 30 s each for connect, send and receive, and they
+    // apply here on the paint thread: one unreachable image in a document
+    // can wedge the window for a minute at a time. Bound each phase, and
+    // keep a total deadline via the receive timeout.
+    //
+    // A redirect is no longer allowed to downgrade an https request to
+    // plaintext http, which is the hop an on-path observer would use to
+    // take over the image request. Same-scheme redirects are still
+    // followed, so this is not a fix for redirect-based address
+    // confusion; that needs the remote-image setting, below.
+    WinHttpSetTimeouts(hRequest, 5000, 5000, 5000, 10000);
+    DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_DISALLOW_HTTPS;
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY,
+                     &redirectPolicy, sizeof(redirectPolicy));
+
     BOOL bResult = WinHttpSendRequest(hRequest,
         WINHTTP_NO_ADDITIONAL_HEADERS, 0,
         WINHTTP_NO_REQUEST_DATA, 0, 0, 0);

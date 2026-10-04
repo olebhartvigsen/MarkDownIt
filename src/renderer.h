@@ -122,6 +122,14 @@ private:
     struct InlineImageCacheEntry {
         std::string url;
         ID2D1Bitmap* bmp = nullptr;
+        // A URL that already failed to load or decode. Kept so a repaint
+        // does not retry it: the fetch is synchronous and on the paint
+        // thread, so an unreachable URL in the document would otherwise be
+        // re-requested on every scroll tick and every mouse-move repaint.
+        bool failed = false;
+        // SVG images cache their source text rather than a bitmap, so the
+        // same entry serves the load once and every later repaint.
+        std::string svgText;
     };
     std::vector<InlineImageCacheEntry> img_cache_;
 

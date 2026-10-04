@@ -1200,7 +1200,32 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
                 if (isSvg && d2d_ctx5_) {
                     // Load SVG text and render via SvgDoc.
-                    std::string svgText = ImageHelper::LoadSvgText(ib.url);
+                    //
+                    // This had no cache at all while the raster branch
+                    // below had one, so a remote or large inline SVG was
+                    // re-read, re-downloaded and re-parsed on every single
+                    // repaint. Cache the text and parse from that.
+                    std::string svgText;
+                    bool svgTried = false;
+                    for (const auto& e : img_cache_) {
+                        if (e.url == ib.url) {
+                            svgTried = true;
+                            if (!e.failed) {
+                                svgText = e.svgText;
+                            }
+                            break;
+                        }
+                    }
+                    if (!svgTried) {
+                        svgText = ImageHelper::LoadSvgText(ib.url);
+                        if (img_cache_.size() >= 128) {
+                            if (img_cache_.front().bmp)
+                                img_cache_.front().bmp->Release();
+                            img_cache_.erase(img_cache_.begin());
+                        }
+                        img_cache_.push_back(
+                            {ib.url, nullptr, svgText.empty(), svgText});
+                    }
                     if (!svgText.empty()) {
                         svg::SvgDoc svgDoc;
                         if (svgDoc.Load(d2d_ctx5_, svgText)) {
@@ -1225,22 +1250,26 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     // repaints (the old code re-downloaded on every frame,
                     // blocking the UI thread on each scroll tick).
                     ID2D1Bitmap* bmp = nullptr;
+                    bool alreadyTried = false;
                     for (const auto& e : img_cache_) {
-                        if (e.url == ib.url) { bmp = e.bmp; break; }
+                        if (e.url == ib.url) {
+                            bmp = e.bmp;
+                            alreadyTried = true;
+                            break;
+                        }
                     }
-                    if (!bmp) {
+                    if (!bmp && !alreadyTried) {
                         bmp = ImageHelper::LoadBitmapFromUrl(
                             rt, ib.url, drawW);
-                        if (bmp) {
-                            // Cache owns it; drop the oldest entry when
-                            // over the cap so ownership stays unambiguous.
-                            if (img_cache_.size() >= 128) {
-                                if (img_cache_.front().bmp)
-                                    img_cache_.front().bmp->Release();
-                                img_cache_.erase(img_cache_.begin());
-                            }
-                            img_cache_.push_back({ib.url, bmp});
+                        // Cache the outcome either way. Remembering the
+                        // failure is what stops a dead URL from being
+                        // fetched again on the next repaint.
+                        if (img_cache_.size() >= 128) {
+                            if (img_cache_.front().bmp)
+                                img_cache_.front().bmp->Release();
+                            img_cache_.erase(img_cache_.begin());
                         }
+                        img_cache_.push_back({ib.url, bmp, bmp == nullptr});
                     }
                     if (bmp) {
                         D2D1_SIZE_F bmpSize = bmp->GetSize();
