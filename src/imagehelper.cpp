@@ -59,7 +59,7 @@ static bool DownloadImage(const std::wstring& url, std::vector<BYTE>& out) {
     // followed, so this is not a fix for redirect-based address
     // confusion; that needs the remote-image setting, below.
     WinHttpSetTimeouts(hRequest, 5000, 5000, 5000, 10000);
-    DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_DISALLOW_HTTPS;
+    DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_DISALLOW_HTTPS_TO_HTTP;
     WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY,
                      &redirectPolicy, sizeof(redirectPolicy));
 
