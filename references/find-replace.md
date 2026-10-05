@@ -800,6 +800,14 @@ Replace with:
 [Replace] [Replace All]
 ```
 
+**MarkDownIt uses a docked bar.** One strip at the bottom of the
+application window serves both functions. `Ctrl + F` opens it in Find mode
+and `Ctrl + H` in Find & Replace mode. The strip keeps one layout in both
+modes: the Replace field and the Replace buttons stay on screen and grey out
+in Find mode, and Replace and Replace All stay disabled in read-only views
+(section 4) whatever the mode is. The strip spans the full window width and
+shrinks the document area while it is open.
+
 ---
 
 # 28. Focus management
