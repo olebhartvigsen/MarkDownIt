@@ -4356,6 +4356,14 @@ void AppWindow::ShowFindReplace(bool replaceMode) {
     // The strip now claims its height from the content area.
     ResizeContentWindow();
 
+    // The strip took over the band the content window vacated. Paint its
+    // face once, right away, so no document pixels linger there until a
+    // natural invalidate arrives.
+    if (HWND bar_wnd = find_bar_.Handle()) {
+        RedrawWindow(bar_wnd, nullptr, nullptr,
+                     RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW);
+    }
+
     RefreshFindResults(true);
 }
 

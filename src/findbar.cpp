@@ -662,15 +662,25 @@ LRESULT CALLBACK FindBar::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (!self) return DefWindowProcW(hwnd, msg, wp, lp);
 
     switch (msg) {
+        case WM_ERASEBKGND:
+            // The strip paints its whole face itself, in one pass; claiming
+            // the erase here keeps that paint flicker free.
+            return 1;
         case WM_PAINT: {
-            // A one pixel separator along the top edge marks the strip as
-            // attached to the window, like a toolbar. The face colour comes
-            // from the class brush during the erase that precedes this.
+            // The strip must not rely on the class-brush erase: it is a
+            // child window shown over a band the content window painted
+            // before, and those early paints are clipped. Filling its own
+            // face on every paint is what keeps document pixels from
+            // showing through between the controls.
             PAINTSTRUCT ps = {};
             HDC dc = BeginPaint(hwnd, &ps);
             if (dc) {
-                RECT line = {};
-                GetClientRect(hwnd, &line);
+                RECT rc = {};
+                GetClientRect(hwnd, &rc);
+                FillRect(dc, &rc, GetSysColorBrush(COLOR_BTNFACE));
+                // A one pixel separator along the top edge marks the strip
+                // as attached to the window, like a toolbar.
+                RECT line = rc;
                 line.bottom = line.top + 1;
                 FillRect(dc, &line, GetSysColorBrush(COLOR_BTNSHADOW));
             }
