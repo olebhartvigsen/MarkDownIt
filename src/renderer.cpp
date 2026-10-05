@@ -16,6 +16,79 @@
 
 static const float kPtToDip = 96.0f / 72.0f;
 
+// Fill the selection highlight for a UTF-16 range of a text layout.
+//
+// HitTestTextRange returns one DWRITE_HIT_TEST_METRICS per text position,
+// so passing a fixed 64-entry stack array silently truncated any selection
+// longer than 64 characters. Source view lays the whole document out as a
+// single layout, so Ctrl+A there highlighted only the first 64 characters
+// and read as "select all does nothing". Rendered view had the same latent
+// truncation for long paragraphs, code blocks and table cells.
+//
+// Walk the layout line by line and touch only the lines that intersect the
+// viewport. That keeps the highlight correct for a selection of any length
+// and bounds the work per frame to what is actually on screen, which a
+// document-wide hit test over a million characters could not.
+static void FillSelectionHighlight(ID2D1RenderTarget* rt,
+                                   IDWriteTextLayout* layout,
+                                   ID2D1SolidColorBrush* brush,
+                                   UINT32 u16Start, UINT32 u16End,
+                                   float originX, float originY,
+                                   float scrollY, float viewportH) {
+    if (!rt || !layout || !brush) return;
+    if (u16End <= u16Start) return;
+
+    DWRITE_TEXT_METRICS tm = {};
+    layout->GetMetrics(&tm);
+    if (tm.lineCount == 0) return;
+
+    // GetLineMetrics fills a caller-supplied array and reports how many
+    // lines it wrote, so ask once with a zero-size call to size the array.
+    UINT32 lineCount = 0;
+    layout->GetLineMetrics(nullptr, 0, &lineCount);
+    if (lineCount == 0) return;
+    std::vector<DWRITE_LINE_METRICS> lines(lineCount);
+    if (FAILED(layout->GetLineMetrics(lines.data(), lineCount, &lineCount)))
+        return;
+
+    const float viewBottom = scrollY + (viewportH > 0.0f ? viewportH : 0.0f);
+    std::vector<DWRITE_HIT_TEST_METRICS> htm;
+    float lineTop = originY;
+    UINT32 lineStart = 0;
+    for (UINT32 i = 0; i < lineCount; ++i) {
+        const DWRITE_LINE_METRICS& lm = lines[i];
+        const float lineBottom = lineTop + lm.height;
+        const UINT32 lineEnd = lineStart + lm.length;
+
+        // Visible band test, in document coordinates.
+        if (lineBottom >= scrollY && lineTop <= viewBottom) {
+            const UINT32 selLo = u16Start > lineStart ? u16Start : lineStart;
+            const UINT32 selHi = u16End < lineEnd ? u16End : lineEnd;
+            if (selHi > selLo) {
+                const UINT32 count = selHi - selLo;
+                htm.resize(count);
+                UINT32 hitCount = 0;
+                HRESULT hr = layout->HitTestTextRange(
+                    selLo, count, originX, originY,
+                    htm.data(), count, &hitCount);
+                if (SUCCEEDED(hr)) {
+                    for (UINT32 h = 0; h < hitCount; ++h) {
+                        D2D1_RECT_F r = D2D1::RectF(
+                            htm[h].left, htm[h].top,
+                            htm[h].left + htm[h].width,
+                            htm[h].top + htm[h].height);
+                        rt->FillRectangle(r, brush);
+                    }
+                }
+            }
+        }
+        lineStart = lineEnd;
+        lineTop = lineBottom;
+        // Lines are in increasing y, so nothing below can be visible.
+        if (lineTop > viewBottom) break;
+    }
+}
+
 Renderer::Renderer() {}
 Renderer::~Renderer() { Release(); }
 
@@ -201,7 +274,7 @@ std::u16string Renderer::ToUtf16(const std::u32string& s32) {
 void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                               const Node& n, float x, float y,
                               float width, float& outH,
-                              const Selection* sel) {
+                              const Selection* sel, float scrollY) {
     if (!rt || !dw || !code_fmt_) { outH = 0.0f; return; }
 
     LayoutMetrics m = ComputeMetrics();
@@ -303,24 +376,10 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 }
                 if (!pastStart) u16Start = u16End; // past end
                 if (!pastEnd) u16End = static_cast<UINT32>(text16.size());
-                if (u16End > u16Start) {
-                    UINT32 hitCount = 0;
-                    DWRITE_HIT_TEST_METRICS htm[64];
-                    D2D1_POINT_2F origin2 = D2D1::Point2F(
-                        x + m.codePad, y + m.codePad);
-                    HRESULT hrHit = layout->HitTestTextRange(
-                        u16Start, u16End - u16Start,
-                        origin2.x, origin2.y, htm, 64, &hitCount);
-                    if (SUCCEEDED(hrHit)) {
-                        for (UINT32 h = 0; h < hitCount && h < 64; ++h) {
-                            D2D1_RECT_F r = D2D1::RectF(
-                                htm[h].left, htm[h].top,
-                                htm[h].left + htm[h].width,
-                                htm[h].top + htm[h].height);
-                            rt->FillRectangle(r, selBrush);
-                        }
-                    }
-                }
+                FillSelectionHighlight(rt, layout, selBrush,
+                                       u16Start, u16End,
+                                       x + m.codePad, y + m.codePad,
+                                       scrollY, rt->GetSize().height);
             }
             selBrush->Release();
         }
@@ -443,7 +502,7 @@ float Renderer::MeasureTable(IDWriteFactory* dw, const Node& n,
 void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                           const Node& n, float x, float y,
                           float width, float& outH,
-                          const Selection* sel) {
+                          const Selection* sel, float scrollY) {
     if (!rt || !dw || !body_fmt_ || n.rows.empty()) { outH = 0.0f; return; }
 
     LayoutMetrics m = ComputeMetrics();
@@ -636,23 +695,10 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                             u16End = std::max<UINT32>(u16End,
                                 static_cast<UINT32>(ui + 1));
                         }
-                        if (u16End > u16Start) {
-                            UINT32 hitCount = 0;
-                            DWRITE_HIT_TEST_METRICS htm[64];
-                            HRESULT hrHit = layout->HitTestTextRange(
-                                u16Start, u16End - u16Start,
-                                cellOrigin.x, cellOrigin.y,
-                                htm, 64, &hitCount);
-                            if (SUCCEEDED(hrHit)) {
-                                for (UINT32 h = 0; h < hitCount && h < 64; ++h) {
-                                    D2D1_RECT_F r = D2D1::RectF(
-                                        htm[h].left, htm[h].top,
-                                        htm[h].left + htm[h].width,
-                                        htm[h].top + htm[h].height);
-                                    rt->FillRectangle(r, selBrush);
-                                }
-                            }
-                        }
+                        FillSelectionHighlight(rt, layout, selBrush,
+                                               u16Start, u16End,
+                                               cellOrigin.x, cellOrigin.y,
+                                               scrollY, rt->GetSize().height);
                     }
                 }
                 rt->DrawTextLayout(cellOrigin, layout, textBrush,
@@ -897,6 +943,9 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (!rt || !dw) return 0.0f;
     LayoutMetrics m = ComputeMetrics();
     Palette pal = BasePalette();
+    // Viewport height in DIPs, used to limit selection highlighting to the
+    // lines actually on screen.
+    const float viewH = rt->GetSize().height;
     if (widthDip <= 0.0f) return m.padTop;
 
     float avail = widthDip - 2.0f * m.padX;
@@ -991,7 +1040,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
         if (n.block == BlockKind::CodeBlock) {
             float blockH = 0.0f;
-            DrawCodeBlock(rt, dw, n, drawX, curY, drawW, blockH, sel);
+            DrawCodeBlock(rt, dw, n, drawX, curY, drawW, blockH, sel,
+                           scrollY);
             curY += blockH + 0;
             prevBlock = n.block;
             prevDepth = n.depth;
@@ -1000,7 +1050,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
         if (n.block == BlockKind::Table) {
             float blockH = 0.0f;
-            DrawTable(rt, dw, n, drawX, curY, drawW, blockH, sel);
+            DrawTable(rt, dw, n, drawX, curY, drawW, blockH, sel,
+                       scrollY);
             curY += blockH;
             prevBlock = n.block;
             prevDepth = n.depth;
@@ -1383,25 +1434,9 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 UINT32 u16End = (selEnd >= blockEnd) ?
                     static_cast<UINT32>(text16.size()) :
                     findU16(selEnd);
-                if (u16End > u16Start) {
-                    UINT32 hitCount = 0;
-                    DWRITE_HIT_TEST_METRICS htm[64];
-                    HRESULT hrHit = layout->HitTestTextRange(
-                        u16Start, u16End - u16Start,
-                        textX, curY, htm, 64, &hitCount);
-                    diag::TraceFmt("PSEL u16=[%u,%u) hits=%u hr=0x%lX",
-                                   u16Start, u16End, hitCount,
-                                   (long)hrHit);
-                    if (SUCCEEDED(hrHit)) {
-                        for (UINT32 h = 0; h < hitCount && h < 64; ++h) {
-                            D2D1_RECT_F r = D2D1::RectF(
-                                htm[h].left, htm[h].top,
-                                htm[h].left + htm[h].width,
-                                htm[h].top + htm[h].height);
-                            rt->FillRectangle(r, selBrush);
-                        }
-                    }
-                }
+                FillSelectionHighlight(rt, layout, selBrush,
+                                       u16Start, u16End,
+                                       textX, curY, scrollY, viewH);
             }
         }
 
@@ -1567,6 +1602,7 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
     Palette pal = BasePalette();
     LayoutMetrics m = ComputeMetrics();
+    const float viewH = rt->GetSize().height;
     float avail = widthDip - 2.0f * m.padX;
     float contentWidth = wrapEnabled_ ? avail : kNoWrapContentWidthDip;
     if (wrapEnabled_ && contentWidth > m.maxContentWidth)
@@ -1645,23 +1681,8 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         UINT32 u16Start = findU16(selStart);
         UINT32 u16End = (selEnd >= static_cast<uint32_t>(src.size())) ?
             static_cast<UINT32>(text16.size()) : findU16(selEnd);
-        if (u16End > u16Start) {
-            UINT32 hitCount = 0;
-            DWRITE_HIT_TEST_METRICS htm[64];
-            HRESULT hrHit = layout->HitTestTextRange(
-                u16Start, u16End - u16Start,
-                textX, textY,
-                htm, 64, &hitCount);
-            if (SUCCEEDED(hrHit)) {
-                for (UINT32 h = 0; h < hitCount && h < 64; ++h) {
-                    D2D1_RECT_F r = D2D1::RectF(
-                        htm[h].left, htm[h].top,
-                        htm[h].left + htm[h].width,
-                        htm[h].top + htm[h].height);
-                    rt->FillRectangle(r, selBrush);
-                }
-            }
-        }
+        FillSelectionHighlight(rt, layout, selBrush, u16Start, u16End,
+                               textX, textY, scrollY, viewH);
     }
 
     // Draw the text in document coordinates (transform handles scrollY).

@@ -369,6 +369,22 @@ validating against the 2009/07 schema first, not guessing the spelling.
   box. The keyboard route already covers it: `Ctrl+0` returns to 100%, and
   `Ctrl`+`+`/`-` step through the range.
 
+**Selection highlighting handles a selection of any length.**
+`FillSelectionHighlight` in `renderer.cpp` draws the highlight for a UTF-16
+range. `HitTestTextRange` returns one `DWRITE_HIT_TEST_METRICS` per text
+position, so the earlier fixed 64-entry stack array truncated any selection
+longer than 64 characters. Source view lays the whole document out as a single
+text layout, so Ctrl+A there produced far more than 64 metrics and the
+highlight stopped after roughly the first 64 characters. To a user that reads
+as select all doing nothing at all.
+
+The helper walks the layout line by line and hit-tests only the lines that
+intersect the viewport, so the highlight is correct for a selection of any
+length while the per-frame cost stays bounded by what is on screen. All four
+selection paths use it: rendered blocks, code blocks, table cells and source
+view. The remaining fixed-size hit test in the renderer paints the inline-code
+background, not a selection, and its spans are a few characters long.
+
 ## 8. Select all and clipboard in every mode
 
 Not a zoom rule, but it sits in the same input path (`OnKeyDown`) and the same
