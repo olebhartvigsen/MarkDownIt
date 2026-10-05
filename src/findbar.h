@@ -105,7 +105,13 @@ enum FindBarControlId {
     kFindBarClose,
     kFindBarCounter,
     kFindBarStatus,
-    kFindBarControlCount
+
+    // The NUMBER of controls, not the next id. The ids above start at 100,
+    // so a bare trailing enumerator would be 113 and every use of this as
+    // an array size or a loop bound would be off by a hundred. Deriving it
+    // from the first and last id keeps the two facts separate, so they
+    // cannot drift apart again.
+    kFindBarControlCount = kFindBarStatus - kFindBarFindEdit + 1
 };
 
 class FindBar {

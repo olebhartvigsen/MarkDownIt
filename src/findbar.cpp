@@ -1,7 +1,5 @@
 #include "findbar.h"
 
-#include "crash_trace.h"
-
 #include <windows.h>
 
 #include <cstddef>
@@ -177,11 +175,7 @@ FindBar::~FindBar() {
 // ---------------------------------------------------------------------------
 
 bool FindBar::Show(HWND owner, bool expandForReplace) {
-    diag::Trace("FINDBAR: FindBar::Show entered");
-    if (!owner || !IsWindow(owner)) {
-        diag::Trace("FINDBAR: Show: owner invalid");
-        return false;
-    }
+    if (!owner || !IsWindow(owner)) return false;
     // The owner is needed BEFORE creation: it is the parent of the popup and
     // the source of the DPI the bar is laid out in.
     owner_ = owner;
@@ -198,12 +192,7 @@ bool FindBar::Show(HWND owner, bool expandForReplace) {
     ShowWindow(hwnd_, SW_SHOWNORMAL);
     SetWindowPos(hwnd_, HWND_TOP, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE);
-    RECT placed = {};
-    const bool gotRect = GetWindowRect(hwnd_, &placed) != 0;
-    diag::TraceFmt("FINDBAR: after ShowWindow vis=%d rect=%d %ld,%ld %ldx%ld",
-                   IsWindowVisible(hwnd_) ? 1 : 0, gotRect ? 1 : 0,
-                   placed.left, placed.top,
-                   placed.right - placed.left, placed.bottom - placed.top);
+
 
     // Guide 28: focus moves to the Find field and the text is selected, so
     // typing replaces it immediately.
@@ -711,12 +700,7 @@ LRESULT CALLBACK FindBar::ChildSubclass(HWND child, UINT msg, WPARAM wp,
 
 bool FindBar::EnsureCreated() {
     if (hwnd_ && IsWindow(hwnd_)) return true;
-    diag::Trace("FINDBAR: EnsureCreated: registering class");
-    if (!RegisterFindBarClass()) {
-        diag::TraceFmt("FINDBAR: RegisterFindBarClass failed err=%lu",
-                       GetLastError());
-        return false;
-    }
+    if (!RegisterFindBarClass()) return false;
 
     dpi_ = static_cast<int>(DpiOf(owner_));
     font_ = CreateFontW(-MulDiv(9, dpi_, 72), 0, 0, 0, FW_NORMAL, FALSE, FALSE,
@@ -733,8 +717,6 @@ bool FindBar::EnsureCreated() {
                             MulDiv(kWidth, dpi_, 96), height,
                             owner_, nullptr, GetModuleHandleW(nullptr), this);
     if (!hwnd_ || !IsWindow(hwnd_)) {
-        diag::TraceFmt("FINDBAR: CreateWindowEx failed err=%lu",
-                       GetLastError());
         if (font_) {
             DeleteObject(font_);
             font_ = nullptr;
@@ -742,17 +724,14 @@ bool FindBar::EnsureCreated() {
         hwnd_ = nullptr;
         return false;
     }
-    diag::Trace("FINDBAR: bar window created");
     if (font_) {
         SendMessageW(hwnd_, WM_SETFONT, reinterpret_cast<WPARAM>(font_),
                      TRUE);
     }
     if (!CreateControls()) {
-        diag::Trace("FINDBAR: CreateControls failed");
         Destroy();
         return false;
     }
-    diag::Trace("FINDBAR: controls created");
     return true;
 }
 
@@ -795,8 +774,6 @@ bool FindBar::CreateControls() {
         { kFindBarStatus, L"STATIC", labelStyle, 0, L"" },
     };
     const int specCount = static_cast<int>(sizeof(specs) / sizeof(specs[0]));
-    diag::TraceFmt("FINDBAR: specCount=%d kFindBarControlCount=%d",
-                   specCount, static_cast<int>(kFindBarControlCount));
     if (specCount != static_cast<int>(kFindBarControlCount)) return false;
 
     for (int i = 0; i < specCount; ++i) {
@@ -810,14 +787,10 @@ bool FindBar::CreateControls() {
         // and walked by MoveTabFocus, so the whole bar is abandoned here
         // instead of being left half built.
         if (!child || !IsWindow(child)) {
-            diag::TraceFmt("FINDBAR: child %d (%ls) create FAILED err=%lu",
-                           spec.id, spec.className, GetLastError());
             AbandonPartial();
             return false;
         }
         const int index = IndexOfId(spec.id);
-        diag::TraceFmt("FINDBAR: child %d (%ls) ok, index=%d want=%d",
-                       spec.id, spec.className, index, i);
         if (index != i) {
             // The header enum order and this table must agree, or the tab
             // order would not be the order written down in guide 45.
@@ -839,8 +812,6 @@ bool FindBar::CreateControls() {
             SetWindowLongPtrW(child, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(
                                                    &ChildSubclass)));
         if (!record.proc) {
-            diag::TraceFmt("FINDBAR: child %d subclass FAILED err=%lu",
-                           spec.id, GetLastError());
             AbandonPartial();
             return false;
         }
