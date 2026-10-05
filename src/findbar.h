@@ -114,6 +114,11 @@ enum FindBarControlId {
     kFindBarControlCount = kFindBarStatus - kFindBarFindEdit + 1
 };
 
+// The two functions the one bar serves. The mode decides enablement, not
+// layout or geometry: both rows stay on screen in both modes, and the
+// replace row greys out in Find mode.
+enum class FindBarMode { Find, FindReplace };
+
 class FindBar {
 public:
     FindBar();
@@ -130,30 +135,41 @@ public:
     // only when the window could not be created. The bar keeps its text and
     // options across a close and reopen (guide 54).
     //
-    // expandForReplace true shows the Replace half (Ctrl+H, guide 2.2),
-    // false shows the compact Find bar (Ctrl+F, guide 2.1 and 27).
+    // mode selects the function: FindReplace turns the replace half on
+    // (Ctrl+H, guide 2.2), Find greys it out (Ctrl+F, guide 2.1 and 27).
+    // Both modes keep the same layout, so nothing moves on a mode switch.
     //
     // Focus moves to the Find field and its text is selected, so typing
     // immediately replaces it (guide 28). Show does NOT change
     // SetReplaceEnabled: the caller states the edit mode every time, because
     // it is the only place that knows which view is on screen (guide 4).
-    bool Show(HWND owner, bool expandForReplace);
+    bool Show(HWND owner, FindBarMode mode);
 
     void Hide();
     // Hide plus onClose. This is what Esc and the Close button call.
     void Close();
 
+    // Switches the function while the bar stays open. Ctrl+F drops back to
+    // Find mode, Ctrl+H turns the replace half on. Reuses the same window,
+    // and keeps text, options and history (guide 54).
+    void SetMode(FindBarMode mode);
+    FindBarMode Mode() const { return mode_; }
+
     bool IsVisible() const;
     bool IsCreated() const { return hwnd_ != nullptr; }
-    bool IsExpanded() const { return expanded_; }
 
     // Tears the windows down. Idempotent, and safe to call after the owner
     // window is gone. The destructor calls it.
     void Destroy();
 
-    // Keeps the bar on screen when the owner moves or resizes. The owner
-    // calls this from its WM_SIZE and WM_MOVE.
-    void Reposition();
+    // Docks the bar along the bottom of the owner's client area, spanning
+    // the full width. The owner calls this from its layout, after it has
+    // reclaimed or reserved the strip height.
+    void Dock();
+
+    // The strip height in pixels at the current DPI, so the owner can
+    // reserve the space before docking.
+    int HeightPx() const;
 
     // Ctrl+F while the bar is already open: focus the Find field and select
     // its text so a new term can be typed straight away (guide 2.1).
@@ -235,7 +251,7 @@ private:
     void AbandonPartial();
     void DetachChildren();
     void ResetHandles();
-    void SetExpanded(bool expand);
+    void DockWith(int dpi);
     // Push the current state into the controls that exist, so text and
     // options set before Show survive into the window.
     void SyncControlsFromState();
@@ -251,7 +267,6 @@ private:
     void MoveTabFocus(HWND from, bool forward);
     void UpdateControls();
     void LayoutControls();
-    void Reposition(int dpi);
     // `id` is a FindBarControlId, not a child index.
     void PlaceChild(int id, int x, int y, int w, int h,
                     bool visible) const;
@@ -297,7 +312,7 @@ private:
     std::wstring replaceText_;
     std::wstring statusText_;
 
-    bool expanded_ = false;
+    FindBarMode mode_ = FindBarMode::Find;
     bool replaceEnabled_ = false;
     // Set while the bar writes its own controls, so the notifications those
     // writes generate cannot feed back into a new search.

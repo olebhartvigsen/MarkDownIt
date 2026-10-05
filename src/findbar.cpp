@@ -98,11 +98,12 @@ const wchar_t* const kWindowClass = L"MarkDownItFindBar";
 // strings a translator has to reach.
 const wchar_t* const kCounterSeparator = L" of ";
 
-// Logical layout, in 96 DPI pixels. Two modes: the compact Find bar and the
-// expanded Find and Replace bar (guide 26 and 27).
-const int kWidth = 420;
-const int kHeightFind = 80;
-const int kHeightReplace = 118;
+// Logical layout, in 96 DPI pixels. The strip docks along the bottom of the
+// owner window and spans its full width, so the only fixed dimension left is
+// its height: two rows, the same in both modes (guide 26 and 27).
+const int kHeightStrip = 68;
+// Width used before the first dock, when the owner has not been measured.
+const int kWidthFallback = 400;
 
 // UTF-8 conversion. The state speaks UTF-8 bytes because that is the
 // document encoding, while the controls speak UTF-16.
@@ -174,29 +175,28 @@ FindBar::~FindBar() {
 // Window and controls
 // ---------------------------------------------------------------------------
 
-bool FindBar::Show(HWND owner, bool expandForReplace) {
+bool FindBar::Show(HWND owner, FindBarMode mode) {
     if (!owner || !IsWindow(owner)) return false;
-    // The owner is needed BEFORE creation: it is the parent of the popup and
-    // the source of the DPI the bar is laid out in.
+    // The owner is needed BEFORE creation: it is the parent the strip docks
+    // into and the source of the DPI the bar is laid out in.
     owner_ = owner;
     if (!EnsureCreated()) return false;
 
-    SetExpanded(expandForReplace);
+    SetMode(mode);
     // A reused window may have been left with stale field text by an edit
     // that happened while the bar was hidden, so the controls are re-synced
     // from the state every time the bar is shown.
     SyncControlsFromState();
     UpdateControls();
-    Reposition();
+    Dock();
 
     ShowWindow(hwnd_, SW_SHOWNORMAL);
     SetWindowPos(hwnd_, HWND_TOP, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE);
 
-
     // Guide 28: focus moves to the Find field and the text is selected, so
-    // typing replaces it immediately.
-    SetActiveWindow(hwnd_);
+    // typing replaces it immediately. A child window never activates on its
+    // own, so the focus call is all that is needed.
     FocusAndSelectSearchText();
     return true;
 }
@@ -230,9 +230,13 @@ void FindBar::Destroy() {
     ResetHandles();
 }
 
-void FindBar::Reposition() {
+void FindBar::Dock() {
     if (!hwnd_ || !IsWindow(hwnd_)) return;
-    Reposition(DpiOf(owner_ ? owner_ : hwnd_));
+    DockWith(DpiOf(owner_ ? owner_ : hwnd_));
+}
+
+int FindBar::HeightPx() const {
+    return MulDiv(kHeightStrip, dpi_ > 0 ? dpi_ : 96, 96);
 }
 
 void FindBar::FocusAndSelectSearchText() {
@@ -589,10 +593,16 @@ void FindBar::UpdateControls() {
     // matches disables navigation and replacement too.
     const bool navigable = hasQuery && status_ == FindStatus::Found &&
                            countTotal_ > 0;
-    const bool replaceAvailable = replaceEnabled_ && navigable;
+    // Two gates on the replace half: the bar's mode (a Find session greys
+    // it out) and the edit state the owner reports (guide 4). The controls
+    // stay visible in both cases, so the layout never jumps.
+    const bool replaceUsable = mode_ == FindBarMode::FindReplace;
+    const bool replaceAvailable =
+        replaceUsable && replaceEnabled_ && navigable;
 
     EnableControl(kFindBarPrevious, navigable);
     EnableControl(kFindBarNext, navigable);
+    EnableControl(kFindBarReplaceEdit, replaceUsable && replaceEnabled_);
     EnableControl(kFindBarReplace, replaceAvailable);
     EnableControl(kFindBarReplaceAll, replaceAvailable);
     EnableControl(kFindBarMatchCase, true);
@@ -624,7 +634,8 @@ std::wstring FindBar::FormatStatusText() const {
     if (!statusText_.empty()) return statusText_;
     // Guide 4: rather than silently ignoring Replace in a read-only view,
     // say why. Only while the replace half is on screen.
-    if (expanded_ && !replaceEnabled_) return S(kStrReadOnlyHint);
+    if (mode_ == FindBarMode::FindReplace && !replaceEnabled_)
+        return S(kStrReadOnlyHint);
     return std::wstring();
 }
 
@@ -717,13 +728,13 @@ bool FindBar::EnsureCreated() {
                         CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                         DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
 
-    const int height = MulDiv(expanded_ ? kHeightReplace : kHeightFind,
-                              dpi_, 96);
-    // An owned WS_POPUP window. It is destroyed with its owner, and it never
-    // activates or steals the document's place in the Z-order.
-    hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW, kWindowClass, S(kStrFind),
-                            WS_POPUP | WS_BORDER, 0, 0,
-                            MulDiv(kWidth, dpi_, 96), height,
+    // A child strip of the owner, docked along its bottom edge. As a child
+    // it is destroyed with its owner and never activates on its own; focus
+    // goes straight to the Find field. Dock sizes it properly right after
+    // creation, so the initial bounds only have to be sane.
+    hwnd_ = CreateWindowExW(0, kWindowClass, S(kStrFind), WS_CHILD, 0, 0,
+                            MulDiv(kWidthFallback, dpi_, 96),
+                            MulDiv(kHeightStrip, dpi_, 96),
                             owner_, nullptr, GetModuleHandleW(nullptr), this);
     if (!hwnd_ || !IsWindow(hwnd_)) {
         if (font_) {
@@ -861,54 +872,51 @@ void FindBar::AbandonPartial() {
     ResetHandles();
 }
 
-void FindBar::SetExpanded(bool expand) {
-    expanded_ = expand;
+void FindBar::SetMode(FindBarMode mode) {
+    mode_ = mode;
     if (!hwnd_ || !IsWindow(hwnd_)) return;
-    SetWindowTextW(hwnd_, S(expand ? kStrFindAndReplace : kStrFind));
-    const int showOrHide = expand ? SW_SHOW : SW_HIDE;
-    ShowWindow(Control(kFindBarReplaceLabel), showOrHide);
-    ShowWindow(Control(kFindBarReplaceEdit), showOrHide);
-    ShowWindow(Control(kFindBarReplace), showOrHide);
-    ShowWindow(Control(kFindBarReplaceAll), showOrHide);
-    LayoutControls();
-    // The status line may have just gained or lost the read-only note.
+    SetWindowTextW(hwnd_, S(mode == FindBarMode::FindReplace ? kStrFindAndReplace
+                                                             : kStrFind));
+    // The rows stay where they are in both modes (greyed, not hidden), so a
+    // mode switch only re-states enablement and the status line. Text,
+    // options and history survive it (guide 54).
+    UpdateControls();
     SetControlText(kFindBarStatus, FormatStatusText());
 }
 
 void FindBar::LayoutControls() {
     if (!hwnd_ || !IsWindow(hwnd_)) return;
-    const bool expand = expanded_;
 
-    // Find row: label, field, then the two navigation buttons.
-    PlaceChild(kFindBarFindLabel, 8, 8, 40, 14, true);
-    PlaceChild(kFindBarFindEdit, 50, 6, 210, 20, true);
-    PlaceChild(kFindBarPrevious, 266, 5, 72, 22, true);
-    PlaceChild(kFindBarNext, 342, 5, 64, 22, true);
+    // The strip spans the owner's client width, so the right side of the
+    // layout is computed from the window's own width instead of a fixed
+    // 420 DIP column. Everything else stays left aligned in 96 DPI units.
+    RECT rc = {};
+    GetClientRect(hwnd_, &rc);
+    int widthDip = dpi_ > 0 ? MulDiv(rc.right, 96, dpi_) : rc.right;
+    if (widthDip < 320) widthDip = 320;
 
-    // Option row, with the counter on its right in the compact bar.
-    PlaceChild(kFindBarMatchCase, 8, expand ? 62 : 32, 92, 18, true);
-    PlaceChild(kFindBarWholeWord, 106, expand ? 62 : 32, 92, 18, true);
+    // Row 1: Find, with the options, the counter, and Close on the right.
+    PlaceChild(kFindBarFindLabel, 12, 9, 36, 14, true);
+    PlaceChild(kFindBarFindEdit, 52, 5, 300, 22, true);
+    PlaceChild(kFindBarPrevious, 360, 4, 72, 24, true);
+    PlaceChild(kFindBarNext, 438, 4, 64, 24, true);
+    PlaceChild(kFindBarMatchCase, 516, 7, 92, 18, true);
+    PlaceChild(kFindBarWholeWord, 616, 7, 92, 18, true);
+    PlaceChild(kFindBarCounter, 716, 8, 110, 18, true);
+    const int closeX = widthDip - 94;
+    PlaceChild(kFindBarClose, closeX, 4, 82, 24, true);
 
-    // Replace row, only when expanded.
-    PlaceChild(kFindBarReplaceLabel, 8, 36, 70, 14, expand);
-    PlaceChild(kFindBarReplaceEdit, 80, 34, 180, 20, expand);
-    PlaceChild(kFindBarReplace, 206, 60, 72, 22, expand);
-    PlaceChild(kFindBarReplaceAll, 282, 60, 84, 22, expand);
+    // Row 2: Replace. On screen in both modes and greyed in Find mode, so
+    // the strip never changes when the mode switches.
+    PlaceChild(kFindBarReplaceLabel, 12, 38, 72, 14, true);
+    PlaceChild(kFindBarReplaceEdit, 88, 34, 300, 22, true);
+    PlaceChild(kFindBarReplace, 396, 33, 72, 24, true);
+    PlaceChild(kFindBarReplaceAll, 476, 33, 84, 24, true);
+    int statusW = widthDip - 572 - 12;
+    if (statusW < 80) statusW = 80;
+    PlaceChild(kFindBarStatus, 572, 38, statusW, 16, true);
 
-    // Counter and message line.
-    if (expand) {
-        PlaceChild(kFindBarCounter, 8, 92, 120, 18, true);
-        PlaceChild(kFindBarStatus, 134, 92, 190, 18, true);
-        PlaceChild(kFindBarClose, 330, 90, 82, 22, true);
-    } else {
-        PlaceChild(kFindBarCounter, 206, 33, 118, 18, true);
-        PlaceChild(kFindBarStatus, 8, 54, 300, 16, true);
-        PlaceChild(kFindBarClose, 330, 50, 82, 22, true);
-    }
-
-    const int width = MulDiv(kWidth, dpi_, 96);
-    const int height = MulDiv(expand ? kHeightReplace : kHeightFind, dpi_, 96);
-    SetWindowPos(hwnd_, nullptr, 0, 0, width, height,
+    SetWindowPos(hwnd_, nullptr, 0, 0, rc.right, HeightPx(),
                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
@@ -923,52 +931,30 @@ void FindBar::PlaceChild(int id, int x, int y, int w, int h,
                  MulDiv(w, dpi_, 96), MulDiv(h, dpi_, 96), flags);
 }
 
-void FindBar::Reposition(int dpi) {
+void FindBar::DockWith(int dpi) {
     if (!hwnd_ || !IsWindow(hwnd_)) return;
     if (dpi <= 0) dpi = 96;
     dpi_ = dpi;
-    // Children are laid out too, so a monitor change with a different DPI
-    // scales the whole bar rather than only its window.
-    LayoutControls();
 
-    // Top right of the owner's window, which is where a floating search bar
-    // belongs (guide 26 and 27), then clamped onto the monitor so it can
-    // never open off screen or under the taskbar.
-    RECT owner = {};
+    // Size first, so the layout below sees the width it will have. The strip
+    // spans the owner's client width and sits flush with its bottom edge.
+    // No SWP_SHOWWINDOW: Dock is part of the owner's layout and must never
+    // resurrect a bar the owner has closed. Show puts it on screen.
+    RECT client = {};
     const HWND reference = owner_ && IsWindow(owner_) ? owner_ : hwnd_;
-    if (!GetWindowRect(reference, &owner)) {
-        owner.left = 0;
-        owner.top = 0;
-        owner.right = MulDiv(kWidth, dpi, 96);
-        owner.bottom = MulDiv(expanded_ ? kHeightReplace : kHeightFind, dpi,
-                              96);
+    if (!GetClientRect(reference, &client)) {
+        client.right = MulDiv(kWidthFallback, dpi, 96);
+        client.bottom = MulDiv(kHeightStrip, dpi, 96);
     }
-    int x = owner.right - MulDiv(kWidth, dpi, 96) - MulDiv(16, dpi, 96);
-    int y = owner.top + MulDiv(16, dpi, 96);
+    const int height = MulDiv(kHeightStrip, dpi, 96);
+    int y = client.bottom - height;
+    if (y < 0) y = 0;
+    SetWindowPos(hwnd_, nullptr, 0, y, client.right, height,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
 
-    POINT probe = {x + MulDiv(kWidth, dpi, 96) / 2,
-                   y + MulDiv(expanded_ ? kHeightReplace : kHeightFind, dpi,
-                              96) / 2};
-    HMONITOR monitor = MonitorFromPoint(probe, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO info = {};
-    info.cbSize = sizeof(info);
-    if (monitor && GetMonitorInfoW(monitor, &info)) {
-        if (x + MulDiv(kWidth, dpi, 96) > info.rcWork.right) {
-            x = info.rcWork.right - MulDiv(kWidth, dpi, 96);
-        }
-        if (y + MulDiv(expanded_ ? kHeightReplace : kHeightFind, dpi, 96) >
-            info.rcWork.bottom) {
-            y = info.rcWork.bottom -
-                MulDiv(expanded_ ? kHeightReplace : kHeightFind, dpi, 96);
-        }
-        if (x < info.rcWork.left) x = info.rcWork.left;
-        if (y < info.rcWork.top) y = info.rcWork.top;
-    }
-
-    // No SWP_SHOWWINDOW here: Reposition must never resurrect a bar the owner
-    // has closed. Show is what puts it on screen.
-    SetWindowPos(hwnd_, HWND_TOP, x, y, 0, 0,
-                 SWP_NOSIZE | SWP_NOACTIVATE);
+    // Children are laid out last, from the window's new width, so a resize
+    // or a DPI change scales the whole strip.
+    LayoutControls();
 }
 
 void FindBar::DetachChildren() {

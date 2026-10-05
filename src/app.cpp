@@ -2597,18 +2597,27 @@ void AppWindow::ResizeContentWindow() {
     GetClientRect(hwnd_, &rc);
     int contentY = static_cast<int>(g_ribbonHeight);
     int contentH = rc.bottom - contentY;
+
+    // The docked find strip claims its height while it is open, so no line
+    // of text hides behind the bar. Hiding the bar gives the height back.
+    if (find_bar_.IsVisible() && find_bar_.IsCreated()) {
+        const int stripH = find_bar_.HeightPx();
+        if (stripH < contentH) contentH -= stripH;
+    }
     if (contentH < 1) contentH = 1;
 
     SetWindowPos(hwnd_content_, nullptr,
         0, contentY,
         rc.right - rc.left, contentH,
         SWP_NOZORDER | SWP_NOACTIVATE);
+
+    // The strip is part of this layout, so it is re-docked here rather than
+    // from a message handler of its own.
+    find_bar_.Dock();
 }
 
 void AppWindow::OnSize(HWND hwnd, int width, int height) {
     ResizeContentWindow();
-    // Keep the find bar on screen when the window moves or resizes.
-    find_bar_.Reposition();
     // Debounce-save window placement so bounds persist even if the app
     // crashes or is killed (not just on clean shutdown).
     SetTimer(hwnd_, 5, 500, nullptr);
@@ -4300,6 +4309,8 @@ void AppWindow::CloseFindBar() {
     renderer_.ClearSearchMatches();
     find_bar_.state().Invalidate();
     find_bar_.Hide();
+    // The strip is gone; give its height back to the content.
+    ResizeContentWindow();
     if (hwnd_content_) SetFocus(hwnd_content_);
     Repaint();
 }
@@ -4312,7 +4323,10 @@ void AppWindow::ShowFindReplace(bool replaceMode) {
     // so a new term can be typed straight away (guide 2.1).
     if (find_bar_.IsVisible()) {
         find_bar_.SetReplaceEnabled(editing_);
-        if (replaceMode) find_bar_.Show(hwnd_, true);
+        // The function follows the shortcut: Ctrl+H turns the replace half
+        // on, Ctrl+F drops back to Find mode. Same window, same text.
+        find_bar_.SetMode(replaceMode ? FindBarMode::FindReplace
+                                      : FindBarMode::Find);
         find_bar_.FocusAndSelectSearchText();
         return;
     }
@@ -4340,7 +4354,11 @@ void AppWindow::ShowFindReplace(bool replaceMode) {
     find_scope_.selectionStart = sel_.Start();
     find_scope_.selectionEnd = sel_.Start() + sel_.Length();
 
-    if (!find_bar_.Show(hwnd_, replaceMode)) return;
+    if (!find_bar_.Show(hwnd_, replaceMode ? FindBarMode::FindReplace
+                                           : FindBarMode::Find)) return;
+
+    // The strip now claims its height from the content area.
+    ResizeContentWindow();
 
     RefreshFindResults(true);
 }
@@ -6038,9 +6056,6 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_MOVE: {
             // Debounce-save window placement when the window is moved.
             SetTimer(hwnd_, 5, 500, nullptr);
-            // Keep an open find bar anchored to its owner. OnSize is not
-            // called for a move, so this cannot rely on the resize path.
-            find_bar_.Reposition();
             return 0;
         }
         case WM_SIZE: {
