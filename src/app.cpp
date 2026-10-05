@@ -1774,10 +1774,6 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
     }
 
     uint32_t offset = layout_cache_.PointToOffsetAtOrAfterBlock(docX, docY);
-    diag::TraceFmt("MOVE doc=(%.1f,%.1f) off=%u word=%d para=%d margin=%d sel=%d txtdrag=%d",
-                   docX, docY, offset, word_dragging_,
-                   paragraph_dragging_, margin_selecting_,
-                   selection_dragging_, text_dragging_);
     if (word_dragging_) {
         if (offset != UINT32_MAX) {
             if (offset >= word_anchor_caret_) {

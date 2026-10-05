@@ -447,9 +447,6 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             uint32_t selEnd = selStart + sel->Length();
             uint32_t blockStart = n.srcOffset;
             uint32_t blockEnd = blockStart + n.srcLength;
-            diag::TraceFmt("PBLOCK kind=%d b=%u..%u sel=%u..%u",
-                           (int)n.block, blockStart, blockEnd,
-                           selStart, selEnd);
             if (selStart < blockEnd && selEnd > blockStart) {
                 // Map selection offsets to the raw text (contentOffset based).
                 uint32_t textStart = n.contentOffset;
@@ -1112,9 +1109,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     ID2D1SolidColorBrush* selBrush = nullptr;
     if (sel && !sel->Empty()) {
         rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
-        diag::TraceFmt("RENDER sel=[%u,%u) nodes=%zu",
-                       sel->Start(), sel->Start()+sel->Length(),
-                       doc.nodes.size());
     }
 
     // Search match brushes, created once per Render and released at the end.
@@ -1567,9 +1561,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             uint32_t selEnd = selStart + sel->Length();
             uint32_t blockStart = n.srcOffset;
             uint32_t blockEnd = blockStart + n.srcLength;
-            diag::TraceFmt("PBLOCK kind=%d b=%u..%u sel=%u..%u",
-                           (int)n.block, blockStart, blockEnd,
-                           selStart, selEnd);
             if (selStart < blockEnd && selEnd > blockStart) {
                 // Find UTF-16 positions for the selection boundaries
                 // by binary search on u16ToSrc.
