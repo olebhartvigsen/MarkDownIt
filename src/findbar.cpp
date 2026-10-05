@@ -550,7 +550,9 @@ void FindBar::MoveTabFocus(HWND from, bool forward) {
     // guide 45 asks for: Find, Replace, Previous, Next, Match case,
     // Whole word, Replace, Replace All, Close.
     std::vector<HWND> stops;
-    HWND child = GetWindow(hwnd_, GW_HWNDFIRST);
+    // GW_CHILD is the topmost child, and a new child joins the bottom
+    // of the z-order, so the walk meets the controls in creation order.
+    HWND child = GetWindow(hwnd_, GW_CHILD);
     for (; child; child = GetWindow(child, GW_HWNDNEXT)) {
         if (!IsWindowVisible(child) || !IsWindowEnabled(child)) continue;
         const LONG_PTR style = GetWindowLongPtrW(child, GWL_STYLE);
@@ -693,9 +695,10 @@ LRESULT CALLBACK FindBar::ChildSubclass(HWND child, UINT msg, WPARAM wp,
 
     if (msg == WM_KEYDOWN && self->HandleKeyDown(child, wp)) return 0;
     if (msg == WM_CHAR) {
-        // Swallow the character form of Enter and Escape so they produce no
-        // beep and no stray insertion.
-        if (wp == VK_RETURN || wp == VK_ESCAPE) return 0;
+        // Swallow the character form of Enter, Escape and Tab so they produce no
+        // beep and no stray insertion. Focus has already moved by the time the
+        // character form of Tab arrives.
+        if (wp == VK_RETURN || wp == VK_ESCAPE || wp == VK_TAB) return 0;
     }
     return CallWindowProcW(next, child, msg, wp, lp);
 }
