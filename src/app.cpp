@@ -95,6 +95,17 @@ static std::string CleanSelectionForCopy(const std::string& src) {
     return out;
 }
 
+static std::wstring ImeUtf8ToWide(const std::string& text) {
+    if (text.empty()) return {};
+    int needed = MultiByteToWideChar(CP_UTF8, 0, text.data(),
+        static_cast<int>(text.size()), nullptr, 0);
+    if (needed <= 0) return {};
+    std::wstring wide(static_cast<size_t>(needed), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, text.data(),
+        static_cast<int>(text.size()), wide.data(), needed);
+    return wide;
+}
+
 static std::string ImeWideToUtf8(const std::wstring& text) {
     if (text.empty()) return {};
     int needed = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
@@ -447,10 +458,9 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         return;
     }
 
-    // Any direct keyboard action can move or replace the caret. Invalidate
-    // the previous Find origin; ShowFindReplace will restart at the current
-    // caret when the next search dialog opens.
-    find_cursor_ = UINT32_MAX;
+    // Any direct keyboard action can move or replace the caret. The find
+    // bar asks for the caret offset every time it navigates, so a moved
+    // caret needs no bookkeeping here.
 
     // In view mode, suppress editing keys but allow navigation, selection,
     // and the clipboard family (Ctrl+A/C/X/V). View mode has no caret, so
@@ -1024,6 +1034,10 @@ void AppWindow::ToggleSourceView() {
     renderer_.ClearSvgCache();
     ForceRepaintNow();
     if (hwnd_content_) SetFocus(hwnd_content_);
+    // Find works in both views, but WHICH text counts as rendered differs:
+    // in source view every byte is on screen, so the same query can return
+    // different matches than in the rendered view. Recompute (guide 4).
+    if (find_bar_.IsVisible()) RefreshFindResults(false);
 }
 
 void AppWindow::OnReparseTimer() {
@@ -1053,10 +1067,18 @@ void AppWindow::OnReparseTimer() {
 void AppWindow::OnBufferChanged() {
     MarkDirty();
     InvalidateFormatButtons();
-    find_cursor_ = UINT32_MAX;
+    OnFindDocumentChanged();
     layout_cache_.Clear();
     renderer_.ClearSvgCache();
     ScheduleReparse();
+}
+
+// The document changed underneath an open Find bar. Every stored match
+// offset is stale now, so the search is recomputed rather than kept, and
+// no stale position is ever used for a later replacement (guide 31).
+void AppWindow::OnFindDocumentChanged() {
+    if (!find_bar_.IsVisible()) return;
+    RefreshFindResults(false);
 }
 
 void AppWindow::ScrollCaretIntoView(float caretY, float caretH) {
@@ -1299,9 +1321,9 @@ void AppWindow::OpenLink(const std::string& url) {
 
 void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     SetFocus(hwnd);
-    // A click can move or extend the caret/selection. Invalidate any prior
-    // Find origin so the next search starts from this interaction.
-    find_cursor_ = UINT32_MAX;
+    // A click moves or extends the caret. Navigation continues from the new
+    // caret position, which is the recommended behaviour for a word
+    // processor (guide 30), and the bar reads it live.
     diag::Trace("OnLButtonDown enter");
 
     // Welcome screen: clicking a card opens that file.
@@ -1602,7 +1624,6 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
 
 void AppWindow::OnLButtonDblClk(HWND hwnd, int x, int y) {
     SetFocus(hwnd);
-    find_cursor_ = UINT32_MAX;
     if (welcome_mode_) return; // single-click handles welcome screen clicks
     // Track for triple-click: double-click counts as the 2nd click.
     click_count_ = std::max(click_count_, 2);
@@ -2312,7 +2333,8 @@ void AppWindow::LoadDocumentText(const std::string& raw, const std::wstring& pat
     StopScrollAnimation();
     totalH_ = 0.0f;
     sel_.Collapse({0});
-    find_cursor_ = UINT32_MAX;
+    find_bar_.state().Invalidate();
+    renderer_.ClearSearchMatches();
     layout_cache_.Clear();
     renderer_.ClearSvgCache();
     // Update source text pointers (buffer may have been reallocated).
@@ -2345,7 +2367,8 @@ void AppWindow::LoadDocumentText(const std::string& raw, const std::wstring& pat
 
 void AppWindow::Reload() {
     if (file_path_.empty()) return;
-    find_cursor_ = UINT32_MAX;
+    find_bar_.state().Invalidate();
+    renderer_.ClearSearchMatches();
     std::ifstream f(file_path_.c_str(), std::ios::binary);
     if (!f.is_open()) return;
     std::stringstream ss;
@@ -2584,6 +2607,8 @@ void AppWindow::ResizeContentWindow() {
 
 void AppWindow::OnSize(HWND hwnd, int width, int height) {
     ResizeContentWindow();
+    // Keep the find bar on screen when the window moves or resizes.
+    find_bar_.Reposition();
     // Debounce-save window placement so bounds persist even if the app
     // crashes or is killed (not just on clean shutdown).
     SetTimer(hwnd_, 5, 500, nullptr);
@@ -3258,6 +3283,10 @@ void AppWindow::NewDocument() {
 
 void AppWindow::SetEdit(bool on) {
     editing_ = on;
+    // Find works in every view, but Replace only makes sense where the
+    // document can change. Re-gate whenever edit mode flips, so a bar left
+    // open across the toggle greys the two buttons out (guide 4).
+    find_bar_.SetReplaceEnabled(editing_);
     if (on && has_focus_ && !caret_visible_) {
         float cx, cy, ch;
         float dpix = static_cast<float>(dpi_) / 96.0f;
@@ -4096,263 +4125,224 @@ static std::string WideToUtf8(const std::wstring& ws) {
 }
 
 
-struct FindReplaceDialogData {
-    bool replaceMode = false;
-    std::wstring find;
-    std::wstring replacement;
-    bool matchCase = false;
-    bool wholeWord = false;
-};
+// Find & Replace session.
+//
+// The bar is modeless, so all of this runs against a live, editable
+// document (find guide 31). The split of responsibility is the point of
+// guide 62: the bar owns search state and visual state, this file owns
+// document state and undo. Neither one reaches into the other.
 
-static void PushWord(std::vector<BYTE>& b, WORD v) {
-    b.push_back(static_cast<BYTE>(v & 0xFF));
-    b.push_back(static_cast<BYTE>((v >> 8) & 0xFF));
-}
-static void PushDword(std::vector<BYTE>& b, DWORD v) {
-    for (int i = 0; i < 4; ++i)
-        b.push_back(static_cast<BYTE>((v >> (i * 8)) & 0xFF));
-}
-static void PushWide(std::vector<BYTE>& b, const wchar_t* text) {
-    while (*text) { PushWord(b, static_cast<WORD>(*text++)); }
-    PushWord(b, 0);
-}
-static void AlignDialog(std::vector<BYTE>& b) {
-    while (b.size() % 4) b.push_back(0);
-}
-static void AddDialogItem(std::vector<BYTE>& b, DWORD style,
-                          WORD atom, const wchar_t* title, WORD id,
-                          WORD x, WORD y, WORD cx, WORD cy) {
-    AlignDialog(b);
-    PushDword(b, style);
-    PushDword(b, 0);
-    PushWord(b, x); PushWord(b, y); PushWord(b, cx); PushWord(b, cy);
-    PushWord(b, id);
-    PushWord(b, 0xFFFF); PushWord(b, atom);
-    PushWide(b, title);
-    PushWord(b, 0);
-}
-
-static std::vector<BYTE> BuildFindReplaceDialogTemplate(bool replaceMode) {
-    std::vector<BYTE> b;
-    const DWORD style = WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU |
-                        DS_MODALFRAME | DS_SETFONT;
-    PushDword(b, style); PushDword(b, 0); PushWord(b, 10);
-    PushWord(b, 10); PushWord(b, 10); PushWord(b, 270);
-    PushWord(b, replaceMode ? 130 : 92);
-    PushWord(b, 0); PushWord(b, 0); PushWide(b, replaceMode ?
-        L"Find and Replace" : L"Find");
-    PushWord(b, 9); PushWide(b, L"Segoe UI");
-    AlignDialog(b);
-
-    const DWORD labelStyle = WS_CHILD | WS_VISIBLE | SS_LEFT;
-    const DWORD editStyle = WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP |
-                            ES_AUTOHSCROLL;
-    AddDialogItem(b, labelStyle, 0x0082, L"Find:", 1100,
-                  8, 7, 55, 10);
-    AddDialogItem(b, editStyle, 0x0081, L"", 1101,
-                  65, 5, 195, 14);
-    AddDialogItem(b, labelStyle, 0x0082, L"Replace:", 1108,
-                  8, 27, 55, 10);
-    AddDialogItem(b, editStyle, 0x0081, L"", 1102,
-                  65, 25, 195, 14);
-    AddDialogItem(b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-                  0x0080, L"Match case", 1103, 65, 45, 75, 12);
-    AddDialogItem(b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
-                  0x0080, L"Whole word", 1104, 145, 45, 85, 12);
-    AddDialogItem(b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-                  0x0080, L"Find Next", 1105, 8, 68, 62, 14);
-    AddDialogItem(b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                  0x0080, L"Replace", 1106, 75, 68, 62, 14);
-    AddDialogItem(b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                  0x0080, L"Replace All", 1107, 142, 68, 62, 14);
-    AddDialogItem(b, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                  0x0080, L"Cancel", IDCANCEL, 209, 68, 52, 14);
-    return b;
-}
-
-static INT_PTR CALLBACK FindReplaceDialogProc(HWND hDlg, UINT msg,
-                                               WPARAM wp, LPARAM lp) {
-    auto* data = reinterpret_cast<FindReplaceDialogData*>(
-        GetWindowLongPtrW(hDlg, DWLP_USER));
-    if (msg == WM_INITDIALOG) {
-        data = reinterpret_cast<FindReplaceDialogData*>(lp);
-        SetWindowLongPtrW(hDlg, DWLP_USER, reinterpret_cast<LONG_PTR>(data));
-        SetDlgItemTextW(hDlg, 1101, data->find.c_str());
-        SetDlgItemTextW(hDlg, 1102, data->replacement.c_str());
-        SendDlgItemMessageW(hDlg, 1103, BM_SETCHECK,
-            data->matchCase ? BST_CHECKED : BST_UNCHECKED, 0);
-        SendDlgItemMessageW(hDlg, 1104, BM_SETCHECK,
-            data->wholeWord ? BST_CHECKED : BST_UNCHECKED, 0);
-        if (!data->replaceMode) {
-            ShowWindow(GetDlgItem(hDlg, 1102), SW_HIDE);
-            ShowWindow(GetDlgItem(hDlg, 1108), SW_HIDE);
-            ShowWindow(GetDlgItem(hDlg, 1106), SW_HIDE);
-            ShowWindow(GetDlgItem(hDlg, 1107), SW_HIDE);
-        }
-        SetFocus(GetDlgItem(hDlg, 1101));
-        return FALSE;
+// Scope filter. Decides which candidate ranges take part in the search,
+// which is how Find stays inside what the user can actually see and
+// edit (guide 4). Two rules:
+//   * In the rendered view, only RENDERED text takes part. Hidden
+//     Markdown syntax (the asterisks of bold, the pipes of a table) is
+//     not text the reader sees, so searching it would report matches
+//     that are not on screen.
+//   * When Find is scoped to the selection, only bytes inside it.
+// A candidate the filter rejects is skipped, not consumed, so a later
+// overlapping match is still found.
+bool AppWindow::FindScopeFilter(uint32_t start, uint32_t length,
+                                void* context) {
+    const FindScopeContext* scope =
+        static_cast<const FindScopeContext*>(context);
+    if (!scope || !scope->app) return true;
+    if (scope->withinSelection) {
+        // A match must lie wholly inside the selection, so Replace All can
+        // never touch a byte outside it (guide 51).
+        if (start < scope->selectionStart) return false;
+        if (start + length > scope->selectionEnd) return false;
     }
-    if (msg == WM_COMMAND) {
-        int id = LOWORD(wp);
-        if (id == 1105 || id == 1106 || id == 1107 || id == IDOK) {
-            wchar_t find[4096] = {};
-            wchar_t replacement[4096] = {};
-            GetDlgItemTextW(hDlg, 1101, find, 4096);
-            GetDlgItemTextW(hDlg, 1102, replacement, 4096);
-            data->find = find;
-            data->replacement = replacement;
-            data->matchCase = SendDlgItemMessageW(
-                hDlg, 1103, BM_GETCHECK, 0, 0) == BST_CHECKED;
-            data->wholeWord = SendDlgItemMessageW(
-                hDlg, 1104, BM_GETCHECK, 0, 0) == BST_CHECKED;
-            EndDialog(hDlg, id == IDOK ? 1105 : id);
-            return TRUE;
-        }
-        if (id == IDCANCEL) { EndDialog(hDlg, IDCANCEL); return TRUE; }
-    }
-    if (msg == WM_CLOSE) { EndDialog(hDlg, IDCANCEL); return TRUE; }
-    return FALSE;
+    // In source view every byte of the buffer is on screen, so the layout
+    // cache says nothing useful and would wrongly reject text.
+    if (scope->app->IsSourceView()) return true;
+    return scope->app->layout_cache_.RangeIsRendered(start, length);
 }
 
-bool AppWindow::FindNextMatch() {
-    if (find_query_.empty()) return false;
-    SearchOptions options{find_case_sensitive_, find_whole_word_};
-    ForceRepaintNow();
-    std::vector<TextMatch> matches = FindTextMatches(buffer_.Text(),
-                                                     find_query_, options);
-    std::vector<TextMatch> visibleMatches;
-    visibleMatches.reserve(matches.size());
-    for (const TextMatch& match : matches) {
-        if (layout_cache_.RangeIsRendered(match.start, match.length))
-            visibleMatches.push_back(match);
-    }
-    matches.swap(visibleMatches);
-    if (matches.empty()) return false;
-    TextMatch chosen = matches.front();
-    const uint32_t cursor = find_cursor_ == UINT32_MAX
-        ? sel_.active.offset
-        : find_cursor_;
-    for (const TextMatch& match : matches) {
-        if (match.start >= cursor) { chosen = match; break; }
-    }
-    sel_.anchor = {chosen.start};
-    sel_.active = {chosen.start + chosen.length};
-    find_cursor_ = chosen.start + chosen.length;
+// Turn a match into a document selection: select exactly the matched bytes
+// and bring it into view (guide 7). The whole match is selected, not just
+// the caret parked in front of it, so the user sees what Replace will hit.
+void AppWindow::ApplyFindSelection(uint32_t offset, uint32_t length) {
+    if (length == 0) return;
+    sel_.anchor = {offset};
+    sel_.active = {offset + length};
     UpdateCaretPosition();
+    // A paint is needed before the caret rect exists, and the scroll that
+    // follows needs the rebuilt layout cache.
+    ForceRepaintNow();
+    float cx = 0.0f, cy = 0.0f, ch = 0.0f;
+    if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &cx, &cy, &ch))
+        ScrollCaretIntoView(cy, ch);
     Repaint();
-    return true;
 }
 
-void AppWindow::ReplaceAllMatches(const std::string& query,
-                                   const std::string& replacement,
-                                   SearchOptions options) {
-    if (!editing_ || query.empty()) return;
-    ForceRepaintNow();
-    std::vector<TextMatch> matches = FindTextMatches(buffer_.Text(), query,
-                                                      options);
-    std::vector<TextMatch> visibleMatches;
-    visibleMatches.reserve(matches.size());
-    for (const TextMatch& match : matches) {
-        if (layout_cache_.RangeIsRendered(match.start, match.length))
-            visibleMatches.push_back(match);
+// Hand the current match list to the renderer. Document byte offsets all
+// the way through, so zoom, scroll and relayout cannot change which text is
+// marked (guide 64).
+void AppWindow::UpdateFindHighlight() {
+    if (!find_bar_.IsVisible() || find_bar_.state().Matches().empty()) {
+        renderer_.ClearSearchMatches();
+        return;
     }
-    matches.swap(visibleMatches);
-    if (matches.empty()) return;
-    std::string result = ReplaceTextMatches(buffer_.Text(), matches, replacement);
-    Selection before = sel_;
-    std::string original = buffer_.Text();
-    buffer_.Splice(0, static_cast<uint32_t>(original.size()), result);
-    sel_.Collapse({0});
-    UndoEntry entry{};
-    entry.offset = 0;
-    entry.removed = std::move(original);
-    entry.inserted = std::move(result);
-    entry.selBefore = before;
-    entry.selAfter = sel_;
-    entry.timestamp = GetTickCount64();
-    entry.type = EditType::Other;
-    undo_stack_.Push(entry);
-    editor_.BreakUndoCoalesce();
-    OnBufferChanged();
-    ForceRepaintNow();
+    renderer_.SetSearchMatches(&find_bar_.state().Matches(),
+                               find_bar_.state().CurrentIndex());
+}
+
+// Re-run the search against the live document and publish the result.
+void AppWindow::RefreshFindResults(bool adoptCurrentMatch) {
+    FindReplaceState& state = find_bar_.state();
+    state.Refresh(buffer_.Text(), &AppWindow::FindScopeFilter,
+                  &find_scope_);
+    if (adoptCurrentMatch && state.HasQuery())
+        state.AdoptMatchAt(sel_.active.offset);
+    find_bar_.SyncFromState();
+    UpdateFindHighlight();
+    TextMatch current{};
+    if (state.CurrentMatch(&current))
+        ApplyFindSelection(current.start, current.length);
+    else
+        Repaint();
+}
+
+// Pull the live view and edit state into the bar. Called on every Show and
+// whenever the view changes, because the bar deliberately does not remember
+// either (guide 4).
+void AppWindow::SyncFindBarFromDocument() {
+    // Find works in every view. Replace only makes sense where the document
+    // can change, so it is gated on edit mode and the bar greys the two
+    // buttons out rather than silently ignoring a click.
+    find_bar_.SetReplaceEnabled(editing_);
+}
+
+// Wire the bar's callbacks once. The bar never touches the buffer or the
+// undo stack itself; everything it wants applied comes through here.
+void AppWindow::WireFindBar() {
+    FindBarListener listener;
+    listener.caretOffset = [this]() { return sel_.active.offset; };
+
+    listener.onSearchChanged = [this]() {
+        // Incremental search: the bar reports a new query, the result is
+        // recomputed right away without an Enter (guide 5).
+        RefreshFindResults(true);
+    };
+
+    listener.onSelectionChanged = [this](uint32_t offset, uint32_t length) {
+        ApplyFindSelection(offset, length);
+        UpdateFindHighlight();
+    };
+
+    listener.onReplaceCurrent = [this](uint32_t offset, uint32_t length) {
+        if (!editing_ || length == 0) return;
+        const Selection before = sel_;
+        const std::string replacement = ImeWideToUtf8(find_bar_.GetReplaceText());
+        // The editor path records one undo entry and leaves the inserted
+        // text selected, like every other replacement in the app.
+        editor_.ReplaceTextRange(offset, length, replacement, EditType::Other,
+                                 &before);
+        editor_.BreakUndoCoalesce();
+        OnBufferChanged();
+        // Continue from where the replacement ended, still searching for the
+        // ORIGINAL query, never for the text just inserted (guide 22).
+        RefreshFindResults(false);
+        find_bar_.SelectMatchAt(sel_.active.offset);
+    };
+
+    listener.onReplaceAll = [this](const std::wstring& query,
+                                   const std::wstring& replacement,
+                                   const FindStateOptions&) {
+        if (!editing_) return;
+        FindReplaceState& state = find_bar_.state();
+        // The bar's own text is already in the state, so nothing has to be
+        // threaded in from the callback arguments.
+        state.SetReplaceText(replacement);
+        std::string result;
+        const size_t count = state.BuildReplacedDocument(buffer_.Text(),
+                                                         &result);
+        // Zero means nothing matched. Not applying it keeps an empty
+        // Replace All from marking the document dirty (guide 59).
+        if (count == 0) {
+            find_bar_.SetStatusText(L"No matches");
+            return;
+        }
+        const std::string original = buffer_.Text();
+        Selection before = sel_;
+        buffer_.Splice(0, static_cast<uint32_t>(original.size()), result);
+        sel_.Collapse({0});
+        UndoEntry entry{};
+        entry.offset = 0;
+        entry.removed = original;
+        entry.inserted = std::move(result);
+        entry.selBefore = before;
+        entry.selAfter = sel_;
+        entry.timestamp = GetTickCount64();
+        // ONE undo entry for the whole sweep, so a single Ctrl+Z restores
+        // the document (guide 17).
+        entry.type = EditType::Other;
+        undo_stack_.Push(entry);
+        editor_.BreakUndoCoalesce();
+        OnBufferChanged();
+        RefreshFindResults(false);
+        wchar_t message[128] = {};
+        _snwprintf_s(message, _TRUNCATE, L"%zu replacements made.", count);
+        find_bar_.SetStatusText(message);
+        ForceRepaintNow();
+    };
+
+    listener.onClose = [this]() {
+        CloseFindBar();
+    };
+
+    find_bar_.SetListener(std::move(listener));
+}
+
+void AppWindow::CloseFindBar() {
+    renderer_.ClearSearchMatches();
+    find_bar_.state().Invalidate();
+    find_bar_.Hide();
+    if (hwnd_content_) SetFocus(hwnd_content_);
+    Repaint();
 }
 
 void AppWindow::ShowFindReplace(bool replaceMode) {
     if (welcome_mode_) return;
-    // Opening Find starts a new navigation session, even when the query and
-    // options are unchanged. Do not reuse a cursor from an earlier dialog.
-    find_cursor_ = UINT32_MAX;
-    FindReplaceDialogData data;
-    data.replaceMode = replaceMode;
-    data.find.clear();
-    if (!find_query_.empty()) {
-        std::wstring wide;
-        int needed = MultiByteToWideChar(CP_UTF8, 0, find_query_.data(),
-            static_cast<int>(find_query_.size()), nullptr, 0);
-        if (needed > 0) {
-            wide.resize(static_cast<size_t>(needed));
-            MultiByteToWideChar(CP_UTF8, 0, find_query_.data(),
-                static_cast<int>(find_query_.size()), wide.data(), needed);
-            data.find = wide;
-        }
-    } else if (!sel_.Empty()) {
-        std::string selected = buffer_.Text().substr(sel_.Start(), sel_.Length());
-        int needed = MultiByteToWideChar(CP_UTF8, 0, selected.data(),
-            static_cast<int>(selected.size()), nullptr, 0);
-        if (needed > 0) {
-            data.find.resize(static_cast<size_t>(needed));
-            MultiByteToWideChar(CP_UTF8, 0, selected.data(),
-                static_cast<int>(selected.size()), data.find.data(), needed);
-        }
-    }
-    data.matchCase = find_case_sensitive_;
-    data.wholeWord = find_whole_word_;
-    auto tmpl = BuildFindReplaceDialogTemplate(replaceMode);
-    INT_PTR result = DialogBoxIndirectParamW(
-        GetModuleHandle(nullptr),
-        reinterpret_cast<DLGTEMPLATE*>(tmpl.data()), hwnd_,
-        FindReplaceDialogProc, reinterpret_cast<LPARAM>(&data));
-    if (result == IDCANCEL || data.find.empty()) return;
-    const std::string oldQuery = find_query_;
-    const bool oldCase = find_case_sensitive_;
-    const bool oldWholeWord = find_whole_word_;
-    find_query_ = ImeWideToUtf8(data.find);
-    find_case_sensitive_ = data.matchCase;
-    find_whole_word_ = data.wholeWord;
-    const bool newSearchSession = find_query_ != oldQuery ||
-        find_case_sensitive_ != oldCase || find_whole_word_ != oldWholeWord;
-    if (newSearchSession || find_cursor_ == UINT32_MAX ||
-        find_cursor_ > buffer_.Text().size()) {
-        find_cursor_ = sel_.active.offset;
-    }
-    if (find_query_.empty()) return;
-    if (result == 1107) {
-        ReplaceAllMatches(find_query_, ImeWideToUtf8(data.replacement),
-                          {find_case_sensitive_, find_whole_word_});
+    WireFindBar();
+
+    // Ctrl+F on an already open bar focuses the field and selects its text
+    // so a new term can be typed straight away (guide 2.1).
+    if (find_bar_.IsVisible()) {
+        find_bar_.SetReplaceEnabled(editing_);
+        if (replaceMode) find_bar_.Show(hwnd_, true);
+        find_bar_.FocusAndSelectSearchText();
         return;
     }
-    if (result == 1106) {
-        if (!editing_) return;
-        const Selection commandBefore = sel_;
-        if (!FindNextMatch()) return;
-        if (!sel_.Empty()) {
-            const uint32_t replacementStart = sel_.Start();
-            const uint32_t removedLength = sel_.Length();
-            const std::string replacement = ImeWideToUtf8(data.replacement);
-            // Use the editor path so the undo entry records the same
-            // collapsed post-selection as every other replacement.
-            editor_.ReplaceTextRange(replacementStart, removedLength,
-                                      replacement, EditType::Other,
-                                      &commandBefore);
-            find_cursor_ = sel_.active.offset;
-            editor_.BreakUndoCoalesce();
-            OnBufferChanged();
-            find_cursor_ = sel_.active.offset;
-            ForceRepaintNow();
+
+    SyncFindBarFromDocument();
+
+    // The layout cache decides what counts as rendered text, so it has to
+    // exist before the first search (guide 4).
+    ForceRepaintNow();
+
+    // Seed the query from the selection, otherwise keep the last one
+    // (guide 9 and 54). A single-line selection is the useful case: a
+    // multi-line one would fill the field with newlines.
+    if (find_bar_.state().SearchText().empty() && !sel_.Empty() &&
+        sel_.Length() < 512) {
+        const std::string selected =
+            buffer_.Text().substr(sel_.Start(), sel_.Length());
+        if (selected.find('\n') == std::string::npos) {
+            find_bar_.SetSearchText(ImeUtf8ToWide(selected));
         }
-        return;
     }
-    FindNextMatch();
+
+    find_scope_.app = this;
+    find_scope_.withinSelection = false;
+    find_scope_.selectionStart = sel_.Start();
+    find_scope_.selectionEnd = sel_.Start() + sel_.Length();
+
+    if (!find_bar_.Show(hwnd_, replaceMode)) return;
+
+    state.SetOptions(state.Options());
+    RefreshFindResults(true);
 }
 
 void AppWindow::InsertLinkCmd() {
@@ -5302,6 +5292,9 @@ void AppWindow::RedoAction() {
 
 
 void AppWindow::OnDestroy() {
+    // The bar is an owned popup: tear its windows down before this window
+    // disappears, so nothing is left pointing at a dead owner.
+    find_bar_.Destroy();
     StopScrollAnimation();
     SaveWinPlacement(hwnd_);
     DestroyRibbon();
@@ -5756,7 +5749,6 @@ void AppWindow::ToggleWrap() {
 }
 
 void AppWindow::SelectAll() {
-    find_cursor_ = UINT32_MAX;
 
     // Progressive selection tiers when the caret sits in a table cell
     // (plan 19): cell, then row, then whole table, then whole document.
@@ -6046,6 +6038,9 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_MOVE: {
             // Debounce-save window placement when the window is moved.
             SetTimer(hwnd_, 5, 500, nullptr);
+            // Keep an open find bar anchored to its owner. OnSize is not
+            // called for a move, so this cannot rely on the resize path.
+            find_bar_.Reposition();
             return 0;
         }
         case WM_SIZE: {

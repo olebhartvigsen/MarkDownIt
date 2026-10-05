@@ -22,6 +22,7 @@
 #include "settings.h"
 #include "welcomescreen.h"
 #include "searchreplace.h"
+#include "findbar.h"
 #include "textdrag.h"
 
 // Active formatting state at the caret position, used to set
@@ -311,11 +312,25 @@ private:
     // moved since breaks the escalation run.
     uint32_t last_selectall_caret_ = UINT32_MAX;
 
-    // Find/replace state is kept between dialogs for Ctrl+F/Ctrl+H.
-    std::string    find_query_;
-    uint32_t       find_cursor_ = 0;
-    bool           find_case_sensitive_ = false;
-    bool           find_whole_word_ = false;
+    // What the Find scope filter reads. Declared BEFORE the member that
+    // holds it: a nested type is not visible to code above its own
+    // declaration point inside the class, so the member would otherwise
+    // name an undeclared type.
+    struct FindScopeContext {
+        const AppWindow* app = nullptr;
+        uint32_t selectionStart = 0;
+        uint32_t selectionEnd = 0;
+        bool withinSelection = false;
+    };
+
+    // Find and Replace. The bar is modeless, so the document stays visible
+    // and editable while it is open (find guide 31), and the search state
+    // lives inside the bar rather than here.
+    FindBar        find_bar_;
+    // The scope context outlives every Refresh call, so it is a member and
+    // not a stack temporary: the filter receives it as a bare void* and
+    // would otherwise read freed memory.
+    FindScopeContext find_scope_;
     // It is not added to the undo stack until the IME reports a result.
     bool           ime_composing_ = false;
     uint32_t       ime_source_start_ = 0;
@@ -358,10 +373,21 @@ private:
     void OnMouseMove(HWND hwnd, int x, int y);
     void OnLButtonUp(HWND hwnd);
     void FinishTextDrag();
-    bool FindNextMatch();
-    void ReplaceAllMatches(const std::string& query,
-                           const std::string& replacement,
-                           SearchOptions options);
+    // The Find & Replace session. RefreshFindResults re-runs the search
+    // against the live document and republishes the counts, the highlights
+    // and the current match. Everything else is reached through the bar's
+    // listener callbacks.
+    void RefreshFindResults(bool adoptCurrentMatch);
+    void ApplyFindSelection(uint32_t offset, uint32_t length);
+    void UpdateFindHighlight();
+    void SyncFindBarFromDocument();
+    // The document changed underneath an open Find bar: recompute rather
+    // than keep, so no stale offset is ever used.
+    void OnFindDocumentChanged();
+    static bool FindScopeFilter(uint32_t start, uint32_t length,
+                                void* context);
+    void WireFindBar();
+    void CloseFindBar();
     std::string SelectionForClipboard() const;
     void OnSetFocus(HWND hwnd);
     void OnImeComposition(LPARAM lp);

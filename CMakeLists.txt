@@ -173,6 +173,7 @@ add_executable(MarkDownIt WIN32
     src/inputfilter.cpp
     src/searchreplace.cpp
     src/findstate.cpp
+    src/findbar.cpp
     src/textdrag.cpp
     src/fileassoc.cpp
     src/settings.cpp
