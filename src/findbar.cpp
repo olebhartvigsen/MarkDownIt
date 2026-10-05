@@ -80,7 +80,7 @@ const wchar_t* const kStrings[kStrCount] = {
     L"Whole word",                 // kStrWholeWord
     L"No matches",                 // kStrNoMatches
     L"Replacing is not available in this view.",  // kStrReadOnlyHint
-    nullptr
+    // No sentinel: kStrCount is exactly the number of strings above.
 };
 
 const wchar_t* S(StringId id) {

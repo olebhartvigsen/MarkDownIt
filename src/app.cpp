@@ -4252,9 +4252,10 @@ void AppWindow::WireFindBar() {
                                    const FindStateOptions&) {
         if (!editing_) return;
         FindReplaceState& state = find_bar_.state();
-        // The bar's own text is already in the state, so nothing has to be
-        // threaded in from the callback arguments.
-        state.SetReplaceText(replacement);
+        // The callback hands over wide text and the state speaks UTF-8, so
+        // convert at the boundary. SetReplaceText cannot change which
+        // ranges match, so the existing match list stays valid.
+        state.SetReplaceText(ImeWideToUtf8(replacement));
         std::string result;
         const size_t count = state.BuildReplacedDocument(buffer_.Text(),
                                                          &result);
@@ -4341,7 +4342,6 @@ void AppWindow::ShowFindReplace(bool replaceMode) {
 
     if (!find_bar_.Show(hwnd_, replaceMode)) return;
 
-    state.SetOptions(state.Options());
     RefreshFindResults(true);
 }
 
