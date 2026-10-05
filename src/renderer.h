@@ -36,6 +36,10 @@ public:
     static constexpr float kMaxZoom     = zoom::kMaxZoom;
     static constexpr float kDefaultZoom = zoom::kDefaultZoom;
 
+    // Column width used when word wrap is off. Render then lays the text
+    // out on one very wide line and lets the user scroll to its end.
+    static constexpr float kNoWrapContentWidthDip = 10000.0f;
+
     // Set a specific zoom factor. The value is clamped to
     // [kMinZoom, kMaxZoom] before it is stored.
     void SetZoom(float z);
@@ -48,10 +52,17 @@ public:
     void SetContentWidthMode(int mode);
     int  ContentWidthMode() const { return contentWidthMode_; }
 
-    // Width of the content column in DIPs at the current zoom, which is
-    // the horizontal scroll range. Mode 3 has no cap, so it reports the
-    // viewport's own width and therefore never scrolls horizontally.
-    float ContentWidthDip() const { return ComputeMetrics().maxContentWidth; }
+    // Width of the drawn content column in DIPs at the current zoom. This
+    // is the horizontal scroll range, so it has to describe what Render
+    // actually paints: the smaller of the capped column width and the
+    // width the viewport leaves after padding. The uncapped width mode
+    // therefore reports the viewport width and never scrolls sideways.
+    float ContentWidthDip(float viewportWidthDip) const;
+
+    // Column width at 100% zoom for the current width mode, which is the
+    // denominator for fit width. Zero means the mode sets no column width,
+    // so the content already fills the viewport and fit width does nothing.
+    float BaseContentWidthDip() const;
 
     // True when the document on screen is a standalone .svg file, not
     // markdown. Only then is a ```svg fence drawn as a picture; inside a

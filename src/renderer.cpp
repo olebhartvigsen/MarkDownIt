@@ -164,6 +164,25 @@ void Renderer::SetContentWidthMode(int mode) {
     contentWidthMode_ = mode;
 }
 
+float Renderer::ContentWidthDip(float viewportWidthDip) const {
+    if (!wrapEnabled_) return kNoWrapContentWidthDip;
+    LayoutMetrics m = ComputeMetrics();
+    if (!(viewportWidthDip > 0.0f)) return m.maxContentWidth;
+    float width = viewportWidthDip - 2.0f * m.padX;
+    if (width > m.maxContentWidth) width = m.maxContentWidth;
+    if (!(width > 0.0f)) width = 1.0f;
+    return width;
+}
+
+float Renderer::BaseContentWidthDip() const {
+    switch (contentWidthMode_) {
+        case 1:  return 960.0f;
+        case 2:  return 1600.0f;
+        case 3:  return 0.0f;   // uncapped: no fixed column to fit
+        default: return 800.0f;
+    }
+}
+
 std::u16string Renderer::ToUtf16(const std::u32string& s32) {
     std::u16string out;
     out.reserve(s32.size());
@@ -721,7 +740,7 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
     if (widthDip <= 0.0f) return m.padTop + topOffsetDip;
 
     float avail = widthDip - 2.0f * m.padX;
-    float contentWidth = wrapEnabled_ ? avail : 10000.0f;
+    float contentWidth = wrapEnabled_ ? avail : kNoWrapContentWidthDip;
     if (wrapEnabled_ && contentWidth > m.maxContentWidth)
         contentWidth = m.maxContentWidth;
     if (contentWidth <= 0.0f) contentWidth = 1.0f;
@@ -881,7 +900,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (widthDip <= 0.0f) return m.padTop;
 
     float avail = widthDip - 2.0f * m.padX;
-    float contentWidth = wrapEnabled_ ? avail : 10000.0f;
+    float contentWidth = wrapEnabled_ ? avail : kNoWrapContentWidthDip;
     if (wrapEnabled_ && contentWidth > m.maxContentWidth)
         contentWidth = m.maxContentWidth;
     if (contentWidth <= 0.0f) contentWidth = 1.0f;
@@ -1507,7 +1526,7 @@ float Renderer::MeasureSourceView(IDWriteFactory* dw, const std::string& src,
 
     LayoutMetrics m = ComputeMetrics();
     float avail = widthDip - 2.0f * m.padX;
-    float contentWidth = wrapEnabled_ ? avail : 10000.0f;
+    float contentWidth = wrapEnabled_ ? avail : kNoWrapContentWidthDip;
     if (wrapEnabled_ && contentWidth > m.maxContentWidth)
         contentWidth = m.maxContentWidth;
     if (contentWidth <= 0.0f) contentWidth = 1.0f;
@@ -1549,7 +1568,7 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     Palette pal = BasePalette();
     LayoutMetrics m = ComputeMetrics();
     float avail = widthDip - 2.0f * m.padX;
-    float contentWidth = wrapEnabled_ ? avail : 10000.0f;
+    float contentWidth = wrapEnabled_ ? avail : kNoWrapContentWidthDip;
     if (wrapEnabled_ && contentWidth > m.maxContentWidth)
         contentWidth = m.maxContentWidth;
     if (contentWidth <= 0.0f) contentWidth = 1.0f;

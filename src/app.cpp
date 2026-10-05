@@ -2523,7 +2523,11 @@ void AppWindow::UpdateScrollInfo() {
         D2D1_SIZE_F rtSize = rt_->GetSize();
         clientWDip = rtSize.width;
     }
-    const float contentW = renderer_.ContentWidthDip();
+    // The scroll range has to describe the column as actually drawn, not
+    // the uncapped width mode value: an over-wide range lets the user
+    // scroll into empty space past the end of the content (zoom guide
+    // section 4).
+    const float contentW = renderer_.ContentWidthDip(clientWDip);
     float maxScrollX = 0.0f;
     if (contentW > clientWDip && clientWDip > 0.0f) {
         maxScrollX = contentW - clientWDip;
@@ -2859,7 +2863,7 @@ void AppWindow::OnContentHScroll(HWND hwnd, int code, int pos) {
             return;
         }
         case SB_LEFT:  targetX = 0.0f; break;
-        case SB_RIGHT: targetX = renderer_.ContentWidthDip(); break;
+        case SB_RIGHT: targetX = renderer_.ContentWidthDip(page); break;
     }
 
     if (targetX < 0.0f) targetX = 0.0f;
@@ -5714,13 +5718,15 @@ bool AppWindow::CanZoomOut() const {
 }
 
 void AppWindow::FitZoomToWidth() {
-    // The content column is 800 DIPs at 100% in the default width mode
-    // (renderer.cpp ComputeMetrics). Scaling the factor by the ratio of
-    // available width to that base width makes the column fill the
-    // viewport, and the model clamps the result to the zoom range.
+    // The base width is the current width mode's own column width at
+    // 100% (800, 960 or 1600 DIPs), not a hardcoded 800: fitting against
+    // the wrong base leaves a 960 or 1600 column overflowing the viewport.
+    // The uncapped mode sets no column width, so there is nothing to fit
+    // and the request is a no-op rather than a wrong zoom.
     if (!rt_) return;
+    const float base = renderer_.BaseContentWidthDip();
+    if (!(base > 0.0f)) return;
     const float available = rt_->GetSize().width;
-    const float base = 800.0f;
     ApplyZoom(zoom::FitWidth(available, base),
               CenterYDip(rt_), CenterXDip(rt_));
 }
@@ -6153,8 +6159,13 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     GetClientRect(hwnd_content_, &rc);
                     if (pt.x >= 0 && pt.y >= 0 &&
                         pt.x < rc.right && pt.y < rc.bottom) {
-                        focusX = static_cast<float>(pt.x);
-                        focusY = static_cast<float>(pt.y);
+                        // Every layout measure is in DIPs, so the anchor
+                        // must be too. At 150% scaling the raw client
+                        // pixels overshoot and the point under the cursor
+                        // drifts away from where it was.
+                        const float dip = 96.0f / static_cast<float>(dpi_);
+                        focusX = static_cast<float>(pt.x) * dip;
+                        focusY = static_cast<float>(pt.y) * dip;
                     }
                 }
                 wheel_zoom_acc_ += static_cast<float>(delta);
