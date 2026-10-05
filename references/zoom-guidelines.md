@@ -368,3 +368,48 @@ validating against the 2009/07 schema first, not guessing the spelling.
 * **Editing the percentage by typing.** The readout is a label, not an edit
   box. The keyboard route already covers it: `Ctrl+0` returns to 100%, and
   `Ctrl`+`+`/`-` step through the range.
+
+## 8. Select all and clipboard in every mode
+
+Not a zoom rule, but it sits in the same input path (`OnKeyDown`) and the same
+"which mode am I in" gate, so it is recorded here rather than re-derived.
+
+**Ctrl+A, Ctrl+C, Ctrl+X and Ctrl+V work in all three modes:** rendered view
+mode, edit mode and source mode. The view-mode gate in `OnKeyDown` used to
+admit only navigation, `Ctrl+C` and `Ctrl+A`; `Ctrl+X` and `Ctrl+V` fell
+through to the edit handlers' suppression and did nothing at all.
+
+**Cut and paste enter edit mode, because there is no caret in view mode.**
+View mode has no caret to cut against or paste at, so both call `SetEdit(true)`
+first. Three rules keep that from surprising the user:
+
+* An empty selection makes cut a no-op, and the spec requires an empty
+  selection to change neither clipboard nor document. The mode switch sits
+  inside the `!sel_.Empty()` branch, so it only happens when there is real
+  work to do.
+* Paste reads the clipboard *before* switching modes, so an empty or
+  unsupported clipboard leaves the mode alone.
+* The shift aliases `Shift+Insert` and `Shift+Delete` do exactly what `Ctrl+V`
+  and `Ctrl+X` do, mode switch included, as the text editing spec requires of
+  alias shortcuts.
+
+The same three commands are on the view-mode context menu, with cut greyed out
+when the selection is empty, matching the keyboard.
+
+**Copy is mode-aware, and source mode is verbatim.**
+`SelectionForClipboard()` had two defects:
+
+* It ran `CleanSelectionForCopy` on its result, and the `Ctrl+C` handler ran it
+  a second time on the returned string. Applying it twice is not idempotent: a
+  paragraph break that survived the first pass as `\n\n` is still fine, but the
+  forced-break and soft-break rules then re-inspect text they had already
+  rewritten. The helper is now the single place that decides.
+* In source mode it applied the rendered-view filter to raw Markdown, turning
+  soft line breaks into spaces and dropping syntax the user could see on
+  screen. A copy from source mode no longer matched the display. Source mode now
+  returns the raw slice verbatim, before any visible-text filtering.
+
+**Ctrl+A in source mode selects everything in one press.** `SelectAll()`
+escalates cell, then row, then table, then document when the caret sits in a
+table cell. That escalation describes rendered cells, and source mode shows
+Markdown text with no cells on screen, so the tier logic is skipped there.

@@ -116,6 +116,13 @@ std::string AppWindow::SelectionForClipboard() const {
     uint32_t end = std::min(start + sel_.Length(), static_cast<uint32_t>(source.size()));
     if (start >= end) return {};
 
+    // Source view shows the raw Markdown, so the clipboard gets it byte
+    // for byte. Running the rendered-view filters over it turned soft
+    // line breaks into spaces and dropped syntax the user could plainly
+    // see on screen, so a copy from source mode no longer matched what
+    // was displayed.
+    if (source_view_) return source.substr(start, end - start);
+
     // WYSIWYG selection is exported as visible text. Markdown delimiters,
     // list prefixes and fence markers are not user-visible characters and
     // must not leak into CF_UNICODETEXT or the lossless application format.
@@ -400,24 +407,24 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         return;
     }
     if (vk == VK_INSERT && shift && !ctrl) {
-        if (editing_) {
-            std::string text = ClipboardPaste(hwnd_content_);
-            // Same in-cell paste rule as Ctrl+V: strip row syntax.
-            if (!text.empty() && IsOffsetInTable(doc_, sel_.active.offset))
-                text = SanitizePasteForTableCell(text);
-            if (!text.empty()) {
-                pending_run_active_ = false;
-                pending_run_suffix_bytes_ = 0;
-                editor_.InsertText(text);
-                OnBufferChanged();
-            }
+        std::string text = ClipboardPaste(hwnd_content_);
+        // Same as Ctrl+V: view mode enters edit mode on a real paste.
+        if (!text.empty() && !editing_) SetEdit(true);
+        // Same in-cell paste rule as Ctrl+V: strip row syntax.
+        if (!text.empty() && IsOffsetInTable(doc_, sel_.active.offset))
+            text = SanitizePasteForTableCell(text);
+        if (!text.empty()) {
+            pending_run_active_ = false;
+            pending_run_suffix_bytes_ = 0;
+            editor_.InsertText(text);
+            OnBufferChanged();
         }
         return;
     }
     if (vk == VK_DELETE && shift && !ctrl) {
-        if (editing_ && !sel_.Empty()) {
-            uint32_t s = sel_.Start();
-            uint32_t len = sel_.Length();
+        if (!sel_.Empty()) {
+            // Same as Ctrl+X, including entering edit mode from view mode.
+            if (!editing_) SetEdit(true);
             std::string sel_text = SelectionForClipboard();
             if (ClipboardCut(hwnd_content_, sel_text)) {
                 editor_.DeleteSelection();
@@ -446,19 +453,24 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
     find_cursor_ = UINT32_MAX;
 
     // In view mode, suppress editing keys but allow navigation, selection,
-    // and copy (Ctrl+C).
+    // and the clipboard family (Ctrl+A/C/X/V). View mode has no caret, so
+    // cut and paste enter edit mode in their handlers; plain typing stays
+    // blocked in OnChar.
     if (!editing_) {
         bool isNavigation = (vk == VK_LEFT || vk == VK_RIGHT ||
             vk == VK_UP || vk == VK_DOWN ||
             vk == VK_HOME || vk == VK_END ||
             vk == VK_PRIOR || vk == VK_NEXT);
         bool isCopy = (ctrl && vk == 0x43); // Ctrl+C
+        bool isCut = (ctrl && !shift && vk == 0x58); // Ctrl+X
+        bool isPaste = (ctrl && !shift && vk == 0x56); // Ctrl+V
         bool isSelectAll = (ctrl && vk == 0x41); // Ctrl+A
         // Shift extends navigation (selection) but nothing else: Shift with
         // any non-navigation key (Backspace, Tab, letter combos) would
         // otherwise fall through to the edit handlers below and mutate the
         // buffer while in view mode.
-        if (!isNavigation && !isCopy && !isSelectAll) return;
+        if (!isNavigation && !isCopy && !isCut && !isPaste && !isSelectAll)
+            return;
     }
 
     if (vk != 0x41) last_selectall_tier_ = 0;  // any other key ends the Ctrl+A escalation run
@@ -817,9 +829,11 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 editor_.BreakUndoCoalesce();
                 OnBufferChanged();
             } else if (ctrl && !shift) {
+                // An empty selection is a no-op and must not switch modes.
                 if (!sel_.Empty()) {
-                    uint32_t s = sel_.Start();
-                    uint32_t len = sel_.Length();
+                    // Cut is an edit, so view mode enters edit mode first:
+                    // there is no caret there to cut against.
+                    if (!editing_) SetEdit(true);
                     std::string sel_text = SelectionForClipboard();
                     if (ClipboardCut(hwnd_content_, sel_text)) {
                         editor_.DeleteSelection();
@@ -843,18 +857,12 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             }
             break;
         case 0x43:  // Ctrl+C = copy
+            // SelectionForClipboard already applies the view-mode cleanup
+            // (soft line breaks become spaces, paragraph and forced breaks
+            // survive), so the text is used exactly as returned.
             if (ctrl && !shift) {
                 if (!sel_.Empty()) {
-                    uint32_t s = sel_.Start();
-                    uint32_t len = sel_.Length();
-                    std::string sel_text = SelectionForClipboard();
-                    // In view mode, convert soft line breaks (single \n within
-                    // a paragraph) to spaces, preserving paragraph breaks
-                    // (\n\n) and forced breaks (two trailing spaces + \n).
-                    if (!editing_) {
-                        sel_text = CleanSelectionForCopy(sel_text);
-                    }
-                    ClipboardCopy(hwnd_content_, sel_text);
+                    ClipboardCopy(hwnd_content_, SelectionForClipboard());
                 }
             }
             break;
@@ -862,6 +870,11 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         case 0x56:  // Ctrl+V = paste
             if (ctrl && !shift) {
                 std::string text = ClipboardPaste(hwnd_content_);
+                // Paste is an edit and view mode has no caret to paste at,
+                // so switch to edit mode. Done after reading the clipboard
+                // so an empty or unsupported clipboard stays a no-op and
+                // leaves the mode alone.
+                if (!text.empty() && !editing_) SetEdit(true);
                 if (!text.empty()) {
                     // Tables are single-line Markdown syntax: a paste
                     // inside a cell must never introduce pipes or row
@@ -5753,7 +5766,11 @@ void AppWindow::SelectAll() {
         last_selectall_tier_ = 0;
     }
     TableCellRef cell;
-    const bool inTable = TableCellAtOffset(doc_, buffer_.Text(), sel_.active.offset, &cell);
+    // Source view shows the Markdown text, not rendered cells, so the
+    // cell/row/table escalation has nothing to select there. Ctrl+A is
+    // the whole buffer on screen, in one press.
+    const bool inTable = !source_view_ &&
+        TableCellAtOffset(doc_, buffer_.Text(), sel_.active.offset, &cell);
     const uint32_t textLen = static_cast<uint32_t>(buffer_.Text().size());
     const bool activeCell = inTable && !cell.separatorRow &&
                             cell.srcEnd > cell.srcOffset;
@@ -5866,6 +5883,14 @@ void AppWindow::ShowContextMenu(int screenX, int screenY) {
 
         AppendMenuW(hMenu, MF_STRING | (hasSel ? 0 : MF_GRAYED),
             CM_COPY, L"Copy\tCtrl+C");
+        // Cut and paste are offered here as well as in edit mode: both
+        // switch to edit mode, since neither has a caret to work from in
+        // view mode. Cut stays greyed with no selection, like the spec
+        // requires for an empty selection.
+        AppendMenuW(hMenu, MF_STRING | (hasSel ? 0 : MF_GRAYED),
+            CM_CUT, L"Cut\tCtrl+X");
+        AppendMenuW(hMenu, MF_STRING, CM_PASTE, L"Paste\tCtrl+V");
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(hMenu, MF_STRING, CM_SELALL, L"Select All\tCtrl+A");
         AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(hMenu, MF_STRING,
@@ -5890,7 +5915,9 @@ void AppWindow::ShowContextMenu(int screenX, int screenY) {
     case CM_REDO:    ApplyUndo(true); break;
     case CM_CUT:
         if (!sel_.Empty()) {
-            uint32_t s = sel_.Start(), len = sel_.Length();
+            // Same rule as Ctrl+X: a cut needs a caret, so view mode
+            // enters edit mode here too.
+            if (!editing_) SetEdit(true);
             std::string sel_text = SelectionForClipboard();
             if (ClipboardCut(hwnd_content_, sel_text)) {
                 editor_.DeleteSelection();
@@ -5907,6 +5934,8 @@ void AppWindow::ShowContextMenu(int screenX, int screenY) {
         break;
     case CM_PASTE: {
         std::string text = ClipboardPaste(hwnd_content_);
+        // Same as Ctrl+V: enter edit mode on a real paste.
+        if (!text.empty() && !editing_) SetEdit(true);
         // Same in-cell paste rule as Ctrl+V: strip row syntax.
         if (!text.empty() && IsOffsetInTable(doc_, sel_.active.offset))
             text = SanitizePasteForTableCell(text);
