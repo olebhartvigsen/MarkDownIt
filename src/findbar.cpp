@@ -1,5 +1,7 @@
 #include "findbar.h"
 
+#include "crash_trace.h"
+
 #include <windows.h>
 
 #include <cstddef>
@@ -175,7 +177,11 @@ FindBar::~FindBar() {
 // ---------------------------------------------------------------------------
 
 bool FindBar::Show(HWND owner, bool expandForReplace) {
-    if (!owner || !IsWindow(owner)) return false;
+    diag::Trace("FINDBAR: FindBar::Show entered");
+    if (!owner || !IsWindow(owner)) {
+        diag::Trace("FINDBAR: Show: owner invalid");
+        return false;
+    }
     // The owner is needed BEFORE creation: it is the parent of the popup and
     // the source of the DPI the bar is laid out in.
     owner_ = owner;
@@ -192,6 +198,12 @@ bool FindBar::Show(HWND owner, bool expandForReplace) {
     ShowWindow(hwnd_, SW_SHOWNORMAL);
     SetWindowPos(hwnd_, HWND_TOP, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE);
+    RECT placed = {};
+    const bool gotRect = GetWindowRect(hwnd_, &placed) != 0;
+    diag::TraceFmt("FINDBAR: after ShowWindow vis=%d rect=%d %ld,%ld %ldx%ld",
+                   IsWindowVisible(hwnd_) ? 1 : 0, gotRect ? 1 : 0,
+                   placed.left, placed.top,
+                   placed.right - placed.left, placed.bottom - placed.top);
 
     // Guide 28: focus moves to the Find field and the text is selected, so
     // typing replaces it immediately.
@@ -699,7 +711,12 @@ LRESULT CALLBACK FindBar::ChildSubclass(HWND child, UINT msg, WPARAM wp,
 
 bool FindBar::EnsureCreated() {
     if (hwnd_ && IsWindow(hwnd_)) return true;
-    if (!RegisterFindBarClass()) return false;
+    diag::Trace("FINDBAR: EnsureCreated: registering class");
+    if (!RegisterFindBarClass()) {
+        diag::TraceFmt("FINDBAR: RegisterFindBarClass failed err=%lu",
+                       GetLastError());
+        return false;
+    }
 
     dpi_ = static_cast<int>(DpiOf(owner_));
     font_ = CreateFontW(-MulDiv(9, dpi_, 72), 0, 0, 0, FW_NORMAL, FALSE, FALSE,
@@ -716,6 +733,8 @@ bool FindBar::EnsureCreated() {
                             MulDiv(kWidth, dpi_, 96), height,
                             owner_, nullptr, GetModuleHandleW(nullptr), this);
     if (!hwnd_ || !IsWindow(hwnd_)) {
+        diag::TraceFmt("FINDBAR: CreateWindowEx failed err=%lu",
+                       GetLastError());
         if (font_) {
             DeleteObject(font_);
             font_ = nullptr;
@@ -723,14 +742,17 @@ bool FindBar::EnsureCreated() {
         hwnd_ = nullptr;
         return false;
     }
+    diag::Trace("FINDBAR: bar window created");
     if (font_) {
         SendMessageW(hwnd_, WM_SETFONT, reinterpret_cast<WPARAM>(font_),
                      TRUE);
     }
     if (!CreateControls()) {
+        diag::Trace("FINDBAR: CreateControls failed");
         Destroy();
         return false;
     }
+    diag::Trace("FINDBAR: controls created");
     return true;
 }
 

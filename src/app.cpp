@@ -446,10 +446,12 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
     }
 
     if (ctrl && !shift && vk == 0x46) {
+        diag::Trace("FINDBAR: Ctrl+F in OnKeyDown");
         ShowFindReplace(false);
         return;
     }
     if (ctrl && !shift && vk == 0x48) {
+        diag::Trace("FINDBAR: Ctrl+H in OnKeyDown");
         ShowFindReplace(true);
         return;
     }
@@ -4305,8 +4307,11 @@ void AppWindow::CloseFindBar() {
 }
 
 void AppWindow::ShowFindReplace(bool replaceMode) {
-    if (welcome_mode_) return;
+    diag::TraceFmt("FINDBAR: ShowFindReplace replace=%d welcome=%d",
+                   replaceMode ? 1 : 0, welcome_mode_ ? 1 : 0);
+    if (welcome_mode_) { diag::Trace("FINDBAR: blocked by welcome"); return; }
     WireFindBar();
+    diag::Trace("FINDBAR: listener wired");
 
     // Ctrl+F on an already open bar focuses the field and selects its text
     // so a new term can be typed straight away (guide 2.1).
@@ -4340,7 +4345,10 @@ void AppWindow::ShowFindReplace(bool replaceMode) {
     find_scope_.selectionStart = sel_.Start();
     find_scope_.selectionEnd = sel_.Start() + sel_.Length();
 
-    if (!find_bar_.Show(hwnd_, replaceMode)) return;
+    const bool shown = find_bar_.Show(hwnd_, replaceMode);
+    diag::TraceFmt("FINDBAR: Show returned %d visible=%d",
+                   shown ? 1 : 0, find_bar_.IsVisible() ? 1 : 0);
+    if (!shown) return;
 
     RefreshFindResults(true);
 }
