@@ -630,4 +630,5 @@ TEST(FindState, WholeWordSearchOnDanishLettersUsesWordBoundaries) {
     EXPECT_EQ(wholeWord.MatchCount(), 0u);
 }
 
-RUN_ALL_TESTS()
+// No RUN_ALL_TESTS() here: tests/test_main.cpp owns main, and a second one
+// makes the test binary fail to link with LNK2005.
