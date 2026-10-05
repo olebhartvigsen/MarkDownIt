@@ -662,6 +662,21 @@ LRESULT CALLBACK FindBar::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (!self) return DefWindowProcW(hwnd, msg, wp, lp);
 
     switch (msg) {
+        case WM_PAINT: {
+            // A one pixel separator along the top edge marks the strip as
+            // attached to the window, like a toolbar. The face colour comes
+            // from the class brush during the erase that precedes this.
+            PAINTSTRUCT ps = {};
+            HDC dc = BeginPaint(hwnd, &ps);
+            if (dc) {
+                RECT line = {};
+                GetClientRect(hwnd, &line);
+                line.bottom = line.top + 1;
+                FillRect(dc, &line, GetSysColorBrush(COLOR_BTNSHADOW));
+            }
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
         case WM_COMMAND:
             if (self->HandleCommand(wp, lp)) return 0;
             return DefWindowProcW(hwnd, msg, wp, lp);
@@ -887,34 +902,45 @@ void FindBar::SetMode(FindBarMode mode) {
 void FindBar::LayoutControls() {
     if (!hwnd_ || !IsWindow(hwnd_)) return;
 
-    // The strip spans the owner's client width, so the right side of the
-    // layout is computed from the window's own width instead of a fixed
-    // 420 DIP column. Everything else stays left aligned in 96 DPI units.
+    // The strip spans the owner's client width, so the layout is computed
+    // from the window's own width. The edit fields flex between a floor and
+    // a cap, the options follow the navigation buttons, and the counter and
+    // Close are anchored to the right edge. With that shape no control can
+    // overlap another at any width above roughly 760 DIPs, where the
+    // previous fixed column pushed controls on top of each other.
     RECT rc = {};
     GetClientRect(hwnd_, &rc);
     int widthDip = dpi_ > 0 ? MulDiv(rc.right, 96, dpi_) : rc.right;
     if (widthDip < 320) widthDip = 320;
 
-    // Row 1: Find, with the options, the counter, and Close on the right.
-    PlaceChild(kFindBarFindLabel, 12, 9, 36, 14, true);
-    PlaceChild(kFindBarFindEdit, 52, 5, 300, 22, true);
-    PlaceChild(kFindBarPrevious, 360, 4, 72, 24, true);
-    PlaceChild(kFindBarNext, 438, 4, 64, 24, true);
-    PlaceChild(kFindBarMatchCase, 516, 7, 92, 18, true);
-    PlaceChild(kFindBarWholeWord, 616, 7, 92, 18, true);
-    PlaceChild(kFindBarCounter, 716, 8, 110, 18, true);
-    const int closeX = widthDip - 94;
-    PlaceChild(kFindBarClose, closeX, 4, 82, 24, true);
+    int editW = widthDip - 640;
+    if (editW > 420) editW = 420;
+    if (editW < 120) editW = 120;
 
-    // Row 2: Replace. On screen in both modes and greyed in Find mode, so
-    // the strip never changes when the mode switches.
-    PlaceChild(kFindBarReplaceLabel, 12, 38, 72, 14, true);
-    PlaceChild(kFindBarReplaceEdit, 88, 34, 300, 22, true);
-    PlaceChild(kFindBarReplace, 396, 33, 72, 24, true);
-    PlaceChild(kFindBarReplaceAll, 476, 33, 84, 24, true);
-    int statusW = widthDip - 572 - 12;
+    // Row 1: Find, its navigation, then the options.
+    PlaceChild(kFindBarFindLabel, 12, 11, 36, 14, true);
+    PlaceChild(kFindBarFindEdit, 52, 6, editW, 22, true);
+    const int prevX = 52 + editW + 8;
+    PlaceChild(kFindBarPrevious, prevX, 5, 72, 24, true);
+    PlaceChild(kFindBarNext, prevX + 80, 5, 64, 24, true);
+    const int optionX = prevX + 80 + 64 + 24;
+    PlaceChild(kFindBarMatchCase, optionX, 8, 92, 18, true);
+    PlaceChild(kFindBarWholeWord, optionX + 100, 8, 92, 18, true);
+    PlaceChild(kFindBarCounter, widthDip - 212, 9, 110, 18, true);
+    PlaceChild(kFindBarClose, widthDip - 94, 5, 82, 24, true);
+
+    // Row 2: Replace, aligned under the Find row. On screen in both modes
+    // and greyed in Find mode, so the strip never changes when the mode
+    // switches.
+    PlaceChild(kFindBarReplaceLabel, 12, 41, 72, 14, true);
+    PlaceChild(kFindBarReplaceEdit, 88, 36, editW, 22, true);
+    const int replaceX = 88 + editW + 8;
+    PlaceChild(kFindBarReplace, replaceX, 35, 72, 24, true);
+    PlaceChild(kFindBarReplaceAll, replaceX + 80, 35, 84, 24, true);
+    const int statusX = replaceX + 80 + 84 + 16;
+    int statusW = widthDip - statusX - 12;
     if (statusW < 80) statusW = 80;
-    PlaceChild(kFindBarStatus, 572, 38, statusW, 16, true);
+    PlaceChild(kFindBarStatus, statusX, 40, statusW, 16, true);
 
     SetWindowPos(hwnd_, nullptr, 0, 0, rc.right, HeightPx(),
                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);

@@ -32,7 +32,7 @@ HWND CreateOwnerWindow() {
     wc.hInstance = GetModuleHandleW(nullptr);
     wc.lpszClassName = L"MarkDownItFindBarRuntimeTestOwner";
     RegisterClassW(&wc);
-    return CreateWindowExW(0, wc.lpszClassName, L"", WS_OVERLAPPED, 0, 0, 320,
+    return CreateWindowExW(0, wc.lpszClassName, L"", WS_OVERLAPPED, 0, 0, 900,
                            240, nullptr, nullptr, GetModuleHandleW(nullptr),
                            nullptr);
 }
@@ -74,11 +74,23 @@ TEST(FindBarWindow, ControlsExistAndMessagesReachTheBar) {
     // its job: no painting, no input and no commands.
     const LONG_PTR instance = GetWindowLongPtrW(bar_wnd, GWLP_USERDATA);
     EXPECT_TRUE(instance != 0);
+    // Every control must sit inside the strip: the dock layout must never
+    // push a control out of the window (or, at this width, on top of
+    // another one).
+    RECT bar_client = {};
+    GetClientRect(bar_wnd, &bar_client);
     for (int id = kFindBarFindEdit; id <= kFindBarStatus; ++id) {
         HWND child = GetDlgItem(bar_wnd, id);
         EXPECT_TRUE(child != nullptr);
         if (child) {
             EXPECT_TRUE(GetWindowLongPtrW(child, GWLP_USERDATA) == instance);
+            RECT cr = {};
+            GetWindowRect(child, &cr);
+            MapWindowPoints(HWND_DESKTOP, bar_wnd,
+                            reinterpret_cast<POINT*>(&cr), 2);
+            EXPECT_TRUE(cr.left >= 0 && cr.top >= 0);
+            EXPECT_TRUE(cr.right <= bar_client.right &&
+                        cr.bottom <= bar_client.bottom);
         }
     }
 
