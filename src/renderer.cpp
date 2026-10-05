@@ -92,6 +92,78 @@ static void FillSelectionHighlight(ID2D1RenderTarget* rt,
 Renderer::Renderer() {}
 Renderer::~Renderer() { Release(); }
 
+void Renderer::SetSearchMatches(const std::vector<TextMatch>* matches,
+                                int currentIndex) {
+    // A null pointer means no highlighting. Clearing here rather than at the
+    // paint sites means a closed find bar can never leave a stale fill on
+    // screen, and the paint paths only have to test the pointer.
+    if (!matches) {
+        searchMatches_ = nullptr;
+        searchCurrentIndex_ = -1;
+        return;
+    }
+    searchMatches_ = matches;
+    searchCurrentIndex_ = currentIndex;
+    // An index past the end, or one that only makes sense for a non-empty
+    // list, would highlight nothing at all. Normalise it so every match still
+    // gets the weaker fill instead of silently losing its highlight.
+    if (!matches->empty() &&
+        (currentIndex < 0 ||
+         currentIndex >= static_cast<int>(matches->size()))) {
+        searchCurrentIndex_ = -1;
+    }
+}
+
+// Map a document byte offset to a UTF-16 index inside one block, using a
+// LINEAR scan over u16ToSrc. These block mappings are not guaranteed to be
+// sorted: a table cell can carry gaps where md4c split the text at a mark or
+// an HTML tag, which is why the existing selection code scans too. A binary
+// search over an unsorted map silently highlights the wrong characters.
+static UINT32 MapSrcToU16Linear(const std::vector<uint32_t>& u16ToSrc,
+                                UINT32 u16Len, uint32_t srcOff) {
+    for (size_t i = 0; i < u16ToSrc.size(); ++i) {
+        if (u16ToSrc[i] >= srcOff) return static_cast<UINT32>(i);
+    }
+    return u16Len;
+}
+
+void Renderer::FillMatchHighlights(ID2D1RenderTarget* rt,
+                                   IDWriteTextLayout* layout,
+                                   ID2D1SolidColorBrush* matchBrush,
+                                   ID2D1SolidColorBrush* currentBrush,
+                                   const std::vector<uint32_t>& u16ToSrc,
+                                   UINT32 u16Len,
+                                   uint32_t blockStart, uint32_t blockEnd,
+                                   float originX, float originY,
+                                   float scrollY, float viewportH) {
+    if (!rt || !layout || !matchBrush || !currentBrush) return;
+    if (!searchMatches_ || searchMatches_->empty()) return;
+    if (u16ToSrc.empty() || u16Len == 0) return;
+
+    for (size_t i = 0; i < searchMatches_->size(); ++i) {
+        const TextMatch& m = (*searchMatches_)[i];
+        if (m.length == 0) continue;
+        const uint32_t mStart = m.start;
+        const uint32_t mEnd = m.start + m.length;
+        // Matches are document ranges. Skip anything this block does not
+        // cover rather than clipping, so a match is never drawn twice by two
+        // adjacent blocks.
+        if (mEnd <= blockStart || mStart >= blockEnd) continue;
+
+        ID2D1SolidColorBrush* brush =
+            (static_cast<int>(i) == searchCurrentIndex_) ? currentBrush
+                                                         : matchBrush;
+        UINT32 u16Start = MapSrcToU16Linear(u16ToSrc, u16Len, mStart);
+        UINT32 u16End = (mEnd >= blockEnd)
+            ? u16Len
+            : MapSrcToU16Linear(u16ToSrc, u16Len, mEnd);
+        if (u16End > u16Len) u16End = u16Len;
+        if (u16End <= u16Start) continue;
+        FillSelectionHighlight(rt, layout, brush, u16Start, u16End,
+                               originX, originY, scrollY, viewportH);
+    }
+}
+
 LayoutMetrics Renderer::ComputeMetrics() const {
     LayoutMetrics m = ScaleMetrics(BaseMetrics(), zoom_);
     // Override the content width cap based on the user's width setting.
@@ -332,6 +404,40 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         rt->DrawRectangle(bgRect, borderBrush, 1.0f);
     }
 
+    // Search match highlights, under the text and under the selection so a
+    // selection always stays readable on top of a match fill. The mapping is
+    // rebuilt here rather than reusing the cache copy, because the cache is
+    // optional and the highlight must not depend on hit-testing being on.
+    if (HasSearchMatches() && !raw.empty() && !text16.empty()) {
+        std::vector<uint32_t> matchU16ToSrc;
+        matchU16ToSrc.reserve(text16.size());
+        uint32_t srcByte = n.contentOffset;
+        for (char32_t cp : raw) {
+            int utf8Len = (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
+                          (cp <= 0xFFFF) ? 3 : 4;
+            int utf16Len = (cp <= 0xFFFF) ? 1 : 2;
+            for (int u = 0; u < utf16Len; u++)
+                matchU16ToSrc.push_back(srcByte);
+            srcByte += utf8Len;
+        }
+        ID2D1SolidColorBrush* matchBrush = nullptr;
+        ID2D1SolidColorBrush* currentBrush = nullptr;
+        rt->CreateSolidColorBrush(pal.findMatchBg, &matchBrush);
+        rt->CreateSolidColorBrush(pal.findCurrentMatchBg, &currentBrush);
+        if (matchBrush && currentBrush) {
+            const uint32_t contentStart = n.contentOffset;
+            const uint32_t contentEnd = contentStart + n.contentLength;
+            FillMatchHighlights(rt, layout, matchBrush, currentBrush,
+                                matchU16ToSrc,
+                                static_cast<UINT32>(text16.size()),
+                                contentStart, contentEnd,
+                                x + m.codePad, y + m.codePad,
+                                scrollY, rt->GetSize().height);
+        }
+        if (matchBrush) matchBrush->Release();
+        if (currentBrush) currentBrush->Release();
+    }
+
     // Draw selection highlight behind the text.
     if (sel && !sel->Empty() && !raw.empty() && !text16.empty()) {
         ID2D1SolidColorBrush* selBrush = nullptr;
@@ -519,6 +625,15 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     ID2D1SolidColorBrush* selBrush = nullptr;
     if (sel && !sel->Empty())
         rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
+    // One pair of brushes for the whole table, released at the end, matching
+    // the selBrush pattern. Both are null when find is closed, so the cells
+    // below test the pointer instead of the match list.
+    ID2D1SolidColorBrush* matchBrush = nullptr;
+    ID2D1SolidColorBrush* currentBrush = nullptr;
+    if (HasSearchMatches()) {
+        rt->CreateSolidColorBrush(pal.findMatchBg, &matchBrush);
+        rt->CreateSolidColorBrush(pal.findCurrentMatchBg, &currentBrush);
+    }
 
     size_t cols = 0;
     for (const auto& row : n.rows) {
@@ -531,6 +646,8 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (altBg) altBg->Release();
         if (borderBrush) borderBrush->Release();
         if (selBrush) selBrush->Release();
+        if (matchBrush) matchBrush->Release();
+        if (currentBrush) currentBrush->Release();
         return;
     }
 
@@ -670,6 +787,22 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 }
                 D2D1_POINT_2F cellOrigin = D2D1::Point2F(
                     cellX + m.cellPadX, curY + m.cellPadY);
+                // Search match highlights for this cell, drawn before the
+                // selection so the selection stays on top.
+                if (matchBrush && currentBrush &&
+                    !row.cells[c].text.empty() && !text16.empty() &&
+                    !row.cells[c].u16ToSrc.empty()) {
+                    const auto& cell = row.cells[c];
+                    const uint32_t cellStart = cell.srcOffset;
+                    const uint32_t cellEnd = cell.srcEnd > cellStart
+                        ? cell.srcEnd : cellStart;
+                    FillMatchHighlights(rt, layout, matchBrush, currentBrush,
+                                        cell.u16ToSrc,
+                                        static_cast<UINT32>(text16.size()),
+                                        cellStart, cellEnd,
+                                        cellOrigin.x, cellOrigin.y,
+                                        scrollY, rt->GetSize().height);
+                }
                 // Draw selection highlight for this cell.
                 if (selBrush && sel && !sel->Empty() &&
                     !row.cells[c].text.empty() && !text16.empty()) {
@@ -776,6 +909,8 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (altBg) altBg->Release();
     if (borderBrush) borderBrush->Release();
     if (selBrush) selBrush->Release();
+    if (matchBrush) matchBrush->Release();
+    if (currentBrush) currentBrush->Release();
     outH = curY - y;
 }
 
@@ -980,6 +1115,15 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         diag::TraceFmt("RENDER sel=[%u,%u) nodes=%zu",
                        sel->Start(), sel->Start()+sel->Length(),
                        doc.nodes.size());
+    }
+
+    // Search match brushes, created once per Render and released at the end.
+    // Both stay null when find is closed, so no block pays for them.
+    ID2D1SolidColorBrush* matchBrush = nullptr;
+    ID2D1SolidColorBrush* currentBrush = nullptr;
+    if (HasSearchMatches()) {
+        rt->CreateSolidColorBrush(pal.findMatchBg, &matchBrush);
+        rt->CreateSolidColorBrush(pal.findCurrentMatchBg, &currentBrush);
     }
 
     // Clip to content area (below the ribbon).
@@ -1404,6 +1548,19 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             }
         }
 
+        // Search match highlights, drawn before the selection highlight so
+        // selection and text stay on top of the match fills.
+        if (matchBrush && currentBrush && !u16ToSrc.empty() &&
+            !text16.empty()) {
+            const uint32_t blockStart = n.srcOffset;
+            const uint32_t blockEnd = blockStart + n.srcLength;
+            FillMatchHighlights(rt, layout, matchBrush, currentBrush,
+                                u16ToSrc,
+                                static_cast<UINT32>(text16.size()),
+                                blockStart, blockEnd,
+                                textX, curY, scrollY, viewH);
+        }
+
         // Draw selection highlight behind the text.
         if (selBrush && sel && !sel->Empty() && !u16ToSrc.empty()) {
             uint32_t selStart = sel->Start();
@@ -1509,6 +1666,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (linkBrush) linkBrush->Release();
     if (quoteBorder) quoteBorder->Release();
     if (selBrush) selBrush->Release();
+    if (matchBrush) matchBrush->Release();
+    if (currentBrush) currentBrush->Release();
     return curY;
 }
 
@@ -1643,6 +1802,14 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     rt->CreateSolidColorBrush(pal.textPrimary, &textBrush);
     ID2D1SolidColorBrush* selBrush = nullptr;
     rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
+    // Search match brushes, created once and released at the end like
+    // selBrush. Null when find is closed, so a closed find bar costs nothing.
+    ID2D1SolidColorBrush* matchBrush = nullptr;
+    ID2D1SolidColorBrush* currentBrush = nullptr;
+    if (HasSearchMatches()) {
+        rt->CreateSolidColorBrush(pal.findMatchBg, &matchBrush);
+        rt->CreateSolidColorBrush(pal.findCurrentMatchBg, &currentBrush);
+    }
 
     // Draw selection highlight behind the text.
     // Build u16ToSrc mapping first (needed for binary search).
@@ -1661,6 +1828,16 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             bi += utf8Len;
             si += utf8Len;
         }
+    }
+    // Search match highlights, drawn before the selection highlight so
+    // selection and text stay on top of the match fills. Source view covers
+    // the whole document, so the block range is the whole source.
+    if (matchBrush && currentBrush && !u16ToSrcMap.empty() &&
+        !text16.empty()) {
+        FillMatchHighlights(rt, layout, matchBrush, currentBrush,
+                            u16ToSrcMap, static_cast<UINT32>(text16.size()),
+                            0, static_cast<uint32_t>(src.size()),
+                            textX, textY, scrollY, viewH);
     }
     if (selBrush && sel && !sel->Empty() && !u16ToSrcMap.empty()) {
         uint32_t selStart = sel->Start();
@@ -1738,6 +1915,8 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
     if (textBrush) textBrush->Release();
     if (selBrush) selBrush->Release();
+    if (matchBrush) matchBrush->Release();
+    if (currentBrush) currentBrush->Release();
     return textY + tm.height;
 }
 

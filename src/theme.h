@@ -76,6 +76,13 @@ struct Palette {
     D2D1_COLOR_F tableRowAlt;
     D2D1_COLOR_F selectionBg;
     D2D1_COLOR_F selectionText;
+    // Search-result highlight fills. findMatchBg marks every other match and
+    // stays clearly weaker than selectionBg so a long result list does not
+    // compete with the text. findCurrentMatchBg marks the match find is
+    // standing on and carries close to selectionBg weight, so "Enter jumps
+    // here" is visible at a glance.
+    D2D1_COLOR_F findMatchBg;
+    D2D1_COLOR_F findCurrentMatchBg;
 };
 
 inline LayoutMetrics BaseMetrics() {
@@ -165,5 +172,7 @@ inline Palette BasePalette() {
     p.tableRowAlt = D2D1::ColorF(0xFAFBFC);
     p.selectionBg = D2D1::ColorF(0xB4D5FE);
     p.selectionText = D2D1::ColorF(0x000000);
+    p.findMatchBg = D2D1::ColorF(0xFFF6D6);
+    p.findCurrentMatchBg = D2D1::ColorF(0xFFE08A);
     return p;
 }
