@@ -99,6 +99,54 @@ static bool IsWord(char32_t cp) {
     return cp >= 0x0300 && cp <= 0x036F;
 }
 
+// Candidate test shared by both matchers. `i` is the index of the first
+// needle code point in the haystack. On success `*outStart`/`*outEnd` receive
+// the match range in document bytes and the function returns true. A rejected
+// candidate is skipped one code point at a time, so a later match that
+// overlaps a rejected one is still found (guide 23).
+static bool CandidateMatches(const std::string& text,
+                             const std::vector<CodePoint>& haystack,
+                             const std::vector<CodePoint>& needle,
+                             std::size_t i, SearchOptions options,
+                             bool rejectLineBreaks,
+                             SearchRangeFilter filter, void* context,
+                             uint32_t* outStart, uint32_t* outEnd) {
+    const std::size_t endIndex = i + needle.size();
+    bool equal = true;
+    for (std::size_t j = 0; j < needle.size(); ++j) {
+        const char32_t a = haystack[i + j].value;
+        const char32_t b = needle[j].value;
+        if ((options.caseSensitive ? a : Fold(a)) !=
+            (options.caseSensitive ? b : Fold(b))) {
+            equal = false;
+            break;
+        }
+    }
+    if (!equal) return false;
+
+    const uint32_t start = haystack[i].start;
+    const uint32_t end = endIndex == haystack.size()
+        ? static_cast<uint32_t>(text.size())
+        : haystack[endIndex].start;
+    // A match never spans a line break, so it can never join the end of one
+    // block with the start of the next.
+    if (rejectLineBreaks) {
+        const size_t nl = text.find('\n', start);
+        if (nl != std::string::npos && nl < end) return false;
+    }
+    if (options.wholeWord) {
+        const bool leftOk = i == 0 || !IsWord(haystack[i - 1].value);
+        const bool rightOk = endIndex == haystack.size() ||
+                             !IsWord(haystack[endIndex].value);
+        if (!leftOk || !rightOk) return false;
+    }
+    if (filter && !filter(start, end - start, context)) return false;
+
+    *outStart = start;
+    *outEnd = end;
+    return true;
+}
+
 }  // namespace
 
 bool IsSearchWordCharacter(unsigned char c) {
@@ -128,33 +176,50 @@ std::vector<TextMatch> FindTextMatches(const std::string& text,
             ++i;
             continue;
         }
-        bool equal = true;
-        for (std::size_t j = 0; j < needle.size(); ++j) {
-            const char32_t a = haystack[i + j].value;
-            const char32_t b = needle[j].value;
-            if ((options.caseSensitive ? a : Fold(a)) !=
-                (options.caseSensitive ? b : Fold(b))) {
-                equal = false;
-                break;
-            }
-        }
-        if (!equal) {
+        uint32_t start = 0;
+        uint32_t end = 0;
+        if (!CandidateMatches(text, haystack, needle, i, options,
+                              false, nullptr, nullptr, &start, &end)) {
             ++i;
             continue;
         }
-        const bool leftOk = i == 0 || !IsWord(haystack[i - 1].value);
-        const bool rightOk = endIndex == haystack.size() ||
-                             !IsWord(haystack[endIndex].value);
-        if (!options.wholeWord || (leftOk && rightOk)) {
-            const uint32_t start = haystack[i].start;
-            const uint32_t end = endIndex == haystack.size()
-                ? static_cast<uint32_t>(text.size())
-                : haystack[endIndex].start;
-            result.push_back({start, end - start});
-            i = endIndex;
-        } else {
+        result.push_back({start, end - start});
+        i = endIndex;
+    }
+    return result;
+}
+
+std::vector<TextMatch> FindTextMatchesScoped(const std::string& text,
+                                             const std::string& query,
+                                             SearchOptions options,
+                                             SearchRangeFilter filter,
+                                             void* context) {
+    std::vector<TextMatch> result;
+    if (query.empty()) return result;
+    const std::vector<CodePoint> haystack = Decode(text);
+    const std::vector<CodePoint> needle = Decode(query);
+    if (needle.empty() || needle.size() > haystack.size()) return result;
+
+    for (std::size_t i = 0; i + needle.size() <= haystack.size();) {
+        const uint32_t candidateStart = haystack[i].start;
+        const std::size_t endIndex = i + needle.size();
+        const uint32_t candidateEnd = endIndex == haystack.size()
+            ? static_cast<uint32_t>(text.size())
+            : haystack[endIndex].start;
+        if (!::IsGraphemeBoundary(text, candidateStart) ||
+            !::IsGraphemeBoundary(text, candidateEnd)) {
             ++i;
+            continue;
         }
+        uint32_t start = 0;
+        uint32_t end = 0;
+        if (!CandidateMatches(text, haystack, needle, i, options,
+                              true, filter, context, &start, &end)) {
+            ++i;
+            continue;
+        }
+        result.push_back({start, end - start});
+        i = endIndex;
     }
     return result;
 }
