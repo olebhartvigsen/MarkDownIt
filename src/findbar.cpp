@@ -634,12 +634,18 @@ LRESULT CALLBACK FindBar::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_NCCREATE) {
         // The instance is known before the first message that can reach the
         // window, so no lookup can ever fail.
+        //
+        // GWLP_USERDATA is the right slot: a pointer-sized value that exists
+        // on every window. The dialog-only DWLP_USER is not. On this plain
+        // window a store to it fails with ERROR_INVALID_INDEX, silently, and
+        // then every lookup returns null, the whole procedure routes to
+        // DefWindowProc, and the bar opens as an empty rectangle.
         auto* create = reinterpret_cast<CREATESTRUCTW*>(lp);
-        SetWindowLongPtrW(hwnd, DWLP_USER,
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA,
                           reinterpret_cast<LONG_PTR>(create->lpCreateParams));
     }
     FindBar* self = reinterpret_cast<FindBar*>(
-        GetWindowLongPtrW(hwnd, DWLP_USER));
+        GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (!self) return DefWindowProcW(hwnd, msg, wp, lp);
 
     switch (msg) {
@@ -671,10 +677,10 @@ LRESULT CALLBACK FindBar::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 LRESULT CALLBACK FindBar::ChildSubclass(HWND child, UINT msg, WPARAM wp,
                                         LPARAM lp) {
     FindBar* self = reinterpret_cast<FindBar*>(
-        GetWindowLongPtrW(child, DWLP_USER));
+        GetWindowLongPtrW(child, GWLP_USERDATA));
     WNDPROC next = nullptr;
     // Only a live control of THIS bar has a stored procedure to chain to. A
-    // foreign window carrying a stale DWLP_USER falls through to the default
+    // foreign window carrying a stale GWLP_USERDATA falls through to the default
     // procedure instead of indexing the subclass table out of range.
     if (self && self->hwnd_ && GetParent(child) == self->hwnd_) {
         const int id = GetDlgCtrlID(child);
@@ -799,8 +805,11 @@ bool FindBar::CreateControls() {
         }
         controls_[index] = child;
         // The bar pointer first, so the child procedure can reach it as soon
-        // as the subclass below is installed.
-        SetWindowLongPtrW(child, DWLP_USER, reinterpret_cast<LONG_PTR>(this));
+        // as the subclass below is installed. GWLP_USERDATA for the reason
+        // given on the bar's own store in WndProc: a store to the dialog-only
+        // DWLP_USER fails silently on a control, the subclass then cannot
+        // find the bar, and DefWindowProc owns the control and paints nothing.
+        SetWindowLongPtrW(child, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
         if (font_) {
             SendMessageW(child, WM_SETFONT, reinterpret_cast<WPARAM>(font_),
                          TRUE);
