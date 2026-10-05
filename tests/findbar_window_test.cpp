@@ -47,6 +47,11 @@ TEST(FindBarWindow, ControlsExistAndMessagesReachTheBar) {
         return;
     }
 
+    // The strip is a child window now, so it counts as visible only while
+    // its owner is visible. The real owner is a shown application window,
+    // so the test shows its owner too.
+    ShowWindow(owner, SW_SHOW);
+
     FindBar bar;
     int closes = 0;
     int searches = 0;
@@ -56,6 +61,7 @@ TEST(FindBarWindow, ControlsExistAndMessagesReachTheBar) {
     bar.SetListener(listener);
 
     EXPECT_TRUE(bar.Show(owner, FindBarMode::Find));
+    EXPECT_TRUE(bar.IsVisible());
     HWND bar_wnd = bar.Handle();
     EXPECT_TRUE(bar_wnd != nullptr);
     if (!bar_wnd) {
