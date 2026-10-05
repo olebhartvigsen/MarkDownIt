@@ -795,6 +795,8 @@ bool FindBar::CreateControls() {
         { kFindBarStatus, L"STATIC", labelStyle, 0, L"" },
     };
     const int specCount = static_cast<int>(sizeof(specs) / sizeof(specs[0]));
+    diag::TraceFmt("FINDBAR: specCount=%d kFindBarControlCount=%d",
+                   specCount, static_cast<int>(kFindBarControlCount));
     if (specCount != static_cast<int>(kFindBarControlCount)) return false;
 
     for (int i = 0; i < specCount; ++i) {
@@ -808,10 +810,14 @@ bool FindBar::CreateControls() {
         // and walked by MoveTabFocus, so the whole bar is abandoned here
         // instead of being left half built.
         if (!child || !IsWindow(child)) {
+            diag::TraceFmt("FINDBAR: child %d (%ls) create FAILED err=%lu",
+                           spec.id, spec.className, GetLastError());
             AbandonPartial();
             return false;
         }
         const int index = IndexOfId(spec.id);
+        diag::TraceFmt("FINDBAR: child %d (%ls) ok, index=%d want=%d",
+                       spec.id, spec.className, index, i);
         if (index != i) {
             // The header enum order and this table must agree, or the tab
             // order would not be the order written down in guide 45.
@@ -833,6 +839,8 @@ bool FindBar::CreateControls() {
             SetWindowLongPtrW(child, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(
                                                    &ChildSubclass)));
         if (!record.proc) {
+            diag::TraceFmt("FINDBAR: child %d subclass FAILED err=%lu",
+                           spec.id, GetLastError());
             AbandonPartial();
             return false;
         }
