@@ -288,6 +288,7 @@ if(BUILD_TESTS)
         tests/editor_features_test.cpp
         tests/findstate_test.cpp
         tests/findbar_ids_test.cpp
+        tests/findbar_window_test.cpp
         tests/table_interaction_test.cpp
         tests/mermaid_model_test.cpp
         tests/mermaid_parse_test.cpp
@@ -323,6 +324,7 @@ if(BUILD_TESTS)
         src/inputfilter.cpp
         src/searchreplace.cpp
         src/findstate.cpp
+        src/findbar.cpp
         src/textdrag.cpp
         src/mermaid/class_parse.cpp
         src/mermaid/class_layout.cpp
@@ -353,6 +355,8 @@ if(BUILD_TESTS)
         miniz
         pugixml
         pdfio
+        user32
+        gdi32
     )
     target_include_directories(MarkDownIt.tests PRIVATE
         src
