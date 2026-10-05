@@ -923,14 +923,16 @@ void FindBar::LayoutControls() {
     int widthDip = dpi_ > 0 ? MulDiv(rc.right, 96, dpi_) : rc.right;
     if (widthDip < 320) widthDip = 320;
 
-    int editW = widthDip - 640;
+    int editW = widthDip - 680;
     if (editW > 420) editW = 420;
     if (editW < 120) editW = 120;
 
-    // Row 1: Find, its navigation, then the options.
-    PlaceChild(kFindBarFindLabel, 12, 11, 36, 14, true);
-    PlaceChild(kFindBarFindEdit, 52, 6, editW, 22, true);
-    const int prevX = 52 + editW + 8;
+    // Row 1: Find, its navigation, then the options. Both rows use one
+    // 76 DIP label column, so the Find and the Replace field start on the
+    // same left edge.
+    PlaceChild(kFindBarFindLabel, 12, 11, 72, 14, true);
+    PlaceChild(kFindBarFindEdit, 88, 6, editW, 22, true);
+    const int prevX = 88 + editW + 8;
     PlaceChild(kFindBarPrevious, prevX, 5, 72, 24, true);
     PlaceChild(kFindBarNext, prevX + 80, 5, 64, 24, true);
     const int optionX = prevX + 80 + 64 + 24;

@@ -79,6 +79,13 @@ TEST(FindBarWindow, ControlsExistAndMessagesReachTheBar) {
     // another one).
     RECT bar_client = {};
     GetClientRect(bar_wnd, &bar_client);
+    // The Find and the Replace field share a left edge (both sit after the
+    // same 76 DIP label column).
+    RECT find_rect = {};
+    RECT replace_rect = {};
+    GetWindowRect(GetDlgItem(bar_wnd, kFindBarFindEdit), &find_rect);
+    GetWindowRect(GetDlgItem(bar_wnd, kFindBarReplaceEdit), &replace_rect);
+    EXPECT_TRUE(find_rect.left == replace_rect.left);
     for (int id = kFindBarFindEdit; id <= kFindBarStatus; ++id) {
         HWND child = GetDlgItem(bar_wnd, id);
         EXPECT_TRUE(child != nullptr);
