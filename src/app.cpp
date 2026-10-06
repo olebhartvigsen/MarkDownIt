@@ -269,7 +269,9 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow, const std::wstring& cmdLine)
     wc.lpszClassName = kClassName;
     wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = nullptr;
-    wc.style         = CS_HREDRAW | CS_VREDRAW;
+    // WS_CLIPCHILDREN keeps the chrome fill (WM_PAINT and WM_ERASEBKGND
+    // below) out of the ribbon's and the content's areas.
+    wc.style         = CS_HREDRAW | CS_VREDRAW | WS_CLIPCHILDREN;
     wc.hIcon         = LoadIconW(hInst, MAKEINTRESOURCEW(IDI_APPICON));
     if (!RegisterClassW(&wc)) {
         MessageBoxW(nullptr, L"RegisterClass failed", L"MarkDownIt", MB_ICONERROR);
@@ -6079,6 +6081,8 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 SWP_NOZORDER | SWP_NOACTIVATE);
             ResizeContentWindow();
             Repaint();
+            diag::TraceFmt("WM_DPICHANGED dpi=%d findvis=%d", dpi_,
+                           find_bar_.IsVisible() ? 1 : 0);
             return 0;
         }
         case WM_TIMER:
@@ -6105,13 +6109,31 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
             return 0;
         case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
-        case WM_ERASEBKGND: return 1;
+        case WM_ERASEBKGND: {
+            // Fill the client so any uncovered band, for example while the
+            // find strip re-docks after a monitor or DPI switch, reads as
+            // chrome instead of as a black hole. WS_CLIPCHILDREN keeps the
+            // fill out of the children's areas.
+            HDC dc = reinterpret_cast<HDC>(wp);
+            RECT rc = {};
+            GetClientRect(hwnd, &rc);
+            FillRect(dc, &rc, GetSysColorBrush(COLOR_BTNFACE));
+            return 1;
+        }
         case WM_CLOSE:      OnClose();        return 0;
         case WM_DESTROY:   OnDestroy();  return 0;
         case WM_PAINT: {
-            // Main window does not paint. The ribbon framework handles
-            // its own area, and the content child handles content.
-            ValidateRect(hwnd, nullptr);
+            // The main window owns no visuals of its own, the ribbon and
+            // the content child paint themselves, but it still paints the
+            // chrome fill above so uncovered bands never show black.
+            PAINTSTRUCT ps = {};
+            HDC dc = BeginPaint(hwnd, &ps);
+            if (dc) {
+                RECT rc = {};
+                GetClientRect(hwnd, &rc);
+                FillRect(dc, &rc, GetSysColorBrush(COLOR_BTNFACE));
+            }
+            EndPaint(hwnd, &ps);
             return 0;
         }
         default: return DefWindowProcW(hwnd, msg, wp, lp);

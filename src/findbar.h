@@ -292,6 +292,7 @@ private:
     HWND hwnd_ = nullptr;
     HWND owner_ = nullptr;
     HFONT font_ = nullptr;
+    int fontDpi_ = 0;
     int dpi_ = 96;
 
     FindReplaceState state_;

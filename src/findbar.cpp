@@ -752,6 +752,7 @@ bool FindBar::EnsureCreated() {
                         FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                         CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                         DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    fontDpi_ = dpi_;
 
     // A child strip of the owner, docked along its bottom edge. As a child
     // it is destroyed with its owner and never activates on its own; focus
@@ -974,6 +975,30 @@ void FindBar::DockWith(int dpi) {
     if (dpi <= 0) dpi = 96;
     dpi_ = dpi;
 
+    // The font was built for the DPI in force when the strip was created.
+    // After a monitor switch it is rebuilt for the new DPI, so the fields
+    // keep their metrics on every monitor.
+    if (font_ && fontDpi_ != dpi_) {
+        DeleteObject(font_);
+        font_ = nullptr;
+    }
+    if (!font_) {
+        font_ = CreateFontW(-MulDiv(9, dpi_, 72), 0, 0, 0, FW_NORMAL, FALSE,
+                            FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                            CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                            DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+        fontDpi_ = dpi_;
+        if (font_) {
+            for (int i = 0; i < kFindBarControlCount; ++i) {
+                HWND child = controls_[i];
+                if (child && IsWindow(child)) {
+                    SendMessageW(child, WM_SETFONT,
+                                 reinterpret_cast<WPARAM>(font_), TRUE);
+                }
+            }
+        }
+    }
+
     // Size first, so the layout below sees the width it will have. The strip
     // spans the owner's client width and sits flush with its bottom edge.
     // No SWP_SHOWWINDOW: Dock is part of the owner's layout and must never
@@ -993,6 +1018,16 @@ void FindBar::DockWith(int dpi) {
     // Children are laid out last, from the window's new width, so a resize
     // or a DPI change scales the whole strip.
     LayoutControls();
+
+    // A dock can follow a monitor or DPI switch, where the window surface
+    // may have been reset and the z-order touched. While the strip is on
+    // screen, re-assert it above the content and repaint its face, so the
+    // band it claims can never show the owner's unpainted background.
+    if (IsWindowVisible(hwnd_)) {
+        SetWindowPos(hwnd_, HWND_TOP, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        InvalidateRect(hwnd_, nullptr, TRUE);
+    }
 }
 
 void FindBar::DetachChildren() {
