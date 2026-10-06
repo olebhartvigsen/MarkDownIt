@@ -77,6 +77,25 @@ static std::vector<CodePoint> Decode(const std::string& text) {
     return result;
 }
 
+// Byte-offset boundary table for one search pass. The per-candidate check
+// used to walk PrevGraphemeBoundary from the start of the document for
+// every position it tested, twice, which made one search quadratic in the
+// document size and could take tens of seconds per keystroke. Walking
+// NextGraphemeBoundary once over the text and marking every boundary it
+// lands on yields exactly the same offsets, at linear cost.
+static std::vector<char> BuildGraphemeBoundaryTable(const std::string& text) {
+    std::vector<char> boundary(text.size() + 1, 0);
+    boundary[0] = 1;
+    uint32_t at = 0;
+    while (at < text.size()) {
+        const uint32_t next = ::NextGraphemeBoundary(text, at);
+        if (next <= at) break;
+        if (next < boundary.size()) boundary[next] = 1;
+        at = next;
+    }
+    return boundary;
+}
+
 static char32_t Fold(char32_t cp) {
     if (cp >= U'A' && cp <= U'Z') return cp + (U'a' - U'A');
     if (cp >= 0x00C0 && cp <= 0x00D6) return cp + 0x20;
@@ -164,6 +183,7 @@ std::vector<TextMatch> FindTextMatches(const std::string& text,
     const std::vector<CodePoint> haystack = Decode(text);
     const std::vector<CodePoint> needle = Decode(query);
     if (needle.empty() || needle.size() > haystack.size()) return result;
+    const std::vector<char> boundaries = BuildGraphemeBoundaryTable(text);
 
     for (std::size_t i = 0; i + needle.size() <= haystack.size();) {
         const uint32_t candidateStart = haystack[i].start;
@@ -171,8 +191,10 @@ std::vector<TextMatch> FindTextMatches(const std::string& text,
         const uint32_t candidateEnd = endIndex == haystack.size()
             ? static_cast<uint32_t>(text.size())
             : haystack[endIndex].start;
-        if (!::IsGraphemeBoundary(text, candidateStart) ||
-            !::IsGraphemeBoundary(text, candidateEnd)) {
+        if (candidateStart >= boundaries.size() ||
+            !boundaries[candidateStart] ||
+            candidateEnd >= boundaries.size() ||
+            !boundaries[candidateEnd]) {
             ++i;
             continue;
         }
@@ -199,6 +221,7 @@ std::vector<TextMatch> FindTextMatchesScoped(const std::string& text,
     const std::vector<CodePoint> haystack = Decode(text);
     const std::vector<CodePoint> needle = Decode(query);
     if (needle.empty() || needle.size() > haystack.size()) return result;
+    const std::vector<char> boundaries = BuildGraphemeBoundaryTable(text);
 
     for (std::size_t i = 0; i + needle.size() <= haystack.size();) {
         const uint32_t candidateStart = haystack[i].start;
@@ -206,8 +229,10 @@ std::vector<TextMatch> FindTextMatchesScoped(const std::string& text,
         const uint32_t candidateEnd = endIndex == haystack.size()
             ? static_cast<uint32_t>(text.size())
             : haystack[endIndex].start;
-        if (!::IsGraphemeBoundary(text, candidateStart) ||
-            !::IsGraphemeBoundary(text, candidateEnd)) {
+        if (candidateStart >= boundaries.size() ||
+            !boundaries[candidateStart] ||
+            candidateEnd >= boundaries.size() ||
+            !boundaries[candidateEnd]) {
             ++i;
             continue;
         }
