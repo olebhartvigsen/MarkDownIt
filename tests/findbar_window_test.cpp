@@ -164,6 +164,27 @@ TEST(FindBarWindow, ControlsExistAndMessagesReachTheBar) {
     EXPECT_FALSE(IsWindowEnabled(replace_btn));
     EXPECT_FALSE(IsWindowEnabled(replace_all));
 
+    // Navigation must refresh the counter: it is the bar's own display of
+    // the state the bar just moved. A counter stuck on the last search's
+    // ordinal (the reported "6 of 42") is exactly this defect.
+    bar.state().SetSearchText("aa");
+    bar.state().Refresh("aa xx aa", nullptr, nullptr);
+    bar.SyncFromState();
+    HWND counter = GetDlgItem(bar_wnd, kFindBarCounter);
+    EXPECT_TRUE(counter != nullptr);
+    wchar_t counter_text[64] = {};
+    if (counter) {
+        GetWindowTextW(counter, counter_text, 64);
+        EXPECT_TRUE(std::wstring(counter_text) == L"0 of 2");
+        EXPECT_TRUE(bar.NavigateNext(0));
+        GetWindowTextW(counter, counter_text, 64);
+        EXPECT_TRUE(std::wstring(counter_text) == L"1 of 2");
+        // Caret at the first match's end: Previous wraps to the last match.
+        EXPECT_TRUE(bar.NavigatePrevious(2));
+        GetWindowTextW(counter, counter_text, 64);
+        EXPECT_TRUE(std::wstring(counter_text) == L"2 of 2");
+    }
+
     // Leave the bar where the rest of the test expects it.
     bar.SetReplaceEnabled(true);
     bar.SetMatchCount(0, 0, FindStatus::Empty);

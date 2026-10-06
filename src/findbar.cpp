@@ -387,6 +387,11 @@ bool FindBar::NavigateNext(uint32_t from) {
     if (!state_.MoveNext(from)) return false;
     TextMatch match;
     if (!state_.CurrentMatch(&match)) return false;
+    // The counter is the bar's own display of the state the bar just
+    // moved; the owner only turns the match into a document selection.
+    // SyncFromState touches counter and status only, never the edit
+    // texts, so this can never retrigger a search.
+    SyncFromState();
     if (listener_.onSelectionChanged) {
         listener_.onSelectionChanged(match.start, match.length);
     }
@@ -408,6 +413,9 @@ bool FindBar::NavigatePrevious(uint32_t from) {
     if (!state_.MovePrevious(from)) return false;
     TextMatch match;
     if (!state_.CurrentMatch(&match)) return false;
+    // Same as NavigateNext: the counter must follow the state this button
+    // just moved.
+    SyncFromState();
     if (listener_.onSelectionChanged) {
         listener_.onSelectionChanged(match.start, match.length);
     }
@@ -418,6 +426,9 @@ bool FindBar::SelectMatchAt(uint32_t offset) {
     state_.AdoptMatchAt(offset);
     TextMatch match;
     if (!state_.CurrentMatch(&match)) return false;
+    // Adopting moves the current ordinal too, so the counter follows here
+    // as well (a replacement continues the count from where it landed).
+    SyncFromState();
     if (listener_.onSelectionChanged) {
         listener_.onSelectionChanged(match.start, match.length);
     }
