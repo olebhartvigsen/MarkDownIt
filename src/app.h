@@ -8,6 +8,7 @@
 #include <string>
 #include "dom.h"
 #include "renderer.h"
+#include "markers.h"
 #include "filewatch.h"
 #include "textbuffer.h"
 #include "layoutcache.h"
@@ -91,6 +92,17 @@ public:
                                       uint32_t mlen);
     void InvalidateFormatButtons();
     void ToggleEdit() { SetEdit(!editing_); }
+
+    // Marker layer (ribbon: Home tab, Markers group; Ctrl+Shift+H). A
+    // marker annotates rendered text: it never touches the Markdown
+    // document, and marker changes never mark the document dirty
+    // (marker guide 12, 17 and 18).
+    void MarkSelection();
+    void RemoveMarkerAtSelection();
+    void ToggleMarkersVisible();
+    bool MarkersVisible() const { return markers_visible_; }
+    bool HasSelection() const { return !sel_.Empty(); }
+    bool SelectionHasMarker() const;
 
     // Settings (Fil menu)
     bool IsMdRegistered() const;
@@ -224,6 +236,13 @@ private:
     // for a wheel gesture and the viewport centre for a button or
     // shortcut, which is what the zoom guide asks for.
     void ApplyZoom(float newZoom, float focusYdip, float focusXdip);
+
+    // Marker layer plumbing (see MarkSelection and friends above).
+    std::string MarkerDocumentPath() const;
+    void RefreshMarkerRanges();
+    void ResolveMarkerAnchors();
+    void LoadMarkersForDocument();
+    void SaveMarkers();
     void OnContentHScroll(HWND hwnd, int code, int pos);
 
     // Editor state
@@ -234,6 +253,11 @@ private:
     int          caret_height_ = 0;   // current caret height in px (for resize on font change)
     bool         editing_ = false;
     bool         source_view_ = false;  // raw markdown source view
+    // Marker annotations: the in-memory set plus the ranges handed to the
+    // renderer, refreshed whenever markers or the document text change.
+    MarkerStore marker_store_;
+    std::vector<TextMatch> marker_ranges_;
+    bool markers_visible_ = true;
     // Triple-click detection: last click time and y position.
     DWORD        last_click_time_ = 0;
     int          last_click_y_ = -1;

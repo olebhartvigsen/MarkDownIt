@@ -174,6 +174,7 @@ add_executable(MarkDownIt WIN32
     src/searchreplace.cpp
     src/findstate.cpp
     src/findbar.cpp
+    src/markers.cpp
     src/textdrag.cpp
     src/fileassoc.cpp
     src/settings.cpp
@@ -289,6 +290,7 @@ if(BUILD_TESTS)
         tests/findstate_test.cpp
         tests/findbar_ids_test.cpp
         tests/findbar_window_test.cpp
+        tests/markers_test.cpp
         tests/table_interaction_test.cpp
         tests/mermaid_model_test.cpp
         tests/mermaid_parse_test.cpp
@@ -325,6 +327,7 @@ if(BUILD_TESTS)
         src/searchreplace.cpp
         src/findstate.cpp
         src/findbar.cpp
+        src/markers.cpp
         src/textdrag.cpp
         src/mermaid/class_parse.cpp
         src/mermaid/class_layout.cpp

@@ -409,6 +409,16 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         return;
     }
 
+    // Marker shortcuts, available in every mode like the clipboard
+    // aliases: annotating a document is not editing it (marker guide 17).
+    //   Ctrl+Shift+H       -> mark the selection
+    //   Ctrl+Shift+Alt+H   -> remove the marker under the selection
+    if (ctrl && shift && vk == 0x48) {  // H
+        if (GetAsyncKeyState(VK_MENU) & 0x8000) RemoveMarkerAtSelection();
+        else MarkSelection();
+        return;
+    }
+
     // Standard Windows clipboard aliases. Keep these before the main
     // switch so they work in the same modes as Ctrl+C/X/V.
     if (vk == VK_INSERT && ctrl && !shift) {
@@ -1046,6 +1056,10 @@ void AppWindow::ToggleSourceView() {
 void AppWindow::OnReparseTimer() {
     reparse_pending_ = false;
     if (reparse_timer_) { KillTimer(hwnd_content_, reparse_timer_); reparse_timer_ = 0; }
+    // A reparse follows every document change; the stored anchors are
+    // resolved against the new text so markers follow edited documents
+    // (marker guide 15).
+    ResolveMarkerAnchors();
     // In source view, we don't need to reparse the markdown; the
     // raw text is displayed directly. Just rebuild the layout cache.
     if (source_view_) {
@@ -2350,6 +2364,9 @@ void AppWindow::LoadDocumentText(const std::string& raw, const std::wstring& pat
     SetWindowTextW(hwnd_, title.c_str());
 
     UpdateScrollInfo();
+    // Load the marker sidecar for this document and resolve its anchors
+    // against the fresh text (marker guide 12.7).
+    LoadMarkersForDocument();
     // Force render target recreation; the D2D hwnd target can become
     // invalid after the GetOpenFileNameW modal dialog closes.
     SafeRelease(rt_);
@@ -2409,6 +2426,9 @@ void AppWindow::Reload() {
     UpdateScrollInfo();
     if (scrollY_ > savedY) scrollY_ = savedY;
     UpdateScrollInfo();
+    // A reload re-reads the file but keeps the document identity, so the
+    // marker sidecar is re-loaded and re-resolved like a fresh open.
+    LoadMarkersForDocument();
     
     Repaint();
 }
@@ -3357,6 +3377,13 @@ void AppWindow::SetEdit(bool on) {
             g_pRibbonFramework->InvalidateUICommand(cmd,
                 UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
         }
+        // The marker commands follow the caret: Mark needs a selection,
+        // Remove needs one that touches a marker. Also invalidating on
+        // edit-mode changes covers selections collapsed by mode switches.
+        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_MARK,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
+        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_MARK_REMOVE,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
     }
     Repaint();
 }
@@ -3575,6 +3602,13 @@ void AppWindow::InvalidateFormatButtons() {
             g_pRibbonFramework->InvalidateUICommand(cmd,
                 UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
         }
+        // The marker commands follow the caret: Mark needs a selection,
+        // Remove needs one that touches a marker. Also invalidating on
+        // edit-mode changes covers selections collapsed by mode switches.
+        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_MARK,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
+        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_MARK_REMOVE,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
     }
 }
 
@@ -4210,6 +4244,83 @@ void AppWindow::RefreshFindResults(bool adoptCurrentMatch) {
         ApplyFindSelection(current.start, current.length);
     else
         Repaint();
+}
+
+// Marker layer commands. A marker annotates the rendered document; it is
+// stored in a temp sidecar, never in the Markdown file, and marker changes
+// never mark the document dirty (marker guide 12, 17 and 18).
+
+std::string AppWindow::MarkerDocumentPath() const {
+    if (file_path_.empty()) return std::string();
+    return ImeWideToUtf8(file_path_);
+}
+
+void AppWindow::RefreshMarkerRanges() {
+    marker_ranges_.clear();
+    for (const auto& m : marker_store_.Markers()) {
+        if (!m.resolved || m.end <= m.start) continue;
+        marker_ranges_.push_back(
+            {m.start, static_cast<uint32_t>(m.end - m.start)});
+    }
+    renderer_.SetMarkers(&marker_ranges_, markers_visible_);
+}
+
+void AppWindow::ResolveMarkerAnchors() {
+    marker_store_.Resolve(buffer_.Text());
+    RefreshMarkerRanges();
+}
+
+void AppWindow::LoadMarkersForDocument() {
+    marker_ranges_.clear();
+    const std::string path = MarkerDocumentPath();
+    if (!path.empty()) {
+        marker_store_.LoadFor(path, buffer_.Text());
+    }
+    ResolveMarkerAnchors();
+}
+
+void AppWindow::SaveMarkers() {
+    const std::string path = MarkerDocumentPath();
+    if (!path.empty()) marker_store_.Save(path, buffer_.Text());
+}
+
+bool AppWindow::SelectionHasMarker() const {
+    if (sel_.Empty()) return false;
+    const uint32_t s = sel_.Start();
+    const uint32_t e = s + sel_.Length();
+    for (const auto& m : marker_store_.Markers()) {
+        if (m.end > s && m.start < e) return true;
+    }
+    return false;
+}
+
+void AppWindow::MarkSelection() {
+    if (sel_.Empty()) return;
+    uint32_t lo = 0;
+    uint32_t hi = 0;
+    if (!layout_cache_.ClipToRendered(sel_.Start(), sel_.Length(), &lo, &hi))
+        return;  // the selection covers no rendered text
+    if (!marker_store_.Add(buffer_.Text(), lo, hi)) return;
+    SaveMarkers();
+    RefreshMarkerRanges();
+    Repaint();
+}
+
+void AppWindow::RemoveMarkerAtSelection() {
+    if (sel_.Empty()) return;
+    const size_t removed = marker_store_.RemoveIntersecting(
+        sel_.Start(), sel_.Start() + sel_.Length());
+    if (removed == 0) return;
+    SaveMarkers();
+    RefreshMarkerRanges();
+    Repaint();
+}
+
+void AppWindow::ToggleMarkersVisible() {
+    markers_visible_ = !markers_visible_;
+    RefreshMarkerRanges();
+    Repaint();
+    UpdateRibbonMarkersState(markers_visible_);
 }
 
 // Pull the live view and edit state into the bar. Called on every Show and

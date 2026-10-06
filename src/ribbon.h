@@ -29,6 +29,10 @@ void DestroyRibbon();
 // Called by AppWindow after toggling wrap mode.
 void UpdateRibbonWrapState(bool wrapped);
 
+// Notify the ribbon that marker visibility changed, so the "Show
+// markers" toggle reflects the layer state.
+void UpdateRibbonMarkersState(bool visible);
+
 // Notify the ribbon that the formatting state at the caret changed.
 // Sets the pressed/unpressed state of Bold, Italic, Code, Strikethrough,
 // Bullets, Numbering, Quote toggle buttons, and H1/H2/H3 enabled state.

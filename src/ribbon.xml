@@ -721,6 +721,65 @@
         <Image Source="icons/save_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
+    <Command Name="cmdGroupMarkers" Symbol="IDC_GROUP_MARKERS" Id="10080">
+      <Command.LabelTitle>
+        <String>Markers</String>
+      </Command.LabelTitle>
+    </Command>
+    <Command Name="cmdMark" Symbol="IDC_CMD_MARK" Id="10900">
+      <Command.LabelTitle>
+        <String>Mark</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Mark selected text</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Highlight the selection in the viewer without changing the document (Ctrl+Shift+H)</String>
+      </Command.TooltipDescription>
+      <Command.LargeImages>
+        <Image Source="icons/mark_32.png" MinDPI="96"/>
+        <Image Source="icons/mark_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/mark_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
+    <Command Name="cmdMarkRemove" Symbol="IDC_CMD_MARK_REMOVE" Id="10901">
+      <Command.LabelTitle>
+        <String>Remove marker</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Remove marker</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Remove the marker under the selection (Ctrl+Shift+Alt+H)</String>
+      </Command.TooltipDescription>
+      <Command.LargeImages>
+        <Image Source="icons/mark-remove_32.png" MinDPI="96"/>
+        <Image Source="icons/mark-remove_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/mark-remove_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
+    <Command Name="cmdMarkShow" Symbol="IDC_CMD_MARK_SHOW" Id="10902">
+      <Command.LabelTitle>
+        <String>Show markers</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Show markers</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Show or hide the marker layer without deleting any marker</String>
+      </Command.TooltipDescription>
+      <Command.LargeImages>
+        <Image Source="icons/mark-show_32.png" MinDPI="96"/>
+        <Image Source="icons/mark-show_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/mark-show_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
   </Application.Commands>
   <Application.Views>
     <Ribbon>
@@ -773,6 +832,11 @@
           <Group CommandName="cmdGroupZoom" SizeDefinition="TwoButtons">
             <Button CommandName="cmdZoomLevel" />
             <Button CommandName="cmdZoomFitWidth" />
+          </Group>
+          <Group CommandName="cmdGroupMarkers" SizeDefinition="ThreeButtons">
+            <Button CommandName="cmdMark" />
+            <Button CommandName="cmdMarkRemove" />
+            <ToggleButton CommandName="cmdMarkShow" />
           </Group>
         </Tab>
         <Tab CommandName="cmdTabInsert">

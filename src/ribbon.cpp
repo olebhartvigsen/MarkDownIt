@@ -90,6 +90,11 @@ void SetRibbonToggle(UINT cmdId, bool on)
     PropVariantClear(&var);
 }
 
+void UpdateRibbonMarkersState(bool visible)
+{
+    SetRibbonToggle(IDC_CMD_MARK_SHOW, visible);
+}
+
 void UpdateRibbonFormatState(const FormatState& state)
 {
     if (!g_pRibbonFramework) return;
@@ -329,6 +334,17 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         }
     }
 
+    if (nCmdID == IDC_CMD_MARK_SHOW && ppropvarNewValue)
+    {
+        if (IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
+        {
+            ppropvarNewValue->vt = VT_BOOL;
+            ppropvarNewValue->boolVal =
+                (m_pApp && m_pApp->MarkersVisible()) ? VARIANT_TRUE : VARIANT_FALSE;
+            return S_OK;
+        }
+    }
+
     if (nCmdID == IDC_CMD_EDIT && ppropvarNewValue)
     {
         if (IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
@@ -513,6 +529,10 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
             diag::TraceFmt("UpdateProperty GetFormatState done cmd=%u", nCmdID);
             switch (nCmdID)
             {
+            case IDC_CMD_MARK:
+                on = m_pApp && m_pApp->HasSelection();        break;
+            case IDC_CMD_MARK_REMOVE:
+                on = m_pApp && m_pApp->SelectionHasMarker();  break;
             case IDC_CMD_BOLD:     on = fs.bold;      break;
             case IDC_CMD_ITALIC:   on = fs.italic;    break;
             case IDC_CMD_CODE:     on = fs.code;      break;
@@ -562,6 +582,9 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_EXPORT_DOCX: m_pApp->ExportWordDocx(); break;
     case IDC_CMD_EXPORT_PDF:  m_pApp->ExportPdf();      break;
     case IDC_CMD_WRAP:    m_pApp->ToggleWrap();        break;
+    case IDC_CMD_MARK:        m_pApp->MarkSelection();           break;
+    case IDC_CMD_MARK_REMOVE: m_pApp->RemoveMarkerAtSelection(); break;
+    case IDC_CMD_MARK_SHOW:   m_pApp->ToggleMarkersVisible();    break;
     case IDC_CMD_ZOOMIN:  m_pApp->ZoomIn();            break;
     case IDC_CMD_ZOOMOUT: m_pApp->ZoomOut();           break;
     // Clicking the percentage readout returns to 100%, which is the one
