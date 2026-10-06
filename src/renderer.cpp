@@ -173,6 +173,18 @@ static void FillRangeFromCache(ID2D1RenderTarget* rt,
     if (u16End <= u16Start) return;
     if (u16Start >= cache.totalU16) return;
     if (u16End > cache.totalU16) u16End = cache.totalU16;
+    // TEMP MARKER DIAG: what the line walk will see. Keyed on the marker
+    // path (underline brush) so search fills stay silent.
+    if (underlineBrush) {
+        static uint32_t lastTickR = 0;
+        uint32_t nowR = GetTickCount();
+        if (nowR - lastTickR > 2000) {
+            lastTickR = nowR;
+            diag::TraceFmt("MARKRANGE enter u16=[%u,%u) total=%u lines=%zu org=(%.1f,%.1f) scY=%.1f vh=%.1f",
+                u16Start, u16End, cache.totalU16, cache.lines.size(),
+                originX, originY, scrollY, viewportH);
+        }
+    }
 
     const float viewBottom = scrollY + (viewportH > 0.0f ? viewportH : 0.0f);
     const size_t lineCount = cache.lines.size();
@@ -429,6 +441,18 @@ void Renderer::FillMarkerHighlights(ID2D1RenderTarget* rt,
                         : MapSrcToU16Linear(u16ToSrc, u16Len, mEnd));
         if (u16Start > u16Len) u16Start = u16Len;
         if (u16End > u16Len) u16End = u16Len;
+        // TEMP MARKER DIAG: the requested marker range and its u16 mapping.
+        {
+            static uint32_t lastTickM = 0;
+            uint32_t nowM = GetTickCount();
+            if (nowM - lastTickM > 2000) {
+                lastTickM = nowM;
+                diag::TraceFmt("MARKMAP m=[%u,%u) block=[%u,%u) u16=[%u,%u) len=%u cache=%d mono=%d",
+                    mStart, mEnd, blockStart, blockEnd,
+                    u16Start, u16End, u16Len,
+                    cache.valid ? 1 : 0, monotone ? 1 : 0);
+            }
+        }
         if (u16End <= u16Start) continue;
         FillRangeFromCache(rt, layout, cache, fillBrush, u16Start, u16End,
                            originX, originY, scrollY, viewportH, lineBrush);
