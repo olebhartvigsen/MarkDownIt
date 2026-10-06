@@ -269,9 +269,7 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow, const std::wstring& cmdLine)
     wc.lpszClassName = kClassName;
     wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = nullptr;
-    // WS_CLIPCHILDREN keeps the chrome fill (WM_PAINT and WM_ERASEBKGND
-    // below) out of the ribbon's and the content's areas.
-    wc.style         = CS_HREDRAW | CS_VREDRAW | WS_CLIPCHILDREN;
+    wc.style         = CS_HREDRAW | CS_VREDRAW;
     wc.hIcon         = LoadIconW(hInst, MAKEINTRESOURCEW(IDI_APPICON));
     if (!RegisterClassW(&wc)) {
         MessageBoxW(nullptr, L"RegisterClass failed", L"MarkDownIt", MB_ICONERROR);
@@ -296,9 +294,12 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow, const std::wstring& cmdLine)
     int w = 900, h = 640;
     int x = (sw - w) / 2, y = (sh - h) / 2;
 
+    // WS_CLIPCHILDREN is a window style, never a class style (a class
+    // style register attempt rejects it). On the window it keeps the
+    // chrome fill out of the ribbon's and the content's areas.
     hwnd_ = CreateWindowExW(
         WS_EX_ACCEPTFILES, kClassName, L"MarkDownIt",
-        WS_OVERLAPPEDWINDOW,
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         x, y, w, h,
         nullptr, nullptr, hInst, this);
 
