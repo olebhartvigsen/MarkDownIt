@@ -72,6 +72,13 @@ public:
     // represented by rendered text. Hidden Markdown markers are excluded.
     bool RangeIsRendered(uint32_t start, uint32_t length) const;
 
+    // Tighten [start, start+length) to the sub-range whose bytes are all
+    // rendered text. Returns false when nothing in the range is rendered.
+    // The clip is safe to use for annotations: it never maps a byte that
+    // the renderer does not draw.
+    bool ClipToRendered(uint32_t start, uint32_t length,
+                        uint32_t* outStart, uint32_t* outEnd) const;
+
     // Set the source text for marker-aware offset calculations.
     void SetSourceText(const std::string* src) { srcText_ = src; }
     const std::string* SourceText() const { return srcText_; }

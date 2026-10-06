@@ -306,6 +306,51 @@ bool LayoutCache::RangeIsRendered(uint32_t start, uint32_t length) const {
     return true;
 }
 
+bool LayoutCache::ClipToRendered(uint32_t start, uint32_t length,
+                                 uint32_t* outStart,
+                                 uint32_t* outEnd) const {
+    if (!outStart || !outEnd) return false;
+    const uint32_t end = start + length;
+    if (length == 0 || end < start) return false;
+    if (!srcText_ || end > srcText_->size()) return false;
+
+    EnsureSpanIndex();
+    if (!spanIndexUsable_) {
+        // Without the index the range cannot be tightened cheaply. The
+        // draw path still paints only mapped bytes, so the raw range is
+        // the best answer available.
+        *outStart = start;
+        *outEnd = end;
+        return true;
+    }
+
+    // The spans are sorted and non-overlapping: step to the first one
+    // that reaches into the range, then forward to the last one that
+    // still starts inside it.
+    auto it = std::upper_bound(spanIndex_.begin(), spanIndex_.end(),
+        (static_cast<uint64_t>(start) << 32) | 0xFFFFFFFFu);
+    if (it != spanIndex_.begin()) --it;
+    while (it != spanIndex_.end()) {
+        const uint32_t spanEnd = static_cast<uint32_t>(*it & 0xFFFFFFFFu);
+        if (spanEnd > start) break;
+        ++it;
+    }
+    if (it == spanIndex_.end()) return false;
+    const uint32_t firstStart = static_cast<uint32_t>(*it >> 32);
+    if (firstStart >= end) return false;
+
+    uint32_t lastEnd = static_cast<uint32_t>(*it & 0xFFFFFFFFu);
+    for (++it; it != spanIndex_.end(); ++it) {
+        const uint32_t spanStart = static_cast<uint32_t>(*it >> 32);
+        if (spanStart >= end) break;
+        const uint32_t spanEnd = static_cast<uint32_t>(*it & 0xFFFFFFFFu);
+        if (spanEnd > lastEnd) lastEnd = spanEnd;
+    }
+    *outStart = firstStart;
+    *outEnd = lastEnd;
+    return true;
+}
+
 bool LayoutCache::GetRenderedBlockRange(int blockIndex,
                                          uint32_t* outStart,
                                          uint32_t* outEnd) const {

@@ -83,6 +83,11 @@ struct Palette {
     // here" is visible at a glance.
     D2D1_COLOR_F findMatchBg;
     D2D1_COLOR_F findCurrentMatchBg;
+    // Marker annotation layer: a warm highlighter fill drawn behind the
+    // text plus a darker line along the bottom edge of each marked range,
+    // so a mark never relies on colour alone.
+    D2D1_COLOR_F markerBg;
+    D2D1_COLOR_F markerLine;
 };
 
 inline LayoutMetrics BaseMetrics() {
@@ -174,5 +179,7 @@ inline Palette BasePalette() {
     p.selectionText = D2D1::ColorF(0x000000);
     p.findMatchBg = D2D1::ColorF(0xFFF6D6);
     p.findCurrentMatchBg = D2D1::ColorF(0xFFE08A);
+    p.markerBg = D2D1::ColorF(0xFFD54A);
+    p.markerLine = D2D1::ColorF(0xB8860B);
     return p;
 }

@@ -82,6 +82,11 @@ public:
     void SetSearchMatches(const std::vector<TextMatch>* matches,
                           int currentIndex);
     void ClearSearchMatches() { SetSearchMatches(nullptr, -1); }
+
+    // Marker (highlight annotation) layer. Same contract as the search
+    // highlights: the pointer is borrowed and outlives the paint, and the
+    // visible flag hides the layer without dropping any data.
+    void SetMarkers(const std::vector<TextMatch>* markers, bool visible);
     const std::vector<TextMatch>* SearchMatches() const {
         return searchMatches_;
     }
@@ -133,6 +138,10 @@ private:
     // highlighting at all, which keeps the empty case free of work.
     const std::vector<TextMatch>* searchMatches_ = nullptr;
     int searchCurrentIndex_ = -1;
+    // Marker ranges to paint. Borrowed like the search matches, and drawn
+    // before them so a find hit and the text stay readable on top.
+    const std::vector<TextMatch>* markerRanges_ = nullptr;
+    bool markersVisible_ = false;
     ID2D1DeviceContext5* d2d_ctx5_ = nullptr;  // may be null
     mutable mermaid::MermaidLayoutCache mermaid_layout_cache_;
 
@@ -188,18 +197,38 @@ private:
         return searchMatches_ && !searchMatches_->empty();
     }
 
+    // True when the marker layer has anything to paint. The paint paths
+    // check this before creating the marker brushes.
+    bool HasMarkers() const {
+        return markersVisible_ && markerRanges_ && !markerRanges_->empty();
+    }
+
     // Paint the search-match fills for one block of text, using the same
     // line-by-line hit test as the selection highlight so the fill follows
     // wrapping, zoom and scroll. u16ToSrc maps each UTF-16 index of the block
     // layout to its source byte offset; blockStart/blockEnd are the source
     // byte range the block covers; matches outside it are skipped. Other
     // matches get matchBrush, the match at searchCurrentIndex_ gets
-    // currentBrush. The mapping is scanned linearly, not binary searched,
-    // because a table cell mapping can contain gaps and is not sorted.
+    // currentBrush. The mapping is read with a binary search when it is
+    // non-decreasing, with the linear scan kept as the fallback.
     void FillMatchHighlights(ID2D1RenderTarget* rt,
                              IDWriteTextLayout* layout,
                              ID2D1SolidColorBrush* matchBrush,
                              ID2D1SolidColorBrush* currentBrush,
+                             const std::vector<uint32_t>& u16ToSrc,
+                             UINT32 u16Len,
+                             uint32_t blockStart, uint32_t blockEnd,
+                             float originX, float originY,
+                             float scrollY, float viewportH);
+
+    // Paint the marker fills for one block. Same shape as the search
+    // highlights: one brush for the fill and one for the thin bottom line
+    // that keeps a mark off colour alone. There is no current-marker
+    // concept, every mark gets the same fill.
+    void FillMarkerHighlights(ID2D1RenderTarget* rt,
+                             IDWriteTextLayout* layout,
+                             ID2D1SolidColorBrush* fillBrush,
+                             ID2D1SolidColorBrush* lineBrush,
                              const std::vector<uint32_t>& u16ToSrc,
                              UINT32 u16Len,
                              uint32_t blockStart, uint32_t blockEnd,
