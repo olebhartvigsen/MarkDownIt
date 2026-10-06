@@ -378,6 +378,18 @@ void Renderer::FillMarkerHighlights(ID2D1RenderTarget* rt,
         break;
     }
     if (!touched) return;
+    // TEMP MARKER DIAG: throttled to one line per paint burst.
+    {
+        static uint32_t lastTick = 0;
+        uint32_t now = GetTickCount();
+        if (now - lastTick > 2000) {
+            lastTick = now;
+            diag::TraceFmt("MARKPAINT ranges=%u firstStart=%u block=%u..%u vis=%d",
+                (unsigned)markerRanges_->size(),
+                markerRanges_->empty() ? 0u : (*markerRanges_)[0].start,
+                blockStart, blockEnd, markersVisible_ ? 1 : 0);
+        }
+    }
 
     LayoutLineCache cache;
     BuildLayoutLineCache(layout, cache);
@@ -1410,6 +1422,17 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (HasMarkers()) {
         rt->CreateSolidColorBrush(pal.markerBg, &markerBrush);
         rt->CreateSolidColorBrush(pal.markerLine, &markerLine);
+    }
+    // TEMP MARKER DIAG: once per Render.
+    if (HasMarkers()) {
+        static uint32_t lastTick = 0;
+        uint32_t now = GetTickCount();
+        if (now - lastTick > 2000) {
+            lastTick = now;
+            diag::TraceFmt("MARKRENDER ranges=%u brush=%d line=%d",
+                (unsigned)markerRanges_->size(),
+                markerBrush ? 1 : 0, markerLine ? 1 : 0);
+        }
     }
 
     // Clip to content area (below the ribbon).
