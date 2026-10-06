@@ -374,6 +374,16 @@ std::wstring FindBar::GetStatusText() const {
 // ---------------------------------------------------------------------------
 
 bool FindBar::NavigateNext(uint32_t from) {
+    // The owner keeps the current match selected, so the caret normally
+    // sits at the match end, where the raw offset already resolves to the
+    // following match. When the caret sits at the match start instead (a
+    // click right there), the raw offset would resolve back to the current
+    // match and Next would look dead; anchor on the match end then.
+    TextMatch current;
+    if (state_.HasCurrentMatch() && state_.CurrentMatch(&current)) {
+        const uint32_t matchEnd = current.start + current.length;
+        if (from >= current.start && from < matchEnd) from = matchEnd;
+    }
     if (!state_.MoveNext(from)) return false;
     TextMatch match;
     if (!state_.CurrentMatch(&match)) return false;
@@ -384,6 +394,17 @@ bool FindBar::NavigateNext(uint32_t from) {
 }
 
 bool FindBar::NavigatePrevious(uint32_t from) {
+    // Mirror of Next. With the caret at the current match's end, the
+    // "match strictly before the caret" rule resolved to the current match
+    // itself, so Previous looked dead on every click. Anchor on the match
+    // start whenever the caret is inside the current match or at its end,
+    // so Previous always steps to a different match and wraps at the first
+    // one (guide 8).
+    TextMatch current;
+    if (state_.HasCurrentMatch() && state_.CurrentMatch(&current)) {
+        const uint32_t matchEnd = current.start + current.length;
+        if (from > current.start && from <= matchEnd) from = current.start;
+    }
     if (!state_.MovePrevious(from)) return false;
     TextMatch match;
     if (!state_.CurrentMatch(&match)) return false;

@@ -4,6 +4,7 @@
 
 #include "gtest_lite.h"
 #include "findstate.h"
+#include "findbar.h"
 
 #include <string>
 #include <vector>
@@ -632,3 +633,58 @@ TEST(FindState, WholeWordSearchOnDanishLettersUsesWordBoundaries) {
 
 // No RUN_ALL_TESTS() here: tests/test_main.cpp owns main, and a second one
 // makes the test binary fail to link with LNK2005.
+
+// ── Bar navigation from the owner's caret (guide 7 and 8) ───────────────
+//
+// The owner keeps the current match selected, so the caret normally sits
+// at the match END when the bar navigates. Previous used to resolve that
+// offset back to the current match itself, so clicking Previous looked
+// dead while Next worked by accident of the same geometry.
+
+TEST(FindBarNavigation, PreviousStepsToADifferentMatchFromTheCaretAtTheMatchEnd) {
+    FindBar bar;
+    bar.state().SetSearchText("aa");
+    bar.state().Refresh("aa xx aa xx aa", nullptr, nullptr);
+    uint32_t reported = UINT32_MAX;
+    FindBarListener listener;
+    listener.onSelectionChanged = [&reported](uint32_t offset, uint32_t) {
+        reported = offset;
+    };
+    bar.SetListener(listener);
+
+    // Second match [6,8) is current and the caret sits at its end (8).
+    bar.state().MoveNext(6);
+    EXPECT_EQ(bar.state().CurrentOrdinal(), 2u);
+    reported = UINT32_MAX;
+    EXPECT_TRUE(bar.NavigatePrevious(8));
+    EXPECT_EQ(reported, 0u);
+    EXPECT_EQ(bar.state().CurrentOrdinal(), 1u);
+
+    // Caret at the first match's end wraps to the last match (guide 8).
+    bar.state().MoveNext(0);
+    EXPECT_EQ(bar.state().CurrentOrdinal(), 1u);
+    reported = UINT32_MAX;
+    EXPECT_TRUE(bar.NavigatePrevious(2));
+    EXPECT_EQ(reported, 12u);
+    EXPECT_EQ(bar.state().CurrentOrdinal(), 3u);
+}
+
+TEST(FindBarNavigation, NextStepsToADifferentMatchFromACaretAtTheMatchStart) {
+    FindBar bar;
+    bar.state().SetSearchText("aa");
+    bar.state().Refresh("aa xx aa", nullptr, nullptr);
+    uint32_t reported = UINT32_MAX;
+    FindBarListener listener;
+    listener.onSelectionChanged = [&reported](uint32_t offset, uint32_t) {
+        reported = offset;
+    };
+    bar.SetListener(listener);
+
+    // Caret parked at the start of the current match still moves forward.
+    bar.state().MoveNext(0);
+    EXPECT_EQ(bar.state().CurrentOrdinal(), 1u);
+    reported = UINT32_MAX;
+    EXPECT_TRUE(bar.NavigateNext(0));
+    EXPECT_EQ(reported, 6u);
+    EXPECT_EQ(bar.state().CurrentOrdinal(), 2u);
+}
