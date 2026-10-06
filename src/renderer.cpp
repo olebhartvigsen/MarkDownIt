@@ -89,6 +89,153 @@ static void FillSelectionHighlight(ID2D1RenderTarget* rt,
     }
 }
 
+// ---------------------------------------------------------------------------
+// Search highlight helpers
+// ---------------------------------------------------------------------------
+//
+// FillMatchHighlights runs per visible block, and a one character search in
+// a big document can carry hundreds of matches. Everything expensive that
+// does not depend on the individual match is therefore hoisted into one
+// cache per block, matches that fall outside the viewport skip their hit
+// test entirely, and the src to UTF-16 mapping uses a binary search when the
+// block's mapping is non-decreasing (which it is everywhere the mapping is
+// built in source order) instead of a linear scan per match.
+
+struct LayoutLineCache {
+    std::vector<DWRITE_LINE_METRICS> lines;
+    std::vector<float> lineTop;     // line top, relative to the origin
+    std::vector<UINT32> lineStart;  // UTF-16 index of each line start
+    UINT32 totalU16 = 0;
+    bool valid = false;
+};
+
+static void BuildLayoutLineCache(IDWriteTextLayout* layout,
+                                 LayoutLineCache& cache) {
+    cache = LayoutLineCache();
+    if (!layout) return;
+    UINT32 count = 0;
+    if (FAILED(layout->GetLineMetrics(nullptr, 0, &count)) || count == 0)
+        return;
+    cache.lines.resize(count);
+    if (FAILED(layout->GetLineMetrics(cache.lines.data(), count, &count)) ||
+        count == 0) {
+        return;
+    }
+    cache.lines.resize(count);
+    cache.lineTop.resize(count);
+    cache.lineStart.resize(count);
+    float y = 0.0f;
+    UINT32 u = 0;
+    for (UINT32 i = 0; i < count; ++i) {
+        cache.lineTop[i] = y;
+        cache.lineStart[i] = u;
+        y += cache.lines[i].height;
+        u += cache.lines[i].length;
+    }
+    cache.totalU16 = u;
+    cache.valid = true;
+}
+
+// First index with value >= target. Exact for a non-decreasing vector, and
+// the same answer the old linear scan gave; callers only use it after
+// checking the mapping really is non-decreasing.
+static UINT32 LowerBoundMapping(const std::vector<uint32_t>& mapping,
+                                uint32_t target) {
+    size_t lo = 0;
+    size_t hi = mapping.size();
+    while (lo < hi) {
+        const size_t mid = lo + (hi - lo) / 2;
+        if (mapping[mid] < target) lo = mid + 1;
+        else hi = mid;
+    }
+    return static_cast<UINT32>(lo);
+}
+
+static bool IsNonDecreasingMapping(const std::vector<uint32_t>& mapping) {
+    for (size_t i = 1; i < mapping.size(); ++i) {
+        if (mapping[i] < mapping[i - 1]) return false;
+    }
+    return true;
+}
+
+// Same fill as FillSelectionHighlight, but for a range drawn from the
+// per-block line cache: no per-match layout setup, and a match that sits
+// outside the visible band never reaches HitTestTextRange.
+static void FillRangeFromCache(ID2D1RenderTarget* rt,
+                               IDWriteTextLayout* layout,
+                               const LayoutLineCache& cache,
+                               ID2D1SolidColorBrush* brush,
+                               UINT32 u16Start, UINT32 u16End,
+                               float originX, float originY,
+                               float scrollY, float viewportH) {
+    if (!rt || !layout || !brush || !cache.valid) return;
+    if (u16End <= u16Start) return;
+    if (u16Start >= cache.totalU16) return;
+    if (u16End > cache.totalU16) u16End = cache.totalU16;
+
+    const float viewBottom = scrollY + (viewportH > 0.0f ? viewportH : 0.0f);
+    const size_t lineCount = cache.lines.size();
+
+    // Line that contains the match start: the last line whose first
+    // character is at or before u16Start (a match commonly starts in the
+    // middle of a line, so a plain lower bound would start too late).
+    size_t first = 0;
+    {
+        size_t lo = 0, hi = lineCount;
+        while (lo < hi) {
+            const size_t mid = lo + (hi - lo) / 2;
+            if (cache.lineStart[mid] <= u16Start) lo = mid + 1;
+            else hi = mid;
+        }
+        first = (lo == 0) ? 0 : lo - 1;
+    }
+
+    // First line whose bottom is inside the visible band, never before the
+    // match's first line: a match far above the viewport costs no hit test.
+    size_t start = first;
+    {
+        size_t lo = first, hi = lineCount;
+        while (lo < hi) {
+            const size_t mid = lo + (hi - lo) / 2;
+            if (originY + cache.lineTop[mid] + cache.lines[mid].height <
+                scrollY) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        if (lo > start) start = lo;
+    }
+
+    std::vector<DWRITE_HIT_TEST_METRICS> htm;
+    for (size_t i = start; i < lineCount; ++i) {
+        const float lineTop = originY + cache.lineTop[i];
+        if (lineTop > viewBottom) break;
+        const UINT32 lineStart = cache.lineStart[i];
+        const UINT32 lineEnd = lineStart + cache.lines[i].length;
+        const UINT32 selLo = u16Start > lineStart ? u16Start : lineStart;
+        const UINT32 selHi = u16End < lineEnd ? u16End : lineEnd;
+        if (selHi > selLo) {
+            const UINT32 count = selHi - selLo;
+            htm.resize(count);
+            UINT32 hitCount = 0;
+            HRESULT hr = layout->HitTestTextRange(
+                selLo, count, originX, originY,
+                htm.data(), count, &hitCount);
+            if (SUCCEEDED(hr)) {
+                for (UINT32 h = 0; h < hitCount; ++h) {
+                    D2D1_RECT_F r = D2D1::RectF(
+                        htm[h].left, htm[h].top,
+                        htm[h].left + htm[h].width,
+                        htm[h].top + htm[h].height);
+                    rt->FillRectangle(r, brush);
+                }
+            }
+        }
+        if (lineEnd >= u16End) break;
+    }
+}
+
 Renderer::Renderer() {}
 Renderer::~Renderer() { Release(); }
 
@@ -140,6 +287,26 @@ void Renderer::FillMatchHighlights(ID2D1RenderTarget* rt,
     if (!searchMatches_ || searchMatches_->empty()) return;
     if (u16ToSrc.empty() || u16Len == 0) return;
 
+    // With hundreds of matches, most blocks are not touched at all. Check
+    // first, so the per-block cache below is never built for them.
+    bool touched = false;
+    for (size_t i = 0; i < searchMatches_->size(); ++i) {
+        const TextMatch& m = (*searchMatches_)[i];
+        if (m.length == 0) continue;
+        if (m.start + m.length <= blockStart || m.start >= blockEnd) continue;
+        touched = true;
+        break;
+    }
+    if (!touched) return;
+
+    LayoutLineCache cache;
+    BuildLayoutLineCache(layout, cache);
+
+    // The binary search is only exact while the mapping is non-decreasing.
+    // Every mapping is built in source order, so it is; the check costs one
+    // pass and keeps the old per-call linear scan as the safe fallback.
+    const bool monotone = IsNonDecreasingMapping(u16ToSrc);
+
     for (size_t i = 0; i < searchMatches_->size(); ++i) {
         const TextMatch& m = (*searchMatches_)[i];
         if (m.length == 0) continue;
@@ -153,14 +320,18 @@ void Renderer::FillMatchHighlights(ID2D1RenderTarget* rt,
         ID2D1SolidColorBrush* brush =
             (static_cast<int>(i) == searchCurrentIndex_) ? currentBrush
                                                          : matchBrush;
-        UINT32 u16Start = MapSrcToU16Linear(u16ToSrc, u16Len, mStart);
+        UINT32 u16Start = monotone
+            ? LowerBoundMapping(u16ToSrc, mStart)
+            : MapSrcToU16Linear(u16ToSrc, u16Len, mStart);
         UINT32 u16End = (mEnd >= blockEnd)
             ? u16Len
-            : MapSrcToU16Linear(u16ToSrc, u16Len, mEnd);
+            : (monotone ? LowerBoundMapping(u16ToSrc, mEnd)
+                        : MapSrcToU16Linear(u16ToSrc, u16Len, mEnd));
+        if (u16Start > u16Len) u16Start = u16Len;
         if (u16End > u16Len) u16End = u16Len;
         if (u16End <= u16Start) continue;
-        FillSelectionHighlight(rt, layout, brush, u16Start, u16End,
-                               originX, originY, scrollY, viewportH);
+        FillRangeFromCache(rt, layout, cache, brush, u16Start, u16End,
+                           originX, originY, scrollY, viewportH);
     }
 }
 
