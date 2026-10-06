@@ -3021,6 +3021,7 @@ void AppWindow::OnContentPaint(HWND hwnd) {
         return;
     }
 
+    const ULONGLONG paint_t0 = GetTickCount64();
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
         if (source_view_) {
@@ -3031,6 +3032,7 @@ void AppWindow::OnContentPaint(HWND hwnd) {
         }
         UpdateScrollInfo();
     }
+    const ULONGLONG paint_t1 = GetTickCount64();
 
     PAINTSTRUCT ps;
     BeginPaint(hwnd, &ps);
@@ -3051,6 +3053,7 @@ void AppWindow::OnContentPaint(HWND hwnd) {
     }
 
     HRESULT hr = rt_->EndDraw();
+    const ULONGLONG paint_t2 = GetTickCount64();
     if (hr == D2DERR_RECREATE_TARGET) {
         RecreateRenderTarget();
         // Force immediate repaint after target recreation.
@@ -3059,6 +3062,11 @@ void AppWindow::OnContentPaint(HWND hwnd) {
     }
     EndPaint(hwnd, &ps);
     UpdateCaretPosition();
+    if (find_bar_.IsVisible()) {
+        diag::TraceFmt("PAINTTIME measure=%llu render=%llu",
+                       static_cast<unsigned long long>(paint_t1 - paint_t0),
+                       static_cast<unsigned long long>(paint_t2 - paint_t1));
+    }
 }
 
 
@@ -3553,6 +3561,7 @@ FormatState AppWindow::GetFormatState() const {
 }
 
 void AppWindow::InvalidateFormatButtons() {
+    const ULONGLONG ribbon_t0 = GetTickCount64();
     FormatState fs = GetFormatState();
     UpdateRibbonFormatState(fs);
     // Invalidate Undo/Redo enabled state so the buttons reflect whether
@@ -3575,6 +3584,11 @@ void AppWindow::InvalidateFormatButtons() {
             g_pRibbonFramework->InvalidateUICommand(cmd,
                 UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
         }
+    }
+    const ULONGLONG ribbon_t1 = GetTickCount64();
+    if (ribbon_t1 - ribbon_t0 >= 2) {
+        diag::TraceFmt("RIBBONTIME invalidate=%llu",
+                       static_cast<unsigned long long>(ribbon_t1 - ribbon_t0));
     }
 }
 
@@ -4172,16 +4186,24 @@ bool AppWindow::FindScopeFilter(uint32_t start, uint32_t length,
 // the caret parked in front of it, so the user sees what Replace will hit.
 void AppWindow::ApplyFindSelection(uint32_t offset, uint32_t length) {
     if (length == 0) return;
+    const ULONGLONG t0 = GetTickCount64();
     sel_.anchor = {offset};
     sel_.active = {offset + length};
     UpdateCaretPosition();
+    const ULONGLONG t1 = GetTickCount64();
     // A paint is needed before the caret rect exists, and the scroll that
     // follows needs the rebuilt layout cache.
     ForceRepaintNow();
+    const ULONGLONG t2 = GetTickCount64();
     float cx = 0.0f, cy = 0.0f, ch = 0.0f;
     if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &cx, &cy, &ch))
         ScrollCaretIntoView(cy, ch);
     Repaint();
+    const ULONGLONG t3 = GetTickCount64();
+    diag::TraceFmt("FINDTIME sel caret=%llu forcepaint=%llu scroll=%llu",
+                   static_cast<unsigned long long>(t1 - t0),
+                   static_cast<unsigned long long>(t2 - t1),
+                   static_cast<unsigned long long>(t3 - t2));
 }
 
 // Hand the current match list to the renderer. Document byte offsets all
@@ -4198,18 +4220,29 @@ void AppWindow::UpdateFindHighlight() {
 
 // Re-run the search against the live document and publish the result.
 void AppWindow::RefreshFindResults(bool adoptCurrentMatch) {
+    const ULONGLONG t0 = GetTickCount64();
     FindReplaceState& state = find_bar_.state();
     state.Refresh(buffer_.Text(), &AppWindow::FindScopeFilter,
                   &find_scope_);
+    const ULONGLONG t1 = GetTickCount64();
     if (adoptCurrentMatch && state.HasQuery())
         state.AdoptMatchAt(sel_.active.offset);
     find_bar_.SyncFromState();
     UpdateFindHighlight();
+    const ULONGLONG t2 = GetTickCount64();
     TextMatch current{};
     if (state.CurrentMatch(&current))
         ApplyFindSelection(current.start, current.length);
     else
         Repaint();
+    const ULONGLONG t3 = GetTickCount64();
+    diag::TraceFmt(
+        "FINDTIME search=%llu prep=%llu apply=%llu matches=%u nodes=%u",
+        static_cast<unsigned long long>(t1 - t0),
+        static_cast<unsigned long long>(t2 - t1),
+        static_cast<unsigned long long>(t3 - t2),
+        static_cast<unsigned>(state.Matches().size()),
+        static_cast<unsigned>(doc_.nodes.size()));
 }
 
 // Pull the live view and edit state into the bar. Called on every Show and
