@@ -16,10 +16,56 @@ void LayoutCache::Clear() {
         }
     }
     blocks_.clear();
+    spanIndexBuilt_ = false;
 }
 
 void LayoutCache::Add(BlockLayout bl) {
     blocks_.push_back(bl);
+    spanIndexBuilt_ = false;
+}
+
+void LayoutCache::EnsureSpanIndex() const {
+    if (spanIndexBuilt_) return;
+    spanIndexBuilt_ = true;
+    spanIndexUsable_ = false;
+    spanIndex_.clear();
+
+    size_t total = 0;
+    for (const auto& bl : blocks_) total += bl.u16ToSrc.size();
+    if (total == 0) return;
+
+    spanIndex_.reserve(total);
+    // Blocks are added in document order and their mappings ascend, so the
+    // collected spans are usually already sorted; the sort is only paid
+    // when some block breaks that order.
+    bool sorted = true;
+    uint64_t previous = 0;
+    for (const auto& bl : blocks_) {
+        for (size_t i = 0; i < bl.u16ToSrc.size(); ++i) {
+            const uint32_t start = bl.u16ToSrc[i];
+            const uint32_t end = i < bl.u16ToSrcEnd.size()
+                ? bl.u16ToSrcEnd[i] : start + 1;
+            if (end <= start) continue;
+            const uint64_t packed =
+                (static_cast<uint64_t>(start) << 32) | end;
+            if (!spanIndex_.empty() && packed < previous) sorted = false;
+            previous = packed;
+            spanIndex_.push_back(packed);
+        }
+    }
+    if (!sorted) {
+        std::sort(spanIndex_.begin(), spanIndex_.end());
+    }
+    // Overlapping spans would make "the" containing span ambiguous, and the
+    // scan this replaces resolved that by block order. Refuse the index
+    // when that happens so results cannot change.
+    for (size_t i = 1; i < spanIndex_.size(); ++i) {
+        const uint32_t previousEnd =
+            static_cast<uint32_t>(spanIndex_[i - 1] & 0xFFFFFFFFu);
+        const uint32_t currentStart = static_cast<uint32_t>(spanIndex_[i] >> 32);
+        if (currentStart < previousEnd) return;
+    }
+    spanIndexUsable_ = true;
 }
 
 int LayoutCache::HitTestBlock(float x, float y) const {
@@ -212,6 +258,30 @@ bool LayoutCache::RangeIsRendered(uint32_t start, uint32_t length) const {
     }
     if (!hasMapping) return false;
     if (!srcText_ || end > srcText_->size()) return false;
+
+    // Find operations call this once per candidate match, so the per-byte
+    // work has to be logarithmic, not a scan of every block.
+    EnsureSpanIndex();
+    if (spanIndexUsable_) {
+        for (uint32_t offset = start; offset < end; ++offset) {
+            const unsigned char byte =
+                static_cast<unsigned char>((*srcText_)[offset]);
+            if ((byte & 0xC0u) == 0x80u) continue;
+            // The span containing offset is the last one starting at or
+            // before it; the usable index holds at most one per start.
+            const uint64_t key =
+                (static_cast<uint64_t>(offset) << 32) | 0xFFFFFFFFu;
+            auto it = std::upper_bound(spanIndex_.begin(), spanIndex_.end(),
+                                       key);
+            if (it == spanIndex_.begin()) return false;
+            --it;
+            const uint32_t spanStart = static_cast<uint32_t>(*it >> 32);
+            const uint32_t spanEnd = static_cast<uint32_t>(*it & 0xFFFFFFFFu);
+            if (offset < spanStart || offset >= spanEnd) return false;
+            if (start > spanStart || end < spanEnd) return false;
+        }
+        return true;
+    }
 
     for (uint32_t offset = start; offset < end; ++offset) {
         const unsigned char byte =

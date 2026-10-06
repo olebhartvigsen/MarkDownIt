@@ -94,6 +94,18 @@ public:
 private:
     uint32_t PointToOffsetInBlock(int blockIndex, float x, float y) const;
 
+    // Coverage index behind RangeIsRendered. Collects every rendered span
+    // (start, end) from every block's mapping, packed as (start << 32 | end)
+    // and kept sorted, so a range test is a binary search per byte instead
+    // of a scan of all blocks. Rebuilt lazily after Clear()/Add(); when the
+    // spans overlap each other the index is refused and the linear scan
+    // stays, because which span a byte belongs to would then depend on
+    // block order.
+    void EnsureSpanIndex() const;
+    mutable std::vector<uint64_t> spanIndex_;
+    mutable bool spanIndexBuilt_ = false;
+    mutable bool spanIndexUsable_ = false;
+
     std::vector<BlockLayout> blocks_;
     const std::string* srcText_ = nullptr; // source text for offset calc
 };
