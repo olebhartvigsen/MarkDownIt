@@ -20,6 +20,13 @@ A zoom control SHOULD provide:
 * A slider or preset menu, if the application’s interface has room.
 * Useful view options such as **Fit page**, **Fit width**, or **Actual pixels**, depending on the content type.
 
+This viewer ships the first bullet only. The percentage readout and
+the Fit width button were removed: the shortcut set (Ctrl and +, -,
+0, and Ctrl+wheel) covers the same ground with no ribbon space and no
+second state to keep honest. Users who need the number can read it
+from the scroll behaviour or set it by stepping. Section 7 records
+what that means for each guide rule.
+
 Every control MUST update the same zoom state. If the user enters a number, the application MUST validate it against the allowed range. For invalid or empty input, it SHOULD restore the previous valid value.
 
 The **+** and **−** buttons SHOULD change zoom by 10 percentage points per press, clamped to the allowed range. They MUST be disabled or have no effect at their respective limit.
@@ -107,13 +114,15 @@ If the content becomes smaller than the viewport at 100%, the corresponding axis
 The same rules apply when returning to 100% using:
 
 * `Ctrl+0` / `Cmd+0`
-* the 100% UI control
 * a numeric zoom field
 * any other control that explicitly selects 100%.
 
+This viewer has the keyboard route only; the 100% control was removed
+with the readout.
+
 ### 1.6 Wheel, keyboard, and touch input
 
-* With the platform’s primary modifier held—**Ctrl** on Windows/Linux or **Cmd** on macOS—wheel-up MUST zoom in and wheel-down MUST zoom out.
+* With the platform’s primary modifier held (**Ctrl** on Windows/Linux, **Cmd** on macOS), wheel-up MUST zoom in and wheel-down MUST zoom out.
 * The application SHOULD normalize mouse-wheel and trackpad deltas so both produce smooth, monotonic zoom changes. A small input MUST NOT cause a larger zoom change than a larger input in the same direction.
 * The application SHOULD prevent the browser or surrounding page from zooming when the pointer is over the application’s content and the app handles the modified wheel gesture.
 * Plain wheel input MUST keep its normal navigation behavior: scrolling the document or panning the image when it is larger than the viewport.
@@ -142,6 +151,12 @@ For a reflowing editor that does not display fixed pages, zoom MAY change the ef
 * A **100%** option returns to the application’s defined base scale.
 
 Fit modes MUST recalculate when the viewing area changes size. A user’s manual zoom action SHOULD switch out of fit mode and display the resulting percentage.
+
+Fit width is no longer a control in this viewer. The column-width
+modes (section 2.2's useful zoom options) cover the same intent:
+Standard, 960, 1600 and Fixed without wrap are line-length settings
+that shape the column instead of scaling it, and the user picks them
+on the ribbon's View group.
 
 ### 2.3 Navigation while zoomed
 
@@ -224,7 +239,12 @@ A viewport resize MUST NOT unnecessarily reset the user's horizontal or vertical
 * Zoom buttons and menus MUST have accessible names such as **Zoom in**, **Zoom out**, **Fit page**, and **Actual pixels**.
 * Controls MUST be reachable and operable by keyboard.
 * Keyboard focus MUST remain visible after zoom actions.
-* The visible percentage MUST update after every zoom change. Screen readers SHOULD announce the settled percentage without announcing every small trackpad update.
+* The percentage display, where the interface has one, MUST update after every zoom change. Screen readers SHOULD announce the settled percentage without announcing every small trackpad update.
+
+This viewer has no on-screen percentage control. `Ctrl+0` is the
+documented route back to the base scale, and the buttons' enabled
+state (dimmed at the range ends) tells the user where they are in the
+range without a number.
 * Zoom MUST NOT make controls inaccessible or prevent users from reaching content boundaries.
 * Scrollbars MUST remain usable and accurately reflect the current content bounds and position after every zoom operation.
 
@@ -232,7 +252,7 @@ A viewport resize MUST NOT unnecessarily reset the user's horizontal or vertical
 
 An implementation is consistent with this guide if all applicable checks pass:
 
-1. **Shared state:** Buttons, percentage entry, slider, shortcuts, modified wheel, and pinch gestures show and use the same zoom value.
+1. **Shared state:** Buttons, shortcuts, and modified wheel gestures show and use the same zoom value.
 2. **Bounds:** Every input respects the declared minimum and maximum; controls cannot move past either limit.
 3. **Direction:** Wheel-up and pinch-out zoom in; wheel-down and pinch-in zoom out.
 4. **Anchor X:** Modified wheel zoom preserves the content point under the pointer horizontally.
@@ -241,10 +261,10 @@ An implementation is consistent with this guide if all applicable checks pass:
 7. **Scroll Y:** Zooming does not unnecessarily reset the vertical scroll position.
 8. **Scroll bounds:** New horizontal and vertical positions are clamped to the valid ranges after every zoom change.
 9. **Centering:** If content becomes smaller than the viewport on an axis, it is correctly centered on that axis.
-10. **100% behavior:** Returning to 100% preserves the user's content position where the content still requires scrolling.
+10. **100% behavior:** Returning to 100% (Ctrl+0 here) preserves the user's content position where the content still requires scrolling.
 11. **Normal navigation:** Plain wheel still scrolls a document or pans a zoomed image.
 12. **No content edits:** Zoom alone does not change document content, formatting, pagination, or image data.
-13. **Fit behavior:** Fit modes show the intended page or image bounds and recalculate when the viewing area changes.
+13. **Fit behavior:** Where fit modes exist, they show the intended page or image bounds and recalculate when the viewing area changes. This viewer has no fit mode control; the check does not apply.
 14. **Position retention:** Zooming does not unexpectedly jump the document or image to its beginning.
 15. **Viewport changes:** Resizing the viewport does not unnecessarily reset horizontal or vertical position.
 16. **Keyboard safety:** Zoom shortcuts do not fire while the user is entering text or operating an unrelated input.
@@ -263,16 +283,29 @@ The previous code multiplied by 1.25, which looked even at 100% but moved 75
 points at 300% and never landed on a round value. Stepping is additive and
 clamped, so the last press at either limit lands exactly on that limit.
 
-**The percentage readout** is a ribbon `Label` bound to `cmdZoomLevel`, fed by
-`zoom::Percent` and refreshed by an `InvalidateUICommand` at the end of
-`ApplyZoom`. Clicking it returns to 100%, which covers the numeric-preset
-option in section 2.2 without adding an edit box.
+**The percentage readout is gone.** An earlier build showed a ribbon
+`Label` bound to `cmdZoomLevel` that returned to 100% on a click, and a
+Fit width button next to it. Both were removed to slim the View tab
+down: the zoom group held no other control after that, so the group
+itself went too, and `ZoomPercent` and `FitZoomToWidth` left the code
+with the buttons. The zoom model itself still has `zoom::Percent` and
+`zoom::FitWidth` as tested math helpers, but nothing in the app calls
+them any more.
+
+What covers the readout's old jobs:
+
+* Back to 100%: `Ctrl+0`, same position-preserving `ApplyZoom` path as
+  every other zoom (section 1.5 still describes the rule).
+* Fit-to-width intents: the column-width modes in the View group.
+* Range feedback: the + and - buttons dim at their respective limits,
+  which section 1.2 asks for and the enabled queries already
+  implement.
 
 **Focus point is an explicit argument.** `ApplyZoom(newZoom, focusY, focusX)`
 takes the point that stays fixed instead of probing the cursor itself. A wheel
-gesture passes the pointer position; a button, a keyboard shortcut and fit
-width pass the viewport centre. The anchor calculation applies to **both X
-and Y**, so horizontal scrolling is preserved using the same model as vertical
+gesture passes the pointer position; a button and a keyboard shortcut pass
+the viewport centre. The anchor calculation applies to **both X and Y**, so
+horizontal scrolling is preserved using the same model as vertical
 scrolling.
 
 **Both axes scroll.** The content column is 800 DIPs at 100% and scales with
@@ -320,15 +353,17 @@ zoom operation the implementation recalculates the maximum X and Y scroll
 positions and clamps the calculated values. If the content becomes smaller
 than the viewport, that axis is centered.
 
-**Fit width** scales by available width over the current width mode's own base
-width and clamps to the same range as every other entry point.
-`Renderer::BaseContentWidthDip()` returns 800, 960 or 1600 for the three capped
-modes. The previous hardcoded 800 base was wrong for the 960 and 1600 modes:
-fitting against 800 left those columns overflowing the viewport. The uncapped
-mode reports 0, and fit width is then a no-op, because there is no fixed column
-width to fit. The content-width modes (Standard, 960, 1600, Full) are a
-line-length setting, not a fit mode: they cap the column rather than scaling it
-to the viewport.
+**The fit width button is removed.** The paragraph below records why its
+math was the way it was, kept because the width modes still use
+`Renderer::BaseContentWidthDip()` and the same reasoning applies to them.
+
+`Renderer::BaseContentWidthDip()` returns 800, 960 or 1600 for the three
+capped modes. The earlier fit-width scaling hardcoded an 800 base, which
+was wrong for the 960 and 1600 modes: those columns overflowed the viewport.
+The uncapped mode reports 0, and fitting against it was a no-op, because
+there is no fixed column width to fit. The content-width modes (Standard,
+960, 1600, Full) are a line-length setting, not a fit mode: they cap the
+column rather than scaling it to the viewport.
 
 **The wheel anchor is in DIPs.** `ScreenToClient` reports pixels, while every
 layout measure, and `ApplyZoom`'s anchor arithmetic, are in DIPs. The anchor is
@@ -348,14 +383,19 @@ nobody retries the same thing:
 * `Label` is not in the 2006/01 XSD at all, and there is no local copy of the
   2009/07 schema to check it against.
 
-So the readout is a plain `Button` rather than a `Label`, and no keytip is
-declared anywhere. Keyboard operation does not depend on it: `Ctrl`+`+`,
+So the readout was a plain `Button` rather than a `Label`, and no keytip was
+declared anywhere. Keyboard operation never depended on it: `Ctrl`+`+`,
 `Ctrl`+`-` and `Ctrl+0` cover zoom in, zoom out and back to 100%, which is what
 the zoom guide requires of these controls. Adding KeyTips properly means
 validating against the 2009/07 schema first, not guessing the spelling.
 
 ### Deliberately not implemented
 
+* **The percentage readout and the Fit width button.** Removed after
+  shipping. The zoom group in the View tab emptied with them, and the
+  keyboard set covers both jobs: `Ctrl+0` for the base scale, and the
+  column-width modes for fit-like intents. A readout that only some
+  users read was charging rent on prime ribbon space.
 * **Trackpad pinch as `WM_GESTURE`.** Windows delivers precision-touchpad
   pinch as `WM_MOUSEWHEEL` with `MK_CONTROL`, which the Ctrl branch already
   handles, so the gesture works on real hardware without a second path.
