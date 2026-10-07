@@ -461,6 +461,9 @@ private:
     void UpdateDpi();         // Query monitor DPI and apply to render target.
     void UpdateScrollInfo();
     void LoadSampleDoc();
+    // Drop recent entries whose file no longer exists on disk, both
+    // from the in-memory list and from the saved settings.
+    void PruneMissingRecentFiles();
     void Repaint();
     void ForceRepaintNow();  // Immediate repaint (for ribbon-triggered edits).
     void RecreateRenderer();

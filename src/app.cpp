@@ -983,12 +983,43 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
     }
 }
 
+// Remove entries from the recent list whose file is gone from disk.
+// GetFileAttributesW is the cheap existence probe: it fails for
+// missing files, directories and unreadable paths alike, and the
+// INVALID_FILE_ATTRIBUTES check covers all three. Missing entries are
+// dropped from the in-memory list and the settings are rewritten right
+// away, so the registry never re-offers a card whose click can only
+// fail.
+void AppWindow::PruneMissingRecentFiles() {
+    if (settings_.recentFiles.empty()) return;
+    const size_t before = settings_.recentFiles.size();
+    std::vector<RecentFile> kept;
+    kept.reserve(settings_.recentFiles.size());
+    for (const RecentFile& entry : settings_.recentFiles) {
+        if (entry.path.empty()) continue;  // defensive: no path, no card
+        const DWORD attrs = GetFileAttributesW(entry.path.c_str());
+        if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+            continue;  // gone from disk (or never was a file)
+        }
+        kept.push_back(entry);
+    }
+    if (kept.size() != before) {
+        settings_.recentFiles = std::move(kept);
+        SaveSettings(settings_);
+    }
+}
+
 void AppWindow::LoadSampleDoc() {
     // Instead of showing a placeholder text, show the welcome screen
     // with recent files cards.
     welcome_mode_ = true;
     if (dw_factory_) {
         welcome_.Init(dw_factory_);
+        // A recent list that offers dead paths is worse than an empty
+        // one: the card says the file is there, the click says it is
+        // not. Remove missing files before display, and keep the
+        // registry in step so they do not come back next session.
+        PruneMissingRecentFiles();
         welcome_.SetRecentFiles(settings_.recentFiles);
     }
     if (rt_) {
