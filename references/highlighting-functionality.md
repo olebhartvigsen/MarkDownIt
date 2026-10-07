@@ -1,5 +1,12 @@
 # Text Marker / Highlighting Functionality
 
+Status (2026-10): this document now describes the shipped marker
+implementation, not only the original wish list. Sections say "not
+implemented" where the build does not cover the behaviour yet. The
+implementation lives in src/markers.cpp (model and sidecar),
+src/renderer.cpp (drawing) and src/app.cpp (commands, shortcut and
+ribbon state).
+
 ## 1. Purpose
 
 The **Marker** functionality allows users to visually mark important passages of text while reading a Markdown document.
@@ -107,42 +114,19 @@ The marker layer is rendered visually over the document but is logically separat
 
 # 4. Marker visibility
 
-The application MUST provide a way to enable and disable marker visibility.
+The current build has no visibility switch. Markers always draw while
+their document is open. An earlier build had a Show markers toggle on
+the ribbon; it was removed because a hidden mark is a lost mark: the
+reader who returns to the document wants to see the annotations.
 
-For example:
+The ribbon still shows the layer state, but through the Mark toggle:
+the button is pressed whenever the current selection overlaps a
+marker. Display state and data state stay separate without a second
+switch.
 
-**View → Show markers**
-
-or a toolbar button:
-
-> 🖍 Markers
-
-The setting SHOULD be a simple on/off state.
-
-### Markers enabled
-
-Marked text is visually highlighted.
-
-```text
-The system MUST use managed identities for authentication.
-            █████████████████████████████████
-```
-
-### Markers disabled
-
-The document is rendered normally.
-
-```text
-The system MUST use managed identities for authentication.
-```
-
-Disabling markers MUST NOT remove the marker data.
-
-Re-enabling markers MUST restore the previous markers.
-
-Therefore:
-
-> **Hide markers ≠ delete markers.**
+> **Hiding ≠ deleting** remains true as a rule: the only operation
+> that removes marker data is the Mark toggle on a marked selection
+> (section 6).
 
 ---
 
@@ -158,12 +142,13 @@ The primary way to create a marker is:
 
 The marker SHOULD be created from the current text selection.
 
-Supported activation methods SHOULD include:
+The shipped activation paths:
 
-* Toolbar button
-* Context menu
-* Keyboard shortcut
-* Command palette, if available
+* The Mark toggle button in the Markers group on the Home tab
+* The keyboard shortcut Ctrl+Shift+H
+
+Context menu and command palette activation are not implemented. The
+Mark command is one toggle; section 6 covers the remove half.
 
 Example:
 
@@ -190,12 +175,17 @@ authentication when accessing Azure.
 
 A user MUST be able to remove an existing marker.
 
-Possible methods:
+The Mark command removes as well as adds. The same ribbon button and
+the same Ctrl+Shift+H act on the current selection:
 
-* Select marked text and choose **Remove marker**
-* Right-click marked text → **Remove marker**
-* Keyboard shortcut
-* Marker toolbar command
+* A selection that overlaps no marker receives one.
+* A selection that overlaps one or more markers loses every
+  overlapping marker.
+
+A partial overlap counts: selecting half of a marked word removes the
+marker that covers the word. The button shows this before the click,
+because it is pressed whenever the selection overlaps any marker, so
+the state the next click will change is visible first.
 
 Removing a marker only modifies the annotation layer.
 
@@ -256,6 +246,11 @@ The marker SHOULD:
 
 The marker MUST NOT alter the document's typography or layout.
 
+The shipped style is a warm yellow fill (0xFFD54A) behind the text
+plus a darker line (0xB8860B) along the bottom edge of each marked
+range. Marker fills sit behind search fills, so an active search
+paints over the marks but never removes them.
+
 ---
 
 # 9. Markdown-specific requirements
@@ -314,6 +309,11 @@ This is **<mark>very important</mark>** information.
 
 because that changes the Markdown document and introduces HTML.
 
+The shipped implementation clips the user selection to rendered text
+before storing anything: LayoutCache::ClipToRendered trims hidden
+Markdown syntax from both ends of the range, so a stored marker never
+starts or ends on bytes the renderer does not draw.
+
 ---
 
 # 11. Cross-element selections
@@ -345,6 +345,9 @@ Marker A
 ```
 
 The implementation SHOULD treat this as one logical marker even if the browser/rendering engine represents it as multiple DOM ranges.
+
+The shipped implementation stores one byte range whose ends sit on
+rendered text; drawing fills whatever part of the range renders.
 
 ---
 
@@ -378,6 +381,9 @@ On other operating systems, the equivalent OS-provided temporary directory MUST 
 
 The exact directory MUST be determined through the operating system/runtime's standard temporary-directory mechanism and MUST NOT be hard-coded.
 
+On Windows the shipped directory is %TEMP%\MarkDownIt, created on
+demand when the first marker is saved.
+
 ---
 
 ## 12.2 Annotation filename
@@ -406,28 +412,50 @@ Instead:
 %TEMP%\MyMarkdownViewer\a83f91c2.markers.json
 ```
 
+The current implementation derives the name from the full document
+path: the first 64 bits of an FNV-1a hash of the path, written as
+sixteen hex digits, then `.markers.json`. The file also records the
+plain document path and a content fingerprint, which the adoption in
+section 12.8 relies on.
+
 ---
 
 ## 12.3 Example annotation file
 
-A sidecar annotation file could contain:
+A sidecar annotation file contains:
 
 ```json
 {
   "version": 1,
+  "path": "C:\\docs\\report.md",
+  "fingerprint": "7d4636a59f14d0ac",
   "markers": [
     {
-      "id": "marker-001",
-      "anchor": {
-        "exact": "managed identities for authentication",
-        "prefix": "The system MUST use ",
-        "suffix": " when accessing Azure."
-      },
-      "created": "2026-10-06T08:30:00Z"
+      "id": "m-0001",
+      "start": 993,
+      "end": 1041,
+      "exact": "If AU already has a working LibreChat deployment",
+      "prefix": "hange the choice to Open WebUI. ",
+      "suffix": ", there is no evidence here that",
+      "created": "2026-10-07T13:18:30Z"
     }
   ]
 }
 ```
+
+Field notes:
+
+* `path` is the document path at save time.
+* `fingerprint` is an FNV-1a hash of the document bytes at save
+  time; it identifies the document for adoption (section 12.8).
+* `start` and `end` are byte offsets into the UTF-8 document at save
+  time, a cache of the last resolution.
+* `exact`, `prefix` and `suffix` form the anchor (section 13). Each
+  context field holds up to 32 bytes, cut at whole UTF-8 code points.
+* `id` values are m-0001 style and stay unique per document.
+
+A corrupt file is treated as "no markers": the document opens with an
+empty layer and the broken file is left alone on disk.
 
 The annotation file is completely independent of the Markdown document.
 
@@ -536,6 +564,10 @@ When a marker is added or removed:
 2. Update the temporary sidecar annotation file.
 3. Do NOT save the Markdown document.
 
+Markers also survive a same-document reload: when the buffer changes
+(a reload, an edit, an undo), anchors are resolved against the fresh
+text before the next paint, exactly as in the open path.
+
 ---
 
 ## 12.8 Document identity
@@ -547,6 +579,16 @@ A document identifier SHOULD be stable across normal document changes.
 A simple content hash alone is NOT sufficient because changing the Markdown content would change the hash.
 
 The application SHOULD therefore maintain an application-level document identity together with content information.
+
+The shipped identity is the document path plus an FNV-1a fingerprint
+of the document bytes stored inside the sidecar. When a document is
+moved or renamed, the sidecar is filed under the hash of the old path
+and no sidecar exists under the new one. The loader then scans the
+annotation directory, and a sidecar is adopted when every one of these
+hold: it stores the document's exact fingerprint, its recorded path no
+longer exists on disk, and it contains at least one marker. The
+newest such sidecar wins. Adoption never happens while the old path
+remains valid, which is what keeps two copies (section 37) apart.
 
 Conceptually:
 
@@ -571,6 +613,11 @@ Cleanup MUST be conservative.
 An annotation file SHOULD only be considered obsolete after an appropriate retention period and when there is reasonable evidence that it is no longer associated with a document.
 
 The application MUST NOT delete annotation data merely because the corresponding Markdown document is temporarily unavailable.
+
+Cleanup itself is not implemented. Sidecars accumulate in the
+temporary directory until the OS or the user clears it, which is
+exactly the duration the temporary-storage model (section 12.5)
+promises.
 
 ---
 
@@ -634,6 +681,15 @@ A more robust representation could be:
 
 The exact implementation is application-specific.
 
+The shipped anchor is the triple in section 12.3: exact text, up to 32
+bytes of prefix and up to 32 bytes of suffix, all cut at whole UTF-8
+code points. On resolution the store walks every occurrence of the
+exact text and scores each candidate: +4 when the prefix matches, +4
+when the suffix matches. The best score wins; ties go to the candidate
+nearest the marker's previous start. This is how a marked phrase keeps
+its mark through a paragraph shift, and how two identical copies of a
+phrase do not drag a mark across the document.
+
 ---
 
 # 14. Marker restoration
@@ -661,6 +717,10 @@ Marker 4   ✓ restored
 ```
 
 The UI MAY notify the user that some markers could not be restored.
+
+The current build does not notify; unresolved markers simply do not
+draw, and the marker data they rest on keeps them alive (the anchor
+is intact, the byte positions are stale).
 
 ---
 
@@ -715,6 +775,11 @@ HIDDEN
 UNRESOLVED
 DELETED
 ```
+
+The build implements two of them: resolved markers draw, unresolved
+ones do not. There is no HIDDEN state because there is no visibility
+switch (section 4), and every unresolved marker still has its anchor
+stored, which is what a restoration after the text returns would need.
 
 ---
 
@@ -812,6 +877,11 @@ Annotation undo stack
 
 or a unified history with explicitly separated operation types.
 
+Not implemented. Marker actions have no undo. Removing a mark through
+the toggle is a deliberate, visible act on a selected range, so the
+design accepted the trade; if marker undo ever becomes a need, it
+belongs on a separate annotation stack, never the document one.
+
 ---
 
 # 20. Keyboard shortcuts
@@ -828,17 +898,21 @@ where H represents Highlight.
 
 However, the exact shortcut SHOULD be configurable and SHOULD avoid conflicts with existing browser/application shortcuts.
 
-Recommended commands:
+Shipped commands:
 
-| Command            | Example shortcut |
-| ------------------ | ---------------- |
-| Mark selected text | Ctrl+Shift+H     |
-| Remove marker      | Ctrl+Shift+Alt+H |
-| Show/hide markers  | Configurable     |
-| Next marker        | Configurable     |
-| Previous marker    | Configurable     |
+| Command        | Shortcut     |
+| -------------- | ------------ |
+| Mark / unmark  | Ctrl+Shift+H |
 
-The application SHOULD expose shortcuts through its command system rather than hard-coding them into the UI.
+One shortcut serves both directions of the toggle. The earlier
+Ctrl+Shift+Alt+H remove variant was dropped when the commands merged,
+because two shortcuts that reverse each other invite mistakes.
+
+Next marker and previous marker navigation is not implemented.
+
+The comparatively small surface (one button, one shortcut, available
+in view mode and edit mode) follows from annotating not being editing:
+no command in the group needs the edit gate (section 17).
 
 ---
 
@@ -862,12 +936,13 @@ When the selection intersects an existing marker:
 ```text
 ┌─────────────────────────────┐
 │ Copy                        │
-│ ─────────────────────────── │
-│ Remove marker               │
-│ ─────────────────────────── │
-│ Show marker                 │
+│ Mark / unmark               │
 └─────────────────────────────┘
 ```
+
+Not implemented: the context menu currently has no marker entries. The
+Mark toggle's pressed state carries the same information at the
+ribbon.
 
 ---
 
@@ -922,6 +997,9 @@ Markers: 7
 
 The count SHOULD represent markers belonging to the current document.
 
+Not implemented: no counter is shown anywhere. The ribbon group holds
+the single Mark toggle, and no statistics view exists in the app.
+
 ---
 
 # 24. Marker visibility versus marker existence
@@ -947,6 +1025,10 @@ Visibility: Off
 
 Turning visibility off MUST NOT delete the 12 markers.
 
+Without a visibility switch (section 4) this distinction collapses to
+existence alone: every stored marker is always drawn, and the only
+way to lose one is the remove action itself.
+
 ---
 
 # 25. Accessibility
@@ -966,6 +1048,9 @@ The implementation SHOULD ensure sufficient contrast between:
 If multiple marker colours are supported, the application SHOULD provide an additional visual distinction where appropriate.
 
 A simple single marker style is preferable unless colour categories are explicitly required.
+
+The shipped style follows this: one warm fill plus a bottom line, no
+colour per category, no reliance on hue differences between markers.
 
 ---
 
@@ -1005,6 +1090,9 @@ Created: 6 Oct 2026
 However, a tooltip SHOULD NOT obstruct reading.
 
 The marker itself SHOULD remain visually subtle.
+
+Not implemented. Marked text has no hover affordance: no tooltip, no
+created date. The mark is the only signal.
 
 ---
 
@@ -1097,6 +1185,10 @@ Recommended behaviour:
 * Print: markers excluded by default.
 * PDF export: markers excluded by default.
 
+The shipped exporters (PDF, DOCX) never include markers. They run on
+the document model, which never sees the annotation layer, so nothing
+can leak into an export by accident.
+
 If exporting marked documents is desired, it SHOULD be an explicit option:
 
 ```text
@@ -1125,6 +1217,11 @@ Find marked text
 ```
 
 A "Find marked text" function could navigate between markers.
+
+Not implemented. Search and markers are separate: the find bar
+queries the document text, and the marker layer reads the sidecar.
+The two meet only on screen, where search fills draw over marker
+fills (section 8).
 
 ---
 
@@ -1179,6 +1276,12 @@ Possible implementation approaches include:
 * other rendering-layer techniques.
 
 The preferred implementation SHOULD minimise changes to the rendered document DOM.
+
+This application is a native Direct2D/DirectWrite renderer without a
+DOM. The marker layer is a pair of brushes applied behind the block
+text through four call sites (source blocks, code, tables and the
+plain render path), reusing the same layout-to-byte mapping that the
+search fills use.
 
 Where browser support permits it, a browser-native highlighting mechanism can be advantageous because the annotation can remain separate from the document's semantic content.
 
@@ -1255,6 +1358,14 @@ The copy SHOULD either:
 
 The application SHOULD NOT accidentally share markers between unrelated document copies.
 
+Because the sidecar identity is the document path (section 12.8), a
+copy made in the file system (a new path, identical bytes) has no
+sidecar until you mark something in it. If you then update the copy,
+its sidecar is a fresh one, not the original's. The reverse also
+holds: adopting a sidecar requires the stored path to be gone from
+disk, so an existing copy never adopts the original side just by
+sharing bytes.
+
 ---
 
 # 38. Version control
@@ -1319,12 +1430,13 @@ The implementation is considered correct when all of the following are true.
 
 ## Basic functionality
 
-* [ ] User can select text.
-* [ ] User can create a marker from selected text.
-* [ ] Marked text is visually distinguishable.
-* [ ] User can remove a marker.
-* [ ] Multiple markers can exist.
-* [ ] Markers can be restored when the document is reopened and the temporary annotation data still exists.
+* [x] User can select text.
+* [x] User can create a marker from selected text.
+* [x] Marked text is visually distinguishable.
+* [x] User can remove a marker (the Mark toggle removes on overlap).
+* [x] Multiple markers can exist.
+* [x] Markers can be restored when the document is reopened and the temporary annotation data still exists.
+* [x] Marked text renders in view mode and in edit mode.
 
 ## Non-destructive behaviour
 
@@ -1337,26 +1449,31 @@ The implementation is considered correct when all of the following are true.
 
 ## Annotation storage
 
-* [ ] Marker data is stored separately from the Markdown file.
-* [ ] Marker data is stored in the OS default temporary directory.
-* [ ] The application does not create marker files next to the Markdown document.
-* [ ] The annotation filename is based on a stable document identifier.
-* [ ] Loss of the temporary annotation file does not prevent opening the Markdown document.
-* [ ] Marker data is treated as temporary/best-effort persistence.
+* [x] Marker data is stored separately from the Markdown file.
+* [x] Marker data is stored in the OS default temporary directory.
+* [x] The application does not create marker files next to the Markdown document.
+* [x] The annotation filename is based on a stable document identifier (path hash).
+* [x] Loss of the temporary annotation file does not prevent opening the Markdown document.
+* [x] Marker data is treated as temporary/best-effort persistence.
+* [x] A moved or renamed document adopts its sidecar from the previous path (section 12.8).
 
-## Visibility
+## Toggle state
 
-* [ ] User can hide markers.
-* [ ] Hiding markers does not delete markers.
-* [ ] User can show markers again.
-* [ ] Marker visibility is independent of document content.
+* [x] The Mark button is pressed whenever the selection overlaps a marker.
+* [x] A partial overlap also reads as pressed.
+* [x] The same click or shortcut that adds a marker removes it again.
+* [x] The toggle state refreshes on selection changes in both view and edit mode.
+
+The earlier Visibility block (hide/show markers) was retired with the
+switch itself. Nothing can hide a marker now, so "hiding does not
+delete" holds vacuously.
 
 ## Document changes
 
-* [ ] Markers can survive reasonable text changes.
-* [ ] Markers do not silently attach themselves to unrelated text.
-* [ ] Deleted marker text is handled safely.
-* [ ] Unresolvable markers are identifiable.
+* [x] Markers can survive reasonable text changes (anchor scoring, section 13).
+* [x] Markers do not silently attach themselves to unrelated text (context scoring).
+* [x] Deleted marker text is handled safely (unresolved, kept in data).
+* [ ] Unresolvable markers are identifiable in the UI: not implemented, they only vanish from view.
 
 ## Rendering
 
@@ -1369,10 +1486,10 @@ The implementation is considered correct when all of the following are true.
 
 ## Clipboard/export
 
-* [ ] Copying marked text copies normal text.
-* [ ] Markdown export excludes markers.
-* [ ] Normal document save excludes markers.
-* [ ] Print/export behaviour is explicitly defined.
+* [x] Copying marked text copies normal text.
+* [x] Markdown export excludes markers.
+* [x] Normal document save excludes markers.
+* [x] Print/export behaviour is explicitly defined (never includes markers).
 
 ---
 
