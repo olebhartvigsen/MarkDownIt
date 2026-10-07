@@ -5855,17 +5855,14 @@ void AppWindow::ApplyZoom(float newZoom, float focusYdip, float focusXdip) {
     UpdateScrollInfo();
     Repaint();
 
-    // Re-query the zoom controls. Without this the + and - buttons keep
-    // whatever enabled state they were given at startup, so they stay live
-    // at the maximum and disabled below the minimum. The percentage readout
-    // needs the same call or it keeps showing the pre-zoom level.
+    // Re-query the zoom buttons. Without this they keep whatever enabled
+    // state they were given at startup, so they stay live at the maximum
+    // and enabled below the minimum.
     if (g_pRibbonFramework) {
         g_pRibbonFramework->InvalidateUICommand(IDC_CMD_ZOOMIN,
             UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
         g_pRibbonFramework->InvalidateUICommand(IDC_CMD_ZOOMOUT,
             UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
-        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_ZOOMLEVEL,
-            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Label);
     }
 }
 
@@ -5900,20 +5897,6 @@ bool AppWindow::CanZoomIn() const {
 
 bool AppWindow::CanZoomOut() const {
     return renderer_.GetZoom() > renderer_.kMinZoom + 1e-4f;
-}
-
-void AppWindow::FitZoomToWidth() {
-    // The base width is the current width mode's own column width at
-    // 100% (800, 960 or 1600 DIPs), not a hardcoded 800: fitting against
-    // the wrong base leaves a 960 or 1600 column overflowing the viewport.
-    // The uncapped mode sets no column width, so there is nothing to fit
-    // and the request is a no-op rather than a wrong zoom.
-    if (!rt_) return;
-    const float base = renderer_.BaseContentWidthDip();
-    if (!(base > 0.0f)) return;
-    const float available = rt_->GetSize().width;
-    ApplyZoom(zoom::FitWidth(available, base),
-              CenterYDip(rt_), CenterXDip(rt_));
 }
 
 bool AppWindow::IsWrapEnabled() const {

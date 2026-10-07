@@ -400,14 +400,6 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
                 return hrWidth;
             }
         }
-        // Zoom readout: the current level as a whole percentage. The zoom
-        // guide requires a visible percentage that updates on every change.
-        if (nCmdID == IDC_CMD_ZOOMLEVEL) {
-            wchar_t buf[16] = {};
-            swprintf_s(buf, _countof(buf), L"%d%%",
-                       m_pApp ? m_pApp->ZoomPercent() : 100);
-            return SetCmdLabel(buf, ppropvarNewValue);
-        }
     }
 
     // Enable/disable format buttons based on edit mode.
@@ -570,10 +562,6 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
         break;
     case IDC_CMD_ZOOMIN:  m_pApp->ZoomIn();            break;
     case IDC_CMD_ZOOMOUT: m_pApp->ZoomOut();           break;
-    // Clicking the percentage readout returns to 100%, which is the one
-    // numeric preset a viewer always needs.
-    case IDC_CMD_ZOOMLEVEL:      m_pApp->ResetZoom();        break;
-    case IDC_CMD_ZOOM_FIT_WIDTH: m_pApp->FitZoomToWidth();   break;
     case IDC_CMD_ABOUT:   m_pApp->ShowAbout();         break;
     case IDC_CMD_BOLD:    m_pApp->ToggleBold();        break;
     case IDC_CMD_ITALIC: m_pApp->ToggleItalic();      break;

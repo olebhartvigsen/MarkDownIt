@@ -55,10 +55,6 @@ public:
     void ZoomIn();
     void ZoomOut();
     void ResetZoom();
-    // Current zoom as a whole percentage, for the ribbon's zoom readout.
-    int  ZoomPercent() const { return zoom::Percent(renderer_.GetZoom()); }
-    // Scale so the content column fills the viewport width.
-    void FitZoomToWidth();
     // True when + and - would still change the zoom. The ribbon greys the
     // buttons out at the limits rather than letting them do nothing.
     bool CanZoomIn() const;
