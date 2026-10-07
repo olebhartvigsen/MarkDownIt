@@ -564,7 +564,10 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_EXPORT_DOCX: m_pApp->ExportWordDocx(); break;
     case IDC_CMD_EXPORT_PDF:  m_pApp->ExportPdf();      break;
     case IDC_CMD_WRAP:    m_pApp->ToggleWrap();        break;
-    case IDC_CMD_MARK:        m_pApp->ToggleMarkSelection();    break;
+    case IDC_CMD_MARK:
+        diag::Trace("MARKEXEC execute");
+        m_pApp->ToggleMarkSelection();
+        break;
     case IDC_CMD_ZOOMIN:  m_pApp->ZoomIn();            break;
     case IDC_CMD_ZOOMOUT: m_pApp->ZoomOut();           break;
     // Clicking the percentage readout returns to 100%, which is the one

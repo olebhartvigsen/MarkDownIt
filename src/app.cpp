@@ -4296,26 +4296,49 @@ void AppWindow::ToggleMarkSelection() {
     // One button, one shortcut: a selection that touches a marker
     // unmarks it, any other selection marks it. A partially marked
     // selection also reads as marked, so the button shows pressed.
-    if (SelectionHasMarker()) RemoveMarkerAtSelection();
-    else MarkSelection();
+    diag::TraceFmt("MARKTOG enter sel=[%u,%u) len=%u", sel_.Start(),
+                   sel_.Length());
+    if (SelectionHasMarker()) {
+        diag::Trace("MARKTOG branch remove");
+        RemoveMarkerAtSelection();
+    } else {
+        diag::Trace("MARKTOG branch mark");
+        MarkSelection();
+    }
 }
 
 void AppWindow::MarkSelection() {
-    if (sel_.Empty()) return;
+    diag::TraceFmt("MARKSEL enter sel=[%u,%u)", sel_.Start(),
+                   sel_.Length());
+    if (sel_.Empty()) {
+        diag::Trace("MARKSEL empty");
+        return;
+    }
     uint32_t lo = 0;
     uint32_t hi = 0;
-    if (!layout_cache_.ClipToRendered(sel_.Start(), sel_.Length(), &lo, &hi))
+    if (!layout_cache_.ClipToRendered(sel_.Start(), sel_.Length(), &lo, &hi)) {
+        diag::Trace("MARKSEL clip failed");
         return;  // the selection covers no rendered text
-    if (!marker_store_.Add(buffer_.Text(), lo, hi)) return;
+    }
+    diag::TraceFmt("MARKSEL clip=[%u,%u)", lo, hi);
+    if (!marker_store_.Add(buffer_.Text(), lo, hi)) {
+        diag::Trace("MARKSEL add rejected");
+        return;
+    }
+    diag::Trace("MARKSEL add ok");
     SaveMarkers();
     RefreshMarkerRanges();
     Repaint();
 }
 
 void AppWindow::RemoveMarkerAtSelection() {
-    if (sel_.Empty()) return;
+    if (sel_.Empty()) {
+        diag::Trace("MARKRM sel empty");
+        return;
+    }
     const size_t removed = marker_store_.RemoveIntersecting(
         sel_.Start(), sel_.Start() + sel_.Length());
+    diag::TraceFmt("MARKRM removed=%zu", removed);
     if (removed == 0) return;
     SaveMarkers();
     RefreshMarkerRanges();
