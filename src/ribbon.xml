@@ -690,18 +690,18 @@
     </Command>
     <Command Name="cmdGroupMarkers" Symbol="IDC_GROUP_MARKERS" Id="10080">
       <Command.LabelTitle>
-        <String>Markers</String>
+        <String>Highlight</String>
       </Command.LabelTitle>
     </Command>
     <Command Name="cmdMark" Symbol="IDC_CMD_MARK" Id="10900">
       <Command.LabelTitle>
-        <String>Mark</String>
+        <String>Highlight</String>
       </Command.LabelTitle>
       <Command.TooltipTitle>
-        <String>Mark or unmark</String>
+        <String>Highlight or unhighlight</String>
       </Command.TooltipTitle>
       <Command.TooltipDescription>
-        <String>Mark the selection without changing the document; a press on marked text removes the marker (Ctrl+Shift+H)</String>
+        <String>Highlight the selection without changing the document; a press on highlighted text removes the highlight (Ctrl+Shift+H)</String>
       </Command.TooltipDescription>
       <Command.LargeImages>
         <Image Source="icons/mark_32.png" MinDPI="96"/>
