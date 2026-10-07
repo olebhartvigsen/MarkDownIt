@@ -114,8 +114,14 @@ static void BuildLayoutLineCache(IDWriteTextLayout* layout,
     cache = LayoutLineCache();
     if (!layout) return;
     UINT32 count = 0;
-    if (FAILED(layout->GetLineMetrics(nullptr, 0, &count)) || count == 0)
-        return;
+    // Sizing probe: DirectWrite reports the needed line count through the
+    // E_NOT_SUFFICIENT_BUFFER failure path, so a failing HRESULT here is
+    // the normal answer, not an error. Only a zero count means there is
+    // nothing to cache. (Checking FAILED() on the probe rejected the count
+    // every time, left the cache invalid, and silently dropped every fill
+    // that depended on it, search matches and markers alike.)
+    layout->GetLineMetrics(nullptr, 0, &count);
+    if (count == 0) return;
     cache.lines.resize(count);
     if (FAILED(layout->GetLineMetrics(cache.lines.data(), count, &count)) ||
         count == 0) {
@@ -173,18 +179,6 @@ static void FillRangeFromCache(ID2D1RenderTarget* rt,
     if (u16End <= u16Start) return;
     if (u16Start >= cache.totalU16) return;
     if (u16End > cache.totalU16) u16End = cache.totalU16;
-    // TEMP MARKER DIAG: what the line walk will see. Keyed on the marker
-    // path (underline brush) so search fills stay silent.
-    if (underlineBrush) {
-        static uint32_t lastTickR = 0;
-        uint32_t nowR = GetTickCount();
-        if (nowR - lastTickR > 2000) {
-            lastTickR = nowR;
-            diag::TraceFmt("MARKRANGE enter u16=[%u,%u) total=%u lines=%zu org=(%.1f,%.1f) scY=%.1f vh=%.1f",
-                u16Start, u16End, cache.totalU16, cache.lines.size(),
-                originX, originY, scrollY, viewportH);
-        }
-    }
 
     const float viewBottom = scrollY + (viewportH > 0.0f ? viewportH : 0.0f);
     const size_t lineCount = cache.lines.size();
@@ -409,18 +403,6 @@ void Renderer::FillMarkerHighlights(ID2D1RenderTarget* rt,
         break;
     }
     if (!touched) return;
-    // TEMP MARKER DIAG: throttled to one line per paint burst.
-    {
-        static uint32_t lastTick = 0;
-        uint32_t now = GetTickCount();
-        if (now - lastTick > 2000) {
-            lastTick = now;
-            diag::TraceFmt("MARKPAINT ranges=%u firstStart=%u block=%u..%u vis=%d",
-                (unsigned)markerRanges_->size(),
-                markerRanges_->empty() ? 0u : (*markerRanges_)[0].start,
-                blockStart, blockEnd, markersVisible_ ? 1 : 0);
-        }
-    }
 
     LayoutLineCache cache;
     BuildLayoutLineCache(layout, cache);
@@ -441,18 +423,6 @@ void Renderer::FillMarkerHighlights(ID2D1RenderTarget* rt,
                         : MapSrcToU16Linear(u16ToSrc, u16Len, mEnd));
         if (u16Start > u16Len) u16Start = u16Len;
         if (u16End > u16Len) u16End = u16Len;
-        // TEMP MARKER DIAG: the requested marker range and its u16 mapping.
-        {
-            static uint32_t lastTickM = 0;
-            uint32_t nowM = GetTickCount();
-            if (nowM - lastTickM > 2000) {
-                lastTickM = nowM;
-                diag::TraceFmt("MARKMAP m=[%u,%u) block=[%u,%u) u16=[%u,%u) len=%u cache=%d mono=%d",
-                    mStart, mEnd, blockStart, blockEnd,
-                    u16Start, u16End, u16Len,
-                    cache.valid ? 1 : 0, monotone ? 1 : 0);
-            }
-        }
         if (u16End <= u16Start) continue;
         FillRangeFromCache(rt, layout, cache, fillBrush, u16Start, u16End,
                            originX, originY, scrollY, viewportH, lineBrush);
@@ -1466,18 +1436,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         rt->CreateSolidColorBrush(pal.markerBg, &markerBrush);
         rt->CreateSolidColorBrush(pal.markerLine, &markerLine);
     }
-    // TEMP MARKER DIAG: once per Render.
-    if (HasMarkers()) {
-        static uint32_t lastTick = 0;
-        uint32_t now = GetTickCount();
-        if (now - lastTick > 2000) {
-            lastTick = now;
-            diag::TraceFmt("MARKRENDER ranges=%u brush=%d line=%d",
-                (unsigned)markerRanges_->size(),
-                markerBrush ? 1 : 0, markerLine ? 1 : 0);
-        }
-    }
-
     // Clip to content area (below the ribbon).
     D2D1_SIZE_F clipSize = rt->GetSize();
     rt->SetTransform(D2D1::Matrix3x2F::Identity());

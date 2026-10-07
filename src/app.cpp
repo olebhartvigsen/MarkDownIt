@@ -4263,10 +4263,6 @@ void AppWindow::RefreshMarkerRanges() {
             {m.start, static_cast<uint32_t>(m.end - m.start)});
     }
     renderer_.SetMarkers(&marker_ranges_, markers_visible_);
-    // TEMP MARKER DIAG
-    diag::TraceFmt("MARKREFRESH stored=%u ranges=%u vis=%d",
-        (unsigned)marker_store_.Markers().size(),
-        (unsigned)marker_ranges_.size(), markers_visible_ ? 1 : 0);
 }
 
 void AppWindow::ResolveMarkerAnchors() {
@@ -4299,9 +4295,6 @@ bool AppWindow::SelectionHasMarker() const {
 }
 
 void AppWindow::MarkSelection() {
-    // TEMP MARKER DIAG
-    diag::TraceFmt("MARKSEL empty=%d anchor=%u active=%u",
-        sel_.Empty() ? 1 : 0, sel_.anchor.offset, sel_.active.offset);
     if (sel_.Empty()) return;
     uint32_t lo = 0;
     uint32_t hi = 0;
