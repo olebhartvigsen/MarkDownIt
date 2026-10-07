@@ -229,25 +229,6 @@ static void FillRangeFromCache(ID2D1RenderTarget* rt,
             HRESULT hr = layout->HitTestTextRange(
                 selLo, count, originX, originY,
                 htm.data(), count, &hitCount);
-            // TEMP MARKER DIAG: the marker path is the only caller that
-            // passes an underline brush, so this names the real fill.
-            if (underlineBrush) {
-                static uint32_t lastTick2 = 0;
-                uint32_t now2 = GetTickCount();
-                if (now2 - lastTick2 > 2000) {
-                    lastTick2 = now2;
-                    diag::TraceFmt(
-                        "MARKRECT u16=%u..%u line=%u..%u cnt=%u hit=%u hr=0x%08X "
-                        "r0=(%.1f,%.1f,%.1f,%.1f) org=(%.1f,%.1f) scY=%.1f",
-                        u16Start, u16End, lineStart, lineEnd,
-                        count, hitCount, (unsigned)hr,
-                        hitCount > 0 ? htm[0].left : -1.0f,
-                        hitCount > 0 ? htm[0].top : -1.0f,
-                        hitCount > 0 ? htm[0].left + htm[0].width : -1.0f,
-                        hitCount > 0 ? htm[0].top + htm[0].height : -1.0f,
-                        originX, originY, scrollY);
-                }
-            }
             if (SUCCEEDED(hr)) {
                 for (UINT32 h = 0; h < hitCount; ++h) {
                     D2D1_RECT_F r = D2D1::RectF(

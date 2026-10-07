@@ -409,13 +409,11 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         return;
     }
 
-    // Marker shortcuts, available in every mode like the clipboard
+    // Marker shortcut, available in every mode like the clipboard
     // aliases: annotating a document is not editing it (marker guide 17).
-    //   Ctrl+Shift+H       -> mark the selection
-    //   Ctrl+Shift+Alt+H   -> remove the marker under the selection
+    //   Ctrl+Shift+H -> mark the selection, or unmark when it is marked
     if (ctrl && shift && vk == 0x48) {  // H
-        if (GetAsyncKeyState(VK_MENU) & 0x8000) RemoveMarkerAtSelection();
-        else MarkSelection();
+        ToggleMarkSelection();
         return;
     }
 
@@ -3377,13 +3375,13 @@ void AppWindow::SetEdit(bool on) {
             g_pRibbonFramework->InvalidateUICommand(cmd,
                 UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
         }
-        // The marker commands follow the caret: Mark needs a selection,
-        // Remove needs one that touches a marker. Also invalidating on
-        // edit-mode changes covers selections collapsed by mode switches.
+        // The marker toggle follows the caret: pressed whenever the
+        // selection touches a marker. The BooleanValue query is keyed on
+        // the selection, and this path runs on every selection change.
         g_pRibbonFramework->InvalidateUICommand(IDC_CMD_MARK,
             UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
-        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_MARK_REMOVE,
-            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
+        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_MARK,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
     }
     Repaint();
 }
@@ -3602,13 +3600,13 @@ void AppWindow::InvalidateFormatButtons() {
             g_pRibbonFramework->InvalidateUICommand(cmd,
                 UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
         }
-        // The marker commands follow the caret: Mark needs a selection,
-        // Remove needs one that touches a marker. Also invalidating on
-        // edit-mode changes covers selections collapsed by mode switches.
+        // The marker toggle follows the caret: pressed whenever the
+        // selection touches a marker. The BooleanValue query is keyed on
+        // the selection, and this path runs on every selection change.
         g_pRibbonFramework->InvalidateUICommand(IDC_CMD_MARK,
             UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
-        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_MARK_REMOVE,
-            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
+        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_MARK,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
     }
 }
 
@@ -4262,7 +4260,7 @@ void AppWindow::RefreshMarkerRanges() {
         marker_ranges_.push_back(
             {m.start, static_cast<uint32_t>(m.end - m.start)});
     }
-    renderer_.SetMarkers(&marker_ranges_, markers_visible_);
+    renderer_.SetMarkers(&marker_ranges_, true);
 }
 
 void AppWindow::ResolveMarkerAnchors() {
@@ -4294,6 +4292,14 @@ bool AppWindow::SelectionHasMarker() const {
     return false;
 }
 
+void AppWindow::ToggleMarkSelection() {
+    // One button, one shortcut: a selection that touches a marker
+    // unmarks it, any other selection marks it. A partially marked
+    // selection also reads as marked, so the button shows pressed.
+    if (SelectionHasMarker()) RemoveMarkerAtSelection();
+    else MarkSelection();
+}
+
 void AppWindow::MarkSelection() {
     if (sel_.Empty()) return;
     uint32_t lo = 0;
@@ -4314,13 +4320,6 @@ void AppWindow::RemoveMarkerAtSelection() {
     SaveMarkers();
     RefreshMarkerRanges();
     Repaint();
-}
-
-void AppWindow::ToggleMarkersVisible() {
-    markers_visible_ = !markers_visible_;
-    RefreshMarkerRanges();
-    Repaint();
-    UpdateRibbonMarkersState(markers_visible_);
 }
 
 // Pull the live view and edit state into the bar. Called on every Show and

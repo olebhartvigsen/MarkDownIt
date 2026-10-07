@@ -99,8 +99,11 @@ public:
     // (marker guide 12, 17 and 18).
     void MarkSelection();
     void RemoveMarkerAtSelection();
-    void ToggleMarkersVisible();
-    bool MarkersVisible() const { return markers_visible_; }
+    // One ribbon button, one shortcut: a selection that touches a marker
+    // unmarks it, any other selection marks it (combined on user request).
+    // Markers are always drawn; there is no visibility toggle to keep in
+    // sync with the ribbon.
+    void ToggleMarkSelection();
     bool HasSelection() const { return !sel_.Empty(); }
     bool SelectionHasMarker() const;
 
@@ -257,7 +260,6 @@ private:
     // renderer, refreshed whenever markers or the document text change.
     MarkerStore marker_store_;
     std::vector<TextMatch> marker_ranges_;
-    bool markers_visible_ = true;
     // Triple-click detection: last click time and y position.
     DWORD        last_click_time_ = 0;
     int          last_click_y_ = -1;
