@@ -99,6 +99,10 @@ public:
     // (marker guide 12, 17 and 18).
     void MarkSelection();
     void RemoveMarkerAtSelection();
+    // Re-query the ribbon for the marker toggle's enabled and pressed
+    // state. Selection changes and marker changes both need it; view
+    // mode skips the caret path that normally carries this invalidation.
+    void InvalidateMarkerToggleUI();
     // One ribbon button, one shortcut: a selection that touches a marker
     // unmarks it, any other selection marks it (combined on user request).
     // Markers are always drawn; there is no visibility toggle to keep in

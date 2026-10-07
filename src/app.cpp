@@ -1118,7 +1118,12 @@ void AppWindow::ScrollCaretIntoView(float caretY, float caretH) {
 
 void AppWindow::UpdateCaretPosition() {
     if (!has_focus_ || !hwnd_content_) return;
-    if (!editing_) return; // No caret in view mode.
+    if (!editing_) {
+        // No caret in view mode, but the selection still changed and the
+        // marker toggle follows it, so feed the ribbon the new state.
+        InvalidateMarkerToggleUI();
+        return;
+    }
     InvalidateFormatButtons();
 
     // Hide the caret when text is selected; only show it when the
@@ -1933,6 +1938,9 @@ void AppWindow::FinishTextDrag() {
 
 void AppWindow::OnLButtonUp(HWND hwnd) {
     FinishTextDrag();
+    // The selection just settled; the marker toggle follows it. This
+    // covers view mode, where no caret update runs to do the same.
+    InvalidateMarkerToggleUI();
     ReleaseCapture();
     margin_selecting_ = false;
     margin_anchor_block_ = -1;
@@ -4253,6 +4261,18 @@ std::string AppWindow::MarkerDocumentPath() const {
     return ImeWideToUtf8(file_path_);
 }
 
+// Re-query the ribbon for the marker toggle state. Called wherever the
+// selection or the marker set changes and no caret update will follow:
+// view-mode selections never run UpdateCaretPosition, and the toggle
+// command itself executes while the ribbon button is pressed.
+void AppWindow::InvalidateMarkerToggleUI() {
+    if (!g_pRibbonFramework) return;
+    g_pRibbonFramework->InvalidateUICommand(IDC_CMD_MARK,
+        UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
+    g_pRibbonFramework->InvalidateUICommand(IDC_CMD_MARK,
+        UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
+}
+
 void AppWindow::RefreshMarkerRanges() {
     marker_ranges_.clear();
     for (const auto& m : marker_store_.Markers()) {
@@ -4305,6 +4325,7 @@ void AppWindow::ToggleMarkSelection() {
         diag::Trace("MARKTOG branch mark");
         MarkSelection();
     }
+    InvalidateMarkerToggleUI();
 }
 
 void AppWindow::MarkSelection() {
@@ -5971,6 +5992,7 @@ void AppWindow::SelectAll() {
 
     sel_.anchor = {0};
     sel_.active = {static_cast<uint32_t>(buffer_.Length())};
+    if (!editing_) InvalidateMarkerToggleUI();
     if (editing_) UpdateCaretPosition();
     Repaint();
 }
