@@ -387,6 +387,10 @@ private:
     void OnReload();
     void OnBufferChanged();
     void UpdateCaretPosition();
+    // Create the system caret at the selection's active end and show
+    // it. Runs whenever focus or edit mode turns the caret on; the
+    // caller guards on mode and the current caret state.
+    bool EnsureCaretVisible();
     // Scroll the viewport so the caret stays visible after keyboard
     // navigation. Direct jump (no spring animation).
     void ScrollCaretIntoView(float caretY, float caretH);

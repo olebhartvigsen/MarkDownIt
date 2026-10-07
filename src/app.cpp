@@ -1985,28 +1985,58 @@ void AppWindow::OnLButtonUp(HWND hwnd) {
     paragraph_anchor_block_ = -1;
 }
 
-void AppWindow::OnSetFocus(HWND hwnd) {
-    has_focus_ = true;
-    // Only create and show caret in edit mode.
-    if (!editing_) return;
-    float x, y, h;
-    if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &x, &y, &h)) {
-        float dpix = static_cast<float>(dpi_) / 96.0f;
-        int ch = static_cast<int>(h * dpix);
-        if (ch < 1) ch = 1;
-        CreateCaret(hwnd, nullptr, 2, ch);
-        caret_height_ = ch;
+// Create the system caret at the selection's active end and show it.
+// This runs whenever focus or edit mode turns the caret on (SetEdit,
+// OnSetFocus). When the layout is not ready yet, typically an empty
+// document before its first paint, a 16 DIP caret stands in; the next
+// UpdateCaretPosition after the paint resizes and repositions it.
+// The flags always mirror reality: caret_visible_ true means a shown
+// caret exists, so a focus loss that destroys the caret clears them.
+bool AppWindow::EnsureCaretVisible() {
+    if (!has_focus_ || !hwnd_content_) return false;
+    // While a selection is shown, the caret is the selection's active
+    // end, not a separate blinking line (cursor-blinking guide), so
+    // focus changes never turn one on over a selection.
+    if (!sel_.Empty()) return false;
+    float x = 0.0f, y = 0.0f, h = 0.0f;
+    const bool haveRect =
+        layout_cache_.OffsetToCaretRect(sel_.active.offset, &x, &y, &h);
+    if (!haveRect) h = 16.0f;  // fallback height, top of the viewport
+    const float dpix = static_cast<float>(dpi_) / 96.0f;
+    int height = static_cast<int>(h * dpix);
+    if (height < 1) height = 1;
+    CreateCaret(hwnd_content_, nullptr, 2, height);
+    caret_height_ = height;
+    if (haveRect) {
         SetCaretPos(static_cast<int>(x * dpix),
                     static_cast<int>((y - scrollY_) * dpix));
-        ShowCaret(hwnd);
-        caret_visible_ = true;
+    } else {
+        SetCaretPos(0, 0);  // defined origin until the layout exists
     }
+    ShowCaret(hwnd_content_);
+    caret_visible_ = true;
+    return true;
+}
+
+void AppWindow::OnSetFocus(HWND hwnd) {
+    has_focus_ = true;
+    // The caret is visible while the editor has focus (cursor-blinking
+    // guide), and only exists in edit mode: view mode has no caret.
+    if (!editing_ || caret_visible_) return;
+    EnsureCaretVisible();
 }
 
 void AppWindow::OnKillFocus(HWND hwnd) {
     OnImeEndComposition();
     has_focus_ = false;
+    // The caret disappears with focus (cursor-blinking guide). The
+    // flags reset with it: a later re-focus must recreate the caret
+    // through EnsureCaretVisible instead of trusting stale state, and
+    // UpdateCaretPosition must not skip recreation because an old
+    // height still matches.
     DestroyCaret();
+    caret_visible_ = false;
+    caret_height_ = 0;
 }
 
 void AppWindow::OnImeComposition(LPARAM lp) {
@@ -3352,21 +3382,7 @@ void AppWindow::SetEdit(bool on) {
     // document can change. Re-gate whenever edit mode flips, so a bar left
     // open across the toggle greys the two buttons out (guide 4).
     find_bar_.SetReplaceEnabled(editing_);
-    if (on && has_focus_ && !caret_visible_) {
-        float cx, cy, ch;
-        float dpix = static_cast<float>(dpi_) / 96.0f;
-        if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &cx, &cy, &ch)) {
-            int h = static_cast<int>(ch * dpix);
-            if (h < 1) h = 1;
-            CreateCaret(hwnd_content_, nullptr, 2, h);
-            caret_height_ = h;
-        } else {
-            CreateCaret(hwnd_content_, nullptr, 2, 16);
-            caret_height_ = 16;
-        }
-        ShowCaret(hwnd_content_);
-        caret_visible_ = true;
-    }
+    if (on && has_focus_ && !caret_visible_) EnsureCaretVisible();
     if (!on && caret_visible_) {
         DestroyCaret();
         caret_visible_ = false;
