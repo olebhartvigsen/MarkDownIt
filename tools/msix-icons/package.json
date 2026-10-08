@@ -1,0 +1,12 @@
+{
+  "name": "markdownit-msix-icons",
+  "private": true,
+  "type": "module",
+  "description": "Renders the MSIX tile/logo PNGs from assets/icons/app-markdownit.svg at 4x supersampling; finalize.py downscales to the final sizes.",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2"
+  }
+}

@@ -30,6 +30,12 @@ a.out
 node_modules/
 package-lock.json
 
+# MSIX icon generator intermediates and local installer build output
+out-4x/
+installer/output/
+installer/obj/
+*.msix
+
 # Python oracle venv (office interop harness)
 .venv-oracle/
 __pycache__/

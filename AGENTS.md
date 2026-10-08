@@ -90,11 +90,27 @@ build-swap-verify loop from the wsl-windows-native-dev skill:
 Local g++ syntax checks are fine for parser.cpp (portable C++), but the
 real compile gate is always CI.
 
+## Release pipeline
+
+Releases are cut by tag, the same way as win-dir-fan (FanFolder): bump the
+version in src/app.rc, push to main, create a vX.Y.Z release there, and
+.github/workflows/release.yml builds MarkDownItSetup-x64.msi and
+MarkDownIt-x64.msix and attaches them to the release. The full procedure,
+the Partner Center identity notes, and the post-build MSIX compliance checks
+live in references/release-pipeline.md. Follow it whenever a release or a
+Store submission is involved; its pitfalls (windows-2022 pinning,
+Identity-scoped sed, app.rc bump before tag) are easy to rediscover the
+hard way.
+
 ## Sandbox gotcha
 
-The output layer strips angle brackets from file content display and from
-write_file. Write C++ files via execute_code with base64 encode/decode to
-get raw bytes on disk. Verify with raw byte inspection, not the display.
+The output layer once stripped angle brackets from file content display and
+from write_file, which mangled markup files. A byte probe on 2026-10-08
+showed write_file preserves angle brackets in the current container, so
+markup files go through write_file directly now. If XML or RC output ever
+looks mangled again, verify with a raw byte count of '<' before mass
+writing, and fall back to execute_code with base64 encode/decode to get
+raw bytes on disk. Verify with raw byte inspection, not the display.
 
 ## Tests
 
@@ -109,6 +125,8 @@ get raw bytes on disk. Verify with raw byte inspection, not the display.
 | src/ | C++ source (main.cpp, parser.cpp, dom.h, app, renderer) |
 | third_party/md4c/ | vendored md4c parser (md4c.c, md4c.h, LICENSE) |
 | tests/ | gtest_lite.h + parser_smoke.cpp |
-| .github/workflows/ | build.yml CI pipeline |
+| .github/workflows/ | build.yml CI pipeline, release.yml release pipeline (MSI + MSIX) |
+| installer/ | WiX MSI project (MarkDownIt.wxs), License.rtf, MSIX manifest with committed PNG assets |
+| tools/msix-icons/ | Renders the MSIX PNG asset set from the app icon SVG (resvg + PIL) |
 | .hermes/plans/ | one-time task plans (viewer, typography, wysiwyg, svg/mermaid, mermaid flowchart closed, macos port, office implementation) |
-| references/ | standing design docs: ribbon menu, text editing spec, caret model, table model, office import/export spec, dagre port, macos pipeline |
+| references/ | standing design docs: ribbon menu, text editing spec, caret model, table model, office import/export spec, dagre port, macos pipeline, release pipeline |

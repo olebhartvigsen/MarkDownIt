@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 rescap">
+
+  <!-- Identity must match Partner Center exactly: App overview, "View app
+       identity details". If upload rejects the package, the error message
+       lists the expected Name and Publisher verbatim; copy those in. -->
+  <Identity Name="Hartvigsen.MarkDownIt"
+            Publisher="CN=26E1ACFC-F324-4E77-8BEF-404C2340AA56"
+            Version="0.2.0.0" />
+
+  <Properties>
+    <DisplayName>MarkDownIt</DisplayName>
+    <PublisherDisplayName>Hartvigsen</PublisherDisplayName>
+    <Logo>assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Resources>
+    <Resource Language="en-US"/>
+  </Resources>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Applications>
+    <Application Id="MarkDownIt"
+                 Executable="MarkDownIt.exe"
+                 EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        AppListEntry="default"
+        DisplayName="MarkDownIt"
+        Description="Native Windows markdown viewer and editor"
+        BackgroundColor="transparent"
+        Square150x150Logo="assets\Logo150.png"
+        Square44x44Logo="assets\Logo44.png">
+        <uap:DefaultTile Wide310x150Logo="assets\Wide310x150.png"
+                         Square310x310Logo="assets\Logo310.png"
+                         Square71x71Logo="assets\Logo71.png" />
+        <uap:SplashScreen Image="assets\SplashScreen.png" />
+      </uap:VisualElements>
+
+      <Extensions>
+        <!-- Let the packaged app open .md files from Explorer and the Store. -->
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="markdownit.md">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.md</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+</Package>

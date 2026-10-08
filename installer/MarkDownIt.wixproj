@@ -1,0 +1,25 @@
+<Project Sdk="WixToolset.Sdk/4.0.5">
+  <PropertyGroup>
+    <OutputName Condition="'$(OutputName)' == ''">MarkDownItSetup</OutputName>
+    <Platform Condition="'$(Platform)' == ''">x64</Platform>
+    <IntermediateOutputPath>obj\$(Platform)\</IntermediateOutputPath>
+    <OutputPath>output\</OutputPath>
+    <!-- Override with: dotnet build -p:ProductVersion=1.2.3 -->
+    <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.0</ProductVersion>
+    <DefineConstants>ProductVersion=$(ProductVersion)</DefineConstants>
+    <!-- ICE91 warns about per-user dirs not varying on ALLUSERS. Expected for perUser packages. -->
+    <SuppressIces>ICE91</SuppressIces>
+    <!-- Disable auto-globbing so stray wxs files are not picked up -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="MarkDownIt.wxs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="4.0.5" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="4.0.5" />
+  </ItemGroup>
+
+</Project>

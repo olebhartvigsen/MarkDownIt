@@ -1,0 +1,271 @@
+name: Release Build
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g. 1.0.0) - used when not triggered by a release tag'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    name: Build MarkDownIt (x64) and MSI
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: |
+          if [[ -n "${{ inputs.version }}" ]]; then
+            echo "VERSION=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "VERSION=0.0.0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Find SDK tools and generate uiribbon.lib
+        id: find-sdk
+        shell: powershell
+        run: |
+          # Find UICC.exe (build tool, any arch)
+          $uicc = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\bin" -Recurse -Filter "uicc.exe" -ErrorAction SilentlyContinue | Sort-Object FullName | Select-Object -Last 1
+          if ($uicc) {
+            "uicc_path=$($uicc.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Found UICC: $($uicc.FullName)"
+          }
+
+          # Find propsys.lib
+          $propsysLib = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\Lib" -Recurse -Filter "propsys.lib" -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -match "x64" } | Sort-Object FullName | Select-Object -Last 1
+          if ($propsysLib) {
+            "propsys_lib=$($propsysLib.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Found propsys.lib: $($propsysLib.FullName)"
+          }
+
+          # uiribbon.lib is not shipped with modern Windows SDKs.
+          # Generate it from uiribbon.dll using dumpbin + lib.exe.
+          $dumpbin = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $libexe = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\lib.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          Write-Host "dumpbin: $dumpbin"
+          Write-Host "lib.exe: $libexe"
+
+          $libDir = "D:\a\_temp\uiribbon_lib"
+          New-Item -ItemType Directory -Force -Path $libDir | Out-Null
+          $defFile = "$libDir\uiribbon.def"
+          $libFile = "$libDir\uiribbon.lib"
+
+          # Export symbols from uiribbon.dll
+          $exports = & $dumpbin /exports "C:\Windows\System32\uiribbon.dll"
+          $defContent = "LIBRARY uiribbon.dll`nEXPORTS`n"
+          foreach ($line in $exports) {
+            if ($line -match '^\s+\d+\s+[0-9A-F]+\s+(\S+)') {
+              $funcName = $matches[1]
+              $defContent += "  $funcName`n"
+            }
+          }
+          Set-Content -Path $defFile -Value $defContent -Encoding ASCII
+          Write-Host "Generated .def with exports"
+
+          # Create import library
+          & $libexe /def:"$defFile" /out:"$libFile" /machine:x64
+          if (Test-Path $libFile) {
+            "uiribbon_lib=$libFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Generated uiribbon.lib: $libFile"
+          } else {
+            Write-Error "Failed to generate uiribbon.lib"
+            exit 1
+          }
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64 `
+            -DUICC_EXE="${{ steps.find-sdk.outputs.uicc_path }}" `
+            -DUIRIBBON_LIB="${{ steps.find-sdk.outputs.uiribbon_lib }}" `
+            -DPROPSYS_LIB="${{ steps.find-sdk.outputs.propsys_lib }}"
+
+      - name: Build Release exe
+        run: cmake --build build --config Release
+
+      - name: Verify exe type
+        shell: bash
+        run: file build/Release/MarkDownIt.exe
+
+      - name: Setup .NET (for WiX)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.x'
+
+      - name: Install WiX toolset
+        run: dotnet tool install --global wix --version 4.0.5
+
+      - name: Add WiX UI and Util extensions
+        working-directory: installer
+        run: |
+          wix extension add WixToolset.UI.wixext/4.0.5
+          wix extension add WixToolset.Util.wixext/4.0.5
+
+      - name: Build MSI installer
+        working-directory: installer
+        run: >
+          dotnet build MarkDownIt.wixproj -c Release
+          -p:Platform=x64
+          -p:ProductVersion=${{ steps.version.outputs.VERSION }}
+          -p:OutputName=MarkDownItSetup-x64
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-x64
+          path: |
+            build/Release/MarkDownIt.exe
+            installer/output/MarkDownItSetup-x64.msi
+
+      - name: Upload EXE for MSIX
+        uses: actions/upload-artifact@v4
+        with:
+          name: exe-x64
+          path: build/Release/MarkDownIt.exe
+
+  build-msix:
+    name: Build MSIX package (Store)
+    runs-on: windows-2022
+    needs: build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: |
+          if [[ -n "${{ inputs.version }}" ]]; then
+            VERSION="${{ inputs.version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0"
+          fi
+          # MSIX package versions are always four-part: X.Y.Z.0
+          echo "MSIX_VERSION=${VERSION}.0" >> "$GITHUB_OUTPUT"
+
+      - name: Download x64 EXE
+        uses: actions/download-artifact@v4
+        with:
+          name: exe-x64
+          path: msix-staging/x64
+
+      - name: Prepare MSIX manifest
+        shell: bash
+        run: |
+          mkdir -p msix-staging
+          cp installer/msix/AppxManifest.xml msix-staging/AppxManifest.xml
+          # Scope the sed to the Identity line. A blanket Version="..." match
+          # would also clobber the TargetDeviceFamily MinVersion.
+          sed -i '/<Identity /s/Version="[^"]*"/Version="${{ steps.version.outputs.MSIX_VERSION }}"/' msix-staging/AppxManifest.xml
+
+      - name: Copy pre-generated MSIX assets
+        shell: bash
+        run: |
+          mkdir -p msix-staging/x64/assets
+          cp installer/msix/assets/*.png msix-staging/x64/assets/
+
+      - name: Inject ProcessorArchitecture into the staged manifest
+        shell: bash
+        run: |
+          cp msix-staging/AppxManifest.xml msix-staging/x64/AppxManifest.xml
+          sed -i 's/<Identity /<Identity ProcessorArchitecture="x64" /' msix-staging/x64/AppxManifest.xml
+
+      - name: Find latest Windows SDK
+        id: sdk
+        shell: pwsh
+        run: |
+          $sdkRoot = "C:\Program Files (x86)\Windows Kits\10\bin"
+          $latest = (Get-ChildItem $sdkRoot -Directory | Where-Object Name -like "10.0.*" | Sort-Object Name -Descending | Select-Object -First 1).Name
+          $makeAppx = Join-Path $sdkRoot "$latest/x64/makeappx.exe"
+          if (-not (Test-Path $makeAppx)) {
+            $makeAppx = Join-Path $sdkRoot "$latest/x86/makeappx.exe"
+          }
+          echo "MAKEAPPX=$makeAppx" >> $env:GITHUB_OUTPUT
+          $makePri = Join-Path $sdkRoot "$latest/x64/makepri.exe"
+          if (-not (Test-Path $makePri)) {
+            $makePri = Join-Path $sdkRoot "$latest/x86/makepri.exe"
+          }
+          echo "MAKEPRI=$makePri" >> $env:GITHUB_OUTPUT
+
+      - name: Build resources.pri (index qualified assets)
+        shell: pwsh
+        run: |
+          # Without a resources.pri, MRT never indexes the qualified asset
+          # names (targetsize-*, altform-unplated), so the taskbar falls back
+          # to the plated path and paints BackgroundColor behind the icon.
+          $stage = "msix-staging/x64"
+          $cfg = "msix-staging/priconfig-x64.xml"
+          & "${{ steps.sdk.outputs.MAKEPRI }}" createconfig /cf $cfg /dq en-US /o
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & "${{ steps.sdk.outputs.MAKEPRI }}" new /pr $stage /cf $cfg /of "$stage/resources.pri" /o
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if (-not (Test-Path "$stage/resources.pri")) {
+            Write-Error "resources.pri missing"
+            exit 1
+          }
+          Write-Host "resources.pri built"
+
+      - name: Pack MSIX
+        shell: pwsh
+        run: |
+          & "${{ steps.sdk.outputs.MAKEAPPX }}" pack -d msix-staging/x64 -p msix-staging/MarkDownIt-x64.msix
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Upload MSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: msix-packages
+          path: msix-staging/MarkDownIt-x64.msix
+
+  publish:
+    name: Publish release assets
+    runs-on: ubuntu-latest
+    needs: [build, build-msix]
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-x64
+          path: artifacts/build
+
+      - name: Download MSIX artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: msix-packages
+          path: artifacts/msix
+
+      - name: Rename the raw exe for the release
+        shell: bash
+        run: cp artifacts/build/build/Release/MarkDownIt.exe artifacts/MarkDownIt-x64.exe
+
+      - name: Attach MSI, MSIX and EXE to the release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            --clobber \
+            "artifacts/MarkDownIt-x64.exe" \
+            "artifacts/build/installer/output/MarkDownItSetup-x64.msi" \
+            "artifacts/msix/MarkDownIt-x64.msix"

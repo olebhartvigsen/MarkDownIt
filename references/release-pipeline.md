@@ -1,0 +1,145 @@
+# Release pipeline
+
+MarkDownIt ships through one tag-driven GitHub Actions workflow,
+`.github/workflows/release.yml`, and two channels:
+
+- `MarkDownItSetup-x64.msi`, a per-user WiX installer for direct download
+- `MarkDownIt-x64.msix`, a full-trust package for Microsoft Store submission
+
+The pipeline mirrors win-dir-fan (FanFolder). The version comes from the git
+tag, not from a config file. A tag `vX.Y.Z` becomes `X.Y.Z` for the MSI and
+`X.Y.Z.0` for the MSIX identity. There is no arm64 leg yet; the ribbon SDK
+steps in build.yml are x64-specific, so the release builds x64 only.
+
+## What the workflow builds
+
+`build` (windows-2022) repeats the SDK dance from build.yml (UICC, generated
+uiribbon.lib, propsys.lib), builds `build/Release/MarkDownIt.exe`, then runs
+WiX 4.0.5 against `installer/MarkDownIt.wixproj`. The MSI installs per-user
+into `%LOCALAPPDATA%\MarkDownIt`, adds Start menu and desktop shortcuts,
+closes a running MarkDownIt.exe during upgrade, and launches the app after
+install. No auto-start entry: MarkDownIt is not a resident utility.
+
+`build-msix` stages the exe, copies `installer/msix/AppxManifest.xml`, sets
+the package version with a sed scoped to the Identity line, injects
+`ProcessorArchitecture="x64"`, copies the committed PNGs from
+`installer/msix/assets/`, builds `resources.pri` with makepri, and packs with
+makeappx. The Store version registers `.md` through a file type association;
+the plain exe handles association itself at runtime.
+
+`publish` attaches `MarkDownIt-x64.exe`, `MarkDownItSetup-x64.msi` and
+`MarkDownIt-x64.msix` to the GitHub release. A `workflow_dispatch` run builds
+everything but attaches nothing; use it to prove a version bump compiles
+before you tag.
+
+## Cutting a release
+
+1. Get `main` green. build.yml runs the tests and the oracle jobs on every
+   push; a release tag should point at a commit that passed them.
+2. Bump the version in `src/app.rc`. Four spots must agree:
+
+   | Field | Value for 1.2.3 |
+   |---|---|
+   | `FILEVERSION` | `1,2,3,0` |
+   | `PRODUCTVERSION` | `1,2,3,0` |
+   | `VALUE "FileVersion"` | `"1.2.3.0"` |
+   | `VALUE "ProductVersion"` | `"1.2.3.0"` |
+
+   app.rc is the only version home in the source tree. CI never edits it.
+   Commit the bump, push, and let build.yml go green before tagging.
+3. Create the release on `main`:
+
+   ```bash
+   gh release create vX.Y.Z --repo olebhartvigsen/MarkDownIt \
+     --target main --title "MarkDownIt X.Y.Z" --notes "...changelog..."
+   ```
+
+4. Watch the run by polling (a `gh run watch` loop outlives a foreground
+   shell timeout in this workspace):
+
+   ```bash
+   gh run list --workflow=release.yml --limit 1 --json databaseId,status,event
+   gh run view <id> --json status,conclusion,jobs \
+     --jq '.status, (.jobs[]|"\(.name): \(.conclusion // .status)")'
+   ```
+
+5. Verify the release grew the three assets:
+
+   ```bash
+   gh release view vX.Y.Z --repo olebhartvigsen/MarkDownIt \
+     --json assets --jq '.assets[].name'
+   ```
+
+## Microsoft Store submission
+
+The MSIX is full trust (`runFullTrust`), so the packaged exe runs as an
+ordinary desktop process with full Win32 access. The Store signs MSIX
+packages during certification, which removes the code-signing certificate
+requirement that Policy 10.2.9 puts on MSI/EXE submissions.
+
+- The first submission is manual in Partner Center: reserve the app name,
+  upload `MarkDownIt-x64.msix`, fill in listing, screenshots, age rating.
+  The submission API cannot create a first submission.
+- The `<Identity>` in `installer/msix/AppxManifest.xml` must match Partner
+  Center exactly: Name, Publisher, and PublisherDisplayName. The current
+  values assume the same Partner Center account as FanFolder:
+  `Hartvigsen.MarkDownIt`, `CN=26E1ACFC-F324-4E77-8BEF-404C2340AA56`,
+  `Hartvigsen`. If an upload is rejected, the error message lists the
+  expected values verbatim; copy them into the manifest and rebuild.
+- Later updates can go through Partner Center's upload, or through the
+  Store submission API. The microsoft-store-submission skill documents the
+  API, the CSV listing format, and its pitfalls.
+
+## MSIX compliance checks after every CI build
+
+Run this against the built package before uploading it anywhere:
+
+```python
+import zipfile, re
+z = zipfile.ZipFile("MarkDownIt-x64.msix")
+m = z.read("AppxManifest.xml").decode()
+print(re.search(r'<Identity [^>]*>', m).group())     # Version="X.Y.Z.0", ProcessorArchitecture="x64"
+print(re.search(r'MinVersion="[^"]*"', m).group())   # must stay 10.0.19041.0
+names = z.namelist()
+print("resources.pri:", any("resources.pri" in n.lower() for n in names))
+print("unplated assets:", sum("altform-unplated" in n for n in names))
+```
+
+A wrong MinVersion means the version sed lost its Identity scoping. A
+missing resources.pri or zero unplated assets means the taskbar icon will
+be plated with the tile background color.
+
+## Regenerating the MSIX icon assets
+
+The 75 PNGs under `installer/msix/assets/` are committed; CI copies them
+without processing. After an icon change:
+
+```bash
+cd tools/msix-icons
+npm install
+npm run render
+python3 finalize.py
+```
+
+`render.mjs` draws every asset at 4x from `assets/icons/app-markdownit.svg`
+via resvg; `finalize.py` downscales with LANCZOS and writes the final set:
+4 base logos, 20 scale variants, 16 targetsize sizes in the plain plus
+`altform-unplated` and `altform-lightunplated` flavors, StoreLogo,
+Wide310x150, and SplashScreen. The unplated flavors are byte-identical to
+the plain assets because the artwork already has a transparent background.
+
+## Pitfalls carried over from the FanFolder pipeline
+
+- Keep the runners pinned to `windows-2022`. `windows-latest` moved to
+  windows-2025, where the Visual Studio generator fails at CMake configure.
+- The version sed must stay scoped to the Identity line. A blanket
+  `Version="..."` match also rewrites the TargetDeviceFamily MinVersion,
+  and the Store rejects the package for it.
+- Bump `app.rc` before tagging. The tag drives the MSI and MSIX versions;
+  the exe reports whatever app.rc holds, and a mismatch makes the built
+  artifacts hard to verify.
+- The version block in app.rc uses numeric IDs and literals on purpose:
+  rc.exe runs from the CMake custom command without the SDK include paths,
+  so `#include <winver.h>` would fail there.
+- Never hand-edit the built manifest or unpack a shipped MSIX to change
+  something. Fix the source, rerun the workflow, upload the new package.
