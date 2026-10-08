@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MarkDownIt: a native Windows Markdown viewer</title>
+<meta name="description" content="MarkDownIt is a native Windows app for Markdown files: one executable, no Electron, no .NET runtime. Renders Mermaid diagrams, imports Word, exports Word and PDF. MIT licensed, in beta.">
+<link rel="canonical" href="https://olebhartvigsen.github.io/MarkDownIt/">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" href="markdownit-icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0F766E">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="MarkDownIt">
+<meta property="og:title" content="MarkDownIt: a native Windows Markdown viewer">
+<meta property="og:description" content="One executable, no Electron, no .NET runtime. Native Mermaid rendering, Word import and export, PDF export. MIT licensed.">
+<meta property="og:url" content="https://olebhartvigsen.github.io/MarkDownIt/">
+<meta property="og:image" content="https://olebhartvigsen.github.io/MarkDownIt/social-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="MarkDownIt, a native Windows Markdown viewer. Single exe, native Mermaid rendering, Word and PDF support.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="MarkDownIt: a native Windows Markdown viewer">
+<meta name="twitter:description" content="One executable, no Electron, no .NET runtime. Native Mermaid rendering, Word import and export, PDF export. MIT licensed.">
+<meta name="twitter:image" content="https://olebhartvigsen.github.io/MarkDownIt/social-card.png">
+<meta name="twitter:image:alt" content="MarkDownIt, a native Windows Markdown viewer. Single exe, native Mermaid rendering, Word and PDF support.">
+<style>
+:root{
+  --teal:#0F766E; --teal-bright:#14B8A6; --teal-deep:#0B5E57;
+  --ink:#22303A; --muted:#5B6B7A; --line:#E2E8E8; --bg:#FFFFFF; --bg-soft:#F4F8F7;
+  --navy:#0B1E22; --radius:14px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;color:var(--ink);background:var(--bg);line-height:1.6}
+img{max-width:100%}
+a{color:var(--teal);text-decoration:none}
+a:hover{text-decoration:underline}
+:focus-visible{outline:3px solid var(--teal-bright);outline-offset:2px;border-radius:4px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+h1,h2,h3{line-height:1.25;margin:0 0 .5em}
+h2{font-size:30px}
+h3{font-size:18px}
+p{margin:0 0 1em}
+.lead{color:var(--muted);font-size:17px;max-width:62ch}
+
+/* nav */
+.site-nav{background:var(--bg);border-bottom:1px solid var(--line)}
+.site-nav .wrap{display:flex;align-items:center;gap:22px;min-height:60px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:var(--ink)}
+.brand svg{width:28px;height:28px;border-radius:50%}
+.site-nav nav{display:flex;gap:18px;margin-left:auto;align-items:center;flex-wrap:wrap}
+.site-nav nav a{color:var(--muted);font-size:15px}
+.site-nav nav a:hover{color:var(--ink)}
+.nav-cta{background:var(--teal-bright);color:#04302B !important;font-weight:600;padding:8px 14px;border-radius:9px}
+.nav-cta:hover{background:#0D9488;text-decoration:none}
+
+/* buttons */
+.btn{display:inline-block;padding:13px 22px;border-radius:10px;font-weight:600;font-size:16px;text-decoration:none}
+.btn:hover{text-decoration:none}
+.btn-solid{background:var(--teal-bright);color:#04302B}
+.btn-solid:hover{background:#0D9488}
+.btn-ghost{border:1.5px solid rgba(255,255,255,.55);color:#fff}
+.btn-ghost:hover{background:rgba(255,255,255,.09)}
+.btn-plain{background:var(--teal);color:#fff}
+.btn-plain:hover{background:var(--teal-deep)}
+
+/* hero */
+.hero{background:linear-gradient(135deg,#0B1E22 0%,#123A34 55%,#0F5E57 100%);color:#fff;padding:84px 0 76px}
+.hero .wrap{display:grid;grid-template-columns:1.15fr .85fr;gap:48px;align-items:center}
+.eyebrow{display:inline-block;font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7ED8CC;margin-bottom:14px}
+.hero h1{font-size:52px;margin-bottom:.35em}
+.hero .lead{color:#C4D9D6;max-width:52ch}
+.hero-ctas{display:flex;gap:14px;margin:26px 0 30px;flex-wrap:wrap}
+.chip-row{display:flex;gap:10px;flex-wrap:wrap}
+.chip{border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:5px 13px;font-size:13.5px;color:#D7E7E4}
+.hero-visual{display:flex;flex-direction:column;align-items:center;gap:26px}
+.hero-icon{width:150px;height:150px;filter:drop-shadow(0 14px 34px rgba(0,0,0,.35))}
+.mock{width:330px;max-width:100%;background:#fff;border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.35);overflow:hidden;text-align:left}
+.mock-title{display:flex;align-items:center;gap:8px;padding:9px 12px;background:#EEF3F2;border-bottom:1px solid #E2E8E8;font-size:12px;color:#5B6B7A}
+.mock-title svg{width:14px;height:14px;border-radius:3px}
+.mock-body{padding:16px 18px 18px}
+.mock-h{height:13px;width:58%;background:var(--teal-bright);border-radius:4px;margin-bottom:10px;opacity:.9}
+.mock-h2{height:10px;width:38%;background:#9AA8B4;border-radius:4px;margin:14px 0 8px}
+.mock-line{height:7px;background:#D8DFE3;border-radius:4px;margin-bottom:7px}
+.w95{width:95%}.w80{width:80%}.w70{width:70%}.w60{width:60%}.w50{width:50%}
+.mock-table{display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin:13px 0 3px}
+.mock-table div{height:16px;border:1px solid #E2E8E8;border-radius:3px;background:#F7FAF9}
+.mock-table div:first-child{background:#E4F1EF;border-color:#CBE4E0}
+
+/* sections */
+section{padding:72px 0}
+.sec-alt{background:var(--bg-soft)}
+.sec-head{margin-bottom:34px}
+
+/* features grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px}
+.card{border:1px solid var(--line);border-radius:var(--radius);padding:24px;background:#fff}
+.card p{color:var(--muted);font-size:15px;margin:0}
+.card h3{color:var(--ink)}
+
+/* mermaid */
+.mermaid-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:44px;align-items:start}
+.mermaid-grid ul{color:var(--muted);padding-left:20px;margin:14px 0}
+.mermaid-grid li{margin-bottom:6px}
+pre{background:var(--navy);color:#E7F2F0;border-radius:12px;padding:18px 20px;overflow-x:auto;font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:13.5px;line-height:1.55;margin:0}
+pre .k{color:#7ED8CC}
+.note{color:var(--muted);font-size:13.5px;margin-top:12px}
+
+/* office steps */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.step{border-top:3px solid var(--teal-bright);padding-top:16px}
+.step .tag{display:inline-block;font-size:12.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--teal);margin-bottom:6px}
+.step p{color:var(--muted);font-size:15px;margin:0}
+
+/* download */
+.download-box{border:1px solid var(--line);border-radius:var(--radius);padding:34px;background:#fff}
+.download-box ol{color:var(--muted);padding-left:22px;margin:18px 0 24px}
+.download-box li{margin-bottom:9px}
+.download-box code{background:var(--bg-soft);border:1px solid var(--line);border-radius:6px;padding:2px 7px;font-family:"Cascadia Mono",Consolas,monospace;font-size:13.5px}
+
+/* faq */
+.faq-item{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;background:#fff}
+.faq-item summary{cursor:pointer;font-weight:600;padding:15px 46px 15px 18px;list-style:none;position:relative}
+.faq-item summary::-webkit-details-marker{display:none}
+.faq-item summary::after{content:"+";position:absolute;right:18px;top:50%;transform:translateY(-50%);font-size:20px;color:var(--teal);font-weight:400}
+.faq-item[open] summary::after{content:"−"}
+.faq-item p{color:var(--muted);padding:0 18px 16px;margin:0;font-size:15px}
+
+/* footer */
+footer{background:var(--navy);color:#B9CCC9;padding:44px 0 50px;font-size:14.5px}
+footer .wrap{display:flex;flex-direction:column;gap:12px}
+footer nav{display:flex;gap:20px;flex-wrap:wrap}
+footer a{color:#8FD9CE}
+footer .fine{color:#7E9491;font-size:13px}
+
+@media (max-width:900px){
+  .hero .wrap{grid-template-columns:1fr}
+  .hero h1{font-size:40px}
+  .hero-visual{order:-1}
+  .mermaid-grid{grid-template-columns:1fr}
+  .steps{grid-template-columns:1fr}
+  section{padding:56px 0}
+}
+</style>
+</head>
+<body>
+
+<header class="site-nav">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="MarkDownIt home">
+      <svg viewBox="0 0 256 256" aria-hidden="true"><defs><linearGradient id="tg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#14B8A6"/><stop offset="1" stop-color="#0F766E"/></linearGradient></defs><circle cx="128" cy="128" r="124" fill="url(#tg)"/><path d="M44 190V66h30l54 76 54-76h30v124h-34V126l-50 68-50-68v64z" fill="#fff"/></svg>
+      MarkDownIt
+    </a>
+    <nav aria-label="Main">
+      <a href="#features">Features</a>
+      <a href="#mermaid">Mermaid</a>
+      <a href="#office">Word and PDF</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/olebhartvigsen/MarkDownIt" target="_blank" rel="noopener">GitHub</a>
+      <a class="nav-cta" href="#download">Download</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+<section class="hero">
+  <div class="wrap">
+    <div>
+      <span class="eyebrow">Native Windows Markdown app</span>
+      <h1>MarkDownIt</h1>
+      <p class="lead">MarkDownIt opens and edits Markdown files the way a Windows app should: one executable, no Electron shell, no .NET runtime, rendering with the graphics stack that ships in Windows.</p>
+      <div class="hero-ctas">
+        <a class="btn btn-solid" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Download the beta</a>
+        <a class="btn btn-ghost" href="#features">See what it does</a>
+      </div>
+      <div class="chip-row" aria-label="Facts">
+        <span class="chip">Windows 10 and 11</span>
+        <span class="chip">x64</span>
+        <span class="chip">Single exe</span>
+        <span class="chip">MIT license</span>
+        <span class="chip">Beta</span>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <img class="hero-icon" src="markdownit-icon.svg" alt="MarkDownIt app icon">
+      <div class="mock" aria-hidden="true">
+        <div class="mock-title"><svg viewBox="0 0 256 256"><circle cx="128" cy="128" r="124" fill="#0F766E"/><path d="M44 190V66h30l54 76 54-76h30v124h-34V126l-50 68-50-68v64z" fill="#fff"/></svg>introduction.md</div>
+        <div class="mock-body">
+          <div class="mock-h"></div>
+          <div class="mock-line w95"></div>
+          <div class="mock-line w80"></div>
+          <div class="mock-line w60"></div>
+          <div class="mock-h2"></div>
+          <div class="mock-line w95"></div>
+          <div class="mock-line w70"></div>
+          <div class="mock-table"><div></div><div></div><div></div><div></div><div></div><div></div></div>
+          <div class="mock-line w50"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Features</h2>
+      <p class="lead">The whole app is one executable. These are the parts most people touch first.</p>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <h3>One executable, nothing to install</h3>
+        <p>MarkDownIt is a single exe written in C++. No Electron shell, no .NET runtime, no bundled dependencies. Copy it somewhere and run it.</p>
+      </div>
+      <div class="card">
+        <h3>Editing in both views</h3>
+        <p>Switch between rendered editing and a plain source view. Bold, italic, links, inline code, headings and lists are on the ribbon when you want them, and the source is always one toggle away.</p>
+      </div>
+      <div class="card">
+        <h3>Tables and structure</h3>
+        <p>Insert a table, add or remove rows and columns, and jump around the document from the outline pane. Find and replace is built in.</p>
+      </div>
+      <div class="card">
+        <h3>Zoom that remembers</h3>
+        <p>Zoom from 25% to 400%. The factor follows you to the next file you open and comes back on the next launch. The ribbon keeps its size.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="mermaid" class="sec-alt">
+  <div class="wrap mermaid-grid">
+    <div>
+      <h2>Mermaid, drawn natively</h2>
+      <p class="lead">Mermaid blocks in your Markdown become diagrams in the window. They are parsed and drawn by the app itself, on the same Direct2D pipeline that renders the rest of the document.</p>
+      <ul>
+        <li>Flowcharts, pie charts and sequence diagrams.</li>
+        <li>No browser window, no JavaScript engine, no network.</li>
+        <li>Layouts follow dagre's topology, computed locally.</li>
+      </ul>
+      <p class="note">Styling directives, click handlers and nested subgraphs are not implemented yet.</p>
+    </div>
+    <div>
+<pre><span class="k">```mermaid</span>
+flowchart TD
+    A[Start] --> B{Decide}
+    B -->|yes| C(Do the thing)
+    B -->|no| D([Skip])
+    C --> E((Done))
+    D --> E
+<span class="k">```</span></pre>
+      <p class="note">A flowchart as it appears in the source. MarkDownIt draws it in the rendered view.</p>
+    </div>
+  </div>
+</section>
+
+<section id="office">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Word and PDF</h2>
+      <p class="lead">Markdown does not live alone. MarkDownIt imports Word documents and exports Word and PDF, so the same text can travel between formats.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <span class="tag">Import</span>
+        <h3>Open a .docx file</h3>
+        <p>Headings, lists, tables, images and links come across as Markdown, ready to edit.</p>
+      </div>
+      <div class="step">
+        <span class="tag">Export</span>
+        <h3>Save as .docx</h3>
+        <p>The Word export is checked in CI by an independent reader, so what you send is what opens on the other side.</p>
+      </div>
+      <div class="step">
+        <span class="tag">Export</span>
+        <h3>Save as PDF</h3>
+        <p>Layout, page breaks and footers survive the trip from Markdown to PDF.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="download" class="sec-alt">
+  <div class="wrap">
+    <div class="download-box">
+      <h2>Download the beta</h2>
+      <p class="lead">MarkDownIt is in beta. Builds are attached to GitHub releases as a single x64 executable.</p>
+      <ol>
+        <li>Download <code>MarkDownIt.exe</code> from the <a href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">latest release</a> on GitHub.</li>
+        <li>Put the file anywhere and run it. There is no installer and nothing to configure.</li>
+        <li>Optional: use <em>Associate .md files</em> in the ribbon so double-clicking a Markdown file opens MarkDownIt.</li>
+      </ol>
+      <a class="btn btn-plain" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Go to releases</a>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>FAQ</h2>
+      <p class="lead">Short answers to the questions that come up.</p>
+    </div>
+    <details class="faq-item">
+      <summary>What is MarkDownIt?</summary>
+      <p>A native Windows app for Markdown files. It opens .md files from Explorer, renders them with Direct2D and DirectWrite, and lets you edit in a rendered view or a source view.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Which Windows versions does it run on?</summary>
+      <p>Windows 10 or 11, x64. The rendering APIs it uses ship with Windows, so there is nothing else to install.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Does Mermaid rendering need the internet?</summary>
+      <p>No. Mermaid blocks are parsed and drawn by the app itself, with no browser window, no JavaScript engine and no network calls. Flowcharts, pie charts and sequence diagrams are supported. Styling directives, click handlers and nested subgraphs are not implemented yet.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Can MarkDownIt read Word documents?</summary>
+      <p>Yes. MarkDownIt imports .docx files and converts them to Markdown. Elements that Markdown cannot express, such as tracked changes and comments, do not carry over.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Can it save Word and PDF files?</summary>
+      <p>It exports .docx and PDF. The Word export is checked in CI by an independent reader, and the PDF export keeps layout, page breaks and footers.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Why is it a native app instead of Electron?</summary>
+      <p>Because a Markdown window does not need a browser inside it. MarkDownIt is one executable that renders with Direct2D and DirectWrite, so it behaves like the rest of Windows, and there is no runtime to download.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Is MarkDownIt free?</summary>
+      <p>Yes. MarkDownIt is MIT licensed and free for personal and commercial use. The source code is on <a href="https://github.com/olebhartvigsen/MarkDownIt" target="_blank" rel="noopener">GitHub</a>.</p>
+    </details>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <nav aria-label="Footer">
+      <a href="https://github.com/olebhartvigsen/MarkDownIt" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/olebhartvigsen/MarkDownIt/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/olebhartvigsen/MarkDownIt/issues" target="_blank" rel="noopener">Issues</a>
+      <a href="https://github.com/olebhartvigsen/MarkDownIt/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
+    </nav>
+    <div>MarkDownIt is an independent project by Ole Bhartvigsen.</div>
+    <div class="fine">The document window on this page is an illustration, not a screenshot.</div>
+  </div>
+</footer>
+
+</body>
+</html>
