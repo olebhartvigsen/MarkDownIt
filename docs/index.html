@@ -152,6 +152,17 @@ section{padding:72px 0}
 .ms-line{white-space:nowrap;overflow:hidden}
 .ms-c{color:#7ED8CC;font-weight:600}
 
+/* tiles + cta strip */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-top:18px}
+.tile{border:1px solid var(--line);border-radius:12px;padding:16px 18px;background:#fff}
+.tile h4{margin:0 0 6px;font-size:15px}
+.tile p{margin:0;color:var(--muted);font-size:14px}
+.cta-strip{background:var(--teal-deep);color:#fff;padding:46px 0}
+.cta-strip .wrap{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.cta-strip h2{font-size:26px;margin:0 0 6px}
+.cta-strip p{margin:0;color:#BFE3DE;font-size:15px}
+.btn-invert{background:#fff;color:var(--teal-deep)}
+
 /* mermaid */
 .mermaid-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:44px;align-items:start}
 .mermaid-grid ul{color:var(--muted);padding-left:20px;margin:14px 0}
@@ -240,7 +251,7 @@ footer .fine{color:#7E9491;font-size:13px}
       <h1>MarkDownIt</h1>
       <p class="lead">MarkDownIt is a word processor for Markdown files. You type in the rendered view itself, with a caret, selection, tables and undo, and the file on disk stays plain Markdown.</p>
       <div class="hero-ctas">
-        <a class="btn btn-solid" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Download the beta</a>
+        <a class="btn btn-solid" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Download for Windows 10 or 11</a>
         <a class="btn btn-ghost" href="#features">See what it does</a>
       </div>
       <div class="chip-row" aria-label="Facts">
@@ -295,6 +306,24 @@ footer .fine{color:#7E9491;font-size:13px}
       <div class="card">
         <h3>Zoom that remembers</h3>
         <p>Zoom from 25% to 400%. The factor follows you to the next file you open and comes back on the next launch. The ribbon keeps its size.</p>
+      </div>
+    </div>
+    <div class="tiles">
+      <div class="tile">
+        <h4>Mark text</h4>
+        <p>Mark passages in the rendered view so they stand out when you come back.</p>
+      </div>
+      <div class="tile">
+        <h4>Find and replace</h4>
+        <p>A dock at the bottom of the window, with a replace mode one click away.</p>
+      </div>
+      <div class="tile">
+        <h4>Drag and drop</h4>
+        <p>Drop a .md file on the window from Explorer or a browser to open it.</p>
+      </div>
+      <div class="tile">
+        <h4>Associate .md files</h4>
+        <p>One ribbon command, and double-clicking a Markdown file opens MarkDownIt.</p>
       </div>
     </div>
   </div>
@@ -435,7 +464,7 @@ flowchart TD
       <p class="lead">MarkDownIt is in beta. Builds are attached to GitHub releases as a single x64 executable.</p>
       <ol>
         <li>Download <code>MarkDownIt.exe</code> from the <a href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">latest release</a> on GitHub.</li>
-        <li>Put the file anywhere and run it. There is no installer and nothing to configure.</li>
+        <li>Put the file anywhere and run it. There is no installer, no account, and nothing is uploaded: your files stay on your machine.</li>
         <li>Optional: use <em>Associate .md files</em> in the ribbon so double-clicking a Markdown file opens MarkDownIt.</li>
       </ol>
       <a class="btn btn-plain" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Go to releases</a>
@@ -490,6 +519,16 @@ flowchart TD
 </section>
 
 </main>
+
+<section class="cta-strip">
+  <div class="wrap">
+    <div>
+      <h2>Ready to try it?</h2>
+      <p>One executable for Windows 10 or 11. No installer, no account.</p>
+    </div>
+    <a class="btn btn-invert" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Download MarkDownIt</a>
+  </div>
+</section>
 
 <footer>
   <div class="wrap">
