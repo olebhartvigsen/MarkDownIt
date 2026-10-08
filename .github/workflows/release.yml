@@ -242,6 +242,13 @@ jobs:
     needs: [build, build-msix]
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        # gh resolves the repository from git context; without a checkout,
+        # gh release upload fails with "not a git repository".
+        with:
+          persist-credentials: false
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -254,18 +261,17 @@ jobs:
           name: msix-packages
           path: artifacts/msix
 
-      - name: Rename the raw exe for the release
-        shell: bash
-        run: cp artifacts/build/build/Release/MarkDownIt.exe artifacts/MarkDownIt-x64.exe
-
-      - name: Attach MSI, MSIX and EXE to the release
+      - name: Attach the install artifacts to the release
         if: github.event_name == 'release'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Release assets are install artifacts only: the per-user MSI and
+          # the Store MSIX. No raw exe, no manifests. GitHub itself always
+          # adds the automatic Source code (zip/tar.gz) archives; those are
+          # not assets and cannot be removed.
           gh release upload "${{ github.ref_name }}" \
             --clobber \
-            "artifacts/MarkDownIt-x64.exe" \
             "artifacts/build/installer/output/MarkDownItSetup-x64.msi" \
             "artifacts/msix/MarkDownIt-x64.msix"
