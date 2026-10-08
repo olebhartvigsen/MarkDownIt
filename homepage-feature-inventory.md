@@ -87,7 +87,14 @@ Mermaid (mermaid-dagre-port.md, flowchart plan closed 2026-09-16, tree):
 - Flowcharts: 4 directions, rectangle/rounded/stadium/diamond/circle nodes,
   solid/dotted/thick edges with or without arrowheads, labels, chains,
   node id reuse, simple subgraphs as flat bands
+- Flowchart plan closed 2026-09-16 at 1a5c334 (ancestor of main): all DoD
+  boxes checked, GUI-verified TD/TB/BT/LR/RL at 25/100/400% zoom, malformed
+  fence falls back to a code block; layout cache is a bounded FIFO keyed by
+  fence source plus the exact zoom bit pattern; Mermaid default palette
+  (#ECECFF fill, #9370DB border) as theme tokens
 - Pie charts (default palette, title, labels, legend) and sequence diagrams
+  (theme-default parity: activation boxes, notes, autonumber, alt/par/critical
+  tag boxes, footer box; oracle scripts pie_oracle.mjs / sequence_oracle.mjs)
 - CI golden oracle against real mermaid.js output within 0.5 DIP on 9 fixtures
 - Broken or unsupported fence falls back to a code block, never blanks
 - NOT supported (say so if listing limits): styling directives, click
@@ -104,10 +111,15 @@ Office (office-import-export-spec.md + tree; office milestone 1, partial):
 
 Distribution (release-pipeline.md, release.yml + installer/ in tree):
 - Tag vX.Y.Z build attaches to the GitHub release:
-  MarkDownIt-x64.exe (portable), MarkDownItSetup-x64.msi (per-user installer,
-  shortcuts, closes running instance, launches after install),
-  MarkDownIt-x64.msix (Microsoft Store package, Store registers .md)
+  MarkDownIt-x64.exe (portable), MarkDownItSetup-x64.msi (per-user installer
+  into %LOCALAPPDATA%\MarkDownIt, shortcuts, closes running instance, launches
+  after install), MarkDownIt-x64.msix (full-trust Store package, Identity
+  Hartvigsen.MarkDownIt, Store registers .md)
 - Windows x64 only, no arm64, no winget in any doc
+- app.rc version on main is 0.2.0; a workflow_dispatch dry-run builds all
+  artifacts without attaching them; cutting the first tag has not happened
+- Microsoft Store submission is a manual Partner Center step; no listing is
+  live, so never claim Store availability on the homepage
 
 ## Spec-only, must stay OFF the homepage
 

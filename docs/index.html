@@ -311,11 +311,11 @@ footer .fine{color:#7E9491;font-size:13px}
     <div class="tiles">
       <div class="tile">
         <h4>Mark text</h4>
-        <p>Highlight passages with Ctrl+Shift+H. Marks live outside your file and never reach your exports.</p>
+        <p>Highlight passages with Ctrl+Shift+H. Marks live outside your file, survive moves and renames, and never reach your exports.</p>
       </div>
       <div class="tile">
         <h4>Find and replace</h4>
-        <p>A dock at the bottom of the window, with a replace mode one click away.</p>
+        <p>Ctrl+F and Ctrl+H open a dock along the bottom edge, with a replace mode one click away.</p>
       </div>
       <div class="tile">
         <h4>Drag and drop</h4>
@@ -390,7 +390,7 @@ footer .fine{color:#7E9491;font-size:13px}
       <h2>Mermaid, drawn natively</h2>
       <p class="lead">Mermaid blocks in your Markdown become diagrams in the window. They are parsed and drawn by the app itself, on the same Direct2D pipeline that renders the rest of the document.</p>
       <ul>
-        <li>Flowcharts with five node shapes and four directions, plus pie charts and sequence diagrams.</li>
+        <li>Flowcharts with five node shapes, four directions and simple subgraphs, plus pie charts and sequence diagrams.</li>
         <li>No browser window, no JavaScript engine, no network.</li>
         <li>Layouts follow dagre's topology and are checked in CI against real mermaid.js output, matching within half a device-independent pixel.</li>
       </ul>
@@ -448,7 +448,7 @@ flowchart TD
       <div class="step">
         <span class="tag">Import</span>
         <h3>Open a .docx file</h3>
-        <p>Headings, lists, tables, images and links come across as Markdown, ready to edit.</p>
+        <p>Headings, lists, tables, images and links come across as Markdown, and the import reports anything Word-specific it had to leave out.</p>
       </div>
       <div class="step">
         <span class="tag">Export</span>
@@ -489,7 +489,7 @@ flowchart TD
     </div>
     <details class="faq-item">
       <summary>What is MarkDownIt?</summary>
-      <p>A native Windows app for Markdown files. It opens .md files from Explorer, renders them with Direct2D and DirectWrite, and lets you edit in a rendered view or a source view.</p>
+      <p>A native Windows app for Markdown files. It opens .md files from Explorer, parses them with the built-in md4c parser, renders with Direct2D and DirectWrite, and lets you edit in a rendered view or a source view.</p>
     </details>
     <details class="faq-item">
       <summary>Is it a word processor?</summary>
@@ -509,7 +509,7 @@ flowchart TD
     </details>
     <details class="faq-item">
       <summary>Can MarkDownIt read Word documents?</summary>
-      <p>Yes. MarkDownIt imports .docx files and converts them to Markdown. Elements that Markdown cannot express, such as tracked changes and comments, do not carry over.</p>
+      <p>Yes. MarkDownIt imports .docx files and converts them to Markdown, and it reports what it could not carry. Word-specific elements such as tracked changes and comments stay in the original file.</p>
     </details>
     <details class="faq-item">
       <summary>Can it save Word and PDF files?</summary>
