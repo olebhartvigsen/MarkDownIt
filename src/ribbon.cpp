@@ -465,15 +465,10 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
                         PropVariantInit(&var);
                         var.vt = VT_LPWSTR;
                         var.pwszVal = copy;
-                        diag::TraceFmt(
-                            "width label push start i=%d mode=%d", i, mode);
                         HRESULT hrSet = g_pRibbonFramework
                             ? g_pRibbonFramework->SetUICommandProperty(
                                   wCmds[i], UI_PKEY_Label, var)
                             : E_FAIL;
-                        diag::TraceFmt(
-                            "width label push done i=%d hr=0x%08X",
-                            i, (unsigned)hrSet);
                         if (g_pRibbonFramework) {
                             g_pRibbonFramework->InvalidateUICommand(
                                 wCmds[i], UI_INVALIDATIONS_PROPERTY,
