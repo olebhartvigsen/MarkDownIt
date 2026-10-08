@@ -733,10 +733,10 @@
             <Button CommandName="cmdAssocMd" />
           </MenuGroup>
           <MenuGroup CommandName="cmdWidthMenu" Class="StandardItems">
-            <Button CommandName="cmdWidthStandard" />
-            <Button CommandName="cmdWidth960" />
-            <Button CommandName="cmdWidth1600" />
-            <Button CommandName="cmdWidthFull" />
+            <ToggleButton CommandName="cmdWidthStandard" />
+            <ToggleButton CommandName="cmdWidth960" />
+            <ToggleButton CommandName="cmdWidth1600" />
+            <ToggleButton CommandName="cmdWidthFull" />
           </MenuGroup>
         </ApplicationMenu>
       </Ribbon.ApplicationMenu>

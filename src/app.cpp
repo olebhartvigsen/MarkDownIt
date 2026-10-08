@@ -6226,13 +6226,16 @@ void AppWindow::InvalidateSettingsButtons() {
     if (!g_pRibbonFramework) return;
     g_pRibbonFramework->InvalidateUICommand(IDC_CMD_ASSOC_MD,
         UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Label);
+    // ToggleButton state for the width commands: the File menu marks
+    // the active width with UI_PKEY_BooleanValue (ribbon guidelines:
+    // state, not a relabeled menu entry).
     static const UINT widthCmds[] = {
         IDC_CMD_WIDTH_STD, IDC_CMD_WIDTH_960,
         IDC_CMD_WIDTH_1600, IDC_CMD_WIDTH_FULL
     };
     for (auto cmd : widthCmds) {
         g_pRibbonFramework->InvalidateUICommand(cmd,
-            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Label);
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
     }
 }
 

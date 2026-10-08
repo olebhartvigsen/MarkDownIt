@@ -355,7 +355,6 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
 
     // Settings buttons (Fil menu): dynamic labels reflect current state.
     // cmdAssocMd shows "Associate .md files" or "Unassociate .md files".
-    // Width buttons show a checkmark prefix when active.
     if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_Label))
     {
         diag::TraceFmt("UpdateProperty label branch cmd=%u", nCmdID);
@@ -373,31 +372,24 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
                            (unsigned)hrAssoc);
             return hrAssoc;
         }
+    }
+
+    // Width commands are ToggleButtons in the File menu: the active
+    // document width is the pressed one (ribbon guidelines: state on
+    // the control, not a relabeled menu entry).
+    if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
+    {
         static const UINT widthCmds[4] = {
             IDC_CMD_WIDTH_STD, IDC_CMD_WIDTH_960,
             IDC_CMD_WIDTH_1600, IDC_CMD_WIDTH_FULL
         };
-        static const wchar_t* widthLabels[4] = {
-            L"Standard", L"960 px", L"1600 px", L"Full width"
-        };
         for (int i = 0; i < 4; ++i) {
             if (nCmdID == widthCmds[i]) {
-                diag::TraceFmt("UpdateProperty width label begin i=%d", i);
                 int mode = m_pApp ? m_pApp->GetContentWidthMode() : 0;
-                const wchar_t* lbl = widthLabels[i];
-                if (mode == i) {
-                    // Prefix with check mark for the active width.
-                    wchar_t buf[40];
-                    buf[0] = (wchar_t)0x2713;  // check mark
-                    buf[1] = L' ';
-                    wcsncpy_s(buf + 2, 38, lbl, _TRUNCATE);
-                    lbl = buf;
-                }
-                diag::TraceFmt("UpdateProperty width label begin i=%d", i);
-                HRESULT hrWidth = SetCmdLabel(lbl, ppropvarNewValue);
-                diag::TraceFmt("UpdateProperty width label done i=%d hr=0x%08X",
-                               i, (unsigned)hrWidth);
-                return hrWidth;
+                ppropvarNewValue->vt = VT_BOOL;
+                ppropvarNewValue->boolVal =
+                    (mode == i) ? VARIANT_TRUE : VARIANT_FALSE;
+                return S_OK;
             }
         }
     }
