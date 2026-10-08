@@ -66,10 +66,14 @@ public:
     // Outline pane: toggle, navigation target and active-heading sync.
     // NavigateToHeading is the primitive the pane callback lands in
     // (view mode scrolls, edit mode also moves the caret).
+    // Content viewport height in DIP (render target size).
+    float ViewHeightDip();
+
     void ToggleOutline();
     bool IsOutlineVisible() const;
     void NavigateToHeading(uint32_t offset);
     void UpdateOutlineActive();
+    void UpdateOutlineActiveFromView();
     std::vector<OutlineItem> OutlineItems() const { return outline_items_; }
     void ShowAbout();
     bool Save();

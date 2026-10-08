@@ -2488,6 +2488,9 @@ void AppWindow::LoadDocumentText(const std::string& raw, const std::wstring& pat
     // active heading to the reset caret position (the reparse hook only
     // fires on later edits).
     outline_items_ = CollectHeadings(doc_);
+    // A fresh document starts with no active pane row: the viewport
+    // probe re-picks one on the first scroll or paint after this load.
+    outline_.SetActive(-1);
     if (outline_.IsCreated() && outline_.IsVisible())
         outline_.SetItems(outline_items_);
     UpdateOutlineActive();
@@ -2760,6 +2763,12 @@ void AppWindow::UpdateScrollInfo() {
     sih.nPage  = static_cast<UINT>(clientWDip > 0.0f ? clientWDip : 1);
     sih.nPos   = static_cast<int>(scrollX_);
     SetScrollInfo(hwnd_content_, SB_HORZ, &sih, TRUE);
+
+    // Outline scroll-follow: every scroll path funnels through here,
+    // so one sync covers wheel, scrollbar drag, spring and momentum
+    // equally. UpdateOutlineActive picks caret rule (visible caret,
+    // edit mode) or viewport probe (view mode, or caret scrolled out).
+    UpdateOutlineActive();
 }
 
 void AppWindow::ResizeContentWindow() {
@@ -6056,6 +6065,13 @@ bool AppWindow::IsWrapEnabled() const {
     return renderer_.Wrap();
 }
 
+float AppWindow::ViewHeightDip() {
+    // The content viewport height in DIP (what the renderer shows of
+    // the document column).
+    if (rt_) return rt_->GetSize().height;
+    return static_cast<float>(clientH_);
+}
+
 void AppWindow::ToggleOutline() {
     if (!outline_.IsCreated()) return;
     const bool show = !outline_.IsVisible();
@@ -6083,9 +6099,11 @@ bool AppWindow::IsOutlineVisible() const {
 }
 
 void AppWindow::NavigateToHeading(uint32_t offset) {
-    // The OpenLink anchor precedent (app.cpp walk + BlockForOffset +
-    // StartSpring), composed into the outline jump. View mode scrolls
-    // only; edit mode also lands the caret at the heading text.
+    // The OpenLink anchor precedent (walk + BlockForOffset +
+    // StartSpring), composed into the outline jump. Both modes scroll
+    // with spring toward the heading; edit mode also lands the caret
+    // at the heading text, view mode only highlights the pane row.
+    const int idx = ItemIndexForOffset(outline_items_, offset);
     if (editing_) {
         sel_.Collapse({offset});
         if (hwnd_content_) SetFocus(hwnd_content_);
@@ -6094,7 +6112,7 @@ void AppWindow::NavigateToHeading(uint32_t offset) {
         // document so typing resumes there.
         return;
     }
-    int blkIdx = layout_cache_.BlockForOffset(static_cast<int>(offset));
+    int blkIdx = layout_cache_.BlockForOffset(offset);
     if (blkIdx < 0) return;
     const auto& blocks = layout_cache_.Blocks();
     // 15% of the viewport from the top: the heading sits near the top,
@@ -6103,14 +6121,73 @@ void AppWindow::NavigateToHeading(uint32_t offset) {
     if (rt_) viewH = rt_->GetSize().height;
     float target = blocks[blkIdx].y - viewH * 0.15f;
     if (target < 0.0f) target = 0.0f;
+    // View mode has no caret: mark the clicked row at once for instant
+    // feedback; the spring settles with the heading at 15% of the
+    // viewport, where the scroll-follow probe keeps it highlighted.
+    outline_.SetActive(idx);
     StartSpring(target);
 }
 
 void AppWindow::UpdateOutlineActive() {
+    // Edit mode: the caret's section is the active heading while the
+    // caret is what the user works on. Once the caret has been
+    // scrolled out of view, reading takes over and the viewport probe
+    // drives the highlight like in view mode (caret returns to view,
+    // caret rule resumes).
+    if (editing_) {
+        float cx = 0.f, cy = 0.f, chh = 0.f;
+        const bool caretVisible =
+            layout_cache_.OffsetToCaretRect(sel_.active.offset,
+                                            &cx, &cy, &chh)
+            && cy >= scrollY_ - 1.f
+            && (cy + chh) <= scrollY_ + ViewHeightDip() + 1.f;
+        // (ViewHeightDip: the DIP height of the content viewport.)
+        if (caretVisible) {
+            const int idx = ItemIndexForOffset(outline_items_,
+                                               sel_.active.offset);
+            if (outline_.Active() != idx) outline_.SetActive(idx);
+            return;
+        }
+        UpdateOutlineActiveFromView();
+        return;
+    }
+    // View mode: no caret exists, the viewport owns the highlight.
+    UpdateOutlineActiveFromView();
+}
+
+void AppWindow::UpdateOutlineActiveFromView() {
+    // View-mode highlight: the heading whose section owns the reading
+    // line, 25% down the viewport, is the one being read. Runs on
+    // every scroll change (UpdateScrollInfo funnels all scroll paths)
+    // and on load/toggle; edit mode never reaches it (caret rules).
     if (!outline_.IsCreated() || !outline_.IsVisible()) return;
-    const int idx = ItemIndexForOffset(outline_items_,
-                                       sel_.active.offset);
-    if (outline_.Active() != idx) outline_.SetActive(idx);
+    if (editing_ || welcome_mode_) return;
+    float viewH = static_cast<float>(clientH_);
+    if (rt_) viewH = rt_->GetSize().height;
+    const float probeY = scrollY_ + viewH * 0.25f;
+    // The last heading at or above the reading line owns it.
+    const auto& blocks = layout_cache_.Blocks();
+    uint32_t ownerOffset = 0;
+    bool haveOwner = false;
+    for (size_t b = 0; b < blocks.size(); ++b) {
+        if (blocks[b].y > probeY) break;
+        const Node& n = doc_.nodes[blocks[b].nodeIndex];
+        if (n.block == BlockKind::Heading) {
+            ownerOffset = n.contentOffset;
+            haveOwner = true;
+        }
+    }
+    if (!haveOwner) {
+        // Above the first heading: no section is being read.
+        if (outline_.Active() != -1) outline_.SetActive(-1);
+        return;
+    }
+    const int idx = ItemIndexForOffset(outline_items_, ownerOffset);
+    if (idx >= 0 && outline_.Active() != idx) {
+        outline_.SetActive(idx);
+        // Keep the highlighted row inside the pane's own viewport.
+        outline_.ScrollIntoView(idx);
+    }
 }
 
 void AppWindow::ToggleWrap() {
