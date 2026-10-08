@@ -427,6 +427,66 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
             return S_OK;
         }
 
+        // The File menu realizes its item views lazily at the first
+        // open, so the startup Label invalidation (timer 6 in
+        // InvalidateSettingsButtons) is dropped: no view exists to
+        // mark dirty yet. This Enabled query is the witness that THIS
+        // command's view exists right now, while the popup builds.
+        // Seize the moment: set the marked label as the command's
+        // current value, then invalidate the property (after the set,
+        // a set onto a pending invalidation fails) so the label pass
+        // of the same build re-asks it too. Whichever route the
+        // framework honors, the checkmark rides on the active width
+        // from the first menu open. A failed set is retried on the
+        // next open through the pushedWidthMode tracking.
+        {
+            static const UINT wCmds[4] = {
+                IDC_CMD_WIDTH_STD, IDC_CMD_WIDTH_960,
+                IDC_CMD_WIDTH_1600, IDC_CMD_WIDTH_FULL
+            };
+            static const wchar_t* const wLbls[4] = {
+                L"Standard", L"960 px", L"1600 px", L"Full width"
+            };
+            static int pushedWidthMode[4] = { -2, -2, -2, -2 };
+            const int mode = m_pApp ? m_pApp->GetContentWidthMode() : 0;
+            for (int i = 0; i < 4; ++i) {
+                if (nCmdID == wCmds[i] && pushedWidthMode[i] != mode) {
+                    wchar_t buf[40];
+                    buf[0] = (wchar_t)0x2713;  // check mark
+                    buf[1] = L' ';
+                    wcsncpy_s(buf + 2, 38, wLbls[i], _TRUNCATE);
+                    const wchar_t* lbl = (mode == i) ? buf : wLbls[i];
+                    const size_t len = wcslen(lbl);
+                    wchar_t* copy = static_cast<wchar_t*>(
+                        CoTaskMemAlloc((len + 1) * sizeof(wchar_t)));
+                    if (copy) {
+                        wcscpy_s(copy, len + 1, lbl);
+                        PROPVARIANT var;
+                        PropVariantInit(&var);
+                        var.vt = VT_LPWSTR;
+                        var.pwszVal = copy;
+                        diag::TraceFmt(
+                            "width label push start i=%d mode=%d", i, mode);
+                        HRESULT hrSet = g_pRibbonFramework
+                            ? g_pRibbonFramework->SetUICommandProperty(
+                                  wCmds[i], UI_PKEY_Label, var)
+                            : E_FAIL;
+                        diag::TraceFmt(
+                            "width label push done i=%d hr=0x%08X",
+                            i, (unsigned)hrSet);
+                        if (g_pRibbonFramework) {
+                            g_pRibbonFramework->InvalidateUICommand(
+                                wCmds[i], UI_INVALIDATIONS_PROPERTY,
+                                &UI_PKEY_Label);
+                        }
+                        PropVariantClear(&var);
+                        if (SUCCEEDED(hrSet)) pushedWidthMode[i] = mode;
+                    }
+                    break;
+                }
+            }
+        }
+
         static const UINT fmtCmds[] = {
             IDC_CMD_BOLD, IDC_CMD_ITALIC, IDC_CMD_CODE, IDC_CMD_STRIKE,
             IDC_CMD_H1, IDC_CMD_H2, IDC_CMD_H3,

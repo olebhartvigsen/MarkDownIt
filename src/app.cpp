@@ -339,14 +339,17 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow, const std::wstring& cmdLine)
         // Apply content width setting to the renderer.
         renderer_.SetContentWidthMode(settings_.contentWidthMode);
 
-        // The saved width must also be visible in the File menu on the
-        // first open: the ribbon framework serves the static markup
-        // labels until a command's Label property is invalidated, so
-        // without this the checkmark only appears after the first
-        // active choice. Timer 6 runs InvalidateSettingsButtons, the
-        // same deferred path a width change uses; at startup no popup
-        // is animating closed, the timer is just a cheap way to reuse
-        // the one proven-safe invalidation path.
+        // The saved width must also be visible in the File menu. The
+        // framework drops a Label invalidation for a command whose
+        // view does not exist yet, and the File menu realizes its
+        // items lazily at the first open, so this timer alone does
+        // not carry the checkmark on the very first popup (live
+        // trace: startup timer 6 fired, yet the first popup build
+        // issued no Label query). The primary first-open marking is
+        // the Enabled-query push in ribbon.cpp's UpdateProperty; this
+        // timer stays as the deferred invalidation for the realized
+        // case, which a width change also uses. Harmless when
+        // dropped.
         if (hwnd_) {
             SetTimer(hwnd_, 6, 350, nullptr);
         }
