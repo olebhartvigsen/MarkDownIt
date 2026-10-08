@@ -6,4 +6,37 @@ IDI_APPICON ICON "markdownit.ico"
 // Document icon: shown for .md files associated with MarkDownIt.
 IDI_DOCICON ICON "markdownit-doc.ico"
 
+// Version resource. rc.exe runs from the CMake custom command without the
+// SDK include paths, so this block uses numeric IDs and literals only
+// (no #include of winver.h or windows.h here). VS_VERSION_INFO is 1.
+// Bump all four values on every release; see references/release-pipeline.md.
+1 VERSIONINFO
+FILEVERSION     0,2,0,0
+PRODUCTVERSION  0,2,0,0
+FILEFLAGSMASK   0x0000003fL
+FILEFLAGS       0x00000000L
+FILEOS          0x00040004L
+FILETYPE        0x00000001L
+FILESUBTYPE     0x00000000L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"   // English (US), Unicode
+        BEGIN
+            VALUE "FileDescription",  "MarkDownIt"
+            VALUE "ProductName",      "MarkDownIt"
+            VALUE "CompanyName",      ""
+            VALUE "FileVersion",      "0.2.0.0"
+            VALUE "ProductVersion",   "0.2.0.0"
+            VALUE "InternalName",     "MarkDownIt"
+            VALUE "OriginalFilename", "MarkDownIt.exe"
+            VALUE "LegalCopyright",   "Copyright (c) 2026 Ole Hartvigsen. MIT License."
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 0x04B0
+    END
+END
+
 #include "ribbonUI.rc2"
