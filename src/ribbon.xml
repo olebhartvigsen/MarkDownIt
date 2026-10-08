@@ -766,9 +766,9 @@
             <Button CommandName="cmdUndo" />
             <Button CommandName="cmdRedo" />
           </Group>
-          <Group CommandName="cmdGroupView" SizeDefinition="ThreeButtons">
+          <Group CommandName="cmdGroupView" SizeDefinition="FourButtons">
             <ToggleButton CommandName="cmdWrap" />
-          <ToggleButton CommandName="cmdOutline" />
+            <ToggleButton CommandName="cmdOutline" />
             <Button CommandName="cmdZoomIn" />
             <Button CommandName="cmdZoomOut" />
           </Group>
