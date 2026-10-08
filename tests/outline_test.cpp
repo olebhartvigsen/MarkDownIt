@@ -75,3 +75,51 @@ TEST(Outline, LinkContributesTextNotUrl) {
     ASSERT_EQ(1u, items.size());
     EXPECT_EQ(U"See the guide", ConcatenateInlineText(items[0]));
 }
+
+TEST(Outline, VisibleItemsRespectCollapsedBranches) {
+    std::vector<OutlineItem> items = {
+        {1, 0, U"a"}, {2, 10, U"b"}, {3, 20, U"c"},
+        {2, 30, U"d"}, {1, 40, U"e"}
+    };
+    OutlineCollapse st;
+    st.Toggle(1);  // collapse "b": hides "c" only (its subtree)
+    std::vector<int> vis = VisibleItems(items, st);
+    ASSERT_EQ(4u, vis.size());
+    EXPECT_EQ(0, vis[0]);
+    EXPECT_EQ(1, vis[1]);
+    EXPECT_EQ(3, vis[2]);
+    EXPECT_EQ(4, vis[3]);
+
+    st.Toggle(0);  // collapse "a": hides "b", "c" and "d" down to next H1
+    vis = VisibleItems(items, st);
+    ASSERT_EQ(2u, vis.size());
+    EXPECT_EQ(0, vis[0]);
+    EXPECT_EQ(4, vis[1]);
+}
+
+TEST(Outline, CollapseOutsideRangeIsHarmless) {
+    std::vector<OutlineItem> items = { {1, 0, U"a"} };
+    OutlineCollapse st;
+    st.Toggle(5);  // no such index; the state records it, nothing breaks
+    std::vector<int> vis = VisibleItems(items, st);
+    ASSERT_EQ(1u, vis.size());
+}
+
+TEST(Outline, ItemIndexForOffsetOwnership) {
+    std::vector<OutlineItem> items = {
+        {1, 0, U"a"}, {2, 10, U"b"}, {2, 30, U"d"}, {1, 40, U"e"}
+    };
+    // A heading owns every offset from its own start up to the next
+    // heading's start (spec 6.1/21: the section the cursor is in).
+    EXPECT_EQ(0, ItemIndexForOffset(items, 0));
+    EXPECT_EQ(0, ItemIndexForOffset(items, 9));
+    EXPECT_EQ(1, ItemIndexForOffset(items, 15));
+    EXPECT_EQ(2, ItemIndexForOffset(items, 32));
+    EXPECT_EQ(2, ItemIndexForOffset(items, 39));
+    EXPECT_EQ(3, ItemIndexForOffset(items, 40));
+    // The last section owns the document tail (spec 6.1: the heading of
+    // the section the cursor is in stays active past the last heading).
+    EXPECT_EQ(3, ItemIndexForOffset(items, 200));
+    EXPECT_EQ(-1, ItemIndexForOffset({}, 0));
+    EXPECT_EQ(-1, ItemIndexForOffset({}, 500));
+}

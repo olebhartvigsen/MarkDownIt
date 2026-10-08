@@ -1,7 +1,4 @@
-// Outline model: the heading navigation projection of the document DOM.
-// Portable and headless (no windows.h) so it builds and tests under g++.
-// The pane keeps no second document copy: it borrows the Document after
-// each reparse and derives its item list from the heading nodes.
+// Outline model implementation, portable and headless. See outline.h.
 
 #include "outline.h"
 
@@ -29,4 +26,33 @@ std::vector<OutlineItem> CollectHeadings(const Document& doc) {
 
 std::u32string ConcatenateInlineText(const OutlineItem& item) {
     return item.text;
+}
+
+std::vector<int> VisibleItems(const std::vector<OutlineItem>& items,
+                              const OutlineCollapse& st) {
+    std::vector<int> visible;
+    const int n = static_cast<int>(items.size());
+    for (int i = 0; i < n; ) {
+        visible.push_back(i);
+        if (st.IsCollapsed(i)) {
+            // Skip the subtree: everything until an item at the same or
+            // shallower depth.
+            const int lvl = items[i].level;
+            ++i;
+            while (i < n && items[i].level > lvl) ++i;
+        } else {
+            ++i;
+        }
+    }
+    return visible;
+}
+
+int ItemIndexForOffset(const std::vector<OutlineItem>& items, uint32_t offset) {
+    // Section ownership: last item whose offset is <= the given offset.
+    int idx = -1;
+    for (int i = 0; i < static_cast<int>(items.size()); ++i) {
+        if (items[i].offset <= offset) idx = i;
+        else break;
+    }
+    return idx;
 }
