@@ -413,6 +413,13 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         ZoomOut();
         return;
     }
+    // Ctrl+Shift+O toggles the outline pane. Like the zoom keys it is
+    // a view setting, not a text edit: handled in both view and edit
+    // mode and never reaches the editor.
+    if (ctrl && shift && vk == 0x4F) {
+        ToggleOutline();
+        return;
+    }
     if (ctrl && !shift && (vk == 0x30 || vk == VK_NUMPAD0)) {
         ResetZoom();
         return;
@@ -1028,6 +1035,10 @@ void AppWindow::LoadSampleDoc() {
     // Instead of showing a placeholder text, show the welcome screen
     // with recent files cards.
     welcome_mode_ = true;
+    // The welcome screen owns the whole content band; the outline has
+    // no document to show.
+    if (outline_.IsCreated() && outline_.IsVisible())
+        ShowWindow(outline_.Handle(), SW_HIDE);
     if (dw_factory_) {
         welcome_.Init(dw_factory_);
         // A recent list that offers dead paths is worse than an empty
@@ -1123,6 +1134,14 @@ void AppWindow::OnReparseTimer() {
     // would leave the cache empty, causing OffsetToCaretRect to fail
     // and the caret to disappear.
     ForceRepaintNow();
+
+    // Outline refresh rides the reparse: every document change that
+    // can alter headings (typing, paste, cut, undo, redo) flows through
+    // here, so one hook covers the whole spec event table.
+    outline_items_ = CollectHeadings(doc_);
+    if (outline_.IsCreated() && outline_.IsVisible())
+        outline_.SetItems(outline_items_);
+    UpdateOutlineActive();
 }
 
 void AppWindow::OnBufferChanged() {
@@ -1164,6 +1183,9 @@ void AppWindow::ScrollCaretIntoView(float caretY, float caretH) {
 
 void AppWindow::UpdateCaretPosition() {
     if (!has_focus_ || !hwnd_content_) return;
+    // Outline active-heading follow (one-way; the pane never pushes
+    // back). Runs first so every early return below still syncs it.
+    UpdateOutlineActive();
     if (!editing_) {
         // No caret in view mode, but the selection still changed and the
         // marker toggle follows it, so feed the ribbon the new state.
@@ -2449,6 +2471,18 @@ void AppWindow::LoadDocumentText(const std::string& raw, const std::wstring& pat
     // Load the marker sidecar for this document and resolve its anchors
     // against the fresh text (marker guide 12.7).
     LoadMarkersForDocument();
+    // Fill the outline from the freshly parsed document and sync the
+    // active heading to the reset caret position (the reparse hook only
+    // fires on later edits).
+    outline_items_ = CollectHeadings(doc_);
+    if (outline_.IsCreated() && outline_.IsVisible())
+        outline_.SetItems(outline_items_);
+    UpdateOutlineActive();
+    // A newly loaded document re-shows the pane if the session left it
+    // open (the welcome screen keeps it hidden).
+    if (outline_.IsCreated() && !outline_.IsVisible()
+        && settings_.outlineVisible && !welcome_mode_)
+        ShowWindow(outline_.Handle(), SW_SHOW);
     // Force render target recreation; the D2D hwnd target can become
     // invalid after the GetOpenFileNameW modal dialog closes.
     SafeRelease(rt_);
@@ -2613,6 +2647,20 @@ void AppWindow::OnCreate(HWND hwnd) {
     dpi_ = GetWindowDpi(hwnd_);
     rt_->SetDpi(static_cast<float>(dpi_), static_cast<float>(dpi_));
 
+    // Outline pane: created once, lazily filled, hidden until toggled.
+    // Same windowing as the find strip (child HWND under the main
+    // window), same factories as the document renderer.
+    if (outline_.Create(hwnd_, d2d_factory_, dw_factory_, dpi_)) {
+        outline_.SetNavigateCallback([this](uint32_t offset) {
+            NavigateToHeading(offset);
+        });
+    }
+    outline_.SetWidthDip(settings_.outlineWidthDip);
+    // Restore the last session's pane state; the first file load fills
+    // the list (the reparse hook runs on every document change).
+    if (!welcome_mode_ && settings_.outlineVisible)
+        ShowWindow(outline_.Handle(), SW_SHOW);
+
     // Try to get ID2D1DeviceContext5 for SVG support (Windows 10 Creators Update+).
     // If QI fails, the app runs without SVG; diagrams fall back to code blocks.
     if (rt_) {
@@ -2707,9 +2755,29 @@ void AppWindow::ResizeContentWindow() {
     }
     if (contentH < 1) contentH = 1;
 
+    // The outline pane claims a left band while it is visible. The
+    // content window moves right and loses the pane width; every
+    // scrollbar range follows through the normal resize path.
+    int paneX = 0;
+    const bool paneOn = outline_.IsCreated() && outline_.IsVisible()
+        && !welcome_mode_;
+    if (paneOn) {
+        const float scale = static_cast<float>(dpi_) / 96.0f;
+        const int paneW = static_cast<int>(outline_.WidthDip() * scale);
+        if (paneW < rc.right - rc.left) paneX = paneW;
+        SetWindowPos(outline_.Handle(), nullptr,
+            0, contentY, paneX, contentH,
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        outline_.SetRect(0, contentY, paneX, contentH, dpi_);
+    } else if (outline_.IsCreated()) {
+        SetWindowPos(outline_.Handle(), nullptr, 0, 0, 0, 0,
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE
+            | SWP_HIDEWINDOW);
+    }
+
     SetWindowPos(hwnd_content_, nullptr,
-        0, contentY,
-        rc.right - rc.left, contentH,
+        paneX, contentY,
+        rc.right - rc.left - paneX, contentH,
         SWP_NOZORDER | SWP_NOACTIVATE);
 
     // The strip is part of this layout, so it is re-docked here rather than
@@ -5963,6 +6031,59 @@ bool AppWindow::CanZoomOut() const {
 
 bool AppWindow::IsWrapEnabled() const {
     return renderer_.Wrap();
+}
+
+void AppWindow::ToggleOutline() {
+    if (!outline_.IsCreated()) return;
+    const bool show = !outline_.IsVisible();
+    if (show) {
+        // Refresh on open: the list may be stale from before the last
+        // reparse if the pane was hidden (SetItems is skipped while
+        // hidden to avoid churn on long documents).
+        outline_.SetItems(outline_items_);
+        UpdateOutlineActive();
+    }
+    ShowWindow(outline_.Handle(), show ? SW_SHOW : SW_HIDE);
+    ResizeContentWindow();
+    UpdateScrollInfo();
+    if (g_pRibbonFramework)
+        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_OUTLINE,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
+}
+
+bool AppWindow::IsOutlineVisible() const {
+    return outline_.IsCreated() && outline_.IsVisible();
+}
+
+void AppWindow::NavigateToHeading(uint32_t offset) {
+    // The OpenLink anchor precedent (app.cpp walk + BlockForOffset +
+    // StartSpring), composed into the outline jump. View mode scrolls
+    // only; edit mode also lands the caret at the heading text.
+    if (editing_) {
+        sel_.Collapse({offset});
+        if (hwnd_content_) SetFocus(hwnd_content_);
+        UpdateCaretPosition();
+        // The click may have come from the pane; return focus to the
+        // document so typing resumes there.
+        return;
+    }
+    int blkIdx = layout_cache_.BlockForOffset(static_cast<int>(offset));
+    if (blkIdx < 0) return;
+    const auto& blocks = layout_cache_.Blocks();
+    // 15% of the viewport from the top: the heading sits near the top,
+    // not glued to the edge (spec: jump leaves context visible).
+    float viewH = static_cast<float>(clientH_);
+    if (rt_) viewH = rt_->GetSize().height;
+    float target = blocks[blkIdx].y - viewH * 0.15f;
+    if (target < 0.0f) target = 0.0f;
+    StartSpring(target);
+}
+
+void AppWindow::UpdateOutlineActive() {
+    if (!outline_.IsCreated() || !outline_.IsVisible()) return;
+    const int idx = ItemIndexForOffset(outline_items_,
+                                       sel_.active.offset);
+    if (outline_.Active() != idx) outline_.SetActive(idx);
 }
 
 void AppWindow::ToggleWrap() {

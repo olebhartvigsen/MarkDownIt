@@ -31,6 +31,12 @@ struct AppSettings {
     // so it is restored on the next launch. ResetZoom() stores 1.0.
     float zoomFactor = zoom::kDefaultZoom;
 
+    // Outline pane geometry: width in DIP (clamped 140..420) and the
+    // last visible state. Persistence is session state, not document
+    // state: the pane re-opens as it was left.
+    float outlineWidthDip = 200.0f;
+    bool  outlineVisible = false;
+
     // Recent files (most-recent first, max 12).
     std::vector<RecentFile> recentFiles;
 };

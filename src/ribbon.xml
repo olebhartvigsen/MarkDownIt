@@ -146,6 +146,17 @@
         <Image Source="icons/wrap_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
+    <Command Name="cmdOutline" Symbol="IDC_CMD_OUTLINE" Id="10606">
+      <Command.LabelTitle>
+        <String>Outline</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Toggle the outline pane</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Show or hide the heading outline on the left side (Ctrl+Shift+O)</String>
+      </Command.TooltipDescription>
+    </Command>
     <Command Name="cmdZoomIn" Symbol="IDC_CMD_ZOOMIN" Id="10201">
       <Command.LabelTitle>
         <String>Zoom In</String>
@@ -757,6 +768,7 @@
           </Group>
           <Group CommandName="cmdGroupView" SizeDefinition="ThreeButtons">
             <ToggleButton CommandName="cmdWrap" />
+          <ToggleButton CommandName="cmdOutline" />
             <Button CommandName="cmdZoomIn" />
             <Button CommandName="cmdZoomOut" />
           </Group>

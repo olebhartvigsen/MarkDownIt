@@ -22,6 +22,7 @@
 #include "inputfilter.h"
 #include "settings.h"
 #include "welcomescreen.h"
+#include "outlinepane.h"
 #include "searchreplace.h"
 #include "findbar.h"
 #include "textdrag.h"
@@ -61,6 +62,15 @@ public:
     bool CanZoomOut() const;
     void ToggleWrap();
     bool IsWrapEnabled() const;
+
+    // Outline pane: toggle, navigation target and active-heading sync.
+    // NavigateToHeading is the primitive the pane callback lands in
+    // (view mode scrolls, edit mode also moves the caret).
+    void ToggleOutline();
+    bool IsOutlineVisible() const;
+    void NavigateToHeading(uint32_t offset);
+    void UpdateOutlineActive();
+    std::vector<OutlineItem> OutlineItems() const { return outline_items_; }
     void ShowAbout();
     bool Save();
     bool SaveAs();
@@ -303,6 +313,8 @@ private:
     WelcomeScreen  welcome_;
     bool           welcome_mode_ = false;
     int            welcome_hover_ = -1;
+    OutlinePane    outline_;
+    std::vector<OutlineItem> outline_items_;
 
     // Margin drag selection: when true, mouse drag selects whole lines.
     bool           margin_selecting_ = false;
