@@ -43,8 +43,14 @@ h3{font-size:18px}
 p{margin:0 0 1em}
 .lead{color:var(--muted);font-size:17px;max-width:62ch}
 
+/* announce bar */
+.announce{background:var(--teal-deep);color:#D9F2EE;font-size:13.5px;text-align:center;padding:8px 16px}
+.announce a{color:#fff;text-decoration:underline;text-underline-offset:2px}
+
 /* nav */
-.site-nav{background:var(--bg);border-bottom:1px solid var(--line)}
+.site-nav{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.94);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid var(--line);transition:box-shadow .2s}
+.site-nav.scrolled{box-shadow:0 4px 18px rgba(11,30,34,.09)}
+.site-nav nav a.active{color:var(--teal);font-weight:600}
 .site-nav .wrap{display:flex;align-items:center;gap:22px;min-height:60px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:var(--ink)}
 .brand svg{width:28px;height:28px;border-radius:50%}
@@ -53,6 +59,11 @@ p{margin:0 0 1em}
 .site-nav nav a:hover{color:var(--ink)}
 .nav-cta{background:var(--teal-bright);color:#04302B !important;font-weight:600;padding:8px 14px;border-radius:9px}
 .nav-cta:hover{background:#0D9488;text-decoration:none}
+.nav-github{display:inline-flex;align-items:center;color:var(--muted)}
+.nav-github:hover{color:var(--ink)}
+.nav-github svg{width:17px;height:17px}
+.menu-toggle{display:none;background:none;border:1px solid var(--line);border-radius:8px;padding:7px 9px;cursor:pointer;color:var(--ink)}
+.menu-toggle svg{width:18px;height:18px;display:block}
 
 /* buttons */
 .btn{display:inline-block;padding:13px 22px;border-radius:10px;font-weight:600;font-size:16px;text-decoration:none}
@@ -97,6 +108,36 @@ section{padding:72px 0}
 .card{border:1px solid var(--line);border-radius:var(--radius);padding:24px;background:#fff}
 .card p{color:var(--muted);font-size:15px;margin:0}
 .card h3{color:var(--ink)}
+
+/* kicker + tabs + copy + flow mock */
+.kicker{display:block;font-size:12.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--teal);margin-bottom:8px}
+.tablist{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.tab{background:none;border:none;border-bottom:2px solid transparent;padding:8px 14px;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;font-family:inherit}
+.tab:hover{color:var(--ink)}
+.tab[aria-selected="true"]{color:var(--teal);border-bottom-color:var(--teal-bright)}
+.code-block{border-radius:12px;overflow:hidden}
+.code-head{display:flex;align-items:center;justify-content:space-between;background:#08181C;padding:8px 10px 8px 16px;border-radius:12px 12px 0 0}
+.code-lang{color:#9DB8B3;font-size:12px;font-family:"Cascadia Mono",Consolas,monospace}
+.code-block pre{border-radius:0 0 12px 12px}
+.copy-btn{display:inline-flex;align-items:center;background:none;border:none;color:#9DB8B3;cursor:pointer;padding:4px 6px;border-radius:6px}
+.copy-btn:hover{color:#fff;background:rgba(255,255,255,.08)}
+.copy-btn .icon-check{display:none}
+.copy-btn.copied .icon-copy{display:none}
+.copy-btn.copied .icon-check{display:inline}
+.copy-btn svg{width:15px;height:15px}
+.flow{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.35);padding:24px 14px 20px;display:flex;flex-direction:column;align-items:center}
+.frow{display:flex;justify-content:center;width:100%}
+.fnode{border:1.5px solid #5A6B75;border-radius:6px;background:#F7FAF9;padding:6px 14px;font-size:12.5px;color:#33424D;text-align:center;white-space:nowrap}
+.fnode.round{border-radius:999px}
+.fnode.stadium{border-radius:999px;background:#EEF6F4}
+.fnode.circle{border-radius:999px;padding:12px;background:#E4F1EF;border-color:#0F766E}
+.fnode.diamond{border:none;background:#E4F1EF;clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);padding:16px 26px}
+.farrow{display:flex;flex-direction:column;align-items:center;margin:2px 0}
+.farrow .stem{width:2px;height:16px;background:#5A6B75}
+.farrow .head{width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #5A6B75}
+.fbranch{display:flex;gap:36px;width:100%;justify-content:center}
+.fcol{display:flex;flex-direction:column;align-items:center;gap:2px}
+.flab{font-size:11px;color:var(--muted);background:var(--bg-soft);border:1px solid var(--line);border-radius:999px;padding:1px 9px}
 
 /* wysiwyg */
 .split-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:44px;align-items:start}
@@ -147,6 +188,12 @@ footer a{color:#8FD9CE}
 footer .fine{color:#7E9491;font-size:13px}
 
 @media (max-width:900px){
+  .menu-toggle{display:flex;margin-left:auto}
+  .site-nav .wrap{flex-wrap:nowrap}
+  .site-nav nav{position:absolute;top:100%;left:0;right:0;background:#fff;flex-direction:column;align-items:flex-start;gap:2px;padding:0 24px;max-height:0;overflow:hidden;transition:max-height .25s ease,padding .25s ease;border-bottom:1px solid transparent}
+  body.menu-open .site-nav nav{max-height:360px;padding:14px 24px 18px;border-bottom-color:var(--line)}
+  body.menu-open .site-nav nav a{padding:9px 0;font-size:16px;width:100%}
+  body.menu-open .site-nav nav .nav-cta{margin-top:8px}
   .hero .wrap{grid-template-columns:1fr}
   .hero h1{font-size:40px}
   .hero-visual{order:-1}
@@ -158,21 +205,29 @@ footer .fine{color:#7E9491;font-size:13px}
 </head>
 <body>
 
+<div class="announce">
+  <p>MarkDownIt is in beta. <a href="#download">See how to get it</a></p>
+</div>
 <header class="site-nav">
   <div class="wrap">
     <a class="brand" href="#top" aria-label="MarkDownIt home">
       <svg viewBox="0 0 256 256" aria-hidden="true"><defs><linearGradient id="tg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#14B8A6"/><stop offset="1" stop-color="#0F766E"/></linearGradient></defs><circle cx="128" cy="128" r="124" fill="url(#tg)"/><path d="M44 190V66h30l54 76 54-76h30v124h-34V126l-50 68-50-68v64z" fill="#fff"/></svg>
       MarkDownIt
     </a>
-    <nav aria-label="Main">
+    <nav id="site-menu" aria-label="Main">
       <a href="#features">Features</a>
       <a href="#wysiwyg">WYSIWYG</a>
       <a href="#mermaid">Mermaid</a>
       <a href="#office">Word and PDF</a>
       <a href="#faq">FAQ</a>
-      <a href="https://github.com/olebhartvigsen/MarkDownIt" target="_blank" rel="noopener">GitHub</a>
+      <a class="nav-github" href="https://github.com/olebhartvigsen/MarkDownIt" target="_blank" rel="noopener" aria-label="MarkDownIt on GitHub">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
+      </a>
       <a class="nav-cta" href="#download">Download</a>
     </nav>
+    <button type="button" class="menu-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="site-menu">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M2 4.5h12M2 8h12M2 11.5h12"/></svg>
+    </button>
   </div>
 </header>
 
@@ -220,6 +275,7 @@ footer .fine{color:#7E9491;font-size:13px}
 <section id="features">
   <div class="wrap">
     <div class="sec-head">
+      <span class="kicker">The app</span>
       <h2>Features</h2>
       <p class="lead">The whole app is one executable. These are the parts most people touch first.</p>
     </div>
@@ -247,6 +303,7 @@ footer .fine{color:#7E9491;font-size:13px}
 <section id="wysiwyg" class="sec-alt">
   <div class="wrap split-grid">
     <div>
+      <span class="kicker">Editing</span>
       <h2>A word processor for Markdown files</h2>
       <p class="lead">Most Markdown tools put a preview next to your text. MarkDownIt puts the caret in the rendered text instead. It behaves like a word processor: you type formatted text directly, and the .md file on disk stays plain Markdown.</p>
       <ul>
@@ -292,6 +349,7 @@ footer .fine{color:#7E9491;font-size:13px}
 <section id="mermaid">
   <div class="wrap mermaid-grid">
     <div>
+      <span class="kicker">Diagrams</span>
       <h2>Mermaid, drawn natively</h2>
       <p class="lead">Mermaid blocks in your Markdown become diagrams in the window. They are parsed and drawn by the app itself, on the same Direct2D pipeline that renders the rest of the document.</p>
       <ul>
@@ -302,7 +360,20 @@ footer .fine{color:#7E9491;font-size:13px}
       <p class="note">Styling directives, click handlers and nested subgraphs are not implemented yet.</p>
     </div>
     <div>
-<pre><span class="k">```mermaid</span>
+      <div class="tablist" role="tablist" aria-label="Mermaid block views">
+        <button type="button" class="tab" id="mtab-src" role="tab" aria-selected="true" aria-controls="mpanel-src">Source</button>
+        <button type="button" class="tab" id="mtab-out" role="tab" aria-selected="false" aria-controls="mpanel-out" tabindex="-1">Rendered</button>
+      </div>
+      <div id="mpanel-src" role="tabpanel" aria-labelledby="mtab-src">
+        <div class="code-block">
+          <div class="code-head">
+            <span class="code-lang">diagram.md</span>
+            <button type="button" class="copy-btn" data-copy="#mcode" aria-label="Copy the Mermaid source">
+              <span class="icon-copy" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" focusable="false"><rect x="5.5" y="5.5" width="8" height="8" rx="1"/><path d="M10.5 3.5v-1h-8v8h1"/></svg></span>
+              <span class="icon-check" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M3 8.5 6.5 12 13 4.5"/></svg></span>
+            </button>
+          </div>
+<pre id="mcode"><span class="k">```mermaid</span>
 flowchart TD
     A[Start] --> B{Decide}
     B -->|yes| C(Do the thing)
@@ -310,7 +381,21 @@ flowchart TD
     C --> E((Done))
     D --> E
 <span class="k">```</span></pre>
-      <p class="note">A flowchart as it appears in the source. MarkDownIt draws it in the rendered view.</p>
+        </div>
+      </div>
+      <div id="mpanel-out" role="tabpanel" aria-labelledby="mtab-out" hidden>
+        <div class="flow" aria-hidden="true">
+          <div class="frow"><div class="fnode">Start</div></div>
+          <div class="farrow"><div class="stem"></div><div class="head"></div></div>
+          <div class="frow"><div class="fnode diamond">Decide</div></div>
+          <div class="fbranch">
+            <div class="fcol"><span class="flab">yes</span><div class="farrow"><div class="stem"></div><div class="head"></div></div><div class="fnode round">Do the thing</div><div class="farrow"><div class="stem"></div><div class="head"></div></div></div>
+            <div class="fcol"><span class="flab">no</span><div class="farrow"><div class="stem"></div><div class="head"></div></div><div class="fnode stadium">Skip</div><div class="farrow"><div class="stem"></div><div class="head"></div></div></div>
+          </div>
+          <div class="frow"><div class="fnode circle">Done</div></div>
+        </div>
+      </div>
+      <p class="note">The same block, source and rendered. MarkDownIt draws it in the window, no browser involved.</p>
     </div>
   </div>
 </section>
@@ -318,6 +403,7 @@ flowchart TD
 <section id="office" class="sec-alt">
   <div class="wrap">
     <div class="sec-head">
+      <span class="kicker">Office</span>
       <h2>Word and PDF</h2>
       <p class="lead">Markdown does not live alone. MarkDownIt imports Word documents and exports Word and PDF, so the same text can travel between formats.</p>
     </div>
@@ -344,6 +430,7 @@ flowchart TD
 <section id="download">
   <div class="wrap">
     <div class="download-box">
+      <span class="kicker">Get it</span>
       <h2>Download the beta</h2>
       <p class="lead">MarkDownIt is in beta. Builds are attached to GitHub releases as a single x64 executable.</p>
       <ol>
@@ -359,6 +446,7 @@ flowchart TD
 <section id="faq" class="sec-alt">
   <div class="wrap">
     <div class="sec-head">
+      <span class="kicker">Questions</span>
       <h2>FAQ</h2>
       <p class="lead">Short answers to the questions that come up.</p>
     </div>
@@ -416,5 +504,67 @@ flowchart TD
   </div>
 </footer>
 
+<script>
+(function(){
+  var mt=document.querySelector('.menu-toggle');
+  var nav=document.getElementById('site-menu');
+  mt.addEventListener('click',function(){
+    var open=document.body.classList.toggle('menu-open');
+    mt.setAttribute('aria-expanded',open?'true':'false');
+    mt.setAttribute('aria-label',open?'Close menu':'Open menu');
+  });
+  nav.addEventListener('click',function(e){
+    if(e.target.closest('a')){document.body.classList.remove('menu-open');mt.setAttribute('aria-expanded','false');}
+  });
+  var hdr=document.querySelector('.site-nav');
+  var onScroll=function(){hdr.classList.toggle('scrolled',window.scrollY>8);};
+  window.addEventListener('scroll',onScroll,{passive:true});
+  onScroll();
+  var links=Array.prototype.slice.call(document.querySelectorAll('.site-nav nav a[href^="#"]'));
+  var secs=links.map(function(a){return document.querySelector(a.hash);}).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;});
+  var spy=new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        links.forEach(function(l){
+          var on=l.hash==='#'+e.target.id;
+          l.classList.toggle('active',on);
+          if(on){l.setAttribute('aria-current','page');}else{l.removeAttribute('aria-current');}
+        });
+      }
+    });
+  },{rootMargin:'-35% 0px -60% 0px'});
+  secs.forEach(function(s){spy.observe(s);});
+  document.querySelectorAll('[role="tablist"]').forEach(function(list){
+    var tabs=Array.prototype.slice.call(list.querySelectorAll('[role="tab"]'));
+    var panels=tabs.map(function(t){return document.getElementById(t.getAttribute('aria-controls'));});
+    var select=function(i,focus){
+      tabs.forEach(function(t,j){
+        var on=i===j;
+        t.setAttribute('aria-selected',on?'true':'false');
+        t.tabIndex=on?0:-1;
+        panels[j].hidden=!on;
+      });
+      if(focus){tabs[i].focus();}
+    };
+    tabs.forEach(function(t,i){
+      t.addEventListener('click',function(){select(i);});
+      t.addEventListener('keydown',function(e){
+        if(e.key==='ArrowRight'){select((i+1)%tabs.length,true);}
+        if(e.key==='ArrowLeft'){select((i-1+tabs.length)%tabs.length,true);}
+      });
+    });
+  });
+  document.querySelectorAll('.copy-btn').forEach(function(b){
+    b.addEventListener('click',function(){
+      var el=document.querySelector(b.getAttribute('data-copy'));
+      if(!el){return;}
+      navigator.clipboard.writeText(el.textContent.replace(/^\s+/,'')).then(function(){
+        b.classList.add('copied');
+        setTimeout(function(){b.classList.remove('copied');},1600);
+      }).catch(function(){});
+    });
+  });
+})();
+</script>
 </body>
 </html>
