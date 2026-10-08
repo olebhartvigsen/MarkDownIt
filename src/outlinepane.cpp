@@ -580,6 +580,17 @@ void OutlinePane::OnLButtonUp(int px, int py) {
 }
 
 void OutlinePane::OnMouseMove(int px, int py) {
+    // Arm the leave-notice once: without it the last hovered row keeps
+    // its highlight forever after the mouse exits the pane (Win32
+    // stops sending WM_MOUSEMOVE at the window edge, nothing clears
+    // hover_).
+    if (!trackingMouse_) {
+        TRACKMOUSEEVENT tme = {};
+        tme.cbSize = sizeof(tme);
+        tme.dwFlags = TME_LEAVE;
+        tme.hwndTrack = hwnd_;
+        if (TrackMouseEvent(&tme)) trackingMouse_ = true;
+    }
     if (splitterDrag_) {
         DragSplitter(px);
         return;
@@ -781,6 +792,12 @@ LRESULT CALLBACK OutlinePane::WndProc(HWND hwnd, UINT msg, WPARAM wp,
             return 0;
         case WM_MOUSEMOVE:
             self->OnMouseMove(GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
+            return 0;
+        case WM_MOUSELEAVE:
+            // The mouse left the pane: drop the hover highlight for
+            // good (re-armed on the next WM_MOUSEMOVE).
+            self->trackingMouse_ = false;
+            self->HoverSet(-1);
             return 0;
         case WM_CAPTURECHANGED:
             self->EndSplitterDrag();

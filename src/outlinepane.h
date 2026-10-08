@@ -184,6 +184,7 @@ private:
     int active_ = -1;      // item index
     int selected_ = -1;    // item index
     int hoverVis_ = -1;    // visible-row index
+    bool trackingMouse_ = false;  // leave-notice armed (see OnMouseMove)
     float scrollY_ = 0.f;  // pane-local scroll in DIP
 
     // Splitter drag state.
