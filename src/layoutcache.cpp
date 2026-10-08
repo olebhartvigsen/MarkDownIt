@@ -532,8 +532,10 @@ bool LayoutCache::OffsetToCaretRect(uint32_t offset,
         float lineH = htm.height;
         *outY = bl.y + caretY + (lineH - caretH) * 0.5f;
     }
-    // Use the font's em height for the caret, not the full line height
-    // (which includes leading/line-spacing and makes the caret too tall).
+    // Caret height: the font's natural line height (ascent+descent+
+    // lineGap, set by the renderer), not the em size of one character
+    // and not the rendered line box either (that one also carries the
+    // app's line spacing). Fallback when metrics were unavailable.
     if (outH) *outH = (bl.fontHeight > 0.0f) ? bl.fontHeight : htm.height;
     return true;
 }

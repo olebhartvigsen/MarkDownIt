@@ -533,12 +533,64 @@ bool Renderer::Init(IDWriteFactory* dw) {
 
 void Renderer::Release() {
     auto rel = [](IDWriteTextFormat*& p) { if (p) { p->Release(); p = nullptr; } };
+    // Formats are about to be recreated (zoom change) or torn down:
+    // drop the line-height cache with them. Keys are format pointers,
+    // and a newly allocated format could land on a freed one's
+    // address, which would answer a different zoom's cached height.
+    lineHeightCache_.clear();
     rel(body_fmt_);
     rel(code_fmt_);
     rel(num_fmt_);
     rel(mermaid_measure_fmt_);
     mermaid_layout_cache_.Clear();
     for (int i = 1; i <= 6; ++i) rel(heading_fmt_[i]);
+}
+
+// Natural line height of the format: ascent + descent + lineGap from
+// the font's own metrics, scaled from design units to the format's
+// size. This is what the cursor-blinking guide calls "the current
+// font's line height" for the caret: distinct from the em size (the
+// height of one character) the code used before, and also distinct
+// from the rendered line box, which additionally carries the app's
+// line-spacing multiplier. A zero result means the metrics could
+// not be resolved; the caller then falls back to the rendered line.
+float Renderer::LineHeightOf(IDWriteTextFormat* fmt) {
+    if (!fmt) return 0.0f;
+    auto hit = lineHeightCache_.find(fmt);
+    if (hit != lineHeightCache_.end()) return hit->second;
+    float dip = 0.0f;
+    IDWriteFontCollection* coll = nullptr;
+    if (SUCCEEDED(fmt->GetFontCollection(&coll)) && coll) {
+        IDWriteFontFamily* family = nullptr;
+        UINT32 idx = 0; BOOL exists = FALSE;
+        wchar_t famName[64];
+        UINT32 nameLen = fmt->GetFontFamilyNameLength();
+        if (nameLen < 64 &&
+            SUCCEEDED(fmt->GetFontFamilyName(famName, 64)) &&
+            SUCCEEDED(coll->FindFamilyName(famName, &idx, &exists)) &&
+            exists &&
+            SUCCEEDED(coll->GetFontFamily(idx, &family)) && family) {
+            IDWriteFont* font = nullptr;
+            if (SUCCEEDED(family->GetFirstMatchingFont(
+                    fmt->GetFontWeight(), fmt->GetFontStretch(),
+                    fmt->GetFontStyle(), &font)) && font) {
+                DWRITE_FONT_METRICS m = {};
+                font->GetMetrics(&m);
+                const float units = static_cast<float>(
+                    m.ascent + m.descent + m.lineGap);
+                const float design =
+                    static_cast<float>(m.designUnitsPerEm);
+                if (design > 0.0f && units > 0.0f) {
+                    dip = fmt->GetFontSize() * units / design;
+                }
+                font->Release();
+            }
+            family->Release();
+        }
+        coll->Release();
+    }
+    lineHeightCache_[fmt] = dip;
+    return dip;
 }
 
 void Renderer::SetZoom(float z) {
@@ -785,10 +837,9 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         bl.nodeIndex = 0;
         bl.u16ToSrc = std::move(cu16ToSrc);
         bl.u16ToSrcEnd = std::move(cu16ToSrcEnd);
-        // Store the font em height for correct caret sizing.
-        if (code_fmt_) {
-            bl.fontHeight = code_fmt_->GetFontSize();
-        }
+        // Caret height: the natural line height of the code font
+        // (cursor-blinking guide), not the em size.
+        bl.fontHeight = LineHeightOf(code_fmt_);
         cache_->Add(bl);
     } else {
         layout->Release();
@@ -1164,9 +1215,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     bl.nodeIndex = 0;
                     bl.u16ToSrc = row.cells[c].u16ToSrc; // copy parser's mapping
                     bl.u16ToSrcEnd = row.cells[c].u16ToSrcEnd;
-                    if (body_fmt_) {
-                        bl.fontHeight = body_fmt_->GetFontSize();
-                    }
+                    bl.fontHeight = LineHeightOf(body_fmt_);
                     cache_->Add(bl);
                 } else {
                     layout->Release();
@@ -1939,10 +1988,9 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             bl.nodeIndex = nodeIdx;
             bl.u16ToSrc = std::move(u16ToSrc);
             bl.u16ToSrcEnd = std::move(u16ToSrcEnd);
-            // Store the font em height for correct caret sizing.
-            if (fmt) {
-                bl.fontHeight = fmt->GetFontSize();
-            }
+            // Caret height: the natural line height of this block's
+            // format (cursor-blinking guide), not the em size.
+            bl.fontHeight = LineHeightOf(fmt);
             cache_->Add(bl);
         } else {
             layout->Release();
@@ -2202,7 +2250,7 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         bl.srcLength = static_cast<uint32_t>(src.size());
         bl.textStartOffset = 0;
         bl.nodeIndex = 0;
-        bl.fontHeight = code_fmt_->GetFontSize();
+        bl.fontHeight = LineHeightOf(code_fmt_);
         // Build u16ToSrc mapping: each UTF-16 code unit maps to its
         // source byte offset.
         std::vector<uint32_t> sourceU16End;

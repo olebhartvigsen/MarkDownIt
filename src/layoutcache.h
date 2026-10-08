@@ -24,7 +24,9 @@ struct BlockLayout {
     // hit-testing and caret placement when inline syntax is present.
     std::vector<uint32_t> u16ToSrc;
     std::vector<uint32_t> u16ToSrcEnd;
-    float fontHeight = 0.0f; // em size in DIP (for caret height)
+    float fontHeight = 0.0f; // natural font line height in DIP
+                              // (ascent+descent+lineGap, zoom-scaled);
+                              // caret height per cursor-blinking guide
 };
 
 class LayoutCache {
