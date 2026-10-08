@@ -338,6 +338,18 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow, const std::wstring& cmdLine)
         }
         // Apply content width setting to the renderer.
         renderer_.SetContentWidthMode(settings_.contentWidthMode);
+
+        // The saved width must also be visible in the File menu on the
+        // first open: the ribbon framework serves the static markup
+        // labels until a command's Label property is invalidated, so
+        // without this the checkmark only appears after the first
+        // active choice. Timer 6 runs InvalidateSettingsButtons, the
+        // same deferred path a width change uses; at startup no popup
+        // is animating closed, the timer is just a cheap way to reuse
+        // the one proven-safe invalidation path.
+        if (hwnd_) {
+            SetTimer(hwnd_, 6, 350, nullptr);
+        }
     }
 
     return true;
