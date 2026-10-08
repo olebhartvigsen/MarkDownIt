@@ -176,6 +176,7 @@ add_executable(MarkDownIt WIN32
     src/findbar.cpp
     src/markers.cpp
     src/outline.cpp
+    src/outlinepane.cpp
     src/textdrag.cpp
     src/fileassoc.cpp
     src/settings.cpp
