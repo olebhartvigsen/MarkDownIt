@@ -355,6 +355,10 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
 
     // Settings buttons (Fil menu): dynamic labels reflect current state.
     // cmdAssocMd shows "Associate .md files" or "Unassociate .md files".
+    // Width entries carry a checkmark prefix on the active width, the
+    // native menu idiom for a chosen item: UICC's content model for a
+    // MenuGroup allows no toggle or checkbox controls, so the mark
+    // rides on the label text.
     if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_Label))
     {
         diag::TraceFmt("UpdateProperty label branch cmd=%u", nCmdID);
@@ -372,24 +376,33 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
                            (unsigned)hrAssoc);
             return hrAssoc;
         }
-    }
-
-    // Width commands are ToggleButtons in the File menu: the active
-    // document width is the pressed one (ribbon guidelines: state on
-    // the control, not a relabeled menu entry).
-    if (ppropvarNewValue && IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
-    {
         static const UINT widthCmds[4] = {
             IDC_CMD_WIDTH_STD, IDC_CMD_WIDTH_960,
             IDC_CMD_WIDTH_1600, IDC_CMD_WIDTH_FULL
         };
+        static const wchar_t* const widthLabels4[4] = {
+            L"Standard", L"960 px", L"1600 px", L"Full width"
+        };
         for (int i = 0; i < 4; ++i) {
             if (nCmdID == widthCmds[i]) {
                 int mode = m_pApp ? m_pApp->GetContentWidthMode() : 0;
-                ppropvarNewValue->vt = VT_BOOL;
-                ppropvarNewValue->boolVal =
-                    (mode == i) ? VARIANT_TRUE : VARIANT_FALSE;
-                return S_OK;
+                // buf lives in the loop body: lbl must not outlive it.
+                // The earlier version built buf inside "if (mode == i)",
+                // so lbl pointed into a dead scope by the time the
+                // trace calls and SetCmdLabel ran, and the mark the
+                // user was supposed to see never survived the trip.
+                wchar_t buf[40];
+                buf[0] = (wchar_t)0x2713;  // check mark
+                buf[1] = L' ';
+                wcsncpy_s(buf + 2, 38, widthLabels4[i], _TRUNCATE);
+                const wchar_t* lbl =
+                    (mode == i) ? buf : widthLabels4[i];
+                diag::TraceFmt("UpdateProperty width label i=%d mode=%d",
+                               i, mode);
+                HRESULT hrWidth = SetCmdLabel(lbl, ppropvarNewValue);
+                diag::TraceFmt("UpdateProperty width label done i=%d hr=0x%08X",
+                               i, (unsigned)hrWidth);
+                return hrWidth;
             }
         }
     }
