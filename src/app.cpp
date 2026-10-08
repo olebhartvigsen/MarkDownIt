@@ -2495,10 +2495,16 @@ void AppWindow::LoadDocumentText(const std::string& raw, const std::wstring& pat
         outline_.SetItems(outline_items_);
     UpdateOutlineActive();
     // A newly loaded document re-shows the pane if the session left it
-    // open (the welcome screen keeps it hidden).
-    if (outline_.IsCreated() && !outline_.IsVisible()
-        && settings_.outlineVisible && !welcome_mode_)
+    // open (the welcome screen keeps it hidden). Laying out right away
+    // matters: ShowWindow flips IsWindowVisible before the pane has
+    // any geometry, and without a resize pass it would sit at its
+    // 10x10 creation size behind the document, absorbing the first
+    // outline toggle (which would "hide" the invisible pane).
+    if (outline_.IsCreated() && settings_.outlineVisible
+        && !welcome_mode_ && !outline_.IsVisible()) {
         ShowWindow(outline_.Handle(), SW_SHOW);
+        ResizeContentWindow();
+    }
     // Force render target recreation; the D2D hwnd target can become
     // invalid after the GetOpenFileNameW modal dialog closes.
     SafeRelease(rt_);
@@ -2682,10 +2688,10 @@ void AppWindow::OnCreate(HWND hwnd) {
         });
     }
     outline_.SetWidthDip(settings_.outlineWidthDip);
-    // Restore the last session's pane state; the first file load fills
-    // the list (the reparse hook runs on every document change).
-    if (!welcome_mode_ && settings_.outlineVisible)
-        ShowWindow(outline_.Handle(), SW_SHOW);
+    // Restore the last session's pane state: ResizeContentWindow shows
+    // the pane with geometry when settings remember it as open, so
+    // nothing here flips visibility without a following layout pass.
+    // (The first file load fills the list via the reparse hook.)
 
     // Try to get ID2D1DeviceContext5 for SVG support (Windows 10 Creators Update+).
     // If QI fails, the app runs without SVG; diagrams fall back to code blocks.
@@ -2791,8 +2797,12 @@ void AppWindow::ResizeContentWindow() {
     // content window moves right and loses the pane width; every
     // scrollbar range follows through the normal resize path.
     int paneX = 0;
-    const bool paneOn = outline_.IsCreated() && outline_.IsVisible()
-        && !welcome_mode_;
+    // A pane remembered as open (settings) counts as on even before
+    // its first ShowWindow: the layout pass then gives it geometry at
+    // the same time it becomes visible, so it can never sit invisible
+    // at creation size absorbing a toggle click.
+    const bool paneOn = outline_.IsCreated() && !welcome_mode_
+        && (outline_.IsVisible() || settings_.outlineVisible);
     if (paneOn) {
         const float scale = static_cast<float>(dpi_) / 96.0f;
         const int paneW = static_cast<int>(outline_.WidthDip() * scale);
