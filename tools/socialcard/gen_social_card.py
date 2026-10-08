@@ -20,8 +20,9 @@ def draw_card(font_reg, font_bold, out):
     d.ellipse([80, 60, 260, 240], fill=WHITE)
     d.text((110, 110), "M↓", font=font_bold, fill=TEAL_DARK)
     d.text((320, 120), "MarkDownIt", font=font_bold, fill=WHITE)
-    d.text((320, 220), "A native Windows Markdown viewer.", font=font_reg, fill=WHITE)
+    d.text((320, 220), "A native Windows Markdown editor.", font=font_reg, fill=WHITE)
     d.text((320, 420), "No Electron. No .NET. No browser.", font=font_reg, fill=(224, 255, 250))
+    d.text((320, 510), "github.com/olebhartvigsen/MarkDownIt", font=font_reg, fill=(174, 224, 220))
     img.save(out, "PNG")
 
 if __name__ == "__main__":

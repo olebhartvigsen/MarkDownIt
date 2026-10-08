@@ -3,26 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MarkDownIt: a native Windows Markdown viewer</title>
-<meta name="description" content="MarkDownIt is a native Windows app for Markdown files: one executable, no Electron, no .NET runtime. Renders Mermaid diagrams, imports Word, exports Word and PDF. MIT licensed, in beta.">
+<title>MarkDownIt: a native Windows Markdown editor with WYSIWYG</title>
+<meta name="description" content="MarkDownIt is a native Windows Markdown editor with WYSIWYG: edit in the rendered view, the file stays plain Markdown. Native Mermaid diagrams, Word import, Word and PDF export. One executable, no Electron, no .NET runtime. MIT licensed, in beta.">
 <link rel="canonical" href="https://olebhartvigsen.github.io/MarkDownIt/">
 <link rel="icon" href="favicon.ico" sizes="any">
 <link rel="icon" href="markdownit-icon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#0F766E">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="MarkDownIt">
-<meta property="og:title" content="MarkDownIt: a native Windows Markdown viewer">
-<meta property="og:description" content="One executable, no Electron, no .NET runtime. Native Mermaid rendering, Word import and export, PDF export. MIT licensed.">
+<meta property="og:title" content="MarkDownIt: a native Windows Markdown editor with WYSIWYG">
+<meta property="og:description" content="Edit Markdown as it renders: WYSIWYG editing in one executable, no Electron, no .NET runtime. Native Mermaid diagrams, Word and PDF export. MIT licensed.">
 <meta property="og:url" content="https://olebhartvigsen.github.io/MarkDownIt/">
 <meta property="og:image" content="https://olebhartvigsen.github.io/MarkDownIt/social-card.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="MarkDownIt, a native Windows Markdown viewer. Single exe, native Mermaid rendering, Word and PDF support.">
+<meta property="og:image:alt" content="MarkDownIt, a native Windows Markdown editor with WYSIWYG. Single exe, native Mermaid diagrams, Word and PDF support.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="MarkDownIt: a native Windows Markdown viewer">
-<meta name="twitter:description" content="One executable, no Electron, no .NET runtime. Native Mermaid rendering, Word import and export, PDF export. MIT licensed.">
+<meta name="twitter:title" content="MarkDownIt: a native Windows Markdown editor with WYSIWYG">
+<meta name="twitter:description" content="Edit Markdown as it renders: WYSIWYG editing in one executable, no Electron, no .NET runtime. Native Mermaid diagrams, Word and PDF export. MIT licensed.">
 <meta name="twitter:image" content="https://olebhartvigsen.github.io/MarkDownIt/social-card.png">
-<meta name="twitter:image:alt" content="MarkDownIt, a native Windows Markdown viewer. Single exe, native Mermaid rendering, Word and PDF support.">
+<meta name="twitter:image:alt" content="MarkDownIt, a native Windows Markdown editor with WYSIWYG. Single exe, native Mermaid diagrams, Word and PDF support.">
 <style>
 :root{
   --teal:#0F766E; --teal-bright:#14B8A6; --teal-deep:#0B5E57;
@@ -98,6 +98,19 @@ section{padding:72px 0}
 .card p{color:var(--muted);font-size:15px;margin:0}
 .card h3{color:var(--ink)}
 
+/* wysiwyg */
+.split-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:44px;align-items:start}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.duo-label{font-size:12.5px;font-weight:600;color:var(--muted);text-align:center;margin-bottom:8px}
+.mock-sm{width:100%}
+.mock-sm .mock-title{font-size:11px}
+.mock-sm .mock-body{padding:12px 14px 14px}
+.mock-line{position:relative}
+.mock-line .seg{position:absolute;top:0;bottom:0;background:#5A6B75;border-radius:4px}
+.mock-src{background:var(--navy);color:#C9E5E1;border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.35);padding:16px;font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:11.5px;line-height:1.9;width:100%}
+.ms-line{white-space:nowrap;overflow:hidden}
+.ms-c{color:#7ED8CC;font-weight:600}
+
 /* mermaid */
 .mermaid-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:44px;align-items:start}
 .mermaid-grid ul{color:var(--muted);padding-left:20px;margin:14px 0}
@@ -153,6 +166,7 @@ footer .fine{color:#7E9491;font-size:13px}
     </a>
     <nav aria-label="Main">
       <a href="#features">Features</a>
+      <a href="#wysiwyg">WYSIWYG</a>
       <a href="#mermaid">Mermaid</a>
       <a href="#office">Word and PDF</a>
       <a href="#faq">FAQ</a>
@@ -167,14 +181,15 @@ footer .fine{color:#7E9491;font-size:13px}
 <section class="hero">
   <div class="wrap">
     <div>
-      <span class="eyebrow">Native Windows Markdown app</span>
+      <span class="eyebrow">Native Windows Markdown editor</span>
       <h1>MarkDownIt</h1>
-      <p class="lead">MarkDownIt opens and edits Markdown files the way a Windows app should: one executable, no Electron shell, no .NET runtime, rendering with the graphics stack that ships in Windows.</p>
+      <p class="lead">MarkDownIt edits Markdown in the rendered view itself: the caret sits in the formatted text, and the file on disk stays plain Markdown. One executable, no Electron shell, no .NET runtime, drawn with the graphics stack that ships in Windows.</p>
       <div class="hero-ctas">
         <a class="btn btn-solid" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Download the beta</a>
         <a class="btn btn-ghost" href="#features">See what it does</a>
       </div>
       <div class="chip-row" aria-label="Facts">
+        <span class="chip">WYSIWYG editing</span>
         <span class="chip">Windows 10 and 11</span>
         <span class="chip">x64</span>
         <span class="chip">Single exe</span>
@@ -210,12 +225,12 @@ footer .fine{color:#7E9491;font-size:13px}
     </div>
     <div class="grid">
       <div class="card">
-        <h3>One executable, nothing to install</h3>
-        <p>MarkDownIt is a single exe written in C++. No Electron shell, no .NET runtime, no bundled dependencies. Copy it somewhere and run it.</p>
+        <h3>Edit the rendered view</h3>
+        <p>Type in the formatted text itself. Caret, selection, undo and redo work on the rendered document, tables get cell navigation, and the file stays plain Markdown. The raw source is one toggle away.</p>
       </div>
       <div class="card">
-        <h3>Editing in both views</h3>
-        <p>Switch between rendered editing and a plain source view. Bold, italic, links, inline code, headings and lists are on the ribbon when you want them, and the source is always one toggle away.</p>
+        <h3>One executable, nothing to install</h3>
+        <p>MarkDownIt is a single exe written in C++. No Electron shell, no .NET runtime, no bundled dependencies. Copy it somewhere and run it.</p>
       </div>
       <div class="card">
         <h3>Tables and structure</h3>
@@ -229,7 +244,52 @@ footer .fine{color:#7E9491;font-size:13px}
   </div>
 </section>
 
-<section id="mermaid" class="sec-alt">
+<section id="wysiwyg" class="sec-alt">
+  <div class="wrap split-grid">
+    <div>
+      <h2>WYSIWYG editing</h2>
+      <p class="lead">Most Markdown tools put a preview next to your text. MarkDownIt puts the caret in the rendered text instead: you type formatted text directly, and the .md file on disk stays plain Markdown.</p>
+      <ul>
+        <li>Caret, selection, undo and redo work on the rendered document.</li>
+        <li>Bold, italic, links, inline code, headings, lists and quotes are on the ribbon.</li>
+        <li>Tables get cell navigation with Tab, plus row and column commands.</li>
+        <li>Find and replace, an outline pane, and zoom from 25% to 400% are built in.</li>
+      </ul>
+      <p class="note">Prefer the raw text? Switch to the source view.</p>
+    </div>
+    <div>
+      <div class="duo">
+        <div>
+          <div class="duo-label">Rendered editing</div>
+          <div class="mock mock-sm" aria-hidden="true">
+            <div class="mock-title">release-notes.md</div>
+            <div class="mock-body">
+              <div class="mock-h"></div>
+              <div class="mock-line w95"><span class="seg" style="left:31%;width:13%"></span></div>
+              <div class="mock-line w80"></div>
+              <div class="mock-h2"></div>
+              <div class="mock-table"><div></div><div></div><div></div><div></div><div></div><div></div></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="duo-label">Source view</div>
+          <div class="mock-src" aria-hidden="true">
+            <div class="ms-line"><span class="ms-c"># </span>Release notes</div>
+            <div class="ms-line">The <span class="ms-c">**</span>new<span class="ms-c">**</span> exporter keeps layout.</div>
+            <div class="ms-line"><span class="ms-c">- </span>item one</div>
+            <div class="ms-line"><span class="ms-c">- </span>item two</div>
+            <div class="ms-line"><span class="ms-c">| a | b |</span></div>
+            <div class="ms-line"><span class="ms-c">&gt; </span>a quote</div>
+          </div>
+        </div>
+      </div>
+      <p class="note">Same file, both views: edit the formatted one, read the raw one.</p>
+    </div>
+  </div>
+</section>
+
+<section id="mermaid">
   <div class="wrap mermaid-grid">
     <div>
       <h2>Mermaid, drawn natively</h2>
@@ -255,7 +315,7 @@ flowchart TD
   </div>
 </section>
 
-<section id="office">
+<section id="office" class="sec-alt">
   <div class="wrap">
     <div class="sec-head">
       <h2>Word and PDF</h2>
@@ -281,7 +341,7 @@ flowchart TD
   </div>
 </section>
 
-<section id="download" class="sec-alt">
+<section id="download">
   <div class="wrap">
     <div class="download-box">
       <h2>Download the beta</h2>
@@ -296,7 +356,7 @@ flowchart TD
   </div>
 </section>
 
-<section id="faq">
+<section id="faq" class="sec-alt">
   <div class="wrap">
     <div class="sec-head">
       <h2>FAQ</h2>
@@ -305,6 +365,10 @@ flowchart TD
     <details class="faq-item">
       <summary>What is MarkDownIt?</summary>
       <p>A native Windows app for Markdown files. It opens .md files from Explorer, renders them with Direct2D and DirectWrite, and lets you edit in a rendered view or a source view.</p>
+    </details>
+    <details class="faq-item">
+      <summary>What does WYSIWYG mean here?</summary>
+      <p>The rendered view is the editor. You place the caret in the formatted text and type. The .md file keeps its Markdown the whole time, and if you want the raw text you switch to the source view.</p>
     </details>
     <details class="faq-item">
       <summary>Which Windows versions does it run on?</summary>
