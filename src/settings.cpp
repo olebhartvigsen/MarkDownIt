@@ -45,6 +45,26 @@ AppSettings LoadSettings() {
         }
     }
 
+    // Outline pane: visible flag and width in DIP.
+    val = 0; sz = sizeof(val); type = 0;
+    if (RegQueryValueExW(hKey, L"OutlineVisible", nullptr, &type,
+            reinterpret_cast<BYTE*>(&val), &sz) == ERROR_SUCCESS &&
+        type == REG_DWORD) {
+        s.outlineVisible = (val != 0);
+    }
+    val = 0; sz = sizeof(val); type = 0;
+    if (RegQueryValueExW(hKey, L"OutlineWidth", nullptr, &type,
+            reinterpret_cast<BYTE*>(&val), &sz) == ERROR_SUCCESS &&
+        type == REG_DWORD) {
+        float w = 0.0f;
+        memcpy(&w, &val, sizeof(w));
+        if (std::isfinite(w)) {
+            if (w < 140.0f) w = 140.0f;
+            if (w > 420.0f) w = 420.0f;
+            s.outlineWidthDip = w;
+        }
+    }
+
     RegCloseKey(hKey);
 
     // Load recent files from HKCU\Software\MarkDownIt\RecentFiles
@@ -112,6 +132,16 @@ void SaveSettings(const AppSettings& s) {
     memcpy(&zBits, &zf, sizeof(zBits));
     RegSetValueExW(hKey, L"ZoomFactor", 0, REG_DWORD,
         reinterpret_cast<BYTE*>(&zBits), sizeof(zBits));
+
+    DWORD ov = s.outlineVisible ? 1u : 0u;
+    RegSetValueExW(hKey, L"OutlineVisible", 0, REG_DWORD,
+        reinterpret_cast<BYTE*>(&ov), sizeof(ov));
+
+    float owf = s.outlineWidthDip;
+    DWORD ow = 0;
+    memcpy(&ow, &owf, sizeof(ow));
+    RegSetValueExW(hKey, L"OutlineWidth", 0, REG_DWORD,
+        reinterpret_cast<BYTE*>(&ow), sizeof(ow));
 
     RegCloseKey(hKey);
 

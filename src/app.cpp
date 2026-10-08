@@ -2672,6 +2672,11 @@ void AppWindow::OnCreate(HWND hwnd) {
         outline_.SetFocusCycleCallback([this]() {
             if (hwnd_content_) SetFocus(hwnd_content_);
         });
+        // A finished splitter drag commits the width to settings.
+        outline_.SetWidthCommittedCallback([this](float w) {
+            settings_.outlineWidthDip = w;
+            SaveSettings(settings_);
+        });
     }
     outline_.SetWidthDip(settings_.outlineWidthDip);
     // Restore the last session's pane state; the first file load fills
@@ -6054,6 +6059,9 @@ bool AppWindow::IsWrapEnabled() const {
 void AppWindow::ToggleOutline() {
     if (!outline_.IsCreated()) return;
     const bool show = !outline_.IsVisible();
+    // Persist the pane state with the toggle (the pane re-opens as it
+    // was left).
+    settings_.outlineVisible = show;
     if (show) {
         // Refresh on open: the list may be stale from before the last
         // reparse if the pane was hidden (SetItems is skipped while
@@ -6064,6 +6072,7 @@ void AppWindow::ToggleOutline() {
     ShowWindow(outline_.Handle(), show ? SW_SHOW : SW_HIDE);
     ResizeContentWindow();
     UpdateScrollInfo();
+    SaveSettings(settings_);
     if (g_pRibbonFramework)
         g_pRibbonFramework->InvalidateUICommand(IDC_CMD_OUTLINE,
             UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);

@@ -145,7 +145,10 @@ void OutlinePane::DragSplitter(int px) {
 }
 
 void OutlinePane::EndSplitterDrag() {
+    if (!splitterDrag_) return;
     splitterDrag_ = false;
+    // Report the committed width so the owner persists it.
+    if (widthCommitted_) widthCommitted_(widthDip_);
 }
 
 void OutlinePane::SetItems(const std::vector<OutlineItem>& items) {
@@ -192,6 +195,11 @@ void OutlinePane::SetNavigateCallback(
 
 void OutlinePane::SetFocusCycleCallback(std::function<void()> cb) {
     focusCycle_ = std::move(cb);
+}
+
+void OutlinePane::SetWidthCommittedCallback(
+        std::function<void(float)> cb) {
+    widthCommitted_ = std::move(cb);
 }
 
 int OutlinePane::RowAt(int px, int py) const {

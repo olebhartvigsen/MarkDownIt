@@ -105,6 +105,10 @@ public:
     // (the pane has no knowledge of the document window).
     void SetFocusCycleCallback(std::function<void()> cb);
 
+    // The user finished dragging the splitter: report the committed
+    // width so the owner can persist it.
+    void SetWidthCommittedCallback(std::function<void(float)> cb);
+
     // Keyboard selection (pane-local). SelectedItem is an item index
     // or -1; SelectItem moves it and scrolls it into view;
     // ActivateSelection is Enter. Collapse selection helpers for
@@ -212,4 +216,5 @@ private:
 
     std::function<void(uint32_t offset)> navigate_;
     std::function<void()> focusCycle_;
+    std::function<void(float)> widthCommitted_;
 };
