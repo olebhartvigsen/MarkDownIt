@@ -190,6 +190,10 @@ void OutlinePane::SetNavigateCallback(
     navigate_ = std::move(cb);
 }
 
+void OutlinePane::SetFocusCycleCallback(std::function<void()> cb) {
+    focusCycle_ = std::move(cb);
+}
+
 int OutlinePane::RowAt(int px, int py) const {
     // Binary search would be premature: row counts are small.
     const float fy = static_cast<float>(py) * 96.f / dpi_ + scrollY_;
@@ -345,6 +349,13 @@ void OutlinePane::PaintRows(ID2D1RenderTarget* rt, const D2D1_RECT_F& rc) {
         } else if (v == hoverVis_) {
             brush_->SetColor(colHoverBg_);
             rt->FillRectangle(rowPx, brush_);
+        }
+        // Focus ring (dotted) around the keyboard-selected row while
+        // the pane holds focus; the active highlight stays visible in
+        // the unfocused pane (spec 13).
+        if (idx == selected_ && GetFocus() == hwnd_) {
+            brush_->SetColor(colText_);
+            rt->DrawRectangle(rowPx, brush_, 1.0f);
         }
 
         // Disclosure arrow when the row can fold.
@@ -776,6 +787,9 @@ void OutlinePane::OnKeyDown(WPARAM vk) {
         case VK_LEFT:  CollapseSelected(); break;
         case VK_RIGHT: ExpandSelected(); break;
         case VK_RETURN: ActivateSelection(); break;
+        case VK_F6:
+            if (focusCycle_) focusCycle_();
+            break;
         case VK_ESCAPE: /* owner decides; pane stays put */ break;
     }
 }

@@ -101,6 +101,10 @@ public:
     void SetNavigateCallback(std::function<void(uint32_t offset)> cb);
     bool HasNavigateCallback() const { return navigate_ != nullptr; }
 
+    // F6 inside the pane asks the owner where focus should cycle to
+    // (the pane has no knowledge of the document window).
+    void SetFocusCycleCallback(std::function<void()> cb);
+
     // Keyboard selection (pane-local). SelectedItem is an item index
     // or -1; SelectItem moves it and scrolls it into view;
     // ActivateSelection is Enter. Collapse selection helpers for
@@ -207,4 +211,5 @@ private:
     void InitColors();
 
     std::function<void(uint32_t offset)> navigate_;
+    std::function<void()> focusCycle_;
 };

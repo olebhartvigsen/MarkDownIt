@@ -420,6 +420,19 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         ToggleOutline();
         return;
     }
+    // F6 cycles focus between the document and the outline pane, the
+    // standard pane-navigation key. Works in both modes; when the pane
+    // is hidden or was never created the key does nothing.
+    if (vk == VK_F6) {
+        if (outline_.IsCreated() && outline_.IsVisible()) {
+            if (GetFocus() == outline_.Handle()) {
+                SetFocus(hwnd_content_);
+            } else {
+                SetFocus(outline_.Handle());
+            }
+        }
+        return;
+    }
     if (ctrl && !shift && (vk == 0x30 || vk == VK_NUMPAD0)) {
         ResetZoom();
         return;
@@ -2653,6 +2666,11 @@ void AppWindow::OnCreate(HWND hwnd) {
     if (outline_.Create(hwnd_, d2d_factory_, dw_factory_, dpi_)) {
         outline_.SetNavigateCallback([this](uint32_t offset) {
             NavigateToHeading(offset);
+        });
+        // F6 from the pane cycles back to the document window; the
+        // pane itself knows nothing about it.
+        outline_.SetFocusCycleCallback([this]() {
+            if (hwnd_content_) SetFocus(hwnd_content_);
         });
     }
     outline_.SetWidthDip(settings_.outlineWidthDip);
