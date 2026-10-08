@@ -521,7 +521,17 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         // delimiter rows are structural, and the last column cannot be
         // removed. Without this the ribbon offers a live button that
         // silently does nothing.
-        if (IsTableCommand(nCmdID) && m_pApp && m_pApp->IsEditing()) {
+        if (IsTableCommand(nCmdID)) {
+            // Table commands mutate the document, so outside edit mode
+            // they are disabled outright. Without this gate a table
+            // command in view mode fell through every branch below and
+            // returned E_NOTIMPL, which the framework reads as "use
+            // the default" and the button stayed live.
+            if (!m_pApp || !m_pApp->IsEditing()) {
+                ppropvarNewValue->vt = VT_BOOL;
+                ppropvarNewValue->boolVal = VARIANT_FALSE;
+                return S_OK;
+            }
             if (!m_pApp->CaretInTable()) {
                 ppropvarNewValue->vt = VT_BOOL;
                 ppropvarNewValue->boolVal = VARIANT_FALSE;

@@ -210,7 +210,14 @@
       <Command.LabelTitle>
         <String>Table Tools</String>
       </Command.LabelTitle>
-    </Command>
+          <Command.LargeImages>
+        <Image Source="icons/table-tools_32.png" MinDPI="96"/>
+        <Image Source="icons/table-tools_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/table-tools_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+</Command>
     <Command Name="cmdAddRow" Symbol="IDC_CMD_ADD_ROW" Id="10212">
       <Command.LabelTitle>
         <String>Add Row</String>
@@ -305,7 +312,14 @@
       <Command.TooltipDescription>
         <String>Left-align this column</String>
       </Command.TooltipDescription>
-    </Command>
+          <Command.LargeImages>
+        <Image Source="icons/align-left_32.png" MinDPI="96"/>
+        <Image Source="icons/align-left_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/align-left_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+</Command>
     <Command Name="cmdAlignCenter" Symbol="IDC_CMD_ALIGN_CENTER" Id="10221">
       <Command.LabelTitle>
         <String>Align Centre</String>
@@ -316,7 +330,14 @@
       <Command.TooltipDescription>
         <String>Centre this column</String>
       </Command.TooltipDescription>
-    </Command>
+          <Command.LargeImages>
+        <Image Source="icons/align-center_32.png" MinDPI="96"/>
+        <Image Source="icons/align-center_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/align-center_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+</Command>
     <Command Name="cmdAlignRight" Symbol="IDC_CMD_ALIGN_RIGHT" Id="10222">
       <Command.LabelTitle>
         <String>Align Right</String>
@@ -327,7 +348,14 @@
       <Command.TooltipDescription>
         <String>Right-align this column</String>
       </Command.TooltipDescription>
-    </Command>
+          <Command.LargeImages>
+        <Image Source="icons/align-right_32.png" MinDPI="96"/>
+        <Image Source="icons/align-right_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/align-right_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+</Command>
 
     <Command Name="cmdSplitCell" Symbol="IDC_CMD_SPLIT_CELL" Id="10223">
       <Command.LabelTitle>
@@ -339,7 +367,14 @@
       <Command.TooltipDescription>
         <String>Split this cell into two columns. Markdown cannot merge cells, so there is no merge command.</String>
       </Command.TooltipDescription>
-    </Command>
+          <Command.LargeImages>
+        <Image Source="icons/split-cell_32.png" MinDPI="96"/>
+        <Image Source="icons/split-cell_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/split-cell_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+</Command>
     <Command Name="cmdRemoveTable" Symbol="IDC_CMD_REMOVE_TABLE" Id="10216">
       <Command.LabelTitle>
         <String>Delete Table</String>
