@@ -156,6 +156,13 @@
       <Command.TooltipDescription>
         <String>Show or hide the heading outline on the left side (Ctrl+Shift+O)</String>
       </Command.TooltipDescription>
+      <Command.LargeImages>
+        <Image Source="icons/outline_32.png" MinDPI="96"/>
+        <Image Source="icons/outline_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/outline_16.png" MinDPI="96"/>
+      </Command.SmallImages>
     </Command>
     <Command Name="cmdZoomIn" Symbol="IDC_CMD_ZOOMIN" Id="10201">
       <Command.LabelTitle>
