@@ -65,11 +65,17 @@ Zoom (zoom-guidelines.md section 7):
 - Select/copy work in rendered, edit and source mode; source copy is verbatim
   Markdown, rendered copy is cleaned visible text
 
-Find bar (find-replace.md section 27):
+Find bar (find-replace.md section 27 + text spec status register, verified
+in src/findbar and src/findstate):
 - One bar docked at the bottom, Ctrl+F find mode, Ctrl+H replace mode,
   replace controls grey out in find mode, replace gated to editable views
-(NOTE: incremental search, match counter, match highlighting, wrap-around,
-regex, history are spec-only, do not claim them)
+- Match case and Whole word toggles (default off), wrap-around navigation
+  (findstate.cpp wraps at both ends), whole-word matching at Unicode
+  boundaries, search rejects non-grapheme-boundary candidates
+(RECONCILED: the find spec lists Match case/Whole word/wrap-around as
+requirements, but the text spec's implementation register ships them and the
+code confirms. Still spec-only: incremental search, match counter, match
+highlighting, current-match selection, regex, history, find in selection)
 
 Rendering (viewer + typography plans, current-context facts, and tree):
 - Headings H1 to H6, paragraphs, bullet/numbered lists with hanging indent,
