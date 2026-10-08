@@ -24,6 +24,26 @@ float Clampf(float v, float lo, float hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
+// UTF-32 to UTF-16: DirectWrite takes UTF-16, the outline model holds
+// UTF-32 (dom encoding). Code points above the BMP expand into
+// surrogate pairs so emoji in headings paint correctly.
+std::u16string ToUtf16(const std::u32string& s32) {
+    std::u16string out;
+    out.reserve(s32.size());
+    for (char32_t cp : s32) {
+        if (cp >= 0x10000 && cp <= 0x10FFFF) {
+            cp -= 0x10000;
+            out.push_back(static_cast<char16_t>(0xD800 + (cp >> 10)));
+            out.push_back(static_cast<char16_t>(0xDC00 + (cp & 0x3FF)));
+        } else if (cp < 0x10000) {
+            out.push_back(static_cast<char16_t>(cp));
+        }
+        // Unpaired or out-of-range values are dropped rather than
+        // corrupting the rest of the row.
+    }
+    return out;
+}
+
 // Expandable: an item has children when some later item is deeper.
 bool HasChildren(const std::vector<OutlineItem>& items, int i) {
     if (i + 1 >= static_cast<int>(items.size())) return false;
@@ -403,11 +423,15 @@ void OutlinePane::PaintRows(ID2D1RenderTarget* rt, const D2D1_RECT_F& rc) {
             textX, yDip * scale, rc.right - kPadXDip * scale,
             (yDip + kRowHeightDip) * scale);
         brush_->SetColor(idx == active_ ? colActiveText_ : colText_);
-        // Layout a short-lived IDWriteTextLayout for trimming.
+        // Layout a short-lived IDWriteTextLayout for trimming. The
+        // item text is UTF-32 and must be widened to UTF-16 before it
+        // reaches DirectWrite: a reinterpret_cast would hand over
+        // twice the byte count and only half the text would paint.
+        const std::u16string text16 = ToUtf16(items_[idx].text);
         IDWriteTextLayout* layout = nullptr;
         if (fmtItem_ && SUCCEEDED(dw_->CreateTextLayout(
-                reinterpret_cast<const wchar_t*>(items_[idx].text.c_str()),
-                static_cast<UINT32>(items_[idx].text.size()), fmtItem_,
+                reinterpret_cast<const wchar_t*>(text16.c_str()),
+                static_cast<UINT32>(text16.size()), fmtItem_,
                 textRc.right - textRc.left, textRc.bottom - textRc.top,
                 &layout)) && layout) {
             layout->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
