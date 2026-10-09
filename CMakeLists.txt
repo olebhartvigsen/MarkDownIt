@@ -190,6 +190,15 @@ add_executable(MarkDownIt WIN32
 )
 
 if(MSVC AND RIBBON_AVAILABLE)
+    # The Windows SDK keeps per-arch import libs under Lib/*/um/<arch>.
+    # Cross builds (-A ARM64) must link the arm64 flavor of uiribbon and
+    # propsys, not the x64 one.
+    if(CMAKE_GENERATOR_PLATFORM MATCHES "ARM64")
+        set(SDK_UM_ARCH arm64)
+    else()
+        set(SDK_UM_ARCH x64)
+    endif()
+
     target_include_directories(MarkDownIt PRIVATE
         src
         ${RIBBON_OUT_DIR}
@@ -206,8 +215,8 @@ if(MSVC AND RIBBON_AVAILABLE)
     # uiribbon.lib and propsys.lib
     if(NOT UIRIBBON_LIB)
         file(GLOB SDK_LIB_DIRS
-            "C:/Program Files (x86)/Windows Kits/10/Lib/*/um/x64"
-            "C:/Program Files/Windows Kits/10/Lib/*/um/x64"
+            "C:/Program Files (x86)/Windows Kits/10/Lib/*/um/${SDK_UM_ARCH}"
+            "C:/Program Files/Windows Kits/10/Lib/*/um/${SDK_UM_ARCH}"
         )
         list(SORT SDK_LIB_DIRS COMPARE NATURAL ORDER DESCENDING)
         if(SDK_LIB_DIRS)
@@ -218,8 +227,8 @@ if(MSVC AND RIBBON_AVAILABLE)
     if(NOT PROPSYS_LIB)
         if(NOT SDK_LIB_DIR)
             file(GLOB SDK_LIB_DIRS
-                "C:/Program Files (x86)/Windows Kits/10/Lib/*/um/x64"
-                "C:/Program Files/Windows Kits/10/Lib/*/um/x64"
+                "C:/Program Files (x86)/Windows Kits/10/Lib/*/um/${SDK_UM_ARCH}"
+                "C:/Program Files/Windows Kits/10/Lib/*/um/${SDK_UM_ARCH}"
             )
             list(SORT SDK_LIB_DIRS COMPARE NATURAL ORDER DESCENDING)
             if(SDK_LIB_DIRS)

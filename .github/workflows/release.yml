@@ -18,8 +18,19 @@ env:
 
 jobs:
   build:
-    name: Build MarkDownIt (x64) and MSI
+    name: Build MarkDownIt (${{ matrix.arch }}) and MSI
     runs-on: windows-2022
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            cmake_arch: x64
+            sdk_arch: x64
+            lib_machine: x64
+          - arch: arm64
+            cmake_arch: ARM64
+            sdk_arch: arm64
+            lib_machine: arm64
 
     steps:
       - name: Checkout
@@ -48,8 +59,8 @@ jobs:
             Write-Host "Found UICC: $($uicc.FullName)"
           }
 
-          # Find propsys.lib
-          $propsysLib = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\Lib" -Recurse -Filter "propsys.lib" -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -match "x64" } | Sort-Object FullName | Select-Object -Last 1
+          # Find propsys.lib for the target architecture
+          $propsysLib = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\Lib" -Recurse -Filter "propsys.lib" -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -match "${{ matrix.sdk_arch }}" } | Sort-Object FullName | Select-Object -Last 1
           if ($propsysLib) {
             "propsys_lib=$($propsysLib.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             Write-Host "Found propsys.lib: $($propsysLib.FullName)"
@@ -79,8 +90,9 @@ jobs:
           Set-Content -Path $defFile -Value $defContent -Encoding ASCII
           Write-Host "Generated .def with exports"
 
-          # Create import library
-          & $libexe /def:"$defFile" /out:"$libFile" /machine:x64
+          # Create import library. The machine type must match the link
+          # target: x64 for x64 builds, arm64 for cross builds.
+          & $libexe /def:"$defFile" /out:"$libFile" /machine:${{ matrix.lib_machine }}
           if (Test-Path $libFile) {
             "uiribbon_lib=$libFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
             Write-Host "Generated uiribbon.lib: $libFile"
@@ -91,7 +103,7 @@ jobs:
 
       - name: Configure CMake
         run: |
-          cmake -B build -G "Visual Studio 17 2022" -A x64 `
+          cmake -B build -G "Visual Studio 17 2022" -A ${{ matrix.cmake_arch }} `
             -DUICC_EXE="${{ steps.find-sdk.outputs.uicc_path }}" `
             -DUIRIBBON_LIB="${{ steps.find-sdk.outputs.uiribbon_lib }}" `
             -DPROPSYS_LIB="${{ steps.find-sdk.outputs.propsys_lib }}"
@@ -121,26 +133,26 @@ jobs:
         working-directory: installer
         run: >
           dotnet build MarkDownIt.wixproj -c Release
-          -p:Platform=x64
+          -p:Platform=${{ matrix.arch }}
           -p:ProductVersion=${{ steps.version.outputs.VERSION }}
-          -p:OutputName=MarkDownItSetup-x64
+          -p:OutputName=MarkDownItSetup-${{ matrix.arch }}
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-x64
+          name: build-${{ matrix.arch }}
           path: |
             build/Release/MarkDownIt.exe
-            installer/output/MarkDownItSetup-x64.msi
+            installer/output/MarkDownItSetup-${{ matrix.arch }}.msi
 
       - name: Upload EXE for MSIX
         uses: actions/upload-artifact@v4
         with:
-          name: exe-x64
+          name: exe-${{ matrix.arch }}
           path: build/Release/MarkDownIt.exe
 
   build-msix:
-    name: Build MSIX package (Store)
+    name: Build MSIX packages (Store)
     runs-on: windows-2022
     needs: build
 
@@ -168,6 +180,12 @@ jobs:
           name: exe-x64
           path: msix-staging/x64
 
+      - name: Download arm64 EXE
+        uses: actions/download-artifact@v4
+        with:
+          name: exe-arm64
+          path: msix-staging/arm64
+
       - name: Prepare MSIX manifest
         shell: bash
         run: |
@@ -180,14 +198,21 @@ jobs:
       - name: Copy pre-generated MSIX assets
         shell: bash
         run: |
-          mkdir -p msix-staging/x64/assets
-          cp installer/msix/assets/*.png msix-staging/x64/assets/
+          for arch in x64 arm64; do
+            mkdir -p "msix-staging/$arch/assets"
+            cp installer/msix/assets/*.png "msix-staging/$arch/assets/"
+          done
 
-      - name: Inject ProcessorArchitecture into the staged manifest
+      - name: Copy manifest to staging dirs (with architecture)
         shell: bash
         run: |
+          # Each architecture gets its own staged manifest with a distinct
+          # ProcessorArchitecture, or the two packages share one full name
+          # and Partner Center rejects the upload.
           cp msix-staging/AppxManifest.xml msix-staging/x64/AppxManifest.xml
           sed -i 's/<Identity /<Identity ProcessorArchitecture="x64" /' msix-staging/x64/AppxManifest.xml
+          cp msix-staging/AppxManifest.xml msix-staging/arm64/AppxManifest.xml
+          sed -i 's/<Identity /<Identity ProcessorArchitecture="arm64" /' msix-staging/arm64/AppxManifest.xml
 
       - name: Find latest Windows SDK
         id: sdk
@@ -212,29 +237,39 @@ jobs:
           # Without a resources.pri, MRT never indexes the qualified asset
           # names (targetsize-*, altform-unplated), so the taskbar falls back
           # to the plated path and paints BackgroundColor behind the icon.
-          $stage = "msix-staging/x64"
-          $cfg = "msix-staging/priconfig-x64.xml"
-          & "${{ steps.sdk.outputs.MAKEPRI }}" createconfig /cf $cfg /dq en-US /o
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          & "${{ steps.sdk.outputs.MAKEPRI }}" new /pr $stage /cf $cfg /of "$stage/resources.pri" /o
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          if (-not (Test-Path "$stage/resources.pri")) {
-            Write-Error "resources.pri missing"
-            exit 1
+          foreach ($arch in @("x64", "arm64")) {
+            $stage = "msix-staging/$arch"
+            $cfg = "msix-staging/priconfig-$arch.xml"
+            & "${{ steps.sdk.outputs.MAKEPRI }}" createconfig /cf $cfg /dq en-US /o
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            & "${{ steps.sdk.outputs.MAKEPRI }}" new /pr $stage /cf $cfg /of "$stage/resources.pri" /o
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            if (-not (Test-Path "$stage/resources.pri")) {
+              Write-Error "resources.pri missing for $arch"
+              exit 1
+            }
+            Write-Host "resources.pri built for $arch"
           }
-          Write-Host "resources.pri built"
 
-      - name: Pack MSIX
+      - name: Pack MSIX (x64)
         shell: pwsh
         run: |
           & "${{ steps.sdk.outputs.MAKEAPPX }}" pack -d msix-staging/x64 -p msix-staging/MarkDownIt-x64.msix
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      - name: Upload MSIX artifact
+      - name: Pack MSIX (arm64)
+        shell: pwsh
+        run: |
+          & "${{ steps.sdk.outputs.MAKEAPPX }}" pack -d msix-staging/arm64 -p msix-staging/MarkDownIt-arm64.msix
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Upload MSIX artifacts
         uses: actions/upload-artifact@v4
         with:
           name: msix-packages
-          path: msix-staging/MarkDownIt-x64.msix
+          path: |
+            msix-staging/MarkDownIt-x64.msix
+            msix-staging/MarkDownIt-arm64.msix
 
   publish:
     name: Publish release assets
@@ -249,13 +284,19 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download build artifacts
+      - name: Download x64 build artifacts
         uses: actions/download-artifact@v4
         with:
           name: build-x64
-          path: artifacts/build
+          path: artifacts/x64
 
-      - name: Download MSIX artifact
+      - name: Download arm64 build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-arm64
+          path: artifacts/arm64
+
+      - name: Download MSIX artifacts
         uses: actions/download-artifact@v4
         with:
           name: msix-packages
@@ -267,11 +308,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Release assets are install artifacts only: the per-user MSI and
-          # the Store MSIX. No raw exe, no manifests. GitHub itself always
-          # adds the automatic Source code (zip/tar.gz) archives; those are
-          # not assets and cannot be removed.
+          # Release assets are install artifacts only: the per-user MSIs and
+          # the Store MSIX packages, one pair per architecture. No raw exe.
+          # GitHub itself always adds the automatic Source code (zip/tar.gz)
+          # archives; those are not assets and cannot be removed.
           gh release upload "${{ github.ref_name }}" \
             --clobber \
-            "artifacts/build/installer/output/MarkDownItSetup-x64.msi" \
-            "artifacts/msix/MarkDownIt-x64.msix"
+            "artifacts/x64/installer/output/MarkDownItSetup-x64.msi" \
+            "artifacts/arm64/installer/output/MarkDownItSetup-arm64.msi" \
+            "artifacts/msix/MarkDownIt-x64.msix" \
+            "artifacts/msix/MarkDownIt-arm64.msix"
