@@ -26,6 +26,11 @@ void WordSpanAt(const TextBuffer& buf, uint32_t offset,
                 uint32_t* outStart, uint32_t* outEnd);
 bool IsOffsetInTable(const Document& doc, uint32_t offset);
 
+// Paragraph selection follows document semantics: a list item's marker and
+// terminating line break are structural, so selecting its text retains both.
+bool GetBlockSelectionRange(const Document* doc, const LayoutCache& cache,
+                            int blockIndex, uint32_t* start, uint32_t* end);
+
 // Move to the adjacent Markdown table cell. Returns false outside a table
 // or at the requested document edge.
 bool MoveTableCell(const Document& doc, uint32_t offset, bool backwards,

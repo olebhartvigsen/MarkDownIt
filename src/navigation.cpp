@@ -3,6 +3,39 @@
 #include <algorithm>
 #include <vector>
 
+bool GetBlockSelectionRange(const Document* doc, const LayoutCache& cache,
+                            int blockIndex, uint32_t* start, uint32_t* end) {
+    if (!cache.GetRenderedBlockRange(blockIndex, start, end)) return false;
+    const auto& block = cache.Blocks()[static_cast<size_t>(blockIndex)];
+    if (doc && block.nodeIndex < doc->nodes.size()) {
+        const Node& node = doc->nodes[block.nodeIndex];
+        if (node.block == BlockKind::List) {
+            // Include closing inline syntax in the selected item, but not its
+            // newline or the next item's marker. Otherwise deletion nests the
+            // next item under the empty prefix left on this source line.
+            *start = node.contentOffset;
+            const std::string* source = cache.SourceText();
+            if (source && node.srcOffset < source->size()) {
+                uint32_t cursor = node.srcOffset;
+                const uint32_t limit = std::min<uint32_t>(
+                    node.contentOffset, static_cast<uint32_t>(source->size()));
+                while (cursor < limit &&
+                       ((*source)[cursor] == ' ' || (*source)[cursor] == '\t')) ++cursor;
+                if (node.ordered) {
+                    while (cursor < limit && (*source)[cursor] >= '0' &&
+                           (*source)[cursor] <= '9') ++cursor;
+                }
+                if (cursor < limit) ++cursor; // bullet or ordered delimiter
+                while (cursor < limit &&
+                       ((*source)[cursor] == ' ' || (*source)[cursor] == '\t')) ++cursor;
+                *start = cursor; // before any opening inline syntax
+            }
+            *end = node.srcOffset + node.srcLength;
+        }
+    }
+    return *start <= *end;
+}
+
 // Check if a source offset is a hidden markdown marker character
 // (not part of the rendered text) using the layout cache's u16ToSrc
 // mapping. If the offset is not in any block's u16ToSrc, it's hidden.

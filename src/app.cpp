@@ -1577,7 +1577,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
         }
         if (blkIdx >= 0) {
             uint32_t blockStart = 0, blockEnd = 0;
-            if (!layout_cache_.GetRenderedBlockRange(blkIdx,
+            if (!GetBlockSelectionRange(source_view_ ? nullptr : &doc_, layout_cache_, blkIdx,
                                                      &blockStart, &blockEnd)) {
                 return;
             }
@@ -1683,7 +1683,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
                 sel_.anchor = {lineStart};
                 sel_.active = {lineEnd};
             } else {
-                if (!layout_cache_.GetRenderedBlockRange(blkIdx,
+                if (!GetBlockSelectionRange(source_view_ ? nullptr : &doc_, layout_cache_, blkIdx,
                                                          &lineStart, &lineEnd)) {
                     return;
                 }
@@ -1859,9 +1859,9 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
             int last = std::max(paragraph_anchor_block_, currentBlock);
             uint32_t firstStart = 0, ignoredEnd = 0;
             uint32_t ignoredStart = 0, lastEnd = 0;
-            if (!layout_cache_.GetRenderedBlockRange(first, &firstStart,
+            if (!GetBlockSelectionRange(source_view_ ? nullptr : &doc_, layout_cache_, first, &firstStart,
                                                      &ignoredEnd) ||
-                !layout_cache_.GetRenderedBlockRange(last, &ignoredStart,
+                !GetBlockSelectionRange(source_view_ ? nullptr : &doc_, layout_cache_, last, &ignoredStart,
                                                      &lastEnd)) {
                 return;
             }
@@ -1903,7 +1903,7 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
             bool gotLine = layout_cache_.GetLineRangeAtY(
                 blkIdx, docY, &curStart, &curEnd);
             if (!gotLine) {
-                if (!layout_cache_.GetRenderedBlockRange(blkIdx,
+                if (!GetBlockSelectionRange(source_view_ ? nullptr : &doc_, layout_cache_, blkIdx,
                                                          &curStart, &curEnd)) {
                     return;
                 }

@@ -576,6 +576,7 @@ Paragraph A
 Tjek:
 
 - [ ] Backspace i et tomt punkt fjerner punktet som beskrevet nedenfor.
+- [ ] Trippelklik og Backspace sletter punktets indhold, men bevarer punkt og linjeskift.
 * [ ] Backspace ved paragraph-start merger paragraphs, undtagen et tomt punkt.
 * [ ] Delete ved paragraph-end merger paragraphs.
 * [ ] Backspace i tom paragraph.
@@ -589,6 +590,11 @@ Når caret står i et punkt uden indhold, skal ét Backspace fjerne punktet.
 Reglen gælder en aktiv punktopstilling med `-`, `*` eller `+` som markør.
 Den gælder ikke en nummereret liste, kode eller bogstavelig tekst.
 En aktiv markering følger de normale regler for sletning.
+
+Trippelklik i et listepunkt skal kun markere indholdet. Markør, indrykning
+og linjeskift skal bevares, når Backspace sletter denne markering.
+Punktet bliver tomt. De næste punkter skal beholde deres tekst og niveau.
+Et nyt Backspace uden markering fjerner så det tomme punkt.
 
 Editoren skal fjerne markøren og punktets indrykning. Den skal beholde
 linjeskiftet og lade caret stå i et tomt afsnit på samme linje.
@@ -667,6 +673,7 @@ backspaceAtParagraphStart()
 backspaceAtEmptyBullet()
 backspaceAtEmptyIndentedBullet()
 undoRedoBackspaceAtEmptyBullet()
+tripleClickDeleteMiddleListItemText()
 deleteAtParagraphEnd()
 undoReturnAtParagraphEnd()
 ```
@@ -800,6 +807,10 @@ Jeg ville afslutte implementeringen med disse krav:
 > Linjeskift og nabotekst skal bevares. Undo og Redo skal gendanne begge tilstande.
 > Tests skal dække `-`, `*` og `+`, indrykning, LF og CRLF samt dokumentets grænser.
 > Kode, bogstavelig tekst og en aktiv markering skal følge deres egne regler.
+
+> Trippelklik og Backspace i punkt 3 i en liste med fem punkter skal kun slette
+> punktets indhold. Alle fem punkter og deres niveauer skal bevares efter parse.
+> Tests skal dække LF, CRLF, fed, links samt Undo og Redo.
 
 ### G. Consistency
 

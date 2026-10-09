@@ -254,7 +254,10 @@ historik fra før kompositionen.
    ligger i.
 2. Afsnittets afsluttende linjeskift skal medtages, hvis et sådant findes. Det
    gør det muligt at erstatte eller flytte afsnittet uden at efterlade et tomt
-   afsnit.
+   afsnit. Et listepunkt er en undtagelse: trippelklik markerer kun indholdet.
+   Listemarkør, indrykning og punktets afsluttende linjeskift må ikke medtages.
+   Backspace på denne markering skal efterlade et tomt punkt. De næste punkter
+   skal beholde deres tekst og niveau. Det gælder også formateret indhold.
 3. Det sidste afsnit i dokumentet skal markeres uden at læse forbi dokumentets
    slutning.
 4. Et afsnit uden synlig tekst skal markeres som sin tomme redigerbare position
@@ -1070,6 +1073,9 @@ Krav: "Tekstpositioner", "Enkeltklik" og "Enter" samt caret-referencens A-H.
   Tests dækker `-`, `*` og `+`, LF og CRLF, indrykning og dokumentets grænser.
   Efter parse og layout bliver caret på den tomme linje. Nabotekst bevares.
   Undo/redo gendanner tekst og caret. Kode og bogstavelig tekst ændrer ikke listeformat.
+- Trippelklik i punkt 3 i en liste med fem punkter efterfulgt af Backspace
+  efterlader fem punkter. Punkt 3 er tomt, og punkt 4 og 5 beholder deres niveau.
+  Tests dækker LF, CRLF, fed, links og undo/redo. Næste Backspace fjerner det tomme punkt.
 
 ### AC-04: Unicode og tovejs-layout
 
