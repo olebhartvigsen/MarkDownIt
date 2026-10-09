@@ -3,6 +3,127 @@
 #include <algorithm>
 #include <vector>
 
+namespace {
+// Excel quoting: a value wrapped in double quotes keeps tabs, and a
+// doubled quote inside is a literal quote.
+std::vector<std::string> SplitTabRow(const std::string& line) {
+    std::vector<std::string> cells;
+    std::string value;
+    bool quoted = false, wasQuoted = false, any = false;
+    auto cellDone = [&]() {
+        cells.push_back(value);
+        value.clear();
+        quoted = wasQuoted = false;
+        any = false;
+    };
+    for (size_t i = 0; i < line.size(); ++i) {
+        const char c = line[i];
+        if (quoted) {
+            if (c == '"') {
+                if (i + 1 < line.size() && line[i + 1] == '"') { value += '"'; ++i; }
+                else quoted = false;
+            } else {
+                value += c;
+            }
+        } else if (c == '"' && value.empty() && !wasQuoted && !any) {
+            quoted = wasQuoted = true;
+        } else if (c == '\t') {
+            cellDone();
+        } else {
+            value += c;
+            any = true;
+        }
+    }
+    cells.push_back(value);
+    return cells;
+}
+
+// Trim one space from each padded side of a cell, matching TableBlankRow's
+// `[padding][content][padding]` rhythm without collapsing user spacing.
+std::string TrimCell(const std::string& cell) {
+    size_t start = 0, end = cell.size();
+    if (start < end && cell[start] == ' ') ++start;
+    if (start < end && cell[end - 1] == ' ') --end;
+    return cell.substr(start, end - start);
+}
+} // namespace
+
+bool TabSeparatedToMarkdownTable(const std::string& pasted,
+                                  std::string* outTable,
+                                  uint32_t* outFirstCellCaret) {
+    if (!outTable || !outFirstCellCaret) return false;
+    outTable->clear();
+    *outFirstCellCaret = 0;
+
+    // Split into logical lines, accepting CRLF and lone CR like the parser.
+    std::vector<std::string> lines;
+    std::string line;
+    for (char c : pasted) {
+        if (c == '\n' || c == '\r') {
+            if (!line.empty()) { lines.push_back(line); line.clear(); }
+        } else {
+            line += c;
+        }
+    }
+    if (!line.empty()) lines.push_back(line);
+    if (lines.size() < 2 || lines.size() > 4096) return false;
+
+    // Every line must be tab separated with the same column count, so a
+    // plain sentence with a stray tab is left alone. Trailing empty cells
+    // are real cells (Excel copies the full rectangle), so nothing is
+    // trimmed: ragged input is rejected rather than corrupted.
+    std::vector<std::vector<std::string>> rows;
+    size_t columns = 0;
+    for (const std::string& row : lines) {
+        if (row.find('\t') == std::string::npos) return false;
+        std::vector<std::string> cells = SplitTabRow(row);
+        if (columns == 0) {
+            columns = cells.size();
+            if (columns < 2 || columns > 64) return false;
+        } else if (cells.size() != columns) {
+            return false;
+        }
+        rows.push_back(std::move(cells));
+    }
+    if (columns < 2) return false;
+
+    // Guard against plain indented text: uniform leading tabs before every
+    // line (an indented code block) leave the whole first column empty,
+    // which real spreadsheet data does not. Paste it as text instead.
+    bool anyFirstCell = false;
+    for (const std::vector<std::string>& row : rows)
+        if (!row.front().empty()) { anyFirstCell = true; break; }
+    if (!anyFirstCell) return false;
+
+    // First data row becomes the header; Excel rows after it are body rows.
+    std::string table;
+    auto appendRow = [&](const std::vector<std::string>& cells) {
+        for (const std::string& cell : cells) {
+            std::string escaped;
+            for (char c : TrimCell(cell)) {
+                if (c == '|') escaped += "\\|";
+                else escaped += c;
+            }
+            table += "| ";
+            table += escaped;
+            table += " ";
+        }
+        table += "|\n";
+    };
+    appendRow(rows.front());
+    table += TableDelimitersFor(static_cast<int>(columns));
+    for (size_t i = 1; i < rows.size(); ++i) appendRow(rows[i]);
+
+    // Caret belongs in the first body cell, right after its opening "| ".
+    size_t delimEnd = table.find('\n');
+    if (delimEnd == std::string::npos) return false;
+    delimEnd = table.find('\n', delimEnd + 1);
+    if (delimEnd == std::string::npos) return false;
+    *outTable = table;
+    *outFirstCellCaret = static_cast<uint32_t>(delimEnd + 3);
+    return true;
+}
+
 bool GetBlockSelectionRange(const Document* doc, const LayoutCache& cache,
                             int blockIndex, uint32_t* start, uint32_t* end) {
     if (!cache.GetRenderedBlockRange(blockIndex, start, end)) return false;
@@ -21,6 +142,14 @@ bool GetBlockSelectionRange(const Document* doc, const LayoutCache& cache,
                     node.contentOffset, static_cast<uint32_t>(source->size()));
                 while (cursor < limit &&
                        ((*source)[cursor] == ' ' || (*source)[cursor] == '\t')) ++cursor;
+                // Skip blockquote markers first, mirroring the parser's
+                // own scan, so a quoted item's '>' is never mistaken for
+                // the bullet: the selection must still skip the '-'.
+                while (cursor < limit && (*source)[cursor] == '>') {
+                    ++cursor;
+                    while (cursor < limit &&
+                           ((*source)[cursor] == ' ' || (*source)[cursor] == '\t')) ++cursor;
+                }
                 if (node.ordered) {
                     while (cursor < limit && (*source)[cursor] >= '0' &&
                            (*source)[cursor] <= '9') ++cursor;

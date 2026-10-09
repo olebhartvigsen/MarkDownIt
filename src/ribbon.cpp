@@ -1,6 +1,81 @@
 #include "ribbon.h"
 #include "crash_trace.h"
 #include "app.h"
+#include <oleacc.h>
+#include <cwchar>
+#include <vector>
+
+namespace {
+bool MatchRibbonButton(IAccessible* object, VARIANT child,
+                       const wchar_t* label, RECT* bounds) {
+    VARIANT role = {}, state = {};
+    BSTR name = nullptr;
+    bool match = false;
+    if (SUCCEEDED(object->get_accRole(child, &role)) && role.vt == VT_I4 &&
+        (role.lVal == ROLE_SYSTEM_PUSHBUTTON ||
+         role.lVal == ROLE_SYSTEM_BUTTONDROPDOWN) &&
+        SUCCEEDED(object->get_accState(child, &state)) && state.vt == VT_I4 &&
+        !(state.lVal & (STATE_SYSTEM_INVISIBLE | STATE_SYSTEM_OFFSCREEN)) &&
+        SUCCEEDED(object->get_accName(child, &name)) && name &&
+        std::wcscmp(name, label) == 0) {
+        long x = 0, y = 0, width = 0, height = 0;
+        if (SUCCEEDED(object->accLocation(&x, &y, &width, &height, child)) &&
+            width > 0 && height > 0) {
+            *bounds = {x, y, x + width, y + height};
+            match = true;
+        }
+    }
+    SysFreeString(name);
+    VariantClear(&state);
+    VariantClear(&role);
+    return match;
+}
+
+bool FindRibbonButton(IAccessible* object, const wchar_t* label,
+                      RECT* bounds, int depth, int* budget) {
+    if (depth > 24 || --*budget < 0) return false;
+    VARIANT self = {};
+    self.vt = VT_I4;
+    self.lVal = CHILDID_SELF;
+    if (MatchRibbonButton(object, self, label, bounds)) return true;
+    long count = 0, fetched = 0;
+    if (FAILED(object->get_accChildCount(&count)) || count <= 0 ||
+        count > 4096) return false;
+    std::vector<VARIANT> children(static_cast<size_t>(count));
+    const HRESULT hr = AccessibleChildren(object, 0, count, children.data(), &fetched);
+    bool found = false;
+    if (SUCCEEDED(hr)) {
+        for (long i = 0; i < fetched && !found && *budget > 0; ++i) {
+            VARIANT& child = children[static_cast<size_t>(i)];
+            if (child.vt == VT_DISPATCH && child.pdispVal) {
+                IAccessible* accessible = nullptr;
+                if (SUCCEEDED(child.pdispVal->QueryInterface(
+                        __uuidof(IAccessible), reinterpret_cast<void**>(&accessible)))) {
+                    found = FindRibbonButton(accessible, label, bounds, depth + 1, budget);
+                    accessible->Release();
+                }
+            } else if (child.vt == VT_I4) {
+                --*budget;
+                found = MatchRibbonButton(object, child, label, bounds);
+            }
+        }
+    }
+    for (auto& child : children) VariantClear(&child);
+    return found;
+}
+} // namespace
+
+bool GetRibbonButtonRect(HWND hwnd, const wchar_t* label, RECT* bounds) {
+    if (!hwnd || !label || !bounds) return false;
+    IAccessible* root = nullptr;
+    if (FAILED(AccessibleObjectFromWindow(hwnd, OBJID_CLIENT,
+            __uuidof(IAccessible), reinterpret_cast<void**>(&root)))) return false;
+    // Query current bounds rather than caching them across DPI/size changes.
+    int budget = 4096;
+    const bool found = FindRibbonButton(root, label, bounds, 0, &budget);
+    root->Release();
+    return found;
+}
 
 // Module-level globals.
 IUIFramework* g_pRibbonFramework = NULL;

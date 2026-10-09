@@ -207,3 +207,46 @@ TEST(ListSelection, OrdinaryParagraphAndSourceViewKeepTheirNewlineRule) {
     ASSERT_TRUE(GetBlockSelectionRange(nullptr, cache, 0, &start, &end));
     EXPECT_EQ(end, 4u);
 }
+
+// A blockquoted list item must keep its bullet: the selection skips the
+// quote markers, not just the first non-space byte.
+TEST(ListSelection, BlockquotedItemKeepsBulletAndQuoteMarkers) {
+    const std::string source = "> - quoted item";
+    TextBuffer buffer;
+    buffer.SetText(source);
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(source, doc));
+    ASSERT_GE(doc.nodes.size(), 2u);
+    const Node* node = nullptr;
+    size_t nodeIndex = 0;
+    for (const Node& n : doc.nodes)
+        if (n.block == BlockKind::List) { node = &n; break; }
+        else ++nodeIndex;
+    ASSERT_TRUE(node != nullptr);
+    EXPECT_EQ(node->srcLength, 15u); // spans "> - quoted item" only
+    LayoutCache cache;
+    cache.SetSourceText(&source);
+    BlockLayout block;
+    block.nodeIndex = static_cast<int>(nodeIndex);
+    for (const auto& child : node->children) {
+        for (uint32_t i = 0; i < child.srcLength; ++i) {
+            block.u16ToSrc.push_back(child.srcOffset + i);
+            block.u16ToSrcEnd.push_back(child.srcOffset + i + 1);
+        }
+    }
+    cache.Add(block);
+    uint32_t start = 0, end = 0;
+    ASSERT_TRUE(GetBlockSelectionRange(&doc, cache, 0, &start, &end));
+    // Selection begins at 'q' of "quoted", past "> - ".
+    EXPECT_EQ(start, 4u);
+    EXPECT_EQ(end, 15u);
+    TextBuffer buf;
+    buf.SetText(source);
+    Selection selection;
+    selection.anchor = {start};
+    selection.active = {end};
+    EditController editor(&buf, &selection);
+    ASSERT_TRUE(editor.DeleteBackward(&doc));
+    // Quote marker AND bullet survive; only the content was deleted.
+    EXPECT_EQ(buf.Text(), "> - ");
+}

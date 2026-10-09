@@ -143,6 +143,8 @@ public:
     void InsertLinkCmd();
     void InsertTableCmd();
     void InsertTableFromGrid(int cols, int rows);
+    void InsertPastedTableAtCaret(const std::string& table,
+                                  uint32_t firstCellCaret);
     bool AddTableRow(bool below = true);
     bool RemoveTableRow();
     bool AddTableColumn(bool right = true);

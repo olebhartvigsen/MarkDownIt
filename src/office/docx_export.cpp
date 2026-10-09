@@ -626,15 +626,23 @@ std::string NumberingPart() {
     std::string out = kXmlDeclaration;
     out += "<w:numbering xmlns:w=\"";
     out += kWmlNamespace;
-    out += "\">"
-           "<w:abstractNum w:abstractNumId=\"0\"><w:multiLevelType "
+    out += "\"><w:abstractNum w:abstractNumId=\"0\"><w:multiLevelType "
            "w:val=\"hybridMultilevel\"/>";
-    AppendNumberingLevel(out, 0, "bullet", kBulletGlyph);
-    AppendNumberingLevel(out, 1, "bullet", "o");
-    out += "</w:abstractNum><w:abstractNum w:abstractNumId=\"1\"><w:multiLevelType "
-           "w:val=\"hybridMultilevel\"/>";
-    AppendNumberingLevel(out, 0, "decimal", "%1.");
-    AppendNumberingLevel(out, 1, "decimal", "%2.");
+    // All levels the writer can emit (kMaxListLevel = 8) are defined, so
+    // a deep list never falls back to Word's default numbering for the
+    // missing levels. Bullet glyphs and decimal texts follow Word's own
+    // level ladder; indentation scales per level.
+    static const char* kBullets[] = {kBulletGlyph, "o",
+        "\xe2\x96\xa0", "\xe2\x97\x8f", "\xe2\x96\xa0",
+        "\xe2\x97\x8f", "\xe2\x96\xa0", "\xe2\x97\x8f", "\xe2\x96\xa0"};
+    static const char* kDecimal[] = {"%1.", "%2.", "%3.", "%4.", "%5.",
+                                     "%6.", "%7.", "%8.", "%9."};
+    for (int level = 0; level <= 8; ++level)
+        AppendNumberingLevel(out, level, "bullet", kBullets[level]);
+    out += "</w:abstractNum><w:abstractNum w:abstractNumId=\"1\">"
+           "<w:multiLevelType w:val=\"hybridMultilevel\"/>";
+    for (int level = 0; level <= 8; ++level)
+        AppendNumberingLevel(out, level, "decimal", kDecimal[level]);
     out += "</w:abstractNum><w:num w:numId=\"";
     out += kBulletNumberingId;
     out += "\"><w:abstractNumId w:val=\"0\"/></w:num><w:num w:numId=\"";

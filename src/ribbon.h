@@ -25,6 +25,9 @@ bool InitRibbon(HWND hWnd, AppWindow* app);
 // Destroy the Ribbon framework (release COM objects).
 void DestroyRibbon();
 
+// Current screen bounds of a visible ribbon button, including collapsed groups.
+bool GetRibbonButtonRect(HWND hwnd, const wchar_t* label, RECT* bounds);
+
 // Notify the ribbon that the wrap toggle state changed.
 // Called by AppWindow after toggling wrap mode.
 void UpdateRibbonWrapState(bool wrapped);

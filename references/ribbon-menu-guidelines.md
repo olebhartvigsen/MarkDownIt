@@ -165,6 +165,27 @@ Lessons from the File menu's width marker. They hold for any state shown inside 
 - Labels handed to the framework must be CoTaskMemAlloc'd VT_LPWSTR copies, and the framework frees them. Never point it at a stack buffer: the buffer goes out of scope before the framework copies the value. The first checkmark attempt died there.
 - UICC accepts only Button, SplitButton, DropDownButton and the two gallery controls in a MenuGroup. A ToggleButton fails the markup compile. The check mark therefore rides on the label text. This bends the no-dynamic-labels rule in section 5. The framework offers no toggle state inside a menu, and a mark prefix is the native menu idiom for a selected entry. The fixed wording of the label stays untouched. Only the mark comes and goes.
 
+## 12. MarkDownIt command layout
+
+- Find lives at Home > Find > Find, not Edit > Editing. The single-button
+  Find group is an explicit layout choice. Ctrl+F stays unchanged.
+- The Highlight group is also a single-button group by the same choice:
+  it holds Mark and pairs visually with Find on the Home tab.
+- Home > View starts with Zoom In and Zoom Out, then Wrap and Outline.
+- The table-size picker opens below the Table button, with its left edge
+  aligned to the button. It must not follow the document caret.
+- The picker accepts keyboard input as well as mouse: arrows size the
+  grid, Enter commits, Escape cancels.
+- Use the button's current screen bounds after a resize or DPI change.
+  Keep the picker inside the monitor's work area if there is not enough room.
+- The second tab is labeled Edit but its markup identifier is
+  cmdTabInsert (Id 10002); the identifier predates the rename, so match
+  on the label, not the name, when searching the markup.
+
+Check the picker with mouse and keyboard input, a narrow window, and more
+than one DPI setting. Check that Find occurs only once on the ribbon and
+that Replace stays under Edit > Editing.
+
 ## Sources
 
 - [Windows Ribbons (Win32 apps (Microsoft Learn)](https://learn.microsoft.com/en-us/windows/win32/uxguide/cmd-ribbons)) the official Microsoft ribbon UX guideline; still the canonical reference for tabs, groups, galleries, KeyTips, and labeling rules.

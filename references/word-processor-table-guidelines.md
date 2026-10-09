@@ -1045,7 +1045,7 @@ Tjek:
 * [ ] Paste i én celle.
 * [ ] Paste i flere celler.
 * [ ] Paste fra Word.
-* [ ] Paste fra Excel.
+* [x] Paste fra Excel (§40, lukket 2026-10-09).
 * [ ] Paste fra HTML.
 * [ ] Paste som ren tekst.
 * [ ] Formatting håndteres.
@@ -1055,7 +1055,7 @@ Tjek:
 
 # 40. Paste fra Excel
 
-Dette bør være et specifikt testområde.
+Status: implementeret 2026-10-09.
 
 Excel-data:
 
@@ -1076,12 +1076,43 @@ skal kunne blive:
 
 Tjek:
 
-* [ ] Tab-separeret tekst genkendes.
-* [ ] Linjeskift genkendes.
-* [ ] Antal kolonner bestemmes korrekt.
-* [ ] Manglende værdier håndteres.
+* [x] Tab-separeret tekst genkendes.
+* [x] Linjeskift genkendes.
+* [x] Antal kolonner bestemmes korrekt.
+* [x] Manglende værdier håndteres.
 * [ ] Formatting håndteres.
-* [ ] Quoted values håndteres.
+* [x] Quoted values håndteres.
+
+Implementeringen konverterer tab-separeret tekst til en Markdown-tabel, når
+alle betingelser er opfyldt:
+
+* Hver linje skal være tab-separeret, og alle linjer skal have samme
+  antal kolonner. Uens antal kolonner (inklusiv enkeltlinjer uden tabulator)
+  afvises, og teksten indsættes som almindelig tekst.
+* Konverteringen sker kun, når caret står uden for en tabel. Paste inde i en
+  celle bruger den eksisterende celle-sanitering og må aldrig introducere
+  rør-tegnet eller linjeskift i cellen.
+* Excel-quoting understøttes: en celle i anførselstegn kan indeholde
+  tabulatorer, og fordoblede anførselstegn bliver ét literalt tegn.
+* Den første række bliver header-rækken, hvorefter der genereres en
+  skillelinje. Caret ender i den første celle i første brødtekst-række.
+* Indsættelsen sker på egne linjer og er ét undo-trin: hele indsættelsen
+  (inklusiv nye linjer før og efter tabellen) sker som ét enkelt splice.
+  En strukturel paste afbryder en igangværende skrive-coalesce, så den
+  ikke flettes med sidste tastetryk.
+* Rør-tegn i celleværdier escapes (`\|`), så de ikke bryder tabelstrukturen.
+* Tomme celler i excel-udvalgets kanter bevares, fordi Excel kopierer hele
+  rektanglet.
+* Ensartet tab-indrykket tekst (fx en kodblok) har en tom første kolonne og
+  konverteres ikke, fordi rigtige spreadsheet-data altid har mindst én
+  værdi i første kolonne.
+* Konverteringen sker på rå (uescape't) klippetekst, så Excel-citater med
+  tabulatorer og rør-tegn i celleværdier tolkes korrekt. Escape af
+  Markdown-tegn sker først efter tabellen er bygget.
+* input med mere end 4096 linjer eller 64 kolonner afvises og indsættes som
+  almindelig tekst (grænse mod uinterpretérbare store datapakker).
+* Enkelt linje med tabulatorer (én Excel-række uden header-række) indsættes
+  som almindelig tekst; konverteringen kræver mindst to linjer.
 
 ---
 
@@ -1576,7 +1607,9 @@ Tjek:
 * [ ] Nested tables fjernes eller konverteres efter en defineret regel.
 * [ ] Editorens dokumentmodel kan aldrig ende med nested tables.
 * [ ] Paste fra Word testes.
-* [ ] Paste fra Excel testes.
+* [x] Paste fra Excel testes. ( Automatiseret dækning findes i
+  `tests/table_interaction_test.cpp` under `ExcelPaste.*`; manuel test af
+  selve paste-flowet i Windows mangler stadig. )
 * [ ] Paste fra browser/HTML testes.
 * [ ] Paste fra editoren selv testes.
 
@@ -1863,9 +1896,10 @@ Følgende huller er lukket siden 2026-09-17:
 
 Stadig åbne krav: fletning af celler (§21),
 kolonnebredde-drag (§31), cellejustering (§29-30), cellebaggrund
-(§35), Excel-paste som tabel (§40), tabel-til-tekst og
-tekst-til-tabel (§41-42), og en dokumentvalidator ud over tabeller
-(§60). De kræver den mere omfattende tabelmodel, som nævnt ovenfor.
+(§35), tabel-til-tekst og tekst-til-tabel (§41-42), og en
+dokumentvalidator ud over tabeller (§60). Excel-paste som tabel (§40)
+blev lukket 2026-10-09, medens de øvrige kræver den mere
+omfattende tabelmodel, som nævnt ovenfor.
 
 ### Status 2026-10-03
 

@@ -1456,12 +1456,16 @@ The implementation is considered correct when all of the following are true.
 
 ## Non-destructive behaviour
 
-- [ ] Triple-click in item 3 of a five-item list highlights only its content,
+* [x] Triple-click in item 3 of a five-item list highlights only its content,
   not its marker, indentation, final line break, or any part of item 4.
-- [ ] Mark on that selection covers only item 3's rendered text.
-- [ ] Backspace on that selection leaves five items, with item 3 empty and
+  (ListSelection.DeleteThirdItemTextKeepsFiveItemsAndTheirDepths,
+  tests/hittest_test.cpp)
+* [x] Mark on that selection covers only item 3's rendered text.
+  (MarkSelection clips through LayoutCache::ClipToRendered, src/layoutcache.cpp)
+* [x] Backspace on that selection leaves five items, with item 3 empty and
   items 4 and 5 at their original level. Undo and Redo restore the same result.
-- [ ] The list checks cover LF, CRLF, bold text and links.
+  (same ListSelection test)
+* [x] The list checks cover LF, CRLF, bold text and links. (same test matrix)
 
 * [ ] Creating a marker does not modify Markdown source.
 * [ ] Removing a marker does not modify Markdown source.

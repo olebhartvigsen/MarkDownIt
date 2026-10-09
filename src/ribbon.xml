@@ -21,6 +21,11 @@
         <String>Editing</String>
       </Command.LabelTitle>
     </Command>
+    <Command Name="cmdGroupFind" Symbol="IDC_GROUP_FIND" Id="10090">
+      <Command.LabelTitle>
+        <String>Find</String>
+      </Command.LabelTitle>
+    </Command>
     <Command Name="cmdGroupView" Symbol="IDC_GROUP_VIEW" Id="10020">
       <Command.LabelTitle>
         <String>View</String>
@@ -809,20 +814,22 @@
             <Button CommandName="cmdRedo" />
           </Group>
           <Group CommandName="cmdGroupView" SizeDefinition="FourButtons">
-            <ToggleButton CommandName="cmdWrap" />
-            <ToggleButton CommandName="cmdOutline" />
             <Button CommandName="cmdZoomIn" />
             <Button CommandName="cmdZoomOut" />
+            <ToggleButton CommandName="cmdWrap" />
+            <ToggleButton CommandName="cmdOutline" />
+          </Group>
+          <Group CommandName="cmdGroupFind" SizeDefinition="OneButton">
+            <Button CommandName="cmdFind" />
           </Group>
           <Group CommandName="cmdGroupMarkers" SizeDefinition="OneButton">
             <ToggleButton CommandName="cmdMark" />
           </Group>
         </Tab>
         <Tab CommandName="cmdTabInsert">
-          <Group CommandName="cmdGroupEdit" SizeDefinition="FourButtons">
+          <Group CommandName="cmdGroupEdit" SizeDefinition="ThreeButtons">
             <ToggleButton CommandName="cmdEditToggle" />
             <ToggleButton CommandName="cmdViewSource" />
-            <Button CommandName="cmdFind" />
             <Button CommandName="cmdReplace" />
           </Group>
           <Group CommandName="cmdGroupFormat" SizeDefinition="SixButtons">

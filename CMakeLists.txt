@@ -261,6 +261,7 @@ target_link_libraries(MarkDownIt PRIVATE
     gdi32
     ole32
     oleaut32
+    oleacc
     shell32
     shlwapi
     windowscodecs

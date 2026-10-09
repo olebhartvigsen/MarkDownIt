@@ -176,3 +176,12 @@ bool TableSetColumnAlign(const std::string& source, uint32_t tableStart,
 bool TableVerticalMove(const std::string& source, uint32_t tableStart,
                        uint32_t tableEnd, uint32_t caretOffset,
                        int direction, uint32_t* outOffset);
+
+// Convert tab-separated clipboard rows (Excel, sheets) into a Markdown
+// table in one Paste. The caller already guarantees that the caret is not
+// inside a table cell. Cells honor Excel quoting: `"a\tb"` is one value.
+// Returns the table text and the caret offset for its first body cell.
+// Returns false (empty output) when the text is not tab-separated rows.
+bool TabSeparatedToMarkdownTable(const std::string& pasted,
+                                 std::string* outTable,
+                                 uint32_t* outFirstCellCaret);

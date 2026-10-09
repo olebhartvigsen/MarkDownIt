@@ -4,6 +4,7 @@
 #include "editcontroller.h"
 #include "textbuffer.h"
 #include <algorithm>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -46,6 +47,109 @@ TEST(TableRows, BlankRowMatchesColumnCount) {
 
 TEST(TableRows, DelimitersMatchColumnCount) {
     EXPECT_EQ(TableDelimitersFor(2), "|--------|--------|\n");
+}
+
+// ─── Excel paste becomes a table (§40) ─────────────────────────────────
+
+TEST(ExcelPaste, TabRowsBecomeAMarkdownTable) {
+    const std::string pasted = "Name\tDepartment\nAda\tMath\nAlan\tComputing";
+    std::string table;
+    uint32_t caret = 0;
+    ASSERT_TRUE(TabSeparatedToMarkdownTable(pasted, &table, &caret));
+    const std::string expected =
+        "| Name | Department |\n"
+        "|--------|--------|\n"
+        "| Ada | Math |\n"
+        "| Alan | Computing |\n";
+    EXPECT_EQ(table, expected);
+    // Caret sits in the first body cell, right after its opening "| ".
+    EXPECT_EQ(table.substr(caret, 3), "Ada");
+    EXPECT_EQ(table[caret - 1], ' ');
+    EXPECT_EQ(table[caret - 2], '|');
+
+    // The produced table must parse back as a table with the right shape.
+    const Document doc = ParseDoc(table);
+    const size_t ti = TableIndexOf(doc);
+    ASSERT_TRUE(ti != SIZE_MAX);
+    // rows[] includes the header: header + two body rows.
+    ASSERT_EQ(doc.nodes[ti].rows.size(), 3u);
+    EXPECT_EQ(ToUtf8(doc.nodes[ti].rows[0].cells[0].text), "Name");
+    EXPECT_EQ(ToUtf8(doc.nodes[ti].rows[0].cells[1].text), "Department");
+    EXPECT_EQ(ToUtf8(doc.nodes[ti].rows[1].cells[0].text), "Ada");
+    EXPECT_EQ(ToUtf8(doc.nodes[ti].rows[1].cells[1].text), "Math");
+    EXPECT_EQ(ToUtf8(doc.nodes[ti].rows[2].cells[1].text), "Computing");
+}
+
+TEST(ExcelPaste, QuotedValuesKeepTabsAndDoubledQuotes) {
+    // Excel quotes a cell whose text contains the separator.
+    const std::string pasted = "\"a\tb\"\tx\n\"say \"\"hi\"\"\"\ty";
+    std::string table;
+    uint32_t caret = 0;
+    ASSERT_TRUE(TabSeparatedToMarkdownTable(pasted, &table, &caret));
+    const Document doc = ParseDoc(table);
+    const size_t ti = TableIndexOf(doc);
+    ASSERT_TRUE(ti != SIZE_MAX);
+    EXPECT_EQ(ToUtf8(doc.nodes[ti].rows[0].cells[0].text), "a\tb");
+    EXPECT_EQ(ToUtf8(doc.nodes[ti].rows[0].cells[1].text), "x");
+    EXPECT_EQ(ToUtf8(doc.nodes[ti].rows[1].cells[0].text), "say \"hi\"");
+}
+
+TEST(ExcelPaste, PipesAreEscapedAndEmptyTrailingCellsSurvive) {
+    const std::string pasted = "a|b\t\n c \t";
+    std::string table;
+    uint32_t caret = 0;
+    ASSERT_TRUE(TabSeparatedToMarkdownTable(pasted, &table, &caret));
+    const Document doc = ParseDoc(table);
+    const size_t ti = TableIndexOf(doc);
+    ASSERT_TRUE(ti != SIZE_MAX);
+    ASSERT_EQ(doc.nodes[ti].rows[0].cells.size(), 2u);
+    EXPECT_EQ(ToUtf8(doc.nodes[ti].rows[0].cells[0].text), "a|b");
+    EXPECT_TRUE(doc.nodes[ti].rows[0].cells[1].text.empty());
+    EXPECT_EQ(ToUtf8(doc.nodes[ti].rows[1].cells[0].text), "c");
+}
+
+TEST(ExcelPaste, EscapedClipboardTextDoesNotBreakQuotingOrPipes) {
+    // The real Windows paste chain escapes Markdown metacharacters before
+    // insertion. The structural conversion must run on the raw text, so
+    // prove the ordering: escaped input must NOT convert to a broken
+    // table, while raw input converts cleanly.
+    const std::string raw = "\"a\tb\"\tx\n\"say \"\"hi\"\"\"\ty";
+    std::string table;
+    uint32_t caret = 0;
+    ASSERT_TRUE(TabSeparatedToMarkdownTable(raw, &table, &caret));
+    // Escaped variant (what a naive chain would hand the converter):
+    // quotes are prefaced with backslashes, so SplitTabRow cannot see the
+    // opening quote and the payload must fall back to plain text.
+    std::string escaped;
+    for (char c : raw) {
+        if (c == '"') escaped += "\\\"";
+        else escaped += c;
+    }
+    std::string rejected;
+    uint32_t caret2 = 0;
+    EXPECT_FALSE(TabSeparatedToMarkdownTable(escaped, &rejected, &caret2));
+    EXPECT_TRUE(rejected.empty());
+}
+
+TEST(ExcelPaste, NotTabSeparatedIsRejected) {
+    const char* rejects[] = {
+        "just a sentence",
+        "one\tline only",
+        "cell\tcell\ncell",        // ragged column count
+        "\tint x;\n\tint y;",      // tab-indented text, not a table
+        "",                        // nothing
+    };
+    for (const char* text : rejects) {
+        std::string table;
+        uint32_t caret = 0;
+        EXPECT_FALSE(TabSeparatedToMarkdownTable(text, &table, &caret));
+        EXPECT_TRUE(table.empty());
+    }
+    // A pipe table from MarkDownIt itself must not be re-converted.
+    std::string table;
+    uint32_t caret = 0;
+    EXPECT_FALSE(TabSeparatedToMarkdownTable(
+        "| a | b |\n|---|---|\n| c | d |", &table, &caret));
 }
 
 TEST(TableRows, DelimiterRangeFindsSecondRow) {

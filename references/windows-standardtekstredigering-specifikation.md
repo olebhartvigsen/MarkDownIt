@@ -501,6 +501,13 @@ Det gælder Ctrl+V, Shift+Insert, menu, kontekstmenu og enhver anden paste-vej.
 Reglen har forrang for forslag om rig paste i tabelreferencen. Den gælder også
 indhold fra Word, Excel, en browser og andre tekstredigeringsprogrammer.
 
+Undtagelse (tilføjet 2026-10-09): ensartet tab-separeret tekst fra et regneark
+konverteres til en Markdown-tabel, når betingelserne i
+tabelreferencens §40 er opfyldt (ens kolonnetal, mindst to rækker,
+ikke-tab-indrykket, caret uden for en tabel, og kun i redigeringstilstand).
+Konverteringen sker på den rå tekst før Markdown-escape, og falder tilbage til
+ren tekst for alle andre input. Ellers gælder ren-tekst-reglen uden ændring.
+
 Programmet må kun bruge clipboardets rene tekstrepræsentation. RTF, HTML,
 Word-formater, typografier og indlejrede objekter må ikke importeres via paste.
 Hvis både tekst og rige formater findes, bruges kun teksten. Hvis der kun
@@ -856,11 +863,12 @@ før det kan erklæres opfyldt.
 
 ### Afvigelser fundet ved dokumentreview
 
-Statisk læsning af `src/app.cpp` viser, at klip og indsætning i visningstilstand
-kan kalde `SetEdit(true)`. Det opfylder ikke kravet om no-op uden redigering.
-Home og End med markering kollapser til markeringens ender, også med Ctrl. Det
-opfylder ikke det præciserede krav om at nå linje- eller dokumentgrænsen. Disse
-kodeveje er ikke ændret eller runtime-testet ved dette review.
+Statisk læsning af `src/app.cpp` viste tidligere, at klip og indsætning i
+visningstilstand kunne kalde `SetEdit(true)`, og at Home og End med
+markering kollapsede til markeringens ender, også med Ctrl. Begge er rettet
+2026-10-09: klip og indsætning er nu no-op i visningstilstand, og
+Home/End/Ctrl+Home/Ctrl+End når linje- eller dokumentgrænsen som krævet.
+Rettede kodeveje afventer fortsat runtime-test i Windows.
 
 `tests/editor_features_test.cpp` tester, at hjælperen `MoveTableCell` stopper
 ved sidste celle. Det beviser ikke den samlede Tab-kommando, som skal oprette en

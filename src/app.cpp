@@ -464,12 +464,24 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         return;
     }
     if (vk == VK_INSERT && shift && !ctrl) {
-        std::string text = ClipboardPaste(hwnd_content_);
-        // Same as Ctrl+V: view mode enters edit mode on a real paste.
-        if (!text.empty() && !editing_) SetEdit(true);
-        // Same in-cell paste rule as Ctrl+V: strip row syntax.
-        if (!text.empty() && IsOffsetInTable(doc_, sel_.active.offset))
+        // Paste is editing: a read-only document stays untouched (no-op),
+        // and no shortcut may itself switch the mode.
+        if (!editing_) return;
+        std::string rawText;
+        std::string text = ClipboardPasteRaw(hwnd_content_, &rawText);
+        // Same in-cell paste rule as Ctrl+V: strip row syntax. The
+        // selection's anchor side decides, matching CaretInTable().
+        if (!text.empty() && CaretInTable())
             text = SanitizePasteForTableCell(text);
+        if (!text.empty() && !CaretInTable()) {
+            // Excel rows become a table (§40) in one paste.
+            std::string table;
+            uint32_t cellCaret = 0;
+            if (TabSeparatedToMarkdownTable(rawText, &table, &cellCaret)) {
+                InsertPastedTableAtCaret(table, cellCaret);
+                return;
+            }
+        }
         if (!text.empty()) {
             pending_run_active_ = false;
             pending_run_suffix_bytes_ = 0;
@@ -480,8 +492,9 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
     }
     if (vk == VK_DELETE && shift && !ctrl) {
         if (!sel_.Empty()) {
-            // Same as Ctrl+X, including entering edit mode from view mode.
-            if (!editing_) SetEdit(true);
+            // Cut is editing: a read-only document stays untouched, and no
+            // shortcut may itself switch the mode.
+            if (!editing_) return;
             std::string sel_text = SelectionForClipboard();
             if (ClipboardCut(hwnd_content_, sel_text)) {
                 editor_.DeleteSelection();
@@ -508,10 +521,10 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
     // bar asks for the caret offset every time it navigates, so a moved
     // caret needs no bookkeeping here.
 
-    // In view mode, suppress editing keys but allow navigation, selection,
-    // and the clipboard family (Ctrl+A/C/X/V). View mode has no caret, so
-    // cut and paste enter edit mode in their handlers; plain typing stays
-    // blocked in OnChar.
+    // In view mode, suppress editing keys but allow navigation, selection
+    // and copy (Ctrl+A/C). Cut and paste are editing too, so they stay
+    // no-ops here rather than switching modes; plain typing stays blocked
+    // in OnChar.
     if (!editing_) {
         bool isNavigation = (vk == VK_LEFT || vk == VK_RIGHT ||
             vk == VK_UP || vk == VK_DOWN ||
@@ -649,10 +662,12 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         }
         case VK_HOME: {
             uint32_t newOffset;
-            if (!shift && !sel_.Empty()) {
-                newOffset = sel_.Start();
-            } else if (ctrl) {
+            if (ctrl) {
                 newOffset = 0;
+            } else if (!shift && !sel_.Empty()) {
+                // Home is a line key: collapse to the start of the
+                // selection's first line, not the selection edge.
+                newOffset = MoveLineStart(layout_cache_, sel_.Start());
             } else {
                 newOffset = MoveLineStart(layout_cache_, sel_.active.offset);
             }
@@ -666,10 +681,12 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         }
         case VK_END: {
             uint32_t newOffset;
-            if (!shift && !sel_.Empty()) {
-                newOffset = sel_.End();
-            } else if (ctrl) {
+            if (ctrl) {
                 newOffset = static_cast<uint32_t>(buffer_.Length());
+            } else if (!shift && !sel_.Empty()) {
+                // End is a line key: collapse to the end of the
+                // selection's last line, not the selection edge.
+                newOffset = MoveLineEnd(layout_cache_, sel_.End());
             } else {
                 newOffset = MoveLineEnd(layout_cache_, sel_.active.offset);
             }
@@ -886,10 +903,9 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 OnBufferChanged();
             } else if (ctrl && !shift) {
                 // An empty selection is a no-op and must not switch modes.
-                if (!sel_.Empty()) {
-                    // Cut is an edit, so view mode enters edit mode first:
-                    // there is no caret there to cut against.
-                    if (!editing_) SetEdit(true);
+                // Cut is editing: read-only documents stay untouched, and
+                // no shortcut may itself switch the mode.
+                if (!sel_.Empty() && editing_) {
                     std::string sel_text = SelectionForClipboard();
                     if (ClipboardCut(hwnd_content_, sel_text)) {
                         editor_.DeleteSelection();
@@ -925,18 +941,27 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
 
         case 0x56:  // Ctrl+V = paste
             if (ctrl && !shift) {
-                std::string text = ClipboardPaste(hwnd_content_);
-                // Paste is an edit and view mode has no caret to paste at,
-                // so switch to edit mode. Done after reading the clipboard
-                // so an empty or unsupported clipboard stays a no-op and
-                // leaves the mode alone.
-                if (!text.empty() && !editing_) SetEdit(true);
+                // Paste is editing: read-only documents stay untouched and
+                // no shortcut switches the mode by itself.
+                if (!editing_) break;
+                std::string rawText;
+                std::string text = ClipboardPasteRaw(hwnd_content_, &rawText);
                 if (!text.empty()) {
                     // Tables are single-line Markdown syntax: a paste
                     // inside a cell must never introduce pipes or row
                     // breaks (nested tables are not expressible here).
-                    if (IsOffsetInTable(doc_, sel_.active.offset))
+                    // The selection's anchor side decides, like Tab.
+                    if (CaretInTable())
                         text = SanitizePasteForTableCell(text);
+                    if (!CaretInTable()) {
+                        // Excel rows become a table (§40) in one paste.
+                        std::string table;
+                        uint32_t cellCaret = 0;
+                        if (TabSeparatedToMarkdownTable(rawText, &table, &cellCaret)) {
+                            InsertPastedTableAtCaret(table, cellCaret);
+                            break;
+                        }
+                    }
                     if (!text.empty()) {
                         pending_run_active_ = false;
                         pending_run_suffix_bytes_ = 0;
@@ -996,11 +1021,14 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             const size_t lengthBefore = buffer_.Length();
             if (ctrl) {
                 editor_.DeleteWordForward();
-            } else if (IsOffsetInTable(doc_, sel_.active.offset)) {
-                // Inside a cell the closing pipe is never consumed.
+            } else if (!source_view_ && IsOffsetInTable(doc_, sel_.active.offset)) {
+                // Inside a cell the closing pipe is never consumed. The
+                // parsed model is authoritative only in rendered view; in
+                // source view doc_ may be stale (OnReparseTimer does not
+                // reparse there), so plain deletion is used instead.
                 editor_.DeleteForwardInCell(doc_);
             } else {
-                editor_.DeleteForward(&doc_);
+                editor_.DeleteForward(source_view_ ? nullptr : &doc_);
             }
             if (buffer_.Length() != lengthBefore) OnBufferChanged();
             break;
@@ -1008,7 +1036,12 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         case VK_RETURN:
             pending_run_active_ = false;
             pending_run_suffix_bytes_ = 0;
-            if ((shift ? editor_.InsertSoftBreak(doc_)
+            // In source view the parsed model may be stale (the reparse
+            // timer does not run there), so Return inserts plain text
+            // instead of deciding structure from stale offsets.
+            if (source_view_) {
+                editor_.InsertText("\n");
+            } else if ((shift ? editor_.InsertSoftBreak(doc_)
                        : editor_.InsertParagraphBreak(doc_))) {
                 OnBufferChanged();
                 // Force immediate visual update after Enter; don't wait
@@ -4903,6 +4936,32 @@ static LRESULT CALLBACK GridPickerProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         if (wp == VK_ESCAPE) {
             DestroyWindow(h);
             g_gridPicker.hPopup = nullptr;
+            return 0;
+        }
+        // Keyboard parity with the mouse: arrows size, Enter commits,
+        // Escape cancels. The picker is not mouse-only.
+        if (wp == VK_LEFT || wp == VK_RIGHT ||
+            wp == VK_UP || wp == VK_DOWN) {
+            if (wp == VK_LEFT && g_gridPicker.selCols > 1)
+                g_gridPicker.selCols--;
+            if (wp == VK_RIGHT && g_gridPicker.selCols < TableGridPicker::kMaxCols)
+                g_gridPicker.selCols++;
+            if (wp == VK_UP && g_gridPicker.selRows > 1)
+                g_gridPicker.selRows--;
+            if (wp == VK_DOWN && g_gridPicker.selRows < TableGridPicker::kMaxRows)
+                g_gridPicker.selRows++;
+            InvalidateRect(h, nullptr, FALSE);
+            return 0;
+        }
+        if (wp == VK_RETURN) {
+            const int col = g_gridPicker.selCols;
+            const int row = g_gridPicker.selRows;
+            DestroyWindow(h);
+            g_gridPicker.hPopup = nullptr;
+            PostMessage(g_gridPicker.hParent, WM_APP + 1,
+                        static_cast<WPARAM>(col),
+                        static_cast<LPARAM>(row));
+            return 0;
         }
         return 0;
     }
@@ -4937,7 +4996,6 @@ void AppWindow::InsertTableCmd() {
     // Scale the popup from logical pixels to physical pixels so the grid
     // keeps its intended size on a high-DPI display. Paint and hit-testing
     // read these same fields.
-    const float dpix = static_cast<float>(dpi_ > 0 ? dpi_ : 96) / 96.0f;
     g_gridPicker.cell = MulDiv(TableGridPicker::kCellSize, dpi_, 96);
     g_gridPicker.margin = MulDiv(TableGridPicker::kMargin, dpi_, 96);
     g_gridPicker.labelH = MulDiv(TableGridPicker::kLabelH, dpi_, 96);
@@ -4951,31 +5009,21 @@ void AppWindow::InsertTableCmd() {
             g_gridPicker.cell * TableGridPicker::kMaxRows +
             g_gridPicker.labelH;
 
-    // Anchor the popup to the caret: its left edge lines up with the
-    // insertion point and it opens just below the caret line. Opening at a
-    // fixed window offset put the grid far to the left of the text the
-    // table is inserted at.
+    // Use the visible Table button's screen bounds, not the document caret.
+    // Accessibility provides the real position for mouse and keyboard use,
+    // including ribbon scaling and a button inside a collapsed group.
     POINT pt = {0, 0};
-    bool anchored = false;
-    if (hwnd_content_) {
-        float cx = 0.0f, cy = 0.0f, ch = 0.0f;
-        if (layout_cache_.OffsetToCaretRect(sel_.active.offset, &cx, &cy, &ch)) {
-            POINT c = {static_cast<int>(cx * dpix),
-                       static_cast<int>((cy - scrollY_) * dpix)};
-            ClientToScreen(hwnd_content_, &c);
-            pt = c;
-            pt.y += std::max(1, static_cast<int>(ch * dpix));
-            anchored = true;
-        }
-    }
-    if (!anchored) {
-        // No laid-out caret yet (empty document, or the layout cache has
-        // not run): fall back to the content window's top-left.
-        RECT rc;
-        HWND host = hwnd_content_ ? hwnd_content_ : hwnd_;
-        GetWindowRect(host, &rc);
-        pt.x = rc.left + 20;
-        pt.y = rc.top + 10;
+    RECT buttonBounds = {};
+    if (GetRibbonButtonRect(hwnd_, L"Table", &buttonBounds)) {
+        pt.x = buttonBounds.left;
+        pt.y = buttonBounds.bottom;
+    } else {
+        // If the provider has no button bounds, stay below the ribbon rather
+        // than opening at an unrelated caret somewhere in the document.
+        GetCursorPos(&pt);
+        POINT ribbonBottom = {0, static_cast<LONG>(g_ribbonHeight)};
+        ClientToScreen(hwnd_, &ribbonBottom);
+        pt.y = ribbonBottom.y;
     }
 
     // Keep the whole popup on the monitor. Clamp against the work area so
@@ -5033,32 +5081,73 @@ void AppWindow::InsertTableFromGrid(int cols, int rows) {
     }
 
     // Insert at cursor position. If there is a selection, replace it.
+    // One splice, one undo step (§3): the newlines and the table text are
+    // all part of the same structural insert, and every table line ends in
+    // a newline, which would otherwise break undo coalescing into up to
+    // three separate entries.
     uint32_t insertPos = sel_.active.offset;
+    uint32_t replaceLen = 0;
     if (!sel_.Empty()) {
         insertPos = sel_.Start();
-        SpliceWithUndo(insertPos, sel_.Length(), "");
+        replaceLen = sel_.Length();
         sel_.Collapse({insertPos});
     }
 
-    // Ensure table starts on a new line.
     const std::string& txt = buffer_.Text();
-    if (insertPos > 0 && txt[insertPos - 1] != '\n') {
-        SpliceWithUndo(insertPos, 0, "\n");
-        insertPos += 1;
-    }
-    std::string insertText = table;
-    if (insertPos + table.size() < txt.size() &&
-        txt[insertPos + table.size()] != '\n') {
+    std::string insertText;
+    if (insertPos > 0 && txt[insertPos - 1] != '\n')
         insertText += "\n";
-    }
+    const uint32_t prefixLen = static_cast<uint32_t>(insertText.size());
+    insertText += table;
+    if (insertPos + replaceLen < txt.size() &&
+        txt[insertPos + replaceLen] != '\n')
+        insertText += "\n";
 
-    SpliceWithUndo(insertPos, 0, insertText);
-    editor_.BreakUndoCoalesce();
+    SpliceWithUndo(insertPos, replaceLen, insertText);
 
     // Caret goes to the first header cell's content (after its leading
     // pipe), not past the whole table.
-    uint32_t firstCellOffset = insertPos + 1;  // past the leading '|'
+    uint32_t firstCellOffset = insertPos + prefixLen + 1;  // past leading '|'
     sel_.Collapse({firstCellOffset});
+
+    OnBufferChanged();
+    ForceRepaintNow();
+}
+
+// Shared paste path: insert a converted Excel table at the caret, on its
+// own lines, undoable as one step; the caret lands in the first body cell.
+// Mirrors InsertTableFromGrid's line handling.
+void AppWindow::InsertPastedTableAtCaret(const std::string& table,
+                                        uint32_t firstCellCaret) {
+    // Defensive hard rule (§62): a table never nests, including here.
+    if (CaretInTable()) return;
+    // A structural paste is not part of any pending typing run.
+    pending_run_active_ = false;
+    pending_run_suffix_bytes_ = 0;
+    uint32_t insertPos = sel_.active.offset;
+    uint32_t replaceLen = 0;
+    if (!sel_.Empty()) {
+        insertPos = sel_.Start();
+        replaceLen = sel_.Length();
+        sel_.Collapse({insertPos});
+    }
+
+    // One splice, one undo step: the leading/trailing newlines and the
+    // table text are all part of the same structural paste, so they must
+    // not land as separate undo entries (the coalescer groups inserts by
+    // contiguity, and every table line ends in a newline, which breaks it).
+    const std::string& txt = buffer_.Text();
+    std::string insertText;
+    if (insertPos > 0 && txt[insertPos - 1] != '\n')
+        insertText += "\n";
+    const uint32_t prefixLen = static_cast<uint32_t>(insertText.size());
+    insertText += table;
+    if (insertPos + replaceLen < txt.size() &&
+        txt[insertPos + replaceLen] != '\n')
+        insertText += "\n";
+
+    SpliceWithUndo(insertPos, replaceLen, insertText);
+    sel_.Collapse({insertPos + prefixLen + firstCellCaret});
 
     OnBufferChanged();
     ForceRepaintNow();
@@ -6370,10 +6459,9 @@ void AppWindow::ShowContextMenu(int screenX, int screenY) {
     case CM_UNDO:    ApplyUndo(false); break;
     case CM_REDO:    ApplyUndo(true); break;
     case CM_CUT:
-        if (!sel_.Empty()) {
-            // Same rule as Ctrl+X: a cut needs a caret, so view mode
-            // enters edit mode here too.
-            if (!editing_) SetEdit(true);
+        if (!sel_.Empty() && editing_) {
+            // Same rule as Ctrl+X: cut is editing, and a menu command
+            // must not switch modes by itself.
             std::string sel_text = SelectionForClipboard();
             if (ClipboardCut(hwnd_content_, sel_text)) {
                 editor_.DeleteSelection();
@@ -6389,13 +6477,27 @@ void AppWindow::ShowContextMenu(int screenX, int screenY) {
         }
         break;
     case CM_PASTE: {
-        std::string text = ClipboardPaste(hwnd_content_);
-        // Same as Ctrl+V: enter edit mode on a real paste.
-        if (!text.empty() && !editing_) SetEdit(true);
-        // Same in-cell paste rule as Ctrl+V: strip row syntax.
-        if (!text.empty() && IsOffsetInTable(doc_, sel_.active.offset))
+        // Paste is editing: a read-only document stays untouched, and the
+        // menu command must not switch modes by itself.
+        if (!editing_) break;
+        std::string rawText;
+        std::string text = ClipboardPasteRaw(hwnd_content_, &rawText);
+        // Same in-cell paste rule as Ctrl+V: strip row syntax. The
+        // selection's anchor side decides, matching CaretInTable().
+        if (!text.empty() && CaretInTable())
             text = SanitizePasteForTableCell(text);
+        if (!text.empty() && !CaretInTable()) {
+            // Excel rows become a table (§40) in one paste.
+            std::string table;
+            uint32_t cellCaret = 0;
+            if (TabSeparatedToMarkdownTable(rawText, &table, &cellCaret)) {
+                InsertPastedTableAtCaret(table, cellCaret);
+                break;
+            }
+        }
         if (!text.empty()) {
+            pending_run_active_ = false;
+            pending_run_suffix_bytes_ = 0;
             editor_.InsertText(text);
             OnBufferChanged();
         }

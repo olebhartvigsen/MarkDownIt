@@ -25,6 +25,11 @@ bool ClipboardCut(HWND hwnd, const std::string& utf8);
 // Returns text for insertion, or empty for a no-op.
 std::string ClipboardPaste(HWND hwnd);
 
+// Paste for structural conversion: returns the escaped text for insertion
+// and the raw unescaped text (tabs and quotes intact) via rawOut, so an
+// Excel-style payload can be converted before escaping is applied.
+std::string ClipboardPasteRaw(HWND hwnd, std::string* rawOut);
+
 // Convert a simple HTML fragment to Markdown.
 // Handles: headings, bold, italic, code, links, lists, blockquotes.
 // Anything else degrades to plain text.

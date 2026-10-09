@@ -320,7 +320,9 @@ bool ClipboardCut(HWND hwnd, const std::string& utf8) {
     return ClipboardCopy(hwnd, utf8);
 }
 
-std::string ClipboardPaste(HWND hwnd) {
+// Read the plain-text clipboard only. rawOut (optional) receives the
+// unescaped text for structural conversion (Excel tabs and quotes).
+static std::string PasteImpl(HWND hwnd, std::string* rawOut) {
     if (!OpenClipboard(hwnd)) return {};
     std::string result;
 
@@ -333,7 +335,11 @@ std::string ClipboardPaste(HWND hwnd) {
             if (ReadClipboardWide(hData, &wide) &&
                 wide.size() <= static_cast<size_t>(INT_MAX)) {
                 result = EscapeMarkdown(WideToUtf8(wide.c_str(),
-                                                  static_cast<int>(wide.size())));
+                    static_cast<int>(wide.size())));
+                if (rawOut) {
+                    *rawOut = WideToUtf8(wide.c_str(),
+                        static_cast<int>(wide.size()));
+                }
             }
         }
     }
@@ -341,6 +347,16 @@ std::string ClipboardPaste(HWND hwnd) {
     result = NormalizeToLf(result);
     CloseClipboard();
     return result;
+}
+
+std::string ClipboardPaste(HWND hwnd) {
+    return PasteImpl(hwnd, nullptr);
+}
+
+std::string ClipboardPasteRaw(HWND hwnd, std::string* rawOut) {
+    const std::string escaped = PasteImpl(hwnd, rawOut);
+    if (rawOut) *rawOut = NormalizeToLf(*rawOut);
+    return escaped;
 }
 
 #endif // _WIN32
