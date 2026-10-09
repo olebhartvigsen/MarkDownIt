@@ -229,8 +229,8 @@ footer .fine{color:#7E9491;font-size:13px}
       MarkDownIt
     </a>
     <nav id="site-menu" aria-label="Main">
-      <a href="#features">Features</a>
       <a href="#wysiwyg">WYSIWYG</a>
+      <a href="#features">Features</a>
       <a href="#mermaid">Mermaid</a>
       <a href="#office">Word and PDF</a>
       <a href="#faq">FAQ</a>
@@ -255,7 +255,7 @@ footer .fine{color:#7E9491;font-size:13px}
       <p class="lead">MarkDownIt is a word processor for Markdown files. You type in the rendered view itself, with a caret, selection, tables and undo, and the file on disk stays plain Markdown.</p>
       <div class="hero-ctas">
         <a class="btn btn-solid" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Download for Windows 10 or 11</a>
-        <a class="btn btn-ghost" href="#features">See what it does</a>
+        <a class="btn btn-ghost" href="#wysiwyg">See what it does</a>
       </div>
       <div class="chip-row" aria-label="Facts">
         <span class="chip">Word processor for Markdown</span>
@@ -282,44 +282,6 @@ footer .fine{color:#7E9491;font-size:13px}
           <div class="mock-line w50"></div>
         </div>
       </div>
-    </div>
-  </div>
-</section>
-
-<section id="features">
-  <div class="wrap">
-    <div class="sec-head">
-      <span class="kicker">The app</span>
-      <h2>Features</h2>
-      <p class="lead">The app, one line per feature. WYSIWYG editing, Mermaid diagrams and Word and PDF each get their own section below.</p>
-    </div>
-    <div class="feature-wrap">
-      <table class="feature-table">
-        <tbody>
-          <tr class="group"><th colspan="2">Writing</th></tr>
-          <tr><th scope="row">WYSIWYG editing</th><td>Type in the rendered view itself, and the file on disk stays plain Markdown. The details are in the next section.</td></tr>
-          <tr><th scope="row">Undo and redo</th><td>Every paste, cut and formatting command is one undo step, and continuous typing folds into one.</td></tr>
-          <tr><th scope="row">Bold, italic and links</th><td>Ctrl+B, Ctrl+I and Ctrl+K. Set a format at an empty caret and the next text you type gets it.</td></tr>
-          <tr><th scope="row">Mark text</th><td>Ctrl+Shift+H highlights the selection. Marks live outside the file, survive moves and renames, and never reach your exports.</td></tr>
-          <tr class="group"><th colspan="2">Tables</th></tr>
-          <tr><th scope="row">Cell editing</th><td>Click into any cell and type. Tab moves between cells, and Tab in the last cell adds a row.</td></tr>
-          <tr><th scope="row">Rows and columns</th><td>Add or remove rows and columns as single undo steps, and set left, center or right column alignment from the ribbon.</td></tr>
-          <tr><th scope="row">Protected cells</th><td>A pipe you type escapes itself, pasted text cannot break a row, and Enter does nothing inside a cell.</td></tr>
-          <tr class="group"><th colspan="2">Finding and view</th></tr>
-          <tr><th scope="row">Find and replace</th><td>Ctrl+F and Ctrl+H open a dock along the bottom edge, with Match case and Whole word options and results that wrap around.</td></tr>
-          <tr><th scope="row">Zoom</th><td>25% to 400%: Ctrl+wheel zooms around the pointer, Ctrl+0 returns to 100% in place, and your level is remembered.</td></tr>
-          <tr><th scope="row">Column widths</th><td>Standard, 960, 1600 or fixed without wrap, with the word wrap toggle next to them.</td></tr>
-          <tr><th scope="row">Outline pane</th><td>Jump around the document from a list of its headings.</td></tr>
-          <tr class="group"><th colspan="2">Files</th></tr>
-          <tr><th scope="row">Open your way</th><td>Double-click an associated .md file, drag one onto the window, or use Open in the ribbon.</td></tr>
-          <tr><th scope="row">Associate .md files</th><td>One ribbon command, and double-clicking a Markdown file opens MarkDownIt.</td></tr>
-          <tr><th scope="row">Follows the file</th><td>When the file changes on disk, the view reloads on its own. F5 forces it.</td></tr>
-          <tr class="group"><th colspan="2">Word, PDF and diagrams</th></tr>
-          <tr><th scope="row">Import Word (.docx)</th><td>Headings, lists, tables, images and links come across as Markdown, and the import reports what it had to leave out.</td></tr>
-          <tr><th scope="row">Export Word and PDF</th><td>The .docx export is checked in CI by an independent reader, and the PDF keeps layout, page breaks and footers.</td></tr>
-          <tr><th scope="row">Mermaid diagrams</th><td>Flowcharts, pie charts and sequence diagrams, drawn natively in the window. Details in their own section below.</td></tr>
-        </tbody>
-      </table>
     </div>
   </div>
 </section>
@@ -370,7 +332,45 @@ footer .fine{color:#7E9491;font-size:13px}
   </div>
 </section>
 
-<section id="mermaid">
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="kicker">The app</span>
+      <h2>Features</h2>
+      <p class="lead">The app, one line per feature. WYSIWYG editing has its own section above, and Mermaid diagrams and Word and PDF get theirs below.</p>
+    </div>
+    <div class="feature-wrap">
+      <table class="feature-table">
+        <tbody>
+          <tr class="group"><th colspan="2">Writing</th></tr>
+          <tr><th scope="row">WYSIWYG editing</th><td>Type in the rendered view itself, and the file on disk stays plain Markdown. The details are in the next section.</td></tr>
+          <tr><th scope="row">Undo and redo</th><td>Every paste, cut and formatting command is one undo step, and continuous typing folds into one.</td></tr>
+          <tr><th scope="row">Bold, italic and links</th><td>Ctrl+B, Ctrl+I and Ctrl+K. Set a format at an empty caret and the next text you type gets it.</td></tr>
+          <tr><th scope="row">Mark text</th><td>Ctrl+Shift+H highlights the selection. Marks live outside the file, survive moves and renames, and never reach your exports.</td></tr>
+          <tr class="group"><th colspan="2">Tables</th></tr>
+          <tr><th scope="row">Cell editing</th><td>Click into any cell and type. Tab moves between cells, and Tab in the last cell adds a row.</td></tr>
+          <tr><th scope="row">Rows and columns</th><td>Add or remove rows and columns as single undo steps, and set left, center or right column alignment from the ribbon.</td></tr>
+          <tr><th scope="row">Protected cells</th><td>A pipe you type escapes itself, pasted text cannot break a row, and Enter does nothing inside a cell.</td></tr>
+          <tr class="group"><th colspan="2">Finding and view</th></tr>
+          <tr><th scope="row">Find and replace</th><td>Ctrl+F and Ctrl+H open a dock along the bottom edge, with Match case and Whole word options and results that wrap around.</td></tr>
+          <tr><th scope="row">Zoom</th><td>25% to 400%: Ctrl+wheel zooms around the pointer, Ctrl+0 returns to 100% in place, and your level is remembered.</td></tr>
+          <tr><th scope="row">Column widths</th><td>Standard, 960, 1600 or fixed without wrap, with the word wrap toggle next to them.</td></tr>
+          <tr><th scope="row">Outline pane</th><td>Jump around the document from a list of its headings.</td></tr>
+          <tr class="group"><th colspan="2">Files</th></tr>
+          <tr><th scope="row">Open your way</th><td>Double-click an associated .md file, drag one onto the window, or use Open in the ribbon.</td></tr>
+          <tr><th scope="row">Associate .md files</th><td>One ribbon command, and double-clicking a Markdown file opens MarkDownIt.</td></tr>
+          <tr><th scope="row">Follows the file</th><td>When the file changes on disk, the view reloads on its own. F5 forces it.</td></tr>
+          <tr class="group"><th colspan="2">Word, PDF and diagrams</th></tr>
+          <tr><th scope="row">Import Word (.docx)</th><td>Headings, lists, tables, images and links come across as Markdown, and the import reports what it had to leave out.</td></tr>
+          <tr><th scope="row">Export Word and PDF</th><td>The .docx export is checked in CI by an independent reader, and the PDF keeps layout, page breaks and footers.</td></tr>
+          <tr><th scope="row">Mermaid diagrams</th><td>Flowcharts, pie charts and sequence diagrams, drawn natively in the window. Details in their own section below.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="mermaid" class="sec-alt">
   <div class="wrap mermaid-grid">
     <div>
       <span class="kicker">Diagrams</span>
@@ -424,7 +424,7 @@ flowchart TD
   </div>
 </section>
 
-<section id="office" class="sec-alt">
+<section id="office">
   <div class="wrap">
     <div class="sec-head">
       <span class="kicker">Office</span>
@@ -451,7 +451,7 @@ flowchart TD
   </div>
 </section>
 
-<section id="download">
+<section id="download" class="sec-alt">
   <div class="wrap">
     <div class="download-box">
       <span class="kicker">Get it</span>
@@ -467,7 +467,7 @@ flowchart TD
   </div>
 </section>
 
-<section id="faq" class="sec-alt">
+<section id="faq">
   <div class="wrap">
     <div class="sec-head">
       <span class="kicker">Questions</span>
