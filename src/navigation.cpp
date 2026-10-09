@@ -124,6 +124,25 @@ bool TabSeparatedToMarkdownTable(const std::string& pasted,
     return true;
 }
 
+uint32_t TableSeparatorNewlinesBefore(const std::string& text,
+                                      uint32_t insertPos) {
+    if (insertPos == 0 || insertPos > text.size()) return 0;
+    uint32_t newlines = 0;
+    size_t scan = insertPos;
+    while (newlines < 2 && scan > 0) {
+        if (text[scan - 1] == '\n') {
+            ++newlines;
+            --scan;
+        } else if (newlines > 0 && text[scan - 1] == '\r') {
+            // The CR of a CRLF pair before the counted LF.
+            --scan;
+        } else {
+            break;
+        }
+    }
+    return 2 - newlines;
+}
+
 bool GetBlockSelectionRange(const Document* doc, const LayoutCache& cache,
                             int blockIndex, uint32_t* start, uint32_t* end) {
     if (!cache.GetRenderedBlockRange(blockIndex, start, end)) return false;

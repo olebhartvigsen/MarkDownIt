@@ -49,8 +49,6 @@ TEST(TableRows, DelimitersMatchColumnCount) {
     EXPECT_EQ(TableDelimitersFor(2), "|--------|--------|\n");
 }
 
-// ─── Excel paste becomes a table (§40) ─────────────────────────────────
-
 TEST(ExcelPaste, TabRowsBecomeAMarkdownTable) {
     const std::string pasted = "Name\tDepartment\nAda\tMath\nAlan\tComputing";
     std::string table;
@@ -129,6 +127,44 @@ TEST(ExcelPaste, EscapedClipboardTextDoesNotBreakQuotingOrPipes) {
     uint32_t caret2 = 0;
     EXPECT_FALSE(TabSeparatedToMarkdownTable(escaped, &rejected, &caret2));
     EXPECT_TRUE(rejected.empty());
+}
+
+TEST(ExcelPaste, TableAfterListNeedsBlankSeparatorLine) {
+    // User scenario: caret in the first empty paragraph after a list, a
+    // new table is created there. A table cannot interrupt a list, so the
+    // insert must add a blank separator line; otherwise the table rows
+    // are absorbed as a lazy continuation of the last list item.
+    const std::string before = "- one\n- two\n";
+    // Caret just past the list's final newline (start of the empty
+    // paragraph after the list).
+    const uint32_t insertPos = 12;
+    EXPECT_EQ(TableSeparatorNewlinesBefore(before, insertPos), 1u);
+    // Reproduce the full insertion and check the parse.
+    const std::string table = "| a | b |\n|---|---|\n| 1 | 2 |\n";
+    std::string insertText(TableSeparatorNewlinesBefore(before, insertPos), '\n');
+    insertText += table;
+    std::string doc = before.substr(0, insertPos) + insertText;
+    Document parsed;
+    ASSERT_TRUE(ParseMarkdown(doc, parsed));
+    size_t tables = 0;
+    for (const Node& n : parsed.nodes)
+        if (n.block == BlockKind::Table) ++tables;
+    EXPECT_EQ(tables, 1u);
+
+    // Without the separator (the old bug): the table disappears into the
+    // last list item.
+    std::string lazy = before + table;
+    Document lazyDoc;
+    ASSERT_TRUE(ParseMarkdown(lazy, lazyDoc));
+    size_t lazyTables = 0;
+    for (const Node& n : lazyDoc.nodes)
+        if (n.block == BlockKind::Table) ++lazyTables;
+    EXPECT_EQ(lazyTables, 0u);
+
+    // Start of document needs nothing.
+    EXPECT_EQ(TableSeparatorNewlinesBefore("", 0), 0u);
+    // Already blank-separated text needs nothing extra.
+    EXPECT_EQ(TableSeparatorNewlinesBefore("- x\n\n", 6), 0u);
 }
 
 TEST(ExcelPaste, NotTabSeparatedIsRejected) {

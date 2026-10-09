@@ -5095,8 +5095,9 @@ void AppWindow::InsertTableFromGrid(int cols, int rows) {
 
     const std::string& txt = buffer_.Text();
     std::string insertText;
-    if (insertPos > 0 && txt[insertPos - 1] != '\n')
-        insertText += "\n";
+    // Same block rule as the paste path: a table always needs a blank
+    // separator line before it, or the previous block absorbs it.
+    insertText.append(TableSeparatorNewlinesBefore(txt, insertPos), '\n');
     const uint32_t prefixLen = static_cast<uint32_t>(insertText.size());
     insertText += table;
     if (insertPos + replaceLen < txt.size() &&
@@ -5132,14 +5133,17 @@ void AppWindow::InsertPastedTableAtCaret(const std::string& table,
         sel_.Collapse({insertPos});
     }
 
-    // One splice, one undo step: the leading/trailing newlines and the
-    // table text are all part of the same structural paste, so they must
-    // not land as separate undo entries (the coalescer groups inserts by
-    // contiguity, and every table line ends in a newline, which breaks it).
+    // One splice, one undo step (§3): the newlines and the table text are
+    // all part of the same structural insert, and every table line ends in
+    // a newline, which would otherwise break undo coalescing into up to
+    // three separate entries.
     const std::string& txt = buffer_.Text();
     std::string insertText;
-    if (insertPos > 0 && txt[insertPos - 1] != '\n')
-        insertText += "\n";
+    // A table is a block: without a blank separator line before it, the
+    // previous block (e.g. the last item of a list) absorbs the table rows
+    // as a lazy continuation. Inserting into the paragraph right after a
+    // list therefore needs a full blank line, not just one newline.
+    insertText.append(TableSeparatorNewlinesBefore(txt, insertPos), '\n');
     const uint32_t prefixLen = static_cast<uint32_t>(insertText.size());
     insertText += table;
     if (insertPos + replaceLen < txt.size() &&

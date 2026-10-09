@@ -183,5 +183,12 @@ bool TableVerticalMove(const std::string& source, uint32_t tableStart,
 // Returns the table text and the caret offset for its first body cell.
 // Returns false (empty output) when the text is not tab-separated rows.
 bool TabSeparatedToMarkdownTable(const std::string& pasted,
-                                 std::string* outTable,
-                                 uint32_t* outFirstCellCaret);
+                                  std::string* outTable,
+                                  uint32_t* outFirstCellCaret);
+
+// Newline bytes that must precede a block table inserted at insertPos so
+// the table never becomes a lazy continuation of the previous block (a
+// list item or paragraph absorbs table rows as plain text). 0 at the
+// document start; otherwise enough to reach a blank separator line.
+uint32_t TableSeparatorNewlinesBefore(const std::string& text,
+                                      uint32_t insertPos);
