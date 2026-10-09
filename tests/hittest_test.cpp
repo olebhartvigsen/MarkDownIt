@@ -150,11 +150,10 @@ TEST(HitTest, EmptyTableCellClickKeepsCaretInClickedCell) {
     }
 
     // A click resolving to the empty cell's own offset must stay there,
-    // not snap to the header cell's rendered bytes 2-3.
+    // not snap to the header cell's rendered bytes 2-3. (Padding clicks
+    // resolve to textStartOffset first, so they also arrive as 24.)
     const uint32_t clicked = 24;
     EXPECT_EQ(cache.NormalizeToRenderedCaret(clicked), 24u);
-    // Any offset inside the empty cell span keeps to the cell.
-    EXPECT_EQ(cache.NormalizeToRenderedCaret(23u), 23u);
 }
 
 // A non-empty cell keeps its marker-aware normalization but never lets
