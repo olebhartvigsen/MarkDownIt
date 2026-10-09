@@ -11,8 +11,8 @@ IDI_DOCICON ICON "markdownit-doc.ico"
 // (no #include of winver.h or windows.h here). VS_VERSION_INFO is 1.
 // Bump all four values on every release; see references/release-pipeline.md.
 1 VERSIONINFO
-FILEVERSION     0,2,0,0
-PRODUCTVERSION  0,2,0,0
+FILEVERSION     0,2,1,0
+PRODUCTVERSION  0,2,1,0
 FILEFLAGSMASK   0x0000003fL
 FILEFLAGS       0x00000000L
 FILEOS          0x00040004L
@@ -26,8 +26,8 @@ BEGIN
             VALUE "FileDescription",  "MarkDownIt"
             VALUE "ProductName",      "MarkDownIt"
             VALUE "CompanyName",      ""
-            VALUE "FileVersion",      "0.2.0.0"
-            VALUE "ProductVersion",   "0.2.0.0"
+            VALUE "FileVersion",      "0.2.1.0"
+            VALUE "ProductVersion",   "0.2.1.0"
             VALUE "InternalName",     "MarkDownIt"
             VALUE "OriginalFilename", "MarkDownIt.exe"
             VALUE "LegalCopyright",   "Copyright (c) 2026 Ole Hartvigsen. MIT License."
