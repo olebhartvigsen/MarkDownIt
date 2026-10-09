@@ -24,7 +24,9 @@ closes a running MarkDownIt.exe during upgrade, and launches the app after
 install. No auto-start entry: MarkDownIt is not a resident utility.
 
 `build-msix` stages the exe, copies `installer/msix/AppxManifest.xml`, sets
-the package version with a sed scoped to the Identity line, injects
+the package version with a multiline substitution scoped to the Identity
+element (the element spans several lines in the manifest, so a line-based
+sed never reaches the Version attribute), injects
 `ProcessorArchitecture="x64"`, copies the committed PNGs from
 `installer/msix/assets/`, builds `resources.pri` with makepri, and packs with
 makeappx. The Store version registers `.md` through a file type association;
@@ -156,9 +158,13 @@ the plain assets because the artwork already has a transparent background.
   commit. To pick up a workflow fix, move the release: delete it with
   `--cleanup-tag`, push the fix, and recreate the release on the new main
   head.
-- The version sed must stay scoped to the Identity line. A blanket
-  `Version="..."` match also rewrites the TargetDeviceFamily MinVersion,
-  and the Store rejects the package for it.
+- The version substitution must reach the Version attribute inside the
+  multi-line Identity element. A line-based sed scoped to the `<Identity `
+  line never matches it, and a blanket `Version="..."` match would also
+  rewrite the TargetDeviceFamily MinVersion. Use the slurped, lookbehind-
+  guarded substitution (see build-msix in release.yml), and keep the
+  committed manifest Version in sync with the last release so a failed
+  substitution cannot pass the compliance check by accident.
 - Bump `app.rc` before tagging. The tag drives the MSI and MSIX versions;
   the exe reports whatever app.rc holds, and a mismatch makes the built
   artifacts hard to verify.

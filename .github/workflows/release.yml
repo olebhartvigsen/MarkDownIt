@@ -191,9 +191,10 @@ jobs:
         run: |
           mkdir -p msix-staging
           cp installer/msix/AppxManifest.xml msix-staging/AppxManifest.xml
-          # Scope the sed to the Identity line. A blanket Version="..." match
-          # would also clobber the TargetDeviceFamily MinVersion.
-          sed -i '/<Identity /s/Version="[^"]*"/Version="${{ steps.version.outputs.MSIX_VERSION }}"/' msix-staging/AppxManifest.xml
+          # The Identity element spans multiple lines in the source manifest,
+          # so the substitution must cross newlines inside the element. The
+          # lookbehind keeps TargetDeviceFamily MinVersion untouched.
+          perl -0777 -pi -e 's/(<Identity\b[^>]*?)(?<!Min)Version="[^"]*"/${1}Version="${{ steps.version.outputs.MSIX_VERSION }}"/s' msix-staging/AppxManifest.xml
 
       - name: Copy pre-generated MSIX assets
         shell: bash
