@@ -86,18 +86,11 @@ p{margin:0 0 1em}
 .chip{border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:5px 13px;font-size:13.5px;color:#D7E7E4}
 .hero-visual{display:flex;flex-direction:column;align-items:center;gap:26px}
 .hero-icon{width:150px;height:150px;filter:drop-shadow(0 14px 34px rgba(0,0,0,.35))}
-.mock{width:330px;max-width:100%;background:#fff;border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.35);overflow:hidden;text-align:left}
-.mock-title{display:flex;align-items:center;gap:8px;padding:9px 12px;background:#EEF3F2;border-bottom:1px solid #E2E8E8;font-size:12px;color:#5B6B7A}
-.mock-title svg{width:14px;height:14px;border-radius:3px}
-.mock-body{padding:16px 18px 18px}
-.mock-h{height:13px;width:58%;background:var(--teal-bright);border-radius:4px;margin-bottom:10px;opacity:.9}
-.mock-h2{height:10px;width:38%;background:#9AA8B4;border-radius:4px;margin:14px 0 8px}
-.mock-line{height:7px;background:#D8DFE3;border-radius:4px;margin-bottom:7px}
-.w95{width:95%}.w80{width:80%}.w70{width:70%}.w60{width:60%}.w50{width:50%}
-.mock-table{display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin:13px 0 3px}
-.mock-table div{height:16px;border:1px solid #E2E8E8;border-radius:3px;background:#F7FAF9}
-.mock-table div:first-child{background:#E4F1EF;border-color:#CBE4E0}
-
+.screenshot{margin:0;min-width:0}
+.screenshot a{display:block;border-radius:10px}
+.screenshot img{display:block;width:100%;height:auto;border-radius:10px;box-shadow:0 12px 32px rgba(11,30,34,.18)}
+.screenshot figcaption{color:var(--muted);font-size:13.5px;margin-top:12px}
+.hero .screenshot{width:100%}
 /* sections */
 section{padding:72px 0}
 .sec-alt{background:var(--bg-soft)}
@@ -116,7 +109,7 @@ section{padding:72px 0}
   .feature-table tbody th{width:118px}
 }
 
-/* kicker + tabs + copy + flow mock */
+/* kicker + tabs + copy */
 .kicker{display:block;font-size:12.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--teal);margin-bottom:8px}
 .tablist{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:14px}
 .tab{background:none;border:none;border-bottom:2px solid transparent;padding:8px 14px;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;font-family:inherit}
@@ -132,32 +125,9 @@ section{padding:72px 0}
 .copy-btn.copied .icon-copy{display:none}
 .copy-btn.copied .icon-check{display:inline}
 .copy-btn svg{width:15px;height:15px}
-.flow{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.35);padding:24px 14px 20px;display:flex;flex-direction:column;align-items:center}
-.frow{display:flex;justify-content:center;width:100%}
-.fnode{border:1.5px solid #5A6B75;border-radius:6px;background:#F7FAF9;padding:6px 14px;font-size:12.5px;color:#33424D;text-align:center;white-space:nowrap}
-.fnode.round{border-radius:999px}
-.fnode.stadium{border-radius:999px;background:#EEF6F4}
-.fnode.circle{border-radius:999px;padding:12px;background:#E4F1EF;border-color:#0F766E}
-.fnode.diamond{border:none;background:#E4F1EF;clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);padding:16px 26px}
-.farrow{display:flex;flex-direction:column;align-items:center;margin:2px 0}
-.farrow .stem{width:2px;height:16px;background:#5A6B75}
-.farrow .head{width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #5A6B75}
-.fbranch{display:flex;gap:36px;width:100%;justify-content:center}
-.fcol{display:flex;flex-direction:column;align-items:center;gap:2px}
-.flab{font-size:11px;color:var(--muted);background:var(--bg-soft);border:1px solid var(--line);border-radius:999px;padding:1px 9px}
 
 /* wysiwyg */
 .split-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:44px;align-items:start}
-.duo{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.duo-label{font-size:12.5px;font-weight:600;color:var(--muted);text-align:center;margin-bottom:8px}
-.mock-sm{width:100%}
-.mock-sm .mock-title{font-size:11px}
-.mock-sm .mock-body{padding:12px 14px 14px}
-.mock-line{position:relative}
-.mock-line .seg{position:absolute;top:0;bottom:0;background:#5A6B75;border-radius:4px}
-.mock-src{background:var(--navy);color:#C9E5E1;border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.35);padding:16px;font-family:"Cascadia Mono",Consolas,"Courier New",monospace;font-size:11.5px;line-height:1.9;width:100%}
-.ms-line{white-space:nowrap;overflow:hidden}
-.ms-c{color:#7ED8CC;font-weight:600}
 
 /* cta strip */
 .cta-strip{background:var(--teal-deep);color:#fff;padding:46px 0}
@@ -211,7 +181,7 @@ footer .fine{color:#7E9491;font-size:13px}
   .hero .wrap{grid-template-columns:1fr}
   .hero h1{font-size:40px}
   .hero-visual{order:-1}
-  .mermaid-grid{grid-template-columns:1fr}
+  .split-grid,.mermaid-grid{grid-template-columns:1fr}
   .steps{grid-template-columns:1fr}
   section{padding:56px 0}
 }
@@ -268,20 +238,11 @@ footer .fine{color:#7E9491;font-size:13px}
     </div>
     <div class="hero-visual">
       <img class="hero-icon" src="markdownit-icon.svg" alt="MarkDownIt app icon">
-      <div class="mock" aria-hidden="true">
-        <div class="mock-title"><svg viewBox="0 0 256 256"><circle cx="128" cy="128" r="124" fill="#0F766E"/><path d="M44 190V66h30l54 76 54-76h30v124h-34V126l-50 68-50-68v64z" fill="#fff"/></svg>introduction.md</div>
-        <div class="mock-body">
-          <div class="mock-h"></div>
-          <div class="mock-line w95"></div>
-          <div class="mock-line w80"></div>
-          <div class="mock-line w60"></div>
-          <div class="mock-h2"></div>
-          <div class="mock-line w95"></div>
-          <div class="mock-line w70"></div>
-          <div class="mock-table"><div></div><div></div><div></div><div></div><div></div><div></div></div>
-          <div class="mock-line w50"></div>
-        </div>
-      </div>
+      <figure class="screenshot">
+        <a href="Basic%20MarkDown%20file.png" target="_blank" rel="noopener" aria-label="Open the basic Markdown screenshot at full size">
+          <img src="Basic%20MarkDown%20file.png" width="998" height="637" fetchpriority="high" alt="MarkDownIt showing release notes with bold text, a bullet list, a table and a quote.">
+        </a>
+      </figure>
     </div>
   </div>
 </section>
@@ -300,35 +261,12 @@ footer .fine{color:#7E9491;font-size:13px}
       </ul>
       <p class="note">That is the WYSIWYG part: what you see is what the file renders. Prefer the raw text? Switch to the source view.</p>
     </div>
-    <div>
-      <div class="duo">
-        <div>
-          <div class="duo-label">Rendered editing</div>
-          <div class="mock mock-sm" aria-hidden="true">
-            <div class="mock-title">release-notes.md</div>
-            <div class="mock-body">
-              <div class="mock-h"></div>
-              <div class="mock-line w95"><span class="seg" style="left:31%;width:13%"></span></div>
-              <div class="mock-line w80"></div>
-              <div class="mock-h2"></div>
-              <div class="mock-table"><div></div><div></div><div></div><div></div><div></div><div></div></div>
-            </div>
-          </div>
-        </div>
-        <div>
-          <div class="duo-label">Source view</div>
-          <div class="mock-src" aria-hidden="true">
-            <div class="ms-line"><span class="ms-c"># </span>Release notes</div>
-            <div class="ms-line">The <span class="ms-c">**</span>new<span class="ms-c">**</span> exporter keeps layout.</div>
-            <div class="ms-line"><span class="ms-c">- </span>item one</div>
-            <div class="ms-line"><span class="ms-c">- </span>item two</div>
-            <div class="ms-line"><span class="ms-c">| a | b |</span></div>
-            <div class="ms-line"><span class="ms-c">&gt; </span>a quote</div>
-          </div>
-        </div>
-      </div>
-      <p class="note">Same file, both views: edit the formatted one, read the raw one.</p>
-    </div>
+    <figure class="screenshot">
+      <a href="Complex%20MarkDown.png" target="_blank" rel="noopener" aria-label="Open the complex Markdown screenshot at full size">
+        <img src="Complex%20MarkDown.png" width="998" height="637" loading="lazy" alt="MarkDownIt with a caret in a rendered heading, followed by paragraphs, a bullet list and a feature table.">
+      </a>
+      <figcaption>A Markdown document in the rendered editor. Select the screenshot to view it at full size.</figcaption>
+    </figure>
   </div>
 </section>
 
@@ -385,10 +323,10 @@ footer .fine{color:#7E9491;font-size:13px}
     </div>
     <div>
       <div class="tablist" role="tablist" aria-label="Mermaid block views">
-        <button type="button" class="tab" id="mtab-src" role="tab" aria-selected="true" aria-controls="mpanel-src">Source</button>
-        <button type="button" class="tab" id="mtab-out" role="tab" aria-selected="false" aria-controls="mpanel-out" tabindex="-1">Rendered</button>
+        <button type="button" class="tab" id="mtab-src" role="tab" aria-selected="false" aria-controls="mpanel-src" tabindex="-1">Source</button>
+        <button type="button" class="tab" id="mtab-out" role="tab" aria-selected="true" aria-controls="mpanel-out">Rendered</button>
       </div>
-      <div id="mpanel-src" role="tabpanel" aria-labelledby="mtab-src">
+      <div id="mpanel-src" role="tabpanel" aria-labelledby="mtab-src" hidden>
         <div class="code-block">
           <div class="code-head">
             <span class="code-lang">diagram.md</span>
@@ -407,17 +345,12 @@ flowchart TD
 <span class="k">```</span></pre>
         </div>
       </div>
-      <div id="mpanel-out" role="tabpanel" aria-labelledby="mtab-out" hidden>
-        <div class="flow" aria-hidden="true">
-          <div class="frow"><div class="fnode">Start</div></div>
-          <div class="farrow"><div class="stem"></div><div class="head"></div></div>
-          <div class="frow"><div class="fnode diamond">Decide</div></div>
-          <div class="fbranch">
-            <div class="fcol"><span class="flab">yes</span><div class="farrow"><div class="stem"></div><div class="head"></div></div><div class="fnode round">Do the thing</div><div class="farrow"><div class="stem"></div><div class="head"></div></div></div>
-            <div class="fcol"><span class="flab">no</span><div class="farrow"><div class="stem"></div><div class="head"></div></div><div class="fnode stadium">Skip</div><div class="farrow"><div class="stem"></div><div class="head"></div></div></div>
-          </div>
-          <div class="frow"><div class="fnode circle">Done</div></div>
-        </div>
+      <div id="mpanel-out" role="tabpanel" aria-labelledby="mtab-out">
+        <figure class="screenshot">
+          <a href="Mermaid%20support.png" target="_blank" rel="noopener" aria-label="Open the Mermaid screenshot at full size">
+            <img src="Mermaid%20support.png" width="998" height="637" loading="lazy" alt="MarkDownIt rendering a Mermaid flowchart with Start, Decide, yes and no branches, and Done.">
+          </a>
+        </figure>
       </div>
       <p class="note">The same block, source and rendered. MarkDownIt draws it in the window, no browser involved.</p>
     </div>
@@ -534,7 +467,7 @@ flowchart TD
       <a href="https://github.com/olebhartvigsen/MarkDownIt/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
     </nav>
     <div>MarkDownIt is an independent project by Hartvigsen.</div>
-    <div class="fine">The document window on this page is an illustration, not a screenshot.</div>
+    <div class="fine">Screenshots show MarkDownIt running on Windows.</div>
   </div>
 </footer>
 
