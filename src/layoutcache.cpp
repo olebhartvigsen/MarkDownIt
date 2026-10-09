@@ -419,9 +419,31 @@ uint32_t LayoutCache::NormalizeToRenderedCaret(uint32_t offset) const {
                 next = start;
         }
     }
-    if (previous == UINT32_MAX) return next;
-    if (next == UINT32_MAX) return previous;
-    return offset - previous <= next - offset ? previous : next;
+    uint32_t snapped;
+    if (previous == UINT32_MAX) snapped = next;
+    else if (next == UINT32_MAX) snapped = previous;
+    else snapped = offset - previous <= next - offset ? previous : next;
+
+    // Table-cell guard: a cell owns the full byte span between its pipes,
+    // rendered or not. An empty cell renders no text, so the snapped
+    // nearest rendered text lives in a DIFFERENT cell; keeping it would
+    // move the caret out of the clicked cell. A click (or any normalized
+    // caret) never crosses a cell boundary: clamp it back and, when the
+    // cell has no rendered text at all, park it at the cell's own start.
+    for (const auto& bl : blocks_) {
+        if (!bl.isTableCell) continue;
+        // The renderer always sets srcCellStart/srcCellEnd for cell
+        // blocks; both zero means it never ran (defensive).
+        const uint32_t cellStart = bl.srcCellStart;
+        const uint32_t cellEnd = std::max(bl.srcCellEnd,
+                                          bl.srcOffset + bl.srcLength);
+        if (cellStart == 0 && cellEnd == 0) continue;
+        if (offset < cellStart || offset > cellEnd) continue;
+        if (snapped < cellStart || snapped > cellEnd)
+            return bl.u16ToSrc.empty() ? bl.srcOffset : snapped;
+        return snapped;
+    }
+    return snapped;
 }
 
 uint32_t LayoutCache::PointToOffset(float x, float y) const {

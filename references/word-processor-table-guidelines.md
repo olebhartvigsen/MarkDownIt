@@ -279,6 +279,17 @@ Klik i den tomme celle:
 * [ ] Første tekst oprettes i cellen.
 * [ ] Klik på forskellige steder i den tomme celle giver samme logiske caret-position.
 
+**Bindende regel for caret-normalisering:** En celle ejer hele sit
+byteinterval mellem rørene, også når cellen er tom og ikke renderer tekst.
+Normalisering til nærmest renderet tekst må aldrig flytte en caret-position
+over en cellegrænse. Klik i en tom celle parkerer altid careten ved cellens
+eget indholdsstart, også når den ønskede position ikke matcher noget renderet
+tegn. Dette gælder både klik, dobbeltklik, drag-drop og tastaturnavigation.
+
+**Testspor:** `HitTest.EmptyTableCellClickKeepsCaretInClickedCell` og
+`HitTest.NonEmptyCellClickDoesNotCrossCellBoundary` i
+`tests/hittest_test.cpp` fastlægger reglen som regressionstests.
+
 ---
 
 # 8. Klik på cellekant

@@ -19,6 +19,7 @@ struct BlockLayout {
     uint32_t srcCellEnd = 0;  // extended end (past closing markers)
     uint32_t textStartOffset = 0; // source offset of layout char 0
     size_t nodeIndex = 0;
+    bool isTableCell = false; // renderer sets this for table cell blocks
     // Maps each UTF-16 code-unit position in the layout to its
     // UTF-8 source byte offset. Built during Render() for accurate
     // hit-testing and caret placement when inline syntax is present.

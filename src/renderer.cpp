@@ -1213,6 +1213,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     }
                     bl.textStartOffset = row.cells[c].srcOffset;
                     bl.nodeIndex = 0;
+                    bl.isTableCell = true;
                     bl.u16ToSrc = row.cells[c].u16ToSrc; // copy parser's mapping
                     bl.u16ToSrcEnd = row.cells[c].u16ToSrcEnd;
                     bl.fontHeight = LineHeightOf(body_fmt_);

@@ -111,6 +111,97 @@ TEST(HitTest, NormalizeParagraphEndPastInlineSyntax) {
               static_cast<uint32_t>(source.size()));
 }
 
+// Regression (empty-cell click): an empty table cell renders no text, so
+// normalizing to the nearest rendered span used to pull the caret into a
+// DIFFERENT cell (typically the non-empty neighbour above). A click must
+// activate the clicked cell itself: the caret parks at the cell's own
+// content start (table guideline 7: klik i tom celle).
+TEST(HitTest, EmptyTableCellClickKeepsCaretInClickedCell) {
+    // "| a | b |\n|---|---|\n|    |    |"
+    // Header cells at bytes 2 and 6; empty body cells at 24 and 29
+    // (between the pipes of the last line).
+    const std::string source = "| a | b |\n|---|---|\n|    |    |";
+    LayoutCache cache;
+    cache.SetSourceText(&source);
+
+    // Header cell "a": rendered text at bytes 2-3.
+    {
+        BlockLayout header;
+        header.isTableCell = true;
+        header.srcOffset = 2;
+        header.srcLength = 1;
+        header.srcCellStart = 2;
+        header.srcCellEnd = 3;
+        header.textStartOffset = 2;
+        header.u16ToSrc = {2};
+        header.u16ToSrcEnd = {3};
+        cache.Add(header);
+    }
+    // Empty body cell: content span [24, 24), no rendered text at all.
+    {
+        BlockLayout empty;
+        empty.isTableCell = true;
+        empty.srcOffset = 24;
+        empty.srcLength = 0;
+        empty.srcCellStart = 24;
+        empty.srcCellEnd = 24;
+        empty.textStartOffset = 24;
+        cache.Add(empty);
+    }
+
+    // A click resolving to the empty cell's own offset must stay there,
+    // not snap to the header cell's rendered bytes 2-3.
+    const uint32_t clicked = 24;
+    EXPECT_EQ(cache.NormalizeToRenderedCaret(clicked), 24u);
+    // Any offset inside the empty cell span keeps to the cell.
+    EXPECT_EQ(cache.NormalizeToRenderedCaret(23u), 23u);
+}
+
+// A non-empty cell keeps its marker-aware normalization but never lets
+// the snapped offset cross into another cell (guideline 5-7).
+TEST(HitTest, NonEmptyCellClickDoesNotCrossCellBoundary) {
+    // "| a  b |\n|------|\n| c    |"
+    // Byte map: 0-8 header line, 9-17 dashes line, 18 pipe, 19-24 row,
+    // 'c' at 20, closing pipe at 25.
+    const std::string source = "| a  b |\n|------|\n| c    |";
+    LayoutCache cache;
+    cache.SetSourceText(&source);
+
+    // Header cell "a  b": content bytes 2..5; md4c renders it as "a b"
+    // (collapsed gap), so u16 0 -> src 2 and u16 2 -> src 5 model the
+    // mapping. The middle source bytes 3-4 are NOT rendered.
+    BlockLayout cellAb;
+    cellAb.isTableCell = true;
+    cellAb.srcOffset = 2;
+    cellAb.srcLength = 4;
+    cellAb.srcCellStart = 2;
+    cellAb.srcCellEnd = 6;
+    cellAb.textStartOffset = 2;
+    cellAb.u16ToSrc = {2, 5};
+    cellAb.u16ToSrcEnd = {3, 6};
+    cache.Add(cellAb);
+
+    // Body cell "c": byte 20, one rendered span.
+    BlockLayout cellC;
+    cellC.isTableCell = true;
+    cellC.srcOffset = 20;
+    cellC.srcLength = 1;
+    cellC.srcCellStart = 20;
+    cellC.srcCellEnd = 21;
+    cellC.textStartOffset = 20;
+    cellC.u16ToSrc = {20};
+    cellC.u16ToSrcEnd = {21};
+    cache.Add(cellC);
+
+    // Rendered positions keep their exact offsets.
+    EXPECT_EQ(cache.NormalizeToRenderedCaret(20u), 20u);
+    // An offset inside the collapsed gap (byte 4) still resolves by
+    // nearest rendered text, and that result stays inside cellAb.
+    const uint32_t gap = cache.NormalizeToRenderedCaret(4u);
+    EXPECT_GE(gap, 2u);
+    EXPECT_LE(gap, 6u);
+}
+
 // AC-03: selecting item 3's text must not consume its structural newline.
 TEST(ListSelection, DeleteThirdItemTextKeepsFiveItemsAndTheirDepths) {
     for (const std::string newline : {"\n", "\r\n"}) {
