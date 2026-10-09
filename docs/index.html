@@ -103,11 +103,18 @@ section{padding:72px 0}
 .sec-alt{background:var(--bg-soft)}
 .sec-head{margin-bottom:34px}
 
-/* features grid */
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px}
-.card{border:1px solid var(--line);border-radius:var(--radius);padding:24px;background:#fff}
-.card p{color:var(--muted);font-size:15px;margin:0}
-.card h3{color:var(--ink)}
+/* features table */
+.feature-wrap{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+.feature-table{width:100%;border-collapse:collapse;font-size:15px}
+.feature-table th,.feature-table td{padding:11px 16px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+.feature-table td{color:var(--muted)}
+.feature-table tbody th{font-weight:600;color:var(--ink);width:232px}
+.feature-table tr.group th{font-size:12.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);background:var(--bg-soft);padding-top:10px;padding-bottom:10px}
+.feature-table tbody tr:last-child th,.feature-table tbody tr:last-child td{border-bottom:none}
+@media (max-width:640px){
+  .feature-table th,.feature-table td{padding:9px 12px;font-size:14px}
+  .feature-table tbody th{width:118px}
+}
 
 /* kicker + tabs + copy + flow mock */
 .kicker{display:block;font-size:12.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--teal);margin-bottom:8px}
@@ -152,11 +159,7 @@ section{padding:72px 0}
 .ms-line{white-space:nowrap;overflow:hidden}
 .ms-c{color:#7ED8CC;font-weight:600}
 
-/* tiles + cta strip */
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-top:18px}
-.tile{border:1px solid var(--line);border-radius:12px;padding:16px 18px;background:#fff}
-.tile h4{margin:0 0 6px;font-size:15px}
-.tile p{margin:0;color:var(--muted);font-size:14px}
+/* cta strip */
 .cta-strip{background:var(--teal-deep);color:#fff;padding:46px 0}
 .cta-strip .wrap{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
 .cta-strip h2{font-size:26px;margin:0 0 6px}
@@ -288,51 +291,35 @@ footer .fine{color:#7E9491;font-size:13px}
     <div class="sec-head">
       <span class="kicker">The app</span>
       <h2>Features</h2>
-      <p class="lead">The whole app is one executable. These are the parts most people touch first.</p>
+      <p class="lead">Everything in this table ships in the app today. The word processor core and Mermaid diagrams get their own sections further down.</p>
     </div>
-    <div class="grid">
-      <div class="card">
-        <h3>A word processor for Markdown</h3>
-        <p>Type in the rendered text itself. Caret, selection, undo and redo, table cell navigation and an outline pane: word processor mechanics, but the file stays plain Markdown. The raw source is one toggle away.</p>
-      </div>
-      <div class="card">
-        <h3>One executable, nothing to install</h3>
-        <p>MarkDownIt is a single exe written in C++. No Electron shell, no .NET runtime, no bundled dependencies. Copy it somewhere and run it.</p>
-      </div>
-      <div class="card">
-        <h3>Tables and structure</h3>
-        <p>Insert a table and edit it by cell: Tab moves between cells and adds a row at the end, rows and columns come and go as single undo steps, alignment sits on the ribbon, and pipes escape themselves.</p>
-      </div>
-      <div class="card">
-        <h3>Zoom that remembers</h3>
-        <p>Zoom from 25% to 400%: Ctrl+wheel zooms around the pointer and Ctrl+0 returns to 100% in place. Your level is remembered, and the View tab offers four column widths.</p>
-      </div>
-    </div>
-    <div class="tiles">
-      <div class="tile">
-        <h4>Mark text</h4>
-        <p>Highlight passages with Ctrl+Shift+H. Marks live outside your file, survive moves and renames, and never reach your exports.</p>
-      </div>
-      <div class="tile">
-        <h4>Find and replace</h4>
-        <p>Ctrl+F and Ctrl+H open a dock along the bottom edge, with Match case and Whole word options, results that wrap around, and a replace mode one click away.</p>
-      </div>
-      <div class="tile">
-        <h4>Drag and drop</h4>
-        <p>Drop a .md file on the window from Explorer to open it.</p>
-      </div>
-      <div class="tile">
-        <h4>Associate .md files</h4>
-        <p>One ribbon command, and double-clicking a Markdown file opens MarkDownIt.</p>
-      </div>
-      <div class="tile">
-        <h4>Follows the file</h4>
-        <p>When the file changes on disk, the view reloads on its own. F5 forces it.</p>
-      </div>
-      <div class="tile">
-        <h4>Word wrap</h4>
-        <p>Toggle wrapping off and long lines run past the edge instead of reflowing.</p>
-      </div>
+    <div class="feature-wrap">
+      <table class="feature-table">
+        <tbody>
+          <tr class="group"><th colspan="2">Writing</th></tr>
+          <tr><th scope="row">WYSIWYG editing</th><td>Type in the rendered view itself, and the file on disk stays plain Markdown. The details are in the next section.</td></tr>
+          <tr><th scope="row">Undo and redo</th><td>Every paste, cut and formatting command is one undo step, and continuous typing folds into one.</td></tr>
+          <tr><th scope="row">Bold, italic and links</th><td>Ctrl+B, Ctrl+I and Ctrl+K. Set a format at an empty caret and the next text you type gets it.</td></tr>
+          <tr><th scope="row">Mark text</th><td>Ctrl+Shift+H highlights the selection. Marks live outside the file, survive moves and renames, and never reach your exports.</td></tr>
+          <tr class="group"><th colspan="2">Tables</th></tr>
+          <tr><th scope="row">Cell editing</th><td>Click into any cell and type. Tab moves between cells, and Tab in the last cell adds a row.</td></tr>
+          <tr><th scope="row">Rows and columns</th><td>Add or remove rows and columns as single undo steps, and set left, center or right column alignment from the ribbon.</td></tr>
+          <tr><th scope="row">Protected cells</th><td>A pipe you type escapes itself, pasted text cannot break a row, and Enter does nothing inside a cell.</td></tr>
+          <tr class="group"><th colspan="2">Finding and view</th></tr>
+          <tr><th scope="row">Find and replace</th><td>Ctrl+F and Ctrl+H open a dock along the bottom edge, with Match case and Whole word options and results that wrap around.</td></tr>
+          <tr><th scope="row">Zoom</th><td>25% to 400%: Ctrl+wheel zooms around the pointer, Ctrl+0 returns to 100% in place, and your level is remembered.</td></tr>
+          <tr><th scope="row">Column widths</th><td>Standard, 960, 1600 or fixed without wrap, with the word wrap toggle next to them.</td></tr>
+          <tr><th scope="row">Outline pane</th><td>Jump around the document from a list of its headings.</td></tr>
+          <tr class="group"><th colspan="2">Files</th></tr>
+          <tr><th scope="row">Open your way</th><td>Double-click an associated .md file, drag one onto the window, or use Open in the ribbon.</td></tr>
+          <tr><th scope="row">Associate .md files</th><td>One ribbon command, and double-clicking a Markdown file opens MarkDownIt.</td></tr>
+          <tr><th scope="row">Follows the file</th><td>When the file changes on disk, the view reloads on its own. F5 forces it.</td></tr>
+          <tr class="group"><th colspan="2">Word, PDF and diagrams</th></tr>
+          <tr><th scope="row">Import Word (.docx)</th><td>Headings, lists, tables, images and links come across as Markdown, and the import reports what it had to leave out.</td></tr>
+          <tr><th scope="row">Export Word and PDF</th><td>The .docx export is checked in CI by an independent reader, and the PDF keeps layout, page breaks and footers.</td></tr>
+          <tr><th scope="row">Mermaid diagrams</th><td>Flowcharts, pie charts and sequence diagrams, drawn natively in the window. Details in their own section below.</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </section>
