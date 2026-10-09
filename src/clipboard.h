@@ -20,11 +20,9 @@ bool ClipboardCopy(HWND hwnd, const std::string& utf8);
 // Returns the selected text, or empty if nothing selected.
 bool ClipboardCut(HWND hwnd, const std::string& utf8);
 
-// Paste: returns the markdown text to insert, or empty if nothing to paste.
-// Checks formats in priority order:
-// 1. Custom "MarkDownIt Markdown" format (lossless)
-// 2. CF_HTML (convert to markdown)
-// 3. CF_UNICODETEXT (plain text, escape markdown metacharacters)
+// Paste: read CF_UNICODETEXT only, normalize line endings and escape Markdown.
+// Ignore custom formats, HTML, RTF and objects, even if no text is available.
+// Returns text for insertion, or empty for a no-op.
 std::string ClipboardPaste(HWND hwnd);
 
 // Convert a simple HTML fragment to Markdown.
