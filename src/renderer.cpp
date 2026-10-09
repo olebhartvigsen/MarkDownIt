@@ -1348,6 +1348,7 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
                     text32 += n.ordered ? U"1. " : U"\u2022  ";
                 }
                 for (const auto& ib : n.children) text32 += ib.text;
+                if (text32.empty() && n.virtualEmptyParagraph) text32 = U" ";
                 // Images advance the draw path's curY (aspect-scaled height
                 // capped at 400 plus paraGap each); measure must charge the
                 // same or totalH_ underestimates and content below images
@@ -1684,11 +1685,16 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             continue;
         }
 
-        // DirectWrite needs one code unit to produce a line metric for an
-        // empty paragraph. A space paints nothing visible but gives its
-        // zero-width logical source position a stable caret rectangle.
-        const std::u16string layoutText16 =
-            text16.empty() && n.virtualEmptyParagraph ? u" " : text16;
+        // A placeholder supplies a line metric, but both sides map to the
+        // same canonical source position. It is layout data, not source text
+        // or a special-case document interpretation in mouse hit-testing.
+        const bool emptyCaretBlock = text16.empty() && !hasImage &&
+            (n.virtualEmptyParagraph || n.block == BlockKind::List);
+        const std::u16string layoutText16 = emptyCaretBlock ? u" " : text16;
+        if (emptyCaretBlock) {
+            u16ToSrc.push_back(n.contentOffset);
+            u16ToSrcEnd.push_back(n.contentOffset);
+        }
 
         float textX = drawX + markerW;
         float textW = drawW - markerW;

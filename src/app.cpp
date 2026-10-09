@@ -973,6 +973,10 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         case VK_BACK: {
             pending_run_active_ = false;
             pending_run_suffix_bytes_ = 0;
+            // Structural Backspace must see the current document, including
+            // an item whose last character was just deleted during debounce.
+            if (!ctrl && !source_view_ && reparse_pending_ &&
+                editor_.MayRemoveEmptyBullet()) OnReparseTimer();
             const size_t lengthBefore = buffer_.Length();
             if (ctrl) {
                 editor_.DeleteWordBackward();
@@ -981,7 +985,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 // one: the cell's left pipe is never consumed.
                 editor_.DeleteBackwardInCell(doc_);
             } else {
-                editor_.DeleteBackward(&doc_);
+                editor_.DeleteBackward(source_view_ ? nullptr : &doc_);
             }
             if (buffer_.Length() != lengthBefore) OnBufferChanged();
             break;

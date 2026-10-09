@@ -1,5 +1,228 @@
 #include "gtest_lite.h"
 #include "parser.h"
+#include "layoutcache.h"
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+// AC-03: marker-only list items own the position after their source prefix.
+TEST(EmptyListMapping, MarkerOnlyItemsAtEof) {
+    for (const std::string source : {"- ", "* ", "+ ", "-", "- \t ", "  - "}) {
+        Document doc;
+        ASSERT_TRUE(ParseMarkdown(source, doc));
+        ASSERT_EQ(doc.nodes.size(), 1u);
+        const Node& node = doc.nodes[0];
+        EXPECT_EQ(static_cast<int>(node.block), static_cast<int>(BlockKind::List));
+        EXPECT_FALSE(node.ordered);
+        EXPECT_TRUE(node.children.empty());
+        EXPECT_EQ(node.srcOffset, 0u);
+        EXPECT_EQ(node.srcLength, source.size());
+        EXPECT_EQ(node.contentOffset, source.size());
+        EXPECT_EQ(node.contentLength, 0u);
+    }
+}
+
+TEST(EmptyListMapping, ConsecutiveMiddleAndNestedItems) {
+    struct Case { const char* source; uint32_t start; uint32_t length; int depth; };
+    const Case cases[] = {
+        {"- first\n- \n- third", 8, 2, 0},
+        {"- first\r\n- \r\n- third", 9, 2, 0},
+        {"- first\n- \n- ", 11, 2, 0},
+        {"- parent\n  - \n  - sibling", 9, 4, 1},
+        {"- parent\n  - ", 9, 4, 1},
+        {"- parent\r\n  - \r\n- next", 10, 4, 1},
+        {"-\n  - ", 2, 4, 1},
+        {"- - ", 0, 4, 1},
+    };
+    for (const auto& test : cases) {
+        Document doc;
+        ASSERT_TRUE(ParseMarkdown(test.source, doc));
+        bool found = false;
+        for (const Node& node : doc.nodes) {
+            if (node.block != BlockKind::List || node.srcOffset != test.start ||
+                node.depth != test.depth || !node.children.empty()) continue;
+            found = true;
+            EXPECT_EQ(node.srcLength, test.length);
+            EXPECT_EQ(node.contentOffset, test.start + test.length);
+            EXPECT_EQ(node.contentLength, 0u);
+        }
+        if (!found) std::cerr << "Source: " << test.source << '\n' << DocumentToString(doc);
+        EXPECT_TRUE(found);
+    }
+}
+
+TEST(EmptyListMapping, CodeHtmlAndRulesCannotClaimEmptyItemRange) {
+    const char* prefixes[] = {
+        "```text\n- \n```\n\n", "    - \n\n", "<div>\n- \n</div>\n\n",
+        "- - -\n\n", "* * *\n\n", "paragraph `- `\n\n",
+    };
+    for (const char* prefix : prefixes) {
+        const std::string source = std::string(prefix) + "- ";
+        Document doc;
+        ASSERT_TRUE(ParseMarkdown(source, doc));
+        size_t count = 0;
+        for (const Node& node : doc.nodes) {
+            if (node.block != BlockKind::List) continue;
+            ++count;
+            EXPECT_TRUE(node.children.empty());
+            EXPECT_EQ(node.srcOffset, source.size() - 2);
+            EXPECT_EQ(node.srcLength, 2u);
+            EXPECT_EQ(node.contentOffset, source.size());
+            EXPECT_EQ(node.contentLength, 0u);
+        }
+        EXPECT_EQ(count, 1u);
+    }
+    for (const char* source : {"```text\n- \n```", "    - ", "\\- "}) {
+        Document doc;
+        ASSERT_TRUE(ParseMarkdown(source, doc));
+        for (const Node& node : doc.nodes)
+            EXPECT_NE(static_cast<int>(node.block), static_cast<int>(BlockKind::List));
+    }
+}
+
+TEST(EmptyListMapping, RealSetextHeadingsRemainHeadings) {
+    for (const std::string source : {"heading\n- ", "- parent\n  --", "- parent\n  ---"}) {
+        Document doc;
+        ASSERT_TRUE(ParseMarkdown(source, doc));
+        size_t headings = 0;
+        size_t emptyItems = 0;
+        for (const Node& node : doc.nodes) {
+            if (node.block == BlockKind::Heading && node.level == 2) ++headings;
+            if (node.block == BlockKind::List && node.children.empty() &&
+                node.contentLength == 0) ++emptyItems;
+        }
+        EXPECT_EQ(headings, 1u);
+        // The existing flat parent container is unchanged for real headings.
+        if (source[0] != '-') EXPECT_EQ(emptyItems, 0u);
+    }
+}
+
+TEST(EmptyListMapping, RemovedBulletLineRemainsAnAddressableParagraph) {
+    struct Case { const char* source; uint32_t caret; };
+    const Case cases[] = {
+        {"", 0}, {"\n", 0}, {"\r\n", 0},
+        {"- first\n", 8}, {"- first\r\n", 9},
+        {"- first\n\n- third", 8}, {"- first\r\n\r\n- third", 9},
+        {"\n- next", 0}, {"\r\n- next", 0},
+        {"- parent\n", 9},
+    };
+    for (const auto& test : cases) {
+        Document doc;
+        ASSERT_TRUE(ParseMarkdown(test.source, doc));
+        size_t count = 0;
+        for (const Node& node : doc.nodes) {
+            if (!node.virtualEmptyParagraph || node.contentOffset != test.caret) continue;
+            ++count;
+            EXPECT_EQ(static_cast<int>(node.block), static_cast<int>(BlockKind::Paragraph));
+            EXPECT_EQ(node.srcOffset, test.caret);
+            EXPECT_EQ(node.srcLength, 0u);
+            EXPECT_EQ(node.contentLength, 0u);
+            EXPECT_TRUE(node.children.empty());
+        }
+        EXPECT_EQ(count, 1u);
+    }
+}
+
+TEST(EmptyListMapping, PlaceholderLayoutKeepsCanonicalPosition) {
+    for (const std::string source : {"- first\n- \n- third", "- first\n\n- third"}) {
+        Document doc;
+        ASSERT_TRUE(ParseMarkdown(source, doc));
+        LayoutCache cache;
+        cache.SetSourceText(&source);
+        size_t index = 0;
+        uint32_t expectedCaret = UINT32_MAX;
+        for (const Node& node : doc.nodes) {
+            BlockLayout block;
+            block.x = 20.0f;
+            block.y = static_cast<float>(index * 20);
+            block.width = 200.0f;
+            block.height = 20.0f;
+            block.srcOffset = node.srcOffset;
+            block.srcLength = node.srcLength;
+            block.textStartOffset = node.contentOffset;
+            block.nodeIndex = static_cast<int>(index);
+            if (node.children.empty() &&
+                (node.block == BlockKind::List || node.virtualEmptyParagraph)) {
+                block.u16ToSrc = {node.contentOffset};
+                block.u16ToSrcEnd = {node.contentOffset};
+                expectedCaret = node.contentOffset;
+            } else {
+                for (const InlineBlock& text : node.children) {
+                    for (uint32_t i = 0; i < text.srcLength; ++i) {
+                        block.u16ToSrc.push_back(text.srcOffset + i);
+                        block.u16ToSrcEnd.push_back(text.srcOffset + i + 1);
+                    }
+                }
+            }
+            cache.Add(block);
+            ++index;
+        }
+        ASSERT_TRUE(expectedCaret != UINT32_MAX);
+        EXPECT_EQ(cache.PointToOffset(20.0f, 25.0f), expectedCaret);
+        EXPECT_EQ(cache.PointToOffsetAtOrAfterBlock(500.0f, 25.0f), expectedCaret);
+        EXPECT_EQ(cache.NormalizeToRenderedCaret(expectedCaret), expectedCaret);
+        EXPECT_EQ(cache.BlockForOffset(expectedCaret), 1);
+        EXPECT_FALSE(cache.RangeIsRendered(expectedCaret, 1));
+    }
+}
+
+#ifdef _WIN32
+// The Windows CI gate exercises real leading/trailing DirectWrite hits on
+// the same one-space, zero-width source mapping used by the renderer.
+TEST(EmptyListMapping, DirectWritePlaceholderHasOneClickableCaret) {
+    HMODULE module = LoadLibraryW(L"dwrite.dll");
+    ASSERT_TRUE(module != nullptr);
+    using CreateFactory = HRESULT (WINAPI *)(DWRITE_FACTORY_TYPE, REFIID, IUnknown**);
+    auto createFactory = reinterpret_cast<CreateFactory>(GetProcAddress(module, "DWriteCreateFactory"));
+    ASSERT_TRUE(createFactory != nullptr);
+    IDWriteFactory* factory = nullptr;
+    ASSERT_TRUE(SUCCEEDED(createFactory(DWRITE_FACTORY_TYPE_SHARED,
+        __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(&factory))));
+    IDWriteTextFormat* format = nullptr;
+    ASSERT_TRUE(SUCCEEDED(factory->CreateTextFormat(L"Segoe UI", nullptr,
+        DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL, 14.0f, L"en-us", &format)));
+
+    for (const std::string source : {"- first\n- \n- third", "- first\n\n- third"}) {
+        Document doc;
+        ASSERT_TRUE(ParseMarkdown(source, doc));
+        ASSERT_EQ(doc.nodes.size(), 3u);
+        const Node& node = doc.nodes[1];
+        IDWriteTextLayout* layout = nullptr;
+        ASSERT_TRUE(SUCCEEDED(factory->CreateTextLayout(L" ", 1, format,
+            200.0f, 100.0f, &layout)));
+        DWRITE_TEXT_METRICS metrics = {};
+        ASSERT_TRUE(SUCCEEDED(layout->GetMetrics(&metrics)));
+        EXPECT_TRUE(metrics.height > 0.0f);
+        LayoutCache cache;
+        cache.SetSourceText(&source);
+        BlockLayout block;
+        block.layout = layout;
+        block.x = 20.0f;
+        block.y = 40.0f;
+        block.width = 200.0f;
+        block.height = metrics.height;
+        block.srcOffset = node.srcOffset;
+        block.srcLength = node.srcLength;
+        block.textStartOffset = node.contentOffset;
+        block.u16ToSrc = {node.contentOffset};
+        block.u16ToSrcEnd = {node.contentOffset};
+        cache.Add(block);
+        for (float x : {20.0f, 22.0f, 24.0f, 150.0f, 500.0f}) {
+            EXPECT_EQ(cache.PointToOffsetAtOrAfterBlock(x, 40.0f + metrics.height * 0.5f),
+                node.contentOffset);
+        }
+        float x = 0.0f, y = 0.0f, height = 0.0f;
+        EXPECT_TRUE(cache.OffsetToCaretRect(node.contentOffset, &x, &y, &height));
+        EXPECT_NEAR(x, 20.0f, 0.01f);
+        EXPECT_TRUE(height > 0.0f);
+        EXPECT_FALSE(cache.RangeIsRendered(node.contentOffset, 1));
+    }
+    format->Release();
+    factory->Release();
+    FreeLibrary(module);
+}
+#endif
 
 // Smoke test: three top-level blocks (H1, H2, Paragraph).
 TEST(ParserSmoke, HeadingsAndParagraph) {

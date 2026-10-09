@@ -21,6 +21,9 @@ public:
     // Return true when the source buffer changed. Passing the parsed document
     // lets paragraph-boundary deletion remove one complete paragraph separator.
     bool DeleteBackward(const Document* doc = nullptr);
+    // Cheap source-only hint for refreshing a debounced document before
+    // structural Backspace. The parsed model still decides list semantics.
+    bool MayRemoveEmptyBullet() const;
     bool DeleteForward(const Document* doc = nullptr);
     void DeleteWordBackward();
     void DeleteWordForward();

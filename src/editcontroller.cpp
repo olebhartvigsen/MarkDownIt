@@ -119,8 +119,8 @@ static bool GetListLineInfo(const std::string& text, uint32_t at,
         ++markerEnd;
     }
 
-    if (markerEnd >= lineEnd ||
-        (text[markerEnd] != ' ' && text[markerEnd] != '\t')) {
+    if (markerEnd < lineEnd && text[markerEnd] != '\r' &&
+        text[markerEnd] != ' ' && text[markerEnd] != '\t') {
         return false;
     }
     uint32_t contentStart = markerEnd;
@@ -424,9 +424,41 @@ bool IsParagraphSeparator(const Document* doc, uint32_t offset,
 
 }  // namespace
 
+bool EditController::MayRemoveEmptyBullet() const {
+    if (!buf_ || !sel_ || !sel_->Empty()) return false;
+    ListLineInfo line;
+    if (!GetListLineInfo(buf_->Text(), sel_->active.offset, &line) ||
+        !line.empty) return false;
+    uint32_t marker = line.lineStart;
+    while (marker < line.lineEnd &&
+           (buf_->Text()[marker] == ' ' || buf_->Text()[marker] == '\t')) ++marker;
+    return marker < line.lineEnd &&
+        (buf_->Text()[marker] == '-' || buf_->Text()[marker] == '*' ||
+         buf_->Text()[marker] == '+');
+}
+
 bool EditController::DeleteBackward(const Document* doc) {
     if (!sel_->Empty()) { DeleteSelection(); return true; }
     const uint32_t at = sel_->active.offset;
+
+    // Empty bullets have a structural caret after their hidden marker.
+    // Require a parsed list node, so code and literal Markdown-like text
+    // keep the ordinary deletion rules. Remove the entire prefix at once,
+    // including indentation, without consuming the line ending.
+    ListLineInfo listLine;
+    if (doc && GetListLineInfo(buf_->Text(), at, &listLine) && listLine.empty) {
+        for (const auto& node : doc->nodes) {
+            if (node.block != BlockKind::List || node.ordered ||
+                node.srcOffset != listLine.lineStart ||
+                node.contentOffset != at || node.contentLength != 0 ||
+                !node.children.empty()) continue;
+            uint32_t end = listLine.lineEnd;
+            if (end > listLine.lineStart && buf_->Text()[end - 1] == '\r') --end;
+            RecordAndApply(listLine.lineStart, end - listLine.lineStart,
+                           "", EditType::Other);
+            return true;
+        }
+    }
     if (at == 0) return false;
 
     // A table is a structural block: the blank lines around it are part of

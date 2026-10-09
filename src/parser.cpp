@@ -295,6 +295,8 @@ struct ParserCtx {
     std::vector<CellSpanOpen> cell_span_stack;
     const char* input;       // pointer to start of input (for offset calculation)
     MD_SIZE inputSize;       // size of input
+    uint32_t listSourceCursor = 0; // advances with source text and LI markers
+    bool cursorAfterListMarker = false;
     std::vector<NodeOffsetInfo> nodeOffsets; // per-node offset tracking
     std::vector<SourceCellRange> sourceCellRanges;
     size_t nextSourceCellRange = 0;
@@ -447,6 +449,73 @@ uint32_t BlockLineEnd(const char* input, uint32_t inputSize, uint32_t offset) {
     return offset;
 }
 
+// md4c gives LI callbacks even for marker-only items, but no source range.
+// Locate the marker only when md4c has confirmed an LI. Source text callbacks
+// advance the cursor, including code/HTML callbacks that produce no inlines,
+// so list-looking text inside those blocks cannot claim a later item's range.
+void SetListSourceRange(ParserCtx& ctx, Node& node) {
+    uint32_t cursor = ctx.listSourceCursor;
+    if (cursor > 0 && ctx.input[cursor - 1] != '\n' &&
+        ctx.input[cursor - 1] != '\r' && !ctx.cursorAfterListMarker) {
+        cursor = BlockLineEnd(ctx.input, ctx.inputSize, cursor);
+    }
+    while (cursor < ctx.inputSize) {
+        if (ctx.input[cursor] == '\r' || ctx.input[cursor] == '\n') {
+            ++cursor;
+            continue;
+        }
+        const uint32_t lineStart = BlockLineStart(ctx.input, cursor);
+        const uint32_t lineEnd = BlockLineEnd(ctx.input, ctx.inputSize, cursor);
+        uint32_t marker = cursor;
+        while (marker < lineEnd &&
+               (ctx.input[marker] == ' ' || ctx.input[marker] == '\t' ||
+                ctx.input[marker] == '>')) ++marker;
+        uint32_t content = marker;
+        bool matches = false;
+        if (node.ordered) {
+            while (content < lineEnd && content - marker < 9 &&
+                   ctx.input[content] >= '0' && ctx.input[content] <= '9')
+                ++content;
+            if (content > marker && content < lineEnd &&
+                (ctx.input[content] == '.' || ctx.input[content] == ')')) {
+                ++content;
+                matches = true;
+            }
+        } else if (content < lineEnd &&
+                   (ctx.input[content] == '-' || ctx.input[content] == '+' ||
+                    ctx.input[content] == '*')) {
+            ++content;
+            matches = true;
+            // A thematic break has no text callback either. Do not mistake
+            // one for the next LI marker while crossing that source gap.
+            uint32_t count = 0;
+            bool rule = true;
+            for (uint32_t i = marker; i < lineEnd; ++i) {
+                if (ctx.input[i] == ctx.input[marker]) ++count;
+                else if (ctx.input[i] != ' ' && ctx.input[i] != '\t') {
+                    rule = false;
+                    break;
+                }
+            }
+            if (rule && count >= 3) matches = false;
+        }
+        if (matches && (content == lineEnd || ctx.input[content] == ' ' ||
+                        ctx.input[content] == '\t')) {
+            while (content < lineEnd &&
+                   (ctx.input[content] == ' ' || ctx.input[content] == '\t'))
+                ++content;
+            node.srcOffset = lineStart;
+            node.srcLength = lineEnd - lineStart;
+            node.contentOffset = content;
+            node.contentLength = 0;
+            ctx.listSourceCursor = content;
+            ctx.cursorAfterListMarker = true;
+            return;
+        }
+        cursor = lineEnd;
+    }
+}
+
 // --- md4c callbacks ---
 
 int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
@@ -540,6 +609,7 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
             ctx->doc->nodes[idx].block = BlockKind::List;
             ctx->doc->nodes[idx].ordered = ordered;
             ctx->doc->nodes[idx].depth = ctx->list_depth - 1;
+            SetListSourceRange(*ctx, ctx->doc->nodes[idx]);
             // merge_inlines: subsequent P inside this LI adds to this node
             ctx->block_stack.push_back({type, idx, true, true});
             break;
@@ -636,6 +706,45 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
                                               noi.lastTextEnd) - node.srcOffset;
                 node.contentOffset = noi.firstTextOffset;
                 node.contentLength = noi.lastTextEnd - noi.firstTextOffset;
+
+                // md4c reads an indented, marker-only '-' immediately below
+                // LI text as a setext underline. In the editable list model
+                // it is the empty nested bullet, not an H2 containing the
+                // parent's text. Recover only this single-marker ambiguity;
+                // multi-hyphen underlines and headings outside lists stay H2.
+                if (type == MD_BLOCK_H && node.level == 2) {
+                    int parentIndex = -1;
+                    for (auto it = ctx->block_stack.rbegin(); it != ctx->block_stack.rend(); ++it) {
+                        if (it->type == MD_BLOCK_LI) { parentIndex = it->node_index; break; }
+                    }
+                    uint32_t start = node.srcOffset + node.srcLength;
+                    if (start < ctx->inputSize && ctx->input[start] == '\r') ++start;
+                    if (start < ctx->inputSize && ctx->input[start] == '\n') ++start;
+                    const uint32_t end = BlockLineEnd(ctx->input, ctx->inputSize, start);
+                    uint32_t marker = start;
+                    while (marker < end && ctx->input[marker] == ' ') ++marker;
+                    uint32_t after = marker;
+                    if (after < end && ctx->input[after] == '-') ++after;
+                    while (after < end &&
+                           (ctx->input[after] == ' ' || ctx->input[after] == '\t')) ++after;
+                    if (parentIndex >= 0 && marker < end &&
+                        ctx->input[marker] == '-' && after == end) {
+                        Node& parent = ctx->doc->nodes[parentIndex];
+                        const uint32_t parentIndent = parent.contentOffset - parent.srcOffset;
+                        if (marker - start >= parentIndent && parent.children.empty()) {
+                            parent.children = std::move(node.children);
+                            ctx->nodeOffsets[parentIndex] = noi;
+                            node = Node{};
+                            node.block = BlockKind::List;
+                            node.depth = parent.depth + 1;
+                            node.srcOffset = start;
+                            node.srcLength = end - start;
+                            node.contentOffset = end;
+                            ctx->listSourceCursor = end;
+                            ctx->cursorAfterListMarker = true;
+                        }
+                    }
+                }
             }
         }
         ctx->block_stack.pop_back();
@@ -902,6 +1011,22 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
     if (size == 0) return 0;
 
 
+    // Track source progress even for HTML blocks that have no renderable node.
+    // This is also used to locate marker-only LI callbacks.
+    uint32_t textOffset = 0;
+    bool textInInput = false;
+    if (ctx->input && text >= ctx->input &&
+        text <= ctx->input + ctx->inputSize) {
+        textOffset = static_cast<uint32_t>(text - ctx->input);
+        textInInput = (textOffset <= ctx->inputSize &&
+                       size <= ctx->inputSize - textOffset);
+    }
+    if (textInInput) {
+        ctx->listSourceCursor = std::max(ctx->listSourceCursor,
+            textOffset + static_cast<uint32_t>(size));
+        ctx->cursorAfterListMarker = false;
+    }
+
     int idx = current_node(*ctx);
     if (idx < 0) return 0;
 
@@ -913,17 +1038,8 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
     // byte as MD_TEXT_NULLCHAR with a pointer to its own static "" and a size
     // of 1 (md4c.c line 404), so `text - ctx->input` is whatever the distance
     // happens to be between two unrelated objects, hundreds of millions for a
-    // one-byte document. That garbage offset was stored as firstTextOffset /
-    // lastTextEnd and then indexed the input, crashing the parser. Only accept
-    // a run that really lies inside [input, input + inputSize].
-    uint32_t textOffset = 0;
-    bool textInInput = false;
-    if (ctx->input && text >= ctx->input &&
-        text <= ctx->input + ctx->inputSize) {
-        textOffset = static_cast<uint32_t>(text - ctx->input);
-        textInInput = (textOffset <= ctx->inputSize &&
-                       size <= ctx->inputSize - textOffset);
-    }
+    // one-byte document. Only accept a run that really lies inside
+    // [input, input + inputSize], as checked above.
     if (ctx->input && textInInput) {
         uint32_t off = textOffset;
         auto& noi = ctx->nodeOffsets[idx];
@@ -1136,6 +1252,23 @@ static void AddVirtualEmptyParagraphs(const std::string& source,
         return;
     }
 
+    if (doc.nodes.empty() && std::all_of(source.begin(), source.end(),
+            [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; })) {
+        size_t breaks = 0;
+        for (size_t i = 0; i < source.size(); ++i) {
+            if (source[i] == '\n' || (source[i] == '\r' &&
+                (i + 1 == source.size() || source[i + 1] != '\n'))) ++breaks;
+        }
+        // Keep the existing two-break paragraph-separator model. A lone
+        // physical blank line still needs an addressable starting position.
+        if (breaks < 2) {
+            Node blank;
+            blank.block = BlockKind::Paragraph;
+            blank.virtualEmptyParagraph = true;
+            doc.nodes.push_back(std::move(blank));
+        }
+    }
+
     std::vector<const Node*> sourceNodes;
     sourceNodes.reserve(doc.nodes.size());
     for (const auto& node : doc.nodes) {
@@ -1175,7 +1308,6 @@ static void AddVirtualEmptyParagraphs(const std::string& source,
         }
         const uint32_t runEnd = begin;
         if (begin == runStart) continue;   // no progress: never spin
-        if (breakEnds.size() < 2) continue;
 
         while (nextNode < sourceNodes.size() &&
                sourceNodes[nextNode]->srcOffset + sourceNodes[nextNode]->srcLength <= runStart) {
@@ -1185,7 +1317,29 @@ static void AddVirtualEmptyParagraphs(const std::string& source,
             sourceNodes[nextNode]->srcOffset < runEnd;
         const bool hasPreviousBlock = nextNode > 0;
         const bool hasNextBlock = nextNode < sourceNodes.size();
-        if (overlapsBlock || (!hasPreviousBlock && hasNextBlock)) continue;
+        const bool listBoundary =
+            (hasPreviousBlock && sourceNodes[nextNode - 1]->block == BlockKind::List) ||
+            (hasNextBlock && sourceNodes[nextNode]->block == BlockKind::List);
+        if (!overlapsBlock && listBoundary) {
+            // A blank line next to a list is an editable paragraph, including
+            // the line left by removing an empty bullet. Anchor it at the
+            // physical line start, not after the next separator or in a LI.
+            auto addBlank = [&](uint32_t offset) {
+                Node blank;
+                blank.block = BlockKind::Paragraph;
+                blank.virtualEmptyParagraph = true;
+                blank.srcOffset = offset;
+                blank.contentOffset = offset;
+                blanks.push_back(std::move(blank));
+            };
+            if (!hasPreviousBlock && runStart == 0) addBlank(0);
+            for (uint32_t offset : breakEnds) {
+                if (offset < runEnd || runEnd == source.size()) addBlank(offset);
+            }
+            continue;
+        }
+        if (breakEnds.size() < 2 || overlapsBlock ||
+            (!hasPreviousBlock && hasNextBlock)) continue;
 
         const size_t pairs = breakEnds.size() / 2;
         const size_t blankCount = hasPreviousBlock && hasNextBlock

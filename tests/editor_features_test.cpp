@@ -341,3 +341,166 @@ TEST(EditController, EnterOnEmptyListItemEndsTheListItem) {
     EXPECT_EQ(b.Text(), "");
     EXPECT_EQ(s.active.offset, 0u);
 }
+
+// AC-03 and caret criterion F: an empty bullet is removed as one
+// structural edit, not a byte deletion or a merge with the preceding item.
+TEST(EmptyBulletBackspace, RemovesMarkerAndIndentationInOneUndoStep) {
+    struct Case {
+        const char* source;
+        uint32_t caret;
+        const char* expected;
+        uint32_t expectedCaret;
+    };
+    const Case cases[] = {
+        {"- ", 2, "", 0},
+        {"* ", 2, "", 0},
+        {"+ ", 2, "", 0},
+        {"-", 1, "", 0},
+        {"- \t ", 4, "", 0},
+        {"- first\n- ", 10, "- first\n", 8},
+        {"- first\n- \n- third", 10, "- first\n\n- third", 8},
+        {"- first\r\n- \r\n- third", 11, "- first\r\n\r\n- third", 9},
+        {"- \n- next", 2, "\n- next", 0},
+        {"- parent\n  - ", 13, "- parent\n", 9},
+        {"- parent\n  - \n- next", 13, "- parent\n\n- next", 9},
+    };
+    for (const auto& c : cases) {
+        TextBuffer b;
+        b.SetText(c.source);
+        Document doc;
+        ASSERT_TRUE(ParseMarkdown(b.Text(), doc));
+        Selection s;
+        s.Collapse({c.caret});
+        UndoStack undo;
+        EditController ec(&b, &s);
+        ec.SetUndoStack(&undo);
+
+        ASSERT_TRUE(ec.DeleteBackward(&doc));
+        EXPECT_EQ(b.Text(), std::string(c.expected));
+        EXPECT_EQ(s.anchor.offset, c.expectedCaret);
+        EXPECT_EQ(s.active.offset, c.expectedCaret);
+        EXPECT_TRUE(s.Empty());
+
+        Document after;
+        ASSERT_TRUE(ParseMarkdown(b.Text(), after));
+        bool foundParagraph = false;
+        for (const auto& node : after.nodes) {
+            if (node.block == BlockKind::Paragraph &&
+                node.virtualEmptyParagraph &&
+                node.contentOffset == c.expectedCaret) foundParagraph = true;
+        }
+        EXPECT_TRUE(foundParagraph);
+
+        ASSERT_TRUE(ec.Undo());
+        EXPECT_EQ(b.Text(), std::string(c.source));
+        EXPECT_EQ(s.anchor.offset, c.caret);
+        EXPECT_EQ(s.active.offset, c.caret);
+        EXPECT_FALSE(undo.CanUndo());
+        ASSERT_TRUE(ec.Redo());
+        EXPECT_EQ(b.Text(), std::string(c.expected));
+        EXPECT_EQ(s.anchor.offset, c.expectedCaret);
+        EXPECT_EQ(s.active.offset, c.expectedCaret);
+        EXPECT_FALSE(undo.CanRedo());
+    }
+}
+
+TEST(EmptyBulletBackspace, DoesNotCoalesceWithPreviousTextDeletion) {
+    TextBuffer b;
+    b.SetText("- x");
+    Selection s;
+    s.Collapse({3});
+    UndoStack undo;
+    EditController ec(&b, &s);
+    ec.SetUndoStack(&undo);
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(b.Text(), doc));
+    ASSERT_TRUE(ec.DeleteBackward(&doc));
+    EXPECT_EQ(b.Text(), "- ");
+    doc = Document{};
+    ASSERT_TRUE(ParseMarkdown(b.Text(), doc));
+    ASSERT_TRUE(ec.DeleteBackward(&doc));
+    EXPECT_EQ(b.Text(), "");
+    ASSERT_TRUE(ec.Undo());
+    EXPECT_EQ(b.Text(), "- ");
+    EXPECT_EQ(s.active.offset, 2u);
+    ASSERT_TRUE(ec.Undo());
+    EXPECT_EQ(b.Text(), "- x");
+    EXPECT_EQ(s.active.offset, 3u);
+    EXPECT_FALSE(undo.CanUndo());
+}
+
+TEST(EmptyBulletBackspace, OrdinaryDeletionInCodeAndLiteralText) {
+    struct Case { const char* source; uint32_t caret; const char* expected; };
+    const Case cases[] = {
+        {"```\n- \n```", 6, "```\n-\n```"},
+        {"    - ", 6, "    -"},
+        {"\\- ", 3, "\\-"},
+        {"- text", 6, "- tex"},
+        {"1. ", 3, "1."},
+        {"plain - ", 8, "plain -"},
+    };
+    for (const auto& c : cases) {
+        TextBuffer b;
+        b.SetText(c.source);
+        Document doc;
+        ASSERT_TRUE(ParseMarkdown(b.Text(), doc));
+        Selection s;
+        s.Collapse({c.caret});
+        EditController ec(&b, &s);
+        ASSERT_TRUE(ec.DeleteBackward(&doc));
+        EXPECT_EQ(b.Text(), std::string(c.expected));
+        EXPECT_EQ(s.active.offset, c.caret - 1);
+    }
+}
+
+TEST(EmptyBulletBackspace, SourceViewUsesOrdinaryDeletion) {
+    TextBuffer b;
+    b.SetText("- ");
+    Selection s;
+    s.Collapse({2});
+    EditController ec(&b, &s);
+    ASSERT_TRUE(ec.DeleteBackward());
+    EXPECT_EQ(b.Text(), "-");
+    EXPECT_EQ(s.active.offset, 1u);
+}
+
+TEST(EmptyBulletBackspace, RefreshHintIsLimitedToEmptyBulletLines) {
+    TextBuffer b;
+    Selection s;
+    EditController ec(&b, &s);
+    for (const std::string text : {"- ", "* ", "+ ", "-", "  - \t"}) {
+        b.SetText(text);
+        s.Collapse({static_cast<uint32_t>(b.Length())});
+        EXPECT_TRUE(ec.MayRemoveEmptyBullet());
+    }
+    for (const std::string text : {"text", "- text", "1. ", "\\- ", ""}) {
+        b.SetText(text);
+        s.Collapse({static_cast<uint32_t>(b.Length())});
+        EXPECT_FALSE(ec.MayRemoveEmptyBullet());
+    }
+    b.SetText("- ");
+    s.anchor = {1};
+    s.active = {2};
+    EXPECT_FALSE(ec.MayRemoveEmptyBullet());
+}
+
+TEST(EmptyBulletBackspace, SelectionUsesOrdinaryDeletion) {
+    TextBuffer b;
+    b.SetText("- first\n- ");
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(b.Text(), doc));
+    Selection s;
+    s.anchor = {10};
+    s.active = {9};
+    UndoStack undo;
+    EditController ec(&b, &s);
+    ec.SetUndoStack(&undo);
+    ASSERT_TRUE(ec.DeleteBackward(&doc));
+    EXPECT_EQ(b.Text(), "- first\n-");
+    EXPECT_EQ(s.active.offset, 9u);
+    ASSERT_TRUE(ec.Undo());
+    EXPECT_EQ(b.Text(), "- first\n- ");
+    EXPECT_EQ(s.anchor.offset, 10u);
+    EXPECT_EQ(s.active.offset, 9u);
+    EXPECT_FALSE(undo.CanUndo());
+}

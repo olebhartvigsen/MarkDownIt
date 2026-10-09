@@ -309,7 +309,8 @@ historik fra før kompositionen.
    caretet.
 4. Delete med en tom markering skal slette grafemklyngen umiddelbart efter
    caretet.
-5. Backspace ved dokumentets begyndelse skal være en no-op.
+5. Backspace ved dokumentets begyndelse skal være en no-op, bortset fra
+   fjernelse af et tomt punkt efter den særlige dokumentregel nedenfor.
 6. Delete ved dokumentets slutning skal være en no-op.
 7. Hvis en sletning fjerner et afsnitsskift, skal de to tilstødende afsnit blive
    ét afsnit. Caretet skal stå på den oprindelige skilleposition.
@@ -731,7 +732,8 @@ kriterier skal være opfyldt.
 ### Sletning og navigation
 
 1. Backspace ved dokumentets begyndelse og Delete ved dokumentets slutning er
-   no-op og opretter ikke fortrydelseshistorik.
+   no-op og opretter ikke fortrydelseshistorik. Et tomt punkt følger dog den
+   særlige regel for Backspace nedenfor.
 2. Backspace eller Delete med markeringen `bcd` i `abcde` efterlader `ae` og et
    caret mellem `a` og `e`.
 3. Ctrl+Backspace og Ctrl+Delete stopper ved samme ordgrænser, som dobbeltklik
@@ -937,6 +939,11 @@ omskrivning af almindeligt tekstinput.
     linkdestination skal følge teksten. De øvrige rækker får tomme celler,
     så alle rækker beholder samme kolonneantal. Parse af resultatet skal
     bekræfte det præcise antal, også ved tomme celler.
+13. Backspace med tom markering i et tomt punkt fjerner markør og indrykning.
+    Caret bliver i et tomt afsnit på samme linje. Linjeskift og nabotekst bevares.
+    Det er én undo-handling, også i et indrykket punkt og ved dokumentets grænser.
+    Reglen gælder aktive punktopstillinger, ikke nummererede lister, kode eller
+    bogstavelig tekst. Caret-referencens afsnit 15 og kriterium F styrer dette valg.
 
 ### Linkaktivering med musen
 
@@ -1059,6 +1066,10 @@ Krav: "Tekstpositioner", "Enkeltklik" og "Enter" samt caret-referencens A-H.
   afsnit ved caret. Shift+Enter bevarer afsnitsantal og skaber et synligt skift.
 - Markering plus Enter og efterfølgende undo/redo bevarer tekst og formatering
   på begge sider. Tests dækker tomme afsnit og dokumentets grænser.
+- Backspace i et tomt punkt fjerner markør og indrykning i én undo-handling.
+  Tests dækker `-`, `*` og `+`, LF og CRLF, indrykning og dokumentets grænser.
+  Efter parse og layout bliver caret på den tomme linje. Nabotekst bevares.
+  Undo/redo gendanner tekst og caret. Kode og bogstavelig tekst ændrer ikke listeformat.
 
 ### AC-04: Unicode og tovejs-layout
 

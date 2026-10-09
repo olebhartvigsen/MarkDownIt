@@ -575,12 +575,41 @@ Paragraph A
 
 Tjek:
 
-* [ ] Backspace ved paragraph-start merger paragraphs.
+- [ ] Backspace i et tomt punkt fjerner punktet som beskrevet nedenfor.
+* [ ] Backspace ved paragraph-start merger paragraphs, undtagen et tomt punkt.
 * [ ] Delete ved paragraph-end merger paragraphs.
 * [ ] Backspace i tom paragraph.
 * [ ] Delete i tom paragraph.
 * [ ] Undo efter merge.
 * [ ] Formatting efter merge bevares.
+
+### Backspace i et tomt punkt
+
+Når caret står i et punkt uden indhold, skal ét Backspace fjerne punktet.
+Reglen gælder en aktiv punktopstilling med `-`, `*` eller `+` som markør.
+Den gælder ikke en nummereret liste, kode eller bogstavelig tekst.
+En aktiv markering følger de normale regler for sletning.
+
+Editoren skal fjerne markøren og punktets indrykning. Den skal beholde
+linjeskiftet og lade caret stå i et tomt afsnit på samme linje.
+Den må ikke samle linjen med det forrige punkt eller slette nabotekst.
+Reglen gælder også i et indrykket punkt og ved dokumentets grænser.
+Et tomt indrykket `-` under et punkt er et nyt punkt, ikke en overskrift.
+Undo skal gendanne punktet og caret i én handling. Redo skal fjerne det igen.
+
+Før og efter Backspace (`|` viser caret, ikke kildetekst):
+
+```text
+Før:
+- Første punkt
+- |
+- Næste punkt
+
+Efter:
+- Første punkt
+|
+- Næste punkt
+```
 
 ---
 
@@ -635,6 +664,9 @@ returnInEmptyParagraph()
 returnAfterClickAtParagraphEnd()
 returnAfterClickBeyondParagraphEnd()
 backspaceAtParagraphStart()
+backspaceAtEmptyBullet()
+backspaceAtEmptyIndentedBullet()
+undoRedoBackspaceAtEmptyBullet()
 deleteAtParagraphEnd()
 undoReturnAtParagraphEnd()
 ```
@@ -762,6 +794,12 @@ Jeg ville afslutte implementeringen med disse krav:
 ### F. Empty paragraphs
 
 > En tom paragraph skal have en gyldig caret-position og kunne modtage Return, Backspace og Delete.
+
+> Backspace i et tomt punkt skal fjerne markør og indrykning i én handling.
+> Caret skal blive i et tomt afsnit på samme linje, også efter parse og layout.
+> Linjeskift og nabotekst skal bevares. Undo og Redo skal gendanne begge tilstande.
+> Tests skal dække `-`, `*` og `+`, indrykning, LF og CRLF samt dokumentets grænser.
+> Kode, bogstavelig tekst og en aktiv markering skal følge deres egne regler.
 
 ### G. Consistency
 
