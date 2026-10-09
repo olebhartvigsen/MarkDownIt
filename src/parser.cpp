@@ -1355,12 +1355,24 @@ static void AddVirtualEmptyParagraphs(const std::string& source,
     }
 
     if (blanks.empty()) return;
-    doc.nodes.insert(doc.nodes.end(), std::make_move_iterator(blanks.begin()),
-                     std::make_move_iterator(blanks.end()));
-    std::stable_sort(doc.nodes.begin(), doc.nodes.end(),
-        [](const Node& a, const Node& b) {
-            return a.srcOffset < b.srcOffset;
-        });
+    // Preserve md4c's block order. Blocks without text callbacks (such as
+    // thematic breaks) can have no source range; sorting all nodes by their
+    // default zero offset would move them to the start of the document.
+    std::vector<Node> merged;
+    merged.reserve(doc.nodes.size() + blanks.size());
+    size_t nextBlank = 0;
+    for (auto& node : doc.nodes) {
+        if (node.srcLength > 0) {
+            while (nextBlank < blanks.size() &&
+                   blanks[nextBlank].srcOffset <= node.srcOffset) {
+                merged.push_back(std::move(blanks[nextBlank++]));
+            }
+        }
+        merged.push_back(std::move(node));
+    }
+    while (nextBlank < blanks.size())
+        merged.push_back(std::move(blanks[nextBlank++]));
+    doc.nodes = std::move(merged);
 }
 
 static int ParseMarkdownInner(const std::string& utf8, Document& out) {

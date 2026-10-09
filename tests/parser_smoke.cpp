@@ -123,6 +123,21 @@ TEST(EmptyListMapping, RemovedBulletLineRemainsAnAddressableParagraph) {
     }
 }
 
+TEST(EmptyListMapping, BlankLinesPreserveExistingBlockOrder) {
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown("# title\n\nparagraph\n\n- bullet\n\n---\n\nclosing", doc));
+    const BlockKind expected[] = {BlockKind::Heading, BlockKind::Paragraph,
+        BlockKind::List, BlockKind::ThematicBreak, BlockKind::Paragraph};
+    size_t index = 0;
+    for (const Node& node : doc.nodes) {
+        if (node.virtualEmptyParagraph) continue;
+        ASSERT_TRUE(index < sizeof(expected) / sizeof(expected[0]));
+        EXPECT_EQ(static_cast<int>(node.block), static_cast<int>(expected[index]));
+        ++index;
+    }
+    EXPECT_EQ(index, sizeof(expected) / sizeof(expected[0]));
+}
+
 TEST(EmptyListMapping, PlaceholderLayoutKeepsCanonicalPosition) {
     for (const std::string source : {"- first\n- \n- third", "- first\n\n- third"}) {
         Document doc;
