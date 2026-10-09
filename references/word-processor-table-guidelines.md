@@ -708,17 +708,23 @@ Ved aktiv celle:
 └─────┴─────┘
 ```
 
-**Indsæt række over:**
+**Indsæt række over** lægger en ny tom række umiddelbart før aktiv række,
+**indsæt række under** umiddelbart efter. Reglerne gælder uanset om cellen
+er tom eller har indhold: kommandoen kigger kun på rækkeplaceringen, aldrig
+på cellens tekst.
 
-```text
-┌─────┬─────┐
-│     │     │
-├─────┼─────┤
-│ A   │ B   │
-├─────┼─────┤
-│ C   │ D   │
-└─────┴─────┘
-```
+* Den nye række har samme kolonnetal som resten af tabellen, og alle
+  celler er tomme. Rækken skrives som `|        |        |` (én
+  mellemrums-cluster pr. celle), så et genparse giver det samme antal
+  kolonner.
+* Cellens indhold påvirkes ikke: teksten i aktiv række og i alle rækker
+  over og under flytter sig med rækken, intet slettes og intet flettes.
+* Overskriftsrækken (række 0) og skillelinjen (række 1) definerer
+  tabellens form. En ny række kan ikke indsættes mellem dem eller over
+  overskriften; kommandoen afviser disse positioner.
+* Caret placeres i den nye rækkes første celle (indsæt over) eller i
+  første celle i rækken efter (indsæt under). Begge er nye tomme celler,
+  så der er ingen tekst at gemme eller vælge.
 
 Tjek:
 
@@ -742,37 +748,87 @@ Samme princip:
 └─────┴─────┴─────┘
 ```
 
+Placeringen følger caretens kolonne: **til højre** indsætter efter
+caret-cellens afsluttende `|`, **til venstre** før dens åbne `|`. Det
+gælder både i tomme og udfyldte celler; kun kolonnepositionen tæller.
+
+* Alle rækker får én ny celle, så kolonnetallet bliver ens på tværs af
+  rækker (§60). De nye celler er tomme og skrives med samme
+  mellemrumsbredde som en indsæt-række-celle.
+* Caretens egen celle berøres ikke: dens tekst, padding og position
+  relativt til kolonnerne omkring den bevares. Teksten i kolonner til
+  højre flyttes men ændres ikke.
+* I skillelinjen skrives den nye celle som `--------|`, så tabellen
+  stadig genparses som tabel.
+* Rækker der er håndredigeret kortere (ragged) og mangler det antal
+  rørtegn der skal til, kopieres uændret: en kort række får ikke
+  tilfældigt en ekstra celle.
+
 Tjek:
 
 * [ ] Kolonnen indsættes korrekt.
 * [ ] Rækkeantallet bevares.
 * [ ] Bredde beregnes korrekt.
 * [ ] Tabellen overstiger ikke utilsigtet dokumentets bredde.
+* [ ] Caret placeres i den nye kolonnes celle på samme række.
 
 ---
 
 # 25. Slet række
 
-* [ ] Aktiv række kan slettes.
-* [ ] Flere markerede rækker kan slettes.
-* [ ] Sidste række håndteres korrekt.
-* [ ] Sletning af sidste række skal enten:
+Den række hvor caret står (den fysiske linje), slettes som helhed: alle
+celler i rækken forsvinder, både tomme og udfyldte. Sletningen er
+repræsentativ for rækken, ikke for cellen.
 
-  * slette tabellen, eller
-  * efterlade en tom række.
-* [ ] Adfærden er eksplicit defineret.
+* Rækker over og under berøres ikke: deres tekst, kolonneantal og
+  breddeforholdene bevares. Kolonnetallet pr. række må ikke ændre sig, og
+  md4c genparser resten til én tabel.
+* Skillelinjen og overskriften kan ikke slettes særskilt. Er caret på
+  række 0 eller 1, afvises kommandoen. Tabellens form defineres netop af
+  disse to linjer.
+* Den sidste række i tabellen kan godt slettes. Hvis der efter
+  sletningen kun står overskrift og skillelinje tilbage, forbliver det
+  en gyldig tabel: et antal kolonner og rækken nul. Alternativet var at
+  slette hele tabellen, men det ville fjerne overskriften som brugeren
+  selv har skrevet.
+* Efter sletningen placeres caret ved startpositionen af den slettede
+  række eller (hvis den var sidst) i sidste tilbageværende række. Caret
+  står aldrig i restroområdet mellem to linjer.
+
+Tjek:
+
+* [ ] Aktiv række kan slettes.
+* [ ] Rækker før og efter sletningen er uændrede.
+* [ ] Sidste række håndteres korrekt.
+* [ ] Efter sletning af sidste række er der en tom tabel eller
+  tabellen er helt væk, og adfærden er eksplicit defineret.
 * [ ] Cursor placeres korrekt bagefter.
 
 ---
 
 # 26. Slet kolonne
 
-Samme princip.
+Samme princip: den kolonne hvor caret står, slettes i alle rækker.
+
+* I hver række fjernes cellens indhold inklusive dens afsluttende `|`.
+  Er cellen i en række tom, fjernes dens mellemrum på samme måde.
+* Kolonner til venstre og højre bevares uændrede: deres tekst og
+  justering flyttes blot med. Rækkeantallet er det samme.
+* Skillelinjens tilsvarende segment `--------|` fjernes også, ellers
+  ville kolonnetallet i linjen overstige kroppens.
+* Den sidste kolonne kan ikke slettes (tabellen må ikke ende i 0
+  kolonner); kommandoen afvises når tabellen kun har én kolonne.
+* Caret placeres i cellen umiddelbart til højre for den slettede
+  kolonne, på samme række. Er den slettede den sidste kolonne, placeres
+  caret i den nye sidste celle på rækken.
+
+Tjek:
 
 * [ ] Aktiv kolonne slettes.
-* [ ] Flere kolonner kan slettes.
+* [ ] Kolonner før og efter er uændrede.
 * [ ] Sidste kolonne håndteres korrekt.
 * [ ] Tabellen må ikke ende i en ugyldig 0-kolonne tilstand.
+* [ ] Caret placeres deterministisk efter sletningen.
 
 ---
 
