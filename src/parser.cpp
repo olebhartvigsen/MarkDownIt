@@ -896,6 +896,37 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
         ctx->in_header = false;
     }
     if (type == MD_BLOCK_TABLE) {
+        // The generic text-based span only covers rows that contain cell
+        // text, so rows with empty cells (grid-created rows, added empty
+        // rows) fall outside the table's own span. Every table command
+        // resolves the caret through that span, and removing a row then
+        // leaves its newline behind: the blank line splits the table and
+        // the remaining rows degrade to a pipe-text paragraph. Recompute
+        // the span from the model instead: first row's first cell to the
+        // last row's last cell, whole physical lines, trailing newline
+        // included.
+        if (ctx->table_node_idx >= 0) {
+            Node& node = ctx->doc->nodes[ctx->table_node_idx];
+            uint32_t first = UINT32_MAX;
+            uint32_t last = 0;
+            bool any = false;
+            for (const auto& row : node.rows) {
+                for (const auto& cell : row.cells) {
+                    if (cell.srcEnd == 0 && cell.srcOffset == 0) continue;
+                    any = true;
+                    if (cell.srcOffset < first) first = cell.srcOffset;
+                    if (cell.srcEnd > last) last = cell.srcEnd;
+                }
+            }
+            if (any && first < last) {
+                const uint32_t start = BlockLineStart(ctx->input, first);
+                uint32_t end = BlockLineEnd(ctx->input, ctx->inputSize, last);
+                if (end < ctx->inputSize && ctx->input[end] == '\r') ++end;
+                if (end < ctx->inputSize && ctx->input[end] == '\n') ++end;
+                node.srcOffset = start;
+                node.srcLength = end - start;
+            }
+        }
         ctx->table_node_idx = -1;
     }
     return 0;

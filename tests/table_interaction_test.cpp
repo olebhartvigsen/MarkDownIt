@@ -167,6 +167,54 @@ TEST(ExcelPaste, TableAfterListNeedsBlankSeparatorLine) {
     EXPECT_EQ(TableSeparatorNewlinesBefore("- x\n\n", 6), 0u);
 }
 
+TEST(TableRows, EmptyCellRowsStayInsideTheTableSpan) {
+    // Grid-created tables have rows whose cells are all empty; the parser's
+    // text-based span used to stop at the last row containing text, leaving
+    // the empty rows outside the table's own span. Removing a row then left
+    // its newline behind, the blank line split the table, and the rows
+    // below degraded to raw pipe text. The span must cover every row line.
+    const std::string src =
+        "| Column 1 | Column 2 |\n"
+        "|--------|--------|\n"
+        "|        |        |\n"
+        "|        |        |\n";
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(src, doc));
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    ASSERT_EQ(doc.nodes[0].block, BlockKind::Table);
+    EXPECT_EQ(doc.nodes[0].rows.size(), 3u);
+    // The span covers the whole table, both empty body rows included.
+    EXPECT_EQ(doc.nodes[0].srcOffset, 0u);
+    EXPECT_EQ(doc.nodes[0].srcLength,
+              static_cast<uint32_t>(src.size()));
+
+    // The user flow: caret in the first body row, remove rows; the text
+    // stays one table no matter which body row was removed.
+    const uint32_t rowLineLen =
+        static_cast<uint32_t>(strlen("\n|        |        |"));
+    for (uint32_t removed = 2; removed <= 4; removed += 2) {
+        // body row 1 line starts after header+delimiter
+        uint32_t rowStart = removed == 2
+            ? strlen("| Column 1 | Column 2 |\n|--------|--------|\n")
+            : strlen("| Column 1 | Column 2 |\n|--------|--------|\n"
+                     "|        |        |\n");
+        std::string after = src.substr(0, rowStart) +
+                            src.substr(rowStart + rowLineLen);
+        Document d2;
+        ASSERT_TRUE(ParseMarkdown(after, d2));
+        size_t tables = 0, otherBlocks = 0;
+        for (const Node& n : d2.nodes) {
+            if (n.block == BlockKind::Table) ++tables;
+            else if (n.block != BlockKind::Paragraph ||
+                     !n.virtualEmptyParagraph) ++otherBlocks;
+        }
+        EXPECT_EQ(tables, 1u);
+        EXPECT_EQ(otherBlocks, 0u);
+        if (d2.nodes.size() == 1u)
+            EXPECT_EQ(d2.nodes[0].rows.size(), 2u);
+    }
+}
+
 TEST(ExcelPaste, NotTabSeparatedIsRejected) {
     const char* rejects[] = {
         "just a sentence",
