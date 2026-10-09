@@ -142,6 +142,22 @@ The primary way to create a marker is:
 
 The marker SHOULD be created from the current text selection.
 
+### Triple-click in a list item
+
+In rendered view, triple-click MUST select only the list item's content.
+The selection highlight MUST NOT include the bullet or number, indentation,
+or the item's final line break. It MUST stop before the next item.
+Applying Mark to this selection MUST mark only its rendered text.
+
+Backspace on the selection MUST leave an empty item with its bullet intact.
+All later items MUST keep their text and nesting level. Including the final
+line break would join the two list prefixes and could nest the next item.
+
+These rules also cover bold text and links. Source view keeps its normal
+line-selection rules. See
+[text editing specification](windows-standardtekstredigering-specifikation.md)
+and [caret and paragraph rules](word-processor-guidelines.md).
+
 The shipped activation paths:
 
 * The Mark toggle button in the Markers group on the Home tab
@@ -1439,6 +1455,13 @@ The implementation is considered correct when all of the following are true.
 * [x] Marked text renders in view mode and in edit mode.
 
 ## Non-destructive behaviour
+
+- [ ] Triple-click in item 3 of a five-item list highlights only its content,
+  not its marker, indentation, final line break, or any part of item 4.
+- [ ] Mark on that selection covers only item 3's rendered text.
+- [ ] Backspace on that selection leaves five items, with item 3 empty and
+  items 4 and 5 at their original level. Undo and Redo restore the same result.
+- [ ] The list checks cover LF, CRLF, bold text and links.
 
 * [ ] Creating a marker does not modify Markdown source.
 * [ ] Removing a marker does not modify Markdown source.
