@@ -125,8 +125,14 @@ Distribution (release-pipeline.md, release.yml + installer/ in tree):
   No raw exe is attached to releases; the exe exists only inside the
   installers and as a CI artifact.
 - Dual arch (x64 + arm64), no winget in any doc
+- First release cut 2026-10-09: v0.2.0 "MarkDownIt 0.2 Beta", flagged
+  pre-release, assets exactly MarkDownItSetup-{x64,arm64}.msi and
+  MarkDownIt-{x64,arm64}.msix (1.4-1.7 MB each), no raw exe
+- releases/latest 404s while the only release is a pre-release, so the
+  homepage download buttons link by tag (v0.2.0) and name the version in
+  copy; bump the page links and version text on every new tag
 - app.rc version on main is 0.2.0; a workflow_dispatch dry-run builds all
-  artifacts without attaching them; cutting the first tag has not happened
+  artifacts without attaching them (used to prove a version bump compiles)
 - Microsoft Store submission is a manual Partner Center step; no listing is
   live, so never claim Store availability on the homepage
 
