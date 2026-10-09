@@ -116,12 +116,15 @@ Office (office-import-export-spec.md + tree; office milestone 1, partial):
   legacy .doc writing (deferred to a later milestone)
 
 Distribution (release-pipeline.md, release.yml + installer/ in tree):
-- Tag vX.Y.Z build attaches to the GitHub release:
-  MarkDownIt-x64.exe (portable), MarkDownItSetup-x64.msi (per-user installer
+- Tag vX.Y.Z build attaches to the GitHub release (matrix over x64 and
+  arm64, added in commit 10c379a):
+  MarkDownItSetup-x64.msi and MarkDownItSetup-arm64.msi (per-user installer
   into %LOCALAPPDATA%\MarkDownIt, shortcuts, closes running instance, launches
-  after install), MarkDownIt-x64.msix (full-trust Store package, Identity
-  Hartvigsen.MarkDownIt, Store registers .md)
-- Windows x64 only, no arm64, no winget in any doc
+  after install), MarkDownIt-x64.msix and MarkDownIt-arm64.msix (full-trust
+  Store packages, Identity Hartvigsen.MarkDownIt, Store registers .md).
+  No raw exe is attached to releases; the exe exists only inside the
+  installers and as a CI artifact.
+- Dual arch (x64 + arm64), no winget in any doc
 - app.rc version on main is 0.2.0; a workflow_dispatch dry-run builds all
   artifacts without attaching them; cutting the first tag has not happened
 - Microsoft Store submission is a manual Partner Center step; no listing is
