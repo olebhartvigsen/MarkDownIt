@@ -169,3 +169,22 @@ Distribution (release-pipeline.md, release.yml + installer/ in tree):
   toggle exists. Claim a toggle, never a split view.
 - "No network" claims must stay scoped to Mermaid rendering: imagehelper.cpp
   fetches remote images over winhttp.
+
+## Homepage structure (obsidian.md restructure, 2026-10-10)
+
+- h1 is the stance line "A word processor for Markdown files." (obsidian-style
+  stance headline; the brand name lives in the nav logo and the SEO title)
+- Order: hero (screenshot right) → unheaded value triad → WYSIWYG (#wysiwyg) →
+  Mermaid (#mermaid) → Office (#office) → feature table (#features) →
+  download (#download) → FAQ → CTA strip → footer
+- Showcase sections come before the feature table: the sections pitch, the
+  table is the inventory
+- Section headings are short verb/stance sentences with periods ("Type on the
+  rendered text.", "Diagrams without a browser.", "Import Word. Export PDF.",
+  "Every feature in the app.", "Get MarkDownIt for Windows")
+- Buttons use the Get verb ("Get MarkDownIt for Windows", "Get MarkDownIt");
+  all four point at releases/latest and name no version
+- Privacy negatives appear twice by design (obsidian repeats them): download
+  note ("No account. No uploads. No tracking.") and CTA strip
+- Alternation stays strict: hero dark, triad plain, then sec-alt/plain
+  alternating down to FAQ, CTA strip dark
