@@ -78,12 +78,19 @@ p{margin:0 0 1em}
 /* hero */
 .hero{background:linear-gradient(135deg,#0B1E22 0%,#123A34 55%,#0F5E57 100%);color:#fff;padding:84px 0 76px}
 .hero .wrap{display:grid;grid-template-columns:1.15fr .85fr;gap:48px;align-items:center}
-.eyebrow{display:inline-block;font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#7ED8CC;margin-bottom:14px}
 .hero h1{font-size:52px;margin-bottom:.35em}
 .hero .lead{color:#C4D9D6;max-width:52ch}
 .hero-ctas{display:flex;gap:14px;margin:26px 0 30px;flex-wrap:wrap}
-.chip-row{display:flex;gap:10px;flex-wrap:wrap}
-.chip{border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:5px 13px;font-size:13.5px;color:#D7E7E4}
+/* triad */
+.triad{padding:58px 0 54px}
+.triad-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:30px}
+.prop-h{font-size:19px;font-weight:600;margin:0 0 6px}
+.prop-p{margin:0;color:var(--muted);font-size:15px}
+/* office file chips */
+.file-chips{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:30px}
+.fchip{border:1px solid var(--line);background:#fff;border-radius:9px;padding:9px 14px;font-size:13.5px;font-family:"Cascadia Mono",Consolas,monospace}
+.fchip:first-child{border-color:var(--teal-bright);color:var(--teal)}
+.fchev{color:var(--muted)}
 .hero-visual{display:flex;flex-direction:column;align-items:center;gap:26px}
 .hero-icon{width:150px;height:150px;filter:drop-shadow(0 14px 34px rgba(0,0,0,.35))}
 .screenshot{margin:0;min-width:0}
@@ -182,7 +189,7 @@ footer .fine{color:#7E9491;font-size:13px}
   .hero h1{font-size:40px}
   .hero-visual{order:-1}
   .split-grid,.mermaid-grid{grid-template-columns:1fr}
-  .steps{grid-template-columns:1fr}
+  .steps,.triad-grid{grid-template-columns:1fr}
   section{padding:56px 0}
 }
 </style>
@@ -200,9 +207,9 @@ footer .fine{color:#7E9491;font-size:13px}
     </a>
     <nav id="site-menu" aria-label="Main">
       <a href="#wysiwyg">WYSIWYG</a>
-      <a href="#features">Features</a>
       <a href="#mermaid">Mermaid</a>
       <a href="#office">Word and PDF</a>
+      <a href="#features">Features</a>
       <a href="#faq">FAQ</a>
       <a class="nav-github" href="https://github.com/olebhartvigsen/MarkDownIt" target="_blank" rel="noopener" aria-label="MarkDownIt on GitHub">
         <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
@@ -220,20 +227,11 @@ footer .fine{color:#7E9491;font-size:13px}
 <section class="hero">
   <div class="wrap">
     <div>
-      <span class="eyebrow">Native Windows Markdown editor</span>
-      <h1>MarkDownIt</h1>
-      <p class="lead">MarkDownIt is a word processor for Markdown files. You type in the rendered view itself, with a caret, selection, tables and undo, and the file on disk stays plain Markdown.</p>
+      <h1>A word processor for Markdown files.</h1>
+      <p class="lead">MarkDownIt opens .md files and edits them in the rendered view itself, with a caret, selection, tables and undo. The file on disk stays plain Markdown.</p>
       <div class="hero-ctas">
-        <a class="btn btn-solid" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Download for Windows 10 or 11</a>
+        <a class="btn btn-solid" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Get MarkDownIt for Windows</a>
         <a class="btn btn-ghost" href="#wysiwyg">See what it does</a>
-      </div>
-      <div class="chip-row" aria-label="Facts">
-        <span class="chip">Word processor for Markdown</span>
-        <span class="chip">Windows 10 and 11</span>
-        <span class="chip">x64 and Arm64</span>
-        <span class="chip">Single exe</span>
-        <span class="chip">MIT license</span>
-        <span class="chip">Beta</span>
       </div>
     </div>
     <div class="hero-visual">
@@ -247,11 +245,28 @@ footer .fine{color:#7E9491;font-size:13px}
   </div>
 </section>
 
+<section class="triad" aria-label="Why MarkDownIt">
+  <div class="wrap triad-grid">
+    <div class="prop">
+      <p class="prop-h">Your file stays Markdown.</p>
+      <p class="prop-p">No lock-in: any tool can open it, today and in ten years.</p>
+    </div>
+    <div class="prop">
+      <p class="prop-h">Nothing to configure.</p>
+      <p class="prop-p">Install it, open a file, write. No account, no uploads.</p>
+    </div>
+    <div class="prop">
+      <p class="prop-h">No browser inside.</p>
+      <p class="prop-p">One native window, drawn with the graphics stack that ships in Windows.</p>
+    </div>
+  </div>
+</section>
+
 <section id="wysiwyg" class="sec-alt">
   <div class="wrap split-grid">
     <div>
       <span class="kicker">Editing</span>
-      <h2>A word processor for Markdown files</h2>
+      <h2>Type on the rendered text.</h2>
       <p class="lead">Most Markdown tools put a preview next to your text. MarkDownIt puts the caret in the rendered text instead. It behaves like a word processor: you type formatted text directly, and the .md file on disk stays plain Markdown.</p>
       <ul>
         <li>Caret, selection, undo and redo work on the rendered document.</li>
@@ -270,49 +285,11 @@ footer .fine{color:#7E9491;font-size:13px}
   </div>
 </section>
 
-<section id="features">
-  <div class="wrap">
-    <div class="sec-head">
-      <span class="kicker">The app</span>
-      <h2>Features</h2>
-      <p class="lead">The app, one line per feature. WYSIWYG editing has its own section above, and Mermaid diagrams and Word and PDF get theirs below.</p>
-    </div>
-    <div class="feature-wrap">
-      <table class="feature-table">
-        <tbody>
-          <tr class="group"><th colspan="2">Writing</th></tr>
-          <tr><th scope="row">WYSIWYG editing</th><td>Type in the rendered view itself, and the file on disk stays plain Markdown. The details are in the next section.</td></tr>
-          <tr><th scope="row">Undo and redo</th><td>Every paste, cut and formatting command is one undo step, and continuous typing folds into one.</td></tr>
-          <tr><th scope="row">Bold, italic and links</th><td>Ctrl+B, Ctrl+I and Ctrl+K. Set a format at an empty caret and the next text you type gets it.</td></tr>
-          <tr><th scope="row">Mark text</th><td>Ctrl+Shift+H highlights the selection. Marks live outside the file, survive moves and renames, and never reach your exports.</td></tr>
-          <tr class="group"><th colspan="2">Tables</th></tr>
-          <tr><th scope="row">Cell editing</th><td>Click into any cell and type. Tab moves between cells, and Tab in the last cell adds a row.</td></tr>
-          <tr><th scope="row">Rows and columns</th><td>Add or remove rows and columns as single undo steps, and set left, center or right column alignment from the ribbon.</td></tr>
-          <tr><th scope="row">Protected cells</th><td>A pipe you type escapes itself, pasted text cannot break a row, and Enter does nothing inside a cell.</td></tr>
-          <tr class="group"><th colspan="2">Finding and view</th></tr>
-          <tr><th scope="row">Find and replace</th><td>Ctrl+F and Ctrl+H open a dock along the bottom edge, with Match case and Whole word options and results that wrap around.</td></tr>
-          <tr><th scope="row">Zoom</th><td>25% to 400%: Ctrl+wheel zooms around the pointer, Ctrl+0 returns to 100% in place, and your level is remembered.</td></tr>
-          <tr><th scope="row">Column widths</th><td>Standard, 960, 1600 or fixed without wrap, with the word wrap toggle next to them.</td></tr>
-          <tr><th scope="row">Outline pane</th><td>Jump around the document from a list of its headings.</td></tr>
-          <tr class="group"><th colspan="2">Files</th></tr>
-          <tr><th scope="row">Open your way</th><td>Double-click an associated .md file, drag one onto the window, or use Open in the ribbon.</td></tr>
-          <tr><th scope="row">Associate .md files</th><td>One ribbon command, and double-clicking a Markdown file opens MarkDownIt.</td></tr>
-          <tr><th scope="row">Follows the file</th><td>When the file changes on disk, the view reloads on its own. F5 forces it.</td></tr>
-          <tr class="group"><th colspan="2">Word, PDF and diagrams</th></tr>
-          <tr><th scope="row">Import Word (.docx)</th><td>Headings, lists, tables, images and links come across as Markdown, and the import reports what it had to leave out.</td></tr>
-          <tr><th scope="row">Export Word and PDF</th><td>The .docx export is checked in CI by an independent reader, and the PDF keeps layout, page breaks and footers.</td></tr>
-          <tr><th scope="row">Mermaid diagrams</th><td>Flowcharts, pie charts and sequence diagrams, drawn natively in the window. Details in their own section below.</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</section>
-
-<section id="mermaid" class="sec-alt">
+<section id="mermaid">
   <div class="wrap mermaid-grid">
     <div>
       <span class="kicker">Diagrams</span>
-      <h2>Mermaid, drawn natively</h2>
+      <h2>Diagrams without a browser.</h2>
       <p class="lead">Mermaid blocks in your Markdown become diagrams in the window. They are parsed and drawn by the app itself, on the same Direct2D pipeline that renders the rest of the document.</p>
       <ul>
         <li>Flowcharts with five node shapes, four directions and simple subgraphs, plus pie charts and sequence diagrams.</li>
@@ -357,11 +334,11 @@ flowchart TD
   </div>
 </section>
 
-<section id="office">
+<section id="office" class="sec-alt">
   <div class="wrap">
     <div class="sec-head">
       <span class="kicker">Office</span>
-      <h2>Word and PDF</h2>
+      <h2>Import Word. Export PDF.</h2>
       <p class="lead">Markdown does not live alone. MarkDownIt imports Word documents and exports Word and PDF, so the same text can travel between formats.</p>
     </div>
     <div class="steps">
@@ -381,6 +358,51 @@ flowchart TD
         <p>Layout, page breaks and footers survive the trip from Markdown to PDF.</p>
       </div>
     </div>
+    <div class="file-chips">
+      <span class="fchip">release-notes.md</span>
+      <span class="fchev" aria-hidden="true">&middot;</span>
+      <span class="fchip">release-notes.docx</span>
+      <span class="fchev" aria-hidden="true">&middot;</span>
+      <span class="fchip">release-notes.pdf</span>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="kicker">The app</span>
+      <h2>Every feature in the app.</h2>
+      <p class="lead">The app, one line per feature. The three sections above show the big ones in action.</p>
+    </div>
+    <div class="feature-wrap">
+      <table class="feature-table">
+        <tbody>
+          <tr class="group"><th colspan="2">Writing</th></tr>
+          <tr><th scope="row">WYSIWYG editing</th><td>Type in the rendered view itself, and the file on disk stays plain Markdown. The details are in the section above.</td></tr>
+          <tr><th scope="row">Undo and redo</th><td>Every paste, cut and formatting command is one undo step, and continuous typing folds into one.</td></tr>
+          <tr><th scope="row">Bold, italic and links</th><td>Ctrl+B, Ctrl+I and Ctrl+K. Set a format at an empty caret and the next text you type gets it.</td></tr>
+          <tr><th scope="row">Mark text</th><td>Ctrl+Shift+H highlights the selection. Marks live outside the file, survive moves and renames, and never reach your exports.</td></tr>
+          <tr class="group"><th colspan="2">Tables</th></tr>
+          <tr><th scope="row">Cell editing</th><td>Click into any cell and type. Tab moves between cells, and Tab in the last cell adds a row.</td></tr>
+          <tr><th scope="row">Rows and columns</th><td>Add or remove rows and columns as single undo steps, and set left, center or right column alignment from the ribbon.</td></tr>
+          <tr><th scope="row">Protected cells</th><td>A pipe you type escapes itself, pasted text cannot break a row, and Enter does nothing inside a cell.</td></tr>
+          <tr class="group"><th colspan="2">Finding and view</th></tr>
+          <tr><th scope="row">Find and replace</th><td>Ctrl+F and Ctrl+H open a dock along the bottom edge, with Match case and Whole word options and results that wrap around.</td></tr>
+          <tr><th scope="row">Zoom</th><td>25% to 400%: Ctrl+wheel zooms around the pointer, Ctrl+0 returns to 100% in place, and your level is remembered.</td></tr>
+          <tr><th scope="row">Column widths</th><td>Standard, 960, 1600 or fixed without wrap, with the word wrap toggle next to them.</td></tr>
+          <tr><th scope="row">Outline pane</th><td>Jump around the document from a list of its headings.</td></tr>
+          <tr class="group"><th colspan="2">Files</th></tr>
+          <tr><th scope="row">Open your way</th><td>Double-click an associated .md file, drag one onto the window, or use Open in the ribbon.</td></tr>
+          <tr><th scope="row">Associate .md files</th><td>One ribbon command, and double-clicking a Markdown file opens MarkDownIt.</td></tr>
+          <tr><th scope="row">Follows the file</th><td>When the file changes on disk, the view reloads on its own. F5 forces it.</td></tr>
+          <tr class="group"><th colspan="2">Word, PDF and diagrams</th></tr>
+          <tr><th scope="row">Import Word (.docx)</th><td>Headings, lists, tables, images and links come across as Markdown, and the import reports what it had to leave out.</td></tr>
+          <tr><th scope="row">Export Word and PDF</th><td>The .docx export is checked in CI by an independent reader, and the PDF keeps layout, page breaks and footers.</td></tr>
+          <tr><th scope="row">Mermaid diagrams</th><td>Flowcharts, pie charts and sequence diagrams, drawn natively in the window. Details in the section above.</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </section>
 
@@ -388,14 +410,15 @@ flowchart TD
   <div class="wrap">
     <div class="download-box">
       <span class="kicker">Get it</span>
-      <h2>Download the beta</h2>
+      <h2>Get MarkDownIt for Windows</h2>
       <p class="lead">MarkDownIt is in beta. Each release carries an MSI installer and an MSIX package, for both x64 and Arm64 Windows.</p>
       <ol>
         <li>Download <code>MarkDownItSetup-x64.msi</code> or <code>MarkDownItSetup-arm64.msi</code> (per-user installer with shortcuts), or the matching <code>.msix</code> package, from the <a href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">latest release</a>.</li>
-        <li>The installer is per-user, so no admin rights are needed. No account, nothing is uploaded: your files stay on your machine.</li>
+        <li>The installer is per-user, so no admin rights are needed.</li>
         <li>Optional: use <em>Associate .md files</em> in the ribbon so double-clicking a Markdown file opens MarkDownIt.</li>
       </ol>
-      <a class="btn btn-plain" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Go to releases</a>
+      <p class="note">No account. No uploads. No tracking. Your files stay on your machine.</p>
+      <a class="btn btn-plain" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Get MarkDownIt</a>
     </div>
   </div>
 </section>
@@ -454,7 +477,7 @@ flowchart TD
       <h2>Ready to try it?</h2>
       <p>For Windows 10 or 11, x64 and Arm64. No account, nothing uploaded.</p>
     </div>
-    <a class="btn btn-invert" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Download MarkDownIt</a>
+    <a class="btn btn-invert" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Get MarkDownIt</a>
   </div>
 </section>
 
