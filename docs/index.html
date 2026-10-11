@@ -109,6 +109,25 @@ section{padding:72px 0}
 .sec-head{margin-bottom:34px}
 
 /* features table */
+/* feature tools */
+.feature-tools{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.fchip-btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 14px;font-size:13.5px;font-weight:600;color:var(--muted);cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s,color .15s}
+.fchip-btn:hover{border-color:rgba(15,118,110,.4);color:var(--teal)}
+.fchip-btn.on{background:var(--teal);border-color:var(--teal);color:#fff}
+.fchip-btn svg{width:14px;height:14px}
+.fsearch{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:7px 14px;background:#fff;min-width:230px;transition:border-color .15s}
+.fsearch:focus-within{border-color:var(--teal-bright)}
+.fsearch svg{width:15px;height:15px;color:var(--muted);flex:none}
+.fsearch input{border:none;outline:none;background:none;font:inherit;font-size:14px;color:var(--ink);width:100%;padding:0}
+.fsearch input::placeholder{color:#93A3AD}
+.fcount{font-size:13px;color:var(--muted);margin:0 0 10px}
+kbd{display:inline-block;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;background:#fff;padding:0 6px;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.7}
+.feature-table tbody tr.fhide{display:none}
+.feature-table tbody tr.fempty td{color:var(--muted);text-align:center;padding:22px 16px;border-bottom:none}
+.feature-table tbody tr.last th,.feature-table tbody tr.last td{border-bottom:none}
+.feature-table tbody tr:not(.group):not(.fempty):hover th,.feature-table tbody tr:not(.group):not(.fempty):hover td{background:var(--bg-soft)}
+.feature-table tbody tr:not(.group):not(.fempty):hover th{box-shadow:inset 3px 0 0 var(--teal-bright)}
 .feature-wrap{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
 .feature-table{width:100%;border-collapse:collapse;font-size:15px}
 .feature-table th,.feature-table td{padding:11px 16px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
@@ -401,33 +420,49 @@ flowchart TD
     <div class="sec-head">
       <span class="kicker">The app</span>
       <h2>Every feature in the app.</h2>
-      <p class="lead">The app, one line per feature. The three sections above show the big ones in action.</p>
+      <p class="lead">One line per feature. Pick a group, or type in the box to narrow the list.</p>
     </div>
+    <div class="feature-tools">
+      <div class="chips" role="group" aria-label="Feature groups">
+        <button type="button" class="fchip-btn on" data-group="all" aria-pressed="true">All</button>
+        <button type="button" class="fchip-btn" data-group="writing" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h-1a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2 -2v-1"/><path d="M20.385 6.585a2.1 2.1 0 0 0 -2.97 -2.97l-8.415 8.385v3h3l8.385 -8.415"/><path d="M16 5l3 3"/></svg>Writing</button>
+        <button type="button" class="fchip-btn" data-group="tables" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14"/><path d="M3 10h18"/><path d="M10 3v18"/></svg>Tables</button>
+        <button type="button" class="fchip-btn" data-group="finding" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg>Finding and view</button>
+        <button type="button" class="fchip-btn" data-group="files" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2"/></svg>Files</button>
+        <button type="button" class="fchip-btn" data-group="word" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2"/><path d="M12 10l0 4"/><path d="M10 12l4 0"/><path d="M10 17l4 0"/></svg>Word, PDF and diagrams</button>
+      </div>
+      <div class="fsearch">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg>
+        <input id="feat-q" type="search" placeholder="Search features" aria-label="Search features">
+      </div>
+    </div>
+    <p class="fcount" id="feat-count" aria-live="polite">17 features</p>
     <div class="feature-wrap">
       <table class="feature-table">
         <tbody>
           <tr class="group"><th colspan="2"><svg class="gicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h-1a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2 -2v-1"/><path d="M20.385 6.585a2.1 2.1 0 0 0 -2.97 -2.97l-8.415 8.385v3h3l8.385 -8.415"/><path d="M16 5l3 3"/></svg>Writing</th></tr>
           <tr><th scope="row">WYSIWYG editing</th><td>Type in the rendered view itself, and the file on disk stays plain Markdown. The details are in the section above.</td></tr>
           <tr><th scope="row">Undo and redo</th><td>Every paste, cut and formatting command is one undo step, and continuous typing folds into one.</td></tr>
-          <tr><th scope="row">Bold, italic and links</th><td>Ctrl+B, Ctrl+I and Ctrl+K. Set a format at an empty caret and the next text you type gets it.</td></tr>
-          <tr><th scope="row">Mark text</th><td>Ctrl+Shift+H highlights the selection. Marks live outside the file, survive moves and renames, and never reach your exports.</td></tr>
+          <tr><th scope="row">Bold, italic and links</th><td><kbd>Ctrl+B</kbd>, <kbd>Ctrl+I</kbd> and <kbd>Ctrl+K</kbd>. Set a format at an empty caret and the next text you type gets it.</td></tr>
+          <tr><th scope="row">Mark text</th><td><kbd>Ctrl+Shift+H</kbd> highlights the selection. Marks live outside the file, survive moves and renames, and never reach your exports.</td></tr>
           <tr class="group"><th colspan="2"><svg class="gicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14"/><path d="M3 10h18"/><path d="M10 3v18"/></svg>Tables</th></tr>
-          <tr><th scope="row">Cell editing</th><td>Click into any cell and type. Tab moves between cells, and Tab in the last cell adds a row.</td></tr>
+          <tr><th scope="row">Cell editing</th><td>Click into any cell and type. <kbd>Tab</kbd> moves between cells, and <kbd>Tab</kbd> in the last cell adds a row.</td></tr>
           <tr><th scope="row">Rows and columns</th><td>Add or remove rows and columns as single undo steps, and set left, center or right column alignment from the ribbon.</td></tr>
-          <tr><th scope="row">Protected cells</th><td>A pipe you type escapes itself, pasted text cannot break a row, and Enter does nothing inside a cell.</td></tr>
+          <tr><th scope="row">Protected cells</th><td>A pipe you type escapes itself, pasted text cannot break a row, and <kbd>Enter</kbd> does nothing inside a cell.</td></tr>
           <tr class="group"><th colspan="2"><svg class="gicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg>Finding and view</th></tr>
-          <tr><th scope="row">Find and replace</th><td>Ctrl+F and Ctrl+H open a dock along the bottom edge, with Match case and Whole word options and results that wrap around.</td></tr>
-          <tr><th scope="row">Zoom</th><td>25% to 400%: Ctrl+wheel zooms around the pointer, Ctrl+0 returns to 100% in place, and your level is remembered.</td></tr>
+          <tr><th scope="row">Find and replace</th><td><kbd>Ctrl+F</kbd> and <kbd>Ctrl+H</kbd> open a dock along the bottom edge, with Match case and Whole word options and results that wrap around.</td></tr>
+          <tr><th scope="row">Zoom</th><td>25% to 400%: <kbd>Ctrl+wheel</kbd> zooms around the pointer, <kbd>Ctrl+0</kbd> returns to 100% in place, and your level is remembered.</td></tr>
           <tr><th scope="row">Column widths</th><td>Standard, 960, 1600 or fixed without wrap, with the word wrap toggle next to them.</td></tr>
           <tr><th scope="row">Outline pane</th><td>Jump around the document from a list of its headings.</td></tr>
           <tr class="group"><th colspan="2"><svg class="gicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2"/></svg>Files</th></tr>
           <tr><th scope="row">Open your way</th><td>Double-click an associated .md file, drag one onto the window, or use Open in the ribbon.</td></tr>
           <tr><th scope="row">Associate .md files</th><td>One ribbon command, and double-clicking a Markdown file opens MarkDownIt.</td></tr>
-          <tr><th scope="row">Follows the file</th><td>When the file changes on disk, the view reloads on its own. F5 forces it.</td></tr>
+          <tr><th scope="row">Follows the file</th><td>When the file changes on disk, the view reloads on its own. <kbd>F5</kbd> forces it.</td></tr>
           <tr class="group"><th colspan="2"><svg class="gicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2"/><path d="M12 10l0 4"/><path d="M10 12l4 0"/><path d="M10 17l4 0"/></svg>Word, PDF and diagrams</th></tr>
           <tr><th scope="row">Import Word (.docx)</th><td>Headings, lists, tables, images and links come across as Markdown, and the import reports what it had to leave out.</td></tr>
           <tr><th scope="row">Export Word and PDF</th><td>The .docx export is checked in CI by an independent reader, and the PDF keeps layout, page breaks and footers.</td></tr>
           <tr><th scope="row">Mermaid diagrams</th><td>Flowcharts, pie charts and sequence diagrams, drawn natively in the window. Details in the section above.</td></tr>
+          <tr class="fempty" hidden><td colspan="2" id="feat-empty">No feature matches.</td></tr>
         </tbody>
       </table>
     </div>
@@ -582,6 +617,68 @@ flowchart TD
       }).catch(function(){});
     });
   });
+  var frows=Array.prototype.slice.call(document.querySelectorAll('.feature-table tbody tr'));
+  var fchips=Array.prototype.slice.call(document.querySelectorAll('.fchip-btn'));
+  var fq=document.getElementById('feat-q');
+  var fcount=document.getElementById('feat-count');
+  var fempty=document.querySelector('.feature-table tr.fempty');
+  var femp=document.getElementById('feat-empty');
+  var fgroup='all';
+  var dataRows=frows.filter(function(r){return !r.classList.contains('group')&&!r.classList.contains('fempty');});
+  var ftotal=dataRows.length;
+  function gname(gr){var t=gr.querySelector('th').textContent.trim().toLowerCase();return t.split(/[\s,]/)[0];}
+  var g=null;
+  frows.forEach(function(r){
+    if(r.classList.contains('group')){g=gname(r);}
+    else if(!r.classList.contains('fempty')){r.setAttribute('data-g',g);}
+  });
+  function applyFilter(){
+    var q=fq.value.trim().toLowerCase();
+    var shown=0;
+    var lastVisible=null;
+    var i=0;
+    while(i<frows.length){
+      var r=frows[i];
+      if(r.classList.contains('group')){
+        var gname2=gname(r);
+        var vis=0;
+        var j=i+1;
+        while(j<frows.length&&!frows[j].classList.contains('group')&&!frows[j].classList.contains('fempty')){
+          var row=frows[j];
+          var okG=(fgroup==='all'||row.getAttribute('data-g')===fgroup);
+          var okQ=!q||row.textContent.toLowerCase().indexOf(q)>=0||gname2.indexOf(q)>=0;
+          var on=okG&&okQ;
+          row.classList.toggle('fhide',!on);
+          if(on){vis++;shown++;lastVisible=row;}
+          j++;
+        }
+        r.classList.toggle('fhide',vis===0);
+        i=j;
+      } else {
+        i++;
+      }
+    }
+    dataRows.forEach(function(r){r.classList.remove('last');});
+    if(lastVisible){lastVisible.classList.add('last');}
+    var none=(shown===0);
+    fempty.hidden=!none;
+    if(none){femp.textContent='No feature matches "'+q+'".';}
+    if(!q&&fgroup==='all'){fcount.textContent=ftotal+' features';}
+    else{fcount.textContent=shown+' of '+ftotal+' features';}
+  }
+  fchips.forEach(function(c){
+    c.addEventListener('click',function(){
+      fgroup=c.getAttribute('data-group');
+      fchips.forEach(function(o){
+        var on=(o===c);
+        o.classList.toggle('on',on);
+        o.setAttribute('aria-pressed',on?'true':'false');
+      });
+      applyFilter();
+    });
+  });
+  fq.addEventListener('input',applyFilter);
+  applyFilter();
 })();
 </script>
 </body>
