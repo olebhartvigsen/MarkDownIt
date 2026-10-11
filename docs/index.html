@@ -426,7 +426,7 @@ flowchart TD
         <button type="button" class="fchip-btn" data-group="word" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2"/><path d="M12 10l0 4"/><path d="M10 12l4 0"/><path d="M10 17l4 0"/></svg>Word, PDF and diagrams</button>
       </div>
     </div>
-    <p class="fcount" id="feat-count" aria-live="polite">24 features</p>
+    <p class="fcount" id="feat-count" aria-live="polite">27 features</p>
     <div class="feature-wrap">
       <table class="feature-table">
         <tbody>
@@ -439,9 +439,11 @@ flowchart TD
           <tr><th scope="row">Links you can click</th><td>A click opens a link while reading, <kbd>Ctrl+click</kbd> while editing. Web, mail and in-document links all work.</td></tr>
           <tr><th scope="row">Drag to move text</th><td>Drag a selection somewhere else in the document to move it, the way a word processor does.</td></tr>
           <tr><th scope="row">Enter and Shift+Enter</th><td><kbd>Enter</kbd> starts a new paragraph and keeps a list going, <kbd>Shift+Enter</kbd> breaks the line inside one.</td></tr>
+          <tr><th scope="row">Tab and Shift+Tab</th><td><kbd>Tab</kbd> indents a list item and <kbd>Shift+Tab</kbd> outdents it; inside code blocks, <kbd>Tab</kbd> types spaces.</td></tr>
           <tr class="group"><th colspan="2"><svg class="gicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14"/><path d="M3 10h18"/><path d="M10 3v18"/></svg>Tables</th></tr>
+          <tr><th scope="row">Insert a table</th><td>Pick rows and columns from the grid popup, and the caret lands in the first header cell.</td></tr>
           <tr><th scope="row">Cell editing</th><td>Click into any cell and type. <kbd>Tab</kbd> moves between cells, and <kbd>Tab</kbd> in the last cell adds a row.</td></tr>
-          <tr><th scope="row">Rows and columns</th><td>Add or remove rows and columns as single undo steps, and set left, center or right column alignment from the ribbon.</td></tr>
+          <tr><th scope="row">Rows and columns</th><td>Add or remove rows and columns as single undo steps, split a cell in two, and set left, center or right column alignment from the ribbon.</td></tr>
           <tr><th scope="row">Protected cells</th><td>A pipe you type escapes itself, pasted text cannot break a row, and <kbd>Enter</kbd> does nothing inside a cell.</td></tr>
           <tr class="group"><th colspan="2"><svg class="gicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg>Finding and view</th></tr>
           <tr><th scope="row">Find and replace</th><td><kbd>Ctrl+F</kbd> and <kbd>Ctrl+H</kbd> open a dock along the bottom edge, with Match case and Whole word options and results that wrap around.</td></tr>
@@ -449,10 +451,11 @@ flowchart TD
           <tr><th scope="row">Column widths</th><td>Standard, 960, 1600 or fixed without wrap, with the word wrap toggle next to them.</td></tr>
           <tr><th scope="row">Source mode</th><td>One toggle flips the whole view to the raw Markdown, and back.</td></tr>
           <tr><th scope="row">Copy, two ways</th><td>Copy from the rendered view and you get clean text; from source mode, the exact Markdown.</td></tr>
-          <tr><th scope="row">Images</th><td>Local and remote images render in the document at the right size.</td></tr>
+          <tr><th scope="row">Images</th><td>Local and remote images render in the document at the right size, SVG included.</td></tr>
           <tr><th scope="row">Outline pane</th><td>Jump around the document from a list of its headings.</td></tr>
           <tr class="group"><th colspan="2"><svg class="gicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2"/></svg>Files</th></tr>
           <tr><th scope="row">Open your way</th><td>Double-click an associated .md file, drag one onto the window, or use Open in the ribbon.</td></tr>
+          <tr><th scope="row">Recent documents</th><td>The welcome screen lists the files you have opened lately, one click to continue where you left off.</td></tr>
           <tr><th scope="row">Associate .md files</th><td>One ribbon command, and double-clicking a Markdown file opens MarkDownIt.</td></tr>
           <tr><th scope="row">Follows the file</th><td>When the file changes on disk, the view reloads on its own. <kbd>F5</kbd> forces it.</td></tr>
           <tr class="group"><th colspan="2"><svg class="gicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2"/><path d="M12 10l0 4"/><path d="M10 12l4 0"/><path d="M10 17l4 0"/></svg>Word, PDF and diagrams</th></tr>
