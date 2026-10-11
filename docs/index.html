@@ -116,18 +116,12 @@ section{padding:72px 0}
 .fchip-btn:hover{border-color:rgba(15,118,110,.4);color:var(--teal)}
 .fchip-btn.on{background:var(--teal);border-color:var(--teal);color:#fff}
 .fchip-btn svg{width:14px;height:14px}
-.fsearch{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:7px 14px;background:#fff;min-width:230px;transition:border-color .15s}
-.fsearch:focus-within{border-color:var(--teal-bright)}
-.fsearch svg{width:15px;height:15px;color:var(--muted);flex:none}
-.fsearch input{border:none;outline:none;background:none;font:inherit;font-size:14px;color:var(--ink);width:100%;padding:0}
-.fsearch input::placeholder{color:#93A3AD}
 .fcount{font-size:13px;color:var(--muted);margin:0 0 10px}
 kbd{display:inline-block;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;background:#fff;padding:0 6px;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.7}
 .feature-table tbody tr.fhide{display:none}
-.feature-table tbody tr.fempty td{color:var(--muted);text-align:center;padding:22px 16px;border-bottom:none}
 .feature-table tbody tr.last th,.feature-table tbody tr.last td{border-bottom:none}
-.feature-table tbody tr:not(.group):not(.fempty):hover th,.feature-table tbody tr:not(.group):not(.fempty):hover td{background:var(--bg-soft)}
-.feature-table tbody tr:not(.group):not(.fempty):hover th{box-shadow:inset 3px 0 0 var(--teal-bright)}
+.feature-table tbody tr:not(.group):hover th,.feature-table tbody tr:not(.group):hover td{background:var(--bg-soft)}
+.feature-table tbody tr:not(.group):hover th{box-shadow:inset 3px 0 0 var(--teal-bright)}
 .feature-wrap{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
 .feature-table{width:100%;border-collapse:collapse;font-size:15px}
 .feature-table th,.feature-table td{padding:11px 16px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
@@ -420,7 +414,7 @@ flowchart TD
     <div class="sec-head">
       <span class="kicker">The app</span>
       <h2>Every feature in the app.</h2>
-      <p class="lead">One line per feature. Pick a group, or type in the box to narrow the list.</p>
+      <p class="lead">One line per feature. Pick a group to narrow the list.</p>
     </div>
     <div class="feature-tools">
       <div class="chips" role="group" aria-label="Feature groups">
@@ -430,10 +424,6 @@ flowchart TD
         <button type="button" class="fchip-btn" data-group="finding" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg>Finding and view</button>
         <button type="button" class="fchip-btn" data-group="files" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2"/></svg>Files</button>
         <button type="button" class="fchip-btn" data-group="word" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2"/><path d="M12 10l0 4"/><path d="M10 12l4 0"/><path d="M10 17l4 0"/></svg>Word, PDF and diagrams</button>
-      </div>
-      <div class="fsearch">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg>
-        <input id="feat-q" type="search" placeholder="Search features" aria-label="Search features">
       </div>
     </div>
     <p class="fcount" id="feat-count" aria-live="polite">17 features</p>
@@ -462,7 +452,6 @@ flowchart TD
           <tr><th scope="row">Import Word (.docx)</th><td>Headings, lists, tables, images and links come across as Markdown, and the import reports what it had to leave out.</td></tr>
           <tr><th scope="row">Export Word and PDF</th><td>The .docx export is checked in CI by an independent reader, and the PDF keeps layout, page breaks and footers.</td></tr>
           <tr><th scope="row">Mermaid diagrams</th><td>Flowcharts, pie charts and sequence diagrams, drawn natively in the window. Details in the section above.</td></tr>
-          <tr class="fempty" hidden><td colspan="2" id="feat-empty">No feature matches.</td></tr>
         </tbody>
       </table>
     </div>
@@ -619,35 +608,28 @@ flowchart TD
   });
   var frows=Array.prototype.slice.call(document.querySelectorAll('.feature-table tbody tr'));
   var fchips=Array.prototype.slice.call(document.querySelectorAll('.fchip-btn'));
-  var fq=document.getElementById('feat-q');
   var fcount=document.getElementById('feat-count');
-  var fempty=document.querySelector('.feature-table tr.fempty');
-  var femp=document.getElementById('feat-empty');
   var fgroup='all';
-  var dataRows=frows.filter(function(r){return !r.classList.contains('group')&&!r.classList.contains('fempty');});
+  var dataRows=frows.filter(function(r){return !r.classList.contains('group');});
   var ftotal=dataRows.length;
   function gname(gr){var t=gr.querySelector('th').textContent.trim().toLowerCase();return t.split(/[\s,]/)[0];}
   var g=null;
   frows.forEach(function(r){
     if(r.classList.contains('group')){g=gname(r);}
-    else if(!r.classList.contains('fempty')){r.setAttribute('data-g',g);}
+    else{r.setAttribute('data-g',g);}
   });
   function applyFilter(){
-    var q=fq.value.trim().toLowerCase();
     var shown=0;
     var lastVisible=null;
     var i=0;
     while(i<frows.length){
       var r=frows[i];
       if(r.classList.contains('group')){
-        var gname2=gname(r);
         var vis=0;
         var j=i+1;
-        while(j<frows.length&&!frows[j].classList.contains('group')&&!frows[j].classList.contains('fempty')){
+        while(j<frows.length&&!frows[j].classList.contains('group')){
           var row=frows[j];
-          var okG=(fgroup==='all'||row.getAttribute('data-g')===fgroup);
-          var okQ=!q||row.textContent.toLowerCase().indexOf(q)>=0||gname2.indexOf(q)>=0;
-          var on=okG&&okQ;
+          var on=(fgroup==='all'||row.getAttribute('data-g')===fgroup);
           row.classList.toggle('fhide',!on);
           if(on){vis++;shown++;lastVisible=row;}
           j++;
@@ -660,10 +642,7 @@ flowchart TD
     }
     dataRows.forEach(function(r){r.classList.remove('last');});
     if(lastVisible){lastVisible.classList.add('last');}
-    var none=(shown===0);
-    fempty.hidden=!none;
-    if(none){femp.textContent='No feature matches "'+q+'".';}
-    if(!q&&fgroup==='all'){fcount.textContent=ftotal+' features';}
+    if(fgroup==='all'){fcount.textContent=ftotal+' features';}
     else{fcount.textContent=shown+' of '+ftotal+' features';}
   }
   fchips.forEach(function(c){
@@ -677,7 +656,6 @@ flowchart TD
       applyFilter();
     });
   });
-  fq.addEventListener('input',applyFilter);
   applyFilter();
 })();
 </script>
