@@ -82,9 +82,14 @@ p{margin:0 0 1em}
 .hero .lead{color:#C4D9D6;max-width:52ch}
 .hero-ctas{display:flex;gap:14px;margin:26px 0 30px;flex-wrap:wrap}
 /* triad */
-.triad{padding:58px 0 54px}
-.triad-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:30px}
-.prop-h{font-size:19px;font-weight:600;margin:0 0 6px}
+.triad{padding:64px 0 58px;background:radial-gradient(1000px 320px at 50% -140px,rgba(15,94,87,.09),transparent 70%)}
+.triad-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.prop{position:relative;overflow:hidden;background:linear-gradient(165deg,#FFFFFF 55%,#EFF7F6 100%);border:1px solid var(--line);border-radius:var(--radius);padding:27px 24px 23px;box-shadow:0 1px 3px rgba(11,30,34,.06);transition:border-color .2s,box-shadow .2s,transform .2s}
+.prop::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--teal-deep),var(--teal-bright))}
+.prop:hover{border-color:rgba(15,118,110,.4);box-shadow:0 12px 28px rgba(11,30,34,.10);transform:translateY(-3px)}
+.prop-icon{display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,var(--teal-deep),var(--teal));color:#fff;box-shadow:0 6px 14px rgba(15,118,110,.25);margin-bottom:14px}
+.prop-icon svg{width:21px;height:21px}
+.prop-h{font-size:18px;font-weight:600;margin:0 0 7px}
 .prop-p{margin:0;color:var(--muted);font-size:15px}
 /* office file chips */
 .file-chips{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:30px}
@@ -190,6 +195,7 @@ footer .fine{color:#7E9491;font-size:13px}
   .hero-visual{order:-1}
   .split-grid,.mermaid-grid{grid-template-columns:1fr}
   .steps,.triad-grid{grid-template-columns:1fr}
+  .triad-grid{gap:16px}
   section{padding:56px 0}
 }
 </style>
@@ -246,18 +252,23 @@ footer .fine{color:#7E9491;font-size:13px}
 </section>
 
 <section class="triad" aria-label="Why MarkDownIt">
-  <div class="wrap triad-grid">
-    <div class="prop">
-      <p class="prop-h">Your file stays Markdown.</p>
-      <p class="prop-p">No lock-in: any tool can open it, today and in ten years.</p>
-    </div>
-    <div class="prop">
-      <p class="prop-h">Nothing to configure.</p>
-      <p class="prop-p">Install it, open a file, write. No account, no uploads.</p>
-    </div>
-    <div class="prop">
-      <p class="prop-h">No browser inside.</p>
-      <p class="prop-p">One native window, drawn with the graphics stack that ships in Windows.</p>
+  <div class="wrap">
+    <div class="triad-grid">
+      <div class="prop">
+        <span class="prop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M14.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7.5z"/><path d="M14.5 3v4.5H19"/><path d="M9 13h6M9 16.5h4"/></svg></span>
+        <p class="prop-h">Your file stays Markdown.</p>
+        <p class="prop-p">No lock-in: any tool can open it, today and in ten years.</p>
+      </div>
+      <div class="prop">
+        <span class="prop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" focusable="false"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M3 9h18"/><path d="M8.5 14.5l2 2 4-4.5"/></svg></span>
+        <p class="prop-h">Nothing to configure.</p>
+        <p class="prop-p">Install it, open a file, write. No account, no uploads.</p>
+      </div>
+      <div class="prop">
+        <span class="prop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" focusable="false"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M3 9h18"/><path d="m11.5 15.2 4.5-4.5 1.8 1.8-4.5 4.5-2.3.5z"/></svg></span>
+        <p class="prop-h">No browser inside.</p>
+        <p class="prop-p">One native window, drawn with the graphics stack that ships in Windows.</p>
+      </div>
     </div>
   </div>
 </section>
