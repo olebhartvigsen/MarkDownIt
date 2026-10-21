@@ -1,0 +1,17 @@
+# MarkDownIt
+
+> MarkDownIt is a free, MIT-licensed word processor for Markdown files, for Windows 10 and 11 (x64 and Arm64). You edit in the rendered view, and the .md file on disk stays plain Markdown. It is a native app, with no Electron and no .NET runtime. Currently in beta.
+
+## Key facts
+
+- Editing: caret, selection, undo and redo, tables with Tab navigation, find and replace, outline pane and zoom work on the rendered document.
+- Diagrams: Mermaid flowcharts, pie charts and sequence diagrams are drawn natively, with no browser and no network. Styling directives, click handlers and nested subgraphs are not implemented yet.
+- Office: imports .docx as Markdown, exports .docx and PDF.
+- Install: per-user MSI installer or MSIX package from the latest release. No admin rights needed.
+
+## Links
+
+- [Homepage](https://olebhartvigsen.github.io/MarkDownIt/): features and FAQ
+- [Releases](https://github.com/olebhartvigsen/MarkDownIt/releases/latest): MSI and MSIX downloads
+- [Source and issues](https://github.com/olebhartvigsen/MarkDownIt): GitHub repository
+- [License](https://github.com/olebhartvigsen/MarkDownIt/blob/main/LICENSE): MIT

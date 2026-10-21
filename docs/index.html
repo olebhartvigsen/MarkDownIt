@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MarkDownIt: a WYSIWYG word processor for Markdown files</title>
-<meta name="description" content="MarkDownIt is a word processor for Markdown files: WYSIWYG editing in the rendered view, while the file on disk stays plain Markdown. Native Mermaid diagrams, Word import, Word and PDF export. One executable, no Electron, no .NET runtime. MIT licensed, in beta.">
+<meta name="description" content="MarkDownIt is a word processor for Markdown files. Edit in the rendered view, keep plain .md on disk. Native Mermaid diagrams, Word import, Word and PDF export. Free, MIT licensed, beta.">
 <link rel="canonical" href="https://olebhartvigsen.github.io/MarkDownIt/">
 <link rel="icon" href="favicon.ico" sizes="any">
 <link rel="icon" href="markdownit-icon.svg" type="image/svg+xml">
@@ -23,6 +23,8 @@
 <meta name="twitter:description" content="A word processor for Markdown files: WYSIWYG editing, the file stays plain Markdown. One executable, no Electron, no .NET runtime. Native Mermaid diagrams, Word and PDF export. MIT licensed.">
 <meta name="twitter:image" content="https://olebhartvigsen.github.io/MarkDownIt/social-card.png">
 <meta name="twitter:image:alt" content="MarkDownIt, a WYSIWYG word processor for Markdown files. Single exe, native Mermaid diagrams, Word and PDF support.">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "MarkDownIt", "applicationCategory": "BusinessApplication", "operatingSystem": "Windows 10, Windows 11 (x64, Arm64)", "description": "A word processor for Markdown files. Edit in the rendered view while the file on disk stays plain Markdown. Native Mermaid diagrams, Word import, Word and PDF export.", "url": "https://olebhartvigsen.github.io/MarkDownIt/", "image": "https://olebhartvigsen.github.io/MarkDownIt/social-card.png", "downloadUrl": "https://github.com/olebhartvigsen/MarkDownIt/releases/latest", "license": "https://github.com/olebhartvigsen/MarkDownIt/blob/main/LICENSE", "dateModified": "2026-10-21", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "author": {"@type": "Person", "name": "Hartvigsen"}}</script>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "What is MarkDownIt?", "acceptedAnswer": {"@type": "Answer", "text": "A native Windows app for Markdown files. It opens .md files from Explorer, parses them with the built-in md4c parser, renders with Direct2D and DirectWrite, and lets you edit in a rendered view or a source view."}}, {"@type": "Question", "name": "Is it a word processor?", "acceptedAnswer": {"@type": "Answer", "text": "Closest, yes. MarkDownIt gives you caret, selection, undo and redo, tables with cell navigation, outline and find and replace, all on the rendered document. The difference from Word: the file is plain Markdown, readable by any tool."}}, {"@type": "Question", "name": "What does WYSIWYG mean here?", "acceptedAnswer": {"@type": "Answer", "text": "You edit directly in the rendered view: click into the formatted text and type. The .md file stays plain Markdown the whole time, and a toggle shows the raw text when you want it."}}, {"@type": "Question", "name": "Which Windows versions does it run on?", "acceptedAnswer": {"@type": "Answer", "text": "Windows 10 or 11, on Intel or AMD (x64) and on Arm64 PCs. The rendering APIs it uses ship with Windows, so there is nothing else to install."}}, {"@type": "Question", "name": "Does Mermaid rendering need the internet?", "acceptedAnswer": {"@type": "Answer", "text": "No. Mermaid blocks are parsed and drawn by the app itself, with no browser window, no JavaScript engine and no network calls. Flowcharts, pie charts and sequence diagrams are supported. Styling directives, click handlers and nested subgraphs are not implemented yet."}}, {"@type": "Question", "name": "Can MarkDownIt read Word documents?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. MarkDownIt imports .docx files and converts them to Markdown, and it reports what it could not carry. Word-specific elements such as tracked changes and comments stay in the original file."}}, {"@type": "Question", "name": "Can it save Word and PDF files?", "acceptedAnswer": {"@type": "Answer", "text": "It exports .docx and PDF. The Word export is checked in CI by an independent reader, and the PDF export keeps layout, page breaks and footers."}}, {"@type": "Question", "name": "Why is it a native app instead of Electron?", "acceptedAnswer": {"@type": "Answer", "text": "Because a Markdown window does not need a browser inside it. MarkDownIt is one executable that renders with Direct2D and DirectWrite, so it starts like any Windows app and needs no runtime download."}}, {"@type": "Question", "name": "Is MarkDownIt free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. MarkDownIt is MIT licensed and free for personal and commercial use. The source code is on GitHub."}}]}</script>
 <style>
 :root{
   --teal:#0F766E; --teal-bright:#14B8A6; --teal-deep:#0B5E57;
@@ -224,7 +226,7 @@ footer .fine{color:#7E9491;font-size:13px}
 <body>
 
 <div class="announce">
-  <p>MarkDownIt is in beta. <a href="#download">See how to get it</a></p>
+  <p>MarkDownIt is in beta. <a href="#download">Download the beta</a></p>
 </div>
 <header class="site-nav">
   <div class="wrap">
@@ -257,7 +259,7 @@ footer .fine{color:#7E9491;font-size:13px}
       <h1>A word processor for Markdown files.</h1>
       <p class="lead">MarkDownIt opens .md files and edits them in the rendered view itself, with a caret, selection, tables and undo. The file on disk stays plain Markdown.</p>
       <div class="hero-ctas">
-        <a class="btn btn-solid" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Get MarkDownIt for Windows</a>
+        <a class="btn btn-solid" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Download MarkDownIt, free</a>
         <a class="btn btn-ghost" href="#wysiwyg">See what it does</a>
       </div>
     </div>
@@ -283,7 +285,7 @@ footer .fine{color:#7E9491;font-size:13px}
       <div class="prop">
         <span class="prop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2"/></svg></span>
         <p class="prop-h">Nothing to configure.</p>
-        <p class="prop-p">Install it, open a file, write. No account, no uploads.</p>
+        <p class="prop-p">Install it, open a file, start typing. No account to create.</p>
       </div>
       <div class="prop">
         <span class="prop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M7 7h-1a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2 -2v-1"/><path d="M20.385 6.585a2.1 2.1 0 0 0 -2.97 -2.97l-8.415 8.385v3h3l8.385 -8.415"/><path d="M16 5l3 3"/></svg></span>
@@ -299,14 +301,14 @@ footer .fine{color:#7E9491;font-size:13px}
     <div>
       <span class="kicker">Editing</span>
       <h2>Type on the rendered text.</h2>
-      <p class="lead">Most Markdown tools put a preview next to your text. MarkDownIt puts the caret in the rendered text instead. It behaves like a word processor: you type formatted text directly, and the .md file on disk stays plain Markdown.</p>
+      <p class="lead">Most Markdown tools show a preview next to your text. MarkDownIt puts the caret in the rendered text, so you type formatted text the way you do in a word processor. The .md file on disk stays plain Markdown.</p>
       <ul>
         <li>Caret, selection, undo and redo work on the rendered document.</li>
         <li>Bold, italic, links, inline code, headings, lists and quotes are on the ribbon.</li>
         <li>Tables get cell navigation with Tab, plus row and column commands.</li>
         <li>Find and replace, an outline pane, and zoom from 25% to 400% are built in.</li>
       </ul>
-      <p class="note">That is the WYSIWYG part: what you see is what the file renders. Prefer the raw text? Switch to the source view.</p>
+      <p class="note">What you see is how the file renders. Prefer the raw text? One toggle switches to the source view.</p>
     </div>
     <figure class="screenshot">
       <a href="Complex%20MarkDown.png" target="_blank" rel="noopener" aria-label="Open the complex Markdown screenshot at full size">
@@ -326,7 +328,7 @@ footer .fine{color:#7E9491;font-size:13px}
       <ul>
         <li>Flowcharts with five node shapes, four directions and simple subgraphs, plus pie charts and sequence diagrams.</li>
         <li>No browser window, no JavaScript engine, no network.</li>
-        <li>Layouts follow dagre's topology and are checked in CI against real mermaid.js output, matching within half a device-independent pixel.</li>
+        <li>Layouts follow dagre, the engine mermaid.js uses, and CI checks them against real mermaid.js output to within half a device-independent pixel.</li>
       </ul>
       <p class="note">Styling directives, click handlers and nested subgraphs are not implemented yet.</p>
     </div>
@@ -371,7 +373,7 @@ flowchart TD
     <div class="sec-head">
       <span class="kicker">Office</span>
       <h2>Import Word. Export PDF.</h2>
-      <p class="lead">Markdown does not live alone. MarkDownIt imports Word documents and exports Word and PDF, so the same text can travel between formats.</p>
+      <p class="lead">Your Markdown has to reach people who use Word and PDF. MarkDownIt imports Word documents and exports both Word and PDF.</p>
     </div>
     <div class="steps">
       <div class="step">
@@ -479,7 +481,7 @@ flowchart TD
         <li>The installer is per-user, so no admin rights are needed.</li>
         <li>Optional: use <em>Associate .md files</em> in the ribbon so double-clicking a Markdown file opens MarkDownIt.</li>
       </ol>
-      <p class="note">No account. No uploads. No tracking. Your files stay on your machine.</p>
+      <p class="note">No account, no uploads, no tracking. Your files stay on your machine.</p>
       <a class="btn btn-plain" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Get MarkDownIt</a>
     </div>
   </div>
@@ -490,7 +492,7 @@ flowchart TD
     <div class="sec-head">
       <span class="kicker">Questions</span>
       <h2>FAQ</h2>
-      <p class="lead">Short answers to the questions that come up.</p>
+      <p class="lead">Short answers to what people ask first.</p>
     </div>
     <details class="faq-item">
       <summary>What is MarkDownIt?</summary>
@@ -498,11 +500,11 @@ flowchart TD
     </details>
     <details class="faq-item">
       <summary>Is it a word processor?</summary>
-      <p>That is the closest description. MarkDownIt gives you caret, selection, undo and redo, tables with cell navigation, outline and find and replace, all on the rendered document. The difference from Word: the file is plain Markdown, readable by any tool.</p>
+      <p>Closest, yes. MarkDownIt gives you caret, selection, undo and redo, tables with cell navigation, outline and find and replace, all on the rendered document. The difference from Word: the file is plain Markdown, readable by any tool.</p>
     </details>
     <details class="faq-item">
       <summary>What does WYSIWYG mean here?</summary>
-      <p>The rendered view is the editor. You place the caret in the formatted text and type. The .md file keeps its Markdown the whole time, and if you want the raw text you switch to the source view.</p>
+      <p>You edit directly in the rendered view: click into the formatted text and type. The .md file stays plain Markdown the whole time, and a toggle shows the raw text when you want it.</p>
     </details>
     <details class="faq-item">
       <summary>Which Windows versions does it run on?</summary>
@@ -522,7 +524,7 @@ flowchart TD
     </details>
     <details class="faq-item">
       <summary>Why is it a native app instead of Electron?</summary>
-      <p>Because a Markdown window does not need a browser inside it. MarkDownIt is one executable that renders with Direct2D and DirectWrite, so it behaves like the rest of Windows, and there is no runtime to download.</p>
+      <p>Because a Markdown window does not need a browser inside it. MarkDownIt is one executable that renders with Direct2D and DirectWrite, so it starts like any Windows app and needs no runtime download.</p>
     </details>
     <details class="faq-item">
       <summary>Is MarkDownIt free?</summary>
@@ -537,7 +539,7 @@ flowchart TD
   <div class="wrap">
     <div>
       <h2>Ready to try it?</h2>
-      <p>For Windows 10 or 11, x64 and Arm64. No account, nothing uploaded.</p>
+      <p>Free for Windows 10 and 11, on x64 and Arm64.</p>
     </div>
     <a class="btn btn-invert" href="https://github.com/olebhartvigsen/MarkDownIt/releases/latest" target="_blank" rel="noopener">Get MarkDownIt</a>
   </div>
@@ -552,7 +554,7 @@ flowchart TD
       <a href="https://github.com/olebhartvigsen/MarkDownIt/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
     </nav>
     <div>MarkDownIt is an independent project by Hartvigsen.</div>
-    <div class="fine">Screenshots show MarkDownIt running on Windows.</div>
+    <div class="fine">Screenshots show MarkDownIt running on Windows. Page updated <time datetime="2026-10-21">21 October 2026</time>.</div>
   </div>
 </footer>
 
