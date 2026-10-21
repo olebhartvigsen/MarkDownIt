@@ -22,7 +22,11 @@
 #include <algorithm>
 
 #include <cstring>
+#ifdef _WIN32
+// Windows-only: the crash-log guard in ParseMarkdown uses SEH and the
+// Win32 file API. Nothing else in this file needs the Windows SDK.
 #include <windows.h>
+#endif
 #include <cctype>
 #include <stack>
 #include <string>
@@ -1440,6 +1444,10 @@ static int ParseMarkdownInner(const std::string& utf8, Document& out) {
 }
 
 bool ParseMarkdown(const std::string& utf8, Document& out) {
+#ifdef _WIN32
+    // The structured-exception guard is MSVC-only syntax: clang cannot
+    // parse __try/__except at all, so the macOS build takes the plain
+    // path below. The portable body is identical either way.
     __try {
         const int rc = ParseMarkdownInner(utf8, out);
         if (rc != 0) return false;
@@ -1465,6 +1473,14 @@ bool ParseMarkdown(const std::string& utf8, Document& out) {
         }
         return false;
     }
+#else
+    // No SEH on clang: a crash in the parser is a crash. The body is the
+    // same as the guarded path above, minus the crash log.
+    const int rc = ParseMarkdownInner(utf8, out);
+    if (rc != 0) return false;
+    AddVirtualEmptyParagraphs(utf8, out);
+    return true;
+#endif
 }
 
 

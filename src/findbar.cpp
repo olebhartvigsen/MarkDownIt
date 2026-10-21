@@ -105,24 +105,6 @@ const int kHeightStrip = 68;
 // Width used before the first dock, when the owner has not been measured.
 const int kWidthFallback = 400;
 
-// UTF-8 conversion. The state speaks UTF-8 bytes because that is the
-// document encoding, while the controls speak UTF-16.
-std::string WideToUtf8(const std::wstring& text) {
-    if (text.empty()) return {};
-    int needed = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
-        text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr,
-        nullptr);
-    if (needed <= 0) {
-        needed = WideCharToMultiByte(CP_UTF8, 0, text.data(),
-            static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
-    }
-    if (needed <= 0) return {};
-    std::string out(static_cast<size_t>(needed), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, text.data(),
-        static_cast<int>(text.size()), out.data(), needed, nullptr, nullptr);
-    return out;
-}
-
 UINT DpiOf(HWND hwnd) {
     HMODULE user32 = GetModuleHandleW(L"user32.dll");
     if (user32 && hwnd) {
@@ -164,7 +146,7 @@ FindBar::FindBar() {
     FindStateOptions options;
     options.search.caseSensitive = false;
     options.search.wholeWord = false;
-    state_.SetOptions(options);
+    model_.state().SetOptions(options);
 }
 
 FindBar::~FindBar() {
@@ -216,7 +198,8 @@ void FindBar::Hide() {
 void FindBar::Close() {
     const bool wasVisible = IsVisible();
     Hide();
-    if (wasVisible && listener_.onClose) listener_.onClose();
+    const FindBarListener& listener = model_.listener();
+    if (wasVisible && listener.onClose) listener.onClose();
 }
 
 bool FindBar::IsVisible() const {
@@ -251,33 +234,27 @@ void FindBar::FocusAndSelectSearchText() {
 // ---------------------------------------------------------------------------
 
 void FindBar::SetSearchText(const std::wstring& text) {
-    searchText_ = text;
-    state_.SetSearchText(WideToUtf8(text));
+    // The model clears the stale counts (guide 53); the owner reports the
+    // real ones from onSearchChanged.
+    model_.SetSearchText(text);
     HWND edit = Control(kFindBarFindEdit);
     if (edit) {
         applying_ = true;
         SetWindowTextW(edit, text.c_str());
         applying_ = false;
     }
-    // The query changed, so the old counts describe a different search. Clear
-    // them instead of leaving a wrong number on screen (guide 53); the owner
-    // reports the real ones from onSearchChanged.
-    countCurrent_ = 0;
-    countTotal_ = 0;
-    status_ = FindStatus::Empty;
     UpdateControls();
 }
 
 std::wstring FindBar::GetSearchText() const {
-    if (!IsVisible()) return searchText_;
+    if (!IsVisible()) return model_.GetSearchText();
     return ReadControlText(kFindBarFindEdit);
 }
 
 void FindBar::SetReplaceText(const std::wstring& text) {
-    replaceText_ = text;
     // Which ranges match cannot depend on the replacement text, so the state
     // takes this without invalidating its matches.
-    state_.SetReplaceText(WideToUtf8(text));
+    model_.SetReplaceText(text);
     HWND edit = Control(kFindBarReplaceEdit);
     if (edit) {
         applying_ = true;
@@ -287,7 +264,7 @@ void FindBar::SetReplaceText(const std::wstring& text) {
 }
 
 std::wstring FindBar::GetReplaceText() const {
-    if (!IsVisible()) return replaceText_;
+    if (!IsVisible()) return model_.GetReplaceText();
     return ReadControlText(kFindBarReplaceEdit);
 }
 
@@ -299,20 +276,15 @@ void FindBar::SetCaseSensitive(bool enabled) {
                      enabled ? BST_CHECKED : BST_UNCHECKED, 0);
         applying_ = false;
     }
-    FindStateOptions options = state_.Options();
-    options.search.caseSensitive = enabled;
-    // Options change which ranges match, so the stored offsets are stale
-    // until the owner refreshes (guide 31).
-    state_.SetOptions(options);
-    countCurrent_ = 0;
-    countTotal_ = 0;
-    status_ = FindStatus::Empty;
+    // The model applies the option, clears the stale counts and asks the
+    // owner to search again, because options change which ranges match
+    // (guide 31).
+    model_.SetCaseSensitive(enabled);
     UpdateControls();
-    if (listener_.onSearchChanged) listener_.onSearchChanged();
 }
 
 bool FindBar::GetCaseSensitive() const {
-    return state_.Options().search.caseSensitive;
+    return model_.GetCaseSensitive();
 }
 
 void FindBar::SetWholeWord(bool enabled) {
@@ -323,35 +295,27 @@ void FindBar::SetWholeWord(bool enabled) {
                      enabled ? BST_CHECKED : BST_UNCHECKED, 0);
         applying_ = false;
     }
-    FindStateOptions options = state_.Options();
-    options.search.wholeWord = enabled;
-    state_.SetOptions(options);
-    countCurrent_ = 0;
-    countTotal_ = 0;
-    status_ = FindStatus::Empty;
+    model_.SetWholeWord(enabled);
     UpdateControls();
-    if (listener_.onSearchChanged) listener_.onSearchChanged();
 }
 
 bool FindBar::GetWholeWord() const {
-    return state_.Options().search.wholeWord;
+    return model_.GetWholeWord();
 }
 
 void FindBar::SetMatchCount(size_t currentOrdinal, size_t total,
                             FindStatus status) {
-    countCurrent_ = currentOrdinal;
-    countTotal_ = total;
-    status_ = status;
+    model_.SetMatchCount(currentOrdinal, total, status);
     UpdateControls();
 }
 
 void FindBar::SyncFromState() {
-    SetMatchCount(state_.CurrentOrdinal(), state_.MatchCount(),
-                  state_.Status());
+    SetMatchCount(model_.state().CurrentOrdinal(), model_.state().MatchCount(),
+                  model_.state().Status());
 }
 
 void FindBar::SetReplaceEnabled(bool enabled) {
-    replaceEnabled_ = enabled;
+    model_.SetReplaceEnabled(enabled);
     // Guide 4 asks the UI to make the state visible rather than silently
     // ignoring a click, so the status line explains it. The owner's own
     // status text, for example a replacement count, always wins.
@@ -360,12 +324,12 @@ void FindBar::SetReplaceEnabled(bool enabled) {
 }
 
 void FindBar::SetStatusText(const std::wstring& text) {
-    statusText_ = text;
+    model_.SetStatusText(text);
     SetControlText(kFindBarStatus, FormatStatusText());
 }
 
 std::wstring FindBar::GetStatusText() const {
-    return statusText_;
+    return model_.GetStatusText();
 }
 
 // ---------------------------------------------------------------------------
@@ -374,65 +338,23 @@ std::wstring FindBar::GetStatusText() const {
 // ---------------------------------------------------------------------------
 
 bool FindBar::NavigateNext(uint32_t from) {
-    // The owner keeps the current match selected, so the caret normally
-    // sits at the match end, where the raw offset already resolves to the
-    // following match. When the caret sits at the match start instead (a
-    // click right there), the raw offset would resolve back to the current
-    // match and Next would look dead; anchor on the match end then.
-    TextMatch current;
-    if (state_.HasCurrentMatch() && state_.CurrentMatch(&current)) {
-        const uint32_t matchEnd = current.start + current.length;
-        if (from >= current.start && from < matchEnd) from = matchEnd;
-    }
-    if (!state_.MoveNext(from)) return false;
-    TextMatch match;
-    if (!state_.CurrentMatch(&match)) return false;
-    // The counter is the bar's own display of the state the bar just
-    // moved; the owner only turns the match into a document selection.
-    // SyncFromState touches counter and status only, never the edit
-    // texts, so this can never retrigger a search.
-    SyncFromState();
-    if (listener_.onSelectionChanged) {
-        listener_.onSelectionChanged(match.start, match.length);
-    }
-    return true;
+    // The model moves the state, updates the counter and reports the new
+    // current match through the listener. The widget only redraws.
+    const bool moved = model_.NavigateNext(from);
+    if (moved) UpdateControls();
+    return moved;
 }
 
 bool FindBar::NavigatePrevious(uint32_t from) {
-    // Mirror of Next. With the caret at the current match's end, the
-    // "match strictly before the caret" rule resolved to the current match
-    // itself, so Previous looked dead on every click. Anchor on the match
-    // start whenever the caret is inside the current match or at its end,
-    // so Previous always steps to a different match and wraps at the first
-    // one (guide 8).
-    TextMatch current;
-    if (state_.HasCurrentMatch() && state_.CurrentMatch(&current)) {
-        const uint32_t matchEnd = current.start + current.length;
-        if (from > current.start && from <= matchEnd) from = current.start;
-    }
-    if (!state_.MovePrevious(from)) return false;
-    TextMatch match;
-    if (!state_.CurrentMatch(&match)) return false;
-    // Same as NavigateNext: the counter must follow the state this button
-    // just moved.
-    SyncFromState();
-    if (listener_.onSelectionChanged) {
-        listener_.onSelectionChanged(match.start, match.length);
-    }
-    return true;
+    const bool moved = model_.NavigatePrevious(from);
+    if (moved) UpdateControls();
+    return moved;
 }
 
 bool FindBar::SelectMatchAt(uint32_t offset) {
-    state_.AdoptMatchAt(offset);
-    TextMatch match;
-    if (!state_.CurrentMatch(&match)) return false;
-    // Adopting moves the current ordinal too, so the counter follows here
-    // as well (a replacement continues the count from where it landed).
-    SyncFromState();
-    if (listener_.onSelectionChanged) {
-        listener_.onSelectionChanged(match.start, match.length);
-    }
-    return true;
+    const bool adopted = model_.SelectMatchAt(offset);
+    if (adopted) UpdateControls();
+    return adopted;
 }
 
 // ---------------------------------------------------------------------------
@@ -478,66 +400,63 @@ bool FindBar::HandleCommand(WPARAM wp, LPARAM lp) {
 void FindBar::OnFindTextChanged() {
     if (applying_) return;
     const std::wstring text = ReadControlText(kFindBarFindEdit);
-    searchText_ = text;
-    const std::string query = WideToUtf8(text);
     // Typing the same text back, for example through undo in the edit, must
     // not start a new search.
-    if (query == state_.SearchText()) return;
-    state_.SetSearchText(query);
+    if (text == model_.GetSearchText()) return;
     // Guide 5: search is incremental, no Enter needed, and guide 53: show
-    // nothing rather than a count that belongs to the previous query.
-    countCurrent_ = 0;
-    countTotal_ = 0;
-    status_ = FindStatus::Empty;
+    // nothing rather than a count that belongs to the previous query. The
+    // model clears the counts; the owner reports the new ones.
+    model_.SetSearchText(text);
     UpdateControls();
-    if (listener_.onSearchChanged) listener_.onSearchChanged();
+    const FindBarListener& listener = model_.listener();
+    if (listener.onSearchChanged) listener.onSearchChanged();
 }
 
 void FindBar::OnReplaceTextChanged() {
     if (applying_) return;
-    replaceText_ = ReadControlText(kFindBarReplaceEdit);
     // The replacement never changes which ranges match, so no re-search and
     // no counter reset here.
-    state_.SetReplaceText(WideToUtf8(replaceText_));
+    model_.SetReplaceText(ReadControlText(kFindBarReplaceEdit));
 }
 
 void FindBar::OnOptionToggled() {
     if (applying_) return;
-    FindStateOptions options = state_.Options();
+    FindStateOptions options = model_.state().Options();
     options.search.caseSensitive =
         SendDlgItemMessageW(hwnd_, kFindBarMatchCase, BM_GETCHECK, 0, 0) ==
         BST_CHECKED;
     options.search.wholeWord =
         SendDlgItemMessageW(hwnd_, kFindBarWholeWord, BM_GETCHECK, 0, 0) ==
         BST_CHECKED;
-    state_.SetOptions(options);
-    countCurrent_ = 0;
-    countTotal_ = 0;
-    status_ = FindStatus::Empty;
+    model_.state().SetOptions(options);
+    model_.SetMatchCount(0, 0, FindStatus::Empty);
     UpdateControls();
-    if (listener_.onSearchChanged) listener_.onSearchChanged();
+    const FindBarListener& listener = model_.listener();
+    if (listener.onSearchChanged) listener.onSearchChanged();
 }
 
 void FindBar::RequestReplaceCurrent() {
     // The gate lives here, not only in the enabled state of the buttons, so
     // that no caller, click or key can mutate a document the owner considers
     // read-only (guide 4 and 63).
-    if (!replaceEnabled_) return;
-    if (!state_.HasQuery()) return;
+    if (!model_.IsReplaceEnabled()) return;
+    if (!model_.state().HasQuery()) return;
     TextMatch match;
-    if (!state_.CurrentMatch(&match)) return;
-    if (listener_.onReplaceCurrent) {
-        listener_.onReplaceCurrent(match.start, match.length);
+    if (!model_.state().CurrentMatch(&match)) return;
+    const FindBarListener& listener = model_.listener();
+    if (listener.onReplaceCurrent) {
+        listener.onReplaceCurrent(match.start, match.length);
     }
 }
 
 void FindBar::RequestReplaceAll() {
-    if (!replaceEnabled_) return;
-    if (!state_.HasQuery()) return;
-    if (state_.MatchCount() == 0) return;
-    if (listener_.onReplaceAll) {
-        listener_.onReplaceAll(GetSearchText(), GetReplaceText(),
-                               state_.Options());
+    if (!model_.IsReplaceEnabled()) return;
+    if (!model_.state().HasQuery()) return;
+    if (model_.state().MatchCount() == 0) return;
+    const FindBarListener& listener = model_.listener();
+    if (listener.onReplaceAll) {
+        listener.onReplaceAll(GetSearchText(), GetReplaceText(),
+                              model_.state().Options());
     }
 }
 
@@ -620,21 +539,21 @@ void FindBar::MoveTabFocus(HWND from, bool forward) {
 
 void FindBar::UpdateControls() {
     if (!hwnd_ || !IsWindow(hwnd_)) return;
-    const bool hasQuery = state_.HasQuery();
+    const bool hasQuery = model_.state().HasQuery();
     // Guide 20: an empty field is never "match everything". Guide 21: no
     // matches disables navigation and replacement too.
-    const bool navigable = hasQuery && status_ == FindStatus::Found &&
-                           countTotal_ > 0;
+    const bool navigable = hasQuery && model_.status() == FindStatus::Found &&
+                           model_.countTotal() > 0;
     // Two gates on the replace half: the bar's mode (a Find session greys
     // it out) and the edit state the owner reports (guide 4). The controls
     // stay visible in both cases, so the layout never jumps.
-    const bool replaceUsable = mode_ == FindBarMode::FindReplace;
+    const bool replaceUsable = model_.Mode() == FindBarMode::FindReplace;
     const bool replaceAvailable =
-        replaceUsable && replaceEnabled_ && navigable;
+        replaceUsable && model_.IsReplaceEnabled() && navigable;
 
     EnableControl(kFindBarPrevious, navigable);
     EnableControl(kFindBarNext, navigable);
-    EnableControl(kFindBarReplaceEdit, replaceUsable && replaceEnabled_);
+    EnableControl(kFindBarReplaceEdit, replaceUsable && model_.IsReplaceEnabled());
     EnableControl(kFindBarReplace, replaceAvailable);
     EnableControl(kFindBarReplaceAll, replaceAvailable);
     EnableControl(kFindBarMatchCase, true);
@@ -647,13 +566,13 @@ void FindBar::UpdateControls() {
 }
 
 std::wstring FindBar::FormatCounter() const {
-    if (status_ == FindStatus::Empty) return std::wstring();
-    if (status_ == FindStatus::NoMatches) return S(kStrNoMatches);
+    if (model_.status() == FindStatus::Empty) return std::wstring();
+    if (model_.status() == FindStatus::NoMatches) return S(kStrNoMatches);
     // Guide 3 and 52: "3 of 17". Built by concatenation rather than through
     // a printf-style format, so the pattern stays in the localization table
     // and MSVC has no non-literal format string to complain about.
-    const std::wstring ordinal = std::to_wstring(countCurrent_);
-    const std::wstring total = std::to_wstring(countTotal_);
+    const std::wstring ordinal = std::to_wstring(model_.countCurrent());
+    const std::wstring total = std::to_wstring(model_.countTotal());
     std::wstring text;
     text.reserve(ordinal.size() + total.size() + 8);
     text += ordinal;
@@ -663,12 +582,9 @@ std::wstring FindBar::FormatCounter() const {
 }
 
 std::wstring FindBar::FormatStatusText() const {
-    if (!statusText_.empty()) return statusText_;
-    // Guide 4: rather than silently ignoring Replace in a read-only view,
-    // say why. Only while the replace half is on screen.
-    if (mode_ == FindBarMode::FindReplace && !replaceEnabled_)
-        return S(kStrReadOnlyHint);
-    return std::wstring();
+    // The model owns the rule: the owner's own text wins, and a read-only
+    // view explains why Replace does nothing (guide 4).
+    return model_.FormatStatusText();
 }
 
 // ---------------------------------------------------------------------------
@@ -908,14 +824,14 @@ void FindBar::SyncControlsFromState() {
     // Text and options may have been set before the window existed, so the
     // controls are filled from the state rather than the other way round.
     applying_ = true;
-    const FindStateOptions& options = state_.Options();
+    const FindStateOptions& options = model_.state().Options();
     SendMessageW(Control(kFindBarMatchCase), BM_SETCHECK,
                  options.search.caseSensitive ? BST_CHECKED : BST_UNCHECKED,
                  0);
     SendMessageW(Control(kFindBarWholeWord), BM_SETCHECK,
                  options.search.wholeWord ? BST_CHECKED : BST_UNCHECKED, 0);
-    SetControlText(kFindBarFindEdit, searchText_);
-    SetControlText(kFindBarReplaceEdit, replaceText_);
+    SetControlText(kFindBarFindEdit, model_.GetSearchText());
+    SetControlText(kFindBarReplaceEdit, model_.GetReplaceText());
     SetControlText(kFindBarCounter, FormatCounter());
     SetControlText(kFindBarStatus, FormatStatusText());
     applying_ = false;
@@ -931,7 +847,7 @@ void FindBar::AbandonPartial() {
 }
 
 void FindBar::SetMode(FindBarMode mode) {
-    mode_ = mode;
+    model_.SetMode(mode);
     if (!hwnd_ || !IsWindow(hwnd_)) return;
     SetWindowTextW(hwnd_, S(mode == FindBarMode::FindReplace ? kStrFindAndReplace
                                                              : kStrFind));
@@ -1147,10 +1063,11 @@ std::wstring FindBar::ReadControlText(int id) const {
 }
 
 uint32_t FindBar::AskCaretOffset() const {
-    if (!listener_.caretOffset) return 0;
-    return listener_.caretOffset();
+    const FindBarListener& listener = model_.listener();
+    if (!listener.caretOffset) return 0;
+    return listener.caretOffset();
 }
 
 void FindBar::SetListener(FindBarListener listener) {
-    listener_ = std::move(listener);
+    model_.SetListener(std::move(listener));
 }

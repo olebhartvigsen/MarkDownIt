@@ -164,6 +164,7 @@ add_executable(MarkDownIt WIN32
     src/ribbon.cpp
     src/textbuffer.cpp
     src/layoutcache.cpp
+    src/textlayout_dwrite.cpp
     src/editcontroller.cpp
     src/navigation.cpp
     src/undostack.cpp
@@ -284,7 +285,111 @@ target_compile_definitions(MarkDownIt PRIVATE
 
 # Tests
 option(BUILD_TESTS "Build test binary" OFF)
-if(BUILD_TESTS)
+if(BUILD_TESTS AND APPLE)
+    # The macOS test target. It compiles the same suite the Windows build
+    # compiles, with two differences:
+    #   * findbar_window_test.cpp is a real Win32 window test, so it stays
+    #     on Windows. The navigation it covers is tested through the
+    #     portable FindBarModel instead, in findstate_test.cpp.
+    #   * the layout cache asks the platform-neutral text layout seam,
+    #     which the macOS build answers with Core Text.
+    add_executable(MarkDownIt.tests
+        tests/parser_smoke.cpp
+        tests/textbuffer_test.cpp
+        tests/caret_test.cpp
+        tests/hittest_test.cpp
+        tests/editcontroller_test.cpp
+        tests/navigation_test.cpp
+        tests/undo_test.cpp
+        tests/incremental_test.cpp
+        tests/clipboard_test.cpp
+        tests/formatting_test.cpp
+        tests/autoformat_test.cpp
+        tests/inputfilter_test.cpp
+        tests/editor_features_test.cpp
+        tests/findstate_test.cpp
+        tests/findbar_ids_test.cpp
+        tests/markers_test.cpp
+        tests/outline_test.cpp
+        tests/table_interaction_test.cpp
+        tests/mermaid_model_test.cpp
+        tests/mermaid_parse_test.cpp
+        tests/mermaid_class_golden_test.cpp
+        tests/mermaid_state_golden_test.cpp
+        tests/mermaid_layout_test.cpp
+        tests/mermaid_golden_test.cpp
+        tests/mermaid_pie_golden_test.cpp
+        tests/mermaid_seq_golden_test.cpp
+        tests/mermaid_swimlanes_test.cpp
+        tests/mermaid_measure_test.cpp
+        tests/dom_mermaid_test.cpp
+        tests/mermaid_cache_test.cpp
+        tests/theme_test.cpp
+        tests/perf_harness.cpp
+        tests/test_main.cpp
+        tests/svgtext_test.cpp
+        tests/zoommodel_test.cpp
+        tests/office_interop_smoke_test.cpp
+        tests/office_docx_import_test.cpp
+        tests/office_docx_export_test.cpp
+        tests/office_pdf_export_test.cpp
+        tests/office_markdown_bridge_test.cpp
+        src/parser.cpp
+        src/textbuffer.cpp
+        src/layoutcache.cpp
+        src/textlayout_coretext.cpp
+        src/editcontroller.cpp
+        src/navigation.cpp
+        src/undostack.cpp
+        src/clipboard.cpp
+        src/formatting.cpp
+        src/autoformat.cpp
+        src/inputfilter.cpp
+        src/searchreplace.cpp
+        src/findstate.cpp
+        src/findbar_model.cpp
+        src/markers.cpp
+        src/outline.cpp
+        src/textdrag.cpp
+        src/svgtext.cpp
+        src/mermaid/class_layout.cpp
+        src/mermaid/class_parse.cpp
+        src/mermaid/layout.cpp
+        src/mermaid/layout_acyclic.cpp
+        src/mermaid/layout_edges.cpp
+        src/mermaid/layout_measure.cpp
+        src/mermaid/layout_normalize.cpp
+        src/mermaid/layout_order.cpp
+        src/mermaid/layout_position.cpp
+        src/mermaid/layout_rank.cpp
+        src/mermaid/parse.cpp
+        src/mermaid/pie_layout.cpp
+        src/mermaid/pie_parse.cpp
+        src/mermaid/seq_layout.cpp
+        src/mermaid/seq_parse.cpp
+        src/mermaid/state_layout.cpp
+        src/mermaid/state_parse.cpp
+        src/mermaid/swimlanes.cpp
+        src/office/docx_import.cpp
+        src/office/docx_export.cpp
+        src/office/pdf_export.cpp
+        src/office/markdown_bridge.cpp
+    )
+    target_include_directories(MarkDownIt.tests PRIVATE
+        src
+        tests
+        tests/mermaid
+        third_party/md4c
+        third_party/miniz
+        third_party/pugixml
+        third_party/pdfio
+    )
+    target_compile_features(MarkDownIt.tests PRIVATE cxx_std_17)
+    set_target_properties(MarkDownIt.tests PROPERTIES
+        MACOSX_BUNDLE OFF
+        WIN32_EXECUTABLE OFF
+    )
+elseif(BUILD_TESTS)
     add_executable(MarkDownIt.tests
         tests/parser_smoke.cpp
         tests/textbuffer_test.cpp
@@ -330,6 +435,7 @@ if(BUILD_TESTS)
         src/parser.cpp
         src/textbuffer.cpp
         src/layoutcache.cpp
+        src/textlayout_dwrite.cpp
         src/editcontroller.cpp
         src/navigation.cpp
         src/undostack.cpp
@@ -393,3 +499,95 @@ if(BUILD_TESTS)
     set_target_properties(MarkDownIt.tests PROPERTIES WIN32_EXECUTABLE OFF)
 endif()
 
+# ============================================================================
+# macOS
+# ============================================================================
+#
+# The macOS app is a PARALLEL UI LAYER on the shared core, not a fork. The
+# shared sources are compiled as they are; the files under src/macos/ add
+# the platform pieces. The Windows build above is untouched.
+if(APPLE)
+    # The shared core. These sources have no Windows headers, so the same
+    # files feed the Windows build, the macOS build and both test targets.
+    set(MARKDOWNIT_CORE_SOURCES
+        src/parser.cpp
+        src/textbuffer.cpp
+        src/layoutcache.cpp
+        src/editcontroller.cpp
+        src/navigation.cpp
+        src/undostack.cpp
+        src/clipboard.cpp
+        src/formatting.cpp
+        src/autoformat.cpp
+        src/inputfilter.cpp
+        src/searchreplace.cpp
+        src/findstate.cpp
+        src/findbar_model.cpp
+        src/markers.cpp
+        src/outline.cpp
+        src/textdrag.cpp
+        src/svgtext.cpp
+        src/settings.cpp
+    )
+
+    # The Mermaid engine. The layout is shared and golden tested; the mac
+    # side only adds a painter and a Core Text measurement seam.
+    file(GLOB MARKDOWNIT_MERMAID_SOURCES
+         ${CMAKE_SOURCE_DIR}/src/mermaid/*.cpp)
+    list(REMOVE_ITEM MARKDOWNIT_MERMAID_SOURCES
+         ${CMAKE_SOURCE_DIR}/src/mermaid/measure_dwrite.cpp)
+
+    # The document bridge for the Office formats.
+    set(MARKDOWNIT_OFFICE_SOURCES
+        src/office/docx_import.cpp
+        src/office/docx_export.cpp
+        src/office/pdf_export.cpp
+        src/office/markdown_bridge.cpp
+    )
+
+    add_library(markdownit_core STATIC
+        ${MARKDOWNIT_CORE_SOURCES}
+        ${MARKDOWNIT_MERMAID_SOURCES}
+        ${MARKDOWNIT_OFFICE_SOURCES}
+        src/textlayout_coretext.cpp
+    )
+    target_include_directories(markdownit_core
+        PUBLIC
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/src/office
+            ${CMAKE_SOURCE_DIR}/third_party/md4c
+            ${CMAKE_SOURCE_DIR}/third_party/miniz
+            ${CMAKE_SOURCE_DIR}/third_party/pugixml
+            ${CMAKE_SOURCE_DIR}/third_party/pdfio
+    )
+    target_compile_features(markdownit_core PUBLIC cxx_std_17)
+
+    add_executable(MarkDownItMac
+        src/macos/main_mac.mm
+        src/macos/app_mac.cpp
+        src/macos/content_view_mac.mm
+        src/macos/renderer_mac.cpp
+        src/macos/text_engine_mac.cpp
+        src/macos/clipboard_mac.mm
+        src/macos/settings_mac.cpp
+        src/macos/menu_mac.mm
+        src/macos/crash_trace_mac.cpp
+    )
+    target_link_libraries(MarkDownItMac
+        PRIVATE
+            markdownit_core
+            md4c
+            miniz
+            pugixml
+            pdfio
+            "-framework Cocoa"
+            "-framework CoreGraphics"
+            "-framework CoreText"
+            "-framework AppKit"
+    )
+    target_compile_features(MarkDownItMac PRIVATE cxx_std_17)
+    set_target_properties(MarkDownItMac PROPERTIES
+        MACOSX_BUNDLE OFF
+        OUTPUT_NAME MarkDownIt
+    )
+endif()  # APPLE

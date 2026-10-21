@@ -4,7 +4,7 @@
 
 #include "gtest_lite.h"
 #include "findstate.h"
-#include "findbar.h"
+#include "findbar_model.h"
 
 #include <string>
 #include <vector>
@@ -642,7 +642,7 @@ TEST(FindState, WholeWordSearchOnDanishLettersUsesWordBoundaries) {
 // dead while Next worked by accident of the same geometry.
 
 TEST(FindBarNavigation, PreviousStepsToADifferentMatchFromTheCaretAtTheMatchEnd) {
-    FindBar bar;
+    FindBarModel bar;
     bar.state().SetSearchText("aa");
     bar.state().Refresh("aa xx aa xx aa", nullptr, nullptr);
     uint32_t reported = UINT32_MAX;
@@ -670,7 +670,7 @@ TEST(FindBarNavigation, PreviousStepsToADifferentMatchFromTheCaretAtTheMatchEnd)
 }
 
 TEST(FindBarNavigation, NextStepsToADifferentMatchFromACaretAtTheMatchStart) {
-    FindBar bar;
+    FindBarModel bar;
     bar.state().SetSearchText("aa");
     bar.state().Refresh("aa xx aa", nullptr, nullptr);
     uint32_t reported = UINT32_MAX;

@@ -11,7 +11,7 @@ LayoutCache::~LayoutCache() {
 void LayoutCache::Clear() {
     for (auto& bl : blocks_) {
         if (bl.layout) {
-            bl.layout->Release();
+            textlayout::Release(bl.layout);
             bl.layout = nullptr;
         }
     }
@@ -120,19 +120,11 @@ bool LayoutCache::GetLineRangeAtY(int blockIndex, float y,
     const auto& bl = blocks_[blockIndex];
     if (!bl.layout) return false;
 
-    // Get line metrics from the DirectWrite layout. The buffer must be
-    // sized for the whole block: GetLineMetrics with a fixed 64-entry
-    // buffer silently truncates (E_NOT_SUFFICIENT_BUFFER is returned for
-    // layouts with more lines), which broke line selection in long
-    // code blocks. Query the count first, then allocate to fit.
-    UINT32 lineCount = 0;
-    HRESULT hr = bl.layout->GetLineMetrics(nullptr, 0, &lineCount);
-    if (FAILED(hr) && lineCount == 0) return false;
+    // Get the line metrics from the layout. The count has to be queried
+    // first: a fixed-size buffer silently truncates for layouts with more
+    // lines, which broke line selection in long code blocks.
+    const uint32_t lineCount = textlayout::LineCount(bl.layout);
     if (lineCount == 0) return false;
-    if (lineCount > 4096) lineCount = 4096;  // sanity cap
-    std::vector<DWRITE_LINE_METRICS> metrics(static_cast<size_t>(lineCount));
-    hr = bl.layout->GetLineMetrics(metrics.data(), lineCount, &lineCount);
-    if (FAILED(hr) || lineCount == 0) return false;
 
     // Convert y to layout-local coordinate.
     float localY = y - bl.y;
@@ -142,7 +134,7 @@ bool LayoutCache::GetLineRangeAtY(int blockIndex, float y,
     float lineBottom = 0.0f;
     int lineIdx = 0;
     for (uint32_t i = 0; i < lineCount; ++i) {
-        lineBottom = lineTop + metrics[i].height;
+        lineBottom = lineTop + textlayout::LineHeight(bl.layout, i);
         if (localY >= lineTop && localY < lineBottom) {
             lineIdx = static_cast<int>(i);
             break;
@@ -155,34 +147,19 @@ bool LayoutCache::GetLineRangeAtY(int blockIndex, float y,
         // Recompute lineTop for the last line
         lineTop = 0.0f;
         for (uint32_t i = 0; i + 1 < lineCount; ++i)
-            lineTop += metrics[i].height;
+            lineTop += textlayout::LineHeight(bl.layout, i);
     }
 
     if (outLineTop) *outLineTop = lineTop;
 
-    // Now find the text position range of this visual line.
-    // Use HitTestTextPosition on the first and last positions.
-    // The line's text range can be found using GetLineMetrics
-    // which unfortunately doesn't give us text positions directly.
-    // Instead, use HitTestPoint on left edge and right edge of the line.
-
-    // First, find the start position: hit-test the left edge of the line.
-    float lineY = lineTop + metrics[lineIdx].height * 0.5f;
-    float lineLocalY = lineY;
-
-    DWRITE_HIT_TEST_METRICS htmStart = {}, htmEnd = {};
-    BOOL isTrailing, isInside;
-
-    // Hit-test the left edge to get the start of the line.
-    bl.layout->HitTestPoint(0.0f, lineLocalY,
-        &isTrailing, &isInside, &htmStart);
-
-    // Hit-test the right edge (full width) to get the end of the line.
-    bl.layout->HitTestPoint(bl.width, lineLocalY,
-        &isTrailing, &isInside, &htmEnd);
-
-    uint32_t u16Start = htmStart.textPosition;
-    uint32_t u16End = htmEnd.textPosition + htmEnd.length;
+    // Now find the text position range of this visual line. The layout
+    // knows which text each line covers; on Windows that range is
+    // recovered by hit testing the line's edges, which the seam handles.
+    uint32_t u16Start = 0;
+    uint32_t u16End = 0;
+    if (!textlayout::LineTextRange(bl.layout, static_cast<uint32_t>(lineIdx),
+                                   bl.width, &u16Start, &u16End))
+        return false;
 
     // Convert UTF-16 positions to UTF-8 source offsets via u16ToSrc.
     if (!bl.u16ToSrc.empty()) {
@@ -486,19 +463,17 @@ uint32_t LayoutCache::PointToOffsetInBlock(int blockIndex, float x,
     const float localX = x - bl.x;
     const float localY = y - bl.y;
 
-    DWRITE_HIT_TEST_METRICS htm = {};
-    BOOL isTrailingHit = FALSE;
-    BOOL isInside = FALSE;
-    bl.layout->HitTestPoint(
-        localX, localY, &isTrailingHit, &isInside, &htm);
+    bool isTrailingHit = false;
+    const textlayout::Hit hit =
+        textlayout::HitTestPoint(bl.layout, localX, localY, &isTrailingHit);
 
-    // htm.textPosition is a UTF-16 code-unit position within the layout.
+    // hit.textPosition is a UTF-16 code-unit position within the layout.
     // Use the u16ToSrc mapping to convert to a UTF-8 source offset.
     if (!bl.u16ToSrc.empty()) {
-        const size_t pos = std::min<size_t>(htm.textPosition,
+        const size_t pos = std::min<size_t>(hit.textPosition,
                                              bl.u16ToSrc.size() - 1);
         const uint32_t srcOff = bl.u16ToSrc[pos];
-        if (htm.textPosition >= bl.u16ToSrc.size() || isTrailingHit) {
+        if (hit.textPosition >= bl.u16ToSrc.size() || isTrailingHit) {
             if (pos < bl.u16ToSrcEnd.size())
                 return bl.u16ToSrcEnd[pos];
             if (pos + 1 < bl.u16ToSrc.size() &&
@@ -508,7 +483,7 @@ uint32_t LayoutCache::PointToOffsetInBlock(int blockIndex, float x,
         return srcOff;
     }
     // Fallback: linear approximation (for blocks without mapping).
-    return bl.textStartOffset + htm.textPosition;
+    return bl.textStartOffset + hit.textPosition;
 }
 
 bool LayoutCache::OffsetToCaretRect(uint32_t offset,
@@ -540,25 +515,24 @@ bool LayoutCache::OffsetToCaretRect(uint32_t offset,
             ? offset - bl.textStartOffset : 0;
     }
 
-    DWRITE_HIT_TEST_METRICS htm = {};
-    FLOAT caretX = 0.0f, caretY = 0.0f;
-    bl.layout->HitTestTextPosition(
-        u16Pos, FALSE, &caretX, &caretY, &htm);
+    float caretX = 0.0f, caretY = 0.0f;
+    const textlayout::Hit hit =
+        textlayout::HitTestTextPosition(bl.layout, u16Pos, &caretX, &caretY);
 
     if (outX) *outX = bl.x + caretX;
     // Vertically center the caret on the text within the line.
     // caretY is the top of the line; the text occupies roughly the
     // em-height portion, centered by the line-spacing/baseline ratio.
     if (outY) {
-        float caretH = (bl.fontHeight > 0.0f) ? bl.fontHeight : htm.height;
-        float lineH = htm.height;
+        float caretH = (bl.fontHeight > 0.0f) ? bl.fontHeight : hit.height;
+        float lineH = hit.height;
         *outY = bl.y + caretY + (lineH - caretH) * 0.5f;
     }
     // Caret height: the font's natural line height (ascent+descent+
     // lineGap, set by the renderer), not the em size of one character
     // and not the rendered line box either (that one also carries the
     // app's line spacing). Fallback when metrics were unavailable.
-    if (outH) *outH = (bl.fontHeight > 0.0f) ? bl.fontHeight : htm.height;
+    if (outH) *outH = (bl.fontHeight > 0.0f) ? bl.fontHeight : hit.height;
     return true;
 }
 

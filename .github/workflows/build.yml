@@ -6,6 +6,7 @@ on:
       - main
       - feat/mermaid-flowchart
       - feat/pdf-word-support
+      - feat/macos-port
   pull_request:
     branches:
       - main
@@ -116,6 +117,57 @@ jobs:
         with:
           name: MarkDownIt-x64
           path: build/Release/MarkDownIt.exe
+
+  # The native macOS gate. The same test suite the Windows build runs,
+  # compiled and executed on Apple Silicon. Every change to the shared
+  # core goes through this job before it reaches the macOS app.
+  #
+  # macos-15-arm64 and not macos-14: the macos-14 images are deprecated
+  # and unsupported after November 2, 2026.
+  test-macos:
+    name: Tests (macOS, Apple Silicon)
+    runs-on: macos-15-arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build-native -DBUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build-native --target MarkDownIt.tests -j2
+
+      - name: Run
+        run: ./build-native/MarkDownIt.tests
+
+  # The macOS app and the .app bundle. The bundle is uploaded so it can be
+  # downloaded and run on a real Mac.
+  build-macos:
+    name: Build (macOS, Apple Silicon)
+    runs-on: macos-15-arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build-mac -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build-mac --target MarkDownItMac -j2
+
+      - name: Assemble the app bundle
+        run: |
+          cmake -P tools/macos/make_bundle.cmake
+          file build-mac/MarkDownIt.app/Contents/MacOS/MarkDownIt
+
+      # The bundle is uploaded AFTER the build succeeds, so a red run never
+      # publishes a bundle that cannot start.
+      - name: Upload app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: MarkDownIt-macos-arm64
+          path: build-mac/MarkDownIt.app
+          if-no-files-found: error
 
   oracle:
     name: Mermaid oracle (golden geometry)

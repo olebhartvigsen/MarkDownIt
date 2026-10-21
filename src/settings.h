@@ -1,11 +1,17 @@
 #pragma once
 
-#include <windows.h>
 #include <string>
 #include <vector>
 #include "zoommodel.h"
 
-// Persisted application settings, stored in HKCU\Software\MarkDownIt.
+// Persisted application settings.
+//
+// The Windows build keeps these in HKCU\Software\MarkDownIt. The macOS
+// build keeps the SAME struct as JSON in
+// ~/Library/Application Support/MarkDownIt/settings.json. The struct is
+// therefore platform independent, and only the two functions that load
+// and save it are platform specific.
+//
 // Loaded at startup, saved on change and shutdown.
 
 struct RecentFile {
@@ -41,12 +47,17 @@ struct AppSettings {
     std::vector<RecentFile> recentFiles;
 };
 
+// The maximum number of recent files kept.
+inline constexpr size_t kMaxRecentFiles = 12;
+
+// Add a file to the recent list (moves to front, dedupes, trims to 12).
+// Reads up to 300 bytes of the file for the preview text.
+void AddRecentFile(AppSettings& s, const std::wstring& path);
+
+#ifdef _WIN32
 // Load settings from the registry. Returns defaults if not found.
 AppSettings LoadSettings();
 
 // Save settings to the registry.
 void SaveSettings(const AppSettings& s);
-
-// Add a file to the recent list (moves to front, dedupes, trims to 12).
-// Reads up to 300 bytes of the file for the preview text.
-void AddRecentFile(AppSettings& s, const std::wstring& path);
+#endif  // _WIN32

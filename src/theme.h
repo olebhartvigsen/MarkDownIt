@@ -1,10 +1,75 @@
 #pragma once
 
-#include <d2d1.h>
-
 // All layout spacing, font sizes, and colors live here as named tokens.
 // Both Measure and Render read from LayoutMetrics so the two passes
 // can never drift apart. Create one via ComputeMetrics(zoom).
+//
+// The file is shared between the Windows and the macOS build. The
+// Windows build hands the palette straight to Direct2D and the font
+// names straight to DirectWrite, so on Windows ThemeColor is
+// D2D1_COLOR_F and ThemeFontName is a wide string. Elsewhere the same
+// names refer to a plain 4-float RGBA struct and a UTF-8 string, so no
+// macOS translation unit has to include <d2d1.h>.
+
+#ifdef _WIN32
+#include <d2d1.h>
+#else
+#include <cstdint>
+#include <string>
+#endif
+
+// A colour in the palette.
+//
+// On Windows this is D2D1_COLOR_F, so a palette entry can be passed
+// straight to ID2D1RenderTarget::CreateSolidColorBrush. Everywhere else
+// it is the same four floats under the same names.
+#ifdef _WIN32
+using ThemeColor = D2D1_COLOR_F;
+#else
+struct ThemeColor {
+    float r;
+    float g;
+    float b;
+    float a;
+};
+#endif
+
+// A font family name.
+//
+// On Windows this is a wide string, which is what
+// IDWriteFactory::CreateTextFormat expects. Everywhere else it is a
+// UTF-8 string, which the Core Text layer converts when it builds a
+// CTFont.
+#ifdef _WIN32
+using ThemeFontName = const wchar_t*;
+#else
+using ThemeFontName = std::string;
+#endif
+
+// Build a colour from a 0xRRGGBB value with the given alpha.
+inline ThemeColor MakeColor(uint32_t rgb, float alpha = 1.0f) {
+#ifdef _WIN32
+    return D2D1::ColorF(rgb, alpha);
+#else
+    ThemeColor c;
+    c.r = static_cast<float>((rgb >> 16) & 0xFF) / 255.0f;
+    c.g = static_cast<float>((rgb >> 8) & 0xFF) / 255.0f;
+    c.b = static_cast<float>(rgb & 0xFF) / 255.0f;
+    c.a = alpha;
+    return c;
+#endif
+}
+
+// The default font family names. The macOS build overrides them in its
+// own theme file, because Segoe UI and Cascadia Mono do not exist on
+// macOS.
+#ifdef _WIN32
+#define THEME_BODY_FONT L"Segoe UI"
+#define THEME_CODE_FONT L"Cascadia Mono"
+#else
+#define THEME_BODY_FONT ""
+#define THEME_CODE_FONT ""
+#endif
 
 struct LayoutMetrics {
     // Side gutter and top padding.
@@ -53,41 +118,41 @@ struct LayoutMetrics {
     float headingSizes[7];  // index 0 unused
 
     // Font family names.
-    const wchar_t* bodyFont;
-    const wchar_t* codeFont;
+    ThemeFontName bodyFont;
+    ThemeFontName codeFont;
 };
 
 struct Palette {
-    D2D1_COLOR_F textPrimary;
-    D2D1_COLOR_F textMuted;
-    D2D1_COLOR_F heading;
-    D2D1_COLOR_F link;
-    D2D1_COLOR_F codeBg;
-    D2D1_COLOR_F codeBorder;
-    D2D1_COLOR_F mermaidNodeFill;
-    D2D1_COLOR_F mermaidNodeBorder;
-    D2D1_COLOR_F mermaidText;
-    D2D1_COLOR_F inlineCodeBg;
-    D2D1_COLOR_F quoteBar;
-    D2D1_COLOR_F quoteText;
-    D2D1_COLOR_F rule;
-    D2D1_COLOR_F tableBorder;
-    D2D1_COLOR_F tableHeaderBg;
-    D2D1_COLOR_F tableRowAlt;
-    D2D1_COLOR_F selectionBg;
-    D2D1_COLOR_F selectionText;
+    ThemeColor textPrimary;
+    ThemeColor textMuted;
+    ThemeColor heading;
+    ThemeColor link;
+    ThemeColor codeBg;
+    ThemeColor codeBorder;
+    ThemeColor mermaidNodeFill;
+    ThemeColor mermaidNodeBorder;
+    ThemeColor mermaidText;
+    ThemeColor inlineCodeBg;
+    ThemeColor quoteBar;
+    ThemeColor quoteText;
+    ThemeColor rule;
+    ThemeColor tableBorder;
+    ThemeColor tableHeaderBg;
+    ThemeColor tableRowAlt;
+    ThemeColor selectionBg;
+    ThemeColor selectionText;
     // Search-result highlight fills. findMatchBg marks every other match and
     // stays clearly weaker than selectionBg so a long result list does not
     // compete with the text. findCurrentMatchBg marks the match find is
     // standing on and carries close to selectionBg weight, so "Enter jumps
     // here" is visible at a glance.
-    D2D1_COLOR_F findMatchBg;
-    D2D1_COLOR_F findCurrentMatchBg;
+    ThemeColor findMatchBg;
+    ThemeColor findCurrentMatchBg;
     // Marker annotation layer: a warm highlighter fill drawn behind the
     // text plus a darker line along the bottom edge of each marked range,
     // so a mark never relies on colour alone.
-    D2D1_COLOR_F markerBg;
-    D2D1_COLOR_F markerLine;
+    ThemeColor markerBg;
+    ThemeColor markerLine;
 };
 
 inline LayoutMetrics BaseMetrics() {
@@ -124,8 +189,8 @@ inline LayoutMetrics BaseMetrics() {
     m.headingSizes[4] = 13.5f;
     m.headingSizes[5] = 12.5f;
     m.headingSizes[6] = 12.0f;
-    m.bodyFont = L"Segoe UI";
-    m.codeFont = L"Cascadia Mono";
+    m.bodyFont = THEME_BODY_FONT;
+    m.codeFont = THEME_CODE_FONT;
     return m;
 }
 
@@ -159,27 +224,27 @@ inline LayoutMetrics ScaleMetrics(const LayoutMetrics& base, float zoom) {
 
 inline Palette BasePalette() {
     Palette p = {};
-    p.textPrimary = D2D1::ColorF(0x24292F);
-    p.textMuted = D2D1::ColorF(0x656D76);
-    p.heading = D2D1::ColorF(0x1F2328);
-    p.link = D2D1::ColorF(0x0969DA);
-    p.codeBg = D2D1::ColorF(0xF6F8FA);
-    p.codeBorder = D2D1::ColorF(0xD0D7DE);
-    p.mermaidNodeFill = D2D1::ColorF(0xECECFF);
-    p.mermaidNodeBorder = D2D1::ColorF(0x9370DB);
-    p.mermaidText = D2D1::ColorF(0x333333);
-    p.inlineCodeBg = D2D1::ColorF(0xEFF1F3);
-    p.quoteBar = D2D1::ColorF(0xD0D7DE);
-    p.quoteText = D2D1::ColorF(0x656D76);
-    p.rule = D2D1::ColorF(0xD8DEE4);
-    p.tableBorder = D2D1::ColorF(0xD0D7DE);
-    p.tableHeaderBg = D2D1::ColorF(0xF6F8FA);
-    p.tableRowAlt = D2D1::ColorF(0xFAFBFC);
-    p.selectionBg = D2D1::ColorF(0xB4D5FE);
-    p.selectionText = D2D1::ColorF(0x000000);
-    p.findMatchBg = D2D1::ColorF(0xFFF6D6);
-    p.findCurrentMatchBg = D2D1::ColorF(0xFFE08A);
-    p.markerBg = D2D1::ColorF(0xFFD54A);
-    p.markerLine = D2D1::ColorF(0xB8860B);
+    p.textPrimary = MakeColor(0x24292F);
+    p.textMuted = MakeColor(0x656D76);
+    p.heading = MakeColor(0x1F2328);
+    p.link = MakeColor(0x0969DA);
+    p.codeBg = MakeColor(0xF6F8FA);
+    p.codeBorder = MakeColor(0xD0D7DE);
+    p.mermaidNodeFill = MakeColor(0xECECFF);
+    p.mermaidNodeBorder = MakeColor(0x9370DB);
+    p.mermaidText = MakeColor(0x333333);
+    p.inlineCodeBg = MakeColor(0xEFF1F3);
+    p.quoteBar = MakeColor(0xD0D7DE);
+    p.quoteText = MakeColor(0x656D76);
+    p.rule = MakeColor(0xD8DEE4);
+    p.tableBorder = MakeColor(0xD0D7DE);
+    p.tableHeaderBg = MakeColor(0xF6F8FA);
+    p.tableRowAlt = MakeColor(0xFAFBFC);
+    p.selectionBg = MakeColor(0xB4D5FE);
+    p.selectionText = MakeColor(0x000000);
+    p.findMatchBg = MakeColor(0xFFF6D6);
+    p.findCurrentMatchBg = MakeColor(0xFFE08A);
+    p.markerBg = MakeColor(0xFFD54A);
+    p.markerLine = MakeColor(0xB8860B);
     return p;
 }

@@ -12,7 +12,7 @@ TEST(Theme, MermaidPaletteUsesNamedDefaults) {
 // match gets a stronger one. "Stronger" is measured here as distance from
 // the white page, so the assertion is about visual weight and not about one
 // channel happening to be larger in a particular hue.
-static double DistanceFromWhite(const D2D1_COLOR_F& c) {
+static double DistanceFromWhite(const ThemeColor& c) {
     return (1.0 - c.r) + (1.0 - c.g) + (1.0 - c.b);
 }
 
