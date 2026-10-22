@@ -173,6 +173,13 @@ jobs:
       - name: Verify the mac sources
         run: python3 tools/check_mac_sources.py
 
+      # The command strip has to mirror the ribbon the Windows app
+      # defines: the same tabs, the same groups, the same commands in
+      # the same order. A strip that drifts gives the mac app a layout
+      # the user does not recognize.
+      - name: Verify the command strip mirrors the ribbon
+        run: python3 tools/check_mac_ribbon.py
+
       # The bundle is signed ad hoc, which seals the executable, the
       # icon and the Info.plist as one unit. An unsigned bundle cannot
       # pass the download check macOS runs on a first launch. The step
