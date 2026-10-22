@@ -362,6 +362,7 @@ if(BUILD_TESTS AND APPLE)
         tests/office_docx_export_test.cpp
         tests/office_pdf_export_test.cpp
         tests/office_markdown_bridge_test.cpp
+        tests/table_picker_test.cpp
         src/parser.cpp
         src/textbuffer.cpp
         src/layoutcache.cpp
@@ -483,6 +484,7 @@ elseif(BUILD_TESTS)
         tests/office_docx_export_test.cpp
         tests/office_pdf_export_test.cpp
         tests/office_markdown_bridge_test.cpp
+        tests/table_picker_test.cpp
         src/parser.cpp
         src/textbuffer.cpp
         src/layoutcache.cpp
@@ -636,6 +638,7 @@ if(APPLE)
         src/macos/image_draw_mac.mm
         src/macos/findbar_mac.mm
         src/macos/ribbon_mac.mm
+        src/macos/table_picker_mac.mm
         src/macos/svg_mac.cpp
         src/macos/welcome_mac.cpp
     )
@@ -651,6 +654,7 @@ if(APPLE)
         src/macos/findbar_mac.mm
         src/macos/fonts_mac.mm
         src/macos/ribbon_mac.mm
+        src/macos/table_picker_mac.mm
         PROPERTIES COMPILE_FLAGS "-fobjc-arc"
     )
     target_link_libraries(MarkDownItMac

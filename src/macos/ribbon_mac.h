@@ -39,4 +39,8 @@
 + (MdRibbonView*)ribbonWithHost:(id<MdRibbonHost>)host;
 // Re-reads the command states from the host.
 - (void)refresh;
+// The view that draws a command, or nil when the strip has no such
+// command. The table-size picker hangs below the Table button, so it
+// asks for the button's current bounds instead of following the caret.
+- (NSView*)viewForCommand:(NSString*)commandId;
 @end

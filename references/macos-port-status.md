@@ -318,3 +318,29 @@ system face for every such run.
 The engine now asks for the family and lets the weight of the run pick
 the face: regular 0.0, semibold 0.3, bold 0.4. The test pins the three
 PostScript names, so a weight that finds no face fails the run.
+
+## The table-size picker
+
+The Windows build opens a grid popup under the Table button: hover the
+cells to choose the size, click to insert. The mac build asked for the
+size in a modal alert with two number fields. That broke three rules in
+section 12 of the ribbon guidelines: the picker opens below the Table
+button, it must not follow the document caret, and it takes keyboard
+input as well as the mouse.
+
+`src/macos/table_picker_mac.mm` is the same grid in AppKit. It hangs
+below the button's current screen bounds, clamps itself into the
+screen's work area when the window sits near an edge, and closes when
+the pointer leaves or Escape is pressed. Arrow keys size the grid and
+Return commits. Called from the menu bar, where the Table button may sit
+on another tab, it hangs below the strip at the pointer instead.
+
+The size range and the label are written down once in
+`src/tablepicker_model.h`, and the mac picker reads them. The Windows
+popup in `src/app.cpp` uses the same numbers, and the ribbon check now
+fails when the two drift apart. `tests/table_picker_test.cpp` covers the
+range, the clamping and the label text.
+
+The mouse, keyboard, narrow-window and multi-display cases still need a
+person at a Mac. CI compiles the picker and runs the model tests, but it
+cannot hover a cell or press an arrow key.

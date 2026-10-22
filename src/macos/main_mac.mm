@@ -30,6 +30,7 @@
 #include "findbar_mac.h"
 #include "menu_mac.h"
 #include "ribbon_mac.h"
+#include "table_picker_mac.h"
 #include "crash_trace_mac.h"
 #include "fonts_mac.h"
 #include "settings_mac.h"
@@ -136,6 +137,7 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 - (void)indentBlock:(id)sender;
 - (void)outdentBlock:(id)sender;
 - (void)insertTable:(id)sender;
+- (void)insertTableFromPickerCols:(int)cols rows:(int)rows;
 - (void)addRowAbove:(id)sender;
 - (void)addRowBelow:(id)sender;
 - (void)removeRow:(id)sender;
@@ -964,45 +966,40 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 }
 
 - (void)OnInsertTable {
-    // The size of the new table is asked for, the way the Windows build
-    // asks for it with its grid picker.
-    NSAlert* alert = [[NSAlert alloc] init];
-    [alert setMessageText:@"Insert Table"];
-    [alert addButtonWithTitle:@"Insert"];
-    [alert addButtonWithTitle:@"Cancel"];
+    // The same Word-style grid picker the Windows build opens, hung below
+    // the Table button in the strip. When the command comes from the menu
+    // bar the button may be on another tab, so the picker hangs below the
+    // strip at the pointer instead. The guideline forbids following the
+    // document caret, and this never does.
+    NSView* anchor = [ribbon_ viewForCommand:@"cmdInsertTable"];
+    NSPoint point = NSZeroPoint;
+    BOOL anchored = NO;
+    if (anchor && [anchor window] && ![anchor isHiddenOrHasHiddenAncestor]) {
+        const NSRect inWindow = [anchor convertRect:[anchor bounds] toView:nil];
+        const NSRect onScreen = [[anchor window] convertRectToScreen:inWindow];
+        // AppKit counts y upward, so the button's bottom edge is its minY,
+        // and the picker's top-left corner hangs from there.
+        point = NSMakePoint(NSMinX(onScreen), NSMinY(onScreen));
+        anchored = YES;
+    }
+    if (!anchored) {
+        const NSPoint pointer = [NSEvent mouseLocation];
+        const NSRect strip = [ribbon_ convertRect:[ribbon_ bounds] toView:nil];
+        const NSRect onScreen = [[ribbon_ window] convertRectToScreen:strip];
+        point = NSMakePoint(pointer.x, NSMinY(onScreen));
+    }
 
-    NSTextField* columns = [[NSTextField alloc] initWithFrame:
-        NSMakeRect(0, 0, 60, 24)];
-    columns.stringValue = @"3";
-    NSTextField* rows = [[NSTextField alloc] initWithFrame:
-        NSMakeRect(0, 0, 60, 24)];
-    rows.stringValue = @"3";
+    __weak MdAppDelegate* weakSelf = self;
+    [MdTablePicker presentBelowAnchor:point
+                             onCommit:^(int cols, int rows) {
+        MdAppDelegate* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        [strongSelf insertTableFromPickerCols:cols rows:rows];
+    }];
+}
 
-    NSTextField* columnsLabel = [[NSTextField alloc] initWithFrame:
-        NSZeroRect];
-    columnsLabel.stringValue = @"Columns";
-    columnsLabel.editable = NO;
-    columnsLabel.bordered = NO;
-    columnsLabel.drawsBackground = NO;
-    NSTextField* rowsLabel = [[NSTextField alloc] initWithFrame:
-        NSZeroRect];
-    rowsLabel.stringValue = @"Rows";
-    rowsLabel.editable = NO;
-    rowsLabel.bordered = NO;
-    rowsLabel.drawsBackground = NO;
-
-    NSStackView* stack = [NSStackView stackViewWithViews:
-        @[columnsLabel, columns, rowsLabel, rows]];
-    stack.orientation = NSUserInterfaceLayoutOrientationHorizontal;
-    [alert setAccessoryView:stack];
-
-    if ([alert runModal] != NSAlertFirstButtonReturn) return;
-
-    const int cols = columns.integerValue;
-    const int rowsCount = rows.integerValue;
-    if (cols < 1 || cols > 20 || rowsCount < 1 || rowsCount > 50) return;
-
-    app_->InsertTable(cols, rowsCount);
+- (void)insertTableFromPickerCols:(int)cols rows:(int)rows {
+    app_->InsertTable(cols, rows);
     [view_ setNeedsDisplay:YES];
 }
 

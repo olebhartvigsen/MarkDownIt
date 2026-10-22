@@ -671,4 +671,14 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
     [self setNeedsDisplay:YES];
 }
 
+- (NSView*)viewForCommand:(NSString*)commandId {
+    for (MdRibbonButton* button in commandButtons_) {
+        if ([button.commandId isEqualToString:commandId]) return button;
+    }
+    for (MdRibbonButton* button in quickAccessButtons_) {
+        if ([button.commandId isEqualToString:commandId]) return button;
+    }
+    return nil;
+}
+
 @end

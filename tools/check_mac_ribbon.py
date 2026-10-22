@@ -241,6 +241,81 @@ def main() -> int:
         if needle not in cmake:
             problems.append("CMakeLists.txt never mentions %r" % needle)
 
+    # The table-size picker. Section 12 of the guidelines asks for the grid
+    # popup below the Table button, with keyboard input and a work-area
+    # clamp. The Windows popup and the mac picker are separate code, so the
+    # size range and the cell geometry have to agree or the two drift.
+    for needle, reason in (
+            ("MdTablePicker presentBelowAnchor:",
+             "the Insert Table command never opens the grid picker"),
+            ("insertTableFromPickerCols:",
+             "the picker's choice never reaches the document")):
+        if needle not in window:
+            problems.append(reason)
+    if "viewForCommand:" not in ribbon:
+        problems.append("the strip cannot report the Table button's bounds")
+    if "src/macos/table_picker_mac.mm" not in cmake:
+        problems.append("CMakeLists.txt never builds the table picker")
+
+    windows_picker = os.path.join(REPO, "src", "app.cpp")
+    mac_picker = os.path.join(REPO, "src", "macos", "table_picker_mac.mm")
+    shared_model = os.path.join(REPO, "src", "tablepicker_model.h")
+    # The mac side splits the geometry: the range sits in the shared model,
+    # the cell geometry in the picker. The label height carries a longer
+    # name on the mac side.
+    names = {"kMaxCols": "kMaxCols", "kMaxRows": "kMaxRows",
+             "kCellSize": "kCellSize", "kMargin": "kMargin",
+             "kLabelH": "kLabelHeight"}
+
+    def constants(path):
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        found = {}
+        for windows_name, mac_name in names.items():
+            for name in (windows_name, mac_name):
+                match = re.search(name + r"\s*=\s*(\d+)", text)
+                if match:
+                    found[windows_name] = int(match.group(1))
+        return found
+
+    windows = constants(windows_picker)
+    mac = constants(mac_picker)
+    mac.update(constants(shared_model))
+    for name in names:
+        if name not in windows:
+            continue
+        if name not in mac:
+            problems.append("the mac picker does not keep %s in step with "
+                            "the Windows popup" % name)
+        elif mac[name] != windows[name]:
+            problems.append("%s is %d in the Windows popup and %d in the mac "
+                            "picker" % (name, windows[name], mac[name]))
+
+    # Section 12: Find occurs once on the strip, and Replace stays under
+    # Edit > Editing. A convenience copy would break both rules.
+    find_places = [array_name for array_name, entries in strip_commands.items()
+                   for entry in entries if entry[0] == "cmdFind"]
+    if len(find_places) != 1:
+        problems.append("Find appears %d times on the strip (%s)"
+                        % (len(find_places), ", ".join(find_places)))
+    editing = []
+    for _tab_label, groups in strip:
+        for group_label, entries in groups:
+            if group_label == "Editing":
+                editing = [entry[0] for entry in entries]
+    if "cmdReplace" not in editing:
+        problems.append("Replace is not in the Edit tab's Editing group")
+
+    # Commands are disabled when unavailable, never hidden. Hiding one
+    # shifts the layout under the user, which the guidelines forbid.
+    refresh_at = ribbon.find("- (void)refresh {")
+    refresh_body = ""
+    if refresh_at >= 0:
+        refresh_end = ribbon.find("\n}\n", refresh_at)
+        refresh_body = ribbon[refresh_at:refresh_end]
+    if "setHidden" in refresh_body:
+        problems.append("the strip hides commands instead of disabling them")
+
     count = sum(len(entries) for _, groups in strip for _, entries in groups)
     if problems:
         print("the mac ribbon check failed:")
