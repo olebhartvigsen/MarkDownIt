@@ -301,6 +301,9 @@ same groups and commands, drawn with the same icon files. The table in
   when they drift apart.
 - The strip is AppKit, so the shared test suite cannot press its
   buttons. The check tool and the build are what CI verifies.
+- The icons are copied into the bundle as a set, and the bundle check
+  fails when one of the 74 files the strip asks for is missing. A build
+  without them would open with a text-only strip.
 
 ## The Selawik semibold face
 

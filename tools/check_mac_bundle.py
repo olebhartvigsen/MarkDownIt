@@ -8,6 +8,7 @@ would fail on the Mac of whoever downloads it.
 """
 import os
 import plistlib
+import re
 import subprocess
 import sys
 
@@ -27,6 +28,44 @@ def run(*args):
     except FileNotFoundError:
         return 127, "%s is not on this machine" % args[0]
     return done.returncode, (done.stdout + done.stderr).strip()
+
+
+# The command strip draws the icons the Windows ribbon names. The
+# table in src/macos/ribbon_mac.mm is the one the strip builds from, so
+# the names it carries are the names the bundle has to hold.
+RIBBON_ROW = re.compile(
+    r'\{"(cmd[^"]+)",\s+"((?:[^"\\]|\\.)*)",\s+"([A-Za-z0-9]+:)",\s+'
+    r'"([a-z0-9-]+)",\s+(true|false),')
+
+
+def strip_icon_bases():
+    path = os.path.join(REPO, "src", "macos", "ribbon_mac.mm")
+    with open(path, encoding="utf-8") as fh:
+        code = fh.read()
+    bases = []
+    for row in RIBBON_ROW.findall(code):
+        if row[3] not in bases:
+            bases.append(row[3])
+    return bases
+
+
+def check_strip_icons(app):
+    """Every icon the strip asks for has to be in the bundle."""
+    bases = strip_icon_bases()
+    if not bases:
+        fail("the strip table names no icons, so the check cannot run")
+    icons_dir = os.path.join(app, "Contents", "Resources", "icons")
+    missing = []
+    for base in bases:
+        for size in (16, 32):
+            name = "%s_%d.png" % (base, size)
+            path = os.path.join(icons_dir, name)
+            if not os.path.isfile(path) or os.path.getsize(path) < 200:
+                missing.append(name)
+    if missing:
+        fail("the bundle is missing the strip icons: %s"
+             % ", ".join(missing))
+    print("the bundle carries the %d strip icons" % (len(bases) * 2))
 
 
 def main():
@@ -65,6 +104,8 @@ def main():
             fail("Contents/Resources/Fonts/%s is only %d bytes"
                  % (name, os.path.getsize(font_path)))
     print("the bundle carries all %d bundled fonts" % len(bundled_fonts))
+
+    check_strip_icons(app)
 
     with open(plist_path, "rb") as fh:
         plist = plistlib.load(fh)
