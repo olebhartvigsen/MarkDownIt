@@ -163,6 +163,11 @@ jobs:
       - name: Verify the menu commands
         run: python3 tools/check_mac_menu.py
 
+      # A Windows header in a shared source has to sit inside a
+      # _WIN32 block, or the mac build stops on it.
+      - name: Verify the guards of the shared sources
+        run: python3 tools/check_shared_guards.py
+
       # The bundle is checked before it is published, so a red run never
       # offers a bundle that cannot start.
       - name: Verify the bundle
