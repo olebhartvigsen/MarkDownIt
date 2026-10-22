@@ -158,6 +158,11 @@ jobs:
       - name: Build
         run: cmake --build build-mac --target MarkDownItMac -j2
 
+      # Every command in the menu has to be carried out. A command that
+      # no handler acts on is a silent no-op.
+      - name: Verify the menu commands
+        run: python3 tools/check_mac_menu.py
+
       # The bundle is checked before it is published, so a red run never
       # offers a bundle that cannot start.
       - name: Verify the bundle
