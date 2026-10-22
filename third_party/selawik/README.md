@@ -7,7 +7,7 @@ and its advance widths match; it was made for exactly this job.
 
 Source: the `microsoft/Selawik` release 1.01 (`Selawik_Release.zip`).
 Files: the TrueType build of Regular, Bold and Semibold. The Semibold
-family is used for headings, the way Segoe UI Semibold is on Windows.
+face is used for headings, the way Segoe UI Semibold is on Windows.
 
 Selawik has no italic faces. The mac text engine slants italic runs
 itself; see `src/macos/text_engine_mac.cpp`.

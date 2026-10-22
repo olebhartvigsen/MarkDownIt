@@ -56,7 +56,7 @@ TEST(TextEngineMac, UsesTheBundledFonts) {
     // The mapping the theme's family names travel through.
     EXPECT_EQ(mac::ResolvedFamily("Segoe UI", false), std::string("Selawik"));
     EXPECT_EQ(mac::ResolvedFamily("Segoe UI Semibold", false),
-              std::string("Selawik Semibold"));
+              std::string("Selawik"));
     EXPECT_EQ(mac::ResolvedFamily("", true), std::string("Cascadia Mono"));
     EXPECT_EQ(mac::ResolvedFamily("Helvetica Neue", false),
               std::string("Helvetica Neue"));
@@ -80,8 +80,40 @@ TEST(TextEngineMac, UsesTheBundledFonts) {
         return out;
     };
     EXPECT_EQ(family_of("Selawik"), std::string("Selawik"));
-    EXPECT_EQ(family_of("Selawik Semibold"), std::string("Selawik Semibold"));
     EXPECT_EQ(family_of("Cascadia Mono"), std::string("Cascadia Mono"));
+
+    // The engine itself picks the face: Core Text reads the Selawik
+    // files as one family with three weights, so the weight of the run
+    // is what picks regular, semibold or bold. A weight that found no
+    // face would leave every heading in a system font, which is what
+    // happened before this test.
+    auto postscript_of = [](const FontSpec& spec) -> std::string {
+        CTFontRef font = mac::CoreTextFontFor(spec);
+        if (!font) return "";
+        CFStringRef have = CTFontCopyPostScriptName(font);
+        std::string out;
+        if (have) {
+            char text[128] = {0};
+            CFStringGetCString(have, text, sizeof(text),
+                               kCFStringEncodingUTF8);
+            out = text;
+            CFRelease(have);
+        }
+        return out;
+    };
+    FontSpec regular;
+    regular.family = "Segoe UI";
+    regular.size = 16.0f;
+    FontSpec semibold;
+    semibold.family = "Segoe UI Semibold";
+    semibold.size = 16.0f;
+    FontSpec bold;
+    bold.family = "Segoe UI";
+    bold.size = 16.0f;
+    bold.bold = true;
+    EXPECT_EQ(postscript_of(regular), std::string("Selawik-Regular"));
+    EXPECT_EQ(postscript_of(semibold), std::string("Selawik-Semibold"));
+    EXPECT_EQ(postscript_of(bold), std::string("Selawik-Bold"));
 }
 
 TEST(TextEngineMac, SlantsTheBundledSansItself) {
