@@ -442,16 +442,20 @@ TEST(SvgBoxPairing, LargeDiagramStaysLinear) {
     // noisy enough to swamp the ratio. Measured here, doubling the diagram
     // costs the old linear scan 3.4x and the grid 2.0x, so 2.8x separates
     // them with room for scheduling noise on both sides.
-    auto best = [&timeIt](size_t n) {
-        double b = 1e9;
-        for (int i = 0; i < 3; ++i) b = std::min(b, timeIt(n));
-        return b;
-    };
-    const double t1 = best(2000);
-    const double t2 = best(4000);
-    // The floor keeps a fast machine from failing on a near-zero measurement;
-    // it is well under the ~16 ms the old code needs at 4000.
-    EXPECT_LT(t2, std::max(t1 * 2.8, 0.030));
+    // The two sizes are measured in pairs, one right after the other, and the
+    // best ratio over the pairs is the one that counts. Measuring the sizes
+    // in separate rounds lets a runner that gets busy in between read as a
+    // regression that is not there: the slow size is then compared against a
+    // fast size that was taken under quieter conditions. A pair shares its
+    // conditions, and the quietest pair is the honest one.
+    double bestRatio = 1e9;
+    for (int i = 0; i < 5; ++i) {
+        const double t1 = timeIt(2000);
+        const double t2 = timeIt(4000);
+        if (t1 <= 0.0) continue;
+        bestRatio = std::min(bestRatio, t2 / t1);
+    }
+    EXPECT_LT(bestRatio, 2.8);
 }
 
 // Every label must still find its shape, and find the NEAREST one. A grid that
@@ -537,18 +541,27 @@ TEST(SvgStyleLookup, ManyRulesStayLinear) {
         EXPECT_EQ(runs.size(), n);
         return std::chrono::duration<double>(t1 - t0).count();
     };
-    auto best = [&timeIt](size_t n) {
-        double b = 1e9;
-        for (int i = 0; i < 3; ++i) b = std::min(b, timeIt(n));
-        return b;
-    };
-    // Start where the quadratic term dominates. At 1000 rules the whole
-    // stylesheet parse is only a few ms, which a fixed floor would swallow and
-    // let the regression through. At 2000 rules the old scan costs 40 ms and
-    // the index 5 ms, so an 8 ms ceiling separates them with room either way.
-    const double t1 = best(500);
-    const double t2 = best(1000);
-    EXPECT_LT(t2, std::max(t1 * 3.0, 0.020));
+    // The two sizes are measured in pairs, one right after the other, and the
+    // best ratio over the pairs is the one that counts. Measuring the sizes
+    // in separate rounds lets a runner that gets busy in between read as a
+    // regression that is not there: the slow size is then compared against a
+    // fast size that was taken under quieter conditions. A pair shares its
+    // conditions, and the quietest pair is the honest one.
+    //
+    // The sizes are large enough that the quadratic term dominates and the
+    // timer is not what is being measured. The old scan costs about 4.3x for
+    // a doubling and the index about 2x, so a ceiling of 3x separates them
+    // with room either way.
+    const size_t kSmall = 2000;
+    const size_t kLarge = 4000;
+    double bestRatio = 1e9;
+    for (int i = 0; i < 5; ++i) {
+        const double t1 = timeIt(kSmall);
+        const double t2 = timeIt(kLarge);
+        if (t1 <= 0.0) continue;
+        bestRatio = std::min(bestRatio, t2 / t1);
+    }
+    EXPECT_LT(bestRatio, 3.0);
 }
 
 // The first declaration for a class must still win. Indexing the rules must
@@ -633,14 +646,18 @@ TEST(SvgTextPathLookup, ManyPathsManyLabelsStayLinear) {
         EXPECT_EQ(runs.size(), n);
         return std::chrono::duration<double>(t1 - t0).count();
     };
-    auto best = [&timeIt](size_t n) {
-        double b = 1e9;
-        for (int i = 0; i < 3; ++i) b = std::min(b, timeIt(n));
-        return b;
-    };
-    const double t1 = best(4000);
-    const double t2 = best(8000);
-    EXPECT_LT(t2, std::max(t1 * 2.8, 0.020));
+    // The two sizes are measured in pairs, one right after the other, and the
+    // best ratio over the pairs is the one that counts, the same way the
+    // style lookup test does it. A busy runner has to hit both members of a
+    // pair, and the quietest pair is the honest one.
+    double bestRatio = 1e9;
+    for (int i = 0; i < 5; ++i) {
+        const double t1 = timeIt(4000);
+        const double t2 = timeIt(8000);
+        if (t1 <= 0.0) continue;
+        bestRatio = std::min(bestRatio, t2 / t1);
+    }
+    EXPECT_LT(bestRatio, 2.8);
 }
 
 // A textPath naming an id that was never declared leaves the run unpositioned,
@@ -671,14 +688,20 @@ TEST(SvgWhitespaceTrim, LongLeadingSpacesStayLinear) {
         EXPECT_EQ(runs.size(), 1u);
         return std::chrono::duration<double>(t1 - t0).count();
     };
-    auto best = [&timeIt](size_t n) {
-        double b = 1e9;
-        for (int i = 0; i < 3; ++i) b = std::min(b, timeIt(n));
-        return b;
-    };
-    const double t1 = best(20000);
-    const double t2 = best(40000);
-    EXPECT_LT(t2, std::max(t1 * 3.0, 0.010));
+    // The two sizes are measured in pairs, one right after the other, and the
+    // best ratio over the pairs is the one that counts. Measuring the sizes
+    // in separate rounds lets a runner that gets busy in between read as a
+    // regression that is not there: the slow size is then compared against a
+    // fast size that was taken under quieter conditions. A pair shares its
+    // conditions, and the quietest pair is the honest one.
+    double bestRatio = 1e9;
+    for (int i = 0; i < 5; ++i) {
+        const double t1 = timeIt(20000);
+        const double t2 = timeIt(40000);
+        if (t1 <= 0.0) continue;
+        bestRatio = std::min(bestRatio, t2 / t1);
+    }
+    EXPECT_LT(bestRatio, 3.0);
 }
 
 // The same trim runs on the selector, so it needs the same bound.
@@ -692,14 +715,20 @@ TEST(SvgWhitespaceTrim, LongSelectorPaddingStaysLinear) {
         EXPECT_EQ(runs.size(), 1u);
         return std::chrono::duration<double>(t1 - t0).count();
     };
-    auto best = [&timeIt](size_t n) {
-        double b = 1e9;
-        for (int i = 0; i < 3; ++i) b = std::min(b, timeIt(n));
-        return b;
-    };
-    const double t1 = best(20000);
-    const double t2 = best(40000);
-    EXPECT_LT(t2, std::max(t1 * 3.0, 0.010));
+    // The two sizes are measured in pairs, one right after the other, and the
+    // best ratio over the pairs is the one that counts. Measuring the sizes
+    // in separate rounds lets a runner that gets busy in between read as a
+    // regression that is not there: the slow size is then compared against a
+    // fast size that was taken under quieter conditions. A pair shares its
+    // conditions, and the quietest pair is the honest one.
+    double bestRatio = 1e9;
+    for (int i = 0; i < 5; ++i) {
+        const double t1 = timeIt(20000);
+        const double t2 = timeIt(40000);
+        if (t1 <= 0.0) continue;
+        bestRatio = std::min(bestRatio, t2 / t1);
+    }
+    EXPECT_LT(bestRatio, 3.0);
 }
 
 // Padding around a declaration and a value must be ignored, at both ends, for

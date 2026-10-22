@@ -135,7 +135,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure
-        run: cmake -B build-native -DBUILD_TESTS=ON
+        run: cmake -B build-native -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build-native --target MarkDownIt.tests -j2
