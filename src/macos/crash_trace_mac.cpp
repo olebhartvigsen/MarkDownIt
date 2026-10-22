@@ -6,6 +6,10 @@
 //
 // The breadcrumb API is shared, so the code that logs is the same on both
 // platforms.
+//
+// A fatal signal writes a backtrace into the same log, so a crash names
+// the code that faulted even when the system keeps the crash report to
+// itself.
 
 #include "crash_trace_mac.h"
 
@@ -13,7 +17,9 @@
 #include <ctime>
 #include <string>
 
+#include <execinfo.h>
 #include <pwd.h>
+#include <signal.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -53,6 +59,35 @@ FILE* TraceFile() {
     return g_traceFile;
 }
 
+// The handler for a fatal signal.
+//
+// The heap may be damaged when the handler runs, so it only writes what
+// is already on the stack, and it uses write() and the frame addresses
+// rather than anything that allocates. The default action runs after,
+// so the system reports the crash the way it would have anyway.
+void CrashHandler(int signalNumber) {
+    FILE* file = g_traceFile;
+    if (file) {
+        const int fd = fileno(file);
+        void* frames[64];
+        const int count = backtrace(frames, 64);
+
+        char header[64];
+        const int length = snprintf(header, sizeof(header),
+                                    "\n*** crash: signal %d ***\n",
+                                    signalNumber);
+        if (length > 0) {
+            const ssize_t written = write(fd, header,
+                                          static_cast<size_t>(length));
+            (void)written;
+        }
+        backtrace_symbols_fd(frames, count, fd);
+    }
+
+    signal(signalNumber, SIG_DFL);
+    raise(signalNumber);
+}
+
 }  // namespace
 
 void TraceMac(const char* fmt, ...) {
@@ -78,6 +113,14 @@ void TraceMac(const char* fmt, ...) {
 
 void TraceMacWide(const std::wstring& text) {
     TraceMac("%s", textenc::WideToUtf8(text).c_str());
+}
+
+void InstallCrashHandler() {
+    const int signals[] = {SIGSEGV, SIGABRT, SIGBUS, SIGILL, SIGFPE,
+                           SIGTRAP};
+    for (int number : signals) {
+        signal(number, CrashHandler);
+    }
 }
 
 }  // namespace mac

@@ -32,18 +32,11 @@
 #include "settings_mac.h"
 #include "zoommodel.h"
 
-// The menu adapter.
-//
-// The adapter implements the MenuActions interface, which the menu
-// calls, and forwards every command to the delegate. It is defined
-// after the delegate, because it calls the delegate's selectors.
-class MdMenuAdapter;
-
 // The window and the app.
 //
 // The delegate owns the app object, the window and the content view. It
 // implements the AppKit selectors, which the menu items are wired to.
-@interface MdAppDelegate : NSObject <NSApplicationDelegate> {
+@interface MdAppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate> {
     mac::App* app_;
     mac::ContentView* content_;
     // The window content, which holds the find bar and the document.
@@ -58,7 +51,6 @@ class MdMenuAdapter;
     NSWindow* window_;
     NSScrollView* scrollView_;
     MdContentView* view_;
-    MdMenuAdapter* adapter_;
     float zoom_;
     bool sourceView_;
     // Whether the text is wrapped.
@@ -99,6 +91,9 @@ class MdMenuAdapter;
 - (void)toggleBold:(id)sender;
 - (void)toggleStrike:(id)sender;
 - (void)setHeading:(int)level;
+- (void)setHeading1:(id)sender;
+- (void)setHeading2:(id)sender;
+- (void)setHeading3:(id)sender;
 - (void)toggleBullets:(id)sender;
 - (void)toggleNumbering:(id)sender;
 - (void)toggleQuote:(id)sender;
@@ -120,92 +115,7 @@ class MdMenuAdapter;
 - (void)toggleLink:(id)sender;
 - (void)toggleMark:(id)sender;
 - (void)clearFormat:(id)sender;
-
-// Creates the menu adapter. It is defined in a category, because the
-// adapter type is only complete further down in the file.
-- (MdMenuAdapter*)makeAdapter;
 @end
-
-// The menu adapter.
-//
-// It implements the MenuActions interface and forwards every command to
-// the delegate. The menu holds it through the interface pointer.
-class MdMenuAdapter : public mac::MenuActions {
-public:
-    explicit MdMenuAdapter(MdAppDelegate* delegate) : delegate_(delegate) {}
-
-    void OnNewDocument() override { [delegate_ newDocument:nil]; }
-    void OnOpen() override { [delegate_ openDocument:nil]; }
-    void OnReload() override { [delegate_ reloadDocument:nil]; }
-    void OnOpenSettings() override { [delegate_ openSettings:nil]; }
-    void OnSetAsDefaultReader() override {
-        [delegate_ setAsDefaultReader:nil];
-    }
-    void OnSave() override { [delegate_ saveDocument:nil]; }
-    void OnSaveAs() override { [delegate_ saveDocumentAs:nil]; }
-    void OnClose() override { [delegate_ closeDocument:nil]; }
-    void OnImportWord() override { [delegate_ importWord:nil]; }
-    void OnExportWord() override { [delegate_ exportWord:nil]; }
-    void OnExportPdf() override { [delegate_ exportPdf:nil]; }
-    void OnFind() override { [delegate_ findDocument:nil]; }
-    void OnReplace() override { [delegate_ replaceInDocument:nil]; }
-    void OnUndo() override { [delegate_ undoEdit:nil]; }
-    void OnRedo() override { [delegate_ redoEdit:nil]; }
-    void OnCut() override { [delegate_ cutSelection:nil]; }
-    void OnCopy() override { [delegate_ copySelection:nil]; }
-    void OnPaste() override { [delegate_ pasteSelection:nil]; }
-    void OnSelectAll() override { [delegate_ selectAll:nil]; }
-    void OnZoomIn() override { [delegate_ zoomIn:nil]; }
-    void OnZoomOut() override { [delegate_ zoomOut:nil]; }
-    void OnZoomReset() override { [delegate_ zoomReset:nil]; }
-    void OnToggleSourceView() override { [delegate_ toggleSourceView:nil]; }
-    void OnToggleOutline() override { [delegate_ toggleOutline:nil]; }
-    void OnToggleWrap() override { [delegate_ toggleWrap:nil]; }
-    void OnCycleContentWidth() override { [delegate_ cycleContentWidth:nil]; }
-    void OnToggleBold() override { [delegate_ toggleBold:nil]; }
-    void OnToggleStrike() override { [delegate_ toggleStrike:nil]; }
-    void OnHeading(int level) override { [delegate_ setHeading:level]; }
-    void OnToggleBullets() override { [delegate_ toggleBullets:nil]; }
-    void OnToggleNumbering() override { [delegate_ toggleNumbering:nil]; }
-    void OnToggleQuote() override { [delegate_ toggleQuote:nil]; }
-    void OnIndent() override { [delegate_ indentBlock:nil]; }
-    void OnOutdent() override { [delegate_ outdentBlock:nil]; }
-    void OnInsertTable() override { [delegate_ insertTable:nil]; }
-    void OnAddTableRow(bool below) override {
-        if (below) {
-            [delegate_ addRowBelow:nil];
-        } else {
-            [delegate_ addRowAbove:nil];
-        }
-    }
-    void OnRemoveTableRow() override { [delegate_ removeRow:nil]; }
-    void OnAddTableColumn(bool right) override {
-        if (right) {
-            [delegate_ addColumnRight:nil];
-        } else {
-            [delegate_ addColumnLeft:nil];
-        }
-    }
-    void OnRemoveTableColumn() override { [delegate_ removeColumn:nil]; }
-    void OnSplitTableCell() override { [delegate_ splitCell:nil]; }
-    void OnAlignTableColumn(int mark) override {
-        if (mark == 1) {
-            [delegate_ alignLeft:nil];
-        } else if (mark == 2) {
-            [delegate_ alignCenter:nil];
-        } else {
-            [delegate_ alignRight:nil];
-        }
-    }
-    void OnToggleItalic() override { [delegate_ toggleItalic:nil]; }
-    void OnToggleCode() override { [delegate_ toggleCode:nil]; }
-    void OnToggleLink() override { [delegate_ toggleLink:nil]; }
-    void OnToggleMark() override { [delegate_ toggleMark:nil]; }
-    void OnClearFormat() override { [delegate_ clearFormat:nil]; }
-
-private:
-    MdAppDelegate* delegate_;
-};
 
 @implementation MdAppDelegate
 
@@ -226,7 +136,6 @@ private:
 - (void)dealloc {
     // The content view belongs to the app object, so it goes with it.
     delete app_;
-    delete adapter_;
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +172,9 @@ private:
                              NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable)
                     backing:NSBackingStoreBuffered
                       defer:NO];
+    // The delegate takes the files that are dropped on the window, and
+    // it is asked before the window closes with unsaved changes.
+    [window_ setDelegate:self];
     [window_ setTitle:@"MarkDownIt"];
     [window_ setMinSize:NSMakeSize(480, 320)];
 
@@ -349,9 +261,9 @@ private:
         [delegate OpenPath:path];
     });
 
-    // The menu bar.
-    adapter_ = [self makeAdapter];
-    NSMenu* menu = mac::BuildMainMenu(adapter_);
+    // The menu bar. The items find their command through the responder
+    // chain, which ends at this delegate.
+    NSMenu* menu = mac::BuildMainMenu();
     [NSApp setMainMenu:menu];
     [NSApp activateIgnoringOtherApps:YES];
 
@@ -388,6 +300,7 @@ private:
 - (BOOL)application:(NSApplication*)application
             openFile:(NSString*)filename {
     (void)application;
+    mac::TraceMac("apple event: open file");
     [self OpenPath:[filename UTF8String]];
     return YES;
 }
@@ -398,6 +311,7 @@ private:
 }
 
 - (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+    mac::TraceMac("drag: drop");
     NSPasteboard* pasteboard = [sender draggingPasteboard];
     NSArray<NSURL*>* urls =
         [pasteboard readObjectsForClasses:@[[NSURL class]]
@@ -416,9 +330,24 @@ private:
     return YES;
 }
 
+// The window asks before it closes with unsaved changes, and a Quit
+// asks the same question.
+- (BOOL)windowShouldClose:(NSWindow*)sender {
+    (void)sender;
+    return [self confirmDiscardChanges];
+}
+
+- (NSApplicationTerminateReply)applicationShouldTerminate:
+    (NSApplication*)sender {
+    (void)sender;
+    if (![self confirmDiscardChanges]) return NSTerminateCancel;
+    return NSTerminateNow;
+}
+
 - (void)applicationWillTerminate:(NSNotification*)notification {
-    // The handler points at this object, so it goes away with it.
+    // The handlers point at this object, so they go away with it.
     app_->SetReloadHandler(nullptr);
+    app_->SetOpenFileHandler(nullptr);
     (void)notification;
     settings_.settings().zoomFactor = zoom_;
     [self saveWindowFrame];
@@ -427,6 +356,7 @@ private:
 
 // Opens a file, and reports a failure to the user.
 - (void)OpenPath:(const std::string&)path {
+    mac::TraceMac("open: %s", path.c_str());
     [self hideWelcomeScreen];
     if (path.empty()) return;
 
@@ -440,6 +370,7 @@ private:
 
     [window_ setTitle:[NSString stringWithUTF8String:path.c_str()]];
     [view_ setNeedsDisplay:YES];
+    mac::TraceMac("open: done");
 }
 
 // ---------------------------------------------------------------------------
@@ -478,6 +409,11 @@ private:
 - (void)toggleBold:(id)sender { (void)sender; [self OnToggleBold]; }
 - (void)toggleStrike:(id)sender { (void)sender; [self OnToggleStrike]; }
 - (void)setHeading:(int)level { [self OnHeading:level]; }
+
+// The heading levels, as the selectors the menu items carry.
+- (void)setHeading1:(id)sender { (void)sender; [self OnHeading:1]; }
+- (void)setHeading2:(id)sender { (void)sender; [self OnHeading:2]; }
+- (void)setHeading3:(id)sender { (void)sender; [self OnHeading:3]; }
 - (void)toggleBullets:(id)sender { (void)sender; [self OnToggleBullets]; }
 - (void)toggleNumbering:(id)sender { (void)sender; [self OnToggleNumbering]; }
 - (void)toggleQuote:(id)sender { (void)sender; [self OnToggleQuote]; }
@@ -565,7 +501,12 @@ private:
 
     const NSModalResponse answer = [alert runModal];
     if (answer == NSAlertFirstButtonReturn) return [self saveCurrentDocument];
-    if (answer == NSAlertSecondButtonReturn) return YES;
+    if (answer == NSAlertSecondButtonReturn) {
+        // The changes are gone, so nothing asks a second time when the
+        // window closes or the app quits right after.
+        app_->MarkClean();
+        return YES;
+    }
     return NO;
 }
 
@@ -671,7 +612,8 @@ private:
 }
 
 - (void)OnClose {
-    if (![self confirmDiscardChanges]) return;
+    // The window asks for the changes itself, so the question is asked
+    // in one place.
     [window_ close];
 }
 
@@ -1031,12 +973,6 @@ private:
 
 @end
 
-@implementation MdAppDelegate (Menu)
-- (MdMenuAdapter*)makeAdapter {
-    return new MdMenuAdapter(self);
-}
-@end
-
 // The program entry point.
 //
 // The app does not own a nib, so the delegate is created here and the
@@ -1050,6 +986,9 @@ int main(int argc, const char* argv[]) {
         // that dies before the window appears can be read back from
         // ~/Library/Logs/MarkDownIt/crash_trace.log.
         mac::TraceMac("main enter");
+        // A crash writes its backtrace to the same log, so the next
+        // report names the code that faulted.
+        mac::InstallCrashHandler();
 
         NSApplication* application = [NSApplication sharedApplication];
         [application setActivationPolicy:NSApplicationActivationPolicyRegular];

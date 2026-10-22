@@ -5,9 +5,15 @@
 #include <string>
 #include <vector>
 
+#include <CoreText/CoreText.h>
+
 #include "seams.h"
 
 namespace mac {
+
+// The font the engine takes for a spec, which the drawing side shares,
+// so the measured metrics and the drawn glyphs come from one font.
+CTFontRef CoreTextFontFor(const FontSpec& spec);
 
 // A Core Text backed text engine.
 //
@@ -32,15 +38,6 @@ public:
                            bool* outTrailing) const override;
     Rect OffsetToRect(const TextLine& line, uint32_t offset) const override;
     float LineHeight(const FontSpec& font) const override;
-
-    // The Core Text line behind a measured TextLine, for the renderer and
-    // the hit tester. The engine keeps the lines alive, so the pointer
-    // stays valid until the next MeasureWrapped call.
-    void* GetCoreTextLine(const TextLine& line) const;
-
-    // The attributed string behind a measured TextLine, which the hit
-    // tester needs to map a position to a character index.
-    void* GetCoreTextAttributedString(const TextLine& line) const;
 
     // The line's text as UTF-8, which the hit tester measures against.
     static std::string LineTextUtf8(const TextLine& line);

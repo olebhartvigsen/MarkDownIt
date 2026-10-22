@@ -167,3 +167,45 @@ CarbonCore has a `struct Marker` of its own and AppKit pulls it in.
   Objective-C runtime and the core does not.
 - The plan suggested the `MarkDownIt` executable. It is `MarkDownItMac`
   in the build and `MarkDownIt` in the bundle.
+
+## The second run on a Mac and the three bugs it found
+
+The second attempt opened the app on real hardware, and it found three
+defects that only a real machine could show. All three are fixed, and
+each one lived in code that had never run before:
+
+- **The interface was drawn upside down and mirrored.** The content
+  view and the outline view are flipped views, so AppKit already hands
+  the drawing a top left origin with the y axis pointing down. Both
+  views flipped the context a second time in `drawRect:`, which turned
+  every drawing over. The extra flip is gone. `DrawText` draws through
+  Core Text with a flipped text matrix now, so the glyphs stand up,
+  the baseline lands where the renderer measures it, and the drawing
+  and the measuring use one font.
+- **The menu items were grey, including Open.** Every item was wired
+  to a hand made target that only implemented `run:`. AppKit disables
+  an item whose target does not respond to its action, so the whole
+  menu was dead. The target and the adapter layer are gone: the items
+  carry no target, AppKit walks the responder chain to the app
+  delegate, and the commands were implemented there all along.
+  `tools/check_mac_menu.py` fails when the menu hands an item a target
+  of its own, and it checks all 52 commands.
+- **A markdown file dropped on the icon crashed the app.** The first
+  real measurement of the document text over-released the lines of a
+  Core Text frame: `CTFrameGetLines` returns a borrowed array, and the
+  code released it and then kept a line out of it, so the heap was
+  corrupt before the first line was drawn. The ownership follows the
+  get rules now, a kept line is retained before its frame goes away,
+  and every line carries the slice of the run that sits on it, so a
+  wrapped paragraph draws its continuation lines instead of drawing
+  the whole run on the first line.
+
+Smaller things from the same pass: the scroll wheel moved the document
+the wrong way, the two dead `ToWide`/`ToNarrow` helpers in the settings
+carried a buffer overflow, and the window now asks about unsaved
+changes both when it closes and when the app quits.
+
+The crash log from that run named a fatal signal and nothing else,
+because the app had no signal handler. `mac::InstallCrashHandler()`
+writes a backtrace into the same breadcrumb log now, so the next crash
+names the code that faulted.

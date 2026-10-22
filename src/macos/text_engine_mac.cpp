@@ -13,6 +13,12 @@
 // string itself, and it asks Core Text for the horizontal offset of each
 // run start. That keeps the file free of the private run dictionary keys,
 // which have changed between SDK releases.
+//
+// The ownership follows the Core Foundation get rules. The lines of a
+// frame belong to the frame, so they are not released, and a line the
+// engine keeps is retained before the frame, which owns it, goes away.
+// Releasing what the frame owned is what made the first document open
+// crash, because the whole document path runs for the first time there.
 
 #include "text_engine_mac.h"
 
@@ -20,6 +26,7 @@
 #include <CoreText/CTFrame.h>
 #include <CoreText/CoreText.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <map>
@@ -134,9 +141,18 @@ struct LaidRun {
     float a = 1.0f;
     // The UTF-16 index where the run starts.
     CFIndex start = 0;
+    // The length of the run in UTF-16 units.
+    CFIndex u16Length = 0;
+    // The UTF-8 byte offset of every UTF-16 unit of the run, so a line
+    // can cut its own slice out of the run.
+    std::vector<uint32_t> u16ToUtf8;
 };
 
 }  // namespace
+
+// The font the engine takes for a spec, which the drawing side shares,
+// so the measured metrics and the drawn glyphs come from one font.
+CTFontRef CoreTextFontFor(const FontSpec& spec) { return GetFont(spec); }
 
 struct CoreTextEngine::Impl {
     // The measured lines of the last MeasureWrapped call. The renderer and
@@ -189,8 +205,20 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
         if (!cfText) continue;
         const CFIndex runLength = CFStringGetLength(cfText);
 
+        LaidRun laid;
+        laid.text = run.text;
+        laid.font = run.font;
+        laid.r = run.r;
+        laid.g = run.g;
+        laid.b = run.b;
+        laid.a = run.a;
+        laid.start = u16Length;
+        laid.u16Length = runLength;
+
         // The character mapping: one entry per UTF-16 unit of the run, so
-        // a UTF-16 index maps back to a UTF-8 offset.
+        // a UTF-16 index maps back to a UTF-8 offset. The run keeps its
+        // own copy, so a wrapped line can find the byte range of the part
+        // of the run that sits on it.
         size_t byteIndex = 0;
         for (CFIndex i = 0; i < runLength; ++i) {
             const uint32_t ch =
@@ -207,10 +235,12 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
                 charBytes = 2;
             }
             u16ToUtf8.push_back(static_cast<uint32_t>(byteIndex));
+            laid.u16ToUtf8.push_back(static_cast<uint32_t>(byteIndex));
             if (utf16Units == 2) {
                 // The low surrogate shares the UTF-8 offset of the high
                 // one.
                 u16ToUtf8.push_back(static_cast<uint32_t>(byteIndex));
+                laid.u16ToUtf8.push_back(static_cast<uint32_t>(byteIndex));
             }
             byteIndex += charBytes;
             if (byteIndex > run.text.size()) byteIndex = run.text.size();
@@ -243,14 +273,6 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
                                         CFRangeMake(u16Length, 0), cfText);
         CFRelease(cfText);
 
-        LaidRun laid;
-        laid.text = run.text;
-        laid.font = run.font;
-        laid.r = run.r;
-        laid.g = run.g;
-        laid.b = run.b;
-        laid.a = run.a;
-        laid.start = u16Length;
         laidRuns.push_back(laid);
 
         u16Length += runLength;
@@ -293,6 +315,9 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
         CTFrameRef frame = CTFramesetterCreateFrame(
             framesetter, CFRangeMake(start, 0), path, nullptr);
         if (!frame) break;
+
+        // The lines belong to the frame, so the array is borrowed and is
+        // not released here.
         CFArrayRef frameLines = CTFrameGetLines(frame);
         CTLineRef line = nullptr;
         if (frameLines && CFArrayGetCount(frameLines) > 0) {
@@ -300,32 +325,53 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
                 CFArrayGetValueAtIndex(frameLines, 0));
         }
         if (!line) {
-            if (frameLines) CFRelease(frameLines);
             CFRelease(frame);
             break;
         }
+
+        // The engine keeps the line, so it is retained before the frame,
+        // which owns it, is released.
+        CFRetain(line);
 
         TextLine out;
         out.width = static_cast<float>(CTLineGetTypographicBounds(
             line, nullptr, nullptr, nullptr));
         double ascent = 0.0, descent = 0.0, leading = 0.0;
-        out.height = static_cast<float>(CTLineGetTypographicBounds(
-            line, &ascent, &descent, &leading));
+        CTLineGetTypographicBounds(line, &ascent, &descent, &leading);
+        // The typographic width is the return value of the call above,
+        // so the height is summed from the three parts.
+        out.height = static_cast<float>(ascent + descent + leading);
         out.ascent = static_cast<float>(ascent);
 
-        // The runs of the line. The engine knows where every run starts,
-        // so it asks Core Text for the horizontal offset of each start
-        // instead of reading the run dictionary.
+        // The runs of the line, cut to the part of the run that sits on
+        // this line. A wrapped run shows a slice on every line it spans,
+        // and the slice starts at the horizontal offset Core Text gives
+        // for its first character on the line.
         for (const LaidRun& laid : laidRuns) {
-            if (laid.start < start) continue;
+            const CFIndex runEnd = laid.start + laid.u16Length;
+            if (runEnd <= start) continue;
             if (laid.start >= start + count) break;
 
-            // The horizontal offset of the run start.
+            const CFIndex clipStart = std::max(start, laid.start);
+            const CFIndex clipEnd = std::min(start + count, runEnd);
+            const size_t localFrom =
+                static_cast<size_t>(clipStart - laid.start);
+            const size_t localTo = static_cast<size_t>(clipEnd - laid.start);
+            const uint32_t byteFrom =
+                localFrom < laid.u16ToUtf8.size() ? laid.u16ToUtf8[localFrom]
+                                                  : 0;
+            const uint32_t byteTo =
+                localTo < laid.u16ToUtf8.size()
+                    ? laid.u16ToUtf8[localTo]
+                    : static_cast<uint32_t>(laid.text.size());
+
+            // The horizontal offset of the run on this line.
             double runX = 0.0;
-            CTLineGetOffsetForStringIndex(line, laid.start, &runX);
+            CTLineGetOffsetForStringIndex(line, clipStart, &runX);
 
             GlyphRun glyph;
-            glyph.text = laid.text;
+            glyph.text = laid.text.substr(byteFrom, byteTo - byteFrom);
+            if (glyph.text.empty()) continue;
             glyph.font = laid.font;
             glyph.r = laid.r;
             glyph.g = laid.g;
@@ -335,11 +381,8 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
             out.runs.push_back(glyph);
         }
 
-        CFRelease(frameLines);
         CFRelease(frame);
 
-        // The line is kept, so the engine owns it.
-        CFRetain(line);
         Impl::Entry entry;
         entry.line = line;
         entry.width = out.width;
@@ -439,25 +482,6 @@ float CoreTextEngine::LineHeight(const FontSpec& font) const {
     const CGFloat leading = CTFontGetLeading(ctFont);
     const CGFloat height = ascent + descent + leading;
     return height > 0.0 ? static_cast<float>(height) : font.size * 1.2f;
-}
-
-void* CoreTextEngine::GetCoreTextLine(const TextLine& line) const {
-    for (const Impl::Entry& entry : impl_->entries) {
-        if (!entry.line) continue;
-        if (std::fabs(entry.width - line.width) <= 0.5f) {
-            // CTLineRef is a pointer to a const struct, so the const is
-            // on the pointee and not on the pointer. A C-style cast is
-            // what removes it.
-            return (void*)entry.line;
-        }
-    }
-    return nullptr;
-}
-
-void* CoreTextEngine::GetCoreTextAttributedString(
-    const TextLine& line) const {
-    (void)line;
-    return nullptr;
 }
 
 std::string CoreTextEngine::LineTextUtf8(const TextLine& line) {

@@ -75,7 +75,6 @@ ContentView::ContentView(App* app)
     renderer_.SetTextEngine(engine_);
     renderer_.SetTheme(BaseMetrics(), BasePalette());
     renderer_.SetStandaloneSvg(app_ && app_->IsStandaloneSvg());
-    renderer_.SetStandaloneSvg(app_ && app_->IsStandaloneSvg());
     width_ = kDefaultWidth;
     height_ = kDefaultHeight;
     Relayout();
@@ -362,17 +361,12 @@ float ContentView::CaretHeight() const {
     CGContextRef context = [[NSGraphicsContext currentContext] CGContext];
     if (!context) return;
 
-    // The view is flipped, so the origin is at the top left and the y
-    // axis points down. A flip of -1 on the y axis makes Core Graphics
-    // draw that way.
-    CGContextSaveGState(context);
-    CGContextTranslateCTM(context, 0.0, NSMaxY(self.bounds));
-    CGContextScaleCTM(context, 1.0, -1.0);
-
+    // The view is flipped, so the origin is already at the top left and
+    // the y axis already points down, which is the space the renderer
+    // lays the document out in. Flipping the context again here turned
+    // the whole document over.
     mac::CoreGraphicsTarget target(context);
     content_->Draw(&target);
-
-    CGContextRestoreGState(context);
 }
 
 - (void)mouseDown:(NSEvent*)event {
@@ -560,7 +554,9 @@ float ContentView::CaretHeight() const {
     if (delta == 0.0) {
         delta = [event scrollingDeltaX];
     }
-    const float offset = content_->scrollOffset() + static_cast<float>(delta);
+    // A positive delta asks for the part of the document above the
+    // current place, so the offset goes down instead of up.
+    const float offset = content_->scrollOffset() - static_cast<float>(delta);
     content_->SetScrollOffset(offset);
     [self setNeedsDisplay:YES];
 }

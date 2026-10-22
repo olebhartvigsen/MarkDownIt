@@ -33,18 +33,13 @@
     CGContextRef context = [[NSGraphicsContext currentContext] CGContext];
     if (!context) return;
 
-    // The view is flipped, so the origin is at the top left and the y
-    // axis points down. A flip of -1 on the y axis makes Core Graphics
-    // draw that way.
-    CGContextSaveGState(context);
-    CGContextTranslateCTM(context, 0.0, NSMaxY(self.bounds));
-    CGContextScaleCTM(context, 1.0, -1.0);
-
+    // The view is flipped, so the origin is already at the top left and
+    // the y axis already points down, which is the space the pane lays
+    // its rows out in. Flipping the context again here turned the rows
+    // over.
     mac::CoreGraphicsTarget target(context);
     _pane->Draw(&target, static_cast<float>(self.bounds.size.width),
                 static_cast<float>(self.bounds.size.height));
-
-    CGContextRestoreGState(context);
 }
 
 - (void)mouseDown:(NSEvent*)event {

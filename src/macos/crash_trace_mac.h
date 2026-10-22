@@ -18,4 +18,11 @@ void TraceMac(const char* fmt, ...);
 // The same, for a wide string.
 void TraceMacWide(const std::wstring& text);
 
+// Installs the crash handler.
+//
+// A fatal signal writes its backtrace to the same log before the
+// default action runs, so a crash names the code that faulted even
+// when no crash report can be read back.
+void InstallCrashHandler();
+
 }  // namespace mac

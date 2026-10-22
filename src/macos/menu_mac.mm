@@ -1,144 +1,18 @@
 // The macOS menu bar.
 //
 // The commands the Windows build puts in its ribbon live here as a
-// standard macOS menu bar: File, Edit, View and Format.
+// standard macOS menu bar: File, Edit, View, Format and Table.
 //
-// The menu targets the app through the MenuActions interface, so the
-// menu does not know anything about the app object.
+// The items carry no target of their own. AppKit walks the responder
+// chain, which ends at the app delegate, and calls the command there.
+// The responder chain is also what enables the items, so an item is grey
+// exactly when nothing carries its command out. A hand made target that
+// does not implement the selectors is what left every item grey.
 
 #include "menu_mac.h"
 
 #import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
-
-// The menu target.
-//
-// AppKit sends the menu actions to an object that responds to the
-// selectors. This class holds the MenuActions and implements the
-// selectors, which keeps the Objective-C part small and out of the rest
-// of the app.
-//
-// NSMenuItem holds its target weakly, so the target is kept alive here
-// for as long as the menu is installed.
-@interface MdMenuTarget : NSObject
-- (instancetype)initWithActions:(mac::MenuActions*)actions;
-- (void)run:(SEL)selector;
-@end
-
-// The installed menu target, so it outlives the menu.
-static MdMenuTarget* gMenuTarget = nil;
-
-@implementation MdMenuTarget {
-    mac::MenuActions* actions_;
-}
-
-- (instancetype)initWithActions:(mac::MenuActions*)actions {
-    self = [super init];
-    if (self) {
-        actions_ = actions;
-    }
-    return self;
-}
-
-- (void)run:(SEL)selector {
-    if (!actions_) return;
-
-    if (selector == @selector(newDocument:)) {
-        actions_->OnNewDocument();
-    } else if (selector == @selector(openDocument:)) {
-        actions_->OnOpen();
-    } else if (selector == @selector(saveDocument:)) {
-        actions_->OnSave();
-    } else if (selector == @selector(saveDocumentAs:)) {
-        actions_->OnSaveAs();
-    } else if (selector == @selector(closeDocument:)) {
-        actions_->OnClose();
-    } else if (selector == @selector(undoEdit:)) {
-        actions_->OnUndo();
-    } else if (selector == @selector(redoEdit:)) {
-        actions_->OnRedo();
-    } else if (selector == @selector(cutSelection:)) {
-        actions_->OnCut();
-    } else if (selector == @selector(copySelection:)) {
-        actions_->OnCopy();
-    } else if (selector == @selector(pasteSelection:)) {
-        actions_->OnPaste();
-    } else if (selector == @selector(selectAll:)) {
-        actions_->OnSelectAll();
-    } else if (selector == @selector(zoomIn:)) {
-        actions_->OnZoomIn();
-    } else if (selector == @selector(zoomOut:)) {
-        actions_->OnZoomOut();
-    } else if (selector == @selector(zoomReset:)) {
-        actions_->OnZoomReset();
-    } else if (selector == @selector(toggleSourceView:)) {
-        actions_->OnToggleSourceView();
-    } else if (selector == @selector(toggleOutline:)) {
-        actions_->OnToggleOutline();
-    } else if (selector == @selector(setAsDefaultReader:)) {
-        actions_->OnSetAsDefaultReader();
-    } else if (selector == @selector(importWord:)) {
-        actions_->OnImportWord();
-    } else if (selector == @selector(exportWord:)) {
-        actions_->OnExportWord();
-    } else if (selector == @selector(exportPdf:)) {
-        actions_->OnExportPdf();
-    } else if (selector == @selector(insertTable:)) {
-        actions_->OnInsertTable();
-    } else if (selector == @selector(addRowBelow:)) {
-        actions_->OnAddTableRow(true);
-    } else if (selector == @selector(addRowAbove:)) {
-        actions_->OnAddTableRow(false);
-    } else if (selector == @selector(removeRow:)) {
-        actions_->OnRemoveTableRow();
-    } else if (selector == @selector(addColumnRight:)) {
-        actions_->OnAddTableColumn(true);
-    } else if (selector == @selector(addColumnLeft:)) {
-        actions_->OnAddTableColumn(false);
-    } else if (selector == @selector(removeColumn:)) {
-        actions_->OnRemoveTableColumn();
-    } else if (selector == @selector(splitCell:)) {
-        actions_->OnSplitTableCell();
-    } else if (selector == @selector(alignLeft:)) {
-        actions_->OnAlignTableColumn(0);
-    } else if (selector == @selector(alignCenter:)) {
-        actions_->OnAlignTableColumn(1);
-    } else if (selector == @selector(alignRight:)) {
-        actions_->OnAlignTableColumn(2);
-    } else if (selector == @selector(toggleBold:)) {
-        actions_->OnToggleBold();
-    } else if (selector == @selector(toggleItalic:)) {
-        actions_->OnToggleItalic();
-    } else if (selector == @selector(toggleStrike:)) {
-        actions_->OnToggleStrike();
-    } else if (selector == @selector(setHeading1:)) {
-        actions_->OnHeading(1);
-    } else if (selector == @selector(setHeading2:)) {
-        actions_->OnHeading(2);
-    } else if (selector == @selector(setHeading3:)) {
-        actions_->OnHeading(3);
-    } else if (selector == @selector(toggleBullets:)) {
-        actions_->OnToggleBullets();
-    } else if (selector == @selector(toggleNumbering:)) {
-        actions_->OnToggleNumbering();
-    } else if (selector == @selector(toggleQuote:)) {
-        actions_->OnToggleQuote();
-    } else if (selector == @selector(indentBlock:)) {
-        actions_->OnIndent();
-    } else if (selector == @selector(outdentBlock:)) {
-        actions_->OnOutdent();
-    } else if (selector == @selector(toggleCode:)) {
-        actions_->OnToggleCode();
-    } else if (selector == @selector(toggleMark:)) {
-        actions_->OnToggleMark();
-    } else if (selector == @selector(clearFormat:)) {
-        actions_->OnClearFormat();
-    } else if (selector == @selector(toggleLink:)) {
-        actions_->OnToggleLink();
-    }
-}
-
-@end
 
 // Builds a submenu with the given items.
 //
@@ -161,13 +35,28 @@ NSMenu* BuildSubmenu(const char* title,
 
 namespace mac {
 
-// Builds the main menu bar and installs it.
-//
-// The target is kept alive by the menu, because the menu holds a
-// reference to it.
-NSMenu* BuildMainMenu(MenuActions* actions) {
-    MdMenuTarget* target = [[MdMenuTarget alloc] initWithActions:actions];
+namespace {
 
+// Adds a top level menu to the bar.
+//
+// The title goes on the item itself, because an item without a title
+// does not name its menu in the menu bar.
+void AddTopLevel(NSMenu* mainMenu, const char* title, NSMenu* submenu) {
+    NSMenuItem* item = [[NSMenuItem alloc]
+        initWithTitle:[NSString stringWithUTF8String:title]
+               action:nil
+        keyEquivalent:@""];
+    item.submenu = submenu;
+    [mainMenu addItem:item];
+}
+
+}  // namespace
+
+// Builds the main menu bar.
+//
+// The commands reach the app delegate through the responder chain, so
+// no item is wired to a target here.
+NSMenu* BuildMainMenu() {
     NSMenu* mainMenu = [[NSMenu alloc] init];
 
     // The application menu, the one that carries the name of the app.
@@ -191,10 +80,7 @@ NSMenu* BuildMainMenu(MenuActions* actions) {
         [appMenu addItemWithTitle:@"Quit MarkDownIt"
                            action:@selector(terminate:)
                     keyEquivalent:@"q"];
-
-        NSMenuItem* appItem = [[NSMenuItem alloc] init];
-        appItem.submenu = appMenu;
-        [mainMenu addItem:appItem];
+        AddTopLevel(mainMenu, "MarkDownIt", appMenu);
     }
 
     // File.
@@ -223,8 +109,7 @@ NSMenu* BuildMainMenu(MenuActions* actions) {
                                 keyEquivalent:@""];
         officeItem.submenu = officeMenu;
         [fileMenu addItem:officeItem];
-        [mainMenu addItem:[[NSMenuItem alloc] init]];
-        [[mainMenu itemArray] lastObject].submenu = fileMenu;
+        AddTopLevel(mainMenu, "File", fileMenu);
     }
 
     // Edit.
@@ -240,8 +125,7 @@ NSMenu* BuildMainMenu(MenuActions* actions) {
              {"Find...", @selector(findDocument:)},
              {"Replace...", @selector(replaceInDocument:)}},
             {"z", "Z", "x", "c", "v", "a", "f", "h"});
-        [mainMenu addItem:[[NSMenuItem alloc] init]];
-        [[mainMenu itemArray] lastObject].submenu = editMenu;
+        AddTopLevel(mainMenu, "Edit", editMenu);
     }
 
     // View.
@@ -256,8 +140,7 @@ NSMenu* BuildMainMenu(MenuActions* actions) {
              {"Wrap Text", @selector(toggleWrap:)},
              {"Wider Content", @selector(cycleContentWidth:)}},
             {"+", "-", "0", "", "", "", ""});
-        [mainMenu addItem:[[NSMenuItem alloc] init]];
-        [[mainMenu itemArray] lastObject].submenu = viewMenu;
+        AddTopLevel(mainMenu, "View", viewMenu);
     }
 
     // Format.
@@ -291,9 +174,7 @@ NSMenu* BuildMainMenu(MenuActions* actions) {
                                 keyEquivalent:@""];
         blockItem.submenu = blockMenu;
         [formatMenu addItem:blockItem];
-
-        [mainMenu addItem:[[NSMenuItem alloc] init]];
-        [[mainMenu itemArray] lastObject].submenu = formatMenu;
+        AddTopLevel(mainMenu, "Format", formatMenu);
     }
 
     // Table. The commands act on the table the caret is in, and they
@@ -313,23 +194,8 @@ NSMenu* BuildMainMenu(MenuActions* actions) {
              {"Align Center", @selector(alignCenter:)},
              {"Align Right", @selector(alignRight:)}},
             {"", "", "", "", "", "", "", "", "", "", ""});
-        [mainMenu addItem:[[NSMenuItem alloc] init]];
-        [[mainMenu itemArray] lastObject].submenu = tableMenu;
+        AddTopLevel(mainMenu, "Table", tableMenu);
     }
-
-    // Every item forwards to the target.
-    for (NSMenuItem* item in [mainMenu itemArray]) {
-        NSMenu* submenu = [item submenu];
-        if (!submenu) continue;
-        for (NSMenuItem* child in [submenu itemArray]) {
-            if (child.action) {
-                child.target = target;
-            }
-        }
-    }
-
-    // The menu items hold the target weakly, so it is kept here.
-    gMenuTarget = target;
 
     return mainMenu;
 }

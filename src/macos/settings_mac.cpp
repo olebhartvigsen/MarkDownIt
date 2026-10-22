@@ -235,26 +235,6 @@ std::vector<std::string> FindJsonStringArray(const std::string& text,
     return values;
 }
 
-// Converts a narrow path to the wide path the settings struct uses.
-std::wstring ToWide(const std::string& text) {
-    if (text.empty()) return std::wstring();
-    const size_t count = ::mbstowcs(nullptr, text.c_str(), 0);
-    if (count == static_cast<size_t>(-1)) return std::wstring();
-    std::wstring wide(count, L'\0');
-    ::mbstowcs(&wide[0], text.c_str(), count + 1);
-    return wide;
-}
-
-// Converts a wide path back to a narrow one.
-std::string ToNarrow(const std::wstring& text) {
-    if (text.empty()) return std::string();
-    const size_t count = ::wcstombs(nullptr, text.c_str(), 0);
-    if (count == static_cast<size_t>(-1)) return std::string();
-    std::string narrow(count, '\0');
-    ::wcstombs(&narrow[0], text.c_str(), count + 1);
-    return narrow;
-}
-
 }  // namespace
 
 MacSettings::MacSettings() {

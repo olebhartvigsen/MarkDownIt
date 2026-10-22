@@ -6,11 +6,16 @@
 // the drawing code never touches a Core Graphics call directly. It
 // lives in a header of its own because the content view and the outline
 // pane both draw through it.
+//
+// The context it draws into is flipped: the origin is at the top left
+// and the y axis points down, which is the space the renderer lays the
+// document out in.
 
 #import <CoreGraphics/CoreGraphics.h>
 
 #include "seams.h"
 #include "image_draw_mac.h"
+#include "text_engine_mac.h"
 
 namespace mac {
 
@@ -94,22 +99,61 @@ public:
 
     void DrawText(const std::string& utf8, const FontSpec& font, float x,
                   float baselineY, const Color& color) override {
-        NSString* text = [[NSString alloc] initWithBytes:utf8.data()
-                                                   length:utf8.size()
-                                                 encoding:NSUTF8StringEncoding];
+        if (utf8.empty()) return;
+
+        // The text as one line, drawn with Core Text so the drawing side
+        // takes exactly the font the measuring side took.
+        CFStringRef text = CFStringCreateWithBytes(
+            kCFAllocatorDefault, reinterpret_cast<const UInt8*>(utf8.data()),
+            static_cast<CFIndex>(utf8.size()), kCFStringEncodingUTF8, false);
         if (!text) return;
 
-        NSFont* nsFont = BuildFont(font);
-        if (!nsFont) return;
+        CTFontRef ctFont = mac::CoreTextFontFor(font);
+        if (!ctFont) {
+            CFRelease(text);
+            return;
+        }
 
-        NSDictionary* attributes = @{
-            NSFontAttributeName : nsFont,
-            NSForegroundColorAttributeName :
-                [NSColor colorWithSRGBRed:color.r green:color.g blue:color.b
-                                     alpha:color.a]
-        };
+        CGColorRef cgColor = CGColorCreateGenericRGB(color.r, color.g,
+                                                     color.b, color.a);
+        if (!cgColor) {
+            CFRelease(text);
+            return;
+        }
 
-        [text drawAtPoint:NSMakePoint(x, baselineY) withAttributes:attributes];
+        const void* keys[] = {kCTFontAttributeName,
+                              kCTForegroundColorAttributeName};
+        const void* values[] = {ctFont, cgColor};
+        CFDictionaryRef attributes = CFDictionaryCreate(
+            kCFAllocatorDefault, keys, values, 2,
+            &kCFTypeDictionaryKeyCallBacks,
+            &kCFTypeDictionaryValueCallBacks);
+        CFRelease(cgColor);
+        if (!attributes) {
+            CFRelease(text);
+            return;
+        }
+
+        CFAttributedStringRef attributed =
+            CFAttributedStringCreate(kCFAllocatorDefault, text, attributes);
+        CFRelease(attributes);
+        CFRelease(text);
+        if (!attributed) return;
+
+        CTLineRef line = CTLineCreateWithAttributedString(attributed);
+        CFRelease(attributed);
+        if (!line) return;
+
+        CGContextSaveGState(context_);
+        // The context is flipped, with the y axis pointing downwards, so
+        // the text matrix is flipped back. That is what stands the glyphs
+        // up and what puts the baseline on the y the renderer asked for.
+        CGContextSetTextMatrix(context_, CGAffineTransformMakeScale(1.0, -1.0));
+        CGContextSetTextPosition(context_, x, baselineY);
+        CTLineDraw(line, context_);
+        CGContextRestoreGState(context_);
+
+        CFRelease(line);
     }
 
     void DrawBitmap(BitmapHandle image, const Rect& rect) override {
@@ -206,45 +250,6 @@ public:
     void PopClip() override { CGContextRestoreGState(context_); }
 
 private:
-    // Builds an NSFont from a font request.
-    static NSFont* BuildFont(const FontSpec& spec) {
-        NSFontWeight weight = spec.bold ? NSFontWeightBold : NSFontWeightRegular;
-        NSFont* font = nil;
-
-        if (spec.monospace) {
-            const char* families[] = {"Menlo", "SF Mono", "Monaco",
-                                      "Courier New"};
-            for (const char* family : families) {
-                font = [NSFont fontWithName:[NSString stringWithUTF8String:family]
-                                      size:spec.size];
-                if (font) break;
-            }
-        } else {
-            const char* families[] = {"Helvetica Neue", "Helvetica", "SF Pro Text",
-                                      "Lucida Grande"};
-            for (const char* family : families) {
-                font = [NSFont fontWithName:[NSString stringWithUTF8String:family]
-                                      size:spec.size];
-                if (font) break;
-            }
-        }
-
-        if (!font) {
-            font = [NSFont systemFontOfSize:spec.size weight:weight];
-        }
-
-        if (spec.italic) {
-            // There is no class method that takes an italic flag, so the
-            // italic is asked for through a font descriptor.
-            NSFontDescriptor* descriptor =
-                [font.fontDescriptor fontDescriptorWithSymbolicTraits:
-                                       NSFontDescriptorTraitItalic];
-            NSFont* italic = [NSFont fontWithDescriptor:descriptor size:spec.size];
-            if (italic) font = italic;
-        }
-        return font;
-    }
-
     CGContextRef context_;
 };
 
