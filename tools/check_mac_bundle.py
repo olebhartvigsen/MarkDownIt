@@ -55,16 +55,29 @@ def check_strip_icons(app):
     if not bases:
         fail("the strip table names no icons, so the check cannot run")
     icons_dir = os.path.join(app, "Contents", "Resources", "icons")
-    missing = []
+    problems = []
     for base in bases:
         for size in (16, 32):
             name = "%s_%d.png" % (base, size)
             path = os.path.join(icons_dir, name)
-            if not os.path.isfile(path) or os.path.getsize(path) < 200:
-                missing.append(name)
-    if missing:
-        fail("the bundle is missing the strip icons: %s"
-             % ", ".join(missing))
+            if not os.path.isfile(path):
+                problems.append("%s is not there" % name)
+                continue
+            # A flat 16px glyph can be under 150 bytes, so a byte count
+            # proves nothing. The PNG header does: signature, then the
+            # width and height in the IHDR chunk.
+            with open(path, "rb") as fh:
+                head = fh.read(24)
+            if head[:8] != b"\x89PNG\r\n\x1a\n":
+                problems.append("%s is not a PNG" % name)
+                continue
+            width = int.from_bytes(head[16:20], "big")
+            height = int.from_bytes(head[20:24], "big")
+            if (width, height) != (size, size):
+                problems.append("%s is %dx%d" % (name, width, height))
+    if problems:
+        fail("the bundle's strip icons are wrong: %s"
+             % ", ".join(problems))
     print("the bundle carries the %d strip icons" % (len(bases) * 2))
 
 
