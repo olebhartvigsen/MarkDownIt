@@ -8,7 +8,7 @@ into a source list, so they are left out.
 import os
 import sys
 
-REPO = "/workspace/MarkDownIt"
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAC = os.path.join(REPO, "src/macos")
 
 with open(os.path.join(REPO, "CMakeLists.txt"), "r", encoding="utf-8") as fh:
