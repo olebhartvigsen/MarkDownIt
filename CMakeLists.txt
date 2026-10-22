@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
 project(MarkDownIt LANGUAGES C CXX)
 
+# The oldest macOS the app supports. It has to be set before the
+# targets are created, because it decides the compiler flags.
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0")
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -601,8 +608,35 @@ if(APPLE)
             "-framework AppKit"
     )
     target_compile_features(MarkDownItMac PRIVATE cxx_std_17)
+
+    # The version lives in the Windows resource script, so the two
+    # platforms never drift apart.
+    file(READ "${CMAKE_SOURCE_DIR}/src/app.rc" MARKDOWNIT_APP_RC)
+    string(REGEX MATCH "FILEVERSION[ \t]+([0-9,]+)" _version_match
+           "${MARKDOWNIT_APP_RC}")
+    string(REPLACE "," "." _version "${CMAKE_MATCH_1}")
+    if(NOT _version)
+        set(_version "0.0.0")
+    endif()
+
+    # The icon is a resource in the bundle. It comes from the same art
+    # the Windows and the Store icons are rendered from.
+    set(MARKDOWNIT_MAC_ICON "${CMAKE_SOURCE_DIR}/installer/macos/app.icns")
+    set_source_files_properties("${MARKDOWNIT_MAC_ICON}"
+        PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+
+    # The app bundle. CMake lays out Contents/MacOS, Contents/Resources
+    # and the Info.plist.
     set_target_properties(MarkDownItMac PROPERTIES
-        MACOSX_BUNDLE OFF
         OUTPUT_NAME MarkDownIt
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST
+            "${CMAKE_SOURCE_DIR}/installer/macos/Info.plist"
+        MACOSX_BUNDLE_ICON_FILE "app"
+        MACOSX_BUNDLE_BUNDLE_NAME "MarkDownIt"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "dk.olebhartvigsen.markdownit"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${_version}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${_version}"
     )
+    target_sources(MarkDownItMac PRIVATE "${MARKDOWNIT_MAC_ICON}")
 endif()  # APPLE

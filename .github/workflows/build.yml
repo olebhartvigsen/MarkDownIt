@@ -155,18 +155,24 @@ jobs:
       - name: Build
         run: cmake --build build-mac --target MarkDownItMac -j2
 
-      - name: Assemble the app bundle
+      # The bundle is checked before it is published, so a red run never
+      # offers a bundle that cannot start.
+      - name: Verify the bundle
         run: |
-          cmake -DBUNDLE_BUILD_DIR=build-mac -P tools/macos/make_bundle.cmake
           file build-mac/MarkDownIt.app/Contents/MacOS/MarkDownIt
+          test -f build-mac/MarkDownIt.app/Contents/Resources/app.icns
+          test -f build-mac/MarkDownIt.app/Contents/Info.plist
 
-      # The bundle is uploaded AFTER the build succeeds, so a red run never
-      # publishes a bundle that cannot start.
+      - name: Zip the bundle
+        run: |
+          cd build-mac
+          zip -r ../MarkDownIt-macos-arm64.zip MarkDownIt.app
+
       - name: Upload app bundle
         uses: actions/upload-artifact@v4
         with:
           name: MarkDownIt-macos-arm64
-          path: build-mac/MarkDownIt.app
+          path: MarkDownIt-macos-arm64.zip
           if-no-files-found: error
 
   oracle:

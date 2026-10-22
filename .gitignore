@@ -47,3 +47,4 @@ __pycache__/
 # macOS resource forks
 desktop.ini
 .DS_Store
+tools/macos-icons/out/
