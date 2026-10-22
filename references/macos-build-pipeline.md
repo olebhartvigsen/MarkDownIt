@@ -205,6 +205,50 @@ after the existing Windows job including the artifact upload:
           path: build-macos/MarkDownIt.app
 ```
 
+## Signing and the first launch
+
+On October 22, 2026, the uploaded bundle was downloaded to a Mac and
+started for the first time. The log from that run settled three things.
+
+The kernel lines `has no CMS blob?` and `Unrecoverable CT signature
+issue, bailing out` are noise on Apple silicon. They appear for every ad
+hoc signed binary, the process still starts, and they are not what
+blocks a launch.
+
+What blocks a downloaded app is the state of the bundle itself:
+
+- the executable carried only the signature the linker writes, so the
+  bundle had no `Contents/_CodeSignature/CodeResources` seal and macOS
+  saw an unsigned app
+- an app without a seal can also be reported as damaged, because the
+  seal is what binds the executable, the icon and the `Info.plist`
+  into one unit
+- `LSMinimumSystemVersion` was empty, because the plist template used
+  `${MACOSX_DEPLOYMENT_TARGET}`, a name CMake never defines; the
+  variable that is expanded is `${CMAKE_OSX_DEPLOYMENT_TARGET}`, and a
+  probe bundle confirmed which of the two fills in
+- the quarantine flag from the download made macOS run the app from a
+  translocated copy under `/private/var/folders/...`, which is normal
+  for a downloaded app and not a defect
+
+The pipeline answers the first three points. A step after the build runs
+`codesign --force --sign -` on the bundle, which seals the executable,
+the icon and the Info.plist as one unit, and `tools/check_mac_bundle.py`
+checks the layout, the plist values, the executable bit and the
+signature before the zip is made; the shipped zip is then unpacked
+again and put through the same check, so the download path is tested
+and not only the build tree. The sign step cannot sit in the CMake
+post-build hook: the bundle's resource copy runs after that hook, so
+the seal would cover a bundle that is still missing its icon (checked
+in the probe bundle).
+
+The quarantine flag is a fact of distribution, not a defect. An ad hoc
+signature cannot be notarized, so the first launch asks once; the zip
+carries `read-me-first-run.txt` with the two ways past the prompt
+(System Settings, Privacy & Security, Open Anyway; or
+`xattr -dr com.apple.quarantine`). Notarization needs an Apple Developer
+certificate and stays out of scope until one exists.
+
 ## Blockers (deliverable 4)
 
 Missing macOS APIs: none for the chosen stack. Core Graphics, Core Text,
@@ -219,11 +263,13 @@ Windows-only fileassoc.cpp. The one MSVC-only construct in a shared file is
 the parser.cpp SEH guard above, and it is a two-line change.
 
 Licensing and runtime: none. Cocoa/CG/CT are part of macOS, md4c is MIT,
-and nothing extra gets shipped. Signing is the only cost: an unsigned build
-shows the "developer cannot be verified" warning and needs right-click open.
-That is fine for personal use; public distribution later needs an Apple
-Developer certificate (about USD 99 per year) or a Homebrew cask built from
-a signed binary.
+and nothing extra gets shipped. Signing is a small step but a required one:
+on Apple silicon every executable needs a signature to run at all, and a
+downloaded bundle needs a bundle-level seal or macOS treats it as an
+unsigned app and blocks the first launch. The pipeline signs the bundle
+ad hoc; see "Signing and the first launch" above. Public distribution later
+needs an Apple Developer certificate (about USD 99 per year) and
+notarization, or a Homebrew cask built from a signed binary.
 
 Test strategy: 221 tests in 22 files, all pure C++ (zero Windows symbols in
 tests/), all native-run on macOS once the two guards below land. This

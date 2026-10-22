@@ -9,7 +9,7 @@ the branch `feat/macos-port` was green on both platforms.
 | Gate | Where it runs | State |
 |------|----------------|-------|
 | `Tests (macOS, Apple Silicon)` | GitHub Actions, `macos-26` | 7433 checks, 0 failures, 625 passed |
-| `Build (macOS, Apple Silicon)` | GitHub Actions, `macos-26` | the app bundle builds and passes the bundle check |
+| `Build (macOS, Apple Silicon)` | GitHub Actions, `macos-26` | the app bundle builds, is signed ad hoc and passes the bundle check |
 | `Build (x64)` | GitHub Actions, `windows-2022` | green |
 | The office and the mermaid oracles | GitHub Actions | green |
 
@@ -95,8 +95,8 @@ Everything the plan asked for in tasks 1 to 7 is there:
   hides its subtree, and a click on a heading moves the caret there.
 - The window keeps its place between the runs, and the settings live
   in `~/Library/Application Support/MarkDownIt/settings.json`.
-- The bundle carries the icon and the document types, and the CI
-  uploads it.
+- The bundle carries the icon and the document types, the CI signs
+  it ad hoc, checks it and uploads it.
 - The table commands are there: insert a table, add and remove a row
   or a column, align a column and split a cell. They are shared with
   the Windows build, so the two do the same thing.
@@ -120,10 +120,17 @@ it into view.
 
 What is left is the work that needs a person in front of a Mac:
 
-- the app has never been run on a real Mac, so the editing, the
-  dragging, the printing and the file associations have not been tried
-  by hand
-- the bundle is not signed and not notarized
+- the first attempt at running the app on a Mac, on October 22, 2026,
+  did not open the app for the person who tried it. The log from that
+  machine names the two build defects that are fixed now (the bundle
+  had no seal, and its minimum system version was empty); see
+  "Signing and the first launch" in `references/macos-build-pipeline.md`
+- the next attempt can be watched from the start-up breadcrumbs in
+  `~/Library/Logs/MarkDownIt/crash_trace.log`
+- the editing, the dragging, the printing and the file associations
+  still wait for a hand run
+- the bundle is signed ad hoc and checked by `tools/check_mac_bundle.py`,
+  but it is not notarized, so the first launch asks once by design
 - the app is not in the Mac App Store
 
 ## The gaps that were closed
