@@ -7,12 +7,21 @@
 #include <cstdlib>
 #include <string>
 
+#if defined(_WIN32)
+
+// The Windows headers come before the diag namespace on purpose. The
+// SDK has a namespace of its own called diag, with COM wrappers in it,
+// and including the headers inside a namespace diag would put those
+// wrappers in this namespace, where they cannot find the global
+// IStream they derive from.
+#include <windows.h>
+#include <shlobj.h>
+
+#endif  // _WIN32
+
 namespace diag {
 
 #if defined(_WIN32)
-
-#include <windows.h>
-#include <shlobj.h>
 
 namespace detail {
 

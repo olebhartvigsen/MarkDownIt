@@ -239,6 +239,11 @@ private:
     int fontDpi_ = 0;
     int dpi_ = 96;
 
+    // True while the widget pushes state into a control. The control
+    // sends a notification for that, and the notification must not be
+    // mistaken for the user changing something.
+    bool applying_ = false;
+
 protected:
     // The portable half: state, listener, text, options and counter.
     FindBarModel model_;
