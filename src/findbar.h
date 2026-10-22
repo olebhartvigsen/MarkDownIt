@@ -233,6 +233,11 @@ private:
     static bool IsButtonId(int id);
     static int IndexOfId(int id);
 
+    // The child windows and the window procedures they had before the
+    // bar subclassed them. The bar restores them before it goes away.
+    HWND controls_[kFindBarControlCount] = {};
+    SubclassRecord subclasses_[kFindBarControlCount] = {};
+
     HWND hwnd_ = nullptr;
     HWND owner_ = nullptr;
     HFONT font_ = nullptr;
