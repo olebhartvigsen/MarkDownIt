@@ -168,6 +168,11 @@ jobs:
       - name: Verify the guards of the shared sources
         run: python3 tools/check_shared_guards.py
 
+      # A file that is in src/macos/ but in no source list never
+      # gets compiled, so it can rot without anyone noticing.
+      - name: Verify the mac sources
+        run: python3 tools/check_mac_sources.py
+
       # The bundle is checked before it is published, so a red run never
       # offers a bundle that cannot start.
       - name: Verify the bundle
