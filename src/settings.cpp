@@ -1,6 +1,7 @@
 #include "settings.h"
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -219,9 +220,13 @@ void AddRecentFile(AppSettings& s, const std::wstring& path) {
         }
     }
 
-    // Read first ~300 bytes for preview
+    // Read first ~300 bytes for preview.
+    //
+    // The path is a wide string, and only the Visual C++ library takes
+    // one in a file stream. The file system path works on every
+    // platform, because it knows the encoding of the platform.
     std::string preview;
-    std::ifstream f(path.c_str(), std::ios::binary);
+    std::ifstream f(std::filesystem::path(path), std::ios::binary);
     if (f.is_open()) {
         char buf[310] = {};
         f.read(buf, 300);

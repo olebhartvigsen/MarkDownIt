@@ -414,6 +414,9 @@ if(BUILD_TESTS AND APPLE)
         miniz
         pugixml
         pdfio
+        # The text layout of the shared core is Core Text on macOS.
+        "-framework CoreText"
+        "-framework CoreFoundation"
     )
     target_compile_features(MarkDownIt.tests PRIVATE cxx_std_17)
     set_target_properties(MarkDownIt.tests PROPERTIES
