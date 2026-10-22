@@ -5,7 +5,18 @@ project(MarkDownIt LANGUAGES C CXX)
 # targets are created, because it decides the compiler flags.
 if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0")
-    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
+endif()
+
+# The architectures the macOS build produces. Apple Silicon is the
+# default, because that is what the runner has. A universal binary is
+# one setting away:
+#
+#     cmake -B build-mac -DMARKDOWNIT_MAC_ARCHS="arm64;x86_64"
+#
+set(MARKDOWNIT_MAC_ARCHS "arm64" CACHE STRING
+    "The macOS architectures to build")
+if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
+    set(CMAKE_OSX_ARCHITECTURES "${MARKDOWNIT_MAC_ARCHS}")
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
@@ -140,7 +151,11 @@ if(MSVC)
     endif()
 endif()
 
-# Main application
+# Main application.
+#
+# The Win32 sources only build on Windows, and the macOS build has its
+# own target, so the Windows target is not defined there.
+if(NOT APPLE)
 add_executable(MarkDownIt WIN32
     src/main.cpp
     src/app.cpp
@@ -181,6 +196,7 @@ add_executable(MarkDownIt WIN32
     src/inputfilter.cpp
     src/searchreplace.cpp
     src/findstate.cpp
+    src/findbar_model.cpp
     src/findbar.cpp
     src/markers.cpp
     src/outline.cpp
@@ -285,6 +301,8 @@ target_compile_definitions(MarkDownIt PRIVATE
     WIN32_LEAN_AND_MEAN
     NOMINMAX
 )
+
+endif() # NOT APPLE
 
 # The linker auto-generates a manifest from the
 # #pragma comment(linker, "/manifestdependency:...") in main.cpp,
