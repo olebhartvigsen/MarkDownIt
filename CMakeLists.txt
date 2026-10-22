@@ -423,6 +423,9 @@ if(BUILD_TESTS AND APPLE)
         "-framework CoreGraphics"
         "-framework CoreText"
         "-framework CoreFoundation"
+        # The font registration goes through Foundation and AppKit, so
+        # the test binary links them too.
+        "-framework AppKit"
     )
     target_compile_features(MarkDownIt.tests PRIVATE cxx_std_17)
     set_target_properties(MarkDownIt.tests PROPERTIES
@@ -435,6 +438,7 @@ if(BUILD_TESTS AND APPLE)
         tests/text_engine_mac_test.cpp
         src/macos/text_engine_mac.cpp
         src/macos/fonts_mac.mm
+        src/macos/crash_trace_mac.cpp
     )
 elseif(BUILD_TESTS)
     add_executable(MarkDownIt.tests
