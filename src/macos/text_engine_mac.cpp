@@ -17,12 +17,14 @@
 // The ownership follows the Core Foundation get rules. The lines of a
 // frame belong to the frame, so they are not released, and a line the
 // engine keeps is retained before the frame, which owns it, goes away.
-// Releasing what the frame owned is what made the first document open
-// crash, because the whole document path runs for the first time there.
+// The attribute calls run after the text is in the string, because a
+// range that reaches past the end of the string faulted inside Core
+// Foundation at the first real document open.
 
 #include "text_engine_mac.h"
 
 #include <CoreFoundation/CoreFoundation.h>
+#include <CoreGraphics/CGColor.h>
 #include <CoreText/CTFrame.h>
 #include <CoreText/CoreText.h>
 
@@ -246,6 +248,12 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
             if (byteIndex > run.text.size()) byteIndex = run.text.size();
         }
 
+        // The text of the run is appended first, so that the attribute
+        // calls below always cover text that is already in the string.
+        CFAttributedStringReplaceString(attributed,
+                                        CFRangeMake(u16Length, 0), cfText);
+        CFRelease(cfText);
+
         // The style of the run.
         CTFontRef font = GetFont(run.font);
         if (font) {
@@ -253,25 +261,15 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
                 attributed, CFRangeMake(u16Length, runLength),
                 kCTFontAttributeName, font);
         }
-        // The colour, as the numeric value Core Text expects.
-        const uint32_t rgba =
-            (static_cast<uint32_t>(run.r * 255.0f + 0.5f) << 24) |
-            (static_cast<uint32_t>(run.g * 255.0f + 0.5f) << 16) |
-            (static_cast<uint32_t>(run.b * 255.0f + 0.5f) << 8) |
-            static_cast<uint32_t>(run.a * 255.0f + 0.5f);
-        CFNumberRef color =
-            CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &rgba);
+        // The colour, as a CGColor, which is the type the foreground
+        // attribute takes, the same as the drawing side builds.
+        CGColorRef color = CGColorCreateGenericRGB(run.r, run.g, run.b, run.a);
         if (color) {
             CFAttributedStringSetAttribute(
                 attributed, CFRangeMake(u16Length, runLength),
                 kCTForegroundColorAttributeName, color);
             CFRelease(color);
         }
-
-        // The text is appended at the end of the string.
-        CFAttributedStringReplaceString(attributed,
-                                        CFRangeMake(u16Length, 0), cfText);
-        CFRelease(cfText);
 
         laidRuns.push_back(laid);
 
