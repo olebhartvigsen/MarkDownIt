@@ -8,7 +8,7 @@ the branch `feat/macos-port` was green on both platforms.
 
 | Gate | Where it runs | State |
 |------|----------------|-------|
-| `Tests (macOS, Apple Silicon)` | GitHub Actions, `macos-26` | 7374 checks, 0 failures, 608 passed |
+| `Tests (macOS, Apple Silicon)` | GitHub Actions, `macos-26` | 7433 checks, 0 failures, 625 passed |
 | `Build (macOS, Apple Silicon)` | GitHub Actions, `macos-26` | the app bundle builds and passes the bundle check |
 | `Build (x64)` | GitHub Actions, `windows-2022` | green |
 | The office and the mermaid oracles | GitHub Actions | green |
@@ -41,6 +41,10 @@ The shared code stays shared. What changed in it is small and mechanical:
   model.
 - `src/settings.h` is portable. The Windows registry code is behind
   `_WIN32`, and the mac build keeps the same struct as JSON.
+- `src/tableedit.cpp` and `src/tableedit.h` hold the table commands,
+  so the Windows build and the mac build change a table the same way.
+- The removal of the inline formatting markers is in the shared
+  formatting module, so the two builds clear the same markers.
 
 Everything else lives in `src/macos/`:
 
@@ -88,27 +92,49 @@ Everything the plan asked for in tasks 1 to 7 is there:
   in `~/Library/Application Support/MarkDownIt/settings.json`.
 - The bundle carries the icon and the document types, and the CI
   uploads it.
+- The table commands are there: insert a table, add and remove a row
+  or a column, align a column and split a cell. They are shared with
+  the Windows build, so the two do the same thing.
+- The highlights are there. The marked text is kept in a sidecar file
+  next to the document, the same way the Windows build keeps it, and
+  the marker is drawn behind the text with the theme colours.
+- The clear formatting command is there. The inline markers are taken
+  away by the shared formatting module, so the two builds clear the
+  same markers.
+- A file dropped on the window opens.
+- The application menu has the command that asks the system to make
+  MarkDownIt the reader of the markdown files.
 
 ## What is not there yet
 
 These are the gaps, and each one is a real gap and not a hidden one:
 
-1. **The outline pane.** The View menu has the command, and it says
-   that the outline is not in this build. The outline itself is shared
+1. **The outline pane.** The outline itself is shared
    (`src/outline.cpp`), so it needs a pane on the mac side and the
    window has to hold it next to the document.
-2. **The table commands.** Insert table, add and remove a row or a
-   column, and split a cell are in the Windows application class, not
-   in a shared module, so the mac build does not have them yet. They
-   need to be lifted out of `src/app.cpp` first.
-3. **The alignment, the highlight and the clear formatting.** The
-   ribbon has them, and the shared formatting module does not have
-   them either, so both builds would need them.
-4. **Drag and drop.** A file dropped on the window is not opened.
-5. **Printing.** The mac build has no print command.
-6. **The file association.** The bundle declares the document types,
-   so the system can offer the app, but there is no "set as the
-   default reader" command.
+
+## The gaps that were closed
+
+The gaps that were listed before are closed. Here is what each one
+came down to:
+
+- **The table commands** were in the Windows application class. They
+  are in a shared module now (`src/tableedit.cpp` and
+  `src/tableedit.h`), the Windows build uses it, and the mac build
+  has a Table menu of its own.
+- **The alignment, the highlight and the clear formatting** are there.
+  The alignment of a column goes with the table commands. The
+  highlights use the portable marker store, and the clear formatting
+  uses the shared formatting module, so the two builds do the same
+  thing.
+- **Drag and drop** opens the file that is dropped on the window.
+- **The file association** has a command that asks the system to make
+  MarkDownIt the reader of the markdown files.
+- **Printing** is not a gap. The Windows build has no print command
+  either, so there is nothing to copy.
+
+The shared marker type is called `TextMarker` now, because
+CarbonCore has a `struct Marker` of its own and AppKit pulls it in.
 
 ## The plan items that were decided differently
 
