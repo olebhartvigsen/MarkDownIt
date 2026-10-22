@@ -51,6 +51,10 @@ struct LaidOutBlock {
 // The mac renderer.
 class MacRenderer {
 public:
+    // The place of a source offset in the layout, in points. The return
+    // value is false when the offset is not in the layout.
+    bool YForOffset(uint32_t offset, float& y) const;
+
     MacRenderer();
     ~MacRenderer();
 

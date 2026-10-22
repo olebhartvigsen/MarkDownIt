@@ -150,6 +150,13 @@ public:
     // Sets the handler that reloads the file. The window owns it,
     // because the window asks the user before the changes are thrown
     // away.
+    // A hook that is called after every reparse, so the views that
+    // borrow the document read it again.
+    using DocumentChangedHandler = std::function<void()>;
+    void SetDocumentChangedHandler(DocumentChangedHandler handler) {
+        documentChanged_ = std::move(handler);
+    }
+
     void SetReloadHandler(std::function<void()> handler) {
         reloadHandler_ = std::move(handler);
     }
@@ -247,6 +254,7 @@ public:
 private:
     std::string filePath_;
     Document document_;
+    DocumentChangedHandler documentChanged_;
     TextBuffer buffer_;
     Selection sel_;
     EditController editor_;

@@ -420,6 +420,7 @@ void App::Reparse() {
         return;
     }
     if (contentView_) contentView_->OnDocumentChanged();
+    if (documentChanged_) documentChanged_();
 }
 
 // The formatting goes away from the selection. The block markers are

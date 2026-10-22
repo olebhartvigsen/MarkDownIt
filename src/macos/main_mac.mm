@@ -15,6 +15,8 @@
 
 #include "app_mac.h"
 #include "content_nsview_mac.h"
+#include "outline_nsview_mac.h"
+#include "outline_pane_mac.h"
 #include "content_view_mac.h"
 #include <fstream>
 #include <sstream>
@@ -47,6 +49,12 @@ class MdMenuAdapter;
     mac::ContentView* content_;
     // The window content, which holds the find bar and the document.
     NSStackView* container_;
+
+    // The outline pane and the view that draws it.
+    mac::OutlinePane* outlinePane_;
+    MdOutlineView* outlineView_;
+    NSSplitView* splitView_;
+    bool outlineVisible_;
     mac::MacSettings settings_;
     NSWindow* window_;
     NSScrollView* scrollView_;
@@ -267,6 +275,29 @@ private:
     [scrollView_ setAutohidesScrollers:YES];
     [scrollView_ setDocumentView:view_];
 
+    // The outline pane sits to the left of the document, in a split
+    // view, so the reader can drag the divider between them.
+    outlinePane_ = new mac::OutlinePane();
+    outlineView_ = [[MdOutlineView alloc] initWithPane:outlinePane_];
+    outlineVisible_ = settings_.settings().outlineVisible;
+    [outlineView_ setHidden:!outlineVisible_];
+
+    // The pane borrows the document of the app and reads it again
+    // after every reparse.
+    outlinePane_->SetDocument(&app_->GetDocument());
+    outlinePane_->SetPalette(BasePalette());
+    app_->SetDocumentChangedHandler([self] {
+        [self outlinePaneRefresh];
+    });
+
+    // A click on a heading puts the caret there and scrolls it into
+    // view. The pane never touches the document itself.
+    outlinePane_->SetNavigateCallback([self](uint32_t offset) {
+        app_->SetCaret(offset);
+        content_->ScrollToOffset(offset);
+        [view_ setNeedsDisplay:YES];
+    });
+
     // The find bar sits above the document. It is in the layout from
     // the start and is hidden when it is not in use, so the document
     // does not jump around when the bar opens and closes.
@@ -277,11 +308,21 @@ private:
         [findBarView.heightAnchor constraintEqualToConstant:findBarHeight]
     ]];
 
+    splitView_ = [[NSSplitView alloc] initWithFrame:frame];
+    [splitView_ setVertical:YES];
+    [splitView_ setDividerStyle:NSSplitViewDividerStyleThin];
+    [splitView_ addSubview:outlineView_];
+    [splitView_ addSubview:scrollView_];
+    // The place of the divider is the width of the pane, because the
+    // pane is the first of the two.
+    [splitView_ setPosition:settings_.settings().outlineWidthDip
+               ofDividerAtIndex:0];
+
     container_ = [[NSStackView alloc] initWithFrame:frame];
     [container_ setOrientation:NSUserInterfaceLayoutOrientationVertical];
     [container_ setDistribution:NSStackViewDistributionFill];
     [container_ addArrangedSubview:findBarView];
-    [container_ addArrangedSubview:scrollView_];
+    [container_ addArrangedSubview:splitView_];
 
     [window_ setContentView:container_];
     [window_ makeKeyAndOrderFront:nil];
@@ -764,11 +805,35 @@ private:
     [view_ setNeedsDisplay:YES];
 }
 
+// The document changed, so the pane reads it again.
+- (void)outlinePaneRefresh {
+    outlinePane_->SetDocument(&app_->GetDocument());
+    outlinePane_->SetCaretOffset(app_->selection().Start());
+    [outlineView_ setNeedsDisplay:YES];
+}
+
 - (void)OnToggleOutline {
-    // The outline pane is not on the mac layer yet. The command is in
-    // the menu so the key bindings match the Windows build, and it
-    // reports that rather than doing nothing silently.
-    [self reportError:@"The outline is not available in this build yet."];
+    outlineVisible_ = !outlineVisible_;
+    // Hiding the view takes the divider with it, so the document takes
+    // the whole width.
+    [outlineView_ setHidden:!outlineVisible_];
+
+    // The width is remembered, so the pane comes back the way it was
+    // left.
+    if (outlineVisible_) {
+        [splitView_ setPosition:settings_.settings().outlineWidthDip
+                   ofDividerAtIndex:0];
+    } else {
+        const NSRect frame = [outlineView_ frame];
+        if (frame.size.width > 0.0) {
+            settings_.settings().outlineWidthDip =
+                static_cast<float>(frame.size.width);
+        }
+    }
+    settings_.settings().outlineVisible = outlineVisible_;
+    settings_.Save();
+
+    [view_ setNeedsDisplay:YES];
 }
 
 - (void)OnToggleMark {

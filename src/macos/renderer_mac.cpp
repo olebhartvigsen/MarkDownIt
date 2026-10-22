@@ -885,6 +885,22 @@ void MacRenderer::PaintTable(const LaidOutBlock& block, float scrollOffset) {
     }
 }
 
+bool MacRenderer::YForOffset(uint32_t offset, float& y) const {
+    for (const LaidOutBlock& block : blocks_) {
+        if (!block.node) continue;
+
+        // The block holds the offset when the offset is inside its
+        // editable text.
+        const uint32_t contentStart = block.node->contentOffset;
+        const uint32_t contentEnd = contentStart + block.node->contentLength;
+        if (offset < contentStart || offset > contentEnd) continue;
+
+        y = block.y;
+        return true;
+    }
+    return false;
+}
+
 uint32_t MacRenderer::HitTestPoint(float x, float y) const {
     for (const LaidOutBlock& block : blocks_) {
         if (y < block.y || y > block.y + block.height) continue;

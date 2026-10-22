@@ -612,7 +612,11 @@ if(APPLE)
         src/macos/text_engine_mac.cpp
         src/macos/clipboard_mac.mm
         src/macos/settings_mac.cpp
-        src/macos/menu_mac.mm
+            src/macos/menu_mac.mm
+        src/macos/outline_pane_mac.cpp
+        src/macos/outline_pane_mac.h
+        src/macos/outline_nsview_mac.h
+        src/macos/outline_nsview_mac.mm
         src/macos/crash_trace_mac.cpp
         src/macos/image_mac.mm
         src/macos/image_draw_mac.mm

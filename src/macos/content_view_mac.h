@@ -60,6 +60,10 @@ public:
 
     // The vertical scroll offset, in points.
     void SetScrollOffset(float offset);
+
+    // Scrolls the place of the offset into view, so the outline pane
+    // can jump to a heading.
+    void ScrollToOffset(uint32_t offset);
     float scrollOffset() const { return scrollOffset_; }
 
     // The view's bounds, for the hit tester.
