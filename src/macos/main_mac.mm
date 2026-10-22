@@ -210,6 +210,16 @@ private:
     [window_ setContentView:container_];
     [window_ makeKeyAndOrderFront:nil];
 
+    // F5 in the document asks the window to reload the file, because
+    // the window asks the user before the changes are thrown away.
+    //
+    // The window and the app both live for the whole run of the
+    // program, and the handler is cleared when the app goes away.
+    MdAppDelegate* delegate = self;
+    [app_ setReloadHandler:^{
+        [delegate OnReload];
+    }];
+
     // The menu bar.
     adapter_ = [self makeAdapter];
     NSMenu* menu = mac::BuildMainMenu(adapter_);
@@ -259,6 +269,8 @@ private:
 }
 
 - (void)applicationWillTerminate:(NSNotification*)notification {
+    // The handler points at this object, so it goes away with it.
+    [app_ setReloadHandler:nullptr];
     (void)notification;
     settings_.settings().zoomFactor = zoom_;
     [self saveWindowFrame];

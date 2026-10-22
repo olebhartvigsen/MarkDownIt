@@ -199,6 +199,61 @@ void App::SetSelection(uint32_t start, uint32_t end) {
     OnSelectionChanged();
 }
 
+namespace {
+
+// The characters that make up a word.
+//
+// A word is a run of letters, digits and the marks that go with them.
+// Everything else breaks a word in two.
+bool IsWordChar(unsigned char c) {
+    if (c >= 0x80) return true;  // Any letter outside ASCII.
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) return true;
+    if (c >= '0' && c <= '9') return true;
+    return c == '_' || c == '-';
+}
+
+}  // namespace
+
+void App::SelectWordAt(uint32_t offset) {
+    const std::string& text = buffer_.Text();
+    if (text.empty()) return;
+
+    size_t start = offset < text.size() ? offset : text.size();
+
+    // The click may have landed on the space after a word, and then the
+    // word before it is the one that counts.
+    if (start > 0 && start < text.size() &&
+        !IsWordChar(static_cast<unsigned char>(text[start]))) {
+        size_t before = start;
+        while (before > 0 &&
+               !IsWordChar(static_cast<unsigned char>(text[before - 1]))) {
+            --before;
+        }
+        if (before < start) start = before;
+    }
+
+    while (start > 0 && IsWordChar(static_cast<unsigned char>(text[start - 1])))
+        --start;
+    size_t end = start;
+    while (end < text.size() && IsWordChar(static_cast<unsigned char>(text[end])))
+        ++end;
+
+    SetSelection(static_cast<uint32_t>(start), static_cast<uint32_t>(end));
+}
+
+void App::SelectParagraphAt(uint32_t offset) {
+    const std::string& text = buffer_.Text();
+    if (text.empty()) return;
+
+    size_t start = offset < text.size() ? offset : text.size();
+    size_t end = start;
+
+    while (start > 0 && text[start - 1] != '\n') --start;
+    while (end < text.size() && text[end] != '\n') ++end;
+
+    SetSelection(static_cast<uint32_t>(start), static_cast<uint32_t>(end));
+}
+
 std::string App::SelectedText() const {
     if (sel_.Empty()) return std::string();
     const std::string& text = buffer_.Text();

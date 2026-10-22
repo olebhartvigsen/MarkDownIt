@@ -12,6 +12,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <functional>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -95,6 +97,25 @@ public:
     // Whether the selection covers any text.
     bool HasSelection() const { return !sel_.Empty(); }
 
+    // Sets the handler that reloads the file. The window owns it,
+    // because the window asks the user before the changes are thrown
+    // away.
+    void SetReloadHandler(std::function<void()> handler) {
+        reloadHandler_ = std::move(handler);
+    }
+
+    // Asks for the file to be reloaded.
+    void RequestReload() {
+        if (reloadHandler_) reloadHandler_();
+    }
+
+    // Selects the word around an offset, the way a double click does.
+    void SelectWordAt(uint32_t offset);
+
+    // Selects the paragraph around an offset, the way a triple click
+    // does.
+    void SelectParagraphAt(uint32_t offset);
+
     // The selected text, empty when there is no selection.
     std::string SelectedText() const;
 
@@ -156,6 +177,8 @@ private:
     Selection sel_;
     EditController editor_;
     UndoStack undo_;
+    // The handler that reloads the file.
+    std::function<void()> reloadHandler_;
     // The find bar, which owns the search state.
     std::unique_ptr<FindBar> findBar_;
     bool dirty_ = false;

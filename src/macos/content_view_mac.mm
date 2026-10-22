@@ -410,6 +410,26 @@ void ContentView::PlaceCaretAt(float x, float y) {
     app_->SetCaret(HitTestPoint(x, y));
 }
 
+void ContentView::SelectWordOrParagraphAt(float x, float y, bool paragraph) {
+    if (!app_) return;
+
+    // A click in the left margin misses the text, and there is no word
+    // or paragraph there either.
+    uint32_t lineStart = 0;
+    uint32_t lineEnd = 0;
+    if (renderer_.LineRangeAtPoint(x, y + scrollOffset_, &lineStart,
+                                   &lineEnd)) {
+        return;
+    }
+
+    const uint32_t offset = HitTestPoint(x, y);
+    if (paragraph) {
+        app_->SelectParagraphAt(offset);
+    } else {
+        app_->SelectWordAt(offset);
+    }
+}
+
 void ContentView::ExtendSelectionTo(float x, float y) {
     if (!app_) return;
     const uint32_t offset = HitTestPoint(x, y);
@@ -538,6 +558,18 @@ float ContentView::CaretHeight() const {
     if (!content_) return;
     const NSPoint point = [self convertPoint:[event locationInWindow]
                                     fromView:nil];
+
+    // A double click takes the word and a triple click takes the
+    // paragraph, the way the Windows app does it.
+    const NSInteger clicks = [event clickCount];
+    if (clicks >= 2) {
+        content_->SelectWordOrParagraphAt(static_cast<float>(point.x),
+                                           static_cast<float>(point.y),
+                                           clicks >= 3);
+        [self setNeedsDisplay:YES];
+        return;
+    }
+
     content_->PlaceCaretAt(static_cast<float>(point.x),
                            static_cast<float>(point.y));
     [self setNeedsDisplay:YES];

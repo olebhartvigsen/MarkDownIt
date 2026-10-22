@@ -141,6 +141,16 @@ toolchain churn does not move the parity baseline. The images ship Xcode 26
 with clang, CMake 4.x, and ninja, so the "Mac toolchain" step is nothing
 more than choosing the default compiler.
 
+What the runners did on October 22, 2026: a macos-15-arm64 job sat in the
+queue for one hour and thirty-six minutes without a runner, and the
+cancelled job behind it showed the same pattern. The macos-26 label
+started at once and ran the whole pipeline. The build workflow therefore
+reads the label from the `MACOS_RUNNER` repository variable and falls
+back to macos-15-arm64, so the label can be moved without touching the
+workflow. The variable is set to macos-26 while the macos-15 queue is
+long. Both images ship the same Xcode, so the parity baseline does not
+move with the label.
+
 The configure step succeeds on macOS today: every Windows-only CMake block
 (UICC, rc.exe, SDK lib discovery) sits inside `if(MSVC)` and is skipped.
 Building the default target is the problem, so the test job builds

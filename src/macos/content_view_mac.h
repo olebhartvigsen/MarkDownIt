@@ -73,6 +73,10 @@ public:
     // Places the caret at a view point, which the mouse handler calls.
     void PlaceCaretAt(float x, float y);
 
+    // Selects the word or the paragraph under a view point, which a
+    // double or a triple click calls.
+    void SelectWordOrParagraphAt(float x, float y, bool paragraph);
+
     // Selects from the anchor to a view point, which a drag calls.
     void ExtendSelectionTo(float x, float y);
 
