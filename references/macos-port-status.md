@@ -209,3 +209,31 @@ The crash log from that run named a fatal signal and nothing else,
 because the app had no signal handler. `mac::InstallCrashHandler()`
 writes a backtrace into the same breadcrumb log now, so the next crash
 names the code that faulted.
+
+## The third run on a Mac and the crash on the first document open
+
+The third attempt opened the app with a live menu, and the first
+document open crashed inside Core Text: `EXC_BAD_ACCESS (SIGBUS)`, an
+alignment fault inside `CFGetRetainCount`, called from
+`CFAttributedStringSetAttribute`, called from
+`mac::CoreTextEngine::MeasureWrapped`. The run loop of the measure path
+set the font and the colour attributes over a range that reached past
+the end of the attributed string, because the text of the run was
+appended after the attribute calls. The order is the other way round
+now, the text goes in first and the attributes cover it, and the
+foreground colour is a `CGColor`, which is the type the attribute takes.
+
+The deeper cause is coverage: the app layer's text engine had no test,
+because it lives outside the shared suite, so nothing in CI had ever
+measured a document. `tests/text_engine_mac_test.cpp` measures through
+the engine now (one run, several styled runs, a wrapped run whose slices
+must rebuild the text, multibyte wrapping, and offset hit tests), and it
+reproduced the fault on the runner before the fix landed. It then caught
+a second, older defect in the same path: a wrapped paragraph came back
+as a single line, because `CTFramesetterSuggestFrameSizeWithConstraints`
+with an unbounded height fits a whole paragraph into one frame, so the
+"break that fits the width" it reported was the rest of the paragraph.
+The line breaks come from `CTTypesetterSuggestLineBreak` now, one line at
+a time, and the line object comes from the typesetter, which the engine
+owns outright, so the frame handling the second run had fixed is gone
+from the measure path entirely.
