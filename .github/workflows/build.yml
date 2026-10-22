@@ -173,18 +173,41 @@ jobs:
       - name: Verify the mac sources
         run: python3 tools/check_mac_sources.py
 
+      # The bundle is signed ad hoc, which seals the executable, the
+      # icon and the Info.plist as one unit. An unsigned bundle cannot
+      # pass the download check macOS runs on a first launch. The step
+      # sits here, after the build, because the bundle content is
+      # finished only then: the resource copy runs after the last
+      # compile step.
+      - name: Sign the app bundle
+        run: codesign --force --sign - --timestamp=none build-mac/MarkDownIt.app
+
       # The bundle is checked before it is published, so a red run never
       # offers a bundle that cannot start.
       - name: Verify the bundle
         run: |
           file build-mac/MarkDownIt.app/Contents/MacOS/MarkDownIt
-          test -f build-mac/MarkDownIt.app/Contents/Resources/app.icns
-          test -f build-mac/MarkDownIt.app/Contents/Info.plist
+          python3 tools/check_mac_bundle.py
 
+      # The read me next to the app explains the one prompt macOS shows
+      # for a build that is not notarized.
       - name: Zip the bundle
         run: |
-          cd build-mac
-          zip -r ../MarkDownIt-macos-arm64.zip MarkDownIt.app
+          mkdir -p "$RUNNER_TEMP/app-stage"
+          cp -R build-mac/MarkDownIt.app "$RUNNER_TEMP/app-stage/"
+          cp installer/macos/read-me-first-run.txt "$RUNNER_TEMP/app-stage/"
+          cd "$RUNNER_TEMP/app-stage"
+          zip -r "$GITHUB_WORKSPACE/MarkDownIt-macos-arm64.zip" \
+            MarkDownIt.app read-me-first-run.txt
+
+      # The zip that ships is opened again and checked, so the download
+      # path is tested and not only the build tree.
+      - name: Verify the shipped zip
+        run: |
+          mkdir -p "$RUNNER_TEMP/roundtrip"
+          ditto -x -k MarkDownIt-macos-arm64.zip "$RUNNER_TEMP/roundtrip"
+          test -f "$RUNNER_TEMP/roundtrip/read-me-first-run.txt"
+          python3 tools/check_mac_bundle.py "$RUNNER_TEMP/roundtrip/MarkDownIt.app"
 
       - name: Upload app bundle
         uses: actions/upload-artifact@v4
