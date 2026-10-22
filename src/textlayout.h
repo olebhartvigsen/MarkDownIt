@@ -21,10 +21,17 @@
 struct IDWriteTextLayout;
 using TextLayoutHandle = IDWriteTextLayout*;
 
-#else
+#elif defined(__APPLE__)
 
 struct MdCoreTextLayout;
 using TextLayoutHandle = MdCoreTextLayout*;
+
+#else
+
+// The portable fallback, used by the test suite on a platform that has
+// neither DirectWrite nor Core Text.
+struct MdFallbackLayout;
+using TextLayoutHandle = MdFallbackLayout*;
 
 #endif
 

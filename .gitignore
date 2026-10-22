@@ -13,6 +13,10 @@ CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 
+# Core dumps from a crashed test run
+core
+core.*
+
 # Compiler artifacts
 *.exe
 *.pdb

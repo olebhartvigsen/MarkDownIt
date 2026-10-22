@@ -384,6 +384,12 @@ if(BUILD_TESTS AND APPLE)
         third_party/pugixml
         third_party/pdfio
     )
+    target_link_libraries(MarkDownIt.tests PRIVATE
+        md4c
+        miniz
+        pugixml
+        pdfio
+    )
     target_compile_features(MarkDownIt.tests PRIVATE cxx_std_17)
     set_target_properties(MarkDownIt.tests PROPERTIES
         MACOSX_BUNDLE OFF
@@ -572,6 +578,15 @@ if(APPLE)
         src/macos/settings_mac.cpp
         src/macos/menu_mac.mm
         src/macos/crash_trace_mac.cpp
+    )
+    # The Objective-C++ sources need the Objective-C runtime and the
+    # frameworks, which the C++ sources do not.
+    set_source_files_properties(
+        src/macos/main_mac.mm
+        src/macos/content_view_mac.mm
+        src/macos/clipboard_mac.mm
+        src/macos/menu_mac.mm
+        PROPERTIES COMPILE_FLAGS "-fobjc-arc"
     )
     target_link_libraries(MarkDownItMac
         PRIVATE

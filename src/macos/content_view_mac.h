@@ -1,0 +1,94 @@
+#pragma once
+
+// The macOS content view.
+//
+// The view owns the layout of the document: it asks the renderer to lay
+// the document out, it keeps the scroll offset, and it turns mouse and
+// keyboard events into edits through the shared edit controller.
+//
+// The drawing goes through the TextEngine and RenderTarget seams, so the
+// view never touches a Core Graphics call directly. That keeps the
+// drawing code testable and keeps the platform API in one file.
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+#include "app_mac.h"
+#include "caret.h"
+#include "renderer_mac.h"
+#include "seams.h"
+
+namespace mac {
+
+class ContentView {
+public:
+    explicit ContentView(App* app);
+    ~ContentView();
+
+    // The document changed, so the layout is stale.
+    void OnDocumentChanged();
+
+    // Redraws the content area.
+    void Invalidate();
+
+    // The height of the whole document, in points. The scroll view needs
+    // it to size the content.
+    float DocumentHeight() const { return documentHeight_; }
+
+    // The width of the text column, in points.
+    float ContentWidth() const { return contentWidth_; }
+
+    // The view's size in points, set by the window.
+    void SetSize(float width, float height);
+
+    // The vertical scroll offset, in points.
+    void SetScrollOffset(float offset);
+    float scrollOffset() const { return scrollOffset_; }
+
+    // The view's bounds, for the hit tester.
+    float viewWidth() const { return width_; }
+    float viewHeight() const { return height_; }
+
+    // The text engine, so the app can measure text outside the view.
+    TextEngine& textEngine() { return *engine_; }
+
+    // Draws the document with the given target, in view coordinates.
+    void Draw(RenderTarget* target);
+
+    // The renderer, which holds the laid out blocks.
+    const MacRenderer& renderer() const { return renderer_; }
+
+    // The offset of the document point that a view point falls on.
+    uint32_t HitTestPoint(float x, float y) const;
+
+    // The rectangle a document offset occupies, in document coordinates.
+    bool OffsetToRect(uint32_t offset, float* outX, float* outY,
+                      float* outWidth, float* outHeight) const;
+
+    // Places the caret at a view point, which the mouse handler calls.
+    void PlaceCaretAt(float x, float y);
+
+    // Selects from the anchor to a view point, which a drag calls.
+    void ExtendSelectionTo(float x, float y);
+
+    // The height of the caret at the current offset, in points.
+    float CaretHeight() const;
+
+private:
+    // The layout of the document, computed by the renderer.
+    void Relayout();
+
+    App* app_;
+    TextEngine* engine_;
+    RenderTarget* target_;
+    MacRenderer renderer_;
+
+    float width_ = 0.0f;
+    float height_ = 0.0f;
+    float contentWidth_ = 0.0f;
+    float documentHeight_ = 0.0f;
+    float scrollOffset_ = 0.0f;
+};
+
+}  // namespace mac

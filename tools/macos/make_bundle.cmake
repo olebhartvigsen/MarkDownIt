@@ -11,16 +11,32 @@
 # The plist declares the markdown document types, so a .md file can be
 # opened with MarkDownIt from the Finder.
 
-set(BUNDLE_DIR "${CMAKE_BINARY_DIR}/MarkDownIt.app")
+# The build folder. A "cmake -P" run has no build directory of its own,
+# so the folder is passed in:
+#
+#   cmake -DBUNDLE_BUILD_DIR=build-mac -P tools/macos/make_bundle.cmake
+#
+# The working directory is the fallback, for a run from inside the build
+# folder.
+if(NOT DEFINED BUNDLE_BUILD_DIR OR BUNDLE_BUILD_DIR STREQUAL "")
+    set(BUNDLE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+endif()
+
+# The source folder, for the icon.
+if(NOT DEFINED BUNDLE_SOURCE_DIR OR BUNDLE_SOURCE_DIR STREQUAL "")
+    get_filename_component(BUNDLE_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+endif()
+
+set(BUNDLE_DIR "${BUNDLE_BUILD_DIR}/MarkDownIt.app")
 set(CONTENTS_DIR "${BUNDLE_DIR}/Contents")
 set(MACOS_DIR "${CONTENTS_DIR}/MacOS")
 set(RESOURCES_DIR "${CONTENTS_DIR}/Resources")
 
 # The binary. The build target is named MarkDownItMac but writes a file
 # called MarkDownIt.
-if(NOT EXISTS "${CMAKE_BINARY_DIR}/MarkDownIt")
+if(NOT EXISTS "${BUNDLE_BUILD_DIR}/MarkDownIt")
     message(FATAL_ERROR
-        "MarkDownIt binary not found at ${CMAKE_BINARY_DIR}/MarkDownIt. "
+        "MarkDownIt binary not found at ${BUNDLE_BUILD_DIR}/MarkDownIt. "
         "Build the MarkDownItMac target first.")
 endif()
 
@@ -28,7 +44,7 @@ file(REMOVE_RECURSE "${BUNDLE_DIR}")
 file(MAKE_DIRECTORY "${MACOS_DIR}")
 file(MAKE_DIRECTORY "${RESOURCES_DIR}")
 
-file(COPY "${CMAKE_BINARY_DIR}/MarkDownIt"
+file(COPY "${BUNDLE_BUILD_DIR}/MarkDownIt"
      DESTINATION "${MACOS_DIR}"
      FILE_PERMISSIONS
          OWNER_READ OWNER_WRITE OWNER_EXECUTE
@@ -37,8 +53,8 @@ file(COPY "${CMAKE_BINARY_DIR}/MarkDownIt"
 
 # The icon, when the build produced one. The bundle still works without
 # it, it just shows the generic application icon.
-if(EXISTS "${CMAKE_SOURCE_DIR}/tools/macos/app.icns")
-    file(COPY "${CMAKE_SOURCE_DIR}/tools/macos/app.icns"
+if(EXISTS "${BUNDLE_SOURCE_DIR}/tools/macos/app.icns")
+    file(COPY "${BUNDLE_SOURCE_DIR}/tools/macos/app.icns"
          DESTINATION "${RESOURCES_DIR}")
 endif()
 

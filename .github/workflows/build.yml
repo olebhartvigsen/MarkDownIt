@@ -157,7 +157,7 @@ jobs:
 
       - name: Assemble the app bundle
         run: |
-          cmake -P tools/macos/make_bundle.cmake
+          cmake -DBUNDLE_BUILD_DIR=build-mac -P tools/macos/make_bundle.cmake
           file build-mac/MarkDownIt.app/Contents/MacOS/MarkDownIt
 
       # The bundle is uploaded AFTER the build succeeds, so a red run never
