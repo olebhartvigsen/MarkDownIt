@@ -59,6 +59,13 @@ public:
     virtual void OnToggleItalic() = 0;
     virtual void OnToggleCode() = 0;
     virtual void OnToggleLink() = 0;
+    virtual void OnToggleStrike() = 0;
+    virtual void OnHeading(int level) = 0;
+    virtual void OnToggleBullets() = 0;
+    virtual void OnToggleNumbering() = 0;
+    virtual void OnToggleQuote() = 0;
+    virtual void OnIndent() = 0;
+    virtual void OnOutdent() = 0;
 };
 
 // Builds the main menu bar and returns it. The menu items are wired to

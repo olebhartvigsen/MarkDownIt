@@ -15,6 +15,7 @@
 #include "app_mac.h"
 #include "content_nsview_mac.h"
 #include "content_view_mac.h"
+#include "formatting.h"
 #include "welcome_mac.h"
 #include "findbar_mac.h"
 #include "formatting.h"
@@ -77,6 +78,13 @@ class MdMenuAdapter;
 - (void)toggleWrap:(id)sender;
 - (void)cycleContentWidth:(id)sender;
 - (void)toggleBold:(id)sender;
+- (void)toggleStrike:(id)sender;
+- (void)setHeading:(int)level;
+- (void)toggleBullets:(id)sender;
+- (void)toggleNumbering:(id)sender;
+- (void)toggleQuote:(id)sender;
+- (void)indentBlock:(id)sender;
+- (void)outdentBlock:(id)sender;
 - (void)toggleItalic:(id)sender;
 - (void)toggleCode:(id)sender;
 - (void)toggleLink:(id)sender;
@@ -117,6 +125,13 @@ public:
     void OnToggleWrap() override { [delegate_ toggleWrap:nil]; }
     void OnCycleContentWidth() override { [delegate_ cycleContentWidth:nil]; }
     void OnToggleBold() override { [delegate_ toggleBold:nil]; }
+    void OnToggleStrike() override { [delegate_ toggleStrike:nil]; }
+    void OnHeading(int level) override { [delegate_ setHeading:level]; }
+    void OnToggleBullets() override { [delegate_ toggleBullets:nil]; }
+    void OnToggleNumbering() override { [delegate_ toggleNumbering:nil]; }
+    void OnToggleQuote() override { [delegate_ toggleQuote:nil]; }
+    void OnIndent() override { [delegate_ indentBlock:nil]; }
+    void OnOutdent() override { [delegate_ outdentBlock:nil]; }
     void OnToggleItalic() override { [delegate_ toggleItalic:nil]; }
     void OnToggleCode() override { [delegate_ toggleCode:nil]; }
     void OnToggleLink() override { [delegate_ toggleLink:nil]; }
@@ -329,6 +344,13 @@ private:
 - (void)toggleWrap:(id)sender { (void)sender; [self OnToggleWrap]; }
 - (void)cycleContentWidth:(id)sender { (void)sender; [self OnCycleContentWidth]; }
 - (void)toggleBold:(id)sender { (void)sender; [self OnToggleBold]; }
+- (void)toggleStrike:(id)sender { (void)sender; [self OnToggleStrike]; }
+- (void)setHeading:(int)level { [self OnHeading:level]; }
+- (void)toggleBullets:(id)sender { (void)sender; [self OnToggleBullets]; }
+- (void)toggleNumbering:(id)sender { (void)sender; [self OnToggleNumbering]; }
+- (void)toggleQuote:(id)sender { (void)sender; [self OnToggleQuote]; }
+- (void)indentBlock:(id)sender { (void)sender; [self OnIndent]; }
+- (void)outdentBlock:(id)sender { (void)sender; [self OnOutdent]; }
 - (void)toggleItalic:(id)sender { (void)sender; [self OnToggleItalic]; }
 - (void)toggleCode:(id)sender { (void)sender; [self OnToggleCode]; }
 - (void)toggleLink:(id)sender { (void)sender; [self OnToggleLink]; }
@@ -538,6 +560,49 @@ private:
     // the menu so the key bindings match the Windows build, and it
     // reports that rather than doing nothing silently.
     [self reportError:@"The outline is not available in this build yet."];
+}
+
+- (void)OnToggleStrike {
+    ToggleInlineMarker(&app_->buffer(), &app_->selection(), "~~", &app_->undo());
+    app_->OnTextChanged();
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnHeading:(int)level {
+    SetHeadingLevel(&app_->buffer(), &app_->selection(), level,
+                    &app_->undo());
+    app_->OnTextChanged();
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnToggleBullets {
+    ToggleUnorderedList(&app_->buffer(), &app_->selection(), &app_->undo());
+    app_->OnTextChanged();
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnToggleNumbering {
+    ToggleOrderedList(&app_->buffer(), &app_->selection(), &app_->undo());
+    app_->OnTextChanged();
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnToggleQuote {
+    ToggleBlockquote(&app_->buffer(), &app_->selection(), &app_->undo());
+    app_->OnTextChanged();
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnIndent {
+    IndentLine(&app_->buffer(), &app_->selection(), &app_->undo());
+    app_->OnTextChanged();
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnOutdent {
+    OutdentLine(&app_->buffer(), &app_->selection(), &app_->undo());
+    app_->OnTextChanged();
+    [view_ setNeedsDisplay:YES];
 }
 
 - (void)OnToggleBold {

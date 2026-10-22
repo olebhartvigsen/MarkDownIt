@@ -79,6 +79,24 @@ static MdMenuTarget* gMenuTarget = nil;
         actions_->OnToggleBold();
     } else if (selector == @selector(toggleItalic:)) {
         actions_->OnToggleItalic();
+    } else if (selector == @selector(toggleStrike:)) {
+        actions_->OnToggleStrike();
+    } else if (selector == @selector(setHeading1:)) {
+        actions_->OnHeading(1);
+    } else if (selector == @selector(setHeading2:)) {
+        actions_->OnHeading(2);
+    } else if (selector == @selector(setHeading3:)) {
+        actions_->OnHeading(3);
+    } else if (selector == @selector(toggleBullets:)) {
+        actions_->OnToggleBullets();
+    } else if (selector == @selector(toggleNumbering:)) {
+        actions_->OnToggleNumbering();
+    } else if (selector == @selector(toggleQuote:)) {
+        actions_->OnToggleQuote();
+    } else if (selector == @selector(indentBlock:)) {
+        actions_->OnIndent();
+    } else if (selector == @selector(outdentBlock:)) {
+        actions_->OnOutdent();
     } else if (selector == @selector(toggleCode:)) {
         actions_->OnToggleCode();
     } else if (selector == @selector(toggleLink:)) {
@@ -196,9 +214,30 @@ NSMenu* BuildMainMenu(MenuActions* actions) {
             "Format",
             {{"Bold", @selector(toggleBold:)},
              {"Italic", @selector(toggleItalic:)},
+             {"Strikethrough", @selector(toggleStrike:)},
              {"Code", @selector(toggleCode:)},
              {"Link", @selector(toggleLink:)}},
-            {"b", "i", "", "k"});
+            {"b", "i", "", "", "k"});
+        // The block commands live in their own menu, the way the Format
+        // menu of the other editors has them.
+        NSMenu* blockMenu = BuildSubmenu(
+            "Blocks",
+            {{"Heading 1", @selector(setHeading1:)},
+             {"Heading 2", @selector(setHeading2:)},
+             {"Heading 3", @selector(setHeading3:)},
+             {"Bulleted List", @selector(toggleBullets:)},
+             {"Numbered List", @selector(toggleNumbering:)},
+             {"Quote", @selector(toggleQuote:)},
+             {"Indent", @selector(indentBlock:)},
+             {"Outdent", @selector(outdentBlock:)}},
+            {"1", "2", "3", "", "", "", "", ""});
+        NSMenuItem* blockItem =
+            [[NSMenuItem alloc] initWithTitle:@"Blocks"
+                                       action:nil
+                                keyEquivalent:@""];
+        blockItem.submenu = blockMenu;
+        [formatMenu addItem:blockItem];
+
         [mainMenu addItem:[[NSMenuItem alloc] init]];
         [[mainMenu itemArray] lastObject].submenu = formatMenu;
     }
