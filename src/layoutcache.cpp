@@ -1,6 +1,5 @@
 #include "layoutcache.h"
 #include "editcontroller.h"
-#include "crash_trace.h"
 #include <algorithm>
 #include <cmath>
 
