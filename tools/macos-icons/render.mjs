@@ -7,7 +7,9 @@
 //
 // Run: node tools/macos-icons/render.mjs
 
-import { Resvg } from '@resvg/resvg-js';
+// The renderer is installed by the MSIX icon tool, which already
+// depends on it.
+import { Resvg } from '../msix-icons/node_modules/@resvg/resvg-js/index.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

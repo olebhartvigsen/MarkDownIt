@@ -48,3 +48,4 @@ __pycache__/
 desktop.ini
 .DS_Store
 tools/macos-icons/out/
+tools/macos-icons/node_modules
