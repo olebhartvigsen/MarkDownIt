@@ -75,6 +75,12 @@ static MdMenuTarget* gMenuTarget = nil;
         actions_->OnToggleSourceView();
     } else if (selector == @selector(toggleOutline:)) {
         actions_->OnToggleOutline();
+    } else if (selector == @selector(importWord:)) {
+        actions_->OnImportWord();
+    } else if (selector == @selector(exportWord:)) {
+        actions_->OnExportWord();
+    } else if (selector == @selector(exportPdf:)) {
+        actions_->OnExportPdf();
     } else if (selector == @selector(toggleBold:)) {
         actions_->OnToggleBold();
     } else if (selector == @selector(toggleItalic:)) {
@@ -171,6 +177,21 @@ NSMenu* BuildMainMenu(MenuActions* actions) {
              {"Save", @selector(saveDocument:)},
              {"Save As...", @selector(saveDocumentAs:)}},
             {"n", "o", "", "w", "s", "S"});
+
+        // The office commands sit in their own menu, the way the other
+        // editors have them.
+        NSMenu* officeMenu = BuildSubmenu(
+            "Office",
+            {{"Import from Word...", @selector(importWord:)},
+             {"Export as Word...", @selector(exportWord:)},
+             {"Export as PDF...", @selector(exportPdf:)}},
+            {"", "", ""});
+        NSMenuItem* officeItem =
+            [[NSMenuItem alloc] initWithTitle:@"Office"
+                                       action:nil
+                                keyEquivalent:@""];
+        officeItem.submenu = officeMenu;
+        [fileMenu addItem:officeItem];
         [mainMenu addItem:[[NSMenuItem alloc] init]];
         [[mainMenu itemArray] lastObject].submenu = fileMenu;
     }

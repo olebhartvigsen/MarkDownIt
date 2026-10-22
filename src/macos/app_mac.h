@@ -75,6 +75,9 @@ public:
     // Marks the document as saved.
     void MarkClean();
 
+    // Puts new text in the document, which the Word import does.
+    void SetText(const std::string& text);
+
     // Reparses the text into the document. Called after every edit, but
     // only when the edit could have changed the structure.
     void Reparse();

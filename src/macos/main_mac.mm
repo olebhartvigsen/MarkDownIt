@@ -15,7 +15,14 @@
 #include "app_mac.h"
 #include "content_nsview_mac.h"
 #include "content_view_mac.h"
+#include <fstream>
+#include <sstream>
+
 #include "formatting.h"
+#include "office/docx_export.h"
+#include "office/docx_import.h"
+#include "office/markdown_bridge.h"
+#include "office/pdf_export.h"
 #include "welcome_mac.h"
 #include "findbar_mac.h"
 #include "formatting.h"
@@ -64,6 +71,9 @@ class MdMenuAdapter;
 - (void)saveDocument:(id)sender;
 - (void)saveDocumentAs:(id)sender;
 - (void)closeDocument:(id)sender;
+- (void)importWord:(id)sender;
+- (void)exportWord:(id)sender;
+- (void)exportPdf:(id)sender;
 - (void)undoEdit:(id)sender;
 - (void)redoEdit:(id)sender;
 - (void)cutSelection:(id)sender;
@@ -109,6 +119,9 @@ public:
     void OnSave() override { [delegate_ saveDocument:nil]; }
     void OnSaveAs() override { [delegate_ saveDocumentAs:nil]; }
     void OnClose() override { [delegate_ closeDocument:nil]; }
+    void OnImportWord() override { [delegate_ importWord:nil]; }
+    void OnExportWord() override { [delegate_ exportWord:nil]; }
+    void OnExportPdf() override { [delegate_ exportPdf:nil]; }
     void OnFind() override { [delegate_ findDocument:nil]; }
     void OnReplace() override { [delegate_ replaceInDocument:nil]; }
     void OnUndo() override { [delegate_ undoEdit:nil]; }
@@ -328,6 +341,9 @@ private:
 - (void)saveDocument:(id)sender { (void)sender; [self OnSave]; }
 - (void)saveDocumentAs:(id)sender { (void)sender; [self OnSaveAs]; }
 - (void)closeDocument:(id)sender { (void)sender; [self OnClose]; }
+- (void)importWord:(id)sender { (void)sender; [self OnImportWord]; }
+- (void)exportWord:(id)sender { (void)sender; [self OnExportWord]; }
+- (void)exportPdf:(id)sender { (void)sender; [self OnExportPdf]; }
 - (void)findDocument:(id)sender { (void)sender; [self OnFind]; }
 - (void)replaceInDocument:(id)sender { (void)sender; [self OnReplace]; }
 - (void)undoEdit:(id)sender { (void)sender; [self OnUndo]; }
@@ -443,6 +459,86 @@ private:
     settings_.Save();
     [window_ setTitle:[NSString stringWithUTF8String:path.c_str()]];
     return YES;
+}
+
+- (void)OnImportWord {
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+    [panel setAllowsMultipleSelection:NO];
+    [panel setCanChooseDirectories:NO];
+    [panel setAllowedFileTypes:@[@"docx"]];
+    if ([panel runModal] != NSModalResponseOK) return;
+
+    const std::string path = [[panel URL] path].UTF8String;
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        [self reportError:@"The file could not be read."];
+        return;
+    }
+    std::ostringstream contents;
+    contents << file.rdbuf();
+    const std::string bytes = contents.str();
+
+    office::DocModel model;
+    office::CompatReport report;
+    std::string error;
+    if (!office::DocxImport(bytes, model, report, error)) {
+        [self reportError:@"The Word file could not be read."];
+        return;
+    }
+
+    // The document becomes the markdown of the Word file.
+    const std::string markdown = office::OfficeModelToMarkdown(model, report);
+    app_->SetText(markdown);
+    [self hideWelcomeScreen];
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnExportWord {
+    [self exportOfficeDocument:false];
+}
+
+- (void)OnExportPdf {
+    [self exportOfficeDocument:true];
+}
+
+// Writes the document as a Word file or as a PDF.
+- (void)exportOfficeDocument:(bool)asPdf {
+    office::DocModel model;
+    office::CompatReport report;
+    std::string error;
+    if (!office::MarkdownToOfficeModel(app_->sourceText(), model, report,
+                                      error)) {
+        [self reportError:@"The document could not be read."];
+        return;
+    }
+
+    std::string bytes;
+    if (asPdf) {
+        office::PdfExportOptions options;
+        if (!office::PdfExport(model, options, bytes, report, error)) {
+            [self reportError:@"The PDF could not be written."];
+            return;
+        }
+    } else {
+        if (!office::DocxExport(model, bytes, report, error)) {
+            [self reportError:@"The Word file could not be written."];
+            return;
+        }
+    }
+
+    NSSavePanel* panel = [NSSavePanel savePanel];
+    [panel setAllowedFileTypes:asPdf ? @[@"pdf"] : @[@"docx"]];
+    [panel setNameFieldStringValue:asPdf ? @"Untitled.pdf" : @"Untitled.docx"];
+    if ([panel runModal] != NSModalResponseOK) return;
+
+    const std::string path = [[panel URL] path].UTF8String;
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    if (!file) {
+        [self reportError:@"The file could not be saved."];
+        return;
+    }
+    file.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    file.close();
 }
 
 - (void)OnClose {

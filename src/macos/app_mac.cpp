@@ -239,6 +239,13 @@ void App::MarkClean() {
     dirty_ = false;
 }
 
+void App::SetText(const std::string& text) {
+    buffer_.SetText(text);
+    sel_.Collapse(CaretPos{0});
+    dirty_ = true;
+    Reparse();
+}
+
 void App::Reparse() {
     // The parse is the shared one. A parse failure leaves the previous
     // document in place, which is what the Windows build does too. The

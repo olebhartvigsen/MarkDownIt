@@ -31,6 +31,9 @@ public:
     virtual void OnSave() = 0;
     virtual void OnSaveAs() = 0;
     virtual void OnClose() = 0;
+    virtual void OnImportWord() = 0;
+    virtual void OnExportWord() = 0;
+    virtual void OnExportPdf() = 0;
 
     // The application menu.
     virtual void OnOpenSettings() = 0;
