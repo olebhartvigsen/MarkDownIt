@@ -274,3 +274,44 @@ families and the shear, `tools/check_mac_bundle.py` fails when the
 bundle does not carry all seven files, and the wrapping tests now
 measure through Selawik on the runner, so the CI numbers are the ones a
 Mac shows.
+
+## The command strip
+
+The mac window had only the menu bar, while the Windows window carries
+the ribbon. The window now opens with the same surface: the quick
+access row with Save, Undo and Redo, the Home and Edit tabs, and the
+same groups and commands, drawn with the same icon files. The table in
+`src/macos/ribbon_mac.mm` mirrors `src/ribbon.xml` command for command.
+
+- The strip owns no state. A click runs the same delegate selector the
+  menu item runs, and the strip asks the delegate two questions: is a
+  toggle on, and is the command available.
+- The Table Tools button opens a dropdown with the row, column,
+  alignment and delete commands, grouped the way the markup groups
+  them.
+- Deleting a table is a mac command as well now, in the Table menu and
+  in the dropdown. The shared table module had every other table
+  command.
+- One command is left out on purpose: the Windows Edit toggle that
+  switches between reading and editing. The mac app has no such split,
+  so there is nothing for it to switch, and
+  `tools/check_mac_ribbon.py` carries the omission in its allowlist.
+- The check compares the two files tab for tab, group for group and
+  command for command: order, labels, toggles and icon files. CI fails
+  when they drift apart.
+- The strip is AppKit, so the shared test suite cannot press its
+  buttons. The check tool and the build are what CI verifies.
+
+## The Selawik semibold face
+
+The font tests added after the crash work caught a rendering defect on
+their first run: every semibold run, which is every heading, fell back
+to Helvetica Neue. The Semibold file of Selawik carries "Selawik" as
+its typographic family, so Core Text reads the three files as one
+family with three weights. Asking for a family named "Selawik
+Semibold" never matched, and the registration check then took the
+system face for every such run.
+
+The engine now asks for the family and lets the weight of the run pick
+the face: regular 0.0, semibold 0.3, bold 0.4. The test pins the three
+PostScript names, so a weight that finds no face fails the run.
