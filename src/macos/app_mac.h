@@ -21,6 +21,7 @@
 #include "dom.h"
 #include "editcontroller.h"
 #include "findbar_model.h"
+#include "tableedit.h"
 #include "textbuffer.h"
 #include "undostack.h"
 
@@ -78,9 +79,30 @@ public:
     // Puts new text in the document, which the Word import does.
     void SetText(const std::string& text);
 
+    // The table commands. They do nothing when the caret is not in a
+    // table, and a table never nests.
+    void InsertTable(int cols, int rows);
+    void AddTableRow(bool below);
+    void RemoveTableRow();
+    void AddTableColumn(bool right);
+    void RemoveTableColumn();
+    void SplitTableCell();
+    void AlignTableColumn(int mark);
+
     // Reparses the text into the document. Called after every edit, but
     // only when the edit could have changed the structure.
     void Reparse();
+
+    // The table the caret is in, and where in it the caret is.
+    bool CaretTable(tableedit::TableLocation* out) const;
+
+    // The source span of the table the caret is in.
+    bool TableSpan(uint32_t* start, uint32_t* end) const;
+
+    // Replaces the table's source span with new text, in one edit, so
+    // one table operation is one undo step.
+    void RewriteTable(uint32_t start, uint32_t end,
+                      const std::string& text, uint32_t caret);
 
     // The content view, which the window hosts.
     ContentView* contentView() const { return contentView_.get(); }

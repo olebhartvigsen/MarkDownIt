@@ -69,6 +69,15 @@ public:
     virtual void OnToggleQuote() = 0;
     virtual void OnIndent() = 0;
     virtual void OnOutdent() = 0;
+
+    // The table commands.
+    virtual void OnInsertTable() = 0;
+    virtual void OnAddTableRow(bool below) = 0;
+    virtual void OnRemoveTableRow() = 0;
+    virtual void OnAddTableColumn(bool right) = 0;
+    virtual void OnRemoveTableColumn() = 0;
+    virtual void OnSplitTableCell() = 0;
+    virtual void OnAlignTableColumn(int mark) = 0;
 };
 
 // Builds the main menu bar and returns it. The menu items are wired to

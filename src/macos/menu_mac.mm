@@ -81,6 +81,28 @@ static MdMenuTarget* gMenuTarget = nil;
         actions_->OnExportWord();
     } else if (selector == @selector(exportPdf:)) {
         actions_->OnExportPdf();
+    } else if (selector == @selector(insertTable:)) {
+        actions_->OnInsertTable();
+    } else if (selector == @selector(addRowBelow:)) {
+        actions_->OnAddTableRow(true);
+    } else if (selector == @selector(addRowAbove:)) {
+        actions_->OnAddTableRow(false);
+    } else if (selector == @selector(removeRow:)) {
+        actions_->OnRemoveTableRow();
+    } else if (selector == @selector(addColumnRight:)) {
+        actions_->OnAddTableColumn(true);
+    } else if (selector == @selector(addColumnLeft:)) {
+        actions_->OnAddTableColumn(false);
+    } else if (selector == @selector(removeColumn:)) {
+        actions_->OnRemoveTableColumn();
+    } else if (selector == @selector(splitCell:)) {
+        actions_->OnSplitTableCell();
+    } else if (selector == @selector(alignLeft:)) {
+        actions_->OnAlignTableColumn(0);
+    } else if (selector == @selector(alignCenter:)) {
+        actions_->OnAlignTableColumn(1);
+    } else if (selector == @selector(alignRight:)) {
+        actions_->OnAlignTableColumn(2);
     } else if (selector == @selector(toggleBold:)) {
         actions_->OnToggleBold();
     } else if (selector == @selector(toggleItalic:)) {
@@ -261,6 +283,27 @@ NSMenu* BuildMainMenu(MenuActions* actions) {
 
         [mainMenu addItem:[[NSMenuItem alloc] init]];
         [[mainMenu itemArray] lastObject].submenu = formatMenu;
+    }
+
+    // Table. The commands act on the table the caret is in, and they
+    // do nothing when the caret is not in one.
+    {
+        NSMenu* tableMenu = BuildSubmenu(
+            "Table",
+            {{"Insert Table...", @selector(insertTable:)},
+             {"Add Row Above", @selector(addRowAbove:)},
+             {"Add Row Below", @selector(addRowBelow:)},
+             {"Remove Row", @selector(removeRow:)},
+             {"Add Column Left", @selector(addColumnLeft:)},
+             {"Add Column Right", @selector(addColumnRight:)},
+             {"Remove Column", @selector(removeColumn:)},
+             {"Split Cell", @selector(splitCell:)},
+             {"Align Left", @selector(alignLeft:)},
+             {"Align Center", @selector(alignCenter:)},
+             {"Align Right", @selector(alignRight:)}},
+            {"", "", "", "", "", "", "", "", "", "", ""});
+        [mainMenu addItem:[[NSMenuItem alloc] init]];
+        [[mainMenu itemArray] lastObject].submenu = tableMenu;
     }
 
     // Every item forwards to the target.

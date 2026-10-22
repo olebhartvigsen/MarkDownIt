@@ -95,6 +95,17 @@ class MdMenuAdapter;
 - (void)toggleQuote:(id)sender;
 - (void)indentBlock:(id)sender;
 - (void)outdentBlock:(id)sender;
+- (void)insertTable:(id)sender;
+- (void)addRowAbove:(id)sender;
+- (void)addRowBelow:(id)sender;
+- (void)removeRow:(id)sender;
+- (void)addColumnLeft:(id)sender;
+- (void)addColumnRight:(id)sender;
+- (void)removeColumn:(id)sender;
+- (void)splitCell:(id)sender;
+- (void)alignLeft:(id)sender;
+- (void)alignCenter:(id)sender;
+- (void)alignRight:(id)sender;
 - (void)toggleItalic:(id)sender;
 - (void)toggleCode:(id)sender;
 - (void)toggleLink:(id)sender;
@@ -145,6 +156,33 @@ public:
     void OnToggleQuote() override { [delegate_ toggleQuote:nil]; }
     void OnIndent() override { [delegate_ indentBlock:nil]; }
     void OnOutdent() override { [delegate_ outdentBlock:nil]; }
+    void OnInsertTable() override { [delegate_ insertTable:nil]; }
+    void OnAddTableRow(bool below) override {
+        if (below) {
+            [delegate_ addRowBelow:nil];
+        } else {
+            [delegate_ addRowAbove:nil];
+        }
+    }
+    void OnRemoveTableRow() override { [delegate_ removeRow:nil]; }
+    void OnAddTableColumn(bool right) override {
+        if (right) {
+            [delegate_ addColumnRight:nil];
+        } else {
+            [delegate_ addColumnLeft:nil];
+        }
+    }
+    void OnRemoveTableColumn() override { [delegate_ removeColumn:nil]; }
+    void OnSplitTableCell() override { [delegate_ splitCell:nil]; }
+    void OnAlignTableColumn(int mark) override {
+        if (mark == 1) {
+            [delegate_ alignLeft:nil];
+        } else if (mark == 2) {
+            [delegate_ alignCenter:nil];
+        } else {
+            [delegate_ alignRight:nil];
+        }
+    }
     void OnToggleItalic() override { [delegate_ toggleItalic:nil]; }
     void OnToggleCode() override { [delegate_ toggleCode:nil]; }
     void OnToggleLink() override { [delegate_ toggleLink:nil]; }
@@ -367,6 +405,17 @@ private:
 - (void)toggleQuote:(id)sender { (void)sender; [self OnToggleQuote]; }
 - (void)indentBlock:(id)sender { (void)sender; [self OnIndent]; }
 - (void)outdentBlock:(id)sender { (void)sender; [self OnOutdent]; }
+- (void)insertTable:(id)sender { (void)sender; [self OnInsertTable]; }
+- (void)addRowAbove:(id)sender { (void)sender; [self OnAddTableRow:NO]; }
+- (void)addRowBelow:(id)sender { (void)sender; [self OnAddTableRow:YES]; }
+- (void)removeRow:(id)sender { (void)sender; [self OnRemoveTableRow]; }
+- (void)addColumnLeft:(id)sender { (void)sender; [self OnAddTableColumn:NO]; }
+- (void)addColumnRight:(id)sender { (void)sender; [self OnAddTableColumn:YES]; }
+- (void)removeColumn:(id)sender { (void)sender; [self OnRemoveTableColumn]; }
+- (void)splitCell:(id)sender { (void)sender; [self OnSplitTableCell]; }
+- (void)alignLeft:(id)sender { (void)sender; [self OnAlignTableColumn:1]; }
+- (void)alignCenter:(id)sender { (void)sender; [self OnAlignTableColumn:2]; }
+- (void)alignRight:(id)sender { (void)sender; [self OnAlignTableColumn:3]; }
 - (void)toggleItalic:(id)sender { (void)sender; [self OnToggleItalic]; }
 - (void)toggleCode:(id)sender { (void)sender; [self OnToggleCode]; }
 - (void)toggleLink:(id)sender { (void)sender; [self OnToggleLink]; }
@@ -686,6 +735,79 @@ private:
 - (void)OnToggleQuote {
     ToggleBlockquote(&app_->buffer(), &app_->selection(), &app_->undo());
     app_->OnTextChanged();
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnInsertTable {
+    // The size of the new table is asked for, the way the Windows build
+    // asks for it with its grid picker.
+    NSAlert* alert = [[NSAlert alloc] init];
+    [alert setMessageText:@"Insert Table"];
+    [alert addButtonWithTitle:@"Insert"];
+    [alert addButtonWithTitle:@"Cancel"];
+
+    NSTextField* columns = [[NSTextField alloc] initWithFrame:
+        NSMakeRect(0, 0, 60, 24)];
+    columns.stringValue = @"3";
+    NSTextField* rows = [[NSTextField alloc] initWithFrame:
+        NSMakeRect(0, 0, 60, 24)];
+    rows.stringValue = @"3";
+
+    NSTextField* columnsLabel = [[NSTextField alloc] initWithFrame:
+        NSZeroRect];
+    columnsLabel.stringValue = @"Columns";
+    columnsLabel.editable = NO;
+    columnsLabel.bordered = NO;
+    columnsLabel.drawsBackground = NO;
+    NSTextField* rowsLabel = [[NSTextField alloc] initWithFrame:
+        NSZeroRect];
+    rowsLabel.stringValue = @"Rows";
+    rowsLabel.editable = NO;
+    rowsLabel.bordered = NO;
+    rowsLabel.drawsBackground = NO;
+
+    NSStackView* stack = [NSStackView stackViewWithViews:
+        @[columnsLabel, columns, rowsLabel, rows]];
+    stack.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    [alert setAccessoryView:stack];
+
+    if ([alert runModal] != NSAlertFirstButtonReturn) return;
+
+    const int cols = columns.integerValue;
+    const int rowsCount = rows.integerValue;
+    if (cols < 1 || cols > 20 || rowsCount < 1 || rowsCount > 50) return;
+
+    app_->InsertTable(cols, rowsCount);
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnAddTableRow:(BOOL)below {
+    app_->AddTableRow(below ? true : false);
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnRemoveTableRow {
+    app_->RemoveTableRow();
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnAddTableColumn:(BOOL)right {
+    app_->AddTableColumn(right ? true : false);
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnRemoveTableColumn {
+    app_->RemoveTableColumn();
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnSplitTableCell {
+    app_->SplitTableCell();
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnAlignTableColumn:(int)mark {
+    app_->AlignTableColumn(mark);
     [view_ setNeedsDisplay:YES];
 }
 

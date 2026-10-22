@@ -4,6 +4,7 @@
 #include "fileassoc.h"
 #include "parser.h"
 #include "navigation.h"
+#include "tableedit.h"
 #include "office/markdown_bridge.h"
 #include "office/docx_import.h"
 #include "office/docx_export.h"
@@ -5059,26 +5060,7 @@ void AppWindow::InsertTableFromGrid(int cols, int rows) {
 
     int dataRows = rows;
 
-    std::string table;
-    // Header
-    for (int c = 0; c < cols; ++c) {
-        table += "| Column ";
-        table += std::to_string(c + 1);
-        table += " ";
-    }
-    table += "|\n";
-    // Separator
-    for (int c = 0; c < cols; ++c) {
-        table += "|--------";
-    }
-    table += "|\n";
-    // Data rows
-    for (int r = 0; r < dataRows; ++r) {
-        for (int c = 0; c < cols; ++c) {
-            table += "|        ";
-        }
-        table += "|\n";
-    }
+    const std::string table = tableedit::BuildGrid(cols, dataRows);
 
     // Insert at cursor position. If there is a selection, replace it.
     // One splice, one undo step (§3): the newlines and the table text are
@@ -5169,81 +5151,19 @@ bool AppWindow::CaretInTable() const {
 // Find the table node containing the cursor offset.
 // Returns nullptr if cursor is not inside a table.
 static const Node* FindContainingTable(const Document& doc, uint32_t offset) {
-    for (const auto& n : doc.nodes) {
-        if (n.block != BlockKind::Table) continue;
-        uint32_t start = n.srcOffset;
-        uint32_t end = start + n.srcLength;
-        // Half-open span: `end` is the first byte after the table, so a
-        // caret resting there is not inside this table.
-        if (offset >= start && offset < end)
-            return &n;
-    }
-    return nullptr;
+    return tableedit::ContainingTable(doc, offset);
 }
 
 // Find the source range of a specific row in the table's source text.
 // A row is one line within the table block. Also return the column
 // index that the cursor is in.
-struct TableLocation {
-    uint32_t rowStart;  // source offset of row's first character
-    uint32_t rowEnd;    // source offset past the row's newline (or end of table)
-    int columnIndex;    // 0-based column the cursor is in
-    int rowIndex;       // 0-based row index
-    int numCols;         // number of columns
-    int numRows;         // number of rows
-};
-
-static bool LocateInTable(const std::string& text, const Node* node,
-                          uint32_t offset, TableLocation& loc) {
-    if (!node) return false;
-    uint32_t tblStart = node->srcOffset;
-    uint32_t tblEnd = tblStart + node->srcLength;
-    if (offset < tblStart || offset > tblEnd) return false;
-
-    // Walk lines within the table source.
-    int rowIdx = 0;
-    uint32_t lineStart = tblStart;
-    int numCols = 0;
-    for (const auto& r : node->rows) {
-        if (static_cast<int>(r.cells.size()) > numCols)
-            numCols = static_cast<int>(r.cells.size());
-    }
-
-    for (uint32_t i = tblStart; i <= tblEnd; ++i) {
-        if (i == tblEnd || text[i] == '\n') {
-            uint32_t lineEnd = i; // not including newline
-            if (offset >= lineStart && offset <= (i == tblEnd ? i : i + 1)) {
-                // Found the row. Count pipes to determine column.
-                int col = 0;
-                for (uint32_t j = lineStart; j < offset && j < lineEnd; ++j) {
-                    if (text[j] == '|') ++col;
-                }
-                // Adjust: first | is col 0 start
-                col = col > 0 ? col - 1 : 0;
-                if (col >= numCols) col = numCols - 1;
-
-                loc.rowStart = lineStart;
-                loc.rowEnd = (i == tblEnd) ? i : i + 1;
-                loc.columnIndex = col;
-                loc.rowIndex = rowIdx;
-                loc.numCols = numCols;
-                loc.numRows = static_cast<int>(node->rows.size());
-                return true;
-            }
-            if (i < tblEnd) lineStart = i + 1;
-            ++rowIdx;
-        }
-    }
-    return false;
-}
-
 TableCapabilities AppWindow::CaretTableCapabilities() const {
     // Resolve the caret against the same LocateInTable the commands use, so
     // an enabled ribbon button always corresponds to a command that runs.
     const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
     if (!tbl) return TableCapabilities();
-    TableLocation loc;
-    if (!LocateInTable(buffer_.Text(), tbl, sel_.active.offset, loc))
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(buffer_.Text(), tbl, sel_.active.offset, &loc))
         return TableCapabilities();
     return TableCapabilitiesFor(loc.rowIndex, loc.numCols);
 }
@@ -5253,49 +5173,17 @@ bool AppWindow::AddTableRow(bool below) {
     const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
     if (!tbl) return false;
 
-    const std::string& text = buffer_.Text();
-    TableLocation loc;
-    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(buffer_.Text(), tbl, sel_.active.offset, &loc))
+        return false;
 
-    // The header line and the dash delimiter are what make this a table.
-    // Inserting above the header, or between header and delimiter, would
-    // leave a block md4c no longer parses as a table.
-    const TableCapabilities caps =
-        TableCapabilitiesFor(loc.rowIndex, loc.numCols);
-    if (below ? !caps.addRowBelow : !caps.addRowAbove) return false;
+    const tableedit::TableEdit edit =
+        tableedit::AddRow(buffer_.Text(), loc, below);
+    if (!edit.ok) return false;
 
-    // Build a new row string with the same number of columns.
-    std::string newRow = "|";
-    for (int c = 0; c < loc.numCols; ++c) {
-        newRow += "        |";
-    }
-    newRow += "\n";
-
-    // Below: insert right after the current row's end.
-    // Above: insert at the current row's start.
-    uint32_t insertPos = below ? loc.rowEnd : loc.rowStart;
-    if (below && insertPos < text.size() && text[insertPos] == '\n')
-        insertPos += 1;
-
-    // A table at the end of the document may have no trailing newline, in
-    // which case loc.rowEnd is already the text end and the row would be
-    // appended onto the last row's line. Start the new row on its own line.
-    std::string prefix;
-    if (insertPos > 0 && text[insertPos - 1] != '\n') prefix = "\n";
-
-    SpliceWithUndo(insertPos, 0, prefix + newRow);
+    SpliceWithUndo(edit.start, edit.length, edit.text);
     editor_.BreakUndoCoalesce();
-
-    // Below keeps the shipped caret (start of the row after the new
-    // one). Above places the caret inside the new row's first cell,
-    // one position past its leading pipe.
-    const uint32_t caretBase = insertPos +
-        static_cast<uint32_t>(prefix.size() + newRow.size());
-    if (below) {
-        sel_.Collapse({caretBase});
-    } else {
-        sel_.Collapse({insertPos + static_cast<uint32_t>(prefix.size()) + 1});
-    }
+    sel_.Collapse({edit.caret});
     OnBufferChanged();
     ForceRepaintNow();
     return true;
@@ -5356,24 +5244,17 @@ bool AppWindow::RemoveTableRow() {
     const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
     if (!tbl) return false;
 
-    const std::string& text = buffer_.Text();
-    TableLocation loc;
-    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
-
-    // The caret's physical line sits on the header (line 0) or the
-    // delimiter (line 1): those lines carry the table's structure and
-    // are never removed by this command, whatever the table size.
-    if (!TableCapabilitiesFor(loc.rowIndex, loc.numCols).removeRow) {
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(buffer_.Text(), tbl, sel_.active.offset, &loc))
         return false;
-    }
 
-    // Remove the row's source text (from lineStart to rowEnd).
-    uint32_t start = loc.rowStart;
-    uint32_t end = loc.rowEnd;
-    SpliceWithUndo(start, end - start, "");
+    const tableedit::TableEdit edit =
+        tableedit::RemoveRow(buffer_.Text(), loc);
+    if (!edit.ok) return false;
+
+    SpliceWithUndo(edit.start, edit.length, edit.text);
     editor_.BreakUndoCoalesce();
-
-    sel_.Collapse({start});
+    sel_.Collapse({edit.caret});
     OnBufferChanged();
     ForceRepaintNow();
     return true;
@@ -5385,8 +5266,8 @@ bool AppWindow::AddTableColumn(bool right) {
     if (!tbl) return false;
 
     const std::string& text = buffer_.Text();
-    TableLocation loc;
-    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(text, tbl, sel_.active.offset, &loc)) return false;
 
     const uint32_t tblStart = tbl->srcOffset;
     const uint32_t tblEnd = tblStart + tbl->srcLength;
@@ -5414,8 +5295,8 @@ bool AppWindow::RemoveTableColumn() {
     if (!tbl) return false;
 
     const std::string& text = buffer_.Text();
-    TableLocation loc;
-    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(text, tbl, sel_.active.offset, &loc)) return false;
 
     if (!TableCapabilitiesFor(loc.rowIndex, loc.numCols).removeColumn)
         return false; // don't remove the last column
@@ -5444,8 +5325,8 @@ bool AppWindow::SetTableColumnAlign(TableAlignMark mark) {
     if (!tbl) return false;
 
     const std::string& text = buffer_.Text();
-    TableLocation loc;
-    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(text, tbl, sel_.active.offset, &loc)) return false;
 
     const uint32_t tblStart = tbl->srcOffset;
     const uint32_t tblEnd = tblStart + tbl->srcLength;
@@ -5474,8 +5355,8 @@ bool AppWindow::SplitTableCell() {
     if (!tbl) return false;
 
     const std::string& text = buffer_.Text();
-    TableLocation loc;
-    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(text, tbl, sel_.active.offset, &loc)) return false;
 
     if (!TableCapabilitiesFor(loc.rowIndex, loc.numCols).splitCell)
         return false; // header and delimiter rows carry the table's shape

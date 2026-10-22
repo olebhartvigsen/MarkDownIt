@@ -189,6 +189,7 @@ add_executable(MarkDownIt WIN32
     src/textlayout_dwrite.cpp
     src/editcontroller.cpp
     src/navigation.cpp
+    src/tableedit.cpp
     src/undostack.cpp
     src/clipboard.cpp
     src/formatting.cpp
@@ -337,6 +338,7 @@ if(BUILD_TESTS AND APPLE)
         tests/markers_test.cpp
         tests/outline_test.cpp
         tests/table_interaction_test.cpp
+        tests/tableedit_test.cpp
         tests/mermaid_model_test.cpp
         tests/mermaid_parse_test.cpp
         tests/mermaid_class_golden_test.cpp
@@ -365,6 +367,7 @@ if(BUILD_TESTS AND APPLE)
         src/textlayout_coretext.cpp
         src/editcontroller.cpp
         src/navigation.cpp
+        src/tableedit.cpp
         src/undostack.cpp
         src/clipboard.cpp
         src/formatting.cpp
@@ -472,6 +475,7 @@ elseif(BUILD_TESTS)
         src/textlayout_dwrite.cpp
         src/editcontroller.cpp
         src/navigation.cpp
+        src/tableedit.cpp
         src/undostack.cpp
         src/clipboard.cpp
         src/formatting.cpp
@@ -550,6 +554,7 @@ if(APPLE)
         src/layoutcache.cpp
         src/editcontroller.cpp
         src/navigation.cpp
+        src/tableedit.cpp
         src/undostack.cpp
         src/clipboard.cpp
         src/formatting.cpp
