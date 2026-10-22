@@ -15,6 +15,7 @@
 #import <AppKit/AppKit.h>
 
 #include "findbar_mac.h"
+#include "fonts_mac.h"
 
 #include <string>
 
@@ -117,7 +118,7 @@ static std::wstring WideText(NSString* text) {
 
     statusLabel_ = [NSTextField labelWithString:@""];
     [statusLabel_ setTextColor:[NSColor secondaryLabelColor]];
-    [statusLabel_ setFont:[NSFont systemFontOfSize:11.0]];
+    [statusLabel_ setFont:mac::BundledUIFont(11.0f)];
 }
 
 // A button with a title, a tooltip and an action.

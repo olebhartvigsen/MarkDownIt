@@ -60,15 +60,16 @@ inline ThemeColor MakeColor(uint32_t rgb, float alpha = 1.0f) {
 #endif
 }
 
-// The default font family names. The macOS build overrides them in its
-// own theme file, because Segoe UI and Cascadia Mono do not exist on
-// macOS.
+// The default font family names. Both platforms ask for the same
+// faces. The mac build bundles metric compatible copies (Selawik for
+// Segoe UI, and Cascadia Mono itself) and maps these names onto them in
+// its text engine, so a document lays out the same way on both systems.
 #ifdef _WIN32
 #define THEME_BODY_FONT L"Segoe UI"
 #define THEME_CODE_FONT L"Cascadia Mono"
 #else
-#define THEME_BODY_FONT ""
-#define THEME_CODE_FONT ""
+#define THEME_BODY_FONT "Segoe UI"
+#define THEME_CODE_FONT "Cascadia Mono"
 #endif
 
 struct LayoutMetrics {

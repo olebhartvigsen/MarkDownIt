@@ -710,7 +710,7 @@ void SvgDoc::Draw(RenderTarget* target, float x, float y, float w,
                 const Point anchor = placeShape(shape.points[0]);
                 FontSpec font;
                 font.family = shape.style.fontFamily.empty()
-                                  ? std::string("Helvetica")
+                                  ? std::string("Segoe UI")
                                   : shape.style.fontFamily;
                 font.size = shape.style.fontSize * shapeScale;
                 font.bold = shape.style.bold;

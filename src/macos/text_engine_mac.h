@@ -15,9 +15,13 @@ namespace mac {
 // so the measured metrics and the drawn glyphs come from one font.
 CTFontRef CoreTextFontFor(const FontSpec& spec);
 
+// The family the engine maps a theme family name onto ("Segoe UI" to
+// the bundled Selawik, and so on). Exposed for the font tests.
+std::string ResolvedFamily(const std::string& family, bool monospace);
+
 // A Core Text backed text engine.
 //
-// The engine measures with CTFramesetter and draws with CTLine, which is
+// The engine measures with CTTypesetter and draws with CTLine, which is
 // the same pair the Windows side uses through DirectWrite. The mapping
 // between the two is one to one: a DWRITE_LINE_METRICS line is a CTLine,
 // and a DWRITE_HIT_TEST_METRICS position is a CTLineGetStringIndexForPosition

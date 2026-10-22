@@ -35,7 +35,7 @@ constexpr float kTriangleSizeDip = 8.0f;
 constexpr float kFontSizeDip = 13.0f;
 
 // The family of the font of a heading.
-const char* kFontFamily = "Helvetica Neue";
+const char* kFontFamily = "Segoe UI";
 
 // The UTF-32 text of a heading, as UTF-8.
 std::string ToUtf8(const std::u32string& text) {

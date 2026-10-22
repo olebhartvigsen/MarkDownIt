@@ -29,6 +29,7 @@
 #include "findbar_mac.h"
 #include "menu_mac.h"
 #include "crash_trace_mac.h"
+#include "fonts_mac.h"
 #include "settings_mac.h"
 #include "zoommodel.h"
 
@@ -146,6 +147,9 @@
     (void)notification;
 
     mac::TraceMac("didFinishLaunching enter");
+    // The bundled fonts come first: everything laid out after this
+    // line, the welcome screen included, measures with them.
+    mac::RegisterBundledFonts();
     settings_.Load();
     zoom_ = zoom::Clamp(settings_.settings().zoomFactor);
     contentWidthMode_ = settings_.settings().contentWidthMode;

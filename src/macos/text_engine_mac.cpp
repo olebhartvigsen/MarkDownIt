@@ -1,6 +1,6 @@
 // The Core Text implementation of the mac TextEngine seam.
 //
-// The engine measures with CTFramesetter and draws with CTLine. That is
+// The engine measures with CTTypesetter and draws with CTLine. That is
 // the same pair the Windows side uses through DirectWrite, so the mapping
 // between the two is one to one: a DWRITE_LINE_METRICS line is a CTLine,
 // and a DWRITE_HIT_TEST_METRICS position is a
@@ -27,8 +27,11 @@
 #include "text_engine_mac.h"
 
 #include <CoreFoundation/CoreFoundation.h>
+#include <CoreGraphics/CGAffineTransform.h>
 #include <CoreGraphics/CGColor.h>
 #include <CoreText/CoreText.h>
+
+#include "crash_trace_mac.h"
 
 #include <algorithm>
 #include <cmath>
@@ -40,21 +43,39 @@
 namespace mac {
 namespace {
 
-// The font families the theme asks for by name, mapped to what macOS
-// actually has. "Segoe UI" does not exist on macOS, so the body font
-// falls back to the system UI font. The mapping lives here rather than in
-// the shared theme, so the Windows names stay untouched.
+// The font families the theme asks for by name, mapped to the faces the
+// build ships. The theme keeps the Windows names, and the mac build
+// bundles metric compatible stands in for them (see fonts_mac.h), so a
+// document lays out the same way on both systems. A family that is not
+// bundled passes through untouched.
 std::string ResolveFamily(const std::string& family, bool monospace) {
     if (monospace) {
-        // Menlo ships with every macOS and is the usual code face.
-        return "Menlo";
+        // The face the Windows build asks for first, and this build
+        // ships it.
+        return "Cascadia Mono";
     }
-    if (family == "Segoe UI" || family == "Segoe UI Semibold" ||
-        family.empty()) {
-        return "Helvetica Neue";
+    if (family == "Segoe UI Semibold") {
+        // Selawik Semibold is a family of its own, the way Segoe UI
+        // Semibold is.
+        return "Selawik Semibold";
+    }
+    if (family == "Segoe UI" || family.empty()) {
+        return "Selawik";
     }
     return family;
 }
+
+// True for the bundled sans families. Neither ships an italic face, so
+// the engine slants them itself instead of letting Core Text answer
+// with a substitute.
+bool IsBundledSans(const std::string& resolved) {
+    return resolved == "Selawik" || resolved == "Selawik Semibold";
+}
+
+// The faces the engine used before the fonts were bundled. They answer
+// even when the bundle's font resources are missing.
+const char* const kFallbackSans = "Helvetica Neue";
+const char* const kFallbackMono = "Menlo";
 
 // The bold and italic traits, as the numeric values Core Text expects.
 // The trait dictionary takes numbers, not the named constants, so the
@@ -65,18 +86,13 @@ const double kItalicSlant = 0.25;
 
 // A font, cached. CTFont creation is not cheap and the renderer asks for
 // the same handful of fonts over and over.
-CTFontRef GetFont(const FontSpec& spec) {
-    static std::map<std::string, CTFontRef> cache;
-    const std::string key = ResolveFamily(spec.family, spec.monospace) + "|" +
-                            std::to_string(static_cast<int>(spec.size)) + "|" +
-                            (spec.bold ? "b" : "") + (spec.italic ? "i" : "");
-    auto it = cache.find(key);
-    if (it != cache.end()) return it->second;
-
+// One CTFont for a resolved family and a style. The italic of a bundled
+// sans is a shear on the font itself, because that family ships no
+// italic face; every other style is a Core Text trait.
+CTFontRef CreateFont(const std::string& family, const FontSpec& spec,
+                     bool syntheticItalic) {
     CFStringRef familyRef =
-        CFStringCreateWithCString(kCFAllocatorDefault,
-                                  ResolveFamily(spec.family, spec.monospace)
-                                      .c_str(),
+        CFStringCreateWithCString(kCFAllocatorDefault, family.c_str(),
                                   kCFStringEncodingUTF8);
     if (!familyRef) return nullptr;
 
@@ -86,7 +102,7 @@ CTFontRef GetFont(const FontSpec& spec) {
                                   &kCFTypeDictionaryValueCallBacks);
     CFDictionarySetValue(attrs, kCTFontFamilyNameAttribute, familyRef);
 
-    if (spec.bold || spec.italic) {
+    if (spec.bold || (spec.italic && !syntheticItalic)) {
         CFMutableDictionaryRef traits =
             CFDictionaryCreateMutable(kCFAllocatorDefault, 2,
                                       &kCFTypeDictionaryKeyCallBacks,
@@ -101,7 +117,7 @@ CTFontRef GetFont(const FontSpec& spec) {
                 CFRelease(number);
             }
         }
-        if (spec.italic) {
+        if (spec.italic && !syntheticItalic) {
             const double slant = kItalicSlant;
             CFNumberRef number =
                 CFNumberCreate(kCFAllocatorDefault, kCFNumberDoubleType,
@@ -115,6 +131,20 @@ CTFontRef GetFont(const FontSpec& spec) {
         CFRelease(traits);
     }
 
+    if (syntheticItalic) {
+        // tan(12 degrees): the slant the system synthesizes for a
+        // family that has no italics.
+        CGAffineTransform matrix =
+            CGAffineTransformMake(1.0, 0.0, 0.2126, 1.0, 0.0, 0.0);
+        CFDataRef data = CFDataCreate(
+            kCFAllocatorDefault, reinterpret_cast<const UInt8*>(&matrix),
+            sizeof(matrix));
+        if (data) {
+            CFDictionarySetValue(attrs, kCTFontMatrixAttribute, data);
+            CFRelease(data);
+        }
+    }
+
     CTFontDescriptorRef desc = CTFontDescriptorCreateWithAttributes(attrs);
     CFRelease(attrs);
     CFRelease(familyRef);
@@ -122,6 +152,49 @@ CTFontRef GetFont(const FontSpec& spec) {
 
     CTFontRef font = CTFontCreateWithFontDescriptor(desc, spec.size, nullptr);
     CFRelease(desc);
+    return font;
+}
+
+// True when the font's family is the one that was asked for. The engine
+// reads this to notice that a bundled face is not registered, in which
+// case Core Text answers with a substitute.
+bool FamilyMatches(CTFontRef font, const std::string& family) {
+    if (!font) return false;
+    CFStringRef want = CFStringCreateWithCString(
+        kCFAllocatorDefault, family.c_str(), kCFStringEncodingUTF8);
+    if (!want) return false;
+    CFStringRef have = CTFontCopyFamilyName(font);
+    const bool match =
+        have && CFStringCompare(have, want, 0) == kCFCompareEqualTo;
+    if (have) CFRelease(have);
+    CFRelease(want);
+    return match;
+}
+
+CTFontRef GetFont(const FontSpec& spec) {
+    static std::map<std::string, CTFontRef> cache;
+    const std::string resolved = ResolveFamily(spec.family, spec.monospace);
+    const std::string key = resolved + "|" +
+                            std::to_string(static_cast<int>(spec.size)) + "|" +
+                            (spec.bold ? "b" : "") + (spec.italic ? "i" : "");
+    auto it = cache.find(key);
+    if (it != cache.end()) return it->second;
+
+    const bool syntheticItalic = spec.italic && IsBundledSans(resolved);
+    CTFontRef font = CreateFont(resolved, spec, syntheticItalic);
+    if (font && IsBundledSans(resolved) && !FamilyMatches(font, resolved)) {
+        // The bundled faces are not registered (a build without the
+        // font resources). The system faces keep text drawing.
+        CFRelease(font);
+        font = CreateFont(spec.monospace ? kFallbackMono : kFallbackSans,
+                          spec, false);
+        static bool logged = false;
+        if (!logged) {
+            TraceMac("the bundled fonts are not registered; "
+                     "the system faces take over");
+            logged = true;
+        }
+    }
     if (!font) return nullptr;
 
     cache[key] = font;
@@ -157,6 +230,12 @@ struct LaidRun {
 // The font the engine takes for a spec, which the drawing side shares,
 // so the measured metrics and the drawn glyphs come from one font.
 CTFontRef CoreTextFontFor(const FontSpec& spec) { return GetFont(spec); }
+
+// The family the engine maps a theme family name onto. The tests read
+// the mapping through here.
+std::string ResolvedFamily(const std::string& family, bool monospace) {
+    return ResolveFamily(family, monospace);
+}
 
 struct CoreTextEngine::Impl {
     // The measured lines of the last MeasureWrapped call. The hit tester

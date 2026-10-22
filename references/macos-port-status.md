@@ -237,3 +237,40 @@ The line breaks come from `CTTypesetterSuggestLineBreak` now, one line at
 a time, and the line object comes from the typesetter, which the engine
 owns outright, so the frame handling the second run had fixed is gone
 from the measure path entirely.
+
+## The fonts, so a document lays out the way it does on Windows
+
+The sizes and the spacing have been shared with the Windows build from
+the start, but the faces were not. The theme asked for Segoe UI and
+Cascadia Mono, neither of which exists on macOS, and the mac engine
+answered with Helvetica Neue and Menlo. Different letterforms are the
+visible part of that. The quieter part is the advance widths: they move
+the line breaks, so every paragraph, table and diagram wrapped at
+different words than it does on Windows, and that is the difference a
+reader notices first.
+
+The build now ships what Windows renders with, or the closest thing
+that can be shipped. Selawik is Microsoft's open, metric compatible
+stand in for Segoe UI: the advance widths match, so a paragraph breaks
+at the same word on both systems. Cascadia Mono is the face the Windows
+build asks for first, and the same files are vendored for the mac
+bundle. Both are SIL OFL, and both sit in `third_party/` with their
+license files and a short note on where they came from.
+
+The engine maps the theme's Windows names onto them, in one function
+next to the Core Text code that uses it. Selawik ships no italic faces,
+so the engine shears an italic run itself, tan(12 degrees), the slant
+the system would have synthesized, without the risk of Core Text
+answering with some other family's italic. When the fonts are missing
+entirely (a test binary that never registers them, a build without the
+bundle resources), the engine notices that the family it got back is
+not the one it asked for, falls back to the system faces, and writes
+one breadcrumb to the crash log.
+
+The faces register at launch, from `Contents/Resources/Fonts`, in
+process scope: nothing is installed on the system.
+`tests/text_engine_mac_test.cpp` checks the mapping, the registered
+families and the shear, `tools/check_mac_bundle.py` fails when the
+bundle does not carry all seven files, and the wrapping tests now
+measure through Selawik on the runner, so the CI numbers are the ones a
+Mac shows.

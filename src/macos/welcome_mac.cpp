@@ -142,7 +142,7 @@ void WelcomeScreen::Render(RenderTarget* target, float viewW, float viewH,
     // The heading.
     {
         FontSpec font;
-        font.family = "Helvetica Neue";
+        font.family = "Segoe UI";
         font.size = 26.0f;
         font.bold = true;
         const std::string heading = "Recent Documents";
@@ -154,7 +154,7 @@ void WelcomeScreen::Render(RenderTarget* target, float viewW, float viewH,
     // Without any files there is a hint instead of the cards.
     if (cards_.empty()) {
         FontSpec font;
-        font.family = "Helvetica Neue";
+        font.family = "Segoe UI";
         font.size = 15.0f;
         const std::string hint = "Open or drag a .md file to get started.";
         const float width = static_cast<float>(hint.size()) * font.size * 0.5f;
@@ -189,7 +189,7 @@ void WelcomeScreen::Render(RenderTarget* target, float viewW, float viewH,
         float textY = card.rect.y + 26.0f;
 
         FontSpec titleFont;
-        titleFont.family = "Helvetica Neue";
+        titleFont.family = "Segoe UI";
         titleFont.size = 15.0f;
         titleFont.bold = true;
         target->DrawText(card.fileName, titleFont, textX, textY, kTitle);
@@ -198,7 +198,7 @@ void WelcomeScreen::Render(RenderTarget* target, float viewW, float viewH,
         if (!card.folder.empty()) {
             textY += 20.0f;
             FontSpec folderFont;
-            folderFont.family = "Helvetica Neue";
+            folderFont.family = "Segoe UI";
             folderFont.size = 12.0f;
             target->DrawText(card.folder, folderFont, textX, textY, kFolder);
         }
@@ -219,7 +219,7 @@ void WelcomeScreen::Render(RenderTarget* target, float viewW, float viewH,
             if (IsTableSeparator(line)) continue;
 
             FontSpec font;
-            font.family = "Helvetica Neue";
+            font.family = "Segoe UI";
             font.size = 12.0f;
             Color color = kPreview;
             if (IsHeading(line)) {

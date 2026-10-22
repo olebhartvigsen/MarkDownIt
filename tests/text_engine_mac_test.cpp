@@ -9,20 +9,33 @@
 
 #include "gtest_lite.h"
 
+#include "../src/macos/fonts_mac.h"
 #include "../src/macos/seams.h"
 #include "../src/macos/text_engine_mac.h"
+
+#include <CoreText/CoreText.h>
 
 using mac::CoreTextEngine;
 using mac::FontSpec;
 using mac::GlyphRun;
 using mac::TextLine;
 
+// The bundled faces register before any test runs, so the engine
+// measures through them on the build machine too. The tests run from
+// the repo root, where the vendored fonts live.
+const bool kFontsRegistered = []() {
+    mac::RegisterFontsFromDirectory("third_party/selawik");
+    mac::RegisterFontsFromDirectory("third_party/cascadia-mono");
+    return true;
+}();
+
 namespace {
 
-GlyphRun Run(const std::string& text, bool bold = false) {
+GlyphRun Run(const std::string& text, bool bold = false,
+             const char* family = "Segoe UI") {
     GlyphRun run;
     run.text = text;
-    run.font.family = "Helvetica Neue";
+    run.font.family = family;
     run.font.size = 16.0f;
     run.font.bold = bold;
     run.r = 0.2f;
@@ -38,6 +51,52 @@ std::string Rebuild(const std::vector<TextLine>& lines) {
 }
 
 }  // namespace
+
+TEST(TextEngineMac, UsesTheBundledFonts) {
+    // The mapping the theme's family names travel through.
+    EXPECT_EQ(mac::ResolvedFamily("Segoe UI", false), std::string("Selawik"));
+    EXPECT_EQ(mac::ResolvedFamily("Segoe UI Semibold", false),
+              std::string("Selawik Semibold"));
+    EXPECT_EQ(mac::ResolvedFamily("", true), std::string("Cascadia Mono"));
+    EXPECT_EQ(mac::ResolvedFamily("Helvetica Neue", false),
+              std::string("Helvetica Neue"));
+
+    // The registered faces answer by name.
+    auto family_of = [](const char* name) -> std::string {
+        CFStringRef wanted = CFStringCreateWithCString(
+            kCFAllocatorDefault, name, kCFStringEncodingUTF8);
+        CTFontRef font = CTFontCreateWithName(wanted, 13.0, nullptr);
+        CFRelease(wanted);
+        CFStringRef have = font ? CTFontCopyFamilyName(font) : nullptr;
+        std::string out;
+        if (have) {
+            char text[128] = {0};
+            CFStringGetCString(have, text, sizeof(text),
+                               kCFStringEncodingUTF8);
+            out = text;
+            CFRelease(have);
+        }
+        if (font) CFRelease(font);
+        return out;
+    };
+    EXPECT_EQ(family_of("Selawik"), std::string("Selawik"));
+    EXPECT_EQ(family_of("Selawik Semibold"), std::string("Selawik Semibold"));
+    EXPECT_EQ(family_of("Cascadia Mono"), std::string("Cascadia Mono"));
+}
+
+TEST(TextEngineMac, SlantsTheBundledSansItself) {
+    FontSpec italic;
+    italic.family = "Segoe UI";
+    italic.size = 16.0f;
+    italic.italic = true;
+    CTFontRef font = mac::CoreTextFontFor(italic);
+    ASSERT_TRUE(font != nullptr);
+    // The bundled sans ships no italic face, so the engine shears the
+    // font itself: tan(12 degrees).
+    const CGAffineTransform matrix = CTFontGetMatrix(font);
+    EXPECT_NEAR(matrix.c, 0.2126, 0.01);
+    EXPECT_NEAR(matrix.a, 1.0, 0.01);
+}
 
 TEST(TextEngineMac, MeasuresOneRun) {
     CoreTextEngine engine;

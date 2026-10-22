@@ -44,6 +44,28 @@ def main():
         fail("the executable is not marked runnable, so a copy step "
              "dropped the mode")
 
+    # The bundled fonts ride in Resources/Fonts. They are what make a
+    # document lay out the same way as on Windows, so a bundle without
+    # them is not the build we mean to ship.
+    fonts_dir = os.path.join(app, "Contents", "Resources", "Fonts")
+    bundled_fonts = (
+        "Selawik-Regular.ttf",
+        "Selawik-Bold.ttf",
+        "Selawik-Semibold.ttf",
+        "CascadiaMono-Regular.ttf",
+        "CascadiaMono-Bold.ttf",
+        "CascadiaMono-Italic.ttf",
+        "CascadiaMono-BoldItalic.ttf",
+    )
+    for name in bundled_fonts:
+        font_path = os.path.join(fonts_dir, name)
+        if not os.path.isfile(font_path):
+            fail("the bundle has no Contents/Resources/Fonts/%s" % name)
+        if os.path.getsize(font_path) < 40000:
+            fail("Contents/Resources/Fonts/%s is only %d bytes"
+                 % (name, os.path.getsize(font_path)))
+    print("the bundle carries all %d bundled fonts" % len(bundled_fonts))
+
     with open(plist_path, "rb") as fh:
         plist = plistlib.load(fh)
 

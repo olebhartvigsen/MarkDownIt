@@ -434,6 +434,7 @@ if(BUILD_TESTS AND APPLE)
     target_sources(MarkDownIt.tests PRIVATE
         tests/text_engine_mac_test.cpp
         src/macos/text_engine_mac.cpp
+        src/macos/fonts_mac.mm
     )
 elseif(BUILD_TESTS)
     add_executable(MarkDownIt.tests
@@ -618,6 +619,7 @@ if(APPLE)
         src/macos/renderer_mac.cpp
         src/macos/mermaid_painter_mac.cpp
         src/macos/text_engine_mac.cpp
+        src/macos/fonts_mac.mm
         src/macos/clipboard_mac.mm
         src/macos/settings_mac.cpp
             src/macos/menu_mac.mm
@@ -642,6 +644,7 @@ if(APPLE)
         src/macos/image_mac.mm
         src/macos/image_draw_mac.mm
         src/macos/findbar_mac.mm
+        src/macos/fonts_mac.mm
         PROPERTIES COMPILE_FLAGS "-fobjc-arc"
     )
     target_link_libraries(MarkDownItMac
@@ -689,4 +692,21 @@ if(APPLE)
         MACOSX_BUNDLE_BUNDLE_VERSION "${_version}"
     )
     target_sources(MarkDownItMac PRIVATE "${MARKDOWNIT_MAC_ICON}")
+
+    # The bundled fonts. They give the mac build the same faces and the
+    # same metrics as the Windows build, so a document lays out the same
+    # way on both systems (see src/macos/fonts_mac.h). The copy into the
+    # bundle happens at build time, before the signing step runs.
+    set(MARKDOWNIT_MAC_FONTS
+        "${CMAKE_SOURCE_DIR}/third_party/selawik/Selawik-Regular.ttf"
+        "${CMAKE_SOURCE_DIR}/third_party/selawik/Selawik-Bold.ttf"
+        "${CMAKE_SOURCE_DIR}/third_party/selawik/Selawik-Semibold.ttf"
+        "${CMAKE_SOURCE_DIR}/third_party/cascadia-mono/CascadiaMono-Regular.ttf"
+        "${CMAKE_SOURCE_DIR}/third_party/cascadia-mono/CascadiaMono-Bold.ttf"
+        "${CMAKE_SOURCE_DIR}/third_party/cascadia-mono/CascadiaMono-Italic.ttf"
+        "${CMAKE_SOURCE_DIR}/third_party/cascadia-mono/CascadiaMono-BoldItalic.ttf"
+    )
+    set_source_files_properties(${MARKDOWNIT_MAC_FONTS}
+        PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/Fonts")
+    target_sources(MarkDownItMac PRIVATE ${MARKDOWNIT_MAC_FONTS})
 endif()  # APPLE
