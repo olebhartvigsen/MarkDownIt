@@ -3,6 +3,10 @@
 #include "layoutcache.h"
 #ifdef _WIN32
 #include <windows.h>
+// The layout cache asks the platform neutral text layout seam, so it
+// no longer includes DirectWrite itself. This test uses the real
+// DirectWrite factory, so it includes the header.
+#include <dwrite.h>
 #endif
 
 // AC-03: marker-only list items own the position after their source prefix.
