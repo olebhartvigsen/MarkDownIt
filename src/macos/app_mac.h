@@ -116,6 +116,15 @@ public:
     // does.
     void SelectParagraphAt(uint32_t offset);
 
+    // The text of the document as it goes on the disk.
+    //
+    // A standalone SVG file is wrapped in a fence while it is shown, so
+    // the text that goes back to the disk takes the fence away again.
+    std::string TextForSaving() const;
+
+    // Whether the document is a standalone SVG file.
+    bool IsStandaloneSvg() const { return isSvg_; }
+
     // The selected text, empty when there is no selection.
     std::string SelectedText() const;
 
@@ -177,6 +186,10 @@ private:
     Selection sel_;
     EditController editor_;
     UndoStack undo_;
+    // Whether the document is a standalone SVG file.
+    bool isSvg_ = false;
+    // Whether the fence around the SVG was put there by the app.
+    bool svgWrapped_ = false;
     // The handler that reloads the file.
     std::function<void()> reloadHandler_;
     // The find bar, which owns the search state.

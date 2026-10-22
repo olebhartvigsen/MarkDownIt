@@ -18,6 +18,7 @@
 #include "mermaid/pie_layout.h"
 #include "mermaid/seq_layout.h"
 #include "mermaid_painter_mac.h"
+#include "svg_mac.h"
 
 namespace mac {
 namespace {
@@ -232,6 +233,19 @@ float MacRenderer::ContentWidthLimit() const {
     }
 }
 
+const SvgDoc* MacRenderer::GetSvgDoc(const Node& node) {
+    // The document is read once, and it is kept until the document
+    // changes.
+    for (const auto& entry : svgDocs_) {
+        if (entry.first == node.srcOffset) return &entry.second;
+    }
+
+    SvgDoc doc;
+    if (!doc.Load(InlineTextUtf8(node))) return nullptr;
+    svgDocs_.emplace_back(node.srcOffset, std::move(doc));
+    return &svgDocs_.back().second;
+}
+
 void MacRenderer::ChargeForImages(LaidOutBlock* block) {
     // The images are drawn under the text of the block, so the block
     // has to reserve the room for them.
@@ -307,6 +321,21 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
 
         case BlockKind::CodeBlock: {
             *y += metrics_.codeBlockGap;
+
+            // A standalone SVG file is a picture, not a code specimen,
+            // so it is measured as one.
+            if (node.lang == "svg" && standaloneSvg_) {
+                const SvgDoc* doc = GetSvgDoc(node);
+                if (doc && doc->Width() > 0.0f && doc->Height() > 0.0f) {
+                    const float available = width - metrics_.codePad * 2.0f;
+                    const float scale = available / doc->Width();
+                    block.height = doc->Height() * scale;
+                    *y += block.height;
+                    *y += metrics_.codeBlockGap;
+                    break;
+                }
+            }
+
             const std::string code = InlineTextUtf8(node);
             // The code is one run per line, so a line break in the source
             // stays a line break on screen.
@@ -523,6 +552,19 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset) {
         }
 
         case BlockKind::CodeBlock: {
+            // A standalone SVG file is drawn as a picture, without the
+            // card behind it.
+            if (block.node->lang == "svg" && standaloneSvg_) {
+                const SvgDoc* doc = GetSvgDoc(*block.node);
+                if (doc && doc->Width() > 0.0f && doc->Height() > 0.0f) {
+                    const float available = block.width - metrics_.codePad * 2.0f;
+                    const float scale = available / doc->Width();
+                    doc->Draw(target_, block.x + metrics_.codePad, top,
+                              available, doc->Height() * scale);
+                    break;
+                }
+            }
+
             // The background and the border, then the code itself.
             Rect bg;
             bg.x = block.x;

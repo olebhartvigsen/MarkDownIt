@@ -202,6 +202,13 @@ public:
     virtual void FillPolygon(const std::vector<Point>& points,
                              const Color& color) = 0;
 
+    // Strokes a polygon. The points are in the order they are given,
+    // and the last point is joined back to the first when the shape is
+    // closed.
+    virtual void StrokePolygon(const std::vector<Point>& points,
+                               const Color& color, float lineWidth,
+                               bool closed) = 0;
+
     // Fills a pie slice of the ellipse that fits the rectangle.
     //
     // The angles are in degrees, measured clockwise from the three

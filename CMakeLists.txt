@@ -611,6 +611,7 @@ if(APPLE)
         src/macos/image_mac.mm
         src/macos/image_draw_mac.mm
         src/macos/findbar_mac.mm
+        src/macos/svg_mac.cpp
     )
     # The Objective-C++ sources need the Objective-C runtime and the
     # frameworks, which the C++ sources do not.

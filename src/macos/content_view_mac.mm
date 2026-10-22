@@ -208,6 +208,27 @@ public:
         CGContextRestoreGState(context_);
     }
 
+    void StrokePolygon(const std::vector<Point>& points,
+                       const Color& color, float lineWidth,
+                       bool closed) override {
+        if (points.size() < 2) return;
+        std::vector<CGPoint> coordinates;
+        coordinates.reserve(points.size());
+        for (const Point& point : points) {
+            coordinates.push_back(CGPointMake(point.x, point.y));
+        }
+        CGContextSaveGState(context_);
+        CGContextSetRGBStrokeColor(context_, color.r, color.g, color.b,
+                                   color.a);
+        CGContextSetLineWidth(context_, lineWidth > 0.0f ? lineWidth : 1.0f);
+        CGContextBeginPath(context_);
+        CGContextMoveToPoint(context_, coordinates[0].x, coordinates[0].y);
+        CGContextAddLines(context_, coordinates.data(), coordinates.size());
+        if (closed) CGContextClosePath(context_);
+        CGContextStrokePath(context_);
+        CGContextRestoreGState(context_);
+    }
+
     void FillPieSlice(const Rect& rect, float startAngle, float endAngle,
                       const Color& color) override {
         // The seam counts the angles clockwise from three o'clock, and
@@ -295,6 +316,8 @@ ContentView::ContentView(App* app)
     renderer_.SetDiagramTextEngine(new CoreTextEngine());
     renderer_.SetTextEngine(engine_);
     renderer_.SetTheme(BaseMetrics(), BasePalette());
+    renderer_.SetStandaloneSvg(app_ && app_->IsStandaloneSvg());
+    renderer_.SetStandaloneSvg(app_ && app_->IsStandaloneSvg());
     width_ = kDefaultWidth;
     height_ = kDefaultHeight;
     Relayout();
@@ -306,6 +329,10 @@ ContentView::~ContentView() {
 }
 
 void ContentView::OnDocumentChanged() {
+    // The document may have changed from a markdown file to a
+    // standalone SVG file, or the other way round.
+    renderer_.SetStandaloneSvg(app_ && app_->IsStandaloneSvg());
+
     Relayout();
     Invalidate();
 }

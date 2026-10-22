@@ -216,9 +216,9 @@ private:
     // The window and the app both live for the whole run of the
     // program, and the handler is cleared when the app goes away.
     MdAppDelegate* delegate = self;
-    [app_ setReloadHandler:^{
+    app_->SetReloadHandler([delegate] {
         [delegate OnReload];
-    }];
+    });
 
     // The menu bar.
     adapter_ = [self makeAdapter];
@@ -270,7 +270,7 @@ private:
 
 - (void)applicationWillTerminate:(NSNotification*)notification {
     // The handler points at this object, so it goes away with it.
-    [app_ setReloadHandler:nullptr];
+    app_->SetReloadHandler(nullptr);
     (void)notification;
     settings_.settings().zoomFactor = zoom_;
     [self saveWindowFrame];
@@ -518,7 +518,7 @@ private:
         [self reportError:@"The file could not be saved."];
         return NO;
     }
-    const std::string& text = app_->sourceText();
+    const std::string text = app_->TextForSaving();
     file.write(text.data(), static_cast<std::streamsize>(text.size()));
     file.close();
     return YES;

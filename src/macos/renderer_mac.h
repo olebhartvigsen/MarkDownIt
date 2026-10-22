@@ -16,6 +16,7 @@
 
 #include "dom.h"
 #include "seams.h"
+#include "svg_mac.h"
 #include "image_mac.h"
 #include "searchreplace.h"
 #include "theme.h"
@@ -86,6 +87,10 @@ public:
     // The modes are the ones the settings keep: 0 is the standard
     // width, 3 is the full window width.
     void SetContentWidthMode(int mode);
+
+    // Says whether the document is a standalone SVG file, which is
+    // drawn as a picture.
+    void SetStandaloneSvg(bool value) { standaloneSvg_ = value; }
 
     // The theme. The mac theme variant supplies macOS font names, the
     // shared one supplies the spacing.
@@ -200,6 +205,16 @@ private:
     ImageCache images_;
     // The ranges the find bar matched, and the one that is current.
     std::vector<TextMatch> searchMatches_;
+
+    // The parsed SVG documents, one for each block that holds one.
+    std::vector<std::pair<uint32_t, SvgDoc>> svgDocs_;
+
+    // The SVG document of a block, which is read the first time the
+    // block is drawn.
+    const SvgDoc* GetSvgDoc(const Node& node);
+
+    // Whether the document is a standalone SVG file.
+    bool standaloneSvg_ = false;
     int searchCurrent_ = -1;
     // The zoom of the document.
     float zoom_ = 1.0f;

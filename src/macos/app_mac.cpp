@@ -64,12 +64,82 @@ App::App() : editor_(&buffer_, &sel_) {
 
 App::~App() = default;
 
+namespace {
+
+// Whether the text already has a fence of the given language.
+bool HasLangFence(const std::string& text, const std::string& lang) {
+    size_t i = 0;
+    while (i < text.size()) {
+        size_t eol = text.find('\n', i);
+        std::string line = text.substr(
+            i, (eol == std::string::npos ? text.size() : eol) - i);
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        size_t b = 0;
+        while (b < line.size() && b < 3 && line[b] == ' ') b++;
+        if (line.compare(b, 3, "```") == 0) {
+            std::string info = line.substr(b + 3);
+            while (!info.empty() && (info.back() == ' ' ||
+                                     info.back() == '\t' || info.back() == '\r')) {
+                info.pop_back();
+            }
+            if (info == lang) return true;
+        }
+        if (eol == std::string::npos) break;
+        i = eol + 1;
+    }
+    return false;
+}
+
+// Puts a fence around the text.
+std::string WrapLangFence(const std::string& lang, const std::string& text) {
+    std::string out = "```" + lang + "\n";
+    out += text;
+    if (out.empty() || out.back() != '\n') out += '\n';
+    if (text.empty()) out += '\n';
+    out += "```\n";
+    return out;
+}
+
+// Takes the fence away again.
+//
+// At most one fence at the top and the one at the end go, so the
+// content that has fences of its own stays as it was.
+std::string UnwrapLangFence(const std::string& lang, const std::string& text) {
+    const std::string open = "```" + lang + "\n";
+    if (text.compare(0, open.size(), open) != 0) return text;
+
+    std::string body = text.substr(open.size());
+    const size_t close = body.rfind("```");
+    if (close == std::string::npos) return text;
+    body = body.substr(0, close);
+    if (!body.empty() && body.back() == '\n') body.pop_back();
+    return body;
+}
+
+// Whether the path ends in the given extension.
+bool EndsWith(const std::string& path, const std::string& extension) {
+    if (path.size() < extension.size()) return false;
+    return path.compare(path.size() - extension.size(), extension.size(),
+                        extension) == 0;
+}
+
+}  // namespace
+
 bool App::OpenFile(const std::string& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file) return false;
     std::ostringstream contents;
     contents << file.rdbuf();
-    const std::string text = contents.str();
+    std::string text = contents.str();
+
+    // A standalone SVG file is a picture, so the content is wrapped in
+    // a fence, and the normal pipeline reads it as one.
+    isSvg_ = EndsWith(path, ".svg");
+    svgWrapped_ = false;
+    if (isSvg_ && !HasLangFence(text, "svg")) {
+        text = WrapLangFence("svg", text);
+        svgWrapped_ = true;
+    }
 
     filePath_ = path;
     buffer_.SetText(text);
@@ -80,8 +150,15 @@ bool App::OpenFile(const std::string& path) {
     return true;
 }
 
+std::string App::TextForSaving() const {
+    if (svgWrapped_) return UnwrapLangFence("svg", buffer_.Text());
+    return buffer_.Text();
+}
+
 void App::NewDocument() {
     filePath_.clear();
+    isSvg_ = false;
+    svgWrapped_ = false;
     buffer_.SetText(std::string());
     buffer_.ClearDirty();
     dirty_ = false;
