@@ -14,18 +14,20 @@
 // run start. That keeps the file free of the private run dictionary keys,
 // which have changed between SDK releases.
 //
-// The ownership follows the Core Foundation get rules. The lines of a
-// frame belong to the frame, so they are not released, and a line the
-// engine keeps is retained before the frame, which owns it, goes away.
+// The ownership follows the Core Foundation get rules: every object the
+// engine creates is released once, and the lines it keeps are handed
+// over by the typesetter, which is what makes the engine their owner.
 // The attribute calls run after the text is in the string, because a
 // range that reaches past the end of the string faulted inside Core
-// Foundation at the first real document open.
+// Foundation at the first real document open. The line breaks come from
+// the typesetter one line at a time, because a frame with an unbounded
+// height takes a whole paragraph, which made every paragraph measure as
+// a single line.
 
 #include "text_engine_mac.h"
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreGraphics/CGColor.h>
-#include <CoreText/CTFrame.h>
 #include <CoreText/CoreText.h>
 
 #include <algorithm>
@@ -157,9 +159,9 @@ struct LaidRun {
 CTFontRef CoreTextFontFor(const FontSpec& spec) { return GetFont(spec); }
 
 struct CoreTextEngine::Impl {
-    // The measured lines of the last MeasureWrapped call. The renderer and
-    // the hit tester both need the Core Text objects behind a TextLine, so
-    // they are kept here, alive, until the next measurement.
+    // The measured lines of the last MeasureWrapped call. The hit tester
+    // needs the Core Text object behind a TextLine, so the lines are kept
+    // here, alive, until the next measurement.
     struct Entry {
         CTLineRef line = nullptr;
         // The width of the line, which is how a TextLine is matched to its
@@ -281,55 +283,31 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
         return {};
     }
 
-    // The typesetter. The suggestion loop asks for the line break that
-    // fits the width, which is how a paragraph wraps.
-    CTFramesetterRef framesetter =
-        CTFramesetterCreateWithAttributedString(attributed);
-    if (!framesetter) {
+    // The typesetter, which knows the line breaks. It is asked for one
+    // line break at a time, which is how a paragraph wraps.
+    CTTypesetterRef typesetter =
+        CTTypesetterCreateWithAttributedString(attributed);
+    if (!typesetter) {
         CFRelease(attributed);
         return {};
     }
 
-    // The path the framesetter breaks against. An unbounded width means
-    // one long line.
+    // An unbounded width means one long line per paragraph.
     const CGFloat width = maxWidth > 0.0f ? maxWidth : CGFLOAT_MAX;
-    CGPathRef path =
-        CGPathCreateWithRect(CGRectMake(0, 0, width, CGFLOAT_MAX), nullptr);
 
     std::vector<TextLine> lines;
     CFIndex start = 0;
     while (start < u16Length) {
         // The break that fits the width.
-        CFRange fitRange = CFRangeMake(0, 0);
-        CTFramesetterSuggestFrameSizeWithConstraints(
-            framesetter, CFRangeMake(start, 0), nullptr,
-            CGSizeMake(width, CGFLOAT_MAX), &fitRange);
-        CFIndex count = fitRange.length;
+        CFIndex count = CTTypesetterSuggestLineBreak(typesetter, start, width);
         if (count <= 0) break;
         if (start + count > u16Length) count = u16Length - start;
 
-        // The line itself. The framesetter lays the text out into a
-        // frame, and the frame hands back the line that covers the range.
-        CTFrameRef frame = CTFramesetterCreateFrame(
-            framesetter, CFRangeMake(start, 0), path, nullptr);
-        if (!frame) break;
-
-        // The lines belong to the frame, so the array is borrowed and is
-        // not released here.
-        CFArrayRef frameLines = CTFrameGetLines(frame);
-        CTLineRef line = nullptr;
-        if (frameLines && CFArrayGetCount(frameLines) > 0) {
-            line = static_cast<CTLineRef>(
-                CFArrayGetValueAtIndex(frameLines, 0));
-        }
-        if (!line) {
-            CFRelease(frame);
-            break;
-        }
-
-        // The engine keeps the line, so it is retained before the frame,
-        // which owns it, is released.
-        CFRetain(line);
+        // The line itself. The typesetter hands it over, so the engine
+        // owns it and releases it when the next measurement replaces it.
+        CTLineRef line =
+            CTTypesetterCreateLine(typesetter, CFRangeMake(start, count));
+        if (!line) break;
 
         TextLine out;
         out.width = static_cast<float>(CTLineGetTypographicBounds(
@@ -379,8 +357,6 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
             out.runs.push_back(glyph);
         }
 
-        CFRelease(frame);
-
         Impl::Entry entry;
         entry.line = line;
         entry.width = out.width;
@@ -390,8 +366,7 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
         start += count;
     }
 
-    if (path) CGPathRelease(path);
-    CFRelease(framesetter);
+    CFRelease(typesetter);
     CFRelease(attributed);
 
     // The line spacing is applied to the line heights, so the caller does

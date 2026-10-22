@@ -78,6 +78,8 @@ TEST(TextEngineMac, WrapsALongRunAndKeepsEveryCharacter) {
     EXPECT_EQ(Rebuild(lines), text);
     for (const TextLine& line : lines) {
         EXPECT_TRUE(!line.runs.empty());
+        // Every line starts at its own left edge.
+        EXPECT_NEAR(line.runs[0].x, 0.0f, 0.5f);
         EXPECT_LT(line.width, 145.0f);
     }
 }
