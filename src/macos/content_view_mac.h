@@ -17,6 +17,7 @@
 #include "app_mac.h"
 #include "caret.h"
 #include "renderer_mac.h"
+#include "welcome_mac.h"
 #include "searchreplace.h"
 #include "seams.h"
 
@@ -29,6 +30,20 @@ public:
 
     // The document changed, so the layout is stale.
     void OnDocumentChanged();
+
+    // Sets the files the welcome screen shows.
+    void SetWelcomeFiles(const std::vector<RecentFile>& files);
+
+    // Which card of the welcome screen is under a point, or -1 when
+    // there is none.
+    int WelcomeCardAt(float x, float y) const;
+
+    // The file a card of the welcome screen stands for.
+    std::string WelcomePathForCard(int index) const;
+
+    // The card under the mouse, which is drawn in another colour.
+    int HoveredWelcomeCard() const { return hoverCard_; }
+    void SetHoveredWelcomeCard(int index) { hoverCard_ = index; }
 
     // Redraws the content area.
     void Invalidate();
@@ -115,6 +130,10 @@ private:
     TextEngine* engine_;
     RenderTarget* target_;
     MacRenderer renderer_;
+    // The welcome screen, which is shown when no document is open.
+    WelcomeScreen welcome_;
+    // The card of the welcome screen under the mouse.
+    int hoverCard_ = -1;
 
     float width_ = 0.0f;
     float height_ = 0.0f;

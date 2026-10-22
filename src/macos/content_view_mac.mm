@@ -372,7 +372,26 @@ void ContentView::Relayout() {
     documentHeight_ = renderer_.Measure(app_->GetDocument(), column);
 }
 
+void ContentView::SetWelcomeFiles(const std::vector<RecentFile>& files) {
+    welcome_.SetRecentFiles(files);
+}
+
+int ContentView::WelcomeCardAt(float x, float y) const {
+    return welcome_.HitTest(x, y);
+}
+
+std::string ContentView::WelcomePathForCard(int index) const {
+    return welcome_.GetPath(index);
+}
+
 void ContentView::Draw(RenderTarget* target) {
+    // Without a document the welcome screen takes its place.
+    if (app_ && app_->WelcomeMode()) {
+        welcome_.Layout(width_, height_);
+        welcome_.Render(target, width_, height_, hoverCard_);
+        target_ = nullptr;
+        return;
+    }
     if (!target || !app_) return;
 
     target_ = target;
@@ -535,6 +554,8 @@ float ContentView::CaretHeight() const {
     mac::App* app_;
     // The timer that blinks the caret.
     NSTimer* blinkTimer_;
+    // The area that tells the view the mouse moved over it.
+    NSTrackingArea* trackingArea_;
 }
 
 - (instancetype)initWithContent:(mac::ContentView*)content app:(mac::App*)app {
@@ -585,6 +606,16 @@ float ContentView::CaretHeight() const {
     if (!content_) return;
     const NSPoint point = [self convertPoint:[event locationInWindow]
                                     fromView:nil];
+
+    // A click on a card of the welcome screen opens that file.
+    if (app_ && app_->WelcomeMode()) {
+        const int card = content_->WelcomeCardAt(static_cast<float>(point.x),
+                                                 static_cast<float>(point.y));
+        if (card >= 0) {
+            app_->RequestOpenFile(content_->WelcomePathForCard(card));
+            return;
+        }
+    }
 
     // A double click takes the word and a triple click takes the
     // paragraph, the way the Windows app does it.
@@ -708,6 +739,32 @@ float ContentView::CaretHeight() const {
     code.target = target;
 
     [NSMenu popUpContextMenu:menu withEvent:event forView:self];
+}
+
+// The mouse moves are only sent when the view asks for them.
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if (trackingArea_) {
+        [self removeTrackingArea:trackingArea_];
+        trackingArea_ = nil;
+    }
+    trackingArea_ = [[NSTrackingArea alloc]
+        initWithRect:self.bounds
+             options:NSTrackingMouseMoved | NSTrackingActiveInKeyWindow
+               owner:self
+            userInfo:nil];
+    [self addTrackingArea:trackingArea_];
+}
+
+- (void)mouseMoved:(NSEvent*)event {
+    if (!content_ || !app_ || !app_->WelcomeMode()) return;
+    const NSPoint point = [self convertPoint:[event locationInWindow]
+                                    fromView:nil];
+    const int card = content_->WelcomeCardAt(static_cast<float>(point.x),
+                                             static_cast<float>(point.y));
+    if (card == content_->HoveredWelcomeCard()) return;
+    content_->SetHoveredWelcomeCard(card);
+    [self setNeedsDisplay:YES];
 }
 
 - (void)mouseDragged:(NSEvent*)event {

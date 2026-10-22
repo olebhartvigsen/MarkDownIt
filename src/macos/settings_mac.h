@@ -37,6 +37,10 @@ public:
     // The recent files, most recent first.
     const std::vector<std::string>& recentFiles() const { return recentFiles_; }
 
+    // The recent files with the first lines of each one, which the
+    // welcome screen shows.
+    std::vector<RecentFile> recentFilesWithPreview() const;
+
     // Adds a file to the recent list. The list keeps at most ten entries
     // and never has the same file twice.
     void AddRecentFile(const std::string& path);

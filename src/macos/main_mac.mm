@@ -15,6 +15,7 @@
 #include "app_mac.h"
 #include "content_nsview_mac.h"
 #include "content_view_mac.h"
+#include "welcome_mac.h"
 #include "findbar_mac.h"
 #include "formatting.h"
 #include "menu_mac.h"
@@ -210,6 +211,10 @@ private:
     [window_ setContentView:container_];
     [window_ makeKeyAndOrderFront:nil];
 
+    // Without a file the welcome screen takes the place of the
+    // document.
+    [self showWelcomeScreen];
+
     // F5 in the document asks the window to reload the file, because
     // the window asks the user before the changes are thrown away.
     //
@@ -218,6 +223,9 @@ private:
     MdAppDelegate* delegate = self;
     app_->SetReloadHandler([delegate] {
         [delegate OnReload];
+    });
+    app_->SetOpenFileHandler([delegate](const std::string& path) {
+        [delegate OpenPath:path];
     });
 
     // The menu bar.
@@ -279,6 +287,7 @@ private:
 
 // Opens a file, and reports a failure to the user.
 - (void)OpenPath:(const std::string&)path {
+    [self hideWelcomeScreen];
     if (path.empty()) return;
 
     if (!app_->OpenFile(path)) {
@@ -329,12 +338,27 @@ private:
 // ---------------------------------------------------------------------------
 
 - (void)OnNewDocument {
+    if (![self confirmDiscardChanges]) return;
     app_->NewDocument();
     [window_ setTitle:@"Untitled"];
+    [self showWelcomeScreen];
     [view_ setNeedsDisplay:YES];
 }
 
+// Shows the welcome screen, which takes the place of the document when
+// no file is open.
+- (void)showWelcomeScreen {
+    app_->SetWelcomeMode(true);
+    content_->SetWelcomeFiles(settings_.recentFilesWithPreview());
+}
+
+// Hides the welcome screen, because a document is open now.
+- (void)hideWelcomeScreen {
+    app_->SetWelcomeMode(false);
+}
+
 - (void)OnOpen {
+    if (![self confirmDiscardChanges]) return;
     NSOpenPanel* panel = [NSOpenPanel openPanel];
     [panel setAllowsMultipleSelection:NO];
     [panel setCanChooseDirectories:NO];
@@ -344,30 +368,63 @@ private:
 }
 
 - (void)OnSave {
+    [self saveCurrentDocument];
+}
+
+// Saves the document, and says whether it worked.
+- (BOOL)saveCurrentDocument {
     if (app_->filePath().empty()) {
-        [self OnSaveAs];
-        return;
+        return [self saveDocumentAs];
     }
-    if (![self writeToPath:app_->filePath()]) return;
+    if (![self writeToPath:app_->filePath()]) return NO;
     app_->MarkClean();
+    return YES;
+}
+
+// Asks what to do with the changes, and says whether the document may
+// be replaced.
+//
+// The user can save the changes, throw them away, or cancel the
+// command that asked.
+- (BOOL)confirmDiscardChanges {
+    if (!app_->IsDirty()) return YES;
+
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText = @"Save the changes before you continue?";
+    alert.informativeText = @"The changes are not on the disk yet.";
+    [alert addButtonWithTitle:@"Save"];
+    [alert addButtonWithTitle:@"Discard"];
+    [alert addButtonWithTitle:@"Cancel"];
+
+    const NSModalResponse answer = [alert runModal];
+    if (answer == NSAlertFirstButtonReturn) return [self saveCurrentDocument];
+    if (answer == NSAlertSecondButtonReturn) return YES;
+    return NO;
 }
 
 - (void)OnSaveAs {
+    [self saveDocumentAs];
+}
+
+// Saves the document under a new name, and says whether it worked.
+- (BOOL)saveDocumentAs {
     NSSavePanel* panel = [NSSavePanel savePanel];
     [panel setAllowedFileTypes:@[@"md", @"markdown"]];
     [panel setNameFieldStringValue:@"Untitled.md"];
-    if ([panel runModal] != NSModalResponseOK) return;
+    if ([panel runModal] != NSModalResponseOK) return NO;
 
     const std::string path = [[panel URL] path].UTF8String;
-    if (![self writeToPath:path]) return;
+    if (![self writeToPath:path]) return NO;
 
     app_->MarkClean();
     settings_.AddRecentFile(path);
     settings_.Save();
     [window_ setTitle:[NSString stringWithUTF8String:path.c_str()]];
+    return YES;
 }
 
 - (void)OnClose {
+    if (![self confirmDiscardChanges]) return;
     [window_ close];
 }
 

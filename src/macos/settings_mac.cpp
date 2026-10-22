@@ -20,6 +20,8 @@
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
+
+#include "textenc.h"
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -374,6 +376,24 @@ bool MacSettings::Save() const {
         if (!file) return false;
     }
     return std::rename(temporary.c_str(), path_.c_str()) == 0;
+}
+
+std::vector<RecentFile> MacSettings::recentFilesWithPreview() const {
+    std::vector<RecentFile> files;
+    for (const std::string& path : recentFiles_) {
+        RecentFile file;
+        file.path = textenc::Utf8ToWide(path);
+
+        // The first lines of the file, which the card shows.
+        std::ifstream input(path, std::ios::binary);
+        if (input) {
+            std::ostringstream contents;
+            contents << input.rdbuf();
+            file.preview = contents.str().substr(0, 300);
+        }
+        files.push_back(file);
+    }
+    return files;
 }
 
 void MacSettings::AddRecentFile(const std::string& path) {

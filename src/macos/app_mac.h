@@ -104,6 +104,21 @@ public:
         reloadHandler_ = std::move(handler);
     }
 
+    // Says whether the welcome screen is shown instead of a document.
+    void SetWelcomeMode(bool mode) { welcomeMode_ = mode; }
+    bool WelcomeMode() const { return welcomeMode_; }
+
+    // Sets the handler that opens a file, which the welcome screen
+    // calls when a card is clicked.
+    void SetOpenFileHandler(std::function<void(const std::string&)> handler) {
+        openFileHandler_ = std::move(handler);
+    }
+
+    // Asks for a file to be opened.
+    void RequestOpenFile(const std::string& path) {
+        if (openFileHandler_) openFileHandler_(path);
+    }
+
     // Asks for the file to be reloaded.
     void RequestReload() {
         if (reloadHandler_) reloadHandler_();
@@ -186,6 +201,10 @@ private:
     Selection sel_;
     EditController editor_;
     UndoStack undo_;
+    // Whether the welcome screen is shown instead of a document.
+    bool welcomeMode_ = false;
+    // The handler that opens a file.
+    std::function<void(const std::string&)> openFileHandler_;
     // Whether the document is a standalone SVG file.
     bool isSvg_ = false;
     // Whether the fence around the SVG was put there by the app.
