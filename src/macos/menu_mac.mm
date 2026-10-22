@@ -192,8 +192,9 @@ NSMenu* BuildMainMenu() {
              {"Split Cell", @selector(splitCell:)},
              {"Align Left", @selector(alignLeft:)},
              {"Align Center", @selector(alignCenter:)},
-             {"Align Right", @selector(alignRight:)}},
-            {"", "", "", "", "", "", "", "", "", "", ""});
+             {"Align Right", @selector(alignRight:)},
+             {"Delete Table", @selector(removeTable:)}},
+            {"", "", "", "", "", "", "", "", "", "", "", ""});
         AddTopLevel(mainMenu, "Table", tableMenu);
     }
 

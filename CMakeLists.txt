@@ -635,6 +635,7 @@ if(APPLE)
         src/macos/image_mac.mm
         src/macos/image_draw_mac.mm
         src/macos/findbar_mac.mm
+        src/macos/ribbon_mac.mm
         src/macos/svg_mac.cpp
         src/macos/welcome_mac.cpp
     )
@@ -649,6 +650,7 @@ if(APPLE)
         src/macos/image_draw_mac.mm
         src/macos/findbar_mac.mm
         src/macos/fonts_mac.mm
+        src/macos/ribbon_mac.mm
         PROPERTIES COMPILE_FLAGS "-fobjc-arc"
     )
     target_link_libraries(MarkDownItMac
@@ -713,4 +715,11 @@ if(APPLE)
     set_source_files_properties(${MARKDOWNIT_MAC_FONTS}
         PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/Fonts")
     target_sources(MarkDownItMac PRIVATE ${MARKDOWNIT_MAC_FONTS})
+
+    # The command strip draws the icons the Windows ribbon lists in
+    # src/ribbon.xml, so the icon set goes into the bundle as a whole.
+    file(GLOB MARKDOWNIT_MAC_ICONS "${CMAKE_SOURCE_DIR}/src/icons/*.png")
+    set_source_files_properties(${MARKDOWNIT_MAC_ICONS}
+        PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/icons")
+    target_sources(MarkDownItMac PRIVATE ${MARKDOWNIT_MAC_ICONS})
 endif()  # APPLE

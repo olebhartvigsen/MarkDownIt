@@ -6,6 +6,7 @@
 // the command line or from the Finder.
 
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <string>
 
@@ -28,20 +29,54 @@
 #include "welcome_mac.h"
 #include "findbar_mac.h"
 #include "menu_mac.h"
+#include "ribbon_mac.h"
 #include "crash_trace_mac.h"
 #include "fonts_mac.h"
 #include "settings_mac.h"
 #include "zoommodel.h"
 
+// The helpers of the command strip. The strip asks what state the
+// caret is in, and these read the text for it.
+namespace {
+
+// The heading level of the line at |lineStart|, 0 when the line is not
+// a heading. The strip lights H1 to H3 from this.
+int HeadingLevelAt(const std::string& text, uint32_t lineStart) {
+    size_t level = 0;
+    while (lineStart + level < text.size() && text[lineStart + level] == '#') {
+        ++level;
+    }
+    if (level == 0 || level > 6) return 0;
+    const size_t after = lineStart + level;
+    if (after < text.size() && text[after] == ' ')
+        return static_cast<int>(level);
+    return 0;
+}
+
+// Whether the line at |lineStart| opens with |prefix|.
+bool LineHasPrefix(const std::string& text, uint32_t lineStart,
+                   const char* prefix) {
+    const size_t length = std::strlen(prefix);
+    return lineStart + length <= text.size() &&
+           text.compare(lineStart, length, prefix) == 0;
+}
+
+}  // namespace
+
 // The window and the app.
 //
 // The delegate owns the app object, the window and the content view. It
-// implements the AppKit selectors, which the menu items are wired to.
-@interface MdAppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate> {
+// implements the AppKit selectors, which the menu items and the command
+// strip are wired to.
+@interface MdAppDelegate
+    : NSObject <NSApplicationDelegate, NSWindowDelegate, MdRibbonHost> {
     mac::App* app_;
     mac::ContentView* content_;
-    // The window content, which holds the find bar and the document.
+    // The window content, which holds the command strip, the find bar
+    // and the document.
     NSStackView* container_;
+    // The command strip, the mac twin of the Windows ribbon.
+    MdRibbonView* ribbon_;
 
     // The outline pane and the view that draws it.
     mac::OutlinePane* outlinePane_;
@@ -204,6 +239,15 @@
     outlinePane_->SetPalette(BasePalette());
     app_->SetDocumentChangedHandler([self] {
         [self outlinePaneRefresh];
+        // The strip follows the document: its toggles and its table
+        // commands depend on what the caret is in.
+        [self ribbonSync];
+    });
+
+    // The strip lights its format toggles from the selection, so it
+    // reads the state again after every move of the caret.
+    app_->SetSelectionChangedHandler([self] {
+        [self ribbonSync];
     });
 
     // A click on a heading puts the caret there and scrolls it into
@@ -237,6 +281,14 @@
     container_ = [[NSStackView alloc] initWithFrame:frame];
     [container_ setOrientation:NSUserInterfaceLayoutOrientationVertical];
     [container_ setDistribution:NSStackViewDistributionFill];
+
+    // The command strip sits at the top, the way the Windows ribbon
+    // does.
+    ribbon_ = [MdRibbonView ribbonWithHost:self];
+    [ribbon_ setTranslatesAutoresizingMaskIntoConstraints:NO];
+    [[ribbon_ heightAnchor]
+        constraintEqualToConstant:[MdRibbonView ribbonHeight]].active = YES;
+    [container_ addArrangedSubview:ribbon_];
     [container_ addArrangedSubview:findBarView];
     [container_ addArrangedSubview:splitView_];
 
@@ -430,6 +482,7 @@
 - (void)addColumnLeft:(id)sender { (void)sender; [self OnAddTableColumn:NO]; }
 - (void)addColumnRight:(id)sender { (void)sender; [self OnAddTableColumn:YES]; }
 - (void)removeColumn:(id)sender { (void)sender; [self OnRemoveTableColumn]; }
+- (void)removeTable:(id)sender { (void)sender; [self OnRemoveTable]; }
 - (void)splitCell:(id)sender { (void)sender; [self OnSplitTableCell]; }
 - (void)alignLeft:(id)sender { (void)sender; [self OnAlignTableColumn:1]; }
 - (void)alignCenter:(id)sender { (void)sender; [self OnAlignTableColumn:2]; }
@@ -457,11 +510,14 @@
 - (void)showWelcomeScreen {
     app_->SetWelcomeMode(true);
     content_->SetWelcomeFiles(settings_.recentFilesWithPreview());
+    // The strip's document commands have nothing to act on here.
+    [self ribbonSync];
 }
 
 // Hides the welcome screen, because a document is open now.
 - (void)hideWelcomeScreen {
     app_->SetWelcomeMode(false);
+    [self ribbonSync];
 }
 
 - (void)OnOpen {
@@ -677,6 +733,7 @@
 
 - (void)OnToggleSourceView {
     sourceView_ = !sourceView_;
+    [self ribbonSync];
     [view_ setNeedsDisplay:YES];
 }
 
@@ -740,6 +797,7 @@
 - (void)OnToggleWrap {
     wrap_ = !wrap_;
     content_->SetWrap(wrap_);
+    [self ribbonSync];
     [view_ setNeedsDisplay:YES];
 }
 
@@ -751,6 +809,83 @@
     settings_.settings().contentWidthMode = contentWidthMode_;
     settings_.Save();
     [view_ setNeedsDisplay:YES];
+}
+
+// The two questions the command strip asks. The strip carries its
+// commands out through the same selectors the menu items use; these
+// methods only report the state the buttons show.
+
+- (BOOL)ribbonCommandOn:(NSString*)commandId {
+    const std::string& text = app_->sourceText();
+    const uint32_t start = app_->selection().Start();
+    const uint32_t end = app_->selection().End();
+    const bool hasSelection = !app_->selection().Empty();
+
+    if ([commandId isEqualToString:@"cmdWrap"]) return wrap_;
+    if ([commandId isEqualToString:@"cmdOutline"]) return outlineVisible_;
+    if ([commandId isEqualToString:@"cmdViewSource"]) return sourceView_;
+    if ([commandId isEqualToString:@"cmdBold"])
+        return hasSelection && IsWrappedIn(text, start, end, "**");
+    if ([commandId isEqualToString:@"cmdItalic"])
+        return hasSelection && IsWrappedIn(text, start, end, "*");
+    if ([commandId isEqualToString:@"cmdStrike"])
+        return hasSelection && IsWrappedIn(text, start, end, "~~");
+    if ([commandId isEqualToString:@"cmdCode"])
+        return hasSelection && IsWrappedIn(text, start, end, "`");
+    if ([commandId isEqualToString:@"cmdMark"]) {
+        if (!hasSelection) return NO;
+        for (const TextMarker& marker : app_->markers().Markers()) {
+            if (!marker.resolved) continue;
+            if (marker.start <= start && end <= marker.end) return YES;
+        }
+        return NO;
+    }
+
+    const uint32_t lineStart = app_->buffer().LineStart(start);
+    if ([commandId isEqualToString:@"cmdHeading1"])
+        return HeadingLevelAt(text, lineStart) == 1;
+    if ([commandId isEqualToString:@"cmdHeading2"])
+        return HeadingLevelAt(text, lineStart) == 2;
+    if ([commandId isEqualToString:@"cmdHeading3"])
+        return HeadingLevelAt(text, lineStart) == 3;
+    if ([commandId isEqualToString:@"cmdBullets"])
+        return LineHasPrefix(text, lineStart, "- ") ||
+               LineHasPrefix(text, lineStart, "* ") ||
+               LineHasPrefix(text, lineStart, "+ ");
+    if ([commandId isEqualToString:@"cmdNumbering"]) {
+        return lineStart + 2 < text.size() && text[lineStart] >= '0' &&
+               text[lineStart] <= '9' && text[lineStart + 1] == '.' &&
+               text[lineStart + 2] == ' ';
+    }
+    if ([commandId isEqualToString:@"cmdQuote"])
+        return LineHasPrefix(text, lineStart, "> ");
+    return NO;
+}
+
+// Whether a strip command is available right now. The table commands
+// need the caret in a table; the undo pair needs something to undo.
+- (BOOL)ribbonCommandAvailable:(NSString*)commandId {
+    if (app_->WelcomeMode()) {
+        // The welcome screen holds no document, so a document command
+        // has nothing to act on.
+        return NO;
+    }
+    if ([commandId isEqualToString:@"cmdUndo"]) return app_->undo().CanUndo();
+    if ([commandId isEqualToString:@"cmdRedo"]) return app_->undo().CanRedo();
+    if ([commandId hasPrefix:@"cmdAdd"] || [commandId hasPrefix:@"cmdAlign"] ||
+        [commandId isEqualToString:@"cmdRemoveRow"] ||
+        [commandId isEqualToString:@"cmdRemoveColumn"] ||
+        [commandId isEqualToString:@"cmdSplitCell"] ||
+        [commandId isEqualToString:@"cmdRemoveTable"]) {
+        tableedit::TableLocation location;
+        return app_->CaretTable(&location);
+    }
+    return YES;
+}
+
+// Re-reads the command states of the strip.
+- (void)ribbonSync {
+    [ribbon_ refresh];
 }
 
 // The document changed, so the pane reads it again.
@@ -781,11 +916,13 @@
     settings_.settings().outlineVisible = outlineVisible_;
     settings_.Save();
 
+    [self ribbonSync];
     [view_ setNeedsDisplay:YES];
 }
 
 - (void)OnToggleMark {
     app_->ToggleMarkSelection();
+    [self ribbonSync];
     [view_ setNeedsDisplay:YES];
 }
 
@@ -896,6 +1033,12 @@
 
 - (void)OnAlignTableColumn:(int)mark {
     app_->AlignTableColumn(mark);
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnRemoveTable {
+    app_->RemoveTable();
+    [self ribbonSync];
     [view_ setNeedsDisplay:YES];
 }
 

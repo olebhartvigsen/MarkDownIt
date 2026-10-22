@@ -379,6 +379,31 @@ void App::AlignTableColumn(int mark) {
     RewriteTable(start, end, rebuilt, caret);
 }
 
+// Removes the whole table the caret is in, in one edit, so the table
+// leaves in a single undo step. The caret lands on the block that
+// followed the table.
+void App::RemoveTable() {
+    uint32_t start = 0;
+    uint32_t end = 0;
+    if (!TableSpan(&start, &end)) return;
+
+    const std::string& text = buffer_.Text();
+    uint32_t following = start;
+    uint32_t look = end;
+    while (look < text.size() && text[look] == '\n') ++look;
+    if (look < text.size()) {
+        for (const Node& node : document_.nodes) {
+            if (node.block != BlockKind::Table && node.srcOffset == look) {
+                following = look;
+                break;
+            }
+        }
+    }
+    const uint32_t removed = end - start;
+    const uint32_t caret = following > removed ? following - removed : 0;
+    RewriteTable(start, end, "", caret);
+}
+
 // Inserts a new table at the caret.
 void App::InsertTable(int cols, int rows) {
     // A table never nests, so the command does nothing inside one.
@@ -568,6 +593,7 @@ void App::OnTextChanged() {
 
 void App::OnSelectionChanged() {
     if (contentView_) contentView_->Invalidate();
+    if (selectionChanged_) selectionChanged_();
 }
 
 void App::SetCaret(uint32_t offset) {

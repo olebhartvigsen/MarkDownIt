@@ -113,6 +113,7 @@ public:
     void RemoveTableColumn();
     void SplitTableCell();
     void AlignTableColumn(int mark);
+    void RemoveTable();
 
     // Reparses the text into the document. Called after every edit, but
     // only when the edit could have changed the structure.
@@ -155,6 +156,13 @@ public:
     using DocumentChangedHandler = std::function<void()>;
     void SetDocumentChangedHandler(DocumentChangedHandler handler) {
         documentChanged_ = std::move(handler);
+    }
+
+    // The handler that runs after the caret or the selection moved. The
+    // command strip reads the format state through it.
+    using SelectionChangedHandler = std::function<void()>;
+    void SetSelectionChangedHandler(SelectionChangedHandler handler) {
+        selectionChanged_ = std::move(handler);
     }
 
     void SetReloadHandler(std::function<void()> handler) {
@@ -255,6 +263,7 @@ private:
     std::string filePath_;
     Document document_;
     DocumentChangedHandler documentChanged_;
+    SelectionChangedHandler selectionChanged_;
     TextBuffer buffer_;
     Selection sel_;
     EditController editor_;
