@@ -892,3 +892,130 @@ void OutdentLine(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     }
 }
 
+std::vector<InlineMarkerRun> CollectInlineMarkerRuns(
+    const Document& doc, const std::string& text, uint32_t start, uint32_t end) {
+    std::vector<InlineMarkerRun> runs;
+
+    for (const Node& node : doc.nodes) {
+        // Only the blocks that overlap the selection.
+        const uint32_t blockStart = node.srcOffset;
+        const uint32_t blockEnd = blockStart + node.srcLength;
+        if (end <= blockStart || start >= blockEnd) continue;
+
+        for (const InlineBlock& child : node.children) {
+            // Only the spans that carry a marker.
+            if (!child.strong && !child.em && !child.code && !child.strike)
+                continue;
+
+            const uint32_t contentStart = child.srcOffset;
+            const uint32_t contentEnd = contentStart + child.srcLength;
+            if (contentEnd <= contentStart) continue;
+            if (contentEnd <= start || contentStart >= end) continue;
+
+            // The marker character of the run. Bold and italic both
+            // use '*', the strike uses '~' and the code uses '`'.
+            char marker = '*';
+            if (child.code) marker = '`';
+            if (child.strike) marker = '~';
+
+            // The run of markers on the left of the content.
+            uint32_t leftRun = 0;
+            while (contentStart > leftRun &&
+                   text[contentStart - leftRun - 1] == marker) {
+                ++leftRun;
+            }
+            // The run of markers on the right of the content.
+            uint32_t rightRun = 0;
+            while (contentEnd + rightRun < text.size() &&
+                   text[contentEnd + rightRun] == marker) {
+                ++rightRun;
+            }
+
+            if (leftRun > 0 && rightRun > 0) {
+                InlineMarkerRun run;
+                run.markerStart = contentStart - leftRun;
+                run.markerEnd = contentEnd + rightRun;
+                run.contentStart = contentStart;
+                run.contentEnd = contentEnd;
+                runs.push_back(run);
+            }
+        }
+    }
+
+    // The runs come back from the right, so a splice does not move the
+    // ones that are still to come.
+    std::sort(runs.begin(), runs.end(),
+              [](const InlineMarkerRun& a, const InlineMarkerRun& b) {
+                  return a.markerStart > b.markerStart;
+              });
+
+    // Two runs can share their markers, a bold and an italic for
+    // example, so the ones that overlap are merged into the wider one.
+    std::vector<InlineMarkerRun> merged;
+    for (const InlineMarkerRun& run : runs) {
+        if (!merged.empty() && run.markerEnd >= merged.back().markerStart) {
+            merged.back().markerStart =
+                std::min(merged.back().markerStart, run.markerStart);
+            merged.back().markerEnd =
+                std::max(merged.back().markerEnd, run.markerEnd);
+            merged.back().contentStart =
+                std::min(merged.back().contentStart, run.contentStart);
+            merged.back().contentEnd =
+                std::max(merged.back().contentEnd, run.contentEnd);
+        } else {
+            merged.push_back(run);
+        }
+    }
+    return merged;
+}
+
+void ClearInlineFormatting(const Document& doc, TextBuffer* buf, Selection* sel,
+                            UndoStack* undo) {
+    if (!buf || !sel) return;
+    if (sel->Empty()) return;  // a selection is needed to clear anything
+
+    const uint32_t start = sel->Start();
+    uint32_t end = start + sel->Length();
+    const std::string& text = buf->Text();
+    if (end > text.size()) end = static_cast<uint32_t>(text.size());
+
+    const std::vector<InlineMarkerRun> runs =
+        CollectInlineMarkerRuns(doc, text, start, end);
+    if (runs.empty()) return;
+
+    // The selection before the change, so the undo step can bring it
+    // back.
+    const Selection selBefore = *sel;
+
+    // The splices shorten the text, so the end of the selection moves
+    // left by the number of bytes that are taken away.
+    int32_t removedTotal = 0;
+    for (const InlineMarkerRun& run : runs) {
+        const std::string content =
+            text.substr(run.contentStart, run.contentEnd - run.contentStart);
+        const std::string removed =
+            text.substr(run.markerStart, run.markerEnd - run.markerStart);
+
+        buf->Splice(run.markerStart, run.markerEnd - run.markerStart, content);
+        if (undo) {
+            UndoEntry entry{};
+            entry.offset = run.markerStart;
+            entry.removed = removed;
+            entry.inserted = content;
+            entry.selBefore = selBefore;
+            entry.selAfter = *sel;
+            entry.type = EditType::Other;
+            undo->Push(entry);
+        }
+        removedTotal += static_cast<int32_t>(removed.size()) -
+                        static_cast<int32_t>(content.size());
+    }
+
+    // The selection covers the same text, now without the markers.
+    const uint32_t newEnd =
+        (end > static_cast<uint32_t>(removedTotal))
+            ? end - static_cast<uint32_t>(removedTotal)
+            : start;
+    sel->anchor = {start};
+    sel->active = {newEnd};
+}

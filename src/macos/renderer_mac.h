@@ -121,6 +121,13 @@ public:
     // The matches are document byte offsets, the same unit the document
     // uses, so a zoom or a scroll cannot change which text is marked.
     // A null pointer clears the marks.
+    // Paints the marked ranges behind the text.
+    void PaintMarkerHighlights(float scrollOffset);
+
+    // The text markers, the highlights the user marked. They are drawn
+    // behind the text, like the search matches.
+    void SetMarkers(const std::vector<TextMatch>* markers);
+
     void SetSearchMatches(const std::vector<TextMatch>* matches,
                           int currentIndex);
 
@@ -205,6 +212,7 @@ private:
     ImageCache images_;
     // The ranges the find bar matched, and the one that is current.
     std::vector<TextMatch> searchMatches_;
+    std::vector<TextMatch> markers_;
 
     // The parsed SVG documents, one for each block that holds one.
     std::vector<std::pair<uint32_t, SvgDoc>> svgDocs_;

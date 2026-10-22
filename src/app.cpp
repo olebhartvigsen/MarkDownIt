@@ -1,4 +1,5 @@
 #include "app.h"
+#include "formatting.h"
 #include "resource.h"
 #include "ribbon.h"
 #include "fileassoc.h"
@@ -5386,106 +5387,9 @@ void AppWindow::ClearFormat() {
     if (!editing_) return;
     if (sel_.Empty()) return; // Need a selection to clear formatting.
 
-    uint32_t origStart = sel_.Start();
-    uint32_t origEnd = origStart + sel_.Length();
-    const std::string& text = buffer_.Text();
-    if (origEnd > text.size()) origEnd = static_cast<uint32_t>(text.size());
-
-    // ── Collect ALL inline formatting spans that overlap the selection ──
-    // For each span, record the marker region to remove. We'll splice
-    // in reverse order so earlier removals don't shift later offsets.
-    struct MarkerRemoval {
-        uint32_t markerStart; // start of left markers
-        uint32_t markerEnd;   // end of right markers
-        uint32_t contentStart; // start of content (after left markers)
-        uint32_t contentEnd;  // end of content (before right markers)
-    };
-    std::vector<MarkerRemoval> removals;
-
-    for (const auto& node : doc_.nodes) {
-        // Only look at blocks overlapping the selection.
-        uint32_t bs = node.srcOffset;
-        uint32_t be = bs + node.srcLength;
-        if (origEnd <= bs || origStart >= be) continue;
-
-        for (const auto& child : node.children) {
-            // Only collect spans with formatting.
-            if (!child.strong && !child.em && !child.code && !child.strike)
-                continue;
-
-            uint32_t cs = child.srcOffset;
-            uint32_t ce = cs + child.srcLength;
-            if (ce <= cs) continue; // skip empty spans
-
-            // Check overlap with the selection.
-            if (ce <= origStart || cs >= origEnd) continue;
-
-            // Determine the marker char and count the run.
-            // Bold and italic both use '*'. Strike uses '~'. Code uses '`'.
-            // For combined bold+italic (***), the marker run includes all *.
-            char mc = '*';
-            if (child.code)   mc = '`';
-            if (child.strike) mc = '~';
-
-            // Scan left for consecutive marker chars.
-            uint32_t leftRun = 0;
-            while (cs > leftRun && text[cs - leftRun - 1] == mc)
-                leftRun++;
-            // Scan right for consecutive marker chars.
-            uint32_t rightRun = 0;
-            while (ce + rightRun < text.size() && text[ce + rightRun] == mc)
-                rightRun++;
-
-            if (leftRun > 0 && rightRun > 0) {
-                removals.push_back({cs - leftRun, ce + rightRun, cs, ce});
-            }
-        }
-    }
-
-    // Sort in REVERSE order (rightmost first) so splices don't shift offsets.
-    std::sort(removals.begin(), removals.end(),
-              [](const MarkerRemoval& a, const MarkerRemoval& b) {
-                  return a.markerStart > b.markerStart;
-              });
-
-    // Remove duplicate/overlapping removals (e.g. bold+italic share ***).
-    // If two removals overlap, keep only the wider one.
-    std::vector<MarkerRemoval> merged;
-    for (const auto& r : removals) {
-        if (!merged.empty() && r.markerEnd >= merged.back().markerStart) {
-            // Overlaps with previous; merge by taking the wider range.
-            merged.back().markerStart = std::min(merged.back().markerStart, r.markerStart);
-            merged.back().markerEnd = std::max(merged.back().markerEnd, r.markerEnd);
-            merged.back().contentStart = std::min(merged.back().contentStart, r.contentStart);
-            merged.back().contentEnd = std::max(merged.back().contentEnd, r.contentEnd);
-        } else {
-            merged.push_back(r);
-        }
-    }
-
-    // Splice: for each removal, replace the marker region with just content.
-    Selection selBefore = sel_;
-    int32_t totalDelta = 0;
-    for (const auto& r : merged) {
-        std::string content = buffer_.Text().substr(r.contentStart, r.contentEnd - r.contentStart);
-        std::string removed = buffer_.Text().substr(r.markerStart, r.markerEnd - r.markerStart);
-        buffer_.Splice(r.markerStart, r.markerEnd - r.markerStart, content);
-        UndoEntry entry{};
-        entry.offset = r.markerStart;
-        entry.removed = removed;
-        entry.inserted = content;
-        entry.selBefore = selBefore;
-        entry.selAfter = sel_;
-        entry.type = EditType::Other;
-        undo_stack_.Push(entry);
-        totalDelta += static_cast<int32_t>(removed.size()) - static_cast<int32_t>(content.size());
-    }
-    // Keep selection covering the same text (now without markers).
-    uint32_t newEnd = (origEnd > static_cast<uint32_t>(totalDelta))
-                      ? origEnd - static_cast<uint32_t>(totalDelta) : origStart;
-    sel_.anchor = {origStart};
-    sel_.active = {newEnd};
-
+    // The inline markers go away first, and the shared module does the
+    // work, so the mac build clears the same markers.
+    ClearInlineFormatting(doc_, &buffer_, &sel_, &undo_stack_);
 
     // Remove BLOCK-level formatting: headings, lists, blockquotes.
     FormatState fs = GetFormatState(); // re-read after inline changes

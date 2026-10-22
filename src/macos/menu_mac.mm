@@ -75,6 +75,8 @@ static MdMenuTarget* gMenuTarget = nil;
         actions_->OnToggleSourceView();
     } else if (selector == @selector(toggleOutline:)) {
         actions_->OnToggleOutline();
+    } else if (selector == @selector(setAsDefaultReader:)) {
+        actions_->OnSetAsDefaultReader();
     } else if (selector == @selector(importWord:)) {
         actions_->OnImportWord();
     } else if (selector == @selector(exportWord:)) {
@@ -127,6 +129,10 @@ static MdMenuTarget* gMenuTarget = nil;
         actions_->OnOutdent();
     } else if (selector == @selector(toggleCode:)) {
         actions_->OnToggleCode();
+    } else if (selector == @selector(toggleMark:)) {
+        actions_->OnToggleMark();
+    } else if (selector == @selector(clearFormat:)) {
+        actions_->OnClearFormat();
     } else if (selector == @selector(toggleLink:)) {
         actions_->OnToggleLink();
     }
@@ -174,6 +180,9 @@ NSMenu* BuildMainMenu(MenuActions* actions) {
         [appMenu addItemWithTitle:@"Settings..."
                            action:@selector(openSettings:)
                     keyEquivalent:@","];
+        [appMenu addItemWithTitle:@"Set as Default Reader..."
+                           action:@selector(setAsDefaultReader:)
+                    keyEquivalent:@""];
         [appMenu addItem:[NSMenuItem separatorItem]];
         [appMenu addItemWithTitle:@"Hide MarkDownIt"
                            action:@selector(hide:)
@@ -259,8 +268,10 @@ NSMenu* BuildMainMenu(MenuActions* actions) {
              {"Italic", @selector(toggleItalic:)},
              {"Strikethrough", @selector(toggleStrike:)},
              {"Code", @selector(toggleCode:)},
-             {"Link", @selector(toggleLink:)}},
-            {"b", "i", "", "", "k"});
+             {"Link", @selector(toggleLink:)},
+             {"Highlight", @selector(toggleMark:)},
+             {"Clear Formatting", @selector(clearFormat:)}},
+            {"b", "i", "", "", "k", "", ""});
         // The block commands live in their own menu, the way the Format
         // menu of the other editors has them.
         NSMenu* blockMenu = BuildSubmenu(

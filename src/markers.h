@@ -13,7 +13,7 @@
 
 // One persisted text marker (a highlight annotation). Offsets are source
 // byte offsets in the Markdown buffer; the anchor text relocates them.
-struct Marker {
+struct TextMarker {
     std::string id;        // "m-0001" style, unique inside one document
     uint32_t start = 0;    // resolved byte range in the current buffer
     uint32_t end = 0;
@@ -80,10 +80,13 @@ public:
     // Remove every marker that intersects [start, end). Returns the count.
     size_t RemoveIntersecting(uint32_t start, uint32_t end);
 
-    const std::vector<Marker>& Markers() const { return markers_; }
+    // Empties the store, so a document without a file has no markers.
+    void Clear() { markers_.clear(); }
+
+    const std::vector<TextMarker>& Markers() const { return markers_; }
     size_t Count() const { return markers_.size(); }
     size_t UnresolvedCount() const;
 
 private:
-    std::vector<Marker> markers_;
+    std::vector<TextMarker> markers_;
 };

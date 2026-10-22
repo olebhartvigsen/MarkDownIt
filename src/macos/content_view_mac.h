@@ -112,6 +112,9 @@ public:
 
     // Marks the ranges the find bar matched. A null pointer clears the
     // marks.
+    // Hands the marked ranges to the renderer.
+    void SetMarkers(const std::vector<TextMatch>* markers);
+
     void SetSearchMatches(const std::vector<TextMatch>* matches,
                           int currentIndex);
 

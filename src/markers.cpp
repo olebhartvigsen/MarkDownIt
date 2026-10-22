@@ -1,4 +1,4 @@
-// Marker storage: the persisted highlight annotations of one document plus
+// TextMarker storage: the persisted highlight annotations of one document plus
 // the JSON sidecar that carries them across sessions. Everything here is
 // portable C++17 (byte offsets, std::string, std::filesystem), so the core
 // compiles and is tested under g++ as well as MSVC. No UI, no platform
@@ -78,9 +78,9 @@ bool ContextMatches(const std::string& text, size_t pos,
 
 // "m-" plus the zero padded decimal of the highest existing numeric suffix
 // plus one, four digits minimum: the first id is "m-0001".
-std::string NextMarkerId(const std::vector<Marker>& markers) {
+std::string NextMarkerId(const std::vector<TextMarker>& markers) {
     uint64_t highest = 0;
-    for (const Marker& marker : markers) {
+    for (const TextMarker& marker : markers) {
         if (marker.id.size() <= 2 || marker.id[0] != 'm' || marker.id[1] != '-') {
             continue;
         }
@@ -98,9 +98,9 @@ std::string NextMarkerId(const std::vector<Marker>& markers) {
 
 // The newest "created" in a marker set. ISO 8601 UTC strings of the fixed
 // shape sort correctly as text, which is all the adoption scan needs.
-std::string NewestCreated(const std::vector<Marker>& markers) {
+std::string NewestCreated(const std::vector<TextMarker>& markers) {
     std::string newest;
-    for (const Marker& marker : markers) {
+    for (const TextMarker& marker : markers) {
         if (marker.created > newest) newest = marker.created;
     }
     return newest;
@@ -150,7 +150,7 @@ public:
     explicit SidecarJsonReader(const std::string& text) : text_(text) {}
 
     bool Read(std::string* outPath, std::string* outFingerprint,
-              std::vector<Marker>* outMarkers) {
+              std::vector<TextMarker>* outMarkers) {
         SkipWhitespace();
         if (!Consume('{')) return false;
         SkipWhitespace();
@@ -300,12 +300,12 @@ private:
         return true;
     }
 
-    bool ReadMarkers(std::vector<Marker>* out) {
+    bool ReadMarkers(std::vector<TextMarker>* out) {
         if (!Consume('[')) return false;
         SkipWhitespace();
         if (Consume(']')) return true;
         for (;;) {
-            Marker marker;
+            TextMarker marker;
             bool anchored = false;
             if (!ReadMarkerEntry(&marker, &anchored)) return false;
             if (anchored) out->push_back(std::move(marker));
@@ -319,7 +319,7 @@ private:
         }
     }
 
-    bool ReadMarkerEntry(Marker* out, bool* anchored) {
+    bool ReadMarkerEntry(TextMarker* out, bool* anchored) {
         *anchored = false;
         SkipWhitespace();
         if (!Consume('{')) return false;
@@ -446,7 +446,7 @@ private:
 
 bool ParseSidecarText(const std::string& text, std::string* outPath,
                       std::string* outFingerprint,
-                      std::vector<Marker>* outMarkers) {
+                      std::vector<TextMarker>* outMarkers) {
     SidecarJsonReader reader(text);
     return reader.Read(outPath, outFingerprint, outMarkers);
 }
@@ -459,13 +459,13 @@ bool ParseSidecarText(const std::string& text, std::string* outPath,
 // candidate by "created" wins.
 bool AdoptMovedSidecar(const std::string& documentPath,
                        const std::string& documentText,
-                       std::vector<Marker>* outMarkers) {
+                       std::vector<TextMarker>* outMarkers) {
     std::error_code ec;
     std::filesystem::directory_iterator it(MarkerStore::SidecarDirectory(), ec);
     if (ec) return false;
 
     const std::string fingerprint = MarkerFingerprint(documentText);
-    std::vector<Marker> best;
+    std::vector<TextMarker> best;
     std::string bestCreated;
     const std::filesystem::directory_iterator end;
     for (; it != end; it.increment(ec)) {
@@ -484,7 +484,7 @@ bool AdoptMovedSidecar(const std::string& documentPath,
         if (!ReadFileToString(entry.path().string(), &data)) continue;
         std::string storedPath;
         std::string storedFingerprint;
-        std::vector<Marker> loaded;
+        std::vector<TextMarker> loaded;
         if (!ParseSidecarText(data, &storedPath, &storedFingerprint, &loaded)) {
             continue;
         }
@@ -569,7 +569,7 @@ bool MarkerStore::LoadFor(const std::string& documentPath,
         std::string data;
         std::string storedPath;
         std::string storedFingerprint;
-        std::vector<Marker> loaded;
+        std::vector<TextMarker> loaded;
         if (!ReadFileToString(directPath, &data)) return false;
         if (!ParseSidecarText(data, &storedPath, &storedFingerprint, &loaded)) {
             return false;
@@ -594,7 +594,7 @@ bool MarkerStore::Save(const std::string& documentPath,
     json += ",\"markers\":[";
     for (size_t i = 0; i < markers_.size(); ++i) {
         if (i > 0) json += ',';
-        const Marker& marker = markers_[i];
+        const TextMarker& marker = markers_[i];
         json += "{\"id\":";
         AppendJsonString(json, marker.id);
         json += ",\"start\":";
@@ -624,7 +624,7 @@ bool MarkerStore::Save(const std::string& documentPath,
 }
 
 void MarkerStore::Resolve(const std::string& documentText) {
-    for (Marker& marker : markers_) {
+    for (TextMarker& marker : markers_) {
         if (marker.exact.empty()) {
             marker.resolved = false;
             continue;
@@ -666,10 +666,10 @@ bool MarkerStore::Add(const std::string& documentText, uint32_t start,
                       uint32_t end) {
     if (start >= end) return false;
     if (static_cast<size_t>(end) > documentText.size()) return false;
-    for (const Marker& existing : markers_) {
+    for (const TextMarker& existing : markers_) {
         if (existing.start == start && existing.end == end) return false;
     }
-    Marker marker;
+    TextMarker marker;
     marker.id = NextMarkerId(markers_);
     marker.start = start;
     marker.end = end;
@@ -685,9 +685,9 @@ bool MarkerStore::Add(const std::string& documentText, uint32_t start,
 size_t MarkerStore::RemoveIntersecting(uint32_t start, uint32_t end) {
     if (start >= end) return 0;
     size_t removed = 0;
-    std::vector<Marker> kept;
+    std::vector<TextMarker> kept;
     kept.reserve(markers_.size());
-    for (const Marker& marker : markers_) {
+    for (const TextMarker& marker : markers_) {
         if (marker.start < end && start < marker.end) {
             ++removed;
         } else {
@@ -700,7 +700,7 @@ size_t MarkerStore::RemoveIntersecting(uint32_t start, uint32_t end) {
 
 size_t MarkerStore::UnresolvedCount() const {
     size_t count = 0;
-    for (const Marker& marker : markers_) {
+    for (const TextMarker& marker : markers_) {
         if (!marker.resolved) ++count;
     }
     return count;

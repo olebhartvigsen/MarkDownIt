@@ -1,7 +1,9 @@
 #pragma once
 #include "textbuffer.h"
 #include "caret.h"
+#include "dom.h"
 #include <string>
+#include <vector>
 
 class UndoStack;
 
@@ -23,6 +25,34 @@ void InsertLink(TextBuffer* buf, Selection* sel, const std::string& url,
 // fences. If already fenced, removes the fences.
 void ToggleCodeBlock(TextBuffer* buf, Selection* sel,
                       UndoStack* undo = nullptr);
+
+// The inline markers that overlap the selection.
+//
+// One entry is one run of markers to take away. The content of the
+// run stays, so `**text**` becomes `text`.
+struct InlineMarkerRun {
+    uint32_t markerStart = 0;  // the start of the left markers
+    uint32_t markerEnd = 0;    // the end of the right markers
+    uint32_t contentStart = 0; // the start of the content
+    uint32_t contentEnd = 0;   // the end of the content
+};
+
+// The inline markers that overlap [start, end) of the document.
+//
+// The runs come back sorted from the right, so the caller can splice
+// them one by one without the earlier ones shifting the later ones.
+// Runs that overlap are merged, because a bold and an italic run can
+// share their markers.
+std::vector<InlineMarkerRun> CollectInlineMarkerRuns(
+    const Document& doc, const std::string& text, uint32_t start, uint32_t end);
+
+// Takes the inline formatting markers away from [start, end) and
+// leaves the content. The block formatting is not touched.
+//
+// The selection covers the same text afterwards, without the markers.
+// If undo is not null, the change is recorded as one undo step.
+void ClearInlineFormatting(const Document& doc, TextBuffer* buf, Selection* sel,
+                            UndoStack* undo = nullptr);
 
 // Check if the text at the given range is already wrapped in the marker.
 bool IsWrappedIn(const std::string& text, uint32_t start, uint32_t end,

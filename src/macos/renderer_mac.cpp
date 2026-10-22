@@ -497,6 +497,12 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
     blocks_.push_back(block);
 }
 
+void MacRenderer::SetMarkers(const std::vector<TextMatch>* markers) {
+    markers_.clear();
+    if (!markers) return;
+    markers_ = *markers;
+}
+
 void MacRenderer::SetSearchMatches(const std::vector<TextMatch>* matches,
                                   int currentIndex) {
     searchMatches_.clear();
@@ -513,10 +519,33 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
     if (!target_) return;
 
     // The marks go under the text, so they are painted first.
+    PaintMarkerHighlights(scrollOffset);
     PaintSearchHighlights(scrollOffset);
 
     for (const LaidOutBlock& block : blocks_) {
         PaintBlock(block, scrollOffset);
+    }
+}
+
+void MacRenderer::PaintMarkerHighlights(float scrollOffset) {
+    if (!target_ || markers_.empty()) return;
+
+    for (const TextMatch& marker : markers_) {
+        for (const Rect& rect : RectsForRange(marker.start,
+                                              marker.start + marker.length)) {
+            Rect drawn = rect;
+            drawn.y -= scrollOffset;
+            target_->FillRect(drawn, ToColor(palette_.markerBg));
+
+            // The line along the bottom, so a mark never relies on
+            // colour alone.
+            Rect line;
+            line.x = drawn.x;
+            line.y = drawn.y + drawn.height - 1.0f;
+            line.width = drawn.width;
+            line.height = 1.0f;
+            target_->FillRect(line, ToColor(palette_.markerLine));
+        }
     }
 }
 

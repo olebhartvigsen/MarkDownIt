@@ -21,6 +21,8 @@
 #include "dom.h"
 #include "editcontroller.h"
 #include "findbar_model.h"
+#include "markers.h"
+#include "searchreplace.h"
 #include "tableedit.h"
 #include "textbuffer.h"
 #include "undostack.h"
@@ -67,6 +69,20 @@ public:
     // The undo stack.
     UndoStack& undo() { return undo_; }
 
+    // The marker store, which holds the highlights.
+    MarkerStore& markers() { return markerStore_; }
+
+    // Hands the marked ranges to the renderer, which draws them behind
+    // the text.
+    void RefreshMarkerRanges();
+
+    // Writes and reads the markers of the open document.
+    void SaveMarkers();
+    void LoadMarkers();
+
+    MarkerStore markerStore_;
+    std::vector<TextMatch> markerRanges_;
+
     // The path of the open file, empty when nothing is open.
     const std::string& filePath() const { return filePath_; }
 
@@ -78,6 +94,15 @@ public:
 
     // Puts new text in the document, which the Word import does.
     void SetText(const std::string& text);
+
+    // Takes the formatting away from the selection, and leaves the
+    // text as it is.
+    void ClearFormat();
+
+    // The text markers, the highlights the user marked. A selection
+    // that touches a marker takes it away, and any other selection
+    // makes one.
+    void ToggleMarkSelection();
 
     // The table commands. They do nothing when the caret is not in a
     // table, and a table never nests.

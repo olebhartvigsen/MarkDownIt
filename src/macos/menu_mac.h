@@ -37,6 +37,7 @@ public:
 
     // The application menu.
     virtual void OnOpenSettings() = 0;
+    virtual void OnSetAsDefaultReader() = 0;
 
     // Edit.
     virtual void OnFind() = 0;
@@ -62,6 +63,8 @@ public:
     virtual void OnToggleItalic() = 0;
     virtual void OnToggleCode() = 0;
     virtual void OnToggleLink() = 0;
+    virtual void OnToggleMark() = 0;
+    virtual void OnClearFormat() = 0;
     virtual void OnToggleStrike() = 0;
     virtual void OnHeading(int level) = 0;
     virtual void OnToggleBullets() = 0;

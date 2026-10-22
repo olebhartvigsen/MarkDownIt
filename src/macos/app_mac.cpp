@@ -5,6 +5,7 @@
 // the window and the drawing are new.
 
 #include "app_mac.h"
+#include "formatting.h"
 
 #include <fstream>
 #include <sstream>
@@ -148,6 +149,8 @@ bool App::OpenFile(const std::string& path) {
     dirty_ = false;
     sel_.Collapse(CaretPos{0});
     Reparse();
+    // The highlights of the document come with it.
+    LoadMarkers();
     return true;
 }
 
@@ -419,9 +422,147 @@ void App::Reparse() {
     if (contentView_) contentView_->OnDocumentChanged();
 }
 
+// The formatting goes away from the selection. The block markers are
+// taken out first, because they move the text around, and the inline
+// markers go last, by the shared module, so the two builds clear the
+// same way.
+void App::ClearFormat() {
+    if (sel_.Empty()) return;
+
+    // The markers at the start of the line the selection is in. A
+    // heading, a quote and a list item each leave a marker, and they
+    // leave the same text behind.
+    struct LineMarker {
+        char ch;       // the character of the marker
+        uint32_t count; // how many of them
+    };
+    const LineMarker lineMarkers[] = {
+        {'#', 0}, {'>', 0}, {'-', 0}, {'*', 0}, {'+', 0},
+    };
+
+    uint32_t start = sel_.Start();
+    uint32_t end = sel_.End();
+
+    // Only the first line of the selection is cleared. A selection
+    // over many lines keeps its block formatting, because taking it
+    // away would change the shape of the document.
+    const uint32_t lineStart = buffer_.LineStart(start);
+    const std::string prefix = buffer_.Text().substr(lineStart, start - lineStart);
+
+    // The heading markers.
+    uint32_t removeCount = 0;
+    uint32_t removeTo = lineStart;
+    {
+        size_t hashes = 0;
+        while (hashes < prefix.size() && prefix[hashes] == '#') ++hashes;
+        if (hashes > 0 && hashes < prefix.size() && prefix[hashes] == ' ') {
+            removeCount = static_cast<uint32_t>(hashes) + 1;
+            removeTo = lineStart + removeCount;
+        }
+    }
+
+    // The quote and the list markers. They come after the heading
+    // markers, because a quote of a heading is written that way.
+    if (removeCount == 0) {
+        size_t spaces = 0;
+        while (spaces < prefix.size() && prefix[spaces] == ' ') ++spaces;
+        if (spaces < prefix.size()) {
+            const char ch = prefix[spaces];
+            const bool isQuote = ch == '>';
+            const bool isList = ch == '-' || ch == '*' || ch == '+';
+            if (isQuote || isList) {
+                removeCount = static_cast<uint32_t>(spaces) + 1;
+                removeTo = lineStart + removeCount;
+                if (removeTo < buffer_.Text().size() &&
+                    buffer_.Text()[removeTo] == ' ') {
+                    ++removeTo;
+                    ++removeCount;
+                }
+            }
+        }
+    }
+
+    if (removeCount > 0) {
+        buffer_.Splice(lineStart, removeCount, "");
+        const uint32_t shift = removeCount;
+        start = (start > shift) ? start - shift : 0;
+        end = (end > shift) ? end - shift : 0;
+        sel_.anchor = {start};
+        sel_.active = {end};
+    }
+
+    // The inline markers go last, because the block change moved the
+    // text around.
+    ClearInlineFormatting(document_, &buffer_, &sel_, &undo_);
+}
+
+// A selection that touches a marker takes it away, and any other
+// selection makes one. One button, one shortcut, the way the Windows
+// build has it.
+void App::ToggleMarkSelection() {
+    if (sel_.Empty()) return;
+
+    const uint32_t start = sel_.Start();
+    const uint32_t end = start + sel_.Length();
+
+    // A selection that touches a marker reads as marked.
+    bool marked = false;
+    for (const TextMarker& marker : markerStore_.Markers()) {
+        if (!marker.resolved) continue;
+        if (marker.start < end && start < marker.end) {
+            marked = true;
+            break;
+        }
+    }
+
+    if (marked) {
+        if (markerStore_.RemoveIntersecting(start, end) == 0) return;
+    } else {
+        if (!markerStore_.Add(buffer_.Text(), start, end)) return;
+    }
+
+    SaveMarkers();
+    RefreshMarkerRanges();
+    if (contentView_) contentView_->Invalidate();
+}
+
+// Hands the marked ranges to the renderer, which draws them behind
+// the text.
+void App::RefreshMarkerRanges() {
+    markerRanges_.clear();
+    for (const TextMarker& marker : markerStore_.Markers()) {
+        if (!marker.resolved || marker.end <= marker.start) continue;
+        markerRanges_.push_back(
+            {marker.start, static_cast<uint32_t>(marker.end - marker.start)});
+    }
+    if (contentView_) contentView_->SetMarkers(&markerRanges_);
+}
+
+// Writes the markers to the sidecar file next to the document.
+void App::SaveMarkers() {
+    if (filePath_.empty()) return;
+    markerStore_.Save(filePath_, buffer_.Text());
+}
+
+// Reads the markers of the document, and re-anchors them.
+void App::LoadMarkers() {
+    markerRanges_.clear();
+    markerStore_.Clear();
+    if (filePath_.empty()) {
+        if (contentView_) contentView_->SetMarkers(&markerRanges_);
+        return;
+    }
+    markerStore_.LoadFor(filePath_, buffer_.Text());
+    markerStore_.Resolve(buffer_.Text());
+    RefreshMarkerRanges();
+}
+
 void App::OnTextChanged() {
     dirty_ = true;
     Reparse();
+    // The markers are anchored to the text, so they move with it.
+    markerStore_.Resolve(buffer_.Text());
+    RefreshMarkerRanges();
 }
 
 void App::OnSelectionChanged() {

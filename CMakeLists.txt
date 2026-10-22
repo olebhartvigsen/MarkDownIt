@@ -330,6 +330,7 @@ if(BUILD_TESTS AND APPLE)
         tests/incremental_test.cpp
         tests/clipboard_test.cpp
         tests/formatting_test.cpp
+        tests/clear_format_test.cpp
         tests/autoformat_test.cpp
         tests/inputfilter_test.cpp
         tests/editor_features_test.cpp
@@ -642,6 +643,7 @@ if(APPLE)
             "-framework CoreGraphics"
             "-framework CoreText"
             "-framework AppKit"
+            "-framework CoreServices"
     )
     target_compile_features(MarkDownItMac PRIVATE cxx_std_17)
 

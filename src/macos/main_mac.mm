@@ -10,6 +10,7 @@
 #include <string>
 
 #import <AppKit/AppKit.h>
+#import <CoreServices/CoreServices.h>
 #import <Foundation/Foundation.h>
 
 #include "app_mac.h"
@@ -66,6 +67,7 @@ class MdMenuAdapter;
 - (void)openDocument:(id)sender;
 - (void)reloadDocument:(id)sender;
 - (void)openSettings:(id)sender;
+- (void)setAsDefaultReader:(id)sender;
 - (void)findDocument:(id)sender;
 - (void)replaceInDocument:(id)sender;
 - (void)saveDocument:(id)sender;
@@ -109,6 +111,8 @@ class MdMenuAdapter;
 - (void)toggleItalic:(id)sender;
 - (void)toggleCode:(id)sender;
 - (void)toggleLink:(id)sender;
+- (void)toggleMark:(id)sender;
+- (void)clearFormat:(id)sender;
 
 // Creates the menu adapter. It is defined in a category, because the
 // adapter type is only complete further down in the file.
@@ -127,6 +131,9 @@ public:
     void OnOpen() override { [delegate_ openDocument:nil]; }
     void OnReload() override { [delegate_ reloadDocument:nil]; }
     void OnOpenSettings() override { [delegate_ openSettings:nil]; }
+    void OnSetAsDefaultReader() override {
+        [delegate_ setAsDefaultReader:nil];
+    }
     void OnSave() override { [delegate_ saveDocument:nil]; }
     void OnSaveAs() override { [delegate_ saveDocumentAs:nil]; }
     void OnClose() override { [delegate_ closeDocument:nil]; }
@@ -186,6 +193,8 @@ public:
     void OnToggleItalic() override { [delegate_ toggleItalic:nil]; }
     void OnToggleCode() override { [delegate_ toggleCode:nil]; }
     void OnToggleLink() override { [delegate_ toggleLink:nil]; }
+    void OnToggleMark() override { [delegate_ toggleMark:nil]; }
+    void OnClearFormat() override { [delegate_ clearFormat:nil]; }
 
 private:
     MdAppDelegate* delegate_;
@@ -277,6 +286,9 @@ private:
     [window_ setContentView:container_];
     [window_ makeKeyAndOrderFront:nil];
 
+    // The delegate takes the files that are dropped on the window.
+    [window_ registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
+
     // Without a file the welcome screen takes the place of the
     // document.
     [self showWelcomeScreen];
@@ -337,6 +349,25 @@ private:
     return YES;
 }
 
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+    (void)sender;
+    return NSDragOperationCopy;
+}
+
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+    NSPasteboard* pasteboard = [sender draggingPasteboard];
+    NSArray<NSURL*>* urls =
+        [pasteboard readObjectsForClasses:@[[NSURL class]]
+                                 options:@{NSPasteboardURLReadingFileURLsOnlyKey:
+                                               @YES}];
+    for (NSURL* url in urls) {
+        if (!url.isFileURL) continue;
+        [self OpenPath:[url.path UTF8String]];
+        break;
+    }
+    return YES;
+}
+
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)sender {
     (void)sender;
     return YES;
@@ -376,6 +407,10 @@ private:
 - (void)openDocument:(id)sender { (void)sender; [self OnOpen]; }
 - (void)reloadDocument:(id)sender { (void)sender; [self OnReload]; }
 - (void)openSettings:(id)sender { (void)sender; [self OnOpenSettings]; }
+- (void)setAsDefaultReader:(id)sender {
+    (void)sender;
+    [self OnSetAsDefaultReader];
+}
 - (void)saveDocument:(id)sender { (void)sender; [self OnSave]; }
 - (void)saveDocumentAs:(id)sender { (void)sender; [self OnSaveAs]; }
 - (void)closeDocument:(id)sender { (void)sender; [self OnClose]; }
@@ -419,6 +454,8 @@ private:
 - (void)toggleItalic:(id)sender { (void)sender; [self OnToggleItalic]; }
 - (void)toggleCode:(id)sender { (void)sender; [self OnToggleCode]; }
 - (void)toggleLink:(id)sender { (void)sender; [self OnToggleLink]; }
+- (void)toggleMark:(id)sender { (void)sender; [self OnToggleMark]; }
+- (void)clearFormat:(id)sender { (void)sender; [self OnClearFormat]; }
 
 // ---------------------------------------------------------------------------
 // The commands
@@ -684,6 +721,33 @@ private:
     [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:full]];
 }
 
+- (void)OnSetAsDefaultReader {
+    // The bundle identifier of the running app is what the system
+    // registers as the reader.
+    NSString* bundleId = [[NSBundle mainBundle] bundleIdentifier];
+    if (bundleId.length == 0) {
+        [self reportError:
+            @"The app has no bundle identifier, so it cannot become the "
+            @"reader."];
+        return;
+    }
+
+    // The markdown files are plain text, so that is the type to ask
+    // the system about.
+    NSString* type = @"public.plain-text";
+    const OSStatus status = LSSetDefaultRoleHandlerForContentType(
+        (__bridge CFStringRef)type, kLSRolesAll,
+        (__bridge CFStringRef)bundleId);
+    if (status != noErr) {
+        [self reportError:
+            @"The system did not make MarkDownIt the reader of the "
+            @"markdown files."];
+        return;
+    }
+    [self reportMessage:@"MarkDownIt is now the reader of the markdown "
+                        @"files."];
+}
+
 - (void)OnToggleWrap {
     wrap_ = !wrap_;
     content_->SetWrap(wrap_);
@@ -705,6 +769,17 @@ private:
     // the menu so the key bindings match the Windows build, and it
     // reports that rather than doing nothing silently.
     [self reportError:@"The outline is not available in this build yet."];
+}
+
+- (void)OnToggleMark {
+    app_->ToggleMarkSelection();
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnClearFormat {
+    app_->ClearFormat();
+    app_->OnTextChanged();
+    [view_ setNeedsDisplay:YES];
 }
 
 - (void)OnToggleStrike {
@@ -872,6 +947,14 @@ private:
 }
 
 // Shows an error to the user.
+// Says that something worked.
+- (void)reportMessage:(NSString*)message {
+    NSAlert* alert = [[NSAlert alloc] init];
+    [alert setMessageText:message];
+    [alert addButtonWithTitle:@"OK"];
+    [alert runModal];
+}
+
 - (void)reportError:(NSString*)message {
     NSAlert* alert = [[NSAlert alloc] init];
     [alert setMessageText:message];

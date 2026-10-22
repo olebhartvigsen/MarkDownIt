@@ -501,6 +501,11 @@ Color ContentView::CaretColor() const {
     return color;
 }
 
+void ContentView::SetMarkers(const std::vector<TextMatch>* markers) {
+    renderer_.SetMarkers(markers);
+    Invalidate();
+}
+
 void ContentView::SetSearchMatches(const std::vector<TextMatch>* matches,
                                    int currentIndex) {
     renderer_.SetSearchMatches(matches, currentIndex);
