@@ -62,6 +62,9 @@ Everything else lives in `src/macos/`:
 | `clipboard_mac.*` | The pasteboard, with the custom markdown format |
 | `settings_mac.*` | The settings file |
 | `menu_mac.*` | The menu bar |
+| `outline_pane_mac.*` | The outline pane: the headings and the jump |
+| `outline_nsview_mac.*` | The AppKit view that draws the outline pane |
+| `cg_target_mac.h` | The Core Graphics render target, for the two views |
 | `crash_trace_mac.*` | The crash breadcrumbs |
 | `main_mac.mm` | The application, the window, the file opening |
 
@@ -88,6 +91,8 @@ Everything the plan asked for in tasks 1 to 7 is there:
   card opens that file.
 - The commands that throw the document away ask about the changes
   first.
+- The outline pane is there. It shows the headings, a collapsed heading
+  hides its subtree, and a click on a heading moves the caret there.
 - The window keeps its place between the runs, and the settings live
   in `~/Library/Application Support/MarkDownIt/settings.json`.
 - The bundle carries the icon and the document types, and the CI
@@ -107,11 +112,19 @@ Everything the plan asked for in tasks 1 to 7 is there:
 
 ## What is not there yet
 
-These are the gaps, and each one is a real gap and not a hidden one:
+There are no gaps left in the list the plan asked for. The outline pane
+is the last one, and it is there: the View menu shows and hides it, it
+sits on the left of the document in a split view, the reader can drag
+the divider, and a click on a heading puts the caret there and scrolls
+it into view.
 
-1. **The outline pane.** The outline itself is shared
-   (`src/outline.cpp`), so it needs a pane on the mac side and the
-   window has to hold it next to the document.
+What is left is the work that needs a person in front of a Mac:
+
+- the app has never been run on a real Mac, so the editing, the
+  dragging, the printing and the file associations have not been tried
+  by hand
+- the bundle is not signed and not notarized
+- the app is not in the Mac App Store
 
 ## The gaps that were closed
 
