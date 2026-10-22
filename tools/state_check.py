@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Compare state_probe output against the stt goldens. Verifies nodes, edge
 # labels and edge d-strings within the +-0.5 DIP tolerance.
-import json, subprocess, sys
+import json, os, subprocess, sys
 
 TOL = 0.5
 
@@ -25,7 +25,7 @@ def main():
     for name in sys.argv[1:]:
         out = subprocess.run(['/tmp/state_probe', f'tests/mermaid/fixtures/{name}.mmd',
                               f'tests/mermaid/golden/{name}.json'],
-                             capture_output=True, text=True, cwd='/workspace/MarkDownIt')
+                             capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         gnodes, pedges, glabels = parse_probe(out.stdout)
         g = json.load(open(f'tests/mermaid/golden/{name}.json'))
         gd = {ge['id']: ge['d'] for ge in g['edges']}
