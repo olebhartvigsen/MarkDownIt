@@ -9,9 +9,14 @@
 #include <fstream>
 #include <sstream>
 
+#include "autoformat.h"
 #include "clipboard_mac.h"
 #include "content_view_mac.h"
+#include "findbar_mac.h"
+#include "inputfilter.h"
+#include "navigation.h"
 #include "parser.h"
+#include "textenc.h"
 
 namespace mac {
 
@@ -28,6 +33,33 @@ Clipboard& TheClipboard() {
 
 App::App() : editor_(&buffer_, &sel_) {
     editor_.SetUndoStack(&undo_);
+    findBar_ = std::make_unique<FindBar>();
+
+    // The bar asks the app where the caret is, and tells it what to do
+    // when the search changes or a match is picked.
+    findBar_->model().SetListener({
+        .caretOffset = [this] {
+            return sel_.active.offset;
+        },
+        .onSearchChanged = [this] {
+            RefreshFindResults();
+        },
+        .onSelectionChanged = [this](uint32_t offset, uint32_t length) {
+            SetSelection(offset, offset + length);
+            if (contentView_) contentView_->Invalidate();
+        },
+        .onReplaceCurrent = [this](uint32_t offset, uint32_t length) {
+            ReplaceMatch(offset, length);
+        },
+        .onReplaceAll = [this](const std::wstring& query,
+                               const std::wstring& replacement,
+                               const FindStateOptions&) {
+            ReplaceAllMatches(query, replacement);
+        },
+        .onClose = [this] {
+            HideFind();
+        },
+    });
 }
 
 App::~App() = default;
@@ -55,6 +87,74 @@ void App::NewDocument() {
     dirty_ = false;
     sel_.Collapse(CaretPos{0});
     Reparse();
+}
+
+bool App::ReloadFile() {
+    if (filePath_.empty()) {
+        return false;
+    }
+    return OpenFile(filePath_);
+}
+
+void App::ShowFind(FindBarMode mode) {
+    // The field starts with the selected text, the way the Windows bar
+    // does it, so the user can widen the query.
+    const std::wstring query = textenc::Utf8ToWide(SelectedText());
+    findBar_->model().SetSearchText(query);
+    findBar_->model().SetReplaceEnabled(true);
+    findBar_->Show(mode);
+    RefreshFindResults();
+}
+
+void App::HideFind() {
+    findBar_->Hide();
+    if (contentView_) contentView_->Invalidate();
+}
+
+void App::RefreshFindResults() {
+    FindReplaceState& state = findBar_->model().state();
+    // The search runs over the whole buffer. A match never spans a line
+    // break, so the search cannot join two blocks.
+    state.Refresh(buffer_.Text(), nullptr, nullptr);
+    if (state.HasQuery()) {
+        state.AdoptMatchAt(sel_.active.offset);
+    }
+    findBar_->model().SyncFromState();
+
+    if (contentView_) {
+        contentView_->SetSearchMatches(&state.Matches(), state.CurrentIndex());
+    }
+}
+
+void App::ReplaceMatch(uint32_t offset, uint32_t length) {
+    if (length == 0) return;
+
+    const std::wstring replacement = findBar_->model().GetReplaceText();
+    const std::string text = textenc::WideToUtf8(replacement);
+    if (text.empty()) return;
+
+    SetSelection(offset, offset + length);
+    editor_.ReplaceTextRange(offset, length, text, EditType::Insert);
+    OnTextChanged();
+    RefreshFindResults();
+}
+
+void App::ReplaceAllMatches(const std::wstring& query,
+                            const std::wstring& replacement) {
+    if (query.empty()) return;
+
+    const std::string text = textenc::WideToUtf8(replacement);
+    FindReplaceState& state = findBar_->model().state();
+    std::string replaced;
+    const size_t count = state.BuildReplacedDocument(buffer_.Text(), &replaced);
+    if (count == 0) {
+        return;
+    }
+
+    editor_.ReplaceTextRange(0, static_cast<uint32_t>(buffer_.Length()),
+                              replaced, EditType::Insert);
+    OnTextChanged();
+    RefreshFindResults();
 }
 
 void App::MarkClean() {
@@ -120,7 +220,20 @@ void App::SetClipboardText(const std::string& text) {
 
 void App::InsertText(const std::string& text) {
     if (text.empty()) return;
-    editor_.InsertText(text);
+
+    // A typed character that would otherwise be markdown syntax is
+    // escaped, so the text stays plain text. This is what the Windows
+    // application does as well.
+    const std::string escaped =
+        EscapeForInsert(buffer_, sel_.active.offset, text,
+                        IsOffsetInTable(document_, sel_.active.offset));
+    editor_.InsertText(escaped);
+
+    // A character that finishes a markdown pattern turns the text around
+    // it, the way a space after a dash makes a list.
+    if (!escaped.empty()) {
+        CheckAutoformat(&buffer_, &sel_, escaped[0]);
+    }
     OnTextChanged();
 }
 

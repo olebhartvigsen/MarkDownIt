@@ -15,6 +15,7 @@
 #include "app_mac.h"
 #include "content_nsview_mac.h"
 #include "content_view_mac.h"
+#include "findbar_mac.h"
 #include "formatting.h"
 #include "menu_mac.h"
 #include "settings_mac.h"
@@ -34,6 +35,8 @@ class MdMenuAdapter;
 @interface MdAppDelegate : NSObject <NSApplicationDelegate> {
     mac::App* app_;
     mac::ContentView* content_;
+    // The window content, which holds the find bar and the document.
+    NSStackView* container_;
     mac::MacSettings settings_;
     NSWindow* window_;
     NSScrollView* scrollView_;
@@ -41,6 +44,10 @@ class MdMenuAdapter;
     MdMenuAdapter* adapter_;
     float zoom_;
     bool sourceView_;
+    // Whether the text is wrapped.
+    bool wrap_;
+    // The width mode of the text column.
+    int contentWidthMode_;
 }
 - (instancetype)init;
 - (void)OpenPath:(const std::string&)path;
@@ -48,6 +55,10 @@ class MdMenuAdapter;
 // The menu commands, as AppKit selectors.
 - (void)newDocument:(id)sender;
 - (void)openDocument:(id)sender;
+- (void)reloadDocument:(id)sender;
+- (void)openSettings:(id)sender;
+- (void)findDocument:(id)sender;
+- (void)replaceInDocument:(id)sender;
 - (void)saveDocument:(id)sender;
 - (void)saveDocumentAs:(id)sender;
 - (void)closeDocument:(id)sender;
@@ -62,6 +73,8 @@ class MdMenuAdapter;
 - (void)zoomReset:(id)sender;
 - (void)toggleSourceView:(id)sender;
 - (void)toggleOutline:(id)sender;
+- (void)toggleWrap:(id)sender;
+- (void)cycleContentWidth:(id)sender;
 - (void)toggleBold:(id)sender;
 - (void)toggleItalic:(id)sender;
 - (void)toggleCode:(id)sender;
@@ -82,9 +95,13 @@ public:
 
     void OnNewDocument() override { [delegate_ newDocument:nil]; }
     void OnOpen() override { [delegate_ openDocument:nil]; }
+    void OnReload() override { [delegate_ reloadDocument:nil]; }
+    void OnOpenSettings() override { [delegate_ openSettings:nil]; }
     void OnSave() override { [delegate_ saveDocument:nil]; }
     void OnSaveAs() override { [delegate_ saveDocumentAs:nil]; }
     void OnClose() override { [delegate_ closeDocument:nil]; }
+    void OnFind() override { [delegate_ findDocument:nil]; }
+    void OnReplace() override { [delegate_ replaceInDocument:nil]; }
     void OnUndo() override { [delegate_ undoEdit:nil]; }
     void OnRedo() override { [delegate_ redoEdit:nil]; }
     void OnCut() override { [delegate_ cutSelection:nil]; }
@@ -96,6 +113,8 @@ public:
     void OnZoomReset() override { [delegate_ zoomReset:nil]; }
     void OnToggleSourceView() override { [delegate_ toggleSourceView:nil]; }
     void OnToggleOutline() override { [delegate_ toggleOutline:nil]; }
+    void OnToggleWrap() override { [delegate_ toggleWrap:nil]; }
+    void OnCycleContentWidth() override { [delegate_ cycleContentWidth:nil]; }
     void OnToggleBold() override { [delegate_ toggleBold:nil]; }
     void OnToggleItalic() override { [delegate_ toggleItalic:nil]; }
     void OnToggleCode() override { [delegate_ toggleCode:nil]; }
@@ -115,6 +134,8 @@ private:
         app_->SetContentView(content_);
         zoom_ = zoom::kDefaultZoom;
         sourceView_ = false;
+        wrap_ = true;
+        contentWidthMode_ = 0;
     }
     return self;
 }
@@ -134,10 +155,24 @@ private:
 
     settings_.Load();
     zoom_ = zoom::Clamp(settings_.settings().zoomFactor);
+    contentWidthMode_ = settings_.settings().contentWidthMode;
+    if (contentWidthMode_ < 0 || contentWidthMode_ > 3) {
+        contentWidthMode_ = 0;
+    }
+    content_->SetContentWidthMode(contentWidthMode_);
 
     // The window. A document based app would use NSWindowController, but
     // this app has a single window, so the delegate owns it.
-    const NSRect frame = NSMakeRect(0, 0, 1000, 760);
+    // The window opens where it was left. A window that has never been
+    // placed opens in the middle of the screen.
+    NSRect frame;
+    const AppSettings& stored = settings_.settings();
+    if (stored.windowFrameWidth > 0.0f && stored.windowFrameHeight > 0.0f) {
+        frame = NSMakeRect(stored.windowFrameX, stored.windowFrameY,
+                           stored.windowFrameWidth, stored.windowFrameHeight);
+    } else {
+        frame = [self centeredFrame];
+    }
     window_ = [[NSWindow alloc]
         initWithContentRect:frame
                   styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
@@ -155,7 +190,24 @@ private:
     [scrollView_ setHasHorizontalScroller:NO];
     [scrollView_ setAutohidesScrollers:YES];
     [scrollView_ setDocumentView:view_];
-    [window_ setContentView:scrollView_];
+
+    // The find bar sits above the document. It is in the layout from
+    // the start and is hidden when it is not in use, so the document
+    // does not jump around when the bar opens and closes.
+    NSView* findBarView = (__bridge NSView*)app_->findBar().view();
+    const float findBarHeight = app_->findBar().Height();
+    [findBarView setTranslatesAutoresizingMaskIntoConstraints:NO];
+    [NSLayoutConstraint activateConstraints:@[
+        [findBarView.heightAnchor constraintEqualToConstant:findBarHeight]
+    ]];
+
+    container_ = [[NSStackView alloc] initWithFrame:frame];
+    [container_ setOrientation:NSUserInterfaceLayoutOrientationVertical];
+    [container_ setDistribution:NSStackViewDistributionFill];
+    [container_ addArrangedSubview:findBarView];
+    [container_ addArrangedSubview:scrollView_];
+
+    [window_ setContentView:container_];
     [window_ makeKeyAndOrderFront:nil];
 
     // The menu bar.
@@ -174,6 +226,26 @@ private:
     }
 }
 
+// The frame of a window in the middle of the screen.
+- (NSRect)centeredFrame {
+    const NSSize size = NSMakeSize(1000, 760);
+    const NSRect screen = [[NSScreen mainScreen] visibleFrame];
+    return NSMakeRect(screen.origin.x + (screen.size.width - size.width) / 2.0,
+                      screen.origin.y + (screen.size.height - size.height) / 2.0,
+                      size.width, size.height);
+}
+
+// The window remembers where it was, so it opens there next time.
+- (void)saveWindowFrame {
+    const NSRect frame = [window_ frame];
+    AppSettings& stored = settings_.settings();
+    stored.windowFrameX = static_cast<float>(frame.origin.x);
+    stored.windowFrameY = static_cast<float>(frame.origin.y);
+    stored.windowFrameWidth = static_cast<float>(frame.size.width);
+    stored.windowFrameHeight = static_cast<float>(frame.size.height);
+    settings_.Save();
+}
+
 - (BOOL)application:(NSApplication*)application
             openFile:(NSString*)filename {
     (void)application;
@@ -189,6 +261,7 @@ private:
 - (void)applicationWillTerminate:(NSNotification*)notification {
     (void)notification;
     settings_.settings().zoomFactor = zoom_;
+    [self saveWindowFrame];
     settings_.Save();
 }
 
@@ -214,9 +287,13 @@ private:
 
 - (void)newDocument:(id)sender { (void)sender; [self OnNewDocument]; }
 - (void)openDocument:(id)sender { (void)sender; [self OnOpen]; }
+- (void)reloadDocument:(id)sender { (void)sender; [self OnReload]; }
+- (void)openSettings:(id)sender { (void)sender; [self OnOpenSettings]; }
 - (void)saveDocument:(id)sender { (void)sender; [self OnSave]; }
 - (void)saveDocumentAs:(id)sender { (void)sender; [self OnSaveAs]; }
 - (void)closeDocument:(id)sender { (void)sender; [self OnClose]; }
+- (void)findDocument:(id)sender { (void)sender; [self OnFind]; }
+- (void)replaceInDocument:(id)sender { (void)sender; [self OnReplace]; }
 - (void)undoEdit:(id)sender { (void)sender; [self OnUndo]; }
 - (void)redoEdit:(id)sender { (void)sender; [self OnRedo]; }
 - (void)cutSelection:(id)sender { (void)sender; [self OnCut]; }
@@ -228,6 +305,8 @@ private:
 - (void)zoomReset:(id)sender { (void)sender; [self OnZoomReset]; }
 - (void)toggleSourceView:(id)sender { (void)sender; [self OnToggleSourceView]; }
 - (void)toggleOutline:(id)sender { (void)sender; [self OnToggleOutline]; }
+- (void)toggleWrap:(id)sender { (void)sender; [self OnToggleWrap]; }
+- (void)cycleContentWidth:(id)sender { (void)sender; [self OnCycleContentWidth]; }
 - (void)toggleBold:(id)sender { (void)sender; [self OnToggleBold]; }
 - (void)toggleItalic:(id)sender { (void)sender; [self OnToggleItalic]; }
 - (void)toggleCode:(id)sender { (void)sender; [self OnToggleCode]; }
@@ -280,6 +359,14 @@ private:
     [window_ close];
 }
 
+- (void)OnFind {
+    app_->ShowFind(FindBarMode::Find);
+}
+
+- (void)OnReplace {
+    app_->ShowFind(FindBarMode::FindReplace);
+}
+
 - (void)OnUndo {
     app_->Undo();
     [view_ setNeedsDisplay:YES];
@@ -328,6 +415,52 @@ private:
 
 - (void)OnToggleSourceView {
     sourceView_ = !sourceView_;
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnReload {
+    if (app_->filePath().empty()) {
+        return;
+    }
+    if (app_->IsDirty()) {
+        // The changes are thrown away, so the user is asked first.
+        NSAlert* alert = [[NSAlert alloc] init];
+        alert.messageText = @"Reload the file and lose the changes?";
+        [alert addButtonWithTitle:@"Reload"];
+        [alert addButtonWithTitle:@"Cancel"];
+        if ([alert runModal] != NSAlertFirstButtonReturn) {
+            return;
+        }
+    }
+    if (!app_->ReloadFile()) {
+        [self reportError:@"The file could not be read."];
+    }
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnOpenSettings {
+    // The settings are a JSON file, so they open in the editor the user
+    // already has. The path is in the same place the Windows build keeps
+    // its settings.
+    NSString* path = [NSString stringWithFormat:
+        @"~/Library/Application Support/MarkDownIt/settings.json"];
+    NSString* full = [path stringByExpandingTildeInPath];
+    [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:full]];
+}
+
+- (void)OnToggleWrap {
+    wrap_ = !wrap_;
+    content_->SetWrap(wrap_);
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnCycleContentWidth {
+    // The width modes are the ones the settings keep, and the command
+    // walks through them.
+    contentWidthMode_ = (contentWidthMode_ + 1) % 4;
+    content_->SetContentWidthMode(contentWidthMode_);
+    settings_.settings().contentWidthMode = contentWidthMode_;
+    settings_.Save();
     [view_ setNeedsDisplay:YES];
 }
 

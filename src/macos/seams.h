@@ -124,6 +124,39 @@ struct Color {
     float a = 1.0f;
 };
 
+// A point in points.
+struct Point {
+    float x = 0.0f;
+    float y = 0.0f;
+};
+
+// An image the target can draw.
+//
+// The handle is opaque to the seam: a decoded bitmap on one platform, a
+// vector document on another. The target owns the drawing, so the
+// renderer never has to know what is behind the handle.
+using BitmapHandle = void*;
+
+// The kinds of image a target can be handed.
+enum class ImageKind {
+    Raster,  // a decoded bitmap, drawn as it is
+    Vector,  // a vector document, scaled into the rectangle
+};
+
+// What a BitmapHandle points at.
+//
+// The seam passes the handle around as an opaque pointer, so the mac
+// layer keeps the concrete type here and both sides agree on it.
+struct Image {
+    ImageKind kind = ImageKind::Raster;
+    // The platform image: a CGImageRef for a raster image, an NSImage
+    // for a vector one.
+    void* handle = nullptr;
+    // The natural size of the image in points.
+    float width = 0.0f;
+    float height = 0.0f;
+};
+
 // Draws the shapes and text the markdown renderer needs.
 //
 // Every method works in points. The caller scales the context once, so
@@ -151,6 +184,30 @@ public:
     // left edge of the baseline.
     virtual void DrawText(const std::string& utf8, const FontSpec& font,
                           float x, float baselineY, const Color& color) = 0;
+
+    // Draws an image into the rectangle, scaled to fit it. The image is
+    // scaled to fit, so the aspect ratio is kept and the image is
+    // centred in the rectangle.
+    virtual void DrawBitmap(BitmapHandle image, const Rect& rect) = 0;
+
+    // Fills an ellipse that fits the rectangle.
+    virtual void FillEllipse(const Rect& rect, const Color& color) = 0;
+
+    // Strokes an ellipse that fits the rectangle.
+    virtual void StrokeEllipse(const Rect& rect, const Color& color,
+                               float lineWidth) = 0;
+
+    // Fills a closed polygon. The points are in the order they are
+    // given, and the last point is joined back to the first.
+    virtual void FillPolygon(const std::vector<Point>& points,
+                             const Color& color) = 0;
+
+    // Fills a pie slice of the ellipse that fits the rectangle.
+    //
+    // The angles are in degrees, measured clockwise from the three
+    // o'clock position, the same way the pie chart data names them.
+    virtual void FillPieSlice(const Rect& rect, float startAngle,
+                              float endAngle, const Color& color) = 0;
 
     // Pushes a clip rectangle. Every PushClip must be matched by a
     // PopClip.

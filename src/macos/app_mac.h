@@ -18,12 +18,17 @@
 #include "caret.h"
 #include "dom.h"
 #include "editcontroller.h"
+#include "findbar_model.h"
 #include "textbuffer.h"
 #include "undostack.h"
 
 namespace mac {
 
 class ContentView;
+
+// The find bar. The bar is an AppKit view, so only the implementation
+// file knows the whole class.
+class FindBar;
 
 // The application. Owns the document, the editing state and the window.
 class App {
@@ -38,6 +43,10 @@ public:
     // Starts an empty document. The file path is cleared, so the app
     // asks for a name when the document is saved.
     void NewDocument();
+
+    // Reads the open file again and throws the changes away. Returns
+    // false when there is no file open or the file cannot be read.
+    bool ReloadFile();
 
     // The document as it stands, parsed from the current text.
     const Document& GetDocument() const { return document_; }
@@ -108,6 +117,26 @@ public:
     // the right markdown.
     void InsertParagraphBreak();
 
+    // Shows the find bar, in the find or the replace mode.
+    void ShowFind(FindBarMode mode);
+
+    // Hides the find bar.
+    void HideFind();
+
+    // The find bar, which the window puts above the document.
+    FindBar& findBar() { return *findBar_; }
+
+    // Re-runs the search against the live document and publishes the
+    // result.
+    void RefreshFindResults();
+
+    // Replaces the range the find bar stands on.
+    void ReplaceMatch(uint32_t offset, uint32_t length);
+
+    // Replaces every match of the find bar, in one edit.
+    void ReplaceAllMatches(const std::wstring& query,
+                           const std::wstring& replacement);
+
     // Undoes the last edit.
     void Undo();
 
@@ -127,6 +156,8 @@ private:
     Selection sel_;
     EditController editor_;
     UndoStack undo_;
+    // The find bar, which owns the search state.
+    std::unique_ptr<FindBar> findBar_;
     bool dirty_ = false;
     std::unique_ptr<ContentView> contentView_;
 };

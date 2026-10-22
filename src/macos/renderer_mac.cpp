@@ -13,9 +13,11 @@
 #include <algorithm>
 #include <cmath>
 
+#include "mermaid/layout_cache.h"
 #include "mermaid/model.h"
 #include "mermaid/pie_layout.h"
 #include "mermaid/seq_layout.h"
+#include "mermaid_painter_mac.h"
 
 namespace mac {
 namespace {
@@ -75,23 +77,75 @@ Node TextNode(const std::u32string& text) {
     return node;
 }
 
-// The code point count of a UTF-8 string, which the code block needs to
-// know how many lines it has.
-size_t CountUtf8Chars(const std::string& text) {
-    size_t count = 0;
-    for (unsigned char c : text) {
-        if ((c & 0xC0) != 0x80) ++count;
+// The height an image takes when its size is not known yet.
+//
+// The Windows renderer charges the same height, so the two agree on how
+// much room an image takes before it has been measured.
+constexpr float kImageFallbackHeight = 100.0f;
+
+// The largest height the images of one block may take.
+constexpr float kImageMaxHeight = 400.0f;
+
+// The width of the text column when the word wrap is off. The text is
+// laid out on one very wide line and the user scrolls to its end.
+constexpr float kNoWrapContentWidthDip = 10000.0f;
+
+// The mermaid layout of a block, in the form the painter takes.
+mermaid::MermaidRender MermaidRenderFor(const Node& node) {
+    mermaid::MermaidRender diagram;
+    switch (node.block) {
+        case BlockKind::MermaidPie:
+            diagram.kind = mermaid::MermaidKind::Pie;
+            diagram.pie = node.mermaid_pie;
+            break;
+        case BlockKind::MermaidSequence:
+            diagram.kind = mermaid::MermaidKind::Sequence;
+            diagram.seq = node.mermaid_seq;
+            break;
+        case BlockKind::MermaidFlowchart:
+        default:
+            diagram.kind = mermaid::MermaidKind::Flowchart;
+            diagram.flow = node.mermaid_layout;
+            break;
     }
-    return count;
+    return diagram;
+}
+
+// True when the diagram has a layout to draw.
+bool HasMermaidLayout(const mermaid::MermaidRender& diagram) {
+    switch (diagram.kind) {
+        case mermaid::MermaidKind::Pie: return diagram.pie != nullptr;
+        case mermaid::MermaidKind::Sequence: return diagram.seq != nullptr;
+        case mermaid::MermaidKind::Flowchart:
+        default: return diagram.flow != nullptr;
+    }
+}
+
+// The width a mermaid block is measured against.
+//
+// The Windows build measures a flowchart against the width inside the
+// block padding, and a pie and a sequence against the full column. The
+// painters fit the diagram into the padded width, so the measurement
+// follows the same split.
+float MermaidMeasureWidth(const mermaid::MermaidRender& diagram,
+                          float width) {
+    const float pad = mermaid::kMermaidBlockPad;
+    if (diagram.kind != mermaid::MermaidKind::Flowchart) return width;
+    return width > 2.0f * pad ? width - 2.0f * pad : 0.0f;
 }
 
 }  // namespace
 
 MacRenderer::MacRenderer() = default;
-MacRenderer::~MacRenderer() = default;
+MacRenderer::~MacRenderer() {
+    // The engine of the diagrams belongs to the renderer.
+    delete diagramEngine_;
+    diagramEngine_ = nullptr;
+}
 
 FontSpec MacRenderer::FontFor(const Node& node, float baseSize, bool bold,
                                bool italic, bool monospace) const {
+    (void)node;
     FontSpec font;
     font.family = monospace ? metrics_.codeFont : metrics_.bodyFont;
     font.size = baseSize;
@@ -135,12 +189,20 @@ std::vector<GlyphRun> MacRenderer::BuildRuns(const Node& node, float baseSize,
 
 float MacRenderer::Measure(const Document& doc, float widthDip) {
     blocks_.clear();
+    needsLayout_ = false;
 
     // The content column. The padding comes from the theme, and the
     // column is capped so a line never runs longer than is comfortable to
     // read.
+    //
+    // With the wrap off the text gets one very wide line, and the user
+    // scrolls to its end.
     const float available = std::max(1.0f, widthDip - metrics_.padX * 2.0f);
-    contentWidth_ = std::min(available, metrics_.maxContentWidth);
+    if (!wrap_) {
+        contentWidth_ = kNoWrapContentWidthDip;
+    } else {
+        contentWidth_ = std::min(available, ContentWidthLimit());
+    }
 
     float y = metrics_.padTop;
     for (const Node& node : doc.nodes) {
@@ -148,6 +210,53 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
     }
     totalHeight_ = y + metrics_.padTop;
     return totalHeight_;
+}
+
+void MacRenderer::SetContentWidthMode(int mode) {
+    if (mode < 0 || mode > 3) {
+        mode = 0;
+    }
+    contentWidthMode_ = mode;
+}
+
+float MacRenderer::ContentWidthLimit() const {
+    // The modes are the ones the settings keep. The standard mode uses
+    // the width from the theme, the wider ones use their own, and the
+    // widest one has no cap at all.
+    switch (contentWidthMode_) {
+        case 1: return 960.0f;
+        case 2: return 1600.0f;
+        case 3: return 100000.0f;
+        case 0:
+        default: return metrics_.maxContentWidth;
+    }
+}
+
+void MacRenderer::ChargeForImages(LaidOutBlock* block) {
+    // The images are drawn under the text of the block, so the block
+    // has to reserve the room for them.
+    //
+    // A remote image is fetched in the background. Until it has arrived
+    // the block gets the fallback height, and the document is laid out
+    // again when the image shows up.
+    float imageHeight = 0.0f;
+    for (const InlineBlock& child : block->node->children) {
+        if (child.kind != InlineKind::Image || child.url.empty()) continue;
+
+        images_.Prefetch(child.url);
+
+        float height = kImageFallbackHeight;
+        if (imageHeight + height > kImageMaxHeight) {
+            height = kImageMaxHeight;
+        }
+        imageHeight += height + metrics_.paraGap;
+        block->images.push_back(child.url);
+
+        if (!images_.GetSize(child.url, nullptr, nullptr)) {
+            needsLayout_ = true;
+        }
+    }
+    block->height += imageHeight;
 }
 
 void MacRenderer::LayoutBlock(const Node& node, float x, float width,
@@ -190,6 +299,7 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
                 block.height += line.height * metrics_.bodyLineHeight /
                                 metrics_.bodyLineHeight;
             }
+            ChargeForImages(&block);
             *y += block.height;
             *y += metrics_.paraGap;
             break;
@@ -339,15 +449,13 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
         case BlockKind::MermaidPie:
         case BlockKind::MermaidSequence: {
             // The mermaid layout is shared and already computed by the
-            // parser. The height comes from the laid out model.
+            // parser. The height is the one the Windows build reserves,
+            // so the two platforms lay the document out the same way.
+            const mermaid::MermaidRender diagram = MermaidRenderFor(node);
             float diagramHeight = 0.0f;
-            if (node.mermaid_layout) {
-                diagramHeight = static_cast<float>(
-                    node.mermaid_layout->height);
-            } else if (node.mermaid_pie) {
-                diagramHeight = static_cast<float>(node.mermaid_pie->height);
-            } else if (node.mermaid_seq) {
-                diagramHeight = static_cast<float>(node.mermaid_seq->height);
+            if (HasMermaidLayout(diagram)) {
+                diagramHeight = mermaid::MeasureMermaidHeight(
+                    diagram, zoom_, MermaidMeasureWidth(diagram, width));
             }
             block.height = diagramHeight > 0.0f ? diagramHeight : 100.0f;
             *y += block.height;
@@ -360,11 +468,42 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
     blocks_.push_back(block);
 }
 
+void MacRenderer::SetSearchMatches(const std::vector<TextMatch>* matches,
+                                  int currentIndex) {
+    searchMatches_.clear();
+    searchCurrent_ = -1;
+    if (!matches) {
+        return;
+    }
+    searchMatches_ = *matches;
+    searchCurrent_ = currentIndex;
+}
+
 void MacRenderer::Render(const Document& doc, float scrollOffset) {
     (void)doc;
     if (!target_) return;
+
+    // The marks go under the text, so they are painted first.
+    PaintSearchHighlights(scrollOffset);
+
     for (const LaidOutBlock& block : blocks_) {
         PaintBlock(block, scrollOffset);
+    }
+}
+
+void MacRenderer::PaintSearchHighlights(float scrollOffset) {
+    if (!target_ || searchMatches_.empty()) return;
+
+    for (size_t i = 0; i < searchMatches_.size(); ++i) {
+        const TextMatch& match = searchMatches_[i];
+        const bool current = static_cast<int>(i) == searchCurrent_;
+        for (const Rect& rect : RectsForRange(match.start,
+                                              match.start + match.length)) {
+            Rect drawn = rect;
+            drawn.y -= scrollOffset;
+            target_->FillRect(drawn, current ? ToColor(palette_.findCurrentMatchBg)
+                                              : ToColor(palette_.findMatchBg));
+        }
     }
 }
 
@@ -480,8 +619,18 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset) {
         case BlockKind::MermaidFlowchart:
         case BlockKind::MermaidPie:
         case BlockKind::MermaidSequence: {
-            // The mermaid painter is a separate piece, added with the
-            // rest of the renderer parity work.
+            // The diagram is painted by the mermaid painter, which draws
+            // the shared layout through the seam.
+            const mermaid::MermaidRender diagram = MermaidRenderFor(*block.node);
+            if (!HasMermaidLayout(diagram)) break;
+            const float pad = mermaid::kMermaidBlockPad;
+            const float availWidth =
+                block.width > 2.0f * pad ? block.width - 2.0f * pad : 0.0f;
+            PaintMermaidDiagram(diagramEngine_ ? diagramEngine_ : engine_,
+                                target_, diagram, zoom_, availWidth, block.x,
+                                top, pad, palette_,
+                                FontFor(*block.node, metrics_.bodyFontSize,
+                                        false, false, false));
             break;
         }
 
@@ -500,8 +649,44 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset) {
                 }
                 y += line.height;
             }
+            PaintImages(block, y, block.width);
             break;
         }
+    }
+}
+
+void MacRenderer::PaintImages(const LaidOutBlock& block, float top,
+                              float width) {
+    if (!target_) return;
+
+    // The images are drawn in the room the layout reserved for them, one
+    // under the other.
+    float y = top;
+    for (const std::string& url : block.images) {
+        float height = kImageFallbackHeight;
+        float imageWidth = 0.0f;
+        float imageHeight = 0.0f;
+        if (images_.GetSize(url, &imageWidth, &imageHeight) &&
+            imageWidth > 0.0f && imageHeight > 0.0f) {
+            // The image keeps its aspect ratio and fits the width of
+            // the column.
+            height = width * (imageHeight / imageWidth);
+            if (height > kImageMaxHeight) {
+                height = kImageMaxHeight;
+            }
+        }
+
+        Rect rect;
+        rect.x = block.x;
+        rect.y = y;
+        rect.width = width;
+        rect.height = height;
+
+        BitmapHandle image = images_.Get(url);
+        if (image) {
+            target_->DrawBitmap(image, rect);
+        }
+        y += height + metrics_.paraGap;
     }
 }
 
@@ -640,14 +825,47 @@ uint32_t MacRenderer::HitTestPoint(float x, float y) const {
                 bool trailing = false;
                 const uint32_t offset = engine_->HitTestOffset(
                     line, x - block.x, &trailing);
-                // The offset is into the block's text, and the block knows
-                // where its text starts in the source.
-                return block.node->srcOffset + offset;
+                // The offset is into the block's text, and the block
+                // knows where its editable text starts in the source.
+                return block.node->contentOffset + offset;
             }
             lineY += line.height;
         }
     }
     return 0;
+}
+
+bool MacRenderer::LineRangeAtPoint(float x, float y, uint32_t* outStart,
+                                   uint32_t* outEnd) const {
+    // The x is ignored on purpose. A click in the margin is level with
+    // a line, and the line is what the user wants to select.
+    (void)x;
+
+    for (const LaidOutBlock& block : blocks_) {
+        if (y < block.y || y > block.y + block.height) continue;
+
+        uint32_t lineStart = block.node->srcOffset;
+        float lineY = block.y;
+        for (const TextLine& line : block.lines) {
+            if (y >= lineY && y < lineY + line.height) {
+                size_t length = 0;
+                for (const GlyphRun& run : line.runs) {
+                    length += run.text.size();
+                }
+                if (outStart) *outStart = lineStart;
+                if (outEnd) {
+                    *outEnd = lineStart + static_cast<uint32_t>(length);
+                }
+                return true;
+            }
+            for (const GlyphRun& run : line.runs) {
+                lineStart += static_cast<uint32_t>(run.text.size());
+            }
+            lineY += line.height;
+        }
+        return false;
+    }
+    return false;
 }
 
 bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
@@ -658,18 +876,80 @@ bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
         const uint32_t end = start + block.node->contentLength;
         if (offset < start || offset > end) continue;
 
+        // The lines are walked with the range each one covers, so the
+        // line the offset is on is the one that is found.
         float lineY = block.y;
+        uint32_t lineStart = start;
         for (const TextLine& line : block.lines) {
-            const Rect rect = engine_->OffsetToRect(line, offset - start);
-            if (outX) *outX = block.x + rect.x;
-            if (outY) *outY = lineY;
-            if (outWidth) *outWidth = rect.width;
-            if (outHeight) *outHeight = line.height;
-            return true;
+            size_t length = 0;
+            for (const GlyphRun& run : line.runs) {
+                length += run.text.size();
+            }
+            const uint32_t lineEnd = lineStart + static_cast<uint32_t>(length);
+            if (offset >= lineStart && offset <= lineEnd) {
+                const Rect rect = engine_->OffsetToRect(line, offset - lineStart);
+                if (outX) *outX = block.x + rect.x;
+                if (outY) *outY = lineY;
+                if (outWidth) *outWidth = rect.width;
+                if (outHeight) *outHeight = line.height;
+                return true;
+            }
+            lineStart = lineEnd;
             lineY += line.height;
         }
     }
     return false;
+}
+
+std::vector<Rect> MacRenderer::SelectionRects(uint32_t start,
+                                               uint32_t end) const {
+    return RectsForRange(start, end);
+}
+
+std::vector<Rect> MacRenderer::RectsForRange(uint32_t start,
+                                             uint32_t end) const {
+    std::vector<Rect> rects;
+    if (end < start) {
+        const uint32_t swap = start;
+        start = end;
+        end = swap;
+    }
+
+    for (const LaidOutBlock& block : blocks_) {
+        if (!block.node) continue;
+
+        // The text of the block, in the same order the lines have it.
+        float lineY = block.y;
+        uint32_t lineStart = block.node->contentOffset;
+        for (const TextLine& line : block.lines) {
+            size_t length = 0;
+            for (const GlyphRun& run : line.runs) {
+                length += run.text.size();
+            }
+            const uint32_t lineEnd = lineStart + static_cast<uint32_t>(length);
+
+            // The part of the line the selection covers.
+            const uint32_t from = start > lineStart ? start : lineStart;
+            const uint32_t to = end < lineEnd ? end : lineEnd;
+            if (from < to) {
+                const Rect first =
+                    engine_->OffsetToRect(line, from - lineStart);
+                const Rect last = engine_->OffsetToRect(line, to - lineStart);
+                Rect rect;
+                rect.x = block.x + first.x;
+                rect.y = lineY;
+                rect.width = (block.x + last.x + last.width) - rect.x;
+                rect.height = line.height;
+                if (rect.width < 0.0f) {
+                    rect.width = 0.0f;
+                }
+                rects.push_back(rect);
+            }
+            lineStart = lineEnd;
+            lineY += line.height;
+        }
+    }
+    return rects;
 }
 
 }  // namespace mac

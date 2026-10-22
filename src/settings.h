@@ -45,6 +45,14 @@ struct AppSettings {
 
     // Recent files (most-recent first, max 12).
     std::vector<RecentFile> recentFiles;
+
+    // Where the window was, in points, so it opens where it was left.
+    // A width of zero means the window has not been placed yet, and the
+    // app puts it in the middle of the screen instead.
+    float windowFrameX = 0.0f;
+    float windowFrameY = 0.0f;
+    float windowFrameWidth = 0.0f;
+    float windowFrameHeight = 0.0f;
 };
 
 // The maximum number of recent files kept.

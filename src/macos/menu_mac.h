@@ -27,11 +27,17 @@ public:
     // File.
     virtual void OnNewDocument() = 0;
     virtual void OnOpen() = 0;
+    virtual void OnReload() = 0;
     virtual void OnSave() = 0;
     virtual void OnSaveAs() = 0;
     virtual void OnClose() = 0;
 
+    // The application menu.
+    virtual void OnOpenSettings() = 0;
+
     // Edit.
+    virtual void OnFind() = 0;
+    virtual void OnReplace() = 0;
     virtual void OnUndo() = 0;
     virtual void OnRedo() = 0;
     virtual void OnCut() = 0;
@@ -45,6 +51,8 @@ public:
     virtual void OnZoomReset() = 0;
     virtual void OnToggleSourceView() = 0;
     virtual void OnToggleOutline() = 0;
+    virtual void OnToggleWrap() = 0;
+    virtual void OnCycleContentWidth() = 0;
 
     // Format.
     virtual void OnToggleBold() = 0;

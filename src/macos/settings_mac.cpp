@@ -312,6 +312,19 @@ void MacSettings::Load() {
         settings_.outlineWidthDip = static_cast<float>(number);
     }
 
+    if (FindJsonNumber(text, "windowFrameX", &number)) {
+        settings_.windowFrameX = static_cast<float>(number);
+    }
+    if (FindJsonNumber(text, "windowFrameY", &number)) {
+        settings_.windowFrameY = static_cast<float>(number);
+    }
+    if (FindJsonNumber(text, "windowFrameWidth", &number)) {
+        settings_.windowFrameWidth = static_cast<float>(number);
+    }
+    if (FindJsonNumber(text, "windowFrameHeight", &number)) {
+        settings_.windowFrameHeight = static_cast<float>(number);
+    }
+
     bool outlineVisible = settings_.outlineVisible;
     if (FindJsonBool(text, "outlineVisible", &outlineVisible)) {
         settings_.outlineVisible = outlineVisible;
@@ -337,6 +350,10 @@ bool MacSettings::Save() const {
     out << "  \"contentWidthMode\": " << settings_.contentWidthMode << ",\n";
     out << "  \"zoomFactor\": " << settings_.zoomFactor << ",\n";
     out << "  \"outlineWidthDip\": " << settings_.outlineWidthDip << ",\n";
+    out << "  \"windowFrameX\": " << settings_.windowFrameX << ",\n";
+    out << "  \"windowFrameY\": " << settings_.windowFrameY << ",\n";
+    out << "  \"windowFrameWidth\": " << settings_.windowFrameWidth << ",\n";
+    out << "  \"windowFrameHeight\": " << settings_.windowFrameHeight << ",\n";
     out << "  \"outlineVisible\": "
         << (settings_.outlineVisible ? "true" : "false") << ",\n";
     out << "  \"recentFiles\": [";

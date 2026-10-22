@@ -125,6 +125,10 @@ NSMenu* BuildMainMenu(MenuActions* actions) {
                            action:@selector(orderFrontStandardAboutPanel:)
                     keyEquivalent:@""];
         [appMenu addItem:[NSMenuItem separatorItem]];
+        [appMenu addItemWithTitle:@"Settings..."
+                           action:@selector(openSettings:)
+                    keyEquivalent:@","];
+        [appMenu addItem:[NSMenuItem separatorItem]];
         [appMenu addItemWithTitle:@"Hide MarkDownIt"
                            action:@selector(hide:)
                     keyEquivalent:@"h"];
@@ -144,10 +148,11 @@ NSMenu* BuildMainMenu(MenuActions* actions) {
             "File",
             {{"New", @selector(newDocument:)},
              {"Open...", @selector(openDocument:)},
+             {"Reload", @selector(reloadDocument:)},
              {"Close", @selector(closeDocument:)},
              {"Save", @selector(saveDocument:)},
              {"Save As...", @selector(saveDocumentAs:)}},
-            {"n", "o", "w", "s", "S"});
+            {"n", "o", "", "w", "s", "S"});
         [mainMenu addItem:[[NSMenuItem alloc] init]];
         [[mainMenu itemArray] lastObject].submenu = fileMenu;
     }
@@ -161,8 +166,10 @@ NSMenu* BuildMainMenu(MenuActions* actions) {
              {"Cut", @selector(cutSelection:)},
              {"Copy", @selector(copySelection:)},
              {"Paste", @selector(pasteSelection:)},
-             {"Select All", @selector(selectAll:)}},
-            {"z", "Z", "x", "c", "v", "a"});
+             {"Select All", @selector(selectAll:)},
+             {"Find...", @selector(findDocument:)},
+             {"Replace...", @selector(replaceInDocument:)}},
+            {"z", "Z", "x", "c", "v", "a", "f", "h"});
         [mainMenu addItem:[[NSMenuItem alloc] init]];
         [[mainMenu itemArray] lastObject].submenu = editMenu;
     }
@@ -175,8 +182,10 @@ NSMenu* BuildMainMenu(MenuActions* actions) {
              {"Zoom Out", @selector(zoomOut:)},
              {"Actual Size", @selector(zoomReset:)},
              {"Source View", @selector(toggleSourceView:)},
-             {"Outline", @selector(toggleOutline:)}},
-            {"+", "-", "0", "", ""});
+             {"Outline", @selector(toggleOutline:)},
+             {"Wrap Text", @selector(toggleWrap:)},
+             {"Wider Content", @selector(cycleContentWidth:)}},
+            {"+", "-", "0", "", "", "", ""});
         [mainMenu addItem:[[NSMenuItem alloc] init]];
         [[mainMenu itemArray] lastObject].submenu = viewMenu;
     }

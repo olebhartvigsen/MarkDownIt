@@ -477,6 +477,7 @@ elseif(BUILD_TESTS)
         src/searchreplace.cpp
         src/findstate.cpp
         src/findbar.cpp
+        src/findbar_model.cpp
         src/markers.cpp
         src/outline.cpp
         src/textdrag.cpp
@@ -598,11 +599,15 @@ if(APPLE)
         src/macos/app_mac.cpp
         src/macos/content_view_mac.mm
         src/macos/renderer_mac.cpp
+        src/macos/mermaid_painter_mac.cpp
         src/macos/text_engine_mac.cpp
         src/macos/clipboard_mac.mm
         src/macos/settings_mac.cpp
         src/macos/menu_mac.mm
         src/macos/crash_trace_mac.cpp
+        src/macos/image_mac.mm
+        src/macos/image_draw_mac.mm
+        src/macos/findbar_mac.mm
     )
     # The Objective-C++ sources need the Objective-C runtime and the
     # frameworks, which the C++ sources do not.
@@ -611,6 +616,9 @@ if(APPLE)
         src/macos/content_view_mac.mm
         src/macos/clipboard_mac.mm
         src/macos/menu_mac.mm
+        src/macos/image_mac.mm
+        src/macos/image_draw_mac.mm
+        src/macos/findbar_mac.mm
         PROPERTIES COMPILE_FLAGS "-fobjc-arc"
     )
     target_link_libraries(MarkDownItMac

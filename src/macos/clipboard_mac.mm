@@ -24,6 +24,15 @@ NSPasteboard* GeneralPasteboard() {
     return [NSPasteboard generalPasteboard];
 }
 
+// The pasteboard type that carries the raw markdown.
+//
+// The Windows build puts the raw markdown on the clipboard under a
+// format of its own, next to the plain text, so a copy of a table keeps
+// its table. The pasteboard type is the macOS version of that format.
+NSString* MarkdownPasteboardType() {
+    return @"com.olebhartvigsen.markdownit.markdown";
+}
+
 }  // namespace
 
 Clipboard::Clipboard() = default;
@@ -48,6 +57,10 @@ void Clipboard::SetText(const std::string& text) {
                                               encoding:NSUTF8StringEncoding];
     if (!value) return;
     [pasteboard setString:value forType:NSPasteboardTypeString];
+
+    // The raw markdown goes on the pasteboard under its own type as
+    // well, so the copy keeps the structure the text alone would lose.
+    [pasteboard setString:value forType:MarkdownPasteboardType()];
 }
 
 bool Clipboard::HasText() const {

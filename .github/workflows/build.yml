@@ -122,11 +122,14 @@ jobs:
   # compiled and executed on Apple Silicon. Every change to the shared
   # core goes through this job before it reaches the macOS app.
   #
-  # macos-15-arm64 and not macos-14: the macos-14 images are deprecated
-  # and unsupported after November 2, 2026.
+  # The runner image is read from the environment, because the macOS
+  # runners are scarce and a queue can sit for a long time. The default
+  # is macos-15-arm64, the label the pipeline reference pins: the
+  # macos-14 images are deprecated and unsupported after November 2,
+  # 2026, and macos-26 is the forward option.
   test-macos:
     name: Tests (macOS, Apple Silicon)
-    runs-on: macos-15-arm64
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-15-arm64' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -144,7 +147,7 @@ jobs:
   # downloaded and run on a real Mac.
   build-macos:
     name: Build (macOS, Apple Silicon)
-    runs-on: macos-15-arm64
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-15-arm64' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

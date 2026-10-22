@@ -17,6 +17,7 @@
 
 #include "content_nsview_mac.h"
 #include "text_engine_mac.h"
+#include "image_draw_mac.h"
 
 namespace mac {
 
@@ -28,6 +29,9 @@ constexpr float kDefaultHeight = 700.0f;
 
 // The gap between the edge of the view and the text column.
 constexpr float kGutter = 24.0f;
+
+// The circle constant, for the pie slices.
+constexpr double kPi = 3.14159265358979323846;
 
 // The offset of the character before the given offset.
 uint32_t PreviousCharacter(const std::string& text, uint32_t offset) {
@@ -161,6 +165,70 @@ public:
         [text drawAtPoint:NSMakePoint(x, baselineY) withAttributes:attributes];
     }
 
+    void DrawBitmap(BitmapHandle image, const Rect& rect) override {
+        mac::DrawImageIntoContext(context_, image, rect);
+    }
+
+    void FillEllipse(const Rect& rect, const Color& color) override {
+        CGContextSaveGState(context_);
+        CGContextSetRGBFillColor(context_, color.r, color.g, color.b, color.a);
+        CGContextFillEllipseInRect(context_,
+                                   CGRectMake(rect.x, rect.y, rect.width,
+                                              rect.height));
+        CGContextRestoreGState(context_);
+    }
+
+    void StrokeEllipse(const Rect& rect, const Color& color,
+                       float lineWidth) override {
+        CGContextSaveGState(context_);
+        CGContextSetRGBStrokeColor(context_, color.r, color.g, color.b, color.a);
+        CGContextSetLineWidth(context_, lineWidth);
+        CGContextStrokeEllipseInRect(context_,
+                                     CGRectMake(rect.x, rect.y, rect.width,
+                                                rect.height));
+        CGContextRestoreGState(context_);
+    }
+
+    void FillPolygon(const std::vector<Point>& points,
+                     const Color& color) override {
+        if (points.size() < 3) return;
+        // Core Graphics takes the points as one array.
+        std::vector<CGPoint> coordinates;
+        coordinates.reserve(points.size());
+        for (const Point& point : points) {
+            coordinates.push_back(CGPointMake(point.x, point.y));
+        }
+        CGContextSaveGState(context_);
+        CGContextSetRGBFillColor(context_, color.r, color.g, color.b, color.a);
+        CGContextBeginPath(context_);
+        CGContextMoveToPoint(context_, coordinates[0].x, coordinates[0].y);
+        CGContextAddLines(context_, coordinates.data(), coordinates.size());
+        CGContextClosePath(context_);
+        CGContextFillPath(context_);
+        CGContextRestoreGState(context_);
+    }
+
+    void FillPieSlice(const Rect& rect, float startAngle, float endAngle,
+                      const Color& color) override {
+        // The seam counts the angles clockwise from three o'clock, and
+        // Core Graphics counts them counter-clockwise, so the angles are
+        // negated. The context is flipped, with the y axis pointing
+        // downwards, so the negated angle sweeps clockwise on screen.
+        const CGFloat centreX = rect.x + rect.width * 0.5;
+        const CGFloat centreY = rect.y + rect.height * 0.5;
+        const CGFloat radius = std::min(rect.width, rect.height) * 0.5;
+        const CGFloat start = -startAngle * kPi / 180.0;
+        const CGFloat end = -endAngle * kPi / 180.0;
+        CGContextSaveGState(context_);
+        CGContextSetRGBFillColor(context_, color.r, color.g, color.b, color.a);
+        CGContextBeginPath(context_);
+        CGContextMoveToPoint(context_, centreX, centreY);
+        CGContextAddArc(context_, centreX, centreY, radius, start, end, true);
+        CGContextClosePath(context_);
+        CGContextFillPath(context_);
+        CGContextRestoreGState(context_);
+    }
+
     void PushClip(const Rect& rect) override {
         CGContextSaveGState(context_);
         CGContextClipToRect(context_, CGRectMake(rect.x, rect.y, rect.width,
@@ -221,6 +289,10 @@ private:
 ContentView::ContentView(App* app)
     : app_(app), engine_(nullptr), target_(nullptr) {
     engine_ = new CoreTextEngine();
+    // The diagrams are measured with an engine of their own, so the
+    // measurement of the document text stays where the hit tester
+    // expects it.
+    renderer_.SetDiagramTextEngine(new CoreTextEngine());
     renderer_.SetTextEngine(engine_);
     renderer_.SetTheme(BaseMetrics(), BasePalette());
     width_ = kDefaultWidth;
@@ -278,7 +350,38 @@ void ContentView::Draw(RenderTarget* target) {
 
     target_ = target;
     renderer_.SetRenderTarget(target);
+
+    // The selection goes under the text, so it is drawn first.
+    const Selection& selection = app_->selection();
+    if (!selection.Empty()) {
+        const uint32_t from = selection.Start();
+        const uint32_t to = selection.End();
+        for (const Rect& rect : renderer_.SelectionRects(from, to)) {
+            Rect drawn = rect;
+            drawn.y -= scrollOffset_;
+            target->FillRect(drawn, SelectionColor());
+        }
+    }
+
     renderer_.Render(app_->GetDocument(), scrollOffset_);
+
+    // The caret goes on top of the text.
+    if (caretVisible_) {
+        float x = 0.0f;
+        float y = 0.0f;
+        float width = 0.0f;
+        float height = 0.0f;
+        const uint32_t caret = selection.active.offset;
+        if (renderer_.OffsetToRect(caret, &x, &y, &width, &height)) {
+            Rect drawn;
+            drawn.x = x;
+            drawn.y = y - scrollOffset_;
+            drawn.width = 1.0f;
+            drawn.height = height > 0.0f ? height : CaretHeight();
+            target->FillRect(drawn, CaretColor());
+        }
+    }
+
     target_ = nullptr;
 }
 
@@ -293,6 +396,17 @@ bool ContentView::OffsetToRect(uint32_t offset, float* outX, float* outY,
 
 void ContentView::PlaceCaretAt(float x, float y) {
     if (!app_) return;
+
+    // A click in the left margin misses the text. It selects the line
+    // the click is level with, the way Word does it.
+    uint32_t lineStart = 0;
+    uint32_t lineEnd = 0;
+    if (renderer_.LineRangeAtPoint(x, y + scrollOffset_, &lineStart,
+                                   &lineEnd)) {
+        app_->SetSelection(lineStart, lineEnd);
+        return;
+    }
+
     app_->SetCaret(HitTestPoint(x, y));
 }
 
@@ -300,6 +414,49 @@ void ContentView::ExtendSelectionTo(float x, float y) {
     if (!app_) return;
     const uint32_t offset = HitTestPoint(x, y);
     app_->SetSelection(app_->selection().anchor.offset, offset);
+}
+
+Color ContentView::SelectionColor() const {
+    // The selection is a soft blue, the same one the Windows app uses.
+    Color color;
+    color.r = 0.27f;
+    color.g = 0.52f;
+    color.b = 0.89f;
+    color.a = 0.35f;
+    return color;
+}
+
+Color ContentView::CaretColor() const {
+    Color color;
+    color.r = 0.10f;
+    color.g = 0.10f;
+    color.b = 0.12f;
+    color.a = 1.0f;
+    return color;
+}
+
+void ContentView::SetSearchMatches(const std::vector<TextMatch>* matches,
+                                   int currentIndex) {
+    renderer_.SetSearchMatches(matches, currentIndex);
+    Invalidate();
+}
+
+void ContentView::SetCaretVisible(bool visible) {
+    if (caretVisible_ == visible) {
+        return;
+    }
+    caretVisible_ = visible;
+    Invalidate();
+}
+
+void ContentView::SetWrap(bool wrap) {
+    renderer_.SetWrap(wrap);
+    Relayout();
+}
+
+void ContentView::SetContentWidthMode(int mode) {
+    renderer_.SetContentWidthMode(mode);
+    Relayout();
 }
 
 float ContentView::CaretHeight() const {
@@ -329,6 +486,8 @@ float ContentView::CaretHeight() const {
 @implementation MdContentView {
     mac::ContentView* content_;
     mac::App* app_;
+    // The timer that blinks the caret.
+    NSTimer* blinkTimer_;
 }
 
 - (instancetype)initWithContent:(mac::ContentView*)content app:(mac::App*)app {
@@ -382,6 +541,114 @@ float ContentView::CaretHeight() const {
     content_->PlaceCaretAt(static_cast<float>(point.x),
                            static_cast<float>(point.y));
     [self setNeedsDisplay:YES];
+}
+
+// The caret blinks while the document has the focus. The timer flips
+// the caret, and the view redraws itself.
+- (void)startBlinking {
+    if (blinkTimer_) return;
+    blinkTimer_ = [NSTimer scheduledTimerWithTimeInterval:0.5
+                                                  target:self
+                                                selector:@selector(blink:)
+                                                userInfo:nil
+                                                 repeats:YES];
+}
+
+- (void)stopBlinking {
+    [blinkTimer_ invalidate];
+    blinkTimer_ = nil;
+    if (content_) content_->SetCaretVisible(true);
+}
+
+- (void)blink:(NSTimer*)timer {
+    (void)timer;
+    if (!content_) return;
+    content_->SetCaretVisible(!content_->caretVisible());
+}
+
+- (BOOL)becomeFirstResponder {
+    const BOOL result = [super becomeFirstResponder];
+    [self startBlinking];
+    return result;
+}
+
+- (BOOL)resignFirstResponder {
+    [self stopBlinking];
+    return [super resignFirstResponder];
+}
+
+- (void)rightMouseDown:(NSEvent*)event {
+    if (!content_) return;
+
+    // The right click places the caret first, so the menu works on the
+    // text under the pointer.
+    const NSPoint point = [self convertPoint:[event locationInWindow]
+                                    fromView:nil];
+    content_->PlaceCaretAt(static_cast<float>(point.x),
+                           static_cast<float>(point.y));
+    [self setNeedsDisplay:YES];
+
+    mac::App* app = content_->app();
+    id target = [NSApp delegate];
+    if (!app || !target) return;
+
+    NSMenu* menu = [[NSMenu alloc] init];
+    const bool hasSelection = app->HasSelection();
+
+    NSMenuItem* undo = [menu addItemWithTitle:@"Undo"
+                                        action:@selector(undoEdit:)
+                                 keyEquivalent:@""];
+    undo.target = target;
+    undo.enabled = app->undo().CanUndo();
+
+    NSMenuItem* redo = [menu addItemWithTitle:@"Redo"
+                                        action:@selector(redoEdit:)
+                                 keyEquivalent:@""];
+    redo.target = target;
+    redo.enabled = app->undo().CanRedo();
+
+    [menu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem* cut = [menu addItemWithTitle:@"Cut"
+                                       action:@selector(cutSelection:)
+                                keyEquivalent:@""];
+    cut.target = target;
+    cut.enabled = hasSelection;
+
+    NSMenuItem* copy = [menu addItemWithTitle:@"Copy"
+                                        action:@selector(copySelection:)
+                                 keyEquivalent:@""];
+    copy.target = target;
+    copy.enabled = hasSelection;
+
+    NSMenuItem* paste = [menu addItemWithTitle:@"Paste"
+                                         action:@selector(pasteSelection:)
+                                  keyEquivalent:@""];
+    paste.target = target;
+
+    NSMenuItem* selectAll = [menu addItemWithTitle:@"Select All"
+                                             action:@selector(selectAll:)
+                                      keyEquivalent:@""];
+    selectAll.target = target;
+
+    [menu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem* bold = [menu addItemWithTitle:@"Bold"
+                                        action:@selector(toggleBold:)
+                                 keyEquivalent:@""];
+    bold.target = target;
+
+    NSMenuItem* italic = [menu addItemWithTitle:@"Italic"
+                                          action:@selector(toggleItalic:)
+                                   keyEquivalent:@""];
+    italic.target = target;
+
+    NSMenuItem* code = [menu addItemWithTitle:@"Code"
+                                        action:@selector(toggleCode:)
+                                 keyEquivalent:@""];
+    code.target = target;
+
+    [NSMenu popUpContextMenu:menu withEvent:event forView:self];
 }
 
 - (void)mouseDragged:(NSEvent*)event {

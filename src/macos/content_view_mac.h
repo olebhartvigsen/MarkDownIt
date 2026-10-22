@@ -17,6 +17,7 @@
 #include "app_mac.h"
 #include "caret.h"
 #include "renderer_mac.h"
+#include "searchreplace.h"
 #include "seams.h"
 
 namespace mac {
@@ -53,6 +54,9 @@ public:
     // The text engine, so the app can measure text outside the view.
     TextEngine& textEngine() { return *engine_; }
 
+    // The application the view draws.
+    App* app() const { return app_; }
+
     // Draws the document with the given target, in view coordinates.
     void Draw(RenderTarget* target);
 
@@ -75,6 +79,30 @@ public:
     // The height of the caret at the current offset, in points.
     float CaretHeight() const;
 
+    // The colour of the selection, and of the caret.
+    Color SelectionColor() const;
+    Color CaretColor() const;
+
+    // Whether the caret is showing. The blink timer flips this, so the
+    // caret appears and disappears like it does in the Windows app.
+    bool caretVisible() const { return caretVisible_; }
+
+    // Sets whether the caret is showing, and asks for a redraw when the
+    // state changed.
+    void SetCaretVisible(bool visible);
+
+    // Marks the ranges the find bar matched. A null pointer clears the
+    // marks.
+    void SetSearchMatches(const std::vector<TextMatch>* matches,
+                          int currentIndex);
+
+    // Turns the word wrap on or off.
+    void SetWrap(bool wrap);
+
+    // Sets the width of the text column. The modes are the ones the
+    // settings keep.
+    void SetContentWidthMode(int mode);
+
 private:
     // The layout of the document, computed by the renderer.
     void Relayout();
@@ -89,6 +117,8 @@ private:
     float contentWidth_ = 0.0f;
     float documentHeight_ = 0.0f;
     float scrollOffset_ = 0.0f;
+    // Whether the caret is showing right now.
+    bool caretVisible_ = true;
 };
 
 }  // namespace mac
