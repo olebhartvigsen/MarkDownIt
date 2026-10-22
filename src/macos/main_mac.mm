@@ -18,7 +18,6 @@
 #include "outline_nsview_mac.h"
 #include "outline_pane_mac.h"
 #include "content_view_mac.h"
-#include <fstream>
 #include <sstream>
 
 #include "formatting.h"
@@ -28,8 +27,8 @@
 #include "office/pdf_export.h"
 #include "welcome_mac.h"
 #include "findbar_mac.h"
-#include "formatting.h"
 #include "menu_mac.h"
+#include "crash_trace_mac.h"
 #include "settings_mac.h"
 #include "zoommodel.h"
 
@@ -237,6 +236,7 @@ private:
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
     (void)notification;
 
+    mac::TraceMac("didFinishLaunching enter");
     settings_.Load();
     zoom_ = zoom::Clamp(settings_.settings().zoomFactor);
     contentWidthMode_ = settings_.settings().contentWidthMode;
@@ -326,6 +326,7 @@ private:
 
     [window_ setContentView:container_];
     [window_ makeKeyAndOrderFront:nil];
+    mac::TraceMac("the window is on screen");
 
     // The delegate takes the files that are dropped on the window.
     [window_ registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
@@ -333,6 +334,7 @@ private:
     // Without a file the welcome screen takes the place of the
     // document.
     [self showWelcomeScreen];
+    mac::TraceMac("the welcome screen is up");
 
     // F5 in the document asks the window to reload the file, because
     // the window asks the user before the changes are thrown away.
@@ -1044,11 +1046,17 @@ int main(int argc, const char* argv[]) {
     (void)argv;
 
     @autoreleasepool {
+        // The breadcrumbs name each stage of the start-up, so a launch
+        // that dies before the window appears can be read back from
+        // ~/Library/Logs/MarkDownIt/crash_trace.log.
+        mac::TraceMac("main enter");
+
         NSApplication* application = [NSApplication sharedApplication];
         [application setActivationPolicy:NSApplicationActivationPolicyRegular];
 
         MdAppDelegate* delegate = [[MdAppDelegate alloc] init];
         [application setDelegate:delegate];
+        mac::TraceMac("the delegate is assigned and the run loop starts");
         [application run];
     }
     return 0;
