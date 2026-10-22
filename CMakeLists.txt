@@ -418,7 +418,9 @@ if(BUILD_TESTS AND APPLE)
         miniz
         pugixml
         pdfio
-        # The text layout of the shared core is Core Text on macOS.
+        # The text layout of the shared core is Core Text on macOS, and
+        # the text engine makes its colors and paths with Core Graphics.
+        "-framework CoreGraphics"
         "-framework CoreText"
         "-framework CoreFoundation"
     )
@@ -426,6 +428,12 @@ if(BUILD_TESTS AND APPLE)
     set_target_properties(MarkDownIt.tests PROPERTIES
         MACOSX_BUNDLE OFF
         WIN32_EXECUTABLE OFF
+    )
+    # The app layer's text engine, with its test, so the Core Text
+    # measure path runs in CI and not only on real hardware.
+    target_sources(MarkDownIt.tests PRIVATE
+        tests/text_engine_mac_test.cpp
+        src/macos/text_engine_mac.cpp
     )
 elseif(BUILD_TESTS)
     add_executable(MarkDownIt.tests
