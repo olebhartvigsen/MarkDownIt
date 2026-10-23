@@ -13,11 +13,13 @@ prompt:
 
  2. In Terminal, clear the download flag from the app:
 
-        xattr -dr com.apple.quarantine /path/to/MarkDownIt.app
+        xattr -cr /path/to/MarkDownIt.app
 
-If macOS says the app is damaged, use way 2. The file is fine; the
-download flag is what upsets the launch check, and clearing it is all
-that is needed. The answer sticks, so later launches are plain
-double-clicks.
+If macOS says the app is damaged, or a double-click does nothing at
+all because the download check denied the launch outright, use way 2.
+The file is fine; the download flag is what upsets the launch check,
+and clearing it is all that is needed. The answer sticks, so later
+launches are plain double-clicks, and once it opens you can move the
+app to /Applications to keep it.
 
 The app needs macOS 12 or later on an Apple silicon Mac.

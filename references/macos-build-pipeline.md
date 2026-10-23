@@ -243,11 +243,17 @@ the seal would cover a bundle that is still missing its icon (checked
 in the probe bundle).
 
 The quarantine flag is a fact of distribution, not a defect. An ad hoc
-signature cannot be notarized, so the first launch asks once; the zip
-carries `read-me-first-run.txt` with the two ways past the prompt
-(System Settings, Privacy & Security, Open Anyway; or
-`xattr -dr com.apple.quarantine`). Notarization needs an Apple Developer
-certificate and stays out of scope until one exists.
+signature cannot be notarized, so the launch check stands between a
+download and the first run. On October 23, 2026, a fresh download of
+the 5b build showed the hard variant of that check: no prompt at all,
+and the unified log carried `syspolicyd` and `kernel ASP: Security
+policy would not allow process` for the translocated copy, followed by
+`termination reported by launchd (9, 8, 9)`. The prompt is therefore
+not guaranteed, and clearing the flag from Terminal is the route that
+works in that case; the zip carries `read-me-first-run.txt`, which
+names both routes (System Settings, Privacy & Security, Open Anyway;
+or `xattr -cr`). Notarization needs an Apple Developer certificate and
+stays out of scope until one exists.
 
 ## Blockers (deliverable 4)
 
