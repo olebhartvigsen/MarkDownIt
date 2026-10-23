@@ -689,7 +689,11 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     NSOpenPanel* panel = [NSOpenPanel openPanel];
     [panel setAllowsMultipleSelection:NO];
     [panel setCanChooseDirectories:NO];
-    [panel setAllowedFileTypes:@[@"docx"]];
+    // Word files arrive as .docx packages, and a legacy .doc is
+    // offered too so the importer can say what it is instead of
+    // the panel filtering the file away (office spec, Word
+    // import).
+    [panel setAllowedFileTypes:@[@"docx", @"doc"]];
     if ([panel runModal] != NSModalResponseOK) return;
 
     const std::string path = [[panel URL] path].UTF8String;
@@ -706,7 +710,15 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     office::CompatReport report;
     std::string error;
     if (!office::DocxImport(bytes, model, report, error)) {
-        [self reportError:@"The Word file could not be read."];
+        // The importer names what is wrong (a legacy .doc, a
+        // damaged package), and the message goes out with it
+        // (office spec, general requirements).
+        NSString* text = @"The Word file could not be read.";
+        if (!error.empty()) {
+            text = [NSString stringWithFormat:@"%@\n\n%s", text,
+                                              error.c_str()];
+        }
+        [self reportError:text];
         return;
     }
 
@@ -750,34 +762,125 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
         return;
     }
 
+    // The PDF scope (office spec, PDF export): the whole document,
+    // a page range or the marked area. The Word export keeps the
+    // whole document, the same contract the Windows build has.
+    bool exportSelection = false;
+    office::PdfExportOptions options;
+    if (asPdf) {
+        NSAlert* scope = [[NSAlert alloc] init];
+        scope.messageText = @"What should the PDF hold?";
+        [scope addButtonWithTitle:@"Whole document"];
+        [scope addButtonWithTitle:@"Page range..."];
+        const bool hasSelection = !app_->selection().Empty();
+        if (hasSelection) {
+            [scope addButtonWithTitle:@"Selection"];
+        }
+        [scope addButtonWithTitle:@"Cancel"];
+        const NSModalResponse answer = [scope runModal];
+        if (answer == NSAlertFirstButtonReturn) {
+            options.all_pages = true;
+        } else if (answer == NSAlertSecondButtonReturn) {
+            options.all_pages = false;
+            options.first_page = 1;
+            options.last_page = 0;
+            NSTextField* firstField = [[NSTextField alloc]
+                initWithFrame:NSMakeRect(0, 0, 90, 24)];
+            firstField.stringValue = @"1";
+            NSTextField* lastField = [[NSTextField alloc]
+                initWithFrame:NSMakeRect(100, 0, 90, 24)];
+            lastField.placeholderString = @"last";
+            NSView* box = [[NSView alloc]
+                initWithFrame:NSMakeRect(0, 0, 200, 28)];
+            [box addSubview:firstField];
+            [box addSubview:lastField];
+            NSAlert* range = [[NSAlert alloc] init];
+            range.messageText = @"Which pages?";
+            range.informativeText =
+                @"The first and the last page, counting from one.";
+            range.accessoryView = box;
+            [range addButtonWithTitle:@"Export"];
+            [range addButtonWithTitle:@"Cancel"];
+            if ([range runModal] != NSAlertFirstButtonReturn) return;
+            if ([firstField intValue] > 0) {
+                options.first_page = [firstField intValue];
+            }
+            if ([lastField intValue] > 0) {
+                options.last_page = [lastField intValue];
+            }
+        } else if (hasSelection &&
+                   answer == NSAlertThirdButtonReturn) {
+            exportSelection = true;
+        } else {
+            return;
+        }
+    }
+
+    // The marked area exports the selection's own markdown, so the
+    // file holds the text the user marked and nothing else.
+    std::string source = app_->sourceText();
+    if (exportSelection) {
+        source = app_->SelectedText();
+        if (source.empty()) {
+            [self reportError:
+                @"The selection is empty. Nothing to export."];
+            return;
+        }
+    }
+
     office::DocModel model;
     office::CompatReport report;
     std::string error;
-    if (!office::MarkdownToOfficeModel(app_->sourceText(), model, report,
-                                      error)) {
-        [self reportError:@"The document could not be read."];
+    if (!office::MarkdownToOfficeModel(source, model, report, error)) {
+        NSString* text = @"The document could not be read.";
+        if (!error.empty()) {
+            text = [NSString stringWithFormat:@"%@\n\n%s", text,
+                                              error.c_str()];
+        }
+        [self reportError:text];
         return;
     }
 
     std::string bytes;
     int pageCount = 0;
     if (asPdf) {
-        office::PdfExportOptions options;
-        options.all_pages = true;
-        options.first_page = 1;
-        options.last_page = 0;
         if (!office::PdfExport(model, options, bytes, report, error,
                                &pageCount) ||
             bytes.empty()) {
-            [self reportError:@"The PDF could not be written."];
+            NSString* text = @"The PDF could not be written.";
+            if (!error.empty()) {
+                text = [NSString stringWithFormat:@"%@\n\n%s", text,
+                                                  error.c_str()];
+            }
+            [self reportError:text];
             return;
         }
     } else {
         if (!office::DocxExport(model, bytes, report, error) ||
             bytes.empty()) {
-            [self reportError:@"The Word file could not be written."];
+            NSString* text = @"The Word file could not be written.";
+            if (!error.empty()) {
+                text = [NSString stringWithFormat:@"%@\n\n%s", text,
+                                                  error.c_str()];
+            }
+            [self reportError:text];
             return;
         }
+    }
+
+    // Everything the model conversion and the writer had to drop
+    // is shown before anything lands on disk (office spec,
+    // general requirements), so the user can back out first.
+    NSString* exportNotes = [self compatNotesText:report];
+    if ([exportNotes length] > 0) {
+        NSAlert* alert = [[NSAlert alloc] init];
+        alert.messageText = @"The export will lose some content.";
+        alert.informativeText = [NSString stringWithFormat:
+            @"These features have no form in the file:\n\n%@",
+            exportNotes];
+        [alert addButtonWithTitle:@"Export"];
+        [alert addButtonWithTitle:@"Cancel"];
+        if ([alert runModal] != NSAlertFirstButtonReturn) return;
     }
 
     NSSavePanel* panel = [NSSavePanel savePanel];
