@@ -69,6 +69,9 @@ ContentView::ContentView(App* app)
     renderer_.SetTextEngine(engine_);
     renderer_.SetTheme(BaseMetrics(), BasePalette());
     renderer_.SetStandaloneSvg(app_ && app_->IsStandaloneSvg());
+    // The renderer reads the source when it normalizes a caret past a
+    // marker, the same pointer the Windows cache holds.
+    if (app_) renderer_.SetSourceText(&app_->sourceText());
     width_ = kDefaultWidth;
     height_ = kDefaultHeight;
     Relayout();
@@ -186,7 +189,15 @@ void ContentView::ScrollToOffset(uint32_t offset) {
 }
 
 uint32_t ContentView::HitTestPoint(float x, float y) const {
-    return renderer_.HitTestPoint(x, y + scrollOffset_);
+    uint32_t offset = 0;
+    if (!renderer_.PointToOffset(x, y + scrollOffset_, &offset)) {
+        return UINT32_MAX;
+    }
+    return offset;
+}
+
+uint32_t ContentView::NormalizeToRenderedCaret(uint32_t offset) const {
+    return renderer_.NormalizeToRenderedCaret(offset);
 }
 
 bool ContentView::OffsetToRect(uint32_t offset, float* outX, float* outY,
@@ -197,8 +208,24 @@ bool ContentView::OffsetToRect(uint32_t offset, float* outX, float* outY,
 void ContentView::PlaceCaretAt(float x, float y) {
     if (!app_) return;
 
-    // A click in the left margin misses the text. It selects the line
-    // the click is level with, the way Word does it.
+    // A point on drawn text is a caret: the renderer decides the
+    // character, and the caret never lands inside a marker.
+    uint32_t offset = 0;
+    if (renderer_.PointToOffset(x, y + scrollOffset_, &offset)) {
+        app_->SetCaret(offset);
+        return;
+    }
+
+    // Below the last of the text the caret goes to the end of the
+    // document.
+    if (y + scrollOffset_ >= renderer_.TextBottom() &&
+        app_->buffer().Length() > 0) {
+        app_->SetCaret(app_->buffer().Length());
+        return;
+    }
+
+    // A click that misses the text entirely, a pointer in the margin,
+    // selects the line it is level with, the way Word does it.
     uint32_t lineStart = 0;
     uint32_t lineEnd = 0;
     if (renderer_.LineRangeAtPoint(x, y + scrollOffset_, &lineStart,
@@ -207,22 +234,25 @@ void ContentView::PlaceCaretAt(float x, float y) {
         return;
     }
 
-    app_->SetCaret(HitTestPoint(x, y));
+    app_->SetCaret(0);
 }
 
 void ContentView::SelectWordOrParagraphAt(float x, float y, bool paragraph) {
     if (!app_) return;
 
-    // A click in the left margin misses the text, and there is no word
-    // or paragraph there either.
-    uint32_t lineStart = 0;
-    uint32_t lineEnd = 0;
-    if (renderer_.LineRangeAtPoint(x, y + scrollOffset_, &lineStart,
-                                   &lineEnd)) {
+    uint32_t offset = 0;
+    if (!renderer_.PointToOffset(x, y + scrollOffset_, &offset)) {
+        // A click in the margin has no word or paragraph either, so it
+        // keeps the Word-like line selection.
+        uint32_t lineStart = 0;
+        uint32_t lineEnd = 0;
+        if (renderer_.LineRangeAtPoint(x, y + scrollOffset_, &lineStart,
+                                       &lineEnd)) {
+            app_->SetSelection(lineStart, lineEnd);
+        }
         return;
     }
 
-    const uint32_t offset = HitTestPoint(x, y);
     if (paragraph) {
         app_->SelectParagraphAt(offset);
     } else {
@@ -232,7 +262,17 @@ void ContentView::SelectWordOrParagraphAt(float x, float y, bool paragraph) {
 
 void ContentView::ExtendSelectionTo(float x, float y) {
     if (!app_) return;
-    const uint32_t offset = HitTestPoint(x, y);
+
+    uint32_t offset = 0;
+    if (!renderer_.PointToOffset(x, y + scrollOffset_, &offset)) {
+        // A pointer below the document extends to its end; a pointer
+        // that left the text keeps the selection's edge.
+        if (y + scrollOffset_ >= renderer_.TextBottom()) {
+            offset = app_->buffer().Length();
+        } else {
+            return;
+        }
+    }
     app_->SetSelection(app_->selection().anchor.offset, offset);
 }
 
@@ -676,6 +716,7 @@ float ContentView::CaretHeight() const {
     viewY += up ? -lineHeight : lineHeight;
 
     const uint32_t target = content_->HitTestPoint(x, viewY);
+    if (target == UINT32_MAX) return;
     if (target == caret) return;
 
     [self setCaret:target extend:NO];

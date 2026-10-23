@@ -321,9 +321,8 @@ static WordKind Kind(char32_t cp) {
 }
 }
 
-uint32_t MoveWordLeft(const TextBuffer& buf, uint32_t offset) {
-    const std::string& s = buf.Text();
-    if (offset == 0) return 0;
+uint32_t MoveWordLeftInString(const std::string& s, uint32_t offset) {
+    if (offset == 0 || s.empty()) return 0;
     uint32_t i = offset;
     while (i > 0) {
         uint32_t p = PrevGraphemeBoundary(s, i);
@@ -342,8 +341,11 @@ uint32_t MoveWordLeft(const TextBuffer& buf, uint32_t offset) {
     return i;
 }
 
-uint32_t MoveWordRight(const TextBuffer& buf, uint32_t offset) {
-    const std::string& s = buf.Text();
+uint32_t MoveWordLeft(const TextBuffer& buf, uint32_t offset) {
+    return MoveWordLeftInString(buf.Text(), offset);
+}
+
+uint32_t MoveWordRightInString(const std::string& s, uint32_t offset) {
     uint32_t n = static_cast<uint32_t>(s.size());
     uint32_t i = offset > n ? n : offset;
     while (i < n) {
@@ -356,6 +358,10 @@ uint32_t MoveWordRight(const TextBuffer& buf, uint32_t offset) {
     while (i < n && Kind(DecodeNav(s, i).value) == wanted)
         i = NextGraphemeBoundary(s, i);
     return i;
+}
+
+uint32_t MoveWordRight(const TextBuffer& buf, uint32_t offset) {
+    return MoveWordRightInString(buf.Text(), offset);
 }
 void WordSpanAt(const TextBuffer& buf, uint32_t offset,
                 uint32_t* outStart, uint32_t* outEnd) {

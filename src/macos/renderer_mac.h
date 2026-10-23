@@ -48,11 +48,28 @@ struct LaidOutBlock {
     std::vector<std::string> images;
     // The height the images take above the text.
     float imagesHeight = 0.0f;
+    // The map from the rendered text of the block to the source.
+    //
+    // One entry per byte of the drawn text: the source byte the
+    // character at that position starts at, in visToSrc, and the source
+    // byte just past it, in visToSrcEnd. A trailing entry holds the end
+    // of the last character. The Markdown markers between the inline
+    // children are the gaps the map does not cover, which is what keeps
+    // the caret out of them.
+    std::vector<uint32_t> visToSrc;
+    std::vector<uint32_t> visToSrcEnd;
     // The table cells, laid out: the lines and the row heights, so the
     // painter draws exactly what the layout measured.
     struct TableCellLayout {
         std::vector<TextLine> lines;
         ColumnAlign align = ColumnAlign::Default;
+        // The cell's own rendered-to-source map, the same shape the
+        // block carries, and the byte range the cell owns. A click in a
+        // cell never normalizes into a different cell.
+        std::vector<uint32_t> visToSrc;
+        std::vector<uint32_t> visToSrcEnd;
+        uint32_t srcCellStart = 0;
+        uint32_t srcCellEnd = 0;
     };
     struct TableLayout {
         float colW = 0.0f;
@@ -112,6 +129,11 @@ public:
     // drawn as a picture.
     void SetStandaloneSvg(bool value) { standaloneSvg_ = value; }
 
+    // The source text the caret normalization reads. The renderer keeps
+    // the pointer, the way the shared LayoutCache does, and the App
+    // owns the string.
+    void SetSourceText(const std::string* text) { sourceText_ = text; }
+
     // The theme. The mac theme variant supplies macOS font names, the
     // shared one supplies the spacing.
     void SetTheme(const LayoutMetrics& metrics, const Palette& palette) {
@@ -130,7 +152,54 @@ public:
     const std::vector<LaidOutBlock>& blocks() const { return blocks_; }
 
     // The document offset at a point, in document coordinates.
+    //
+    // The point must be on drawn text: a click in the left margin of
+    // the text column has no caret and the return value is UINT32_MAX,
+    // so the caller keeps the Word-like line selection.
     uint32_t HitTestPoint(float x, float y) const;
+
+    // Where a point lands, as a source offset, under the caret rules
+    // the two platforms share.
+    //
+    // The x decides the character, a point past the right end of a line
+    // is that line's last insertion position (the paragraph-end rule),
+    // a point between two blocks is the nearer line, and a point in a
+    // table cell is a caret in that cell. The offset that comes back is
+    // always a rendered position, never a Markdown marker. The return
+    // value is false when the point is in the left margin of the text.
+    bool PointToOffset(float x, float y, uint32_t* outOffset) const;
+
+    // The nearest rendered position to a source offset: a caret never
+    // sits inside a Markdown marker, and a cell owns its whole range.
+    uint32_t NormalizeToRenderedCaret(uint32_t offset) const;
+
+    // True when the source byte at the offset is drawn as text.
+    bool OffsetIsRendered(uint32_t offset) const;
+
+    // True when every byte of the range is drawn text.
+    bool RangeIsRendered(uint32_t start, uint32_t length) const;
+
+    // Tightens a range to the part of it that is drawn text. Returns
+    // false when nothing in the range is rendered.
+    bool ClipToRendered(uint32_t start, uint32_t length, uint32_t* outStart,
+                        uint32_t* outEnd) const;
+
+    // The source offset one grapheme cluster to the left or right. The
+    // step goes through the rendered text, so a hidden marker is never
+    // a caret position and the boundary of a block is a step of its
+    // own.
+    uint32_t StepGrapheme(uint32_t offset, bool left) const;
+
+    // The source offset one word to the left or right, on the shared
+    // word boundaries.
+    uint32_t StepWord(uint32_t offset, bool left) const;
+
+    // The first or the last source offset of the visual line the
+    // offset is on.
+    uint32_t LineBoundary(uint32_t offset, bool end) const;
+
+    // The bottom of the last drawn line, in document coordinates.
+    float TextBottom() const;
 
     // The rectangle a document offset occupies, in document coordinates.
     // Returns false when the offset is not in a text block.
@@ -187,6 +256,53 @@ private:
     // The metrics of the current zoom and width mode, resolved the way
     // the Windows renderer resolves them.
     LayoutMetrics ComputeMetrics() const;
+
+    // One addressable piece of drawn text: a block's own lines or one
+    // of its table cells, with the geometry and the map of its text.
+    struct TextRegion {
+        const std::vector<TextLine>* lines = nullptr;
+        const std::vector<uint32_t>* visToSrc = nullptr;
+        const std::vector<uint32_t>* visToSrcEnd = nullptr;
+        float x = 0.0f;      // the x of the first glyph
+        float top = 0.0f;    // the y of the top of the first line
+        float width = 0.0f;  // the width the text wraps at
+        // The x where the region's own track begins: the margin of the
+        // document column for a block, the left edge of the cell for a
+        // cell. A click left of it is a Word-like line selection, and a
+        // click between it and the text is still a caret in the region
+        // (on a list bullet, or in cell padding).
+        float trackX = 0.0f;
+        // The height of the band when the region draws no lines, an
+        // empty table cell that keeps its box addressable.
+        float emptyBandHeight = 0.0f;
+        uint32_t srcStart = 0;
+        uint32_t srcEnd = 0;
+        // Set when the region is a table cell, which owns its box.
+        bool cell = false;
+    };
+    std::vector<TextRegion> TextRegions() const;
+
+    // A rendered span of the document, in source bytes.
+    struct RenderedSpan {
+        uint32_t start = 0;
+        uint32_t end = 0;
+    };
+    void CollectRenderedSpans(std::vector<RenderedSpan>* out) const;
+
+    // The x of the first glyph of a block's lines.
+    float TextX(const LaidOutBlock& block) const;
+
+    // The y of the top of a block's text, relative to the document.
+    float TextTop(const LaidOutBlock& block) const;
+
+    // The width the text of a block wraps at.
+    float TextWidth(const LaidOutBlock& block) const;
+
+    // The rectangles a source range covers inside one region.
+    void AppendRangeRects(const std::vector<TextLine>& lines,
+                          const std::vector<uint32_t>& visToSrc, float x,
+                          float top, uint32_t start, uint32_t end,
+                          std::vector<Rect>* rects) const;
 
     // Draws the images of a block under its text.
     void PaintImages(const LaidOutBlock& block, float top, float width);
@@ -296,6 +412,9 @@ private:
     int searchCurrent_ = -1;
     // The zoom of the document.
     float zoom_ = 1.0f;
+    // The source text, which the caret normalization reads to skip the
+    // markers that follow a link. The App owns the string.
+    const std::string* sourceText_ = nullptr;
 };
 
 }  // namespace mac

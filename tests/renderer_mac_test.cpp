@@ -615,13 +615,21 @@ TEST(RendererMac, FillsTheInlineCodeBackground) {
     InlineBlock before;
     before.kind = InlineKind::Text;
     before.text = Utf32("text ");
+    before.srcOffset = 0;
+    before.srcLength = 5;
     InlineBlock span;
     span.kind = InlineKind::Text;
     span.text = Utf32("code");
     span.code = true;
+    // The parser hands the content of a code span over, without the
+    // backticks, so its source range is the four characters.
+    span.srcOffset = 6;
+    span.srcLength = 4;
     InlineBlock after;
     after.kind = InlineKind::Text;
     after.text = Utf32(" tail");
+    after.srcOffset = 11;
+    after.srcLength = 5;
     para.children = {before, span, after};
 
     const Document doc = Doc({para});
@@ -768,4 +776,267 @@ TEST(RendererMac, GivesAnEmptyParagraphNoHeight) {
     EXPECT_NEAR(renderer.blocks()[0].height, 0.0f, 0.01f);
     float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
     EXPECT_TRUE(!renderer.OffsetToRect(0, &x, &y, &w, &h));
+}
+
+// --- The caret model ---------------------------------------------------
+//
+// The Windows app gets its caret rules from the shared LayoutCache; the
+// mac renderer carries its own source-to-rendered map and the same
+// rules on top of it. These tests pin the map, the marker rules, the
+// hit test and the steps.
+
+// A paragraph whose inline children carry their source offsets, the
+// way the parser hands them over: "a **b** c".
+Node MarkedPara() {
+    Node node;
+    node.block = BlockKind::Paragraph;
+    node.srcOffset = 0;
+    node.srcLength = 9;
+    node.contentOffset = 0;
+    node.contentLength = 9;
+
+    InlineBlock first;
+    first.kind = InlineKind::Text;
+    first.text = Utf32("a ");
+    first.srcOffset = 0;
+    first.srcLength = 2;
+    node.children.push_back(first);
+
+    InlineBlock strong;
+    strong.kind = InlineKind::Strong;
+    strong.strong = true;
+    strong.text = Utf32("b");
+    strong.srcOffset = 4;
+    strong.srcLength = 1;
+    node.children.push_back(strong);
+
+    InlineBlock rest;
+    rest.kind = InlineKind::Text;
+    rest.text = Utf32(" c");
+    rest.srcOffset = 7;
+    rest.srcLength = 2;
+    node.children.push_back(rest);
+    return node;
+}
+
+TEST(RendererMac, MapsTheRenderedTextBackToTheSource) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    const std::string source = "a **b** c";
+    renderer.SetSourceText(&source);
+
+    const Document doc = Doc({MarkedPara()});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+
+    // Only the drawn bytes are rendered positions; the markers are the
+    // gaps.
+    EXPECT_TRUE(renderer.OffsetIsRendered(0u));
+    EXPECT_TRUE(renderer.OffsetIsRendered(4u));
+    EXPECT_TRUE(renderer.OffsetIsRendered(7u));
+    EXPECT_TRUE(!renderer.OffsetIsRendered(2u));
+    EXPECT_TRUE(!renderer.OffsetIsRendered(3u));
+
+    // A position at the visual end of the bold text stays outside the
+    // closing markers.
+    EXPECT_EQ(renderer.NormalizeToRenderedCaret(2u), 4u);
+    EXPECT_EQ(renderer.NormalizeToRenderedCaret(5u), 7u);
+    // A position between the marker bytes snaps to the nearer rendered
+    // end.
+    EXPECT_EQ(renderer.NormalizeToRenderedCaret(3u), 2u);
+    EXPECT_EQ(renderer.NormalizeToRenderedCaret(6u), 5u);
+}
+
+TEST(RendererMac, ClipsRangesToTheDrawnText) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    const std::string source = "a **b** c";
+    renderer.SetSourceText(&source);
+
+    const Document doc = Doc({MarkedPara()});
+    renderer.Measure(doc, 1400.0f);
+
+    // A range that covers the marked text clips down to the drawn
+    // characters.
+    uint32_t clipStart = 0;
+    uint32_t clipEnd = 0;
+    EXPECT_TRUE(renderer.ClipToRendered(2u, 5u, &clipStart, &clipEnd));
+    EXPECT_EQ(clipStart, 4u);
+    EXPECT_EQ(clipEnd, 5u);
+    // A range that touches nothing drawn has no clip at all.
+    EXPECT_TRUE(!renderer.ClipToRendered(2u, 2u, &clipStart, &clipEnd));
+    // The whole paragraph, markers included, clips to the whole drawn
+    // text.
+    EXPECT_TRUE(renderer.ClipToRendered(0u, 9u, &clipStart, &clipEnd));
+    EXPECT_EQ(clipStart, 0u);
+    EXPECT_EQ(clipEnd, 9u);
+
+    // A plain drawn word is fully rendered; the marked text is not.
+    EXPECT_TRUE(renderer.RangeIsRendered(4u, 1u));
+    EXPECT_TRUE(!renderer.RangeIsRendered(0u, 9u));
+}
+
+TEST(RendererMac, StepsSkipTheHiddenMarkers) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    const std::string source = "a **b** c";
+    renderer.SetSourceText(&source);
+
+    const Document doc = Doc({MarkedPara()});
+    renderer.Measure(doc, 1400.0f);
+
+    // One step to the right from 'b' crosses the closing markers and
+    // lands on the text after them.
+    EXPECT_EQ(renderer.StepGrapheme(4u, false), 7u);
+    // One step to the left lands before the space.
+    EXPECT_EQ(renderer.StepGrapheme(4u, true), 1u);
+    // From the end of the paragraph, a step left lands before 'c'.
+    EXPECT_EQ(renderer.StepGrapheme(9u, true), 8u);
+    // The right at the end of the document stays put.
+    EXPECT_EQ(renderer.StepGrapheme(9u, false), 9u);
+    // A word step shares the boundaries of the shared navigation.
+    EXPECT_EQ(renderer.StepWord(9u, true), 8u);
+}
+
+TEST(RendererMac, PointToOffsetIsExactBetweenCharacters) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    const Document doc = Doc({Para("ab")});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    const LaidOutBlock& block = renderer.blocks()[0];
+    ASSERT_EQ(block.lines.size(), 1u);
+
+    // The character grid of the fake engine: half an em per character.
+    const float charW = kBodyEm * 0.5f;
+    const float midY = block.y + block.lines[0].height * 0.5f;
+
+    uint32_t offset = 0;
+    // Between the two characters.
+    EXPECT_TRUE(renderer.PointToOffset(block.x + charW * 1.2f, midY, &offset));
+    EXPECT_EQ(offset, 1u);
+    // Before the first character.
+    EXPECT_TRUE(renderer.PointToOffset(block.x + charW * 0.1f, midY, &offset));
+    EXPECT_EQ(offset, 0u);
+    // Past the right end of the line: its last insertion position, the
+    // paragraph end.
+    EXPECT_TRUE(renderer.PointToOffset(block.x + charW * 9.0f, midY, &offset));
+    EXPECT_EQ(offset, 2u);
+    // The left margin of the column is not a caret; the caller keeps
+    // the line selection.
+    EXPECT_TRUE(!renderer.PointToOffset(block.x - 20.0f, midY, &offset));
+    EXPECT_EQ(renderer.HitTestPoint(block.x - 20.0f, midY), UINT32_MAX);
+}
+
+TEST(RendererMac, WrappedLineClicksLandOnTheLine) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    const Document doc = Doc({Para("abcdef")});
+    renderer.Measure(doc, 140.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    const LaidOutBlock& block = renderer.blocks()[0];
+    ASSERT_EQ(block.lines.size(), 2u);
+    const float mid1 = block.y + block.lines[0].height * 0.5f;
+    const float mid2 =
+        block.y + block.lines[0].height + block.lines[1].height * 0.5f;
+
+    uint32_t offset = 0;
+    // Far right on the first line: the end of that line, not of the
+    // paragraph.
+    EXPECT_TRUE(renderer.PointToOffset(block.x + 200.0f, mid1, &offset));
+    EXPECT_EQ(offset, 3u);
+    // The second line ends the paragraph.
+    EXPECT_TRUE(renderer.PointToOffset(block.x + 200.0f, mid2, &offset));
+    EXPECT_EQ(offset, 6u);
+}
+
+TEST(RendererMac, ListClicksAndCaretRectsUseTheMarkerGutter) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    Node item = ListItem(false, 0, "item");
+    item.contentOffset = 2;
+    item.contentLength = 4;
+    item.children[0].srcOffset = 2;
+    item.children[0].srcLength = 4;
+
+    const Document doc = Doc({item});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    const LaidOutBlock& block = renderer.blocks()[0];
+    ASSERT_EQ(block.lines.size(), 1u);
+
+    const float markerW =
+        BaseMetrics().listIndent * 0.6f + BaseMetrics().markerGutter;
+
+    // A caret rect on the item text starts after the marker gutter.
+    float x = 0.0f;
+    float y = 0.0f;
+    float w = 0.0f;
+    float h = 0.0f;
+    EXPECT_TRUE(renderer.OffsetToRect(2, &x, &y, &w, &h));
+    EXPECT_NEAR(x, block.x + markerW, 0.01f);
+
+    // A click on the marker gutter is a caret at the start of the
+    // item's text, never on the bullet.
+    uint32_t offset = 0;
+    EXPECT_TRUE(renderer.PointToOffset(
+        block.x + 2.0f, block.y + block.lines[0].height * 0.5f, &offset));
+    EXPECT_EQ(offset, 2u);
+}
+
+TEST(RendererMac, TableClicksLandInTheClickedCell) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    Node table = Table({{"A", "B"}, {"C", "D"}});
+    uint32_t src = 0;
+    for (TableRow& row : table.rows) {
+        for (TableCell& cell : row.cells) {
+            cell.srcOffset = src;
+            cell.srcEnd = src + 1;
+            cell.u16ToSrc = {src};
+            cell.u16ToSrcEnd = {src + 1};
+            ++src;
+        }
+    }
+
+    const Document doc = Doc({table});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    const LaidOutBlock& block = renderer.blocks()[0];
+    ASSERT_EQ(block.tableLayout.rows.size(), 2u);
+
+    const float colW = block.tableLayout.colW;
+    const float rowH = block.tableLayout.rowHeights[0];
+    const float midY = block.y + rowH * 0.5f;
+
+    // The second cell of the first row owns the source byte 1.
+    uint32_t offset = 0;
+    EXPECT_TRUE(renderer.PointToOffset(
+        block.x + colW + BaseMetrics().cellPadX + 2.0f, midY, &offset));
+    EXPECT_EQ(offset, 1u);
+
+    // The fourth cell owns the source byte 3.
+    const float midY2 =
+        block.y + rowH + block.tableLayout.rowHeights[1] * 0.5f;
+    EXPECT_TRUE(renderer.PointToOffset(
+        block.x + colW + BaseMetrics().cellPadX + 2.0f, midY2, &offset));
+    EXPECT_EQ(offset, 3u);
 }

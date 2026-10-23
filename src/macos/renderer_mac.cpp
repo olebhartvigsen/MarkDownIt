@@ -14,11 +14,13 @@
 #include <cmath>
 #include <utility>
 
+#include "editcontroller.h"
 #include "mermaid/layout_cache.h"
 #include "mermaid/model.h"
 #include "mermaid/pie_layout.h"
 #include "mermaid/seq_layout.h"
 #include "mermaid_painter_mac.h"
+#include "navigation.h"
 #include "svg_mac.h"
 
 namespace mac {
@@ -170,6 +172,150 @@ bool HasMermaidLayout(const mermaid::MermaidRender& diagram) {
         case mermaid::MermaidKind::Flowchart:
         default: return diagram.flow != nullptr;
     }
+}
+
+// The UTF-8 byte length of the character that starts at the byte.
+size_t Utf8CharLen(const std::string& s, size_t at) {
+    const unsigned char b = static_cast<unsigned char>(s[at]);
+    if (b < 0x80) return 1;
+    if ((b & 0xE0) == 0xC0) return 2;
+    if ((b & 0xF0) == 0xE0) return 3;
+    if ((b & 0xF8) == 0xF0) return 4;
+    return 1;
+}
+
+// The visible text of a run of lines, as the runs hold it.
+std::string VisibleTextOfLines(const std::vector<TextLine>& lines) {
+    std::string text;
+    for (const TextLine& line : lines) {
+        for (const GlyphRun& run : line.runs) text += run.text;
+    }
+    return text;
+}
+
+// The source position of a visible byte offset. The trailing flag asks
+// for the end of the character at the position.
+uint32_t SourceAtVisible(const std::vector<uint32_t>& visToSrc,
+                          const std::vector<uint32_t>& visToSrcEnd,
+                          uint32_t vis, bool trailing) {
+    if (visToSrc.empty()) return 0;
+    const uint32_t last = static_cast<uint32_t>(visToSrc.size() - 1);
+    if (vis >= last) {
+        return visToSrcEnd.empty() ? visToSrc[last] : visToSrcEnd.back();
+    }
+    if (trailing && vis < visToSrcEnd.size()) return visToSrcEnd[vis];
+    return visToSrc[vis];
+}
+
+// The visible byte offset of a source position. Returns false when the
+// block does not draw the position at all.
+bool VisibleAtSource(const std::vector<uint32_t>& visToSrc, uint32_t src,
+                      uint32_t* out) {
+    if (visToSrc.empty()) return false;
+    if (src < visToSrc.front() || src > visToSrc.back()) return false;
+    const uint32_t last = static_cast<uint32_t>(visToSrc.size() - 1);
+    uint32_t lo = 0;
+    uint32_t hi = static_cast<uint32_t>(visToSrc.size());
+    while (lo < hi) {
+        const uint32_t mid = (lo + hi) / 2;
+        if (visToSrc[mid] < src) lo = mid + 1;
+        else hi = mid;
+    }
+    if (out) *out = lo > last ? last : lo;
+    return true;
+}
+
+// Fully append the visible-to-source map of an inline block list. One
+// entry per rendered byte, plus the end of the last character as the
+// final entry. The mirror of the mapping the Windows renderer builds
+// while it lays a block out.
+void AppendInlineMapping(const std::vector<InlineBlock>& children,
+                          std::vector<uint32_t>* visToSrc,
+                          std::vector<uint32_t>* visToSrcEnd) {
+    for (const InlineBlock& child : children) {
+        if (child.kind == InlineKind::Image) continue;
+        if (child.text.empty()) continue;
+        uint32_t srcByte = child.srcOffset;
+        for (char32_t cp : child.text) {
+            const uint32_t utf8Len = cp <= 0x7F ? 1u
+                                    : cp <= 0x7FF ? 2u
+                                    : cp <= 0xFFFF ? 3u : 4u;
+            uint32_t srcEnd = srcByte + utf8Len;
+            // A span the parser gave a longer source than its text (an
+            // escape or an entity) ends where the source ends.
+            if (child.text.size() == 1 && child.srcLength > utf8Len) {
+                srcEnd = child.srcOffset + child.srcLength;
+            }
+            for (uint32_t k = 0; k < utf8Len; ++k) {
+                visToSrc->push_back(srcByte);
+                visToSrcEnd->push_back(srcEnd);
+            }
+            srcByte += utf8Len;
+        }
+    }
+    if (!visToSrcEnd->empty()) {
+        visToSrc->push_back(visToSrcEnd->back());
+        visToSrcEnd->push_back(visToSrcEnd->back());
+    }
+}
+
+// Close a map with the sentinel entry, or leave it holding the one
+// addressable position an empty region keeps.
+void FinishMapping(uint32_t emptyPosition, std::vector<uint32_t>* visToSrc,
+                    std::vector<uint32_t>* visToSrcEnd) {
+    if (!visToSrcEnd->empty()) {
+        visToSrc->push_back(visToSrcEnd->back());
+        visToSrcEnd->push_back(visToSrcEnd->back());
+    } else {
+        visToSrc->push_back(emptyPosition);
+        visToSrcEnd->push_back(emptyPosition);
+    }
+}
+
+// The visible-to-source map of a table cell, from the parser's own
+// UTF-16-to-source mapping.
+void AppendCellMapping(const TableCell& cell,
+                        std::vector<uint32_t>* visToSrc,
+                        std::vector<uint32_t>* visToSrcEnd) {
+    uint32_t u16 = 0;
+    uint32_t srcByte = cell.srcOffset;
+    for (char32_t cp : cell.text) {
+        const uint32_t utf8Len = cp <= 0x7F ? 1u
+                                : cp <= 0x7FF ? 2u
+                                : cp <= 0xFFFF ? 3u : 4u;
+        uint32_t start = srcByte;
+        uint32_t end = srcByte + utf8Len;
+        if (u16 < cell.u16ToSrc.size()) {
+            start = cell.u16ToSrc[u16];
+            end = u16 < cell.u16ToSrcEnd.size() ? cell.u16ToSrcEnd[u16]
+                                                : start + utf8Len;
+        }
+        for (uint32_t k = 0; k < utf8Len; ++k) {
+            visToSrc->push_back(start);
+            visToSrcEnd->push_back(end);
+        }
+        u16 += cp > 0xFFFF ? 2u : 1u;
+        srcByte = end;
+    }
+    FinishMapping(cell.srcOffset, visToSrc, visToSrcEnd);
+}
+
+// The visible-to-source map of a code block: the raw text is drawn as
+// it stands, so the map walks the source from the content start.
+void AppendCodeMapping(const std::string& code, uint32_t contentOffset,
+                        std::vector<uint32_t>* visToSrc,
+                        std::vector<uint32_t>* visToSrcEnd) {
+    uint32_t srcByte = contentOffset;
+    for (size_t i = 0; i < code.size();) {
+        const size_t len = Utf8CharLen(code, i);
+        for (size_t k = 0; k < len; ++k) {
+            visToSrc->push_back(srcByte);
+            visToSrcEnd->push_back(srcByte + static_cast<uint32_t>(len));
+        }
+        srcByte += static_cast<uint32_t>(len);
+        i += len;
+    }
+    FinishMapping(contentOffset, visToSrc, visToSrcEnd);
 }
 
 // The width a mermaid block is measured against.
@@ -693,6 +839,68 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
         }
     }
 
+    // The map from the drawn text back to the source, so the caret,
+    // the selection and the hit tester never land on a Markdown marker.
+    switch (node.block) {
+        case BlockKind::Heading:
+        case BlockKind::Paragraph:
+            AppendInlineMapping(node.children, &block.visToSrc,
+                                 &block.visToSrcEnd);
+            if (block.visToSrc.empty() && node.virtualEmptyParagraph) {
+                // The placeholder line maps to the position the empty
+                // paragraph keeps for its caret.
+                FinishMapping(node.contentOffset, &block.visToSrc,
+                               &block.visToSrcEnd);
+            }
+            break;
+
+        case BlockKind::List:
+            AppendInlineMapping(node.children, &block.visToSrc,
+                                 &block.visToSrcEnd);
+            if (block.visToSrc.empty()) {
+                // The marker keeps the item addressable.
+                FinishMapping(node.contentOffset, &block.visToSrc,
+                               &block.visToSrcEnd);
+            }
+            break;
+
+        case BlockKind::BlockQuote:
+            AppendInlineMapping(node.children, &block.visToSrc,
+                                 &block.visToSrcEnd);
+            break;
+
+        case BlockKind::CodeBlock: {
+            std::string code = InlineTextUtf8(node);
+            while (!code.empty() &&
+                   (code.back() == '\n' || code.back() == '\r')) {
+                code.pop_back();
+            }
+            AppendCodeMapping(code, node.contentOffset, &block.visToSrc,
+                               &block.visToSrcEnd);
+            break;
+        }
+
+        case BlockKind::Table:
+            for (size_t r = 0; r < node.rows.size() &&
+                               r < block.tableLayout.rows.size(); ++r) {
+                const TableRow& sourceRow = node.rows[r];
+                for (size_t c = 0; c < sourceRow.cells.size() &&
+                                   c < block.tableLayout.rows[r].size();
+                     ++c) {
+                    const TableCell& cell = sourceRow.cells[c];
+                    LaidOutBlock::TableCellLayout& laid =
+                        block.tableLayout.rows[r][c];
+                    AppendCellMapping(cell, &laid.visToSrc, &laid.visToSrcEnd);
+                    laid.srcCellStart = cell.srcOffset;
+                    laid.srcCellEnd = cell.srcEnd;
+                }
+            }
+            break;
+
+        default:
+            break;
+    }
+
     block.y = *y;
     *y += block.height;
     blocks_.push_back(std::move(block));
@@ -1002,21 +1210,16 @@ void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
     // The background of an inline code span, behind the text and two
     // points wider than the glyphs, the same fill the Windows renderer
     // draws.
-    uint32_t childStart = block.node->contentOffset;
     for (const InlineBlock& child : block.node->children) {
-        const uint32_t length =
-            static_cast<uint32_t>(Utf32ToUtf8(child.text).size());
-        if (child.code && length > 0) {
-            for (const Rect& rect : RectsForRangeInBlock(
-                     block, childStart, childStart + length)) {
-                Rect drawn = rect;
-                drawn.x -= 2.0f;
-                drawn.width += 4.0f;
-                drawn.y -= scrollOffset;
-                target_->FillRect(drawn, ToColor(palette_.inlineCodeBg));
-            }
+        if (!child.code || child.srcLength == 0) continue;
+        for (const Rect& rect : RectsForRangeInBlock(
+                 block, child.srcOffset, child.srcOffset + child.srcLength)) {
+            Rect drawn = rect;
+            drawn.x -= 2.0f;
+            drawn.width += 4.0f;
+            drawn.y -= scrollOffset;
+            target_->FillRect(drawn, ToColor(palette_.inlineCodeBg));
         }
-        childStart += length;
     }
 }
 
@@ -1127,67 +1330,542 @@ void MacRenderer::PaintTable(const LaidOutBlock& block, float scrollOffset) {
 bool MacRenderer::YForOffset(uint32_t offset, float& y) const {
     for (const LaidOutBlock& block : blocks_) {
         if (!block.node) continue;
+        if (block.visToSrc.empty()) continue;
+        if (offset < block.visToSrc.front() || offset > block.visToSrc.back()) {
+            continue;
+        }
 
-        // The block holds the offset when the offset is inside its
-        // editable text.
-        const uint32_t contentStart = block.node->contentOffset;
-        const uint32_t contentEnd = contentStart + block.node->contentLength;
-        if (offset < contentStart || offset > contentEnd) continue;
+        uint32_t vis = 0;
+        if (!VisibleAtSource(block.visToSrc, offset, &vis)) continue;
 
-        y = block.y + block.imagesHeight;
+        // The line the visible position sits on.
+        float lineY = TextTop(block);
+        uint32_t lineStart = 0;
+        for (const TextLine& line : block.lines) {
+            uint32_t length = 0;
+            for (const GlyphRun& run : line.runs) {
+                length += static_cast<uint32_t>(run.text.size());
+            }
+            if (vis <= lineStart + length) {
+                y = lineY;
+                return true;
+            }
+            lineStart += length;
+            lineY += line.height;
+        }
+        y = lineY;
         return true;
     }
     return false;
 }
 
-uint32_t MacRenderer::HitTestPoint(float x, float y) const {
-    for (const LaidOutBlock& block : blocks_) {
-        if (y < block.y || y > block.y + block.height) continue;
-        if (x < block.x || x > block.x + block.width) continue;
+float MacRenderer::TextX(const LaidOutBlock& block) const {
+    if (block.kind == BlockKind::List) {
+        // The text sits after the marker gutter, the same reservation
+        // the layout makes.
+        return block.x + metrics_.listIndent * 0.6f + metrics_.markerGutter;
+    }
+    if (block.kind == BlockKind::CodeBlock) {
+        return block.x + metrics_.codePad;
+    }
+    return block.x;
+}
 
-        float lineY = block.y + block.imagesHeight;
-        for (const TextLine& line : block.lines) {
-            if (y >= lineY && y < lineY + line.height) {
-                bool trailing = false;
-                const uint32_t offset = engine_->HitTestOffset(
-                    line, x - block.x, &trailing);
-                // The offset is into the block's text, and the block
-                // knows where its editable text starts in the source.
-                return block.node->contentOffset + offset;
+float MacRenderer::TextTop(const LaidOutBlock& block) const {
+    if (block.kind == BlockKind::CodeBlock) {
+        return block.y + metrics_.codePad;
+    }
+    return block.y + block.imagesHeight;
+}
+
+float MacRenderer::TextWidth(const LaidOutBlock& block) const {
+    if (block.kind == BlockKind::List) {
+        return block.width -
+               (metrics_.listIndent * 0.6f + metrics_.markerGutter);
+    }
+    if (block.kind == BlockKind::CodeBlock) {
+        return block.width - metrics_.codePad * 2.0f;
+    }
+    return block.width;
+}
+
+std::vector<MacRenderer::TextRegion> MacRenderer::TextRegions() const {
+    std::vector<TextRegion> regions;
+    for (const LaidOutBlock& block : blocks_) {
+        if (block.kind == BlockKind::Table) {
+            float rowTop = block.y;
+            for (size_t r = 0; r < block.tableLayout.rows.size(); ++r) {
+                const std::vector<LaidOutBlock::TableCellLayout>& cells =
+                    block.tableLayout.rows[r];
+                for (size_t c = 0; c < cells.size(); ++c) {
+                    const LaidOutBlock::TableCellLayout& cell = cells[c];
+                    if (cell.visToSrc.empty()) continue;
+                    TextRegion region;
+                    region.lines = &cell.lines;
+                    region.visToSrc = &cell.visToSrc;
+                    region.visToSrcEnd = &cell.visToSrcEnd;
+                    region.trackX =
+                        block.x + static_cast<float>(c) * block.tableLayout.colW;
+                    region.x = region.trackX + metrics_.cellPadX;
+                    region.top = rowTop + metrics_.cellPadY;
+                    region.width =
+                        block.tableLayout.colW - 2.0f * metrics_.cellPadX;
+                    if (cell.lines.empty() &&
+                        r < block.tableLayout.rowHeights.size()) {
+                        // An empty cell draws nothing, but its box stays
+                        // addressable: a click in it parks the caret at
+                        // the cell's content start.
+                        region.emptyBandHeight =
+                            block.tableLayout.rowHeights[r];
+                    }
+                    region.srcStart = cell.srcCellStart;
+                    region.srcEnd = cell.srcCellEnd;
+                    region.cell = true;
+                    regions.push_back(region);
+                }
+                if (r < block.tableLayout.rowHeights.size()) {
+                    rowTop += block.tableLayout.rowHeights[r];
+                }
             }
-            lineY += line.height;
+        } else if (!block.lines.empty() && !block.visToSrc.empty()) {
+            TextRegion region;
+            region.lines = &block.lines;
+            region.visToSrc = &block.visToSrc;
+            region.visToSrcEnd = &block.visToSrcEnd;
+            region.x = TextX(block);
+            region.top = TextTop(block);
+            region.width = TextWidth(block);
+            region.trackX = block.x;
+            region.srcStart = block.visToSrc.front();
+            region.srcEnd = block.visToSrc.back();
+            region.cell = false;
+            regions.push_back(region);
         }
     }
-    return 0;
+    return regions;
+}
+
+void MacRenderer::CollectRenderedSpans(std::vector<RenderedSpan>* out) const {
+    out->clear();
+    for (const TextRegion& region : TextRegions()) {
+        const std::vector<uint32_t>& visToSrc = *region.visToSrc;
+        const std::vector<uint32_t>& visToSrcEnd = *region.visToSrcEnd;
+        if (visToSrc.size() < 2) continue;
+        for (size_t i = 0; i + 1 < visToSrc.size(); ++i) {
+            RenderedSpan span;
+            span.start = visToSrc[i];
+            span.end = i < visToSrcEnd.size() ? visToSrcEnd[i] : span.start + 1;
+            if (span.start == span.end) continue;
+            out->push_back(span);
+        }
+    }
+    std::sort(out->begin(), out->end(),
+              [](const RenderedSpan& a, const RenderedSpan& b) {
+                  return a.start < b.start;
+              });
+}
+
+uint32_t MacRenderer::HitTestPoint(float x, float y) const {
+    uint32_t offset = 0;
+    return PointToOffset(x, y, &offset) ? offset : UINT32_MAX;
+}
+
+bool MacRenderer::PointToOffset(float x, float y, uint32_t* outOffset) const {
+    const std::vector<TextRegion> regions = TextRegions();
+    if (regions.empty()) return false;
+
+    // An exact hit wins; otherwise the nearest line band does, with a
+    // band the x is inside beating one that is only near, so a point in
+    // a gap between two blocks still lands on a caret.
+    int bestScore = -1;
+    float bestDistance = 0.0f;
+    size_t bestRegion = 0;
+    size_t bestLine = 0;
+    for (size_t r = 0; r < regions.size(); ++r) {
+        const TextRegion& region = regions[r];
+        const bool inX = x >= region.x && x <= region.x + region.width;
+        if (region.lines->empty()) {
+            // A cell with no drawn text: its box is the band.
+            const float bandBottom = region.top + region.emptyBandHeight;
+            const float distance = y < region.top
+                ? region.top - y
+                : (y > bandBottom ? y - bandBottom : 0.0f);
+            const int score = (distance == 0.0f ? 2 : 0) + (inX ? 1 : 0);
+            if (score > bestScore ||
+                (score == bestScore && distance < bestDistance)) {
+                bestScore = score;
+                bestDistance = distance;
+                bestRegion = r;
+                bestLine = 0;
+            }
+            continue;
+        }
+        float lineTop = region.top;
+        for (size_t i = 0; i < region.lines->size(); ++i) {
+            const TextLine& line = (*region.lines)[i];
+            const float lineBottom = lineTop + line.height;
+            const float distance = y < lineTop
+                ? lineTop - y
+                : (y > lineBottom ? y - lineBottom : 0.0f);
+            const bool inBand = distance == 0.0f;
+            const int score = (inBand ? 2 : 0) + (inX ? 1 : 0);
+            if (score > bestScore ||
+                (score == bestScore && distance < bestDistance)) {
+                bestScore = score;
+                bestDistance = distance;
+                bestRegion = r;
+                bestLine = i;
+            }
+            lineTop = lineBottom;
+        }
+    }
+    if (bestScore < 0) return false;
+
+    const TextRegion& region = regions[bestRegion];
+    // A point left of the region's track, the margin of the document
+    // column, is not a caret; the caller keeps the Word-like line
+    // selection. A cell owns its whole box, so a point in its padding
+    // is still a caret in the cell.
+    if (!region.cell && x < region.trackX) return false;
+
+    if (region.lines->empty()) {
+        // An empty cell: the caret parks at the cell's content start.
+        uint32_t src = region.visToSrc->empty() ? region.srcStart
+                                                : region.visToSrc->front();
+        if (region.cell) {
+            if (src < region.srcStart) src = region.srcStart;
+            if (src > region.srcEnd) src = region.srcEnd;
+        }
+        if (outOffset) *outOffset = NormalizeToRenderedCaret(src);
+        return true;
+    }
+
+    // The x inside the line, clamped to the text: a point past the
+    // right end of a line is that line's last insertion position.
+    float localX = x - region.x;
+    if (localX < 0.0f) localX = 0.0f;
+    const TextLine& line = (*region.lines)[bestLine];
+    if (line.width > 0.0f && localX > line.width) localX = line.width;
+
+    bool trailing = false;
+    const uint32_t inLine = engine_->HitTestOffset(line, localX, &trailing);
+
+    uint32_t lineStartVis = 0;
+    for (size_t i = 0; i < bestLine; ++i) {
+        for (const GlyphRun& run : (*region.lines)[i].runs) {
+            lineStartVis += static_cast<uint32_t>(run.text.size());
+        }
+    }
+    uint32_t vis = lineStartVis + inLine;
+    const uint32_t lastIndex = static_cast<uint32_t>(region.visToSrc->size() - 1);
+    if (vis > lastIndex) vis = lastIndex;
+
+    uint32_t src = SourceAtVisible(*region.visToSrc, *region.visToSrcEnd, vis,
+                                   trailing);
+    if (region.cell) {
+        // The binding rule: the caret lands in the clicked cell.
+        if (src < region.srcStart) src = region.srcStart;
+        if (src > region.srcEnd) src = region.srcEnd;
+    }
+    if (outOffset) *outOffset = NormalizeToRenderedCaret(src);
+    return true;
+}
+
+uint32_t MacRenderer::NormalizeToRenderedCaret(uint32_t offset) const {
+    std::vector<RenderedSpan> spans;
+    CollectRenderedSpans(&spans);
+    if (spans.empty()) return offset;
+
+    uint32_t previous = UINT32_MAX;
+    uint32_t next = UINT32_MAX;
+    for (const RenderedSpan& span : spans) {
+        if (offset == span.start) return offset;
+        if (offset == span.end) {
+            // The position just past a character: the markers that
+            // follow it are stepped over, so a caret at the visual end
+            // of bold or italic text stays outside the syntax.
+            uint32_t normalized = span.end;
+            if (sourceText_) {
+                const std::string& text = *sourceText_;
+                while (normalized < text.size() &&
+                       (text[normalized] == '*' || text[normalized] == '_' ||
+                        text[normalized] == '`' || text[normalized] == '~')) {
+                    ++normalized;
+                }
+                // Link text ends before `](destination)`. Keep a
+                // position at that visual end outside the hidden link
+                // syntax as well.
+                if (normalized + 1 < text.size() &&
+                    text[normalized] == ']' && text[normalized + 1] == '(') {
+                    uint32_t cursor = normalized + 2;
+                    int depth = 1;
+                    while (cursor < text.size() && depth > 0) {
+                        const char c = text[cursor++];
+                        if (c == '\\' && cursor < text.size()) {
+                            ++cursor;
+                        } else if (c == '(') {
+                            ++depth;
+                        } else if (c == ')') {
+                            --depth;
+                        }
+                    }
+                    if (depth == 0) normalized = cursor;
+                }
+            }
+            return normalized;
+        }
+        if (offset > span.start && offset < span.end) return span.end;
+        if (span.end < offset && (previous == UINT32_MAX || span.end > previous)) {
+            previous = span.end;
+        }
+        if (span.start > offset && (next == UINT32_MAX || span.start < next)) {
+            next = span.start;
+        }
+    }
+    uint32_t snapped;
+    if (previous == UINT32_MAX) snapped = next;
+    else if (next == UINT32_MAX) snapped = previous;
+    else snapped = offset - previous <= next - offset ? previous : next;
+
+    // The cell guard: a cell owns the whole byte range between its
+    // pipes. A snapped position outside the clicked cell would move the
+    // caret into a different cell, so it is clamped back; a cell with
+    // no drawn text parks the caret at its own start.
+    for (const LaidOutBlock& block : blocks_) {
+        if (block.kind != BlockKind::Table) continue;
+        for (const std::vector<LaidOutBlock::TableCellLayout>& row :
+             block.tableLayout.rows) {
+            for (const LaidOutBlock::TableCellLayout& cell : row) {
+                if (cell.srcCellStart == 0 && cell.srcCellEnd == 0) continue;
+                if (offset < cell.srcCellStart || offset > cell.srcCellEnd) {
+                    continue;
+                }
+                if (snapped < cell.srcCellStart || snapped > cell.srcCellEnd) {
+                    return cell.visToSrc.empty() ? cell.srcCellStart : snapped;
+                }
+                return snapped;
+            }
+        }
+    }
+    return snapped;
+}
+
+bool MacRenderer::OffsetIsRendered(uint32_t offset) const {
+    std::vector<RenderedSpan> spans;
+    CollectRenderedSpans(&spans);
+    for (const RenderedSpan& span : spans) {
+        if (offset == span.start) return true;
+        if (span.start > offset) break;
+    }
+    return false;
+}
+
+bool MacRenderer::RangeIsRendered(uint32_t start, uint32_t length) const {
+    const uint32_t end = start + length;
+    if (length == 0 || end < start) return false;
+    if (!sourceText_ || end > sourceText_->size()) return false;
+
+    std::vector<RenderedSpan> spans;
+    CollectRenderedSpans(&spans);
+    if (spans.empty()) return false;
+
+    for (uint32_t offset = start; offset < end; ++offset) {
+        const unsigned char byte =
+            static_cast<unsigned char>((*sourceText_)[offset]);
+        if ((byte & 0xC0u) == 0x80u) continue;
+        bool covered = false;
+        for (const RenderedSpan& span : spans) {
+            if (span.start <= offset && offset < span.end) {
+                // The whole span has to sit inside the range, so a
+                // range that starts or ends inside a drawn word is not
+                // fully rendered.
+                if (start > span.start || end < span.end) return false;
+                covered = true;
+                break;
+            }
+        }
+        if (!covered) return false;
+    }
+    return true;
+}
+
+bool MacRenderer::ClipToRendered(uint32_t start, uint32_t length,
+                                  uint32_t* outStart, uint32_t* outEnd) const {
+    if (!outStart || !outEnd) return false;
+    const uint32_t end = start + length;
+    if (length == 0 || end < start) return false;
+    if (!sourceText_ || end > sourceText_->size()) return false;
+
+    std::vector<RenderedSpan> spans;
+    CollectRenderedSpans(&spans);
+
+    // The tightened range is the outer edge of every span that reaches
+    // into the range, the same answer the Windows cache gives.
+    uint32_t firstStart = UINT32_MAX;
+    uint32_t lastEnd = 0;
+    for (const RenderedSpan& span : spans) {
+        if (span.end <= start || span.start >= end) continue;
+        if (firstStart == UINT32_MAX || span.start < firstStart) {
+            firstStart = span.start;
+        }
+        if (span.end > lastEnd) lastEnd = span.end;
+    }
+    if (firstStart == UINT32_MAX) return false;
+    *outStart = firstStart;
+    *outEnd = lastEnd;
+    return true;
+}
+
+uint32_t MacRenderer::StepGrapheme(uint32_t offset, bool left) const {
+    const uint32_t clamped = NormalizeToRenderedCaret(offset);
+    const std::vector<TextRegion> regions = TextRegions();
+    for (const TextRegion& region : regions) {
+        if (clamped < region.visToSrc->front() ||
+            clamped > region.visToSrc->back()) {
+            continue;
+        }
+        uint32_t vis = 0;
+        if (!VisibleAtSource(*region.visToSrc, clamped, &vis)) continue;
+
+        const std::string text = VisibleTextOfLines(*region.lines);
+        if (left && vis > 0) {
+            const uint32_t step = PrevGraphemeBoundary(text, vis);
+            return NormalizeToRenderedCaret(SourceAtVisible(
+                *region.visToSrc, *region.visToSrcEnd, step, false));
+        }
+        if (!left && vis < text.size()) {
+            const uint32_t step = NextGraphemeBoundary(text, vis);
+            return NormalizeToRenderedCaret(SourceAtVisible(
+                *region.visToSrc, *region.visToSrcEnd, step, false));
+        }
+
+        // The edge of the region: the nearest drawn text on the other
+        // side of the marker gap.
+        uint32_t edge = clamped;
+        bool found = false;
+        std::vector<RenderedSpan> spans;
+        CollectRenderedSpans(&spans);
+        for (const RenderedSpan& span : spans) {
+            if (left) {
+                if (span.end < clamped && (!found || span.end > edge)) {
+                    edge = span.end;
+                    found = true;
+                }
+            } else {
+                if (span.start > clamped && (!found || span.start < edge)) {
+                    edge = span.start;
+                    found = true;
+                }
+            }
+        }
+        return found ? NormalizeToRenderedCaret(edge) : clamped;
+    }
+    return clamped;
+}
+
+uint32_t MacRenderer::StepWord(uint32_t offset, bool left) const {
+    if (!sourceText_) return offset;
+    const uint32_t clamped = NormalizeToRenderedCaret(offset);
+    const uint32_t target = left
+        ? MoveWordLeftInString(*sourceText_, clamped)
+        : MoveWordRightInString(*sourceText_, clamped);
+    return NormalizeToRenderedCaret(target);
+}
+
+uint32_t MacRenderer::LineBoundary(uint32_t offset, bool end) const {
+    const std::vector<TextRegion> regions = TextRegions();
+    for (const TextRegion& region : regions) {
+        if (offset < region.visToSrc->front() ||
+            offset > region.visToSrc->back()) {
+            continue;
+        }
+        uint32_t vis = 0;
+        if (!VisibleAtSource(*region.visToSrc, offset, &vis)) continue;
+
+        uint32_t lineStartVis = 0;
+        for (const TextLine& line : *region.lines) {
+            uint32_t length = 0;
+            for (const GlyphRun& run : line.runs) {
+                length += static_cast<uint32_t>(run.text.size());
+            }
+            const uint32_t lineEndVis = lineStartVis + length;
+            if (vis >= lineStartVis && vis <= lineEndVis) {
+                if (!end) {
+                    return SourceAtVisible(*region.visToSrc,
+                                           *region.visToSrcEnd, lineStartVis,
+                                           false);
+                }
+                if (lineEndVis == 0) {
+                    return SourceAtVisible(*region.visToSrc,
+                                           *region.visToSrcEnd, 0, false);
+                }
+                return SourceAtVisible(*region.visToSrc, *region.visToSrcEnd,
+                                       lineEndVis - 1, true);
+            }
+            lineStartVis = lineEndVis;
+        }
+        if (!end) {
+            return SourceAtVisible(*region.visToSrc, *region.visToSrcEnd, 0,
+                                   false);
+        }
+        return region.visToSrc->back();
+    }
+    return NormalizeToRenderedCaret(offset);
+}
+
+float MacRenderer::TextBottom() const {
+    float bottom = 0.0f;
+    for (const TextRegion& region : TextRegions()) {
+        float lineTop = region.top;
+        for (const TextLine& line : *region.lines) {
+            lineTop += line.height;
+        }
+        if (lineTop > bottom) bottom = lineTop;
+    }
+    return bottom;
 }
 
 bool MacRenderer::LineRangeAtPoint(float x, float y, uint32_t* outStart,
                                    uint32_t* outEnd) const {
-    // The x is ignored on purpose. A click in the margin is level with
+    // The x is ignored on purpose: a click in the margin is level with
     // a line, and the line is what the user wants to select.
     (void)x;
 
     for (const LaidOutBlock& block : blocks_) {
+        if (block.lines.empty()) continue;
+        if (block.visToSrc.empty()) continue;
         if (y < block.y || y > block.y + block.height) continue;
 
-        uint32_t lineStart = block.node->srcOffset;
-        float lineY = block.y + block.imagesHeight;
+        float lineTop = TextTop(block);
+        uint32_t lineStartVis = 0;
         for (const TextLine& line : block.lines) {
-            if (y >= lineY && y < lineY + line.height) {
-                size_t length = 0;
-                for (const GlyphRun& run : line.runs) {
-                    length += run.text.size();
+            uint32_t length = 0;
+            for (const GlyphRun& run : line.runs) {
+                length += static_cast<uint32_t>(run.text.size());
+            }
+            const float lineBottom = lineTop + line.height;
+            if (y >= lineTop && y < lineBottom) {
+                if (outStart) {
+                    *outStart = SourceAtVisible(block.visToSrc,
+                                                block.visToSrcEnd,
+                                                lineStartVis, false);
                 }
-                if (outStart) *outStart = lineStart;
                 if (outEnd) {
-                    *outEnd = lineStart + static_cast<uint32_t>(length);
+                    if (length == 0) {
+                        *outEnd = SourceAtVisible(block.visToSrc,
+                                                  block.visToSrcEnd,
+                                                  lineStartVis, false);
+                    } else {
+                        *outEnd = SourceAtVisible(block.visToSrc,
+                                                  block.visToSrcEnd,
+                                                  lineStartVis + length - 1,
+                                                  true);
+                    }
                 }
                 return true;
             }
-            for (const GlyphRun& run : line.runs) {
-                lineStart += static_cast<uint32_t>(run.text.size());
-            }
-            lineY += line.height;
+            lineStartVis += length;
+            lineTop = lineBottom;
         }
         return false;
     }
@@ -1196,33 +1874,39 @@ bool MacRenderer::LineRangeAtPoint(float x, float y, uint32_t* outStart,
 
 bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
                                float* outWidth, float* outHeight) const {
-    for (const LaidOutBlock& block : blocks_) {
-        if (!block.node) continue;
-        const uint32_t start = block.node->contentOffset;
-        const uint32_t end = start + block.node->contentLength;
-        if (offset < start || offset > end) continue;
+    for (const TextRegion& region : TextRegions()) {
+        if (offset < region.visToSrc->front() ||
+            offset > region.visToSrc->back()) {
+            continue;
+        }
+        uint32_t vis = 0;
+        if (!VisibleAtSource(*region.visToSrc, offset, &vis)) continue;
 
-        // The lines are walked with the range each one covers, so the
-        // line the offset is on is the one that is found.
-        float lineY = block.y + block.imagesHeight;
-        uint32_t lineStart = start;
-        for (const TextLine& line : block.lines) {
-            size_t length = 0;
+        // The lines are walked with the visible range each one covers,
+        // so the line the position is on is the one that is found.
+        float lineTop = region.top;
+        uint32_t lineStartVis = 0;
+        for (const TextLine& line : *region.lines) {
+            uint32_t length = 0;
             for (const GlyphRun& run : line.runs) {
-                length += run.text.size();
+                length += static_cast<uint32_t>(run.text.size());
             }
-            const uint32_t lineEnd = lineStart + static_cast<uint32_t>(length);
-            if (offset >= lineStart && offset <= lineEnd) {
-                const Rect rect = engine_->OffsetToRect(line, offset - lineStart);
-                if (outX) *outX = block.x + rect.x;
-                if (outY) *outY = lineY;
+            const uint32_t lineEndVis = lineStartVis + length;
+            if (vis >= lineStartVis && vis <= lineEndVis) {
+                const uint32_t inLine = vis >= lineEndVis
+                    ? length
+                    : vis - lineStartVis;
+                const Rect rect = engine_->OffsetToRect(line, inLine);
+                if (outX) *outX = region.x + rect.x;
+                if (outY) *outY = lineTop;
                 if (outWidth) *outWidth = rect.width;
                 if (outHeight) *outHeight = line.height;
                 return true;
             }
-            lineStart = lineEnd;
-            lineY += line.height;
+            lineStartVis = lineEndVis;
+            lineTop += line.height;
         }
+        return false;
     }
     return false;
 }
@@ -1243,50 +1927,87 @@ std::vector<Rect> MacRenderer::RectsForRange(uint32_t start,
     return rects;
 }
 
-std::vector<Rect> MacRenderer::RectsForRangeInBlock(const LaidOutBlock& block,
-                                                     uint32_t start,
-                                                     uint32_t end) const {
-    std::vector<Rect> rects;
-    if (!block.node) return rects;
+void MacRenderer::AppendRangeRects(const std::vector<TextLine>& lines,
+                                    const std::vector<uint32_t>& visToSrc,
+                                    float x, float top, uint32_t start,
+                                    uint32_t end,
+                                    std::vector<Rect>* rects) const {
+    if (lines.empty() || visToSrc.empty()) return;
     if (end < start) {
         const uint32_t swap = start;
         start = end;
         end = swap;
     }
+    if (start > visToSrc.back() || end < visToSrc.front()) return;
 
-    // The lines are walked with the range each one covers, so the
-    // rectangles land on the lines that hold the range. The text of a
-    // block starts below its images.
-    float lineY = block.y + block.imagesHeight;
-    uint32_t lineStart = block.node->contentOffset;
-    for (const TextLine& line : block.lines) {
-        size_t length = 0;
+    // The range is walked in visible space, so the rectangles land on
+    // the drawn text and the markers inside the range never widen it.
+    uint32_t visStart = 0;
+    uint32_t visEnd = 0;
+    if (!VisibleAtSource(visToSrc, start, &visStart)) return;
+    if (!VisibleAtSource(visToSrc, end, &visEnd)) return;
+    if (visEnd <= visStart) return;
+
+    float lineTop = top;
+    uint32_t lineStartVis = 0;
+    for (const TextLine& line : lines) {
+        uint32_t length = 0;
         for (const GlyphRun& run : line.runs) {
-            length += run.text.size();
+            length += static_cast<uint32_t>(run.text.size());
         }
-        const uint32_t lineEnd = lineStart + static_cast<uint32_t>(length);
+        const uint32_t lineEndVis = lineStartVis + length;
 
-        // The part of the line the range covers.
-        const uint32_t from = start > lineStart ? start : lineStart;
-        const uint32_t to = end < lineEnd ? end : lineEnd;
+        const uint32_t from = visStart > lineStartVis ? visStart : lineStartVis;
+        const uint32_t to = visEnd < lineEndVis ? visEnd : lineEndVis;
         if (from < to) {
-            const Rect first = engine_->OffsetToRect(line, from - lineStart);
+            const Rect first = engine_->OffsetToRect(line, from - lineStartVis);
             // The right edge of the range is the left edge of the
-            // character after it, which is the rect OffsetToRect gives
-            // for that position.
-            const Rect after = engine_->OffsetToRect(line, to - lineStart);
+            // character after it, the rect OffsetToRect gives for that
+            // position.
+            const Rect after = engine_->OffsetToRect(line, to - lineStartVis);
             Rect rect;
-            rect.x = block.x + first.x;
-            rect.y = lineY;
-            rect.width = (block.x + after.x) - rect.x;
+            rect.x = x + first.x;
+            rect.y = lineTop;
+            rect.width = after.x - first.x;
             rect.height = line.height;
-            if (rect.width < 0.0f) {
-                rect.width = 0.0f;
-            }
-            rects.push_back(rect);
+            if (rect.width < 0.0f) rect.width = 0.0f;
+            rects->push_back(rect);
         }
-        lineStart = lineEnd;
-        lineY += line.height;
+        lineStartVis = lineEndVis;
+        lineTop += line.height;
+    }
+}
+
+std::vector<Rect> MacRenderer::RectsForRangeInBlock(const LaidOutBlock& block,
+                                                     uint32_t start,
+                                                     uint32_t end) const {
+    std::vector<Rect> rects;
+
+    // The block's own text.
+    AppendRangeRects(block.lines, block.visToSrc,
+                     TextX(block), TextTop(block), start, end, &rects);
+
+    // A table draws its text cell by cell, so a range inside a cell
+    // gets the cell's own geometry.
+    if (block.kind == BlockKind::Table) {
+        float rowTop = block.y;
+        for (size_t r = 0; r < block.tableLayout.rows.size(); ++r) {
+            const std::vector<LaidOutBlock::TableCellLayout>& cells =
+                block.tableLayout.rows[r];
+            for (size_t c = 0; c < cells.size(); ++c) {
+                const LaidOutBlock::TableCellLayout& cell = cells[c];
+                AppendRangeRects(cell.lines, cell.visToSrc,
+                                 block.x +
+                                     static_cast<float>(c) *
+                                         block.tableLayout.colW +
+                                     metrics_.cellPadX,
+                                 rowTop + metrics_.cellPadY, start, end,
+                                 &rects);
+            }
+            if (r < block.tableLayout.rowHeights.size()) {
+                rowTop += block.tableLayout.rowHeights[r];
+            }
+        }
     }
     return rects;
 }

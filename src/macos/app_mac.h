@@ -223,6 +223,16 @@ public:
     // Deletes the selection, or the character after the caret.
     void DeleteForward();
 
+    // Deletes the selection, or the word before the caret.
+    void DeleteWordBackward();
+
+    // Deletes the selection, or the word after the caret.
+    void DeleteWordForward();
+
+    // Inserts a Markdown soft line break at the caret. A table row does
+    // not take one.
+    void InsertSoftBreak();
+
     // Inserts a paragraph break, which the shared controller turns into
     // the right markdown.
     void InsertParagraphBreak();

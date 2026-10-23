@@ -83,7 +83,13 @@ public:
     const MacRenderer& renderer() const { return renderer_; }
 
     // The offset of the document point that a view point falls on.
+    // UINT32_MAX when the point is in the margin, where the Word-like
+    // line selection takes over.
     uint32_t HitTestPoint(float x, float y) const;
+
+    // The nearest drawn position to a source offset, so a caret from
+    // outside the document model never lands inside a marker.
+    uint32_t NormalizeToRenderedCaret(uint32_t offset) const;
 
     // The rectangle a document offset occupies, in document coordinates.
     bool OffsetToRect(uint32_t offset, float* outX, float* outY,

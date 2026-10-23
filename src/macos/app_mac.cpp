@@ -603,59 +603,81 @@ void App::SetSelection(uint32_t start, uint32_t end) {
     OnSelectionChanged();
 }
 
-namespace {
-
-// The characters that make up a word.
-//
-// A word is a run of letters, digits and the marks that go with them.
-// Everything else breaks a word in two.
-bool IsWordChar(unsigned char c) {
-    if (c >= 0x80) return true;  // Any letter outside ASCII.
-    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) return true;
-    if (c >= '0' && c <= '9') return true;
-    return c == '_' || c == '-';
-}
-
-}  // namespace
-
 void App::SelectWordAt(uint32_t offset) {
     const std::string& text = buffer_.Text();
     if (text.empty()) return;
 
-    size_t start = offset < text.size() ? offset : text.size();
+    // The shared word span is the same boundary the word-wise caret
+    // moves and the word deletions use, so a double click and a
+    // Ctrl+Backspace can never disagree about where a word ends. A
+    // click on punctuation selects that punctuation, the way the
+    // Windows selection does.
+    uint32_t start = 0;
+    uint32_t end = 0;
+    WordSpanAt(buffer_, offset, &start, &end);
+    if (end <= start) return;
 
-    // The click may have landed on the space after a word, and then the
-    // word before it is the one that counts.
-    if (start > 0 && start < text.size() &&
-        !IsWordChar(static_cast<unsigned char>(text[start]))) {
-        size_t before = start;
-        while (before > 0 &&
-               !IsWordChar(static_cast<unsigned char>(text[before - 1]))) {
-            --before;
-        }
-        if (before < start) start = before;
+    // The ends snap to drawn text, so a double click never drags a
+    // Markdown marker into the selection.
+    if (contentView_) {
+        start = contentView_->NormalizeToRenderedCaret(start);
+        end = contentView_->NormalizeToRenderedCaret(end);
     }
-
-    while (start > 0 && IsWordChar(static_cast<unsigned char>(text[start - 1])))
-        --start;
-    size_t end = start;
-    while (end < text.size() && IsWordChar(static_cast<unsigned char>(text[end])))
-        ++end;
-
-    SetSelection(static_cast<uint32_t>(start), static_cast<uint32_t>(end));
+    if (end < start) {
+        const uint32_t swap = start;
+        start = end;
+        end = swap;
+    }
+    if (end <= start) return;
+    SetSelection(start, end);
 }
 
 void App::SelectParagraphAt(uint32_t offset) {
     const std::string& text = buffer_.Text();
     if (text.empty()) return;
 
-    size_t start = offset < text.size() ? offset : text.size();
-    size_t end = start;
+    // The paragraph is the block the offset sits in: its drawn text and
+    // the break that ends it. A list item keeps its marker, the next
+    // item's prefix and the closing newline out of the selection, the
+    // same rule the Windows selection follows.
+    const Node* node = nullptr;
+    for (const Node& n : document_.nodes) {
+        if (offset >= n.srcOffset && offset < n.srcOffset + n.srcLength) {
+            node = &n;
+        }
+    }
+    if (!node) {
+        for (const Node& n : document_.nodes) {
+            if (offset >= n.srcOffset && offset <= n.srcOffset + n.srcLength) {
+                node = &n;
+            }
+        }
+    }
 
-    while (start > 0 && text[start - 1] != '\n') --start;
-    while (end < text.size() && text[end] != '\n') ++end;
-
-    SetSelection(static_cast<uint32_t>(start), static_cast<uint32_t>(end));
+    uint32_t start = 0;
+    uint32_t end = 0;
+    if (node && node->block == BlockKind::List) {
+        start = node->contentOffset;
+        end = node->srcOffset + node->srcLength;
+    } else if (node) {
+        start = node->contentOffset;
+        end = node->contentOffset + node->contentLength;
+        // The paragraph break belongs to the selection, so the next
+        // typed character replaces the whole paragraph.
+        while (end < text.size() &&
+               (text[end] == '\n' || text[end] == '\r')) {
+            ++end;
+        }
+    } else {
+        size_t s = offset < text.size() ? offset : text.size();
+        size_t e = s;
+        while (s > 0 && text[s - 1] != '\n') --s;
+        while (e < text.size() && text[e] != '\n') ++e;
+        start = static_cast<uint32_t>(s);
+        end = static_cast<uint32_t>(e);
+    }
+    if (end <= start) return;
+    SetSelection(start, end);
 }
 
 std::string App::SelectedText() const {
@@ -711,6 +733,29 @@ void App::DeleteForward() {
     } else {
         editor_.DeleteSelection();
     }
+    OnTextChanged();
+}
+
+void App::DeleteWordBackward() {
+    if (sel_.Empty()) {
+        editor_.DeleteWordBackward();
+    } else {
+        editor_.DeleteSelection();
+    }
+    OnTextChanged();
+}
+
+void App::DeleteWordForward() {
+    if (sel_.Empty()) {
+        editor_.DeleteWordForward();
+    } else {
+        editor_.DeleteSelection();
+    }
+    OnTextChanged();
+}
+
+void App::InsertSoftBreak() {
+    editor_.InsertSoftBreak(document_);
     OnTextChanged();
 }
 

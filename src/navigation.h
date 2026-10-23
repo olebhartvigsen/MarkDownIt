@@ -21,6 +21,12 @@ uint32_t MoveWordLeft(const TextBuffer& buf, uint32_t offset);
 // Move right by one word (Ctrl+Right).
 uint32_t MoveWordRight(const TextBuffer& buf, uint32_t offset);
 
+// Move left/right by one word over a plain UTF-8 string, on the same
+// boundaries the buffer based moves use. The mac renderer's word steps
+// and the double click both need the boundaries of a string.
+uint32_t MoveWordLeftInString(const std::string& s, uint32_t offset);
+uint32_t MoveWordRightInString(const std::string& s, uint32_t offset);
+
 // Return the contiguous Unicode word/space/punctuation span containing offset.
 void WordSpanAt(const TextBuffer& buf, uint32_t offset,
                 uint32_t* outStart, uint32_t* outEnd);
