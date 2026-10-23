@@ -56,6 +56,10 @@
 // belongs to the owner; the threshold is shared.
 constexpr std::size_t kFindDebounceThresholdBytes = 512u * 1024u;
 
+// The pause a debounced search waits for, in seconds: long enough
+// to collect fast typing, short enough to feel immediate.
+constexpr double kFindDebounceDelaySeconds = 0.15;
+
 inline bool FindRefreshDebounceNeeded(std::size_t document_bytes) {
     return document_bytes >= kFindDebounceThresholdBytes;
 }

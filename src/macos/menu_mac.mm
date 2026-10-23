@@ -150,6 +150,19 @@ NSMenu* BuildMainMenu() {
              {"Wider Content", @selector(cycleContentWidth:)}},
             {"+", "-", "0", "", "", "", ""});
         AddTopLevel(mainMenu, "View", viewMenu);
+
+        // Command with the plain equals key zooms in as well. On
+        // most layouts the "+" above needs Shift, and a zoom key
+        // must stay a command with a modifier rather than a bare
+        // character, or it would eat typing (zoom guide,
+        // keyboard safety). The item stays hidden; AppKit still
+        // routes its key equivalent.
+        NSMenuItem* zoomInPlain = [[NSMenuItem alloc]
+            initWithTitle:@"Zoom In"
+                   action:@selector(zoomIn:)
+            keyEquivalent:@"="];
+        [zoomInPlain setHidden:YES];
+        [viewMenu addItem:zoomInPlain];
     }
 
     // Format.

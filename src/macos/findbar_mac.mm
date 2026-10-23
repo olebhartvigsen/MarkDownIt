@@ -15,7 +15,9 @@
 #import <AppKit/AppKit.h>
 
 #include "findbar_mac.h"
+#include "find_strings.h"
 #include "fonts_mac.h"
+#include "strings_mac.h"
 
 #include <string>
 
@@ -48,12 +50,14 @@ static std::wstring WideText(NSString* text) {
 
 // The counter the Windows bar shows: "3 of 17" while matches exist,
 // "No matches" when the query matched nothing, and nothing at all
-// while the field is empty (guide 3, 21 and 52).
+// while the field is empty (guide 3, 21 and 52). The strings come
+// from the shared table, so both bars say the same thing.
 static std::wstring CounterText(const FindBarModel& model) {
     if (model.status() == FindStatus::Empty) return std::wstring();
-    if (model.status() == FindStatus::NoMatches) return L"No matches";
+    if (model.status() == FindStatus::NoMatches)
+        return findstrings::kNoMatches;
     std::wstring text = std::to_wstring(model.countCurrent());
-    text += L" of ";
+    text += findstrings::kCounterSeparator;
     text += std::to_wstring(model.countTotal());
     return text;
 }
@@ -80,6 +84,7 @@ static std::wstring CounterText(const FindBarModel& model) {
     NSButton* replaceButton_;
     NSButton* replaceAllButton_;
     NSButton* closeButton_;
+    NSButton* historyButton_;
     NSTextField* counterLabel_;
     NSTextField* statusLabel_;
     NSStackView* searchRow_;
@@ -102,35 +107,41 @@ static std::wstring CounterText(const FindBarModel& model) {
 // code only has to place them.
 - (void)buildControls {
     searchField_ = [NSTextField textFieldWithString:@""];
-    [searchField_ setPlaceholderString:@"Find"];
+    [searchField_ setPlaceholderString:macstrings::kFindPlaceholder];
     [searchField_ setDelegate:self];
 
     replaceField_ = [NSTextField textFieldWithString:@""];
-    [replaceField_ setPlaceholderString:@"Replace"];
+    [replaceField_ setPlaceholderString:macstrings::kReplacePlaceholder];
     [replaceField_ setDelegate:self];
 
-    previousButton_ = [self makeButton:@"\u25B2" tooltip:@"Previous match"
+    previousButton_ = [self makeButton:@"\u25B2" tooltip:macstrings::kPreviousMatch
                               action:@selector(previousMatch:)];
-    nextButton_ = [self makeButton:@"\u25BC" tooltip:@"Next match"
+    nextButton_ = [self makeButton:@"\u25BC" tooltip:macstrings::kNextMatch
                           action:@selector(nextMatch:)];
-    matchCaseButton_ = [self makeCheckbox:@"Match case"
+    matchCaseButton_ = [self makeCheckbox:macstrings::kMatchCase
                                    action:@selector(optionsChanged:)];
-    wholeWordButton_ = [self makeCheckbox:@"Whole word"
+    wholeWordButton_ = [self makeCheckbox:macstrings::kWholeWord
                                   action:@selector(optionsChanged:)];
-    replaceButton_ = [self makeButton:@"Replace" tooltip:@"Replace the match"
+    replaceButton_ = [self makeButton:@"Replace"
+                              tooltip:macstrings::kReplaceTheMatch
                               action:@selector(replaceCurrent:)];
-    replaceAllButton_ = [self makeButton:@"All" tooltip:@"Replace every match"
+    replaceAllButton_ = [self makeButton:@"All"
+                                tooltip:macstrings::kReplaceEveryMatch
                                 action:@selector(replaceAll:)];
-    closeButton_ = [self makeButton:@"\u2715" tooltip:@"Close the find bar"
+    closeButton_ = [self makeButton:@"\u2715" tooltip:macstrings::kCloseFindBar
                             action:@selector(closeBar:)];
+    historyButton_ = [self makeButton:@"\u25BE"
+                             tooltip:macstrings::kRecentSearches
+                              action:@selector(showHistory:)];
 
     // The glyph buttons need real names for assistive technology
     // (find spec 2.3 and 44).
-    [previousButton_ setAccessibilityLabel:@"Previous match"];
-    [nextButton_ setAccessibilityLabel:@"Next match"];
-    [closeButton_ setAccessibilityLabel:@"Close find bar"];
-    [searchField_ setAccessibilityLabel:@"Search text"];
-    [replaceField_ setAccessibilityLabel:@"Replace text"];
+    [previousButton_ setAccessibilityLabel:macstrings::kPreviousMatch];
+    [nextButton_ setAccessibilityLabel:macstrings::kNextMatch];
+    [closeButton_ setAccessibilityLabel:macstrings::kCloseFindBarLabel];
+    [historyButton_ setAccessibilityLabel:macstrings::kRecentSearches];
+    [searchField_ setAccessibilityLabel:macstrings::kSearchText];
+    [replaceField_ setAccessibilityLabel:macstrings::kReplaceText];
 
     counterLabel_ = [NSTextField labelWithString:@""];
     [counterLabel_ setAlignment:NSTextAlignmentRight];
@@ -165,7 +176,7 @@ static std::wstring CounterText(const FindBarModel& model) {
 - (void)buildRows {
     searchRow_ = [NSStackView stackViewWithViews:@[
         searchField_, previousButton_, nextButton_, matchCaseButton_,
-        wholeWordButton_, counterLabel_
+        wholeWordButton_, counterLabel_, historyButton_
     ]];
     [searchRow_ setOrientation:NSUserInterfaceLayoutOrientationHorizontal];
     [searchRow_ setAlignment:NSLayoutAttributeCenterY];
@@ -271,15 +282,47 @@ static std::wstring CounterText(const FindBarModel& model) {
     (void)notification;
     if ([notification.object isEqual:searchField_]) {
         model_->SetSearchText(WideText(searchField_.stringValue));
-        const FindBarListener& listener = model_->listener();
-        if (listener.onSearchChanged) {
-            listener.onSearchChanged();
+        // A large document waits for a pause in the typing instead
+        // of searching on every keystroke, so the bar stays
+        // responsive (find spec, large documents); a small one
+        // searches right away.
+        if ([self debouncedRefreshNeeded]) {
+            [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                                      selector:@selector(commitSearch:)
+                                                        object:nil];
+            [self performSelector:@selector(commitSearch:)
+                       withObject:nil
+                       afterDelay:kFindDebounceDelaySeconds];
+        } else {
+            const FindBarListener& listener = model_->listener();
+            if (listener.onSearchChanged) {
+                listener.onSearchChanged();
+            }
         }
         // The count and the buttons move with every keystroke.
         [self updateFromModel];
     } else if ([notification.object isEqual:replaceField_]) {
         model_->SetReplaceText(WideText(replaceField_.stringValue));
     }
+}
+
+// Whether this keystroke should wait for a pause: the owner answers
+// how large the document is, and only a large one gets the delay
+// (find spec, large documents).
+- (BOOL)debouncedRefreshNeeded {
+    const FindBarListener& listener = model_->listener();
+    if (!listener.documentSize) return NO;
+    return FindRefreshDebounceNeeded(listener.documentSize()) ? YES : NO;
+}
+
+// The delayed search, one pause after the last keystroke.
+- (void)commitSearch:(id)sender {
+    (void)sender;
+    const FindBarListener& listener = model_->listener();
+    if (listener.onSearchChanged) {
+        listener.onSearchChanged();
+    }
+    [self updateFromModel];
 }
 
 - (void)optionsChanged:(id)sender {
@@ -299,8 +342,16 @@ static std::wstring CounterText(const FindBarModel& model) {
     return listener.caretOffset ? listener.caretOffset() : 0u;
 }
 
+// The query the user is working with, remembered whenever a search
+// is actually run (find spec: the session remembers recently used
+// search strings).
+- (void)rememberQuery {
+    model_->RememberSearchQuery(model_->GetSearchText());
+}
+
 - (void)nextMatch:(id)sender {
     (void)sender;
+    [self rememberQuery];
     model_->NavigateNext([self caretOffset]);
     // The counter reads the ordinal the navigation just moved.
     model_->SyncFromState();
@@ -309,6 +360,7 @@ static std::wstring CounterText(const FindBarModel& model) {
 
 - (void)previousMatch:(id)sender {
     (void)sender;
+    [self rememberQuery];
     model_->NavigatePrevious([self caretOffset]);
     // The counter reads the ordinal the navigation just moved.
     model_->SyncFromState();
@@ -317,6 +369,7 @@ static std::wstring CounterText(const FindBarModel& model) {
 
 - (void)replaceCurrent:(id)sender {
     (void)sender;
+    [self rememberQuery];
     const FindBarListener& listener = model_->listener();
     TextMatch current{};
     if (model_->state().CurrentMatch(&current) && listener.onReplaceCurrent) {
@@ -328,6 +381,7 @@ static std::wstring CounterText(const FindBarModel& model) {
 
 - (void)replaceAll:(id)sender {
     (void)sender;
+    [self rememberQuery];
     const FindBarListener& listener = model_->listener();
     if (listener.onReplaceAll) {
         listener.onReplaceAll(model_->GetSearchText(), model_->GetReplaceText(),
@@ -339,10 +393,51 @@ static std::wstring CounterText(const FindBarModel& model) {
 
 - (void)closeBar:(id)sender {
     (void)sender;
+    [self rememberQuery];
     const FindBarListener& listener = model_->listener();
     if (listener.onClose) {
         listener.onClose();
     }
+}
+
+// The session's recent queries, as a menu under the history button.
+- (void)showHistory:(NSButton*)sender {
+    const std::vector<std::wstring>& recent = model_->RecentSearchQueries();
+    NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
+    if (recent.empty()) {
+        NSMenuItem* item = [menu addItemWithTitle:macstrings::kNoRecentSearches
+                                           action:nil
+                                    keyEquivalent:@""];
+        [item setEnabled:NO];
+    } else {
+        for (std::size_t i = 0; i < recent.size(); ++i) {
+            NSMenuItem* item =
+                [menu addItemWithTitle:NarrowText(recent[i])
+                                action:@selector(selectHistoryQuery:)
+                         keyEquivalent:@""];
+            [item setTarget:self];
+            [item setTag:static_cast<NSInteger>(i)];
+        }
+    }
+    [menu popUpMenuPositioningItem:nil
+                        atLocation:NSMakePoint(0, NSHeight(sender.bounds))
+                            inView:sender];
+}
+
+// A query from the history becomes the current one and searches
+// again, the same as typing it would.
+- (void)selectHistoryQuery:(NSMenuItem*)item {
+    const std::vector<std::wstring>& recent = model_->RecentSearchQueries();
+    const std::size_t index = static_cast<std::size_t>(item.tag);
+    if (index >= recent.size()) return;
+    [searchField_ setStringValue:NarrowText(recent[index])];
+    model_->SetSearchText(recent[index]);
+    model_->RememberSearchQuery(recent[index]);
+    const FindBarListener& listener = model_->listener();
+    if (listener.onSearchChanged) {
+        listener.onSearchChanged();
+    }
+    [self updateFromModel];
 }
 
 // The keys the guide gives the bar: Enter steps to the next match,

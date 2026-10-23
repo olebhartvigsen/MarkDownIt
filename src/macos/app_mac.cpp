@@ -57,6 +57,12 @@ App::App() : editor_(&buffer_, &sel_) {
         .caretOffset = [this] {
             return sel_.active.offset;
         },
+        .documentSize = [this] {
+            // The live document size, so the bar can debounce its
+            // searches on a large document (find spec, large
+            // documents).
+            return buffer_.Text().size();
+        },
         .onSearchChanged = [this] {
             // An incremental search re-aims the current match at the
             // caret on every keystroke.

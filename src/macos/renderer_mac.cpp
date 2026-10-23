@@ -1458,35 +1458,37 @@ void MacRenderer::PaintTable(const LaidOutBlock& block, float scrollOffset) {
 }
 
 bool MacRenderer::YForOffset(uint32_t offset, float& y) const {
-    for (const LaidOutBlock& block : blocks_) {
-        if (!block.node) continue;
-        if (block.visToSrc.empty()) continue;
-        if (offset < block.visToSrc.front() || offset > block.visToSrc.back()) {
-            continue;
-        }
-
+    // The regions are the same ones the hit test reads, so a table cell
+    // is addressable here too: a find jump inside a table lands on the
+    // row that holds the match, and a block without a region has no y.
+    //
+    // A position on the seam between two regions goes to the later one:
+    // both maps hold the end of their last character, which is where
+    // the next region's text starts, and a match that starts there
+    // belongs to the text in front of the caret.
+    bool found = false;
+    for (const TextRegion& region : TextRegions()) {
+        if (offset < region.srcStart || offset > region.srcEnd) continue;
         uint32_t vis = 0;
-        if (!VisibleAtSource(block.visToSrc, offset, &vis)) continue;
+        if (!VisibleAtSource(*region.visToSrc, offset, &vis)) continue;
 
-        // The line the visible position sits on.
-        float lineY = TextTop(block);
+        // The line the visible position sits on, the same walk the hit
+        // test does.
+        float lineY = region.top;
         uint32_t lineStart = 0;
-        for (const TextLine& line : block.lines) {
+        for (const TextLine& line : *region.lines) {
             uint32_t length = 0;
             for (const GlyphRun& run : line.runs) {
                 length += static_cast<uint32_t>(run.text.size());
             }
-            if (vis <= lineStart + length) {
-                y = lineY;
-                return true;
-            }
+            if (vis <= lineStart + length) break;
             lineStart += length;
             lineY += line.height;
         }
         y = lineY;
-        return true;
+        found = true;
     }
-    return false;
+    return found;
 }
 
 float MacRenderer::TextX(const LaidOutBlock& block) const {

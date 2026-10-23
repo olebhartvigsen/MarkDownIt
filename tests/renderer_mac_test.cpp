@@ -1154,3 +1154,43 @@ TEST(RendererMac, SourceModeDrawsTheRawBufferWithEveryByteAddressable) {
     ASSERT_EQ(renderer.blocks().size(), 1u);
     EXPECT_EQ(renderer.blocks()[0].visToSrc.size(), 6u);
 }
+
+// A find jump into a table: the offsets of a cell live in the cell's
+// own rendered map, so the jump's y has to come from the cell's region.
+// Before this the table match had no y at all and the jump went
+// nowhere.
+TEST(RendererMac, YForOffsetFindsTextInsideTableCells) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    Node table = Table({{"A", "B"}, {"C", "D"}});
+    uint32_t src = 0;
+    for (TableRow& row : table.rows) {
+        for (TableCell& cell : row.cells) {
+            cell.srcOffset = src;
+            cell.srcEnd = src + 1;
+            cell.u16ToSrc = {src};
+            cell.u16ToSrcEnd = {src + 1};
+            ++src;
+        }
+    }
+
+    const Document doc = Doc({table});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    const LaidOutBlock& block = renderer.blocks()[0];
+    ASSERT_EQ(block.tableLayout.rows.size(), 2u);
+
+    // Byte 0 is the first cell of the first row.
+    float y = -1.0f;
+    ASSERT_TRUE(renderer.YForOffset(0, y));
+    EXPECT_TRUE(std::fabs(y - (block.y + BaseMetrics().cellPadY)) < 0.5f);
+
+    // Byte 2 opens the second row, so the jump lands one row down.
+    const float rowTwo = block.y + block.tableLayout.rowHeights[0];
+    y = -1.0f;
+    ASSERT_TRUE(renderer.YForOffset(2, y));
+    EXPECT_TRUE(std::fabs(y - (rowTwo + BaseMetrics().cellPadY)) < 0.5f);
+}
