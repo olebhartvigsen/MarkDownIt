@@ -88,7 +88,7 @@ public:
                                                            : run.text.size();
                         GlyphRun sliced = run;
                         sliced.text = run.text.substr(from, to - from);
-                        sliced.x = static_cast<float>(pos + from - start) *
+                        sliced.x = static_cast<float>(offset + from - start) *
                                    charWidth;
                         line.runs.push_back(sliced);
                     }
