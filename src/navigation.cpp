@@ -1501,3 +1501,89 @@ std::string SlugifyAnchor(const std::string& value) {
     while (!result.empty() && result.back() == '-') result.pop_back();
     return result;
 }
+
+bool CellTextRangeAtOffset(const Document& doc, const std::string& source,
+                           uint32_t offset, uint32_t* outStart,
+                           uint32_t* outEnd) {
+    if (!outStart || !outEnd) return false;
+    TableCellRef cell;
+    if (!TableCellAtOffset(doc, source, offset, &cell)) return false;
+    if (cell.separatorRow || cell.srcEnd <= cell.srcOffset) return false;
+    *outStart = cell.srcOffset;
+    *outEnd = std::min<uint32_t>(cell.srcEnd,
+                                 static_cast<uint32_t>(source.size()));
+    return *outEnd > *outStart;
+}
+
+bool RowTextRangeAtOffset(const Document& doc, const std::string& source,
+                          uint32_t offset, uint32_t* outStart,
+                          uint32_t* outEnd) {
+    if (!outStart || !outEnd) return false;
+    TableCellRef cell;
+    if (!TableCellAtOffset(doc, source, offset, &cell)) return false;
+    if (cell.separatorRow || cell.rowIndex == SIZE_MAX) return false;
+    if (cell.tableIndex >= doc.nodes.size()) return false;
+    const Node& node = doc.nodes[cell.tableIndex];
+    if (cell.rowIndex >= node.rows.size()) return false;
+    const TableRow& row = node.rows[cell.rowIndex];
+    uint32_t rowStart = UINT32_MAX;
+    uint32_t rowEnd = 0;
+    for (const TableCell& c : row.cells) {
+        if (c.srcOffset < rowStart) rowStart = c.srcOffset;
+        if (c.srcEnd > rowEnd) rowEnd = c.srcEnd;
+    }
+    if (rowEnd <= rowStart) return false;
+    *outStart = rowStart;
+    *outEnd = std::min<uint32_t>(rowEnd,
+                                 static_cast<uint32_t>(source.size()));
+    return *outEnd > *outStart;
+}
+
+TableSelectionTier NextTableSelectionTier(const Document& doc,
+                                          const std::string& source,
+                                          uint32_t caret, int previousTier) {
+    // The steps mirror the Windows escalation (plan 19): the cell, the
+    // row, the table, then the whole document. A run that has used all
+    // the table tiers lands on the document and starts over.
+    TableSelectionTier out;
+    const uint32_t textLen = static_cast<uint32_t>(source.size());
+    TableCellRef cell;
+    const bool inTable = TableCellAtOffset(doc, source, caret, &cell);
+    const bool activeCell = inTable && !cell.separatorRow &&
+                            cell.srcEnd > cell.srcOffset;
+    if (activeCell && previousTier < 4) {
+        const Node& node = doc.nodes[cell.tableIndex];
+        if (previousTier == 0) {
+            out.start = cell.srcOffset;
+            out.end = std::min<uint32_t>(cell.srcEnd, textLen);
+            out.tier = 1;
+            return out;
+        }
+        if (previousTier == 1 && cell.rowIndex < node.rows.size()) {
+            const TableRow& row = node.rows[cell.rowIndex];
+            uint32_t rowStart = UINT32_MAX;
+            uint32_t rowEnd = 0;
+            for (const TableCell& c : row.cells) {
+                if (c.srcOffset < rowStart) rowStart = c.srcOffset;
+                if (c.srcEnd > rowEnd) rowEnd = c.srcEnd;
+            }
+            if (rowEnd > rowStart) {
+                out.start = rowStart;
+                out.end = std::min<uint32_t>(rowEnd, textLen);
+                out.tier = 2;
+                return out;
+            }
+        }
+        if (previousTier < 3) {
+            out.start = node.srcOffset;
+            out.end = std::min<uint32_t>(node.srcOffset + node.srcLength,
+                                         textLen);
+            out.tier = 3;
+            return out;
+        }
+    }
+    out.start = 0;
+    out.end = textLen;
+    out.tier = 0;
+    return out;
+}

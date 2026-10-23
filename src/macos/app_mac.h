@@ -188,6 +188,11 @@ public:
     // position.
     bool MoveSelectedText(uint32_t drop);
 
+    // Moves the caret to the same column of the row above or
+    // below when it sits in a table (spec AC-10). False when the
+    // caret is not in a table or the move has no target.
+    bool MoveTableRow(bool up, uint32_t* out);
+
     // Whether the selection covers any text.
     bool HasSelection() const { return !sel_.Empty(); }
 
@@ -409,6 +414,12 @@ private:
     // True while the window shows the raw source (spec C2).
     bool sourceView_ = false;
     Selection sel_;
+
+    // The Cmd+A escalation run in a table (plan 19): the tier of
+    // the last press and the caret it left behind. A caret that
+    // moved between presses resets the run to the first tier.
+    int selectAllTier_ = 0;
+    uint32_t selectAllCaret_ = UINT32_MAX;
     EditController editor_;
     UndoStack undo_;
     // The pending typing format: bold or italic toggled with an empty

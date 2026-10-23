@@ -74,6 +74,34 @@ struct TableCellRef {
 // the offset sits in hidden syntax (pipes, dashes, padding). Nearest is
 // searched within the same row first, then the same table. Returns false
 // only when offset belongs to no table.
+// The range a double click takes inside a table cell: the cell's
+// own text, padding and markers excluded (plan 19, tier 1). False
+// when the offset is not inside a cell with text.
+bool CellTextRangeAtOffset(const Document& doc, const std::string& source,
+                           uint32_t offset, uint32_t* outStart,
+                           uint32_t* outEnd);
+
+// The range a triple click takes inside a table cell: the whole
+// row, from the first cell's start to the last cell's end (plan
+// 19). False when the offset is not inside a row.
+bool RowTextRangeAtOffset(const Document& doc, const std::string& source,
+                          uint32_t offset, uint32_t* outStart,
+                          uint32_t* outEnd);
+
+// The progressive Cmd+A tiers in a table (plan 19, spec S8): 0
+// takes the cell, 1 the row, 2 the table and 3 the whole document.
+// The caller holds the tier of the previous press and resets it
+// whenever the caret moves between presses.
+struct TableSelectionTier {
+    uint32_t start = 0;
+    uint32_t end = 0;
+    int tier = 0;
+};
+TableSelectionTier NextTableSelectionTier(const Document& doc,
+                                          const std::string& source,
+                                          uint32_t caret,
+                                          int previousTier);
+
 bool TableCellAtOffset(const Document& doc, const std::string& source,
                        uint32_t offset, TableCellRef* out);
 

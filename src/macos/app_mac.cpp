@@ -1117,6 +1117,23 @@ bool App::WordSpanForOffset(uint32_t offset, uint32_t* outStart,
 }
 
 void App::SelectWordAt(uint32_t offset) {
+    // Inside a table cell a double click takes the whole cell (plan
+    // 19 tier 1); word granularity is for prose only, the same
+    // split the Windows build makes.
+    if (!sourceView_) {
+        uint32_t cellStart = 0;
+        uint32_t cellEnd = 0;
+        if (CellTextRangeAtOffset(document_, buffer_.Text(), offset,
+                                  &cellStart, &cellEnd)) {
+            SetSelection(cellStart, cellEnd);
+            // The next Cmd+A continues at the row, so a double
+            // click followed by Cmd+A walks the same steps a bare
+            // Cmd+A run does (the Windows pre-seed).
+            selectAllTier_ = 1;
+            selectAllCaret_ = cellEnd;
+            return;
+        }
+    }
     uint32_t start = 0;
     uint32_t end = 0;
     if (!WordSpanForOffset(offset, &start, &end)) return;
@@ -1191,6 +1208,18 @@ bool App::ParagraphRangeForOffset(uint32_t offset, uint32_t* outStart,
 }
 
 void App::SelectParagraphAt(uint32_t offset) {
+    // Inside a table cell the paragraph equivalent is the row (plan
+    // 19): the block is the whole table, which only the Cmd+A
+    // tiers expand to.
+    if (!sourceView_) {
+        uint32_t rowStart = 0;
+        uint32_t rowEnd = 0;
+        if (RowTextRangeAtOffset(document_, buffer_.Text(), offset,
+                                 &rowStart, &rowEnd)) {
+            SetSelection(rowStart, rowEnd);
+            return;
+        }
+    }
     uint32_t start = 0;
     uint32_t end = 0;
     if (!ParagraphRangeForOffset(offset, &start, &end)) return;
@@ -1263,7 +1292,28 @@ void App::CutToClipboard() {
 }
 
 void App::SelectAll() {
+    // Progressive selection tiers when the caret sits in a table
+    // cell (plan 19, spec S8): cell, then row, then whole table,
+    // then the whole document. The run escalates only while the
+    // caret has not moved between presses; any other action that
+    // moves the caret resets the run.
+    if (sel_.active.offset != selectAllCaret_) selectAllTier_ = 0;
+
+    // The source view shows the Markdown text, not rendered cells,
+    // so there is nothing to escalate there: one press takes the
+    // whole buffer.
+    if (!sourceView_) {
+        const TableSelectionTier step = NextTableSelectionTier(
+            document_, buffer_.Text(), sel_.active.offset,
+            selectAllTier_);
+        selectAllTier_ = step.tier;
+        SetSelection(step.start, step.end);
+        selectAllCaret_ = step.end;
+        return;
+    }
+    selectAllTier_ = 0;
     SetSelection(0, static_cast<uint32_t>(buffer_.Length()));
+    selectAllCaret_ = sel_.active.offset;
 }
 
 void App::InsertText(const std::string& text) {
@@ -1498,6 +1548,24 @@ bool App::OpenExternalUrl(const std::string& url) const {
                          lower.rfind("mailto:", 0) == 0;
     if (!allowed) return false;
     return mac::OpenExternalUrl(url);
+}
+
+bool App::MoveTableRow(bool up, uint32_t* out) {
+    if (!out) return false;
+    const uint32_t caret = sel_.active.offset;
+    const Node* table = nullptr;
+    for (const Node& node : document_.nodes) {
+        if (node.block != BlockKind::Table) continue;
+        if (caret >= node.srcOffset &&
+            caret < node.srcOffset + node.srcLength) {
+            table = &node;
+            break;
+        }
+    }
+    if (!table) return false;
+    return TableVerticalMove(buffer_.Text(), table->srcOffset,
+                             table->srcOffset + table->srcLength,
+                             caret, up ? -1 : 1, out);
 }
 
 bool App::MoveSelectedText(uint32_t drop) {

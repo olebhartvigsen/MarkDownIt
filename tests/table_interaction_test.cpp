@@ -1349,3 +1349,91 @@ TEST(TableInteraction, DeleteForwardInTheBlankLineBeforeATableKeepsTheTable) {
     EXPECT_FALSE(ec.DeleteForward(&doc));
     EXPECT_EQ(b.Text(), source);
 }
+
+
+TEST(TableSelection, TheCellRowAndTierRangesComeFromTheParsedCells) {
+    const std::string source =
+        "| a | b |\n"
+        "| --- | --- |\n"
+        "| c | d |\n";
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(source, doc));
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    ASSERT_EQ(doc.nodes[0].block, BlockKind::Table);
+
+    // Locate the body cell "c" by its parsed text, so the expected
+    // bounds come from the parser, not from string arithmetic.
+    const TableCell* cellC = nullptr;
+    size_t rowC = 0;
+    for (size_t ri = 0; ri < doc.nodes[0].rows.size(); ++ri) {
+        for (const TableCell& cell : doc.nodes[0].rows[ri].cells) {
+            if (cell.text == U"c") {
+                cellC = &cell;
+                rowC = ri;
+            }
+        }
+    }
+    ASSERT_TRUE(cellC != nullptr);
+    const uint32_t cOffset = cellC->srcOffset;
+
+    // A double click inside "c" takes the whole cell text.
+    uint32_t rs = 0;
+    uint32_t re = 0;
+    EXPECT_TRUE(CellTextRangeAtOffset(doc, source, cOffset, &rs, &re));
+    EXPECT_EQ(rs, cellC->srcOffset);
+    EXPECT_EQ(re, cellC->srcEnd);
+
+    // A triple click takes the whole row: the first cell's start to
+    // the last cell's end.
+    const TableRow& row = doc.nodes[0].rows[rowC];
+    uint32_t rowStart = UINT32_MAX;
+    uint32_t rowEnd = 0;
+    for (const TableCell& cell : row.cells) {
+        rowStart = std::min(rowStart, cell.srcOffset);
+        rowEnd = std::max(rowEnd, cell.srcEnd);
+    }
+    EXPECT_TRUE(RowTextRangeAtOffset(doc, source, cOffset, &rs, &re));
+    EXPECT_EQ(rs, rowStart);
+    EXPECT_EQ(re, rowEnd);
+
+    // Cmd+A escalates cell, row, table, document, and the press after
+    // the document starts over (plan 19, S8).
+    TableSelectionTier tier =
+        NextTableSelectionTier(doc, source, cOffset, 0);
+    EXPECT_EQ(tier.start, cellC->srcOffset);
+    EXPECT_EQ(tier.end, cellC->srcEnd);
+    EXPECT_EQ(tier.tier, 1);
+
+    tier = NextTableSelectionTier(doc, source, cOffset, tier.tier);
+    EXPECT_EQ(tier.start, rowStart);
+    EXPECT_EQ(tier.end, rowEnd);
+    EXPECT_EQ(tier.tier, 2);
+
+    const Node& table = doc.nodes[0];
+    tier = NextTableSelectionTier(doc, source, cOffset, tier.tier);
+    EXPECT_EQ(tier.start, table.srcOffset);
+    EXPECT_EQ(tier.end, table.srcOffset + table.srcLength);
+    EXPECT_EQ(tier.tier, 3);
+
+    tier = NextTableSelectionTier(doc, source, cOffset, tier.tier);
+    EXPECT_EQ(tier.start, 0u);
+    EXPECT_EQ(tier.end, static_cast<uint32_t>(source.size()));
+    EXPECT_EQ(tier.tier, 0);
+
+    // The delimiter row carries no text and takes no cell range: a
+    // double click on its dashes selects nothing.
+    const size_t dash = source.find("---");
+    ASSERT_TRUE(dash != std::string::npos);
+    EXPECT_FALSE(CellTextRangeAtOffset(doc, source,
+                                       static_cast<uint32_t>(dash),
+                                       &rs, &re));
+
+    // Outside a table the first press is the whole document already.
+    const std::string prose = "plain text\n";
+    Document proseDoc;
+    ASSERT_TRUE(ParseMarkdown(prose, proseDoc));
+    tier = NextTableSelectionTier(proseDoc, prose, 3, 0);
+    EXPECT_EQ(tier.start, 0u);
+    EXPECT_EQ(tier.end, static_cast<uint32_t>(prose.size()));
+    EXPECT_EQ(tier.tier, 0);
+}

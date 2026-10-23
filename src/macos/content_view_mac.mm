@@ -1344,6 +1344,19 @@ static const CGFloat kPinchStepMagnification = 0.1;
 
 // Moves the caret to the line above or below.
 - (void)moveVertical:(bool)up extend:(bool)extend {
+    // Inside a table cell Up and Down walk rows and keep the
+    // column (spec AC-10): the logical move comes first and the
+    // visual line move is the fallback, the order the Windows
+    // build uses.
+    if (app_ && content_ && app_->selection().Empty()) {
+        uint32_t target = 0;
+        if (app_->MoveTableRow(up, &target)) {
+            desiredX_ = -1.0f;
+            [self setCaret:target extend:extend];
+            [self caretMoved];
+            return;
+        }
+    }
     [self moveVerticallyBy:0.0f up:up extend:extend];
 }
 

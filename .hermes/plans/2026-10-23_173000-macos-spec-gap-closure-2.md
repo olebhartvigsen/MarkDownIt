@@ -101,3 +101,9 @@ run. Goldens never change.
   allowlist, an internal #anchor moves the viewport instead, View
   Source draws the raw buffer so Find matches raw bytes, and a press
   inside the selection drags it as one undo entry (Esc cancels).
+
+- Batch D (cell selection and tiers) is implemented: a double click
+  takes the cell, a triple click the row, Cmd+A escalates cell, row,
+  table, document with a reset whenever the caret moves, and Up/Down
+  in a cell keep the column. The ranges and the tier step are shared
+  helpers, covered by the portable suite.
