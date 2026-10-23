@@ -189,6 +189,9 @@ void App::NewDocument() {
     dirty_ = false;
     sel_.Collapse(CaretPos{0});
     Reparse();
+    // A new document has no markers: the layer goes with the old
+    // document's identity (highlighting guide 37).
+    LoadMarkers();
 }
 
 bool App::ReloadFile() {
@@ -718,6 +721,22 @@ void App::ClearFormat() {
     ClearInlineFormatting(document_, &buffer_, &sel_, &undo_);
 }
 
+// Whether the selection overlaps any marker. A partial overlap counts,
+// and an unresolved marker counts too: the button shows the state the
+// next click will change (highlighting guide 4 and 6).
+bool App::SelectionHasMarker() const {
+    if (sel_.Empty()) return false;
+
+    const uint32_t start = sel_.Start();
+    const uint32_t end = start + sel_.Length();
+    for (const TextMarker& marker : markerStore_.Markers()) {
+        if (marker.start < end && start < marker.end) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // A selection that touches a marker takes it away, and any other
 // selection makes one. One button, one shortcut, the way the Windows
 // build has it.
@@ -727,20 +746,21 @@ void App::ToggleMarkSelection() {
     const uint32_t start = sel_.Start();
     const uint32_t end = start + sel_.Length();
 
-    // A selection that touches a marker reads as marked.
-    bool marked = false;
-    for (const TextMarker& marker : markerStore_.Markers()) {
-        if (!marker.resolved) continue;
-        if (marker.start < end && start < marker.end) {
-            marked = true;
-            break;
-        }
-    }
-
-    if (marked) {
+    if (SelectionHasMarker()) {
         if (markerStore_.RemoveIntersecting(start, end) == 0) return;
     } else {
-        if (!markerStore_.Add(buffer_.Text(), start, end)) return;
+        // The mark covers drawn text only: hidden Markdown syntax is
+        // trimmed off both ends before anything is stored, so a stored
+        // marker never starts or ends on bytes the renderer does not
+        // draw (highlighting guide 10).
+        uint32_t lo = 0;
+        uint32_t hi = 0;
+        if (!contentView_ ||
+            !contentView_->renderer().ClipToRendered(
+                start, static_cast<uint32_t>(sel_.Length()), &lo, &hi)) {
+            return;  // the selection covers no drawn text
+        }
+        if (!markerStore_.Add(buffer_.Text(), lo, hi)) return;
     }
 
     SaveMarkers();
@@ -764,6 +784,14 @@ void App::RefreshMarkerRanges() {
 void App::SaveMarkers() {
     if (filePath_.empty()) return;
     markerStore_.Save(filePath_, buffer_.Text());
+}
+
+// The document was saved under a new name. The marker sidecar keys off
+// the path, so it follows the document, and the marks on screen are
+// cloned onto the new identity (highlighting guide 12.7 and 37).
+void App::AdoptSavedPath(const std::string& path) {
+    filePath_ = path;
+    SaveMarkers();
 }
 
 // Reads the markers of the document, and re-anchors them.

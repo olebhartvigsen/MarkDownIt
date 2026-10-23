@@ -613,6 +613,11 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     const std::string path = [[panel URL] path].UTF8String;
     if (![self writeToPath:path]) return NO;
 
+    // The document has a new identity, so the marker sidecar follows
+    // it and the marks on screen stay with the document (highlighting
+    // guide 12.7 and 37).
+    app_->AdoptSavedPath(path);
+
     app_->MarkClean();
     settings_.AddRecentFile(path);
     settings_.Save();
@@ -878,11 +883,10 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
         return hasSelection && IsWrappedIn(text, start, end, "`");
     if ([commandId isEqualToString:@"cmdMark"]) {
         if (!hasSelection) return NO;
-        for (const TextMarker& marker : app_->markers().Markers()) {
-            if (!marker.resolved) continue;
-            if (marker.start <= start && end <= marker.end) return YES;
-        }
-        return NO;
+        // The button is pressed whenever the selection overlaps a
+        // marker, a partial overlap and an unresolved marker included
+        // (highlighting guide 4 and 6).
+        return app_->SelectionHasMarker() ? YES : NO;
     }
 
     const uint32_t lineStart = app_->buffer().LineStart(start);
@@ -1111,10 +1115,35 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     [view_ setNeedsDisplay:YES];
 }
 
+// Cmd+K opens the link dialog. The document only changes when there is
+// a selection and the destination is not empty; a cancel, an empty
+// destination or no selection changes nothing (text guide, links on a
+// selection).
 - (void)OnToggleLink {
-    InsertLink(&app_->buffer(), &app_->selection(), "", &app_->undo());
-    app_->OnTextChanged();
-    [view_ setNeedsDisplay:YES];
+    const bool hadSelection = !app_->selection().Empty();
+
+    NSAlert* alert = [[NSAlert alloc] init];
+    [alert setMessageText:@"Insert Link"];
+    [alert setInformativeText:@"The destination of the link."];
+    [alert addButtonWithTitle:@"Insert"];
+    [alert addButtonWithTitle:@"Cancel"];
+
+    NSTextField* urlField =
+        [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 264, 24)];
+    [alert setAccessoryView:urlField];
+
+    [alert beginSheetModalForWindow:window_
+                  completionHandler:^(NSModalResponse response) {
+        const char* entered = [[urlField stringValue] UTF8String];
+        const std::string url = entered ? entered : "";
+        if (response != NSAlertFirstButtonReturn || url.empty() ||
+            !hadSelection) {
+            return;
+        }
+        InsertLink(&app_->buffer(), &app_->selection(), url, &app_->undo());
+        app_->OnTextChanged();
+        [view_ setNeedsDisplay:YES];
+    }];
 }
 
 // ---------------------------------------------------------------------------

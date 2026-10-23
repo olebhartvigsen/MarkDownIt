@@ -104,7 +104,7 @@ arrows), 18 (selection start), 43-45, 51-52.
   and the table-cell highlight half of F14 was closed by the
   caret-model batch.
 
-## Batch 3b: zoom (this push)
+## Batch 3b: zoom (landed in `9676e98`)
 
 - The scroll view does the scrolling: the document view takes the
   content's size at the current zoom, so the scrollers span the whole
@@ -120,20 +120,25 @@ arrows), 18 (selection start), 43-45, 51-52.
   stays centered while it is narrower than the viewport (zoom
   guideline 1.4).
 
-## Batch 4: markers, links, format toggles
+## Batch 4a: markers and the link sheet (this push)
 
 - Mark clips its range to drawn text before it is stored (highlighting
-  spec 10; audit blocking row).
+  spec 10).
 - The Mark toggle reports pressed on overlap, and an unresolved marker
   under the selection counts as marked (spec 4, 6).
-- Save As updates the file path markers key off; File > New clears the
-  marker layer (spec 12.7, 37).
-- Cmd+K opens a link sheet; an empty destination is refused (text spec
-  F6, F8).
-- Format toggles: partial bold extends without nesting, Ctrl+I on bold
-  text adds italic instead of stripping bold, empty caret keeps a
-  pending format with no document change (text spec F3, F4, F5).
-- Cmd+Shift+H marks (highlighting spec 5.1, 20).
+- Save As updates the path the marker sidecar keys off; File > New
+  clears the marker layer (spec 12.7, 37).
+- Cmd+K opens a link sheet; an empty destination, a cancel or no
+  selection changes nothing (text spec, links on a selection).
+- Cmd+Shift+H marks (highlighting spec 20).
+
+## Batch 4b: the format toggles (next push)
+
+- Partial bold extends without nesting, Ctrl+I on bold text adds
+  italic instead of stripping bold, and an empty caret keeps a pending
+  format with no document change: the pending-format port the Windows
+  build already carries (text spec, fed and kursiv rules, empty-caret
+  rules).
 
 ## Batch 5: outline, office, mermaid
 

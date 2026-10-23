@@ -104,6 +104,16 @@ public:
     // makes one.
     void ToggleMarkSelection();
 
+    // Whether the selection overlaps any marker. A partial overlap
+    // counts, and an unresolved marker counts too; both the button
+    // state and the toggle's direction read this (highlighting guide
+    // 4 and 6).
+    bool SelectionHasMarker() const;
+
+    // The document was saved under a new name, so the path the marker
+    // sidecar keys off moves with it (highlighting guide 12.7).
+    void AdoptSavedPath(const std::string& path);
+
     // The table commands. They do nothing when the caret is not in a
     // table, and a table never nests.
     void InsertTable(int cols, int rows);

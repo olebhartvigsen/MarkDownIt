@@ -154,7 +154,13 @@ NSMenu* BuildMainMenu() {
              {"Link", @selector(toggleLink:)},
              {"Highlight", @selector(toggleMark:)},
              {"Clear Formatting", @selector(clearFormat:)}},
-            {"b", "i", "", "", "k", "", ""});
+            {"b", "i", "", "", "k", "h", ""});
+        // Marking carries the Windows shortcut with Command on the
+        // mac: Ctrl+Shift+H becomes Cmd+Shift+H (highlighting guide
+        // 20).
+        [[formatMenu itemWithTitle:@"Highlight"]
+            setKeyEquivalentModifierMask:NSEventModifierFlagCommand |
+                                        NSEventModifierFlagShift];
         // The block commands live in their own menu, the way the Format
         // menu of the other editors has them.
         NSMenu* blockMenu = BuildSubmenu(
