@@ -16,6 +16,7 @@
 
 #include "editcontroller.h"
 #include "mermaid/layout_cache.h"
+#include "mermaid/layout.h"
 #include "mermaid/model.h"
 #include "mermaid/pie_layout.h"
 #include "mermaid/seq_layout.h"
@@ -143,26 +144,45 @@ FontSpec MakeFont(const LayoutMetrics& metrics, float size, bool bold,
     return font;
 }
 
-// The mermaid layout of a block, in the form the painter takes.
-mermaid::MermaidRender MermaidRenderFor(const Node& node) {
-    mermaid::MermaidRender diagram;
-    switch (node.block) {
-        case BlockKind::MermaidPie:
-            diagram.kind = mermaid::MermaidKind::Pie;
-            diagram.pie = node.mermaid_pie;
-            break;
-        case BlockKind::MermaidSequence:
-            diagram.kind = mermaid::MermaidKind::Sequence;
-            diagram.seq = node.mermaid_seq;
-            break;
-        case BlockKind::MermaidFlowchart:
-        default:
-            diagram.kind = mermaid::MermaidKind::Flowchart;
-            diagram.flow = node.mermaid_layout;
-            break;
+// The measurement the shared flowchart layout asks for, answered with
+// the diagram text engine. The labels are joined with the same
+// newline the DirectWrite bridge uses, so both platforms measure the
+// same text, and the widest line and the summed heights are the raw
+// text metrics the layout expects.
+struct EngineMeasureCtx {
+    TextEngine* engine = nullptr;
+    FontSpec font;
+};
+
+mermaid::LabelSize MeasureWithEngine(const std::string& label, float maxWidth,
+                                      void* ctx) {
+    const auto* c = static_cast<const EngineMeasureCtx*>(ctx);
+    if (!c || !c->engine) return {0.0f, 0.0f};
+
+    const std::vector<std::string> lines = mermaid::SplitLabelLines(label);
+    std::string text;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        if (i != 0) text.push_back('\n');
+        text += lines[i];
     }
-    return diagram;
+    if (text.empty()) return {0.0f, 0.0f};
+
+    GlyphRun run;
+    run.text = text;
+    run.font = c->font;
+    const std::vector<TextLine> measured = c->engine->MeasureWrapped(
+        {run}, maxWidth > 0.0f ? maxWidth : 1.0e6f, 0.0f);
+    if (measured.empty()) return {0.0f, 0.0f};
+
+    float width = 0.0f;
+    float height = 0.0f;
+    for (const TextLine& line : measured) {
+        if (line.width > width) width = line.width;
+        height += line.height;
+    }
+    return {width, height};
 }
+
 
 // True when the diagram has a layout to draw.
 bool HasMermaidLayout(const mermaid::MermaidRender& diagram) {
@@ -332,6 +352,54 @@ float MermaidMeasureWidth(const mermaid::MermaidRender& diagram,
 }
 
 }  // namespace
+
+// The mermaid layout of a block, in the form the painter takes.
+//
+// A flowchart is laid out again with the diagram text engine measuring
+// every label, the way the Windows build lays it out with DirectWrite,
+// and the result is cached by fence source and zoom. Without an
+// engine, or when the re-layout comes back empty, the parse-time
+// layout stands.
+mermaid::MermaidRender MacRenderer::MermaidRenderFor(const Node& node) const {
+    mermaid::MermaidRender diagram;
+    switch (node.block) {
+        case BlockKind::MermaidPie:
+            diagram.kind = mermaid::MermaidKind::Pie;
+            diagram.pie = node.mermaid_pie;
+            break;
+        case BlockKind::MermaidSequence:
+            diagram.kind = mermaid::MermaidKind::Sequence;
+            diagram.seq = node.mermaid_seq;
+            break;
+        case BlockKind::MermaidFlowchart:
+        default: {
+            diagram.kind = mermaid::MermaidKind::Flowchart;
+            if (node.mermaid_flowchart && !node.mermaid_source.empty() &&
+                diagramEngine_) {
+                if (auto cached = mermaid_layout_cache_.Find(
+                        node.mermaid_source, zoom_)) {
+                    diagram.flow = cached;
+                    break;
+                }
+                EngineMeasureCtx ctx;
+                ctx.engine = diagramEngine_;
+                ctx.font = DiagramFontFor(node, metrics_.bodyFontSize,
+                                          false, false, false);
+                auto laid = std::make_shared<mermaid::LaidOutFlowchart>(
+                    mermaid::LayoutFlowchartWith(*node.mermaid_flowchart,
+                                                 MeasureWithEngine, &ctx));
+                if (!laid->nodes.empty()) {
+                    mermaid_layout_cache_.Put(node.mermaid_source, zoom_, laid);
+                    diagram.flow = laid;
+                    break;
+                }
+            }
+            diagram.flow = node.mermaid_layout;
+            break;
+        }
+    }
+    return diagram;
+}
 
 MacRenderer::MacRenderer() {
     // The theme, until the caller sets its own: the same numbers the

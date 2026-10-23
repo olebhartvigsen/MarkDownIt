@@ -20,6 +20,7 @@
 #include "image_mac.h"
 #include "searchreplace.h"
 #include "theme.h"
+#include "mermaid/layout_cache.h"
 
 namespace mac {
 
@@ -107,6 +108,9 @@ public:
     void SetZoom(float zoom) {
         zoom_ = zoom;
         metrics_ = ComputeMetrics();
+        // The diagrams are measured at the new zoom from now on. The
+        // cache is keyed by source and zoom, so this is hygiene.
+        mermaid_layout_cache_.Clear();
     }
 
     // The zoom the layout is at.
@@ -256,6 +260,11 @@ private:
     // Returns the height the images take above the text.
     float ChargeForImages(LaidOutBlock* block);
 
+    // The mermaid layout of a block, with flowcharts laid out again
+    // through the diagram text engine and cached by source and zoom,
+    // the way the Windows renderer does it with DirectWrite.
+    mermaid::MermaidRender MermaidRenderFor(const Node& node) const;
+
     // The metrics of the current zoom and width mode, resolved the way
     // the Windows renderer resolves them.
     LayoutMetrics ComputeMetrics() const;
@@ -374,6 +383,10 @@ private:
     void PaintTable(const LaidOutBlock& block, float scrollOffset);
 
     TextEngine* engine_ = nullptr;
+    // The mermaid layouts measured at a zoom, keyed by fence source.
+    // It is mutable because the layout pass caches what it measures.
+    mutable mermaid::MermaidLayoutCache mermaid_layout_cache_;
+
     // The engine the mermaid diagrams are measured with. It belongs to
     // the renderer, which deletes it.
     TextEngine* diagramEngine_ = nullptr;

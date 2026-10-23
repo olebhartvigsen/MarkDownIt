@@ -329,6 +329,16 @@ void App::SetText(const std::string& text) {
     ClearPendingFormat();
 }
 
+void App::AdoptImportedText(const std::string& text) {
+    SetText(text);
+    // The imported markdown is not the file that was open before, so
+    // the document loses its path and its name. Without this a Save
+    // would write the imported text over the previous document.
+    filePath_.clear();
+    isSvg_ = false;
+    svgWrapped_ = false;
+}
+
 // The table the caret is in, and where in it the caret is.
 bool App::CaretTable(tableedit::TableLocation* out) const {
     const Node* table =

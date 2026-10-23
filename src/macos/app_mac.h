@@ -95,6 +95,11 @@ public:
     // Puts new text in the document, which the Word import does.
     void SetText(const std::string& text);
 
+    // Replaces the document with imported text. The document has no
+    // file of its own, and it is dirty, so Save asks for a name and
+    // closing asks whether to save (office spec, Word import).
+    void AdoptImportedText(const std::string& text);
+
     // Takes the formatting away from the selection, and leaves the
     // text as it is.
     void ClearFormat();

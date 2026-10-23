@@ -169,14 +169,22 @@ arrows), 18 (selection start), 43-45, 51-52.
   with its text, its level and whether it is the heading the caret is
   in (spec 22).
 
-## Batch 5b: office and mermaid (next push)
+## Batch 5b: office and mermaid (this push)
 
-- Office: the compatibility report is shown, an import does not keep
-  the previous file path (data loss risk), PDF export options reach
-  the UI (office spec, general clauses; audit blocking gaps 2, 3, 5,
-  6).
-- Mermaid labels are measured with Core Text in the live renderer
-  (mermaid-dagre-port, measurement clause).
+- Office: the compatibility report is shown after an import and after
+  both exports, an import makes the document untitled and dirty so a
+  Save cannot write the imported text over the previous file, and the
+  PDF export carries the whole-document options and reports its page
+  count, the same contract the Windows build has (office spec, general
+  clauses).
+- Mermaid labels are measured with the diagram text engine through the
+  shared measurement seam, and flowcharts are laid out again at the
+  current zoom and cached by fence source and zoom, the way the
+  Windows build measures with DirectWrite (mermaid-dagre-port, the
+  measurement clause).
+
+With this the five-batch gap closure is complete: every batch has
+landed with its CI run green, and the audit rows it named are closed.
 
 ## Recorded as not a macOS gap
 

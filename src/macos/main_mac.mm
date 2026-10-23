@@ -665,11 +665,23 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
         return;
     }
 
-    // The document becomes the markdown of the Word file.
+    // The document becomes the markdown of the Word file. It has no
+    // file of its own yet: untitled and dirty, so Save asks for a name
+    // and closing asks whether to save.
     const std::string markdown = office::OfficeModelToMarkdown(model, report);
-    app_->SetText(markdown);
+    app_->AdoptImportedText(markdown);
+    [window_ setTitle:@"Untitled"];
     [self hideWelcomeScreen];
     [view_ setNeedsDisplay:YES];
+
+    // The report gains everything markdown has no form for, and it is
+    // shown the way the Windows build shows it.
+    NSString* notes = [self compatNotesText:report];
+    if ([notes length] > 0) {
+        [self reportInfo:[NSString stringWithFormat:
+            @"The document was imported with these compatibility notes:"
+            @"\n\n%@", notes]];
+    }
 }
 
 - (void)OnExportWord {
@@ -680,8 +692,19 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     [self exportOfficeDocument:true];
 }
 
-// Writes the document as a Word file or as a PDF.
+// Writes the document as a Word file or as a PDF. The whole document
+// is exported: the model carries the page setup, the same contract the
+// Windows build has.
 - (void)exportOfficeDocument:(bool)asPdf {
+    if (app_->WelcomeMode()) {
+        [self reportError:@"No document is open. Open a markdown file first."];
+        return;
+    }
+    if (app_->sourceText().empty()) {
+        [self reportError:@"The document is empty. Nothing to export."];
+        return;
+    }
+
     office::DocModel model;
     office::CompatReport report;
     std::string error;
@@ -692,14 +715,21 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     }
 
     std::string bytes;
+    int pageCount = 0;
     if (asPdf) {
         office::PdfExportOptions options;
-        if (!office::PdfExport(model, options, bytes, report, error)) {
+        options.all_pages = true;
+        options.first_page = 1;
+        options.last_page = 0;
+        if (!office::PdfExport(model, options, bytes, report, error,
+                               &pageCount) ||
+            bytes.empty()) {
             [self reportError:@"The PDF could not be written."];
             return;
         }
     } else {
-        if (!office::DocxExport(model, bytes, report, error)) {
+        if (!office::DocxExport(model, bytes, report, error) ||
+            bytes.empty()) {
             [self reportError:@"The Word file could not be written."];
             return;
         }
@@ -713,11 +743,30 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     const std::string path = [[panel URL] path].UTF8String;
     std::ofstream file(path, std::ios::binary | std::ios::trunc);
     if (!file) {
-        [self reportError:@"The file could not be saved."];
+        [self reportError:@"Could not write the file. The export was not saved."];
         return;
     }
     file.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
     file.close();
+
+    // The PDF export reports the page count, and both exports report
+    // what they dropped or approximated (office spec, the
+    // compatibility report clause).
+    NSString* notes = [self compatNotesText:report];
+    if (asPdf) {
+        NSMutableString* message = [NSMutableString stringWithFormat:
+            @"The document was exported to:\n%s\n\nPages: %d",
+            path.c_str(), pageCount];
+        if ([notes length] > 0) {
+            [message appendFormat:@"\n\nCompatibility notes:\n\n%@", notes];
+        }
+        [self reportInfo:message];
+    } else if ([notes length] > 0) {
+        NSString* message = [NSString stringWithFormat:
+            @"The document was exported to:\n%s\n\nCompatibility "
+            @"notes:\n\n%@", path.c_str(), notes];
+        [self reportInfo:message];
+    }
 }
 
 - (void)OnClose {
@@ -1234,6 +1283,34 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     [alert setMessageText:message];
     [alert addButtonWithTitle:@"OK"];
     [alert runModal];
+}
+
+// Reports what an office operation did.
+- (void)reportInfo:(NSString*)message {
+    NSAlert* alert = [[NSAlert alloc] init];
+    [alert setMessageText:message];
+    [alert addButtonWithTitle:@"OK"];
+    [alert runModal];
+}
+
+// The compatibility report as alert text: one "- feature: detail" line
+// per dropped or approximated feature. Empty when there was nothing to
+// report.
+- (NSString*)compatNotesText:(const office::CompatReport&)report {
+    if (report.warnings.empty()) return @"";
+    NSMutableString* text = [NSMutableString string];
+    for (const office::CompatWarning& warning : report.warnings) {
+        [text appendString:@"- "];
+        [text appendString:[NSString
+            stringWithUTF8String:warning.feature.c_str()]];
+        if (!warning.detail.empty()) {
+            [text appendString:@": "];
+            [text appendString:[NSString
+                stringWithUTF8String:warning.detail.c_str()]];
+        }
+        [text appendString:@"\n"];
+    }
+    return text;
 }
 
 @end
