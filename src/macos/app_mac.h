@@ -182,6 +182,12 @@ public:
     // Selects a range of the text.
     void SetSelection(uint32_t start, uint32_t end);
 
+    // Moves the selection to the drop offset as one undo entry
+    // (text spec, drag and drop). False when the drop is refused:
+    // inside the range, on table syntax, or with no valid
+    // position.
+    bool MoveSelectedText(uint32_t drop);
+
     // Whether the selection covers any text.
     bool HasSelection() const { return !sel_.Empty(); }
 
@@ -274,6 +280,20 @@ public:
     // source view, drawn text everywhere else, so hidden markers and
     // fence lines never leak into a copy (text spec C2).
     std::string SelectionForClipboard() const;
+
+    // The URL of the link drawn at the offset, empty when the
+    // offset is not part of a link (text spec, link activation).
+    std::string LinkAtOffset(uint32_t offset) const;
+
+    // The document offset of the heading an internal #anchor
+    // names. False when nothing matches.
+    bool HeadingOffsetForAnchor(const std::string& url,
+                                uint32_t* out) const;
+
+    // Opens an external URL through the scheme allowlist: http,
+    // https and mailto, matched without case (link activation 3).
+    // False when the URL is refused or the handoff fails.
+    bool OpenExternalUrl(const std::string& url) const;
 
     // Selects the whole document.
     void SelectAll();

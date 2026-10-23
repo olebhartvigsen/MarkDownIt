@@ -1343,46 +1343,6 @@ static void AppendCodePointUtf8(std::string& out, char32_t cp) {
     }
 }
 
-static std::string SlugifyAnchor(const std::string& value) {
-    std::string result;
-    bool pendingHyphen = false;
-    for (size_t i = 0; i < value.size();) {
-        const unsigned char b = static_cast<unsigned char>(value[i]);
-        if (b < 0x80) {
-            const char c = static_cast<char>(b);
-            if (std::isspace(b) != 0) {
-                pendingHyphen = !result.empty();
-                ++i;
-                continue;
-            }
-            if (std::ispunct(b) != 0 && c != '_' && c != '-') {
-                ++i;
-                continue;
-            }
-            if (pendingHyphen && !result.empty() && result.back() != '-') {
-                result.push_back('-');
-            }
-            pendingHyphen = false;
-            result.push_back((c >= 'A' && c <= 'Z') ?
-                             static_cast<char>(c - 'A' + 'a') : c);
-            ++i;
-            continue;
-        }
-        uint32_t length = (b & 0xE0) == 0xC0 ? 2 :
-                          (b & 0xF0) == 0xE0 ? 3 :
-                          (b & 0xF8) == 0xF0 ? 4 : 1;
-        if (i + length > value.size()) length = 1;
-        if (pendingHyphen && !result.empty() && result.back() != '-') {
-            result.push_back('-');
-        }
-        pendingHyphen = false;
-        result.append(value, i, length);
-        i += length;
-    }
-    while (!result.empty() && result.back() == '-') result.pop_back();
-    return result;
-}
-
 void AppWindow::OpenLink(const std::string& url) {
     if (url.empty()) return;
 

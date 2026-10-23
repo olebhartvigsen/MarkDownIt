@@ -1105,3 +1105,52 @@ TEST(RendererMac, BlankParagraphClickKeepsTheCaretOnTheLine) {
     EXPECT_EQ(offset, 7u);
     EXPECT_EQ(renderer.NormalizeToRenderedCaret(offset), 7u);
 }
+
+
+TEST(RendererMac, SourceModeDrawsTheRawBufferWithEveryByteAddressable) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    // The find guide's view-modes clause (4): the raw buffer, markers
+    // and all, is what the source view draws.
+    const std::string source = "# Title\n\nA **bold** line.\n";
+    renderer.SetSourceText(&source);
+    renderer.SetSourceMode(true);
+
+    // The document is deliberately empty: the raw buffer replaces it.
+    const Document empty;
+    renderer.Measure(empty, 600.0f);
+
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    const LaidOutBlock& block = renderer.blocks()[0];
+    EXPECT_EQ(block.lines.size(), 3u);
+
+    // Every byte of the buffer is drawn, so the map to the source is
+    // the identity over the whole buffer, with the end sentinel the
+    // mapping always carries.
+    EXPECT_EQ(block.visToSrc.size(), source.size() + 1);
+    EXPECT_EQ(block.visToSrc.front(), 0u);
+    EXPECT_EQ(block.visToSrc.back(),
+              static_cast<uint32_t>(source.size()));
+
+    // The find scope accepts raw bytes here: the '#' and the '**'
+    // markers are text on screen.
+    EXPECT_TRUE(renderer.RangeIsRendered(0, 1));
+    EXPECT_TRUE(renderer.RangeIsRendered(11, 2));
+
+    // Nothing is stepped over in the source view, so the caret
+    // normalization keeps every offset exactly where it is.
+    const uint32_t samples[] = {0u, 7u, 11u, 17u, 25u};
+    for (uint32_t at : samples) {
+        EXPECT_EQ(renderer.NormalizeToRenderedCaret(at), at);
+    }
+
+    // Switching back returns to the document layout.
+    renderer.SetSourceMode(false);
+    const Document doc = Doc({Para("hello")});
+    renderer.Measure(doc, 600.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    EXPECT_EQ(renderer.blocks()[0].visToSrc.size(), 6u);
+}

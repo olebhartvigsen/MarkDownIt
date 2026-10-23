@@ -95,3 +95,9 @@ run. Goldens never change.
   placeholder line, the cell wall for the arrows, the forward delete
   guard before a table, the shared row append with portable tests
   (X2), and the Insert Table gating in the menu and the strip.
+
+- Batch C (link activation, source view, text drag) is implemented:
+  a Cmd/Ctrl+click on a link opens it through the http/https/mailto
+  allowlist, an internal #anchor moves the viewport instead, View
+  Source draws the raw buffer so Find matches raw bytes, and a press
+  inside the selection drags it as one undo entry (Esc cancels).

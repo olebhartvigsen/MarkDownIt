@@ -141,6 +141,13 @@ public:
     // owns the string.
     void SetSourceText(const std::string* text) { sourceText_ = text; }
 
+    // Draw the raw source text instead of the document: the source
+    // view the find guide's view-modes clause needs (guide 4).
+    // Every byte is on screen in this mode, so the caret, the
+    // selection and the find scope all work on the raw buffer.
+    void SetSourceMode(bool on) { sourceMode_ = on; }
+    bool inSourceMode() const { return sourceMode_; }
+
     // The theme. The mac theme variant supplies macOS font names, the
     // shared one supplies the spacing.
     void SetTheme(const LayoutMetrics& metrics, const Palette& palette) {
@@ -254,6 +261,9 @@ public:
 
 private:
     // Lays one block out and appends it.
+    // Lays the raw buffer out as one monospaced block whose
+    // map to the source is the identity (find guide 4).
+    void LayoutSourceBlocks(float x, float width, float* y);
     void LayoutBlock(const Node& node, float x, float width, float* y);
 
     // Charges the block for the room its images take and remembers them.
@@ -431,6 +441,8 @@ private:
     // The source text, which the caret normalization reads to skip the
     // markers that follow a link. The App owns the string.
     const std::string* sourceText_ = nullptr;
+    // Whether the raw source text is what is drawn.
+    bool sourceMode_ = false;
 };
 
 }  // namespace mac

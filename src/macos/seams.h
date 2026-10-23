@@ -287,4 +287,9 @@ public:
     virtual std::string GetOpenFilePath() const = 0;
 };
 
+// Opens a URL in the user's browser. The caller has checked the
+// scheme; this only performs the handoff and reports whether the
+// system took it.
+bool OpenExternalUrl(const std::string& url);
+
 }  // namespace mac

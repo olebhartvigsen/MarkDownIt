@@ -162,6 +162,20 @@ public:
     // Turns the word wrap on or off.
     void SetWrap(bool wrap);
 
+    // Switches the drawing to the raw buffer (find guide 4).
+    void SetSourceMode(bool on);
+
+    // The text drag (text spec, drag and drop): a press inside
+    // the selection arms it, the system threshold starts it, and
+    // the release drops it as one undo entry. A press without a
+    // drag collapses the selection at the release.
+    bool ArmTextDrag(float x, float y);
+    void DragTextTo(float x, float y);
+    bool textDragArmed() const { return textDragArmed_; }
+    bool textDragActive() const { return textDragActive_; }
+    uint32_t TextDragDropOffset() const { return textDragTarget_; }
+    void CancelTextDrag();
+
     // Sets the width of the text column. The modes are the ones the
     // settings keep.
     void SetContentWidthMode(int mode);
@@ -192,6 +206,14 @@ private:
     std::function<void(float)> scrollTo_;
     // The platform layer's layout request.
     std::function<void()> layoutChanged_;
+    // The state of the text drag: armed by a press inside the
+    // selection, active past the drag threshold, with the drop
+    // target kept in source offsets.
+    bool textDragArmed_ = false;
+    bool textDragActive_ = false;
+    float textDragDownX_ = 0.0f;
+    float textDragDownY_ = 0.0f;
+    uint32_t textDragTarget_ = UINT32_MAX;
     // Whether the caret is showing right now.
     bool caretVisible_ = true;
 };

@@ -587,6 +587,16 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
     int prevDepth = -1;
     bool first = true;
 
+    // The source view (find guide 4) lays the raw buffer out
+    // instead of the document: one monospace block with every
+    // byte on screen, so the caret, the selection and the find
+    // scope work on raw bytes.
+    if (sourceMode_) {
+        LayoutSourceBlocks(originX_, contentWidth_, &y);
+        totalHeight_ = y + metrics_.padTop * 2.0f;
+        return totalHeight_;
+    }
+
     for (const Node& node : doc.nodes) {
         // The gap belongs to the block that follows it, and the first
         // block gets none, the same model the Windows renderer uses.
@@ -667,6 +677,49 @@ float MacRenderer::ChargeForImages(LaidOutBlock* block) {
     }
     block->imagesHeight = imageHeight;
     return imageHeight;
+}
+
+void MacRenderer::LayoutSourceBlocks(float x, float width, float* y) {
+    if (!sourceText_ || sourceText_->empty()) return;
+
+    // The whole buffer is one block of monospace text, with the line
+    // breaks kept inside the run so Core Text breaks the lines: the
+    // same shape the code block path measures, and the same rule the
+    // Windows source view follows (one wrapped monospaced layout of
+    // the raw buffer).
+    LaidOutBlock block;
+    block.kind = BlockKind::Paragraph;
+    block.x = x;
+    block.width = width;
+    const std::string& text = *sourceText_;
+
+    GlyphRun run;
+    run.text = text;
+    run.font = MakeFont(metrics_, metrics_.codeFontSize * kPtToDip * zoom_,
+                        false, false, true);
+    const Color color = ToColor(palette_.textPrimary);
+    run.r = color.r;
+    run.g = color.g;
+    run.b = color.b;
+    run.a = color.a;
+    std::vector<GlyphRun> runs;
+    runs.push_back(std::move(run));
+
+    block.lines = engine_->MeasureWrapped(
+        runs, width - metrics_.codePad * 2.0f, 0.0f);
+    ApplyLineSpacing(&block.lines, metrics_.codeFontSize,
+                     metrics_.codeLineHeight, 1.0f);
+    for (const TextLine& line : block.lines) {
+        block.height += line.height;
+    }
+
+    // Every byte is drawn in this mode, so the map to the source is
+    // the identity over the whole buffer.
+    AppendCodeMapping(text, 0, &block.visToSrc, &block.visToSrcEnd);
+
+    block.y = *y;
+    *y += block.height;
+    blocks_.push_back(std::move(block));
 }
 
 void MacRenderer::LayoutBlock(const Node& node, float x, float width,
@@ -1675,7 +1728,9 @@ uint32_t MacRenderer::NormalizeToRenderedCaret(uint32_t offset) const {
             // follow it are stepped over, so a caret at the visual end
             // of bold or italic text stays outside the syntax.
             uint32_t normalized = span.end;
-            if (sourceText_) {
+            // The source view draws the markers too, so nothing
+            // is stepped over there (find guide 4).
+            if (sourceText_ && !sourceMode_) {
                 const std::string& text = *sourceText_;
                 while (normalized < text.size() &&
                        (text[normalized] == '*' || text[normalized] == '_' ||

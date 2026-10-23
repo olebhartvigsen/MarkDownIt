@@ -107,6 +107,12 @@ bool TableDelimiterRange(const Document& doc, const std::string& source,
 // to single spaces (a nested table cannot be expressed).
 std::string SanitizePasteForTableCell(const std::string& pasted);
 
+// The slug an internal #anchor link matches against a heading's
+// text, the same fold the Windows app applies: punctuation and
+// whitespace become hyphens, ASCII letters lower-case, the rest
+// passes through unchanged.
+std::string SlugifyAnchor(const std::string& value);
+
 // Insert or remove a column across every line of a table's source span.
 //
 // Both rewrite the whole span in one pass and report the caret to restore,

@@ -31,6 +31,22 @@
 #include "menu_mac.h"
 #include "ribbon_mac.h"
 #include "table_picker_mac.h"
+
+namespace mac {
+
+// Opens a URL in the user's browser. The caller has checked the
+// scheme; this only performs the handoff.
+bool OpenExternalUrl(const std::string& url) {
+    if (url.empty()) return false;
+    NSString* text = [NSString stringWithUTF8String:url.c_str()];
+    if (text == nil) return false;
+    NSURL* url_target = [NSURL URLWithString:text];
+    if (url_target == nil) return false;
+    return [[NSWorkspace sharedWorkspace] openURL:url_target] ? true
+                                                             : false;
+}
+
+}  // namespace mac
 #include "crash_trace_mac.h"
 #include "fonts_mac.h"
 #include "settings_mac.h"
@@ -873,10 +889,18 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 - (void)OnToggleSourceView {
     sourceView_ = !sourceView_;
     // The app needs the flag too: it decides what a copy carries
-    // (spec C2).
+    // (spec C2) and which bytes the find scope accepts.
     app_->SetSourceView(sourceView_);
-    [self ribbonSync];
+    // The view really switches the drawing now: the renderer lays
+    // the raw buffer out as one monospace block, every byte on
+    // screen, so Find matches raw bytes the way the Windows view
+    // does (find guide 4).
+    content_->SetSourceMode(sourceView_);
     [view_ setNeedsDisplay:YES];
+    if (app_->findBar().IsVisible()) {
+        app_->RefreshFindResults(false);
+    }
+    [self ribbonSync];
 }
 
 - (void)OnReload {

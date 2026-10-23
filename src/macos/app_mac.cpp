@@ -17,7 +17,9 @@
 #include "inputfilter.h"
 #include "navigation.h"
 #include "parser.h"
+#include "seams.h"
 #include "tableedit.h"
+#include "textdrag.h"
 #include "textenc.h"
 
 namespace mac {
@@ -1394,6 +1396,176 @@ void App::Redo() {
 
 void App::SetContentView(ContentView* view) {
     contentView_.reset(view);
+}
+
+}  // namespace mac
+
+namespace mac {
+
+namespace {
+
+// One code point to UTF-8, the same encoding the Windows app writes
+// when it builds a heading's text for anchor matching.
+void AppendCodePointUtf8(std::string* out, char32_t cp) {
+    if (cp <= 0x7F) {
+        out->push_back(static_cast<char>(cp));
+    } else if (cp <= 0x7FF) {
+        out->push_back(static_cast<char>(0xC0 | (cp >> 6)));
+        out->push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else if (cp <= 0xFFFF) {
+        out->push_back(static_cast<char>(0xE0 | (cp >> 12)));
+        out->push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out->push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else {
+        out->push_back(static_cast<char>(0xF0 | (cp >> 18)));
+        out->push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+        out->push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out->push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    }
+}
+
+}  // namespace
+
+std::string App::LinkAtOffset(uint32_t offset) const {
+    // The parser records the drawn link text and its byte range, not
+    // the Markdown delimiters around it, so a hit on the drawn text is
+    // a hit on the link (rule 6: the hidden markers never take a
+    // caret, and never take the activation either).
+    for (const Node& node : document_.nodes) {
+        for (const InlineBlock& ib : node.children) {
+            if (ib.kind != InlineKind::Link) continue;
+            const uint32_t end = ib.srcOffset + ib.srcLength;
+            if (offset >= ib.srcOffset && offset < end) return ib.url;
+            if (offset == end && contentView_ &&
+                !contentView_->renderer().OffsetIsRendered(offset)) {
+                return ib.url;
+            }
+        }
+        if (node.block != BlockKind::Table) continue;
+        for (const TableRow& row : node.rows) {
+            for (const TableCell& cell : row.cells) {
+                for (const TableLink& link : cell.links) {
+                    const uint32_t end = link.srcOffset + link.srcLength;
+                    if (offset >= link.srcOffset && offset < end) {
+                        return link.url;
+                    }
+                    if (offset == end && contentView_ &&
+                        !contentView_->renderer().OffsetIsRendered(offset)) {
+                        return link.url;
+                    }
+                }
+            }
+        }
+    }
+    return std::string();
+}
+
+bool App::HeadingOffsetForAnchor(const std::string& url,
+                                 uint32_t* out) const {
+    if (url.empty() || url[0] != '#') return false;
+    const std::string anchor = SlugifyAnchor(url.substr(1));
+    for (const Node& node : document_.nodes) {
+        if (node.block != BlockKind::Heading) continue;
+        std::string headingText;
+        for (const InlineBlock& ib : node.children) {
+            for (char32_t cp : ib.text) {
+                AppendCodePointUtf8(&headingText, cp);
+            }
+        }
+        if (SlugifyAnchor(headingText) == anchor) {
+            if (out) *out = node.contentOffset;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool App::OpenExternalUrl(const std::string& url) const {
+    if (url.empty()) return false;
+    // Control characters mark a crafted destination and are refused
+    // before anything opens (rule 3).
+    for (char c : url) {
+        if (static_cast<unsigned char>(c) < 0x20) return false;
+    }
+    std::string lower;
+    lower.reserve(url.size());
+    for (char c : url) {
+        lower.push_back((c >= 'A' && c <= 'Z') ?
+                        static_cast<char>(c - 'A' + 'a') : c);
+    }
+    const bool allowed = lower.rfind("http://", 0) == 0 ||
+                         lower.rfind("https://", 0) == 0 ||
+                         lower.rfind("mailto:", 0) == 0;
+    if (!allowed) return false;
+    return mac::OpenExternalUrl(url);
+}
+
+bool App::MoveSelectedText(uint32_t drop) {
+    if (sel_.Empty()) return false;
+
+    // The drop runs through the canonical position model: the point
+    // becomes a source offset, and that offset is normalized to the
+    // rendered caret the same way every other position is (drag and
+    // drop 5).
+    if (contentView_) {
+        const uint32_t normalized =
+            contentView_->renderer().NormalizeToRenderedCaret(drop);
+        if (normalized == UINT32_MAX) return false;
+        drop = normalized;
+    }
+
+    // Table guard: a drop inside a cell may not carry table syntax,
+    // pipes or line breaks would corrupt the row, and a drop on the
+    // delimiter row is refused outright (the same rule the Windows
+    // drop follows).
+    const std::string& text = buffer_.Text();
+    TableCellRef dropRef;
+    const bool dropInTable =
+        TableCellAtOffset(document_, text, drop, &dropRef);
+    if (dropInTable && dropRef.separatorRow) return false;
+
+    std::string moved;
+    uint32_t newStart = 0;
+    if (!MoveTextRange(text, sel_.Start(), sel_.Length(), drop,
+                       &moved, &newStart)) {
+        return false;
+    }
+
+    uint32_t segmentLen = sel_.Length();
+    if (dropInTable) {
+        std::string segment = moved.substr(newStart, segmentLen);
+        if (segment.find('|') != std::string::npos) return false;
+        segment = SanitizePasteForTableCell(segment);
+        if (segment.size() != segmentLen) {
+            moved.replace(newStart, segmentLen, segment);
+            segmentLen = static_cast<uint32_t>(segment.size());
+        }
+    }
+
+    const Selection before = sel_;
+    const std::string original = text;
+    buffer_.Splice(0, static_cast<uint32_t>(original.size()), moved);
+    Selection after;
+    after.anchor = CaretPos{newStart};
+    after.active = CaretPos{newStart + segmentLen};
+    sel_ = after;
+
+    // One undo entry for the whole move (drag and drop 4): the entry
+    // replaces the buffer, so undo restores the text and the original
+    // selection together.
+    UndoEntry entry{};
+    entry.offset = 0;
+    entry.removed = original;
+    entry.inserted = moved;
+    entry.selBefore = before;
+    entry.selAfter = after;
+    entry.timestamp = 0;
+    entry.type = EditType::Other;
+    undo_.Push(entry);
+    editor_.BreakUndoCoalesce();
+    OnTextChanged();
+    OnSelectionChanged();
+    return true;
 }
 
 }  // namespace mac

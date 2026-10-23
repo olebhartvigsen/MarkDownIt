@@ -14,6 +14,7 @@
 #import <Foundation/Foundation.h>
 
 #include <algorithm>
+#include <cmath>
 
 #include "content_nsview_mac.h"
 #include "cg_target_mac.h"
@@ -153,6 +154,27 @@ void ContentView::Draw(RenderTarget* target) {
             drawn.y = y;
             drawn.width = 1.0f;
             drawn.height = height > 0.0f ? height : CaretHeight();
+            target->FillRect(drawn, CaretColor());
+        }
+    }
+
+    // A text drag paints its drop caret on top, so the user sees
+    // where the moved text lands (drag and drop 3).
+    if (textDragActive_ && textDragTarget_ != UINT32_MAX) {
+        float dropX = 0.0f;
+        float dropY = 0.0f;
+        float dropW = 0.0f;
+        float dropH = 0.0f;
+        const uint32_t dropOffset =
+            renderer_.NormalizeToRenderedCaret(textDragTarget_);
+        if (dropOffset != UINT32_MAX &&
+            renderer_.OffsetToRect(dropOffset, &dropX, &dropY,
+                                   &dropW, &dropH)) {
+            Rect drawn;
+            drawn.x = dropX;
+            drawn.y = dropY;
+            drawn.width = 1.0f;
+            drawn.height = dropH > 0.0f ? dropH : CaretHeight();
             target->FillRect(drawn, CaretColor());
         }
     }
@@ -334,6 +356,48 @@ void ContentView::SetCaretVisible(bool visible) {
 void ContentView::SetWrap(bool wrap) {
     renderer_.SetWrap(wrap);
     Relayout();
+}
+
+void ContentView::SetSourceMode(bool on) {
+    renderer_.SetSourceMode(on);
+    Relayout();
+}
+
+bool ContentView::ArmTextDrag(float x, float y) {
+    if (!app_ || app_->selection().Empty()) return false;
+    const uint32_t offset = HitTestPoint(x, y);
+    if (offset == UINT32_MAX) return false;
+    const uint32_t start = app_->selection().Start();
+    const uint32_t end = app_->selection().End();
+    if (offset < start || offset >= end) return false;
+    textDragArmed_ = true;
+    textDragActive_ = false;
+    textDragDownX_ = x;
+    textDragDownY_ = y;
+    textDragTarget_ = UINT32_MAX;
+    return true;
+}
+
+void ContentView::DragTextTo(float x, float y) {
+    if (!textDragArmed_) return;
+    if (!textDragActive_) {
+        // The system drag threshold, the same four points the
+        // Windows build reads from SM_CXDRAG: below it the press
+        // is still a plain click (drag and drop 1).
+        if (std::abs(x - textDragDownX_) < 4.0f &&
+            std::abs(y - textDragDownY_) < 4.0f) {
+            return;
+        }
+        textDragActive_ = true;
+    }
+    const uint32_t offset = HitTestPoint(x, y);
+    if (offset != UINT32_MAX) textDragTarget_ = offset;
+}
+
+void ContentView::CancelTextDrag() {
+    textDragArmed_ = false;
+    textDragActive_ = false;
+    textDragTarget_ = UINT32_MAX;
 }
 
 void ContentView::SetContentWidthMode(int mode) {
@@ -622,6 +686,31 @@ static const CGFloat kPinchStepMagnification = 0.1;
     const NSEventModifierFlags flags =
         [event modifierFlags] & NSEventModifierFlagDeviceIndependentFlagsMask;
 
+    // A modified click on a link activates it (link activation
+    // 1-6): an internal anchor moves the viewport, an allowlisted
+    // external URL opens in the browser, and anything else is
+    // consumed without an external action. The plain click keeps
+    // placing the caret, so a link never blocks editing.
+    if (clicks == 1 &&
+        (flags & (NSEventModifierFlagCommand |
+                  NSEventModifierFlagControl)) != 0 &&
+        (flags & NSEventModifierFlagShift) == 0) {
+        const uint32_t offset = content_->HitTestPoint(
+            static_cast<float>(point.x), static_cast<float>(point.y));
+        if (offset != UINT32_MAX) {
+            const std::string url = app_->LinkAtOffset(offset);
+            if (!url.empty()) {
+                uint32_t heading = 0;
+                if (app_->HeadingOffsetForAnchor(url, &heading)) {
+                    content_->ScrollToOffset(heading);
+                } else {
+                    app_->OpenExternalUrl(url);
+                }
+                return;
+            }
+        }
+    }
+
     // A shift click extends the selection from the anchor instead of
     // placing a caret, the way the Windows window works.
     if (clicks == 1 && (flags & NSEventModifierFlagShift) != 0) {
@@ -645,6 +734,16 @@ static const CGFloat kPinchStepMagnification = 0.1;
     }
 
     dragMode_ = 0;
+
+    // A press inside the current selection arms a text drag
+    // instead of placing a new selection (drag and drop 1); the
+    // release without a drag collapses the selection then.
+    if (content_->ArmTextDrag(static_cast<float>(point.x),
+                              static_cast<float>(point.y))) {
+        [self setNeedsDisplay:YES];
+        return;
+    }
+
     content_->PlaceCaretAt(static_cast<float>(point.x),
                            static_cast<float>(point.y));
     [self setNeedsDisplay:YES];
@@ -859,6 +958,17 @@ static const CGFloat kPinchStepMagnification = 0.1;
     const NSPoint point = [self convertPoint:[event locationInWindow]
                                     fromView:nil];
     lastDragPoint_ = point;
+
+    // An armed text drag moves the drop target instead of the
+    // selection (drag and drop 1-3).
+    if (content_->textDragArmed() || content_->textDragActive()) {
+        content_->DragTextTo(static_cast<float>(point.x),
+                             static_cast<float>(point.y));
+        [self updateAutoscroll];
+        [self setNeedsDisplay:YES];
+        return;
+    }
+
     content_->ExtendSelectionTo(static_cast<float>(point.x),
                                  static_cast<float>(point.y), dragMode_);
     [self updateAutoscroll];
@@ -866,8 +976,28 @@ static const CGFloat kPinchStepMagnification = 0.1;
 }
 
 - (void)mouseUp:(NSEvent*)event {
-    (void)event;
     [self stopAutoscroll];
+    if (content_->textDragArmed() || content_->textDragActive()) {
+        const bool dragged = content_->textDragActive();
+        const uint32_t drop = content_->TextDragDropOffset();
+        content_->CancelTextDrag();
+        if (dragged) {
+            // The drop is one undo entry, and the moved text
+            // stays selected (drag and drop 3-4).
+            if (drop != UINT32_MAX) app_->MoveSelectedText(drop);
+            [self caretMoved];
+        } else {
+            // No drag: the release collapses the selection at
+            // the normalized click position (drag and drop 1).
+            const NSPoint point = [self convertPoint:[event locationInWindow]
+                                            fromView:nil];
+            content_->PlaceCaretAt(static_cast<float>(point.x),
+                                   static_cast<float>(point.y));
+        }
+        [self setNeedsDisplay:YES];
+        return;
+    }
+    (void)event;
     [self setNeedsDisplay:YES];
 }
 
@@ -982,6 +1112,16 @@ static const CGFloat kPinchStepMagnification = 0.1;
             [self caretMoved];
             return;
         }
+    }
+
+    // Esc ends a text-drag attempt without changing anything
+    // (drag and drop 7): the text, the selection and the history
+    // stay as they were.
+    if ([event keyCode] == 53 &&
+        (content_->textDragArmed() || content_->textDragActive())) {
+        content_->CancelTextDrag();
+        [self setNeedsDisplay:YES];
+        return;
     }
 
     [self interpretKeyEvents:@[event]];
