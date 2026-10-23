@@ -27,8 +27,14 @@ public:
     // The model, which the owner drives.
     FindBarModel& model() { return model_; }
 
-    // Shows the bar. The replace half comes on in the replace mode.
+    // Shows the bar in the given mode. Both rows stay on screen; the
+    // mode only enables or greys out the replace half.
     void Show(FindBarMode mode);
+
+    // Re-reads the model into the controls, so a fresh count, a fresh
+    // enable state and a status message show up right away. The owner
+    // calls this after it refreshed the search.
+    void SyncControls();
 
     // Hides the bar.
     void Hide();

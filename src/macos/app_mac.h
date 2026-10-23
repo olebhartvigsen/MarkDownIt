@@ -275,9 +275,22 @@ public:
     // The find bar, which the window puts above the document.
     FindBar& findBar() { return *findBar_; }
 
+    // The find bar came or went. The window gives the strip its height
+    // from this call and hands the focus back to the document on the
+    // way out.
+    void SetFindVisibilityCallback(std::function<void(bool)> callback) {
+        findVisibilityChanged_ = callback;
+    }
+
     // Re-runs the search against the live document and publishes the
-    // result.
-    void RefreshFindResults();
+    // result. `adoptCurrentMatch` re-aims the current match at the
+    // caret, which an incremental search wants and a document edit
+    // does not.
+    void RefreshFindResults(bool adoptCurrentMatch);
+
+    // Selects the current match and brings it into view. Navigation
+    // and every refresh end here.
+    void ApplyFindSelection(uint32_t offset, uint32_t length);
 
     // Replaces the range the find bar stands on.
     void ReplaceMatch(uint32_t offset, uint32_t length);
@@ -319,6 +332,8 @@ private:
     std::function<void()> reloadHandler_;
     // The find bar, which owns the search state.
     std::unique_ptr<FindBar> findBar_;
+    // The window, told when the bar comes and goes.
+    std::function<void(bool)> findVisibilityChanged_;
     bool dirty_ = false;
     std::unique_ptr<ContentView> contentView_;
 };

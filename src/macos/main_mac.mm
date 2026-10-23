@@ -94,6 +94,8 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     bool wrap_;
     // The width mode of the text column.
     int contentWidthMode_;
+    // The find bar's height, which follows its visibility.
+    NSLayoutConstraint* findBarHeightConstraint_;
 }
 - (instancetype)init;
 - (void)OpenPath:(const std::string&)path;
@@ -121,6 +123,9 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 - (void)zoomIn:(id)sender;
 - (void)zoomOut:(id)sender;
 - (void)zoomReset:(id)sender;
+// The find bar's layout hook: its height and the focus follow its
+// visibility.
+- (void)syncFindBarLayout:(BOOL)visible;
 - (void)toggleSourceView:(id)sender;
 - (void)toggleOutline:(id)sender;
 - (void)toggleWrap:(id)sender;
@@ -262,14 +267,21 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     });
 
     // The find bar sits above the document. It is in the layout from
-    // the start and is hidden when it is not in use, so the document
-    // does not jump around when the bar opens and closes.
+    // the start, hidden until it is used.
+    //
+    // The height read here is zero, because the bar starts hidden, so
+    // the constraint is kept and the bar pushes its real height
+    // through the callback below when it comes and goes.
     NSView* findBarView = (__bridge NSView*)app_->findBar().view();
-    const float findBarHeight = app_->findBar().Height();
     [findBarView setTranslatesAutoresizingMaskIntoConstraints:NO];
-    [NSLayoutConstraint activateConstraints:@[
-        [findBarView.heightAnchor constraintEqualToConstant:findBarHeight]
-    ]];
+    findBarHeightConstraint_ =
+        [findBarView.heightAnchor
+            constraintEqualToConstant:app_->findBar().Height()];
+    [findBarHeightConstraint_ setActive:YES];
+    __weak id weakSelf = self;
+    app_->SetFindVisibilityCallback([weakSelf](bool visible) {
+        [weakSelf syncFindBarLayout:visible];
+    });
 
     splitView_ = [[NSSplitView alloc] initWithFrame:frame];
     [splitView_ setVertical:YES];
@@ -681,6 +693,20 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     // The window asks for the changes itself, so the question is asked
     // in one place.
     [window_ close];
+}
+
+// The find bar came on or went off screen. The height constraint is
+// pushed here, because the bar reads zero while it is hidden, and the
+// document takes the focus back when the bar closes.
+- (void)syncFindBarLayout:(BOOL)visible {
+    findBarHeightConstraint_.constant = app_->findBar().Height();
+    // The document area changes with the bar, and the find code scrolls
+    // the match into view right after this, so the layout is settled
+    // first.
+    [window_ layoutIfNeeded];
+    if (!visible) {
+        [window_ makeFirstResponder:view_];
+    }
 }
 
 - (void)OnFind {

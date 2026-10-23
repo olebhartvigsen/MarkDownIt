@@ -70,7 +70,7 @@ S2, S4, S5, S6, S7, C2 (partly), Z1; wp-guidelines A, B, C, D, E, G,
 H (new tests), ARCH-1, ARCH-2; table rules 5-7 and 12-13 (hit test and
 arrows), 18 (selection start), 43-45, 51-52.
 
-## Batch 2: table keyboard and paste
+## Batch 2: table keyboard and paste (landed in `03999d3`)
 
 - Tab and Shift+Tab move cells through the shared table model, Tab in
   the last cell adds a row (table rules 9, 10, 11, 14, 37, 52).
@@ -83,17 +83,30 @@ arrows), 18 (selection start), 43-45, 51-52.
   typing-run pattern (audit note), and the shared-controller fix for
   it is a follow-up.
 
-## Batch 3: find bar and zoom
+## Batch 3a: the find bar (this push)
 
-- The find bar's height constraint is captured while hidden, so the
-  bar is pinned to zero height (find/replace audit, blocking gap 1).
-- Enter, Shift+Enter and Escape in the bar; the counter, the "No
-  matches" text and the replacement count; buttons re-enable after a
-  search; the current match scrolls into view; results refresh on edit
-  and highlights clear on close (gaps 2, 4, 5, 6, 7).
-- The search scope becomes drawn text through `ClipToRendered` /
-  `RangeIsRendered` (spec 4, F12, F14).
-- Zoom: Cmd+wheel, scroll clamping, a horizontal scroller bound to the
+- The find bar's height constraint follows its visibility, so the
+  strip takes its 68 points when it opens and gives them back on
+  close, and the focus returns to the document (find/replace audit,
+  blocking gap 1; F38). The replace half greys out in Find mode
+  instead of disappearing (F37).
+- Enter steps to the next match, Shift+Enter to the previous one and
+  Escape closes the bar (F4, F6).
+- The counter shows "3 of 17" or "No matches", the status line shows
+  "14 replacements made.", and the controls re-enable through a sync
+  path after every search (F8, F22, F26, F32; blocking gaps 2 and 6).
+- Navigation and every refresh select the current match and scroll it
+  into view; the current-match tint is re-published on navigation, the
+  results refresh on every edit, and the highlights clear on close
+  (F15, F16, F41, F7; blocking gaps 4 and 7).
+- The search scope becomes drawn text through `RangeIsRendered`, and
+  Find stays closed in welcome mode (spec 4, F12). The rect mapping
+  and the table-cell highlight half of F14 was closed by the
+  caret-model batch.
+
+## Batch 3b: zoom (next push)
+
+- Cmd+wheel, scroll clamping, a horizontal scroller bound to the
   content, and the axis centred when the content is smaller (zoom
   guideline 1.4, 1.6, 4; find/replace audit Z8, Z9, Z11-Z14, Z21, Z22,
   Z24).

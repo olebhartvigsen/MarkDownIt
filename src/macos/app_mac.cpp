@@ -33,6 +33,18 @@ Clipboard& TheClipboard() {
 
 }  // namespace
 
+namespace {
+
+// The find scope: a range takes part in a search only when it is
+// drawn, so the hidden markers are never searched. It is the same
+// rule the Windows window applies.
+bool FindScopeIsRendered(uint32_t start, uint32_t length, void* context) {
+    const auto* renderer = static_cast<const MacRenderer*>(context);
+    return renderer != nullptr && renderer->RangeIsRendered(start, length);
+}
+
+}  // namespace
+
 App::App() : editor_(&buffer_, &sel_) {
     editor_.SetUndoStack(&undo_);
     findBar_ = std::make_unique<FindBar>();
@@ -44,11 +56,20 @@ App::App() : editor_(&buffer_, &sel_) {
             return sel_.active.offset;
         },
         .onSearchChanged = [this] {
-            RefreshFindResults();
+            // An incremental search re-aims the current match at the
+            // caret on every keystroke.
+            RefreshFindResults(true);
         },
         .onSelectionChanged = [this](uint32_t offset, uint32_t length) {
-            SetSelection(offset, offset + length);
-            if (contentView_) contentView_->Invalidate();
+            // The selection follows the match, and the highlight index
+            // is re-published, so the current tint never lags a
+            // navigation (guide 6).
+            ApplyFindSelection(offset, length);
+            if (contentView_) {
+                FindReplaceState& state = findBar_->model().state();
+                contentView_->SetSearchMatches(&state.Matches(),
+                                               state.CurrentIndex());
+            }
         },
         .onReplaceCurrent = [this](uint32_t offset, uint32_t length) {
             ReplaceMatch(offset, length);
@@ -178,46 +199,85 @@ bool App::ReloadFile() {
 }
 
 void App::ShowFind(FindBarMode mode) {
+    // Without a document there is nothing to search; the Windows
+    // window returns the same way.
+    if (WelcomeMode()) return;
+
     // The field starts with the selected text, the way the Windows bar
     // does it, so the user can widen the query.
     const std::wstring query = textenc::Utf8ToWide(SelectedText());
     findBar_->model().SetSearchText(query);
     findBar_->model().SetReplaceEnabled(true);
     findBar_->Show(mode);
-    RefreshFindResults();
+    // The strip has its height now, so the window lays the document
+    // out under it before the first match is scrolled into view.
+    if (findVisibilityChanged_) findVisibilityChanged_(true);
+    RefreshFindResults(true);
 }
 
+// Closing the bar says nothing about the document, the selection or
+// the clipboard; only the marks go away (guide 2.4).
 void App::HideFind() {
     findBar_->Hide();
-    if (contentView_) contentView_->Invalidate();
+    if (contentView_) {
+        contentView_->SetSearchMatches(nullptr, -1);
+        contentView_->Invalidate();
+    }
+    if (findVisibilityChanged_) findVisibilityChanged_(false);
 }
 
-void App::RefreshFindResults() {
+// The current match becomes the document selection and is scrolled
+// into view, so the reader sees what Replace will hit (guide 7).
+void App::ApplyFindSelection(uint32_t offset, uint32_t length) {
+    if (length == 0) return;
+
+    SetSelection(offset, offset + length);
+    if (contentView_) {
+        contentView_->ScrollToOffset(offset);
+    }
+}
+
+void App::RefreshFindResults(bool adoptCurrentMatch) {
     FindReplaceState& state = findBar_->model().state();
-    // The search runs over the whole buffer. A match never spans a line
-    // break, so the search cannot join two blocks.
-    state.Refresh(buffer_.Text(), nullptr, nullptr);
-    if (state.HasQuery()) {
+    // The search covers the drawn text, never the hidden markers; the
+    // same scope the Windows window passes.
+    state.Refresh(buffer_.Text(), &FindScopeIsRendered,
+                  contentView_
+                      ? const_cast<MacRenderer*>(&contentView_->renderer())
+                      : nullptr);
+    if (adoptCurrentMatch && state.HasQuery()) {
         state.AdoptMatchAt(sel_.active.offset);
     }
     findBar_->model().SyncFromState();
+    findBar_->SyncControls();
 
     if (contentView_) {
         contentView_->SetSearchMatches(&state.Matches(), state.CurrentIndex());
+    }
+
+    // The current match becomes the selection and scrolls into view,
+    // so the reader sees where the search landed.
+    TextMatch current{};
+    if (state.CurrentMatch(&current)) {
+        ApplyFindSelection(current.start, current.length);
     }
 }
 
 void App::ReplaceMatch(uint32_t offset, uint32_t length) {
     if (length == 0) return;
 
+    // The field holding nothing means the match goes away, which is
+    // what replacing it with an empty string is.
     const std::wstring replacement = findBar_->model().GetReplaceText();
     const std::string text = textenc::WideToUtf8(replacement);
-    if (text.empty()) return;
 
     SetSelection(offset, offset + length);
-    editor_.ReplaceTextRange(offset, length, text, EditType::Insert);
+    editor_.ReplaceTextRange(offset, length, text, EditType::Other);
+    // The replacement is one undo step of its own; the next keystroke
+    // must not merge into it.
+    editor_.BreakUndoCoalesce();
     OnTextChanged();
-    RefreshFindResults();
+    RefreshFindResults(false);
 }
 
 void App::ReplaceAllMatches(const std::wstring& query,
@@ -229,13 +289,25 @@ void App::ReplaceAllMatches(const std::wstring& query,
     std::string replaced;
     const size_t count = state.BuildReplacedDocument(buffer_.Text(), &replaced);
     if (count == 0) {
+        findBar_->model().SetStatusText(L"No matches");
+        findBar_->SyncControls();
         return;
     }
 
+    // The whole sweep is one undo entry, so a single undo brings the
+    // document back (guide 17).
     editor_.ReplaceTextRange(0, static_cast<uint32_t>(buffer_.Length()),
-                              replaced, EditType::Insert);
+                              replaced, EditType::Other);
+    editor_.BreakUndoCoalesce();
+    sel_.Collapse(CaretPos{0});
     OnTextChanged();
-    RefreshFindResults();
+    RefreshFindResults(false);
+
+    // The count is what tells the user the sweep happened (guide 15).
+    std::wstring message = std::to_wstring(count);
+    message += L" replacements made.";
+    findBar_->model().SetStatusText(message);
+    findBar_->SyncControls();
 }
 
 void App::MarkClean() {
@@ -713,6 +785,13 @@ void App::OnTextChanged() {
     // The markers are anchored to the text, so they move with it.
     markerStore_.Resolve(buffer_.Text());
     RefreshMarkerRanges();
+
+    // The find bar stands on document offsets, so an edit refreshes
+    // the results rather than letting a stale offset survive (guide
+    // 31).
+    if (findBar_->IsVisible()) {
+        RefreshFindResults(false);
+    }
 }
 
 void App::OnSelectionChanged() {

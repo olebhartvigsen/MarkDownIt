@@ -46,6 +46,18 @@ static std::wstring WideText(NSString* text) {
     return textenc::Utf8ToWide(std::string([text UTF8String]));
 }
 
+// The counter the Windows bar shows: "3 of 17" while matches exist,
+// "No matches" when the query matched nothing, and nothing at all
+// while the field is empty (guide 3, 21 and 52).
+static std::wstring CounterText(const FindBarModel& model) {
+    if (model.status() == FindStatus::Empty) return std::wstring();
+    if (model.status() == FindStatus::NoMatches) return L"No matches";
+    std::wstring text = std::to_wstring(model.countCurrent());
+    text += L" of ";
+    text += std::to_wstring(model.countTotal());
+    return text;
+}
+
 // The AppKit view that holds the controls.
 //
 // It is written in Objective-C++ because the controls are AppKit
@@ -187,13 +199,15 @@ static std::wstring WideText(NSString* text) {
     ]];
 }
 
-// The bar shows what the model holds.
+// Both rows stay on screen in both modes, so the strip keeps its
+// height and the layout never jumps; the mode only decides whether
+// the replace half is live (findbar_model.h, guide 2.2).
 - (void)setReplaceMode:(BOOL)replaceMode {
-    [replaceRow_ setHidden:!replaceMode];
-    [replaceButton_ setEnabled:model_->IsReplaceEnabled()];
-    [replaceAllButton_ setEnabled:model_->IsReplaceEnabled()];
+    (void)replaceMode;
+    [self updateFromModel];
 }
 
+// The bar shows what the model holds.
 - (void)updateFromModel {
     const std::wstring search = model_->GetSearchText();
     if (![searchField_.stringValue isEqualToString:NarrowText(search)]) {
@@ -210,13 +224,30 @@ static std::wstring WideText(NSString* text) {
                                   ? NSControlStateValueOn
                                   : NSControlStateValueOff];
 
-    const bool hasMatches = model_->countTotal() > 0;
-    [previousButton_ setEnabled:hasMatches];
-    [nextButton_ setEnabled:hasMatches];
-    [replaceButton_ setEnabled:model_->IsReplaceEnabled() && hasMatches];
-    [replaceAllButton_ setEnabled:model_->IsReplaceEnabled() && hasMatches];
+    // The Windows rules, so the two bars cannot disagree: navigation
+    // needs a match, and the replace half needs the replace mode and
+    // an editable document.
+    const bool hasQuery = model_->state().HasQuery();
+    const bool navigable = hasQuery &&
+                           model_->status() == FindStatus::Found &&
+                           model_->countTotal() > 0;
+    const bool replaceUsable = model_->Mode() == FindBarMode::FindReplace;
+    const bool replaceAvailable =
+        replaceUsable && model_->IsReplaceEnabled() && navigable;
 
-    [counterLabel_ setStringValue:NarrowText(model_->FormatStatusText())];
+    [previousButton_ setEnabled:navigable];
+    [nextButton_ setEnabled:navigable];
+    [replaceField_ setEnabled:replaceUsable && model_->IsReplaceEnabled()];
+    [replaceButton_ setEnabled:replaceAvailable];
+    [replaceAllButton_ setEnabled:replaceAvailable];
+    [matchCaseButton_ setEnabled:YES];
+    [wholeWordButton_ setEnabled:YES];
+    [closeButton_ setEnabled:YES];
+
+    // The counter and the status line, the pair the Windows bar keeps
+    // (guide 3, 15, 21 and 52).
+    [counterLabel_ setStringValue:NarrowText(CounterText(*model_))];
+    [statusLabel_ setStringValue:NarrowText(model_->FormatStatusText())];
 }
 
 - (void)focusSearchField {
@@ -236,6 +267,8 @@ static std::wstring WideText(NSString* text) {
         if (listener.onSearchChanged) {
             listener.onSearchChanged();
         }
+        // The count and the buttons move with every keystroke.
+        [self updateFromModel];
     } else if ([notification.object isEqual:replaceField_]) {
         model_->SetReplaceText(WideText(replaceField_.stringValue));
     }
@@ -249,6 +282,7 @@ static std::wstring WideText(NSString* text) {
     if (listener.onSearchChanged) {
         listener.onSearchChanged();
     }
+    [self updateFromModel];
 }
 
 // The caret offset the navigation starts from.
@@ -260,12 +294,16 @@ static std::wstring WideText(NSString* text) {
 - (void)nextMatch:(id)sender {
     (void)sender;
     model_->NavigateNext([self caretOffset]);
+    // The counter reads the ordinal the navigation just moved.
+    model_->SyncFromState();
     [self updateFromModel];
 }
 
 - (void)previousMatch:(id)sender {
     (void)sender;
     model_->NavigatePrevious([self caretOffset]);
+    // The counter reads the ordinal the navigation just moved.
+    model_->SyncFromState();
     [self updateFromModel];
 }
 
@@ -276,6 +314,8 @@ static std::wstring WideText(NSString* text) {
     if (model_->state().CurrentMatch(&current) && listener.onReplaceCurrent) {
         listener.onReplaceCurrent(current.start, current.length);
     }
+    model_->SyncFromState();
+    [self updateFromModel];
 }
 
 - (void)replaceAll:(id)sender {
@@ -285,6 +325,8 @@ static std::wstring WideText(NSString* text) {
         listener.onReplaceAll(model_->GetSearchText(), model_->GetReplaceText(),
                               model_->state().Options());
     }
+    model_->SyncFromState();
+    [self updateFromModel];
 }
 
 - (void)closeBar:(id)sender {
@@ -293,6 +335,34 @@ static std::wstring WideText(NSString* text) {
     if (listener.onClose) {
         listener.onClose();
     }
+}
+
+// The keys the guide gives the bar: Enter steps to the next match,
+// Shift+Enter to the previous one, and Escape closes the bar
+// (guide 2.3 and 2.4).
+- (BOOL)control:(NSControl*)control
+             textView:(NSTextView*)textView
+    doCommandBySelector:(SEL)commandSelector {
+    (void)control;
+    (void)textView;
+    if (commandSelector == @selector(insertNewline:)) {
+        const NSEventModifierFlags flags =
+            [[NSApp currentEvent] modifierFlags] &
+            NSEventModifierFlagDeviceIndependentFlagsMask;
+        if ((flags & NSEventModifierFlagShift) != 0) {
+            [self previousMatch:nil];
+        } else {
+            [self nextMatch:nil];
+        }
+        return YES;
+    }
+
+    if (commandSelector == @selector(cancelOperation:)) {
+        [self closeBar:nil];
+        return YES;
+    }
+
+    return NO;
 }
 
 @end
@@ -313,8 +383,9 @@ void FindBar::Show(FindBarMode mode) {
     model_.SetMode(mode);
     visible_ = true;
     MdFindBarView* bar = (__bridge MdFindBarView*)view_;
+    // The mode greys the replace half in or out and re-reads the
+    // model, so the controls open in the right state.
     [bar setReplaceMode:mode == FindBarMode::FindReplace];
-    [bar updateFromModel];
     [bar setHidden:NO];
     [bar focusSearchField];
 }
@@ -328,6 +399,11 @@ void FindBar::Hide() {
 void FindBar::FocusSearchField() {
     MdFindBarView* bar = (__bridge MdFindBarView*)view_;
     [bar focusSearchField];
+}
+
+void FindBar::SyncControls() {
+    MdFindBarView* bar = (__bridge MdFindBarView*)view_;
+    [bar updateFromModel];
 }
 
 float FindBar::Height() const {
