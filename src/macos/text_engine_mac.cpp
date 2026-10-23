@@ -227,6 +227,11 @@ struct LaidRun {
     float g = 0.0f;
     float b = 0.0f;
     float a = 1.0f;
+    // The run is a link and carries an underline, or is struck
+    // through; the flags travel through the measured lines so the
+    // renderer can draw the decorations.
+    bool underline = false;
+    bool strike = false;
     // The UTF-16 index where the run starts.
     CFIndex start = 0;
     // The length of the run in UTF-16 units.
@@ -235,6 +240,12 @@ struct LaidRun {
     // can cut its own slice out of the run.
     std::vector<uint32_t> u16ToUtf8;
 };
+
+// The cap on the line entries the engine keeps for hit testing. The cap
+// bounds the memory of an engine whose measurements are never bracketed
+// by a layout pass (the diagram engine). A document stays far below it,
+// so the hit tester keeps every line of the current layout.
+constexpr size_t kMaxLineEntries = 20000;
 
 }  // namespace
 
@@ -249,15 +260,16 @@ std::string ResolvedFamily(const std::string& family, bool monospace) {
 }
 
 struct CoreTextEngine::Impl {
-    // The measured lines of the last MeasureWrapped call. The hit tester
+    // The measured lines since the last BeginLayout. The hit tester
     // needs the Core Text object behind a TextLine, so the lines are kept
-    // here, alive, until the next measurement.
+    // here, alive, until the next layout pass starts.
     struct Entry {
         CTLineRef line = nullptr;
-        // The width of the line, which is how a TextLine is matched to its
-        // entry. The engine does not carry an index through the seam, so
-        // the width is the identity.
+        // The width and the text of the line, which is how a TextLine is
+        // matched to its entry. The engine does not carry an index through
+        // the seam, so those two are the identity.
         float width = 0.0f;
+        std::string text;
         // The UTF-8 byte offset of every UTF-16 unit of the line.
         std::vector<uint32_t> u16ToUtf8;
     };
@@ -273,13 +285,27 @@ CoreTextEngine::~CoreTextEngine() {
     delete impl_;
 }
 
-std::vector<TextLine> CoreTextEngine::MeasureWrapped(
-    const std::vector<GlyphRun>& runs, float maxWidth, float lineSpacing) {
-    // Release the previous measurement, so the engine holds one snapshot.
+void CoreTextEngine::BeginLayout() {
+    // A new layout pass starts: the lines of the pass before it are
+    // dropped, and the hit tester works against the new layout.
     for (auto& entry : impl_->entries) {
         if (entry.line) CFRelease(entry.line);
     }
     impl_->entries.clear();
+}
+
+std::vector<TextLine> CoreTextEngine::MeasureWrapped(
+    const std::vector<GlyphRun>& runs, float maxWidth, float lineSpacing) {
+    // The entries stay until the next BeginLayout, so the hit tester can
+    // reach every line of the layout the renderer made. An engine whose
+    // measurements are never bracketed that way (the diagram engine)
+    // stops growing here instead.
+    if (impl_->entries.size() > kMaxLineEntries) {
+        for (auto& entry : impl_->entries) {
+            if (entry.line) CFRelease(entry.line);
+        }
+        impl_->entries.clear();
+    }
 
     if (runs.empty()) return {};
 
@@ -306,6 +332,8 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
         laid.g = run.g;
         laid.b = run.b;
         laid.a = run.a;
+        laid.underline = run.underline;
+        laid.strike = run.strike;
         laid.start = u16Length;
         laid.u16Length = runLength;
 
@@ -443,6 +471,8 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
             glyph.g = laid.g;
             glyph.b = laid.b;
             glyph.a = laid.a;
+            glyph.underline = laid.underline;
+            glyph.strike = laid.strike;
             glyph.x = static_cast<float>(runX);
             out.runs.push_back(glyph);
         }
@@ -450,6 +480,7 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
         Impl::Entry entry;
         entry.line = line;
         entry.width = out.width;
+        entry.text = CoreTextEngine::LineTextUtf8(out);
         entry.u16ToUtf8 = u16ToUtf8;
         impl_->entries.push_back(entry);
         lines.push_back(out);
@@ -471,10 +502,13 @@ uint32_t CoreTextEngine::HitTestOffset(const TextLine& line, float x,
                                        bool* outTrailing) const {
     if (outTrailing) *outTrailing = false;
 
-    // The line is identified by its width, which is what the seam carries.
+    // The line is identified by its width and by its text, the two
+    // things the seam carries.
+    const std::string wanted = CoreTextEngine::LineTextUtf8(line);
     for (const Impl::Entry& entry : impl_->entries) {
         if (!entry.line) continue;
         if (std::fabs(entry.width - line.width) > 0.5f) continue;
+        if (!entry.text.empty() && entry.text != wanted) continue;
 
         // The position in the line, in typographic coordinates. The line's
         // origin is at its left edge, so the point is the x the caller
@@ -510,9 +544,11 @@ Rect CoreTextEngine::OffsetToRect(const TextLine& line,
     rect.height = line.height;
     if (impl_->entries.empty()) return rect;
 
+    const std::string wanted = CoreTextEngine::LineTextUtf8(line);
     for (const Impl::Entry& entry : impl_->entries) {
         if (!entry.line) continue;
         if (std::fabs(entry.width - line.width) > 0.5f) continue;
+        if (!entry.text.empty() && entry.text != wanted) continue;
 
         // The UTF-16 index of the UTF-8 offset.
         CFIndex index = 0;

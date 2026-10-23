@@ -28,12 +28,6 @@ namespace {
 constexpr float kDefaultWidth = 900.0f;
 constexpr float kDefaultHeight = 700.0f;
 
-// The gap between the edge of the view and the text column.
-constexpr float kGutter = 24.0f;
-
-// The circle constant, for the pie slices.
-constexpr double kPi = 3.14159265358979323846;
-
 // The offset of the character before the given offset.
 uint32_t PreviousCharacter(const std::string& text, uint32_t offset) {
     if (offset == 0 || text.empty()) return 0;
@@ -115,18 +109,11 @@ void ContentView::SetScrollOffset(float offset) {
 void ContentView::Relayout() {
     if (!app_) return;
 
-    // The text column is the view width, less the gutters, capped at the
-    // width the theme asks for.
-    const LayoutMetrics& metrics = BaseMetrics();
-    const float available = width_ - kGutter * 2.0f;
-    float column = available;
-    if (metrics.maxContentWidth > 0.0f && column > metrics.maxContentWidth) {
-        column = metrics.maxContentWidth;
-    }
-    if (column < 120.0f) column = 120.0f;
-
-    contentWidth_ = column;
-    documentHeight_ = renderer_.Measure(app_->GetDocument(), column);
+    // The renderer lays the document out at the full view width: it
+    // takes the theme padding off, caps the reading width and centers
+    // the column, the same arithmetic the Windows renderer uses.
+    documentHeight_ = renderer_.Measure(app_->GetDocument(), width_);
+    contentWidth_ = renderer_.contentWidth();
 }
 
 void ContentView::SetWelcomeFiles(const std::vector<RecentFile>& files) {
@@ -294,6 +281,11 @@ void ContentView::SetWrap(bool wrap) {
 
 void ContentView::SetContentWidthMode(int mode) {
     renderer_.SetContentWidthMode(mode);
+    Relayout();
+}
+
+void ContentView::SetZoom(float zoom) {
+    renderer_.SetZoom(zoom);
     Relayout();
 }
 

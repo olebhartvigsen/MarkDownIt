@@ -437,9 +437,17 @@ if(BUILD_TESTS AND APPLE)
     # measure path runs in CI and not only on real hardware.
     target_sources(MarkDownIt.tests PRIVATE
         tests/text_engine_mac_test.cpp
+        tests/renderer_mac_test.cpp
         src/macos/text_engine_mac.cpp
         src/macos/fonts_mac.mm
         src/macos/crash_trace_mac.cpp
+        # The renderer's layout arithmetic, driven by its test with a
+        # fixed text engine, so the typography runs in CI and not only
+        # on real hardware. The renderer links the pieces it draws with.
+        src/macos/renderer_mac.cpp
+        src/macos/svg_mac.cpp
+        src/macos/image_mac.mm
+        src/macos/mermaid_painter_mac.cpp
     )
 elseif(BUILD_TESTS)
     add_executable(MarkDownIt.tests

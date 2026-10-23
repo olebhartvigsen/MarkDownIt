@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 #include "mermaid/layout_cache.h"
 #include "mermaid/model.h"
@@ -91,6 +92,55 @@ constexpr float kImageMaxHeight = 400.0f;
 // laid out on one very wide line and the user scrolls to its end.
 constexpr float kNoWrapContentWidthDip = 10000.0f;
 
+// The theme sizes are points, and the Windows renderer converts them to
+// DIPs with this factor (kPtToDip there) when it creates its text
+// formats. The mac renderer applies the same factor, so a document lays
+// out at the same em on both platforms and the line breaks land in the
+// same places.
+constexpr float kPtToDip = 96.0f / 72.0f;
+
+// The baseline offset inside a body line, as a multiple of the font
+// size. The Windows body format sets the same value (SetLineSpacing
+// with 1.24).
+constexpr float kBodyBaselineOffset = 1.24f;
+
+// The gap before a block, from the block that came before it: the rules
+// and the numbers of the Windows renderer (Renderer::GapForTransition),
+// so the two platforms leave the same space between the same pair of
+// blocks.
+float GapForTransition(BlockKind prev, BlockKind cur, BlockKind next,
+                       int curDepth, int prevDepth, const LayoutMetrics& m) {
+    (void)next;
+    (void)curDepth;
+    (void)prevDepth;
+    if (cur == BlockKind::Heading) {
+        if (prev == BlockKind::Heading) return m.headingGapAfter;
+        return m.headingGapBefore;
+    }
+    if (prev == BlockKind::Heading) return m.headingGapAfter;
+    if (cur == BlockKind::List && prev == BlockKind::List) {
+        return m.listItemGap;
+    }
+    if (cur == BlockKind::List && prev != BlockKind::List) return m.listGap;
+    if (prev == BlockKind::List && cur != BlockKind::List) return m.listGap;
+    if (cur == BlockKind::CodeBlock || prev == BlockKind::CodeBlock) {
+        return m.codeBlockGap;
+    }
+    return m.paraGap;
+}
+
+// A font, in the layout unit.
+FontSpec MakeFont(const LayoutMetrics& metrics, float size, bool bold,
+                  bool italic, bool monospace) {
+    FontSpec font;
+    font.family = monospace ? metrics.codeFont : metrics.bodyFont;
+    font.size = size;
+    font.bold = bold;
+    font.italic = italic;
+    font.monospace = monospace;
+    return font;
+}
+
 // The mermaid layout of a block, in the form the painter takes.
 mermaid::MermaidRender MermaidRenderFor(const Node& node) {
     mermaid::MermaidRender diagram;
@@ -137,7 +187,12 @@ float MermaidMeasureWidth(const mermaid::MermaidRender& diagram,
 
 }  // namespace
 
-MacRenderer::MacRenderer() = default;
+MacRenderer::MacRenderer() {
+    // The theme, until the caller sets its own: the same numbers the
+    // Windows renderer starts from.
+    baseMetrics_ = BaseMetrics();
+    metrics_ = ComputeMetrics();
+}
 MacRenderer::~MacRenderer() {
     // The engine of the diagrams belongs to the renderer.
     delete diagramEngine_;
@@ -147,13 +202,102 @@ MacRenderer::~MacRenderer() {
 FontSpec MacRenderer::FontFor(const Node& node, float baseSize, bool bold,
                                bool italic, bool monospace) const {
     (void)node;
-    FontSpec font;
-    font.family = monospace ? metrics_.codeFont : metrics_.bodyFont;
-    font.size = baseSize;
-    font.bold = bold;
-    font.italic = italic;
-    font.monospace = monospace;
-    return font;
+    return MakeFont(metrics_, baseSize * kPtToDip * zoom_, bold, italic,
+                    monospace);
+}
+
+FontSpec MacRenderer::DiagramFontFor(const Node& node, float baseSize,
+                                      bool bold, bool italic,
+                                      bool monospace) const {
+    // The mermaid painters scale their text by the zoom themselves, the
+    // same way the Windows measure format stays unzoomed.
+    (void)node;
+    return MakeFont(metrics_, baseSize * kPtToDip, bold, italic, monospace);
+}
+
+void MacRenderer::ApplyLineSpacing(std::vector<TextLine>* lines, float ptSize,
+                                    float heightMult,
+                                    float baselineMult) const {
+    const float em = ptSize * kPtToDip * zoom_;
+    for (TextLine& line : *lines) {
+        line.height = heightMult * em;
+        line.ascent = baselineMult * em;
+    }
+}
+
+std::vector<GlyphRun> MacRenderer::BuildCellRuns(const TableCell& cell,
+                                                  bool bold,
+                                                  const Color& color) const {
+    // The cell text, cut into runs at the boundaries of the inline
+    // spans. The spans index the text in UTF-16 units, so the walk
+    // counts them as it goes.
+    std::vector<GlyphRun> runs;
+    const std::u32string& text = cell.text;
+    const size_t count = text.size();
+
+    auto styleAt = [&](uint32_t index, bool* strong, bool* em, bool* code,
+                       bool* strike) {
+        *strong = bold;
+        *em = false;
+        *code = false;
+        *strike = false;
+        for (const CellInlineSpan& span : cell.inlineSpans) {
+            if (index < span.u16Start || index >= span.u16End) continue;
+            *strong = *strong || span.bold;
+            *em = *em || span.italic;
+            *code = *code || span.code;
+            *strike = *strike || span.strike;
+        }
+    };
+    auto isLink = [&](uint32_t index) {
+        if (index >= cell.u16ToSrc.size()) return false;
+        const uint32_t source = cell.u16ToSrc[index];
+        for (const TableLink& link : cell.links) {
+            if (source >= link.srcOffset &&
+                source < link.srcOffset + link.srcLength) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    uint32_t u16 = 0;
+    size_t i = 0;
+    while (i < count) {
+        bool strong = false, em = false, code = false, strike = false;
+        styleAt(u16, &strong, &em, &code, &strike);
+        const bool link = isLink(u16);
+
+        // The run takes every code point with the same style.
+        std::string run;
+        while (i < count) {
+            bool next = false, nextEm = false, nextCode = false;
+            bool nextStrike = false;
+            styleAt(u16, &next, &nextEm, &nextCode, &nextStrike);
+            if (next != strong || nextEm != em || nextCode != code ||
+                nextStrike != strike || isLink(u16) != link) {
+                break;
+            }
+            run += Utf32ToUtf8(std::u32string(1, text[i]));
+            u16 += text[i] > 0xFFFF ? 2u : 1u;
+            ++i;
+        }
+        if (run.empty()) continue;
+
+        GlyphRun glyph;
+        glyph.text = std::move(run);
+        // The windows renderer gives a cell code span the code family
+        // at the body size, and the header its weight.
+        glyph.font = FontFor(Node{}, metrics_.bodyFontSize, strong, em, code);
+        glyph.r = color.r;
+        glyph.g = color.g;
+        glyph.b = color.b;
+        glyph.a = color.a;
+        glyph.underline = link;
+        glyph.strike = strike;
+        runs.push_back(std::move(glyph));
+    }
+    return runs;
 }
 
 std::vector<GlyphRun> MacRenderer::BuildRuns(const Node& node, float baseSize,
@@ -163,26 +307,31 @@ std::vector<GlyphRun> MacRenderer::BuildRuns(const Node& node, float baseSize,
     std::vector<GlyphRun> runs;
 
     // The children are walked one by one, so a run carries the style of
-    // the span it came from. A link is a colour change, everything else
-    // is a font change.
+    // the span it came from. A link is a colour change and an
+    // underline, an inline code span switches to the smaller code face,
+    // and everything else is a font change.
     for (const InlineBlock& child : node.children) {
         const std::string runText = Utf32ToUtf8(child.text);
         if (runText.empty()) continue;
 
         GlyphRun run;
         run.text = runText;
+        // An inline code span uses the code size, the way the Windows
+        // renderer sets codeFontSize on the span.
         const bool childCode = child.code;
-        run.font = FontFor(node, baseSize, bold || child.strong,
+        const float runSize = childCode ? metrics_.codeFontSize : baseSize;
+        run.font = FontFor(node, runSize, bold || child.strong,
                            italic || child.em, monospace || childCode);
         // A link is drawn in the link colour, everything else in the text
         // colour of the block.
-        const Color runColor = child.kind == InlineKind::Link
-                                   ? ToColor(palette_.link)
-                                   : color;
+        const bool link = child.kind == InlineKind::Link;
+        const Color runColor = link ? ToColor(palette_.link) : color;
         run.r = runColor.r;
         run.g = runColor.g;
         run.b = runColor.b;
         run.a = runColor.a;
+        run.underline = link;
+        run.strike = child.strike;
         runs.push_back(run);
     }
     return runs;
@@ -192,24 +341,52 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
     blocks_.clear();
     needsLayout_ = false;
 
-    // The content column. The padding comes from the theme, and the
-    // column is capped so a line never runs longer than is comfortable to
-    // read.
-    //
-    // With the wrap off the text gets one very wide line, and the user
-    // scrolls to its end.
-    const float available = std::max(1.0f, widthDip - metrics_.padX * 2.0f);
-    if (!wrap_) {
-        contentWidth_ = kNoWrapContentWidthDip;
-    } else {
-        contentWidth_ = std::min(available, ContentWidthLimit());
+    // The engine drops the measurements of the pass before this one, so
+    // the hit tester works against the layout that is about to be made.
+    if (engine_) {
+        engine_->BeginLayout();
     }
 
-    float y = metrics_.padTop;
-    for (const Node& node : doc.nodes) {
-        LayoutBlock(node, metrics_.padX, contentWidth_, &y);
+    if (widthDip <= 0.0f) {
+        contentWidth_ = 1.0f;
+        originX_ = metrics_.padX;
+        totalHeight_ = metrics_.padTop;
+        return totalHeight_;
     }
-    totalHeight_ = y + metrics_.padTop;
+
+    // The content column: the view width less the theme padding, capped
+    // at the reading width, and centered when it is narrower than the
+    // space. The same arithmetic the Windows renderer uses, so a
+    // document sits the same way on both platforms. With the wrap off
+    // the text gets one very wide line, and the user scrolls to its
+    // end.
+    const float available = widthDip - metrics_.padX * 2.0f;
+    contentWidth_ = wrap_ ? std::min(available, metrics_.maxContentWidth)
+                          : kNoWrapContentWidthDip;
+    if (contentWidth_ <= 0.0f) {
+        contentWidth_ = 1.0f;
+    }
+    originX_ = wrap_ ? (widthDip - contentWidth_) * 0.5f : metrics_.padX;
+
+    float y = metrics_.padTop;
+    BlockKind prevBlock = BlockKind::Paragraph;
+    int prevDepth = -1;
+    bool first = true;
+
+    for (const Node& node : doc.nodes) {
+        // The gap belongs to the block that follows it, and the first
+        // block gets none, the same model the Windows renderer uses.
+        if (!first) {
+            y += GapForTransition(prevBlock, node.block, BlockKind::Paragraph,
+                                  node.depth, prevDepth, metrics_);
+        }
+        first = false;
+        LayoutBlock(node, originX_, contentWidth_, &y);
+        prevBlock = node.block;
+        prevDepth = node.depth;
+    }
+
+    totalHeight_ = y + metrics_.padTop * 2.0f;
     return totalHeight_;
 }
 
@@ -218,19 +395,22 @@ void MacRenderer::SetContentWidthMode(int mode) {
         mode = 0;
     }
     contentWidthMode_ = mode;
+    metrics_ = ComputeMetrics();
 }
 
-float MacRenderer::ContentWidthLimit() const {
-    // The modes are the ones the settings keep. The standard mode uses
-    // the width from the theme, the wider ones use their own, and the
-    // widest one has no cap at all.
+LayoutMetrics MacRenderer::ComputeMetrics() const {
+    LayoutMetrics m = ScaleMetrics(baseMetrics_, zoom_);
+    // Override the content width cap based on the user's width setting.
+    // Mode 3 (Full) means no cap, so we use a very large value. The
+    // same numbers the Windows renderer resolves, zoom included.
     switch (contentWidthMode_) {
-        case 1: return 960.0f;
-        case 2: return 1600.0f;
-        case 3: return 100000.0f;
+        case 1: m.maxContentWidth = 960.0f * zoom_; break;
+        case 2: m.maxContentWidth = 1600.0f * zoom_; break;
+        case 3: m.maxContentWidth = 100000.0f; break;
         case 0:
-        default: return metrics_.maxContentWidth;
+        default: m.maxContentWidth = 800.0f * zoom_; break;
     }
+    return m;
 }
 
 const SvgDoc* MacRenderer::GetSvgDoc(const Node& node) {
@@ -246,9 +426,10 @@ const SvgDoc* MacRenderer::GetSvgDoc(const Node& node) {
     return &svgDocs_.back().second;
 }
 
-void MacRenderer::ChargeForImages(LaidOutBlock* block) {
-    // The images are drawn under the text of the block, so the block
-    // has to reserve the room for them.
+float MacRenderer::ChargeForImages(LaidOutBlock* block) {
+    // The images are drawn above the text of the block, so the block
+    // has to reserve the room for them, the same height the Windows
+    // layout charges.
     //
     // A remote image is fetched in the background. Until it has arrived
     // the block gets the fallback height, and the document is laid out
@@ -270,83 +451,105 @@ void MacRenderer::ChargeForImages(LaidOutBlock* block) {
             needsLayout_ = true;
         }
     }
-    block->height += imageHeight;
+    block->imagesHeight = imageHeight;
+    return imageHeight;
 }
 
 void MacRenderer::LayoutBlock(const Node& node, float x, float width,
                               float* y) {
     LaidOutBlock block;
     block.node = &node;
-    block.x = x;
-    block.width = width;
     block.kind = node.block;
     block.level = node.level;
 
+    // A quote and a list step their content inward, and the text
+    // narrows with it, the same way the Windows renderer measures them.
+    float drawX = x;
+    float drawW = width;
+    if (node.block == BlockKind::BlockQuote) {
+        const float indent = metrics_.quoteIndent * (node.depth + 1);
+        drawX += indent;
+        drawW -= indent;
+    } else if (node.block == BlockKind::List) {
+        const float indent = metrics_.listIndent * (node.depth + 1);
+        drawX += indent;
+        drawW -= indent;
+    }
+    block.x = drawX;
+    block.width = drawW;
+
     switch (node.block) {
         case BlockKind::Heading: {
-            // The gap before a heading depends on its level: the big
-            // headings get more room, like the Windows renderer.
-            *y += node.level <= 2 ? metrics_.headingGapBefore
-                                  : metrics_.headingGapBeforeMinor;
-            const float size = metrics_.headingSizes[node.level <= 6
-                                                        ? node.level
-                                                        : 6];
+            const int level =
+                node.level < 1 ? 1 : (node.level > 6 ? 6 : node.level);
+            const float size = metrics_.headingSizes[level];
             const std::vector<GlyphRun> runs = BuildRuns(
                 node, size, true, false, ToColor(palette_.heading), false);
-            block.lines = engine_->MeasureWrapped(runs, width, 0.0f);
+            block.lines = engine_->MeasureWrapped(runs, drawW, 0.0f);
+            ApplyLineSpacing(&block.lines, size, metrics_.headingLineHeight,
+                             1.0f);
             for (const TextLine& line : block.lines) {
                 block.height += line.height;
             }
-            block.height *= metrics_.headingLineHeight /
-                            metrics_.bodyLineHeight;
-            *y += block.height;
-            *y += metrics_.headingGapAfter;
+            // The rule under an H1 and an H2 lives inside the block, so
+            // the next block keeps its distance from the rule.
+            if (level <= 2 && !block.lines.empty()) {
+                block.height += metrics_.ruleGapAbove + metrics_.ruleGapBelow;
+            }
+            block.height += ChargeForImages(&block);
             break;
         }
 
         case BlockKind::Paragraph: {
-            const std::vector<GlyphRun> runs = BuildRuns(
-                node, metrics_.bodyFontSize, false, false,
-                ToColor(palette_.textPrimary), false);
-            block.lines = engine_->MeasureWrapped(runs, width, 0.0f);
-            for (const TextLine& line : block.lines) {
-                block.height += line.height * metrics_.bodyLineHeight /
-                                metrics_.bodyLineHeight;
+            const float size = metrics_.bodyFontSize;
+            std::vector<GlyphRun> runs = BuildRuns(
+                node, size, false, false, ToColor(palette_.textPrimary),
+                false);
+            if (runs.empty() && node.virtualEmptyParagraph) {
+                // A blank paragraph keeps a line, so the caret has a
+                // place to sit: the same placeholder line the Windows
+                // layout keeps for it.
+                runs = BuildRuns(TextNode(U" "), size, false, false,
+                                 ToColor(palette_.textPrimary), false);
             }
-            ChargeForImages(&block);
-            *y += block.height;
-            *y += metrics_.paraGap;
+            block.lines = engine_->MeasureWrapped(runs, drawW, 0.0f);
+            ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight,
+                             kBodyBaselineOffset);
+            for (const TextLine& line : block.lines) {
+                block.height += line.height;
+            }
+            block.height += ChargeForImages(&block);
             break;
         }
 
         case BlockKind::CodeBlock: {
-            *y += metrics_.codeBlockGap;
-
             // A standalone SVG file is a picture, not a code specimen,
             // so it is measured as one.
             if (node.lang == "svg" && standaloneSvg_) {
                 const SvgDoc* doc = GetSvgDoc(node);
                 if (doc && doc->Width() > 0.0f && doc->Height() > 0.0f) {
-                    const float available = width - metrics_.codePad * 2.0f;
+                    const float available = drawW - metrics_.codePad * 2.0f;
                     const float scale = available / doc->Width();
                     block.height = doc->Height() * scale;
-                    *y += block.height;
-                    *y += metrics_.codeBlockGap;
                     break;
                 }
             }
 
-            const std::string code = InlineTextUtf8(node);
-            // The code is one run per line, so a line break in the source
-            // stays a line break on screen.
+            // The raw text, with the trailing newlines stripped the way
+            // the Windows measure pass strips them.
+            std::string code = InlineTextUtf8(node);
+            while (!code.empty() &&
+                   (code.back() == '\n' || code.back() == '\r')) {
+                code.pop_back();
+            }
+
+            // One run, with the line breaks kept in the text: Core Text
+            // breaks a line there, so a blank line in the source stays a
+            // blank line on screen.
             std::vector<GlyphRun> runs;
-            size_t start = 0;
-            while (start <= code.size()) {
-                const size_t end = code.find('\n', start);
-                const size_t length =
-                    (end == std::string::npos ? code.size() : end) - start;
+            if (!code.empty()) {
                 GlyphRun run;
-                run.text = code.substr(start, length);
+                run.text = code;
                 run.font = FontFor(node, metrics_.codeFontSize, false, false,
                                    true);
                 const Color color = ToColor(palette_.textPrimary);
@@ -354,123 +557,122 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
                 run.g = color.g;
                 run.b = color.b;
                 run.a = color.a;
-                runs.push_back(run);
-                if (end == std::string::npos) break;
-                start = end + 1;
+                runs.push_back(std::move(run));
             }
-            const float lineHeight =
-                engine_->LineHeight(FontFor(node, metrics_.codeFontSize, false,
-                                           false, true));
-            block.lines = engine_->MeasureWrapped(runs, width - metrics_.codePad * 2.0f,
-                                                 0.0f);
-            block.height = static_cast<float>(block.lines.size()) * lineHeight *
-                           metrics_.codeLineHeight / metrics_.bodyLineHeight;
+            block.lines = engine_->MeasureWrapped(
+                runs, drawW - metrics_.codePad * 2.0f, 0.0f);
+            ApplyLineSpacing(&block.lines, metrics_.codeFontSize,
+                             metrics_.codeLineHeight, 1.0f);
+            for (const TextLine& line : block.lines) {
+                block.height += line.height;
+            }
             block.height += metrics_.codePad * 2.0f;
-            *y += block.height;
-            *y += metrics_.codeBlockGap;
             break;
         }
 
         case BlockKind::BlockQuote: {
-            const float indent = metrics_.quoteIndent * (node.depth + 1);
+            const float size = metrics_.bodyFontSize;
             const std::vector<GlyphRun> runs = BuildRuns(
-                node, metrics_.bodyFontSize, false, false,
-                ToColor(palette_.quoteText), false);
-            block.lines = engine_->MeasureWrapped(runs, width - indent, 0.0f);
+                node, size, false, false, ToColor(palette_.quoteText), false);
+            block.lines = engine_->MeasureWrapped(runs, drawW, 0.0f);
+            ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight,
+                             kBodyBaselineOffset);
             for (const TextLine& line : block.lines) {
                 block.height += line.height;
             }
-            *y += block.height;
-            *y += metrics_.paraGap;
+            block.height += ChargeForImages(&block);
             break;
         }
 
         case BlockKind::ThematicBreak: {
-            block.height = 1.0f;
-            *y += metrics_.ruleGapAbove;
-            *y += block.height;
-            *y += metrics_.ruleGapBelow;
+            // The band the rule sits in the middle of, the same 12
+            // points the Windows layout reserves.
+            block.height = 12.0f;
             break;
         }
 
         case BlockKind::List: {
-            const float indent = metrics_.listIndent * (node.depth + 1);
-            const std::vector<GlyphRun> runs = BuildRuns(
-                node, metrics_.bodyFontSize, false, false,
-                ToColor(palette_.textPrimary), false);
-            block.lines = engine_->MeasureWrapped(runs, width - indent, 0.0f);
+            const float size = metrics_.bodyFontSize;
+            std::vector<GlyphRun> runs = BuildRuns(
+                node, size, false, false, ToColor(palette_.textPrimary),
+                false);
+            bool hasImage = false;
+            for (const InlineBlock& child : node.children) {
+                if (child.kind == InlineKind::Image && !child.url.empty()) {
+                    hasImage = true;
+                }
+            }
+            if (runs.empty() && !hasImage) {
+                // The marker keeps the item addressable even without
+                // text, the way the Windows layout keeps its line.
+                runs = BuildRuns(TextNode(U" "), size, false, false,
+                                 ToColor(palette_.textPrimary), false);
+            }
+            // The text wraps in the space that is left after the marker
+            // gutter: the same reservation the Windows layout makes.
+            const float markerW =
+                metrics_.listIndent * 0.6f + metrics_.markerGutter;
+            block.lines = engine_->MeasureWrapped(runs, drawW - markerW,
+                                                  0.0f);
+            ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight,
+                             kBodyBaselineOffset);
             for (const TextLine& line : block.lines) {
                 block.height += line.height;
             }
-            *y += block.height;
-            *y += metrics_.listItemGap;
+            block.height += ChargeForImages(&block);
             break;
         }
 
         case BlockKind::Table: {
-            // The table is measured column by column, the same way the
-            // Windows renderer does it: the widest cell in a column sets
-            // the column width.
+            block.table = &node;
             size_t columnCount = 0;
             for (const TableRow& row : node.rows) {
                 columnCount = std::max(columnCount, row.cells.size());
             }
-            std::vector<float> columnWidths(columnCount, 0.0f);
-            for (const TableRow& row : node.rows) {
-                for (size_t c = 0; c < row.cells.size(); ++c) {
-                    const std::string cellText =
-                        Utf32ToUtf8(row.cells[c].text);
-                    GlyphRun run;
-                    run.text = cellText;
-                    run.font = FontFor(node, metrics_.bodyFontSize, false,
-                                       false, false);
-                    const std::vector<TextLine> lines =
-                        engine_->MeasureWrapped({run}, 10000.0f, 0.0f);
-                    float cellWidth = 0.0f;
-                    for (const TextLine& line : lines) {
-                        cellWidth = std::max(cellWidth, line.width);
-                    }
-                    columnWidths[c] = std::max(columnWidths[c], cellWidth);
-                }
+            if (columnCount == 0) {
+                break;
             }
-            // The table is capped at the content width, and the columns
-            // share what is left over when they do not fit.
+
+            // The columns are equal, the width the Windows renderer
+            // gives them (colW = width / cols).
+            block.tableLayout.colW = drawW / static_cast<float>(columnCount);
+            const float innerW =
+                block.tableLayout.colW - 2.0f * metrics_.cellPadX;
+
             float total = 0.0f;
-            for (float w : columnWidths) total += w;
-            const float available = width - columnCount * metrics_.cellPadX * 2.0f;
-            if (total > available && total > 0.0f) {
-                const float scale = available / total;
-                for (float& w : columnWidths) w *= scale;
-            }
-            // The height is the sum of the row heights, and every row is
-            // at least one line tall.
-            float rowHeight = 0.0f;
             for (const TableRow& row : node.rows) {
+                std::vector<LaidOutBlock::TableCellLayout> cells;
                 float tallest = 0.0f;
-                for (size_t c = 0; c < row.cells.size(); ++c) {
-                    const Node tmp = TextNode(row.cells[c].text);
-                    const std::vector<GlyphRun> cellRuns = BuildRuns(
-                        tmp, metrics_.bodyFontSize, false, false,
-                        ToColor(palette_.textPrimary), false);
-                    const std::vector<TextLine> cellLines =
-                        engine_->MeasureWrapped(cellRuns,
-                                                columnWidths[c] > 0.0f
-                                                    ? columnWidths[c]
-                                                    : 1.0f,
-                                                0.0f);
-                    float cellHeight = 0.0f;
-                    for (const TextLine& line : cellLines) {
-                        cellHeight += line.height;
+                for (size_t c = 0; c < row.cells.size() && c < columnCount;
+                     ++c) {
+                    const TableCell& cell = row.cells[c];
+                    LaidOutBlock::TableCellLayout laid;
+                    if (c < node.aligns.size()) {
+                        laid.align = node.aligns[c];
                     }
-                    tallest = std::max(tallest, cellHeight);
+                    const std::vector<GlyphRun> runs = BuildCellRuns(
+                        cell, cell.isHeader, ToColor(palette_.textPrimary));
+                    laid.lines = engine_->MeasureWrapped(
+                        runs, innerW > 0.0f ? innerW : 1.0f, 0.0f);
+                    ApplyLineSpacing(&laid.lines, metrics_.bodyFontSize,
+                                     metrics_.bodyLineHeight,
+                                     kBodyBaselineOffset);
+                    float height = 0.0f;
+                    for (const TextLine& line : laid.lines) {
+                        height += line.height;
+                    }
+                    if (height > tallest) tallest = height;
+                    cells.push_back(std::move(laid));
                 }
-                rowHeight = std::max(rowHeight, tallest);
+                // A row with no text at all still has the Windows
+                // minimum, and every row carries the cell padding.
+                if (tallest == 0.0f) tallest = 20.0f;
+                const float rowH = tallest + 2.0f * metrics_.cellPadY;
+                block.tableLayout.rowHeights.push_back(rowH);
+                block.tableLayout.rows.push_back(std::move(cells));
+                total += rowH;
             }
-            block.height = static_cast<float>(node.rows.size()) *
-                           (rowHeight + metrics_.cellPadY * 2.0f);
-            block.table = &node;
-            *y += block.height;
-            *y += metrics_.paraGap;
+            block.height = total;
             break;
         }
 
@@ -484,17 +686,16 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
             float diagramHeight = 0.0f;
             if (HasMermaidLayout(diagram)) {
                 diagramHeight = mermaid::MeasureMermaidHeight(
-                    diagram, zoom_, MermaidMeasureWidth(diagram, width));
+                    diagram, zoom_, MermaidMeasureWidth(diagram, drawW));
             }
             block.height = diagramHeight > 0.0f ? diagramHeight : 100.0f;
-            *y += block.height;
-            *y += metrics_.paraGap;
             break;
         }
     }
 
-    block.y = *y - block.height;
-    blocks_.push_back(block);
+    block.y = *y;
+    *y += block.height;
+    blocks_.push_back(std::move(block));
 }
 
 void MacRenderer::SetMarkers(const std::vector<TextMatch>* markers) {
@@ -522,8 +723,31 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
     PaintMarkerHighlights(scrollOffset);
     PaintSearchHighlights(scrollOffset);
 
+    // The ordered list markers count across a run of items, and the
+    // count restarts when the list ends or the depth changes, the same
+    // way the Windows renderer counts them.
+    int listCounter = 0;
+    BlockKind prevKind = BlockKind::Paragraph;
+    int prevDepth = -1;
     for (const LaidOutBlock& block : blocks_) {
-        PaintBlock(block, scrollOffset);
+        std::string marker;
+        const int depth = block.node ? block.node->depth : 0;
+        if (block.kind == BlockKind::List) {
+            if (prevKind != BlockKind::List || depth != prevDepth) {
+                listCounter = 0;
+            }
+            if (block.node && block.node->ordered) {
+                ++listCounter;
+                marker = std::to_string(listCounter) + ". ";
+            } else {
+                marker = "\xE2\x80\xA2 ";
+            }
+        } else {
+            listCounter = 0;
+        }
+        PaintBlock(block, scrollOffset, marker);
+        prevKind = block.kind;
+        prevDepth = depth;
     }
 }
 
@@ -565,15 +789,19 @@ void MacRenderer::PaintSearchHighlights(float scrollOffset) {
     }
 }
 
-void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset) {
+void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset,
+                              const std::string& marker) {
     if (!target_) return;
     const float top = block.y - scrollOffset;
 
     switch (block.kind) {
         case BlockKind::ThematicBreak: {
+            // The rule sits in the middle of the band the layout
+            // reserves for it, the same place the Windows renderer puts
+            // it.
             Rect rect;
             rect.x = block.x;
-            rect.y = top;
+            rect.y = top + 6.0f;
             rect.width = block.width;
             rect.height = 1.0f;
             target_->FillRect(rect, ToColor(palette_.rule));
@@ -586,7 +814,8 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset) {
             if (block.node->lang == "svg" && standaloneSvg_) {
                 const SvgDoc* doc = GetSvgDoc(*block.node);
                 if (doc && doc->Width() > 0.0f && doc->Height() > 0.0f) {
-                    const float available = block.width - metrics_.codePad * 2.0f;
+                    const float available =
+                        block.width - metrics_.codePad * 2.0f;
                     const float scale = available / doc->Width();
                     doc->Draw(target_, block.x + metrics_.codePad, top,
                               available, doc->Height() * scale);
@@ -594,91 +823,78 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset) {
                 }
             }
 
-            // The background and the border, then the code itself.
+            // The background and the border, then the code itself. The
+            // border follows the same rounded outline as the fill, the
+            // way the Windows renderer strokes it.
             Rect bg;
             bg.x = block.x;
             bg.y = top;
             bg.width = block.width;
             bg.height = block.height;
             target_->FillRoundedRect(bg, metrics_.codeRadius,
-                                      ToColor(palette_.codeBg));
-            Rect border = bg;
-            target_->StrokeRect(border, ToColor(palette_.codeBorder), 1.0f);
+                                     ToColor(palette_.codeBg));
+            target_->StrokeRoundedRect(bg, metrics_.codeRadius,
+                                       ToColor(palette_.codeBorder), 1.0f);
 
-            const float lineHeight =
-                engine_->LineHeight(FontFor(*block.node,
-                                            metrics_.codeFontSize, false,
-                                            false, true));
-            float y = top + metrics_.codePad;
-            for (const TextLine& line : block.lines) {
-                for (const GlyphRun& run : line.runs) {
-                    Color color;
-                    color.r = run.r;
-                    color.g = run.g;
-                    color.b = run.b;
-                    color.a = run.a;
-                    target_->DrawText(run.text, run.font,
-                                      block.x + metrics_.codePad + run.x,
-                                      y + line.ascent, color);
-                }
-                y += lineHeight;
-            }
+            PaintLines(block.lines, block.x + metrics_.codePad,
+                       top + metrics_.codePad);
             break;
         }
 
         case BlockKind::BlockQuote: {
-            // The bar on the left, then the text.
-            const float indent = metrics_.quoteIndent * (block.node->depth + 1);
+            // The bar steps inward with the nesting depth, and it is as
+            // tall as the text. The geometry is the Windows one: the
+            // bar is centered four points left of the text edge.
+            float textHeight = 0.0f;
+            for (const TextLine& line : block.lines) {
+                textHeight += line.height;
+            }
+            const float barX = block.x - metrics_.quoteIndent + 4.0f;
             Rect bar;
-            bar.x = block.x;
-            bar.y = top;
+            bar.x = barX - metrics_.quoteBarWidth * 0.5f;
+            bar.y = top + block.imagesHeight;
             bar.width = metrics_.quoteBarWidth;
-            bar.height = block.height;
+            bar.height = textHeight;
             target_->FillRect(bar, ToColor(palette_.quoteBar));
 
-            float y = top;
-            for (const TextLine& line : block.lines) {
-                for (const GlyphRun& run : line.runs) {
-                    Color color;
-                    color.r = run.r;
-                    color.g = run.g;
-                    color.b = run.b;
-                    color.a = run.a;
-                    target_->DrawText(run.text, run.font,
-                                      block.x + indent + run.x,
-                                      y + line.ascent, color);
-                }
-                y += line.height;
-            }
+            PaintImages(block, top, block.width);
+            PaintInlineCodeBg(block, scrollOffset);
+            PaintLines(block.lines, block.x, top + block.imagesHeight);
             break;
         }
 
         case BlockKind::List: {
-            // The marker sits in the gutter, and the text is indented.
-            const float indent = metrics_.listIndent * (block.node->depth + 1);
-            const std::string marker = block.node->ordered ? "1." : "\xE2\x80\xA2";
-            FontSpec markerFont = FontFor(*block.node,
-                                          metrics_.bodyFontSize, false,
-                                          false, false);
-            target_->DrawText(marker, markerFont, block.x,
-                              top + (block.lines.empty()
-                                         ? metrics_.bodyFontSize
-                                         : block.lines.front().ascent),
-                              ToColor(palette_.textMuted));
-            float y = top;
+            // The text sits after the marker gutter, and the marker sits
+            // in the gutter, clipped to it the way the Windows renderer
+            // clips its marker layout.
+            const float markerW =
+                metrics_.listIndent * 0.6f + metrics_.markerGutter;
+            float textHeight = 0.0f;
             for (const TextLine& line : block.lines) {
-                for (const GlyphRun& run : line.runs) {
-                    Color color;
-                    color.r = run.r;
-                    color.g = run.g;
-                    color.b = run.b;
-                    color.a = run.a;
-                    target_->DrawText(run.text, run.font,
-                                      block.x + indent + run.x,
-                                      y + line.ascent, color);
-                }
-                y += line.height;
+                textHeight += line.height;
             }
+            const float textTop = top + block.imagesHeight;
+            if (!marker.empty()) {
+                const FontSpec markerFont = FontFor(
+                    *block.node, metrics_.bodyFontSize, false, false, false);
+                Rect clip;
+                clip.x = block.x;
+                clip.y = textTop;
+                clip.width = markerW;
+                clip.height = textHeight > 0.0f ? textHeight
+                                                : metrics_.bodyFontSize;
+                const float baseline =
+                    textTop + (block.lines.empty()
+                                   ? metrics_.bodyFontSize
+                                   : block.lines.front().ascent);
+                target_->PushClip(clip);
+                target_->DrawText(marker, markerFont, block.x, baseline,
+                                  ToColor(palette_.textPrimary));
+                target_->PopClip();
+            }
+            PaintImages(block, top, block.width);
+            PaintInlineCodeBg(block, scrollOffset);
+            PaintLines(block.lines, block.x + markerW, textTop);
             break;
         }
 
@@ -691,38 +907,115 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset) {
         case BlockKind::MermaidPie:
         case BlockKind::MermaidSequence: {
             // The diagram is painted by the mermaid painter, which draws
-            // the shared layout through the seam.
-            const mermaid::MermaidRender diagram = MermaidRenderFor(*block.node);
+            // the shared layout through the seam. The painter follows
+            // the zoom itself, so it gets the unzoomed font.
+            const mermaid::MermaidRender diagram =
+                MermaidRenderFor(*block.node);
             if (!HasMermaidLayout(diagram)) break;
+            if (diagramEngine_) diagramEngine_->BeginLayout();
             const float pad = mermaid::kMermaidBlockPad;
             const float availWidth =
                 block.width > 2.0f * pad ? block.width - 2.0f * pad : 0.0f;
             PaintMermaidDiagram(diagramEngine_ ? diagramEngine_ : engine_,
-                                target_, diagram, zoom_, availWidth, block.x,
-                                top, pad, palette_,
-                                FontFor(*block.node, metrics_.bodyFontSize,
-                                        false, false, false));
+                                target_, diagram, zoom_, availWidth,
+                                block.x, top, pad, palette_,
+                                DiagramFontFor(*block.node,
+                                               metrics_.bodyFontSize, false,
+                                               false, false));
             break;
         }
 
         case BlockKind::Heading:
         case BlockKind::Paragraph: {
-            float y = top;
-            for (const TextLine& line : block.lines) {
-                for (const GlyphRun& run : line.runs) {
-                    Color color;
-                    color.r = run.r;
-                    color.g = run.g;
-                    color.b = run.b;
-                    color.a = run.a;
-                    target_->DrawText(run.text, run.font, block.x + run.x,
-                                      y + line.ascent, color);
+            const float textTop = top + block.imagesHeight;
+            PaintImages(block, top, block.width);
+            PaintInlineCodeBg(block, scrollOffset);
+            PaintLines(block.lines, block.x, textTop);
+
+            // The rule under an H1 and an H2, inside the room the layout
+            // reserved: under the text, the gap of the rule above it.
+            if (block.kind == BlockKind::Heading && block.level <= 2) {
+                float textHeight = 0.0f;
+                for (const TextLine& line : block.lines) {
+                    textHeight += line.height;
                 }
-                y += line.height;
+                const float ruleY =
+                    textTop + textHeight + metrics_.ruleGapAbove;
+                target_->StrokeLine(block.x, ruleY, block.x + block.width,
+                                    ruleY, ToColor(palette_.rule), 1.0f);
             }
-            PaintImages(block, y, block.width);
             break;
         }
+    }
+}
+
+void MacRenderer::PaintLines(const std::vector<TextLine>& lines, float x,
+                              float top) const {
+    float y = top;
+    for (const TextLine& line : lines) {
+        PaintLineRuns(line, x, y);
+        y += line.height;
+    }
+}
+
+void MacRenderer::PaintLineRuns(const TextLine& line, float x,
+                                 float y) const {
+    if (!target_) return;
+
+    for (size_t i = 0; i < line.runs.size(); ++i) {
+        const GlyphRun& run = line.runs[i];
+        Color color;
+        color.r = run.r;
+        color.g = run.g;
+        color.b = run.b;
+        color.a = run.a;
+        target_->DrawText(run.text, run.font, x + run.x,
+                          y + line.ascent, color);
+
+        // The underline of a link and the strike-through of a struck
+        // span. The seam has no draw call for the two decorations, so
+        // they are stroked where DirectWrite puts them.
+        if (!run.underline && !run.strike) continue;
+        float runWidth = line.width - run.x;
+        if (i + 1 < line.runs.size()) {
+            runWidth = line.runs[i + 1].x - run.x;
+        }
+        if (runWidth <= 0.0f) continue;
+        if (run.underline) {
+            target_->StrokeLine(x + run.x, y + line.ascent + 2.0f,
+                                x + run.x + runWidth,
+                                y + line.ascent + 2.0f, color, 1.0f);
+        }
+        if (run.strike) {
+            const float strikeY = y + line.ascent - 0.30f * run.font.size;
+            target_->StrokeLine(x + run.x, strikeY, x + run.x + runWidth,
+                                strikeY, color, 1.0f);
+        }
+    }
+}
+
+void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
+                                     float scrollOffset) const {
+    if (!target_ || !block.node) return;
+
+    // The background of an inline code span, behind the text and two
+    // points wider than the glyphs, the same fill the Windows renderer
+    // draws.
+    uint32_t childStart = block.node->contentOffset;
+    for (const InlineBlock& child : block.node->children) {
+        const uint32_t length =
+            static_cast<uint32_t>(Utf32ToUtf8(child.text).size());
+        if (child.code && length > 0) {
+            for (const Rect& rect : RectsForRangeInBlock(
+                     block, childStart, childStart + length)) {
+                Rect drawn = rect;
+                drawn.x -= 2.0f;
+                drawn.width += 4.0f;
+                drawn.y -= scrollOffset;
+                target_->FillRect(drawn, ToColor(palette_.inlineCodeBg));
+            }
+        }
+        childStart += length;
     }
 }
 
@@ -764,124 +1057,69 @@ void MacRenderer::PaintImages(const LaidOutBlock& block, float top,
 void MacRenderer::PaintTable(const LaidOutBlock& block, float scrollOffset) {
     if (!target_ || !block.table) return;
     const Node& node = *block.table;
+    const LaidOutBlock::TableLayout& layout = block.tableLayout;
+    if (layout.rowHeights.empty()) return;
 
-    size_t columnCount = 0;
-    for (const TableRow& row : node.rows) {
-        columnCount = std::max(columnCount, row.cells.size());
-    }
-    if (columnCount == 0) return;
-
-    // The column widths, measured the same way as in the layout, so the
-    // painting matches the measurement.
-    std::vector<float> columnWidths(columnCount, 0.0f);
-    for (const TableRow& row : node.rows) {
-        for (size_t c = 0; c < row.cells.size(); ++c) {
-            const Node tmp = TextNode(row.cells[c].text);
-            const std::vector<GlyphRun> cellRuns = BuildRuns(
-                tmp, metrics_.bodyFontSize, false, false,
-                ToColor(palette_.textPrimary), false);
-            const std::vector<TextLine> lines =
-                engine_->MeasureWrapped(cellRuns, 10000.0f, 0.0f);
-            float cellWidth = 0.0f;
-            for (const TextLine& line : lines) {
-                cellWidth = std::max(cellWidth, line.width);
-            }
-            columnWidths[c] = std::max(columnWidths[c], cellWidth);
-        }
-    }
-    float total = 0.0f;
-    for (float w : columnWidths) total += w;
-    const float available = block.width - columnCount * metrics_.cellPadX * 2.0f;
-    if (total > available && total > 0.0f) {
-        const float scale = available / total;
-        for (float& w : columnWidths) w *= scale;
-    }
-
-    // The row height, the tallest cell of the tallest row.
-    float rowHeight = 0.0f;
-    for (const TableRow& row : node.rows) {
-        float tallest = 0.0f;
-        for (size_t c = 0; c < row.cells.size(); ++c) {
-            Node tmp;
-            tmp.children.push_back(InlineBlock{});
-            tmp.children.back().text = row.cells[c].text;
-            const std::vector<GlyphRun> cellRuns = BuildRuns(
-                tmp, metrics_.bodyFontSize, false, false,
-                ToColor(palette_.textPrimary), false);
-            const std::vector<TextLine> cellLines =
-                engine_->MeasureWrapped(cellRuns,
-                                        columnWidths[c] > 0.0f
-                                            ? columnWidths[c]
-                                            : 1.0f,
-                                        0.0f);
-            float cellHeight = 0.0f;
-            for (const TextLine& line : cellLines) {
-                cellHeight += line.height;
-            }
-            tallest = std::max(tallest, cellHeight);
-        }
-        rowHeight = std::max(rowHeight, tallest);
-    }
-
-    // The rows.
     float y = block.y - scrollOffset;
-    for (size_t r = 0; r < node.rows.size(); ++r) {
+    for (size_t r = 0; r < node.rows.size() && r < layout.rows.size(); ++r) {
         const TableRow& row = node.rows[r];
-        const bool isHeader = r == 0;
+        const std::vector<LaidOutBlock::TableCellLayout>& cells =
+            layout.rows[r];
+        const bool isHeaderRow = !row.cells.empty() && row.cells[0].isHeader;
+        const float rowH = layout.rowHeights[r];
 
         // The row background: the header has its own, and the body rows
-        // alternate.
+        // alternate, the same stripes the Windows renderer paints.
         Rect rowBg;
         rowBg.x = block.x;
         rowBg.y = y;
         rowBg.width = block.width;
-        rowBg.height = rowHeight + metrics_.cellPadY * 2.0f;
-        if (isHeader) {
+        rowBg.height = rowH;
+        if (isHeaderRow) {
             target_->FillRect(rowBg, ToColor(palette_.tableHeaderBg));
         } else if (r % 2 == 0) {
             target_->FillRect(rowBg, ToColor(palette_.tableRowAlt));
         }
 
-        // The cells.
-        float x = block.x;
-        for (size_t c = 0; c < row.cells.size(); ++c) {
-            const float cellWidth = columnWidths[c];
-            const Node tmp = TextNode(row.cells[c].text);
-            const std::vector<GlyphRun> cellRuns = BuildRuns(
-                tmp, metrics_.bodyFontSize, isHeader, false,
-                ToColor(isHeader ? palette_.heading : palette_.textPrimary),
-                false);
-            const std::vector<TextLine> cellLines =
-                engine_->MeasureWrapped(cellRuns, cellWidth > 0.0f
-                                                  ? cellWidth
-                                                  : 1.0f,
-                                        0.0f);
-            float cellY = y + metrics_.cellPadY;
-            for (const TextLine& line : cellLines) {
-                for (const GlyphRun& run : line.runs) {
-                    Color color;
-                    color.r = run.r;
-                    color.g = run.g;
-                    color.b = run.b;
-                    color.a = run.a;
-                    target_->DrawText(run.text, run.font,
-                                      x + metrics_.cellPadX + run.x,
-                                      cellY + line.ascent, color);
-                }
-                cellY += line.height;
-            }
+        const float innerW = layout.colW - 2.0f * metrics_.cellPadX;
+        for (size_t c = 0; c < cells.size(); ++c) {
+            const float cellX = block.x + static_cast<float>(c) * layout.colW;
 
-            // The cell border.
+            // The cell border, one rectangle per cell.
             Rect border;
-            border.x = x;
+            border.x = cellX;
             border.y = y;
-            border.width = cellWidth + metrics_.cellPadX * 2.0f;
-            border.height = rowHeight + metrics_.cellPadY * 2.0f;
+            border.width = layout.colW;
+            border.height = rowH;
             target_->StrokeRect(border, ToColor(palette_.tableBorder), 1.0f);
 
-            x += border.width;
+            // The lines of the cell, placed at the column alignment of
+            // the delimiter row, inside the cell padding, clipped to
+            // the cell the way the Windows renderer clips them.
+            Rect inner;
+            inner.x = cellX + metrics_.cellPadX;
+            inner.y = y + metrics_.cellPadY;
+            inner.width = innerW > 0.0f ? innerW : 0.0f;
+            inner.height = rowH - 2.0f * metrics_.cellPadY;
+            if (inner.width > 0.0f && inner.height > 0.0f) {
+                target_->PushClip(inner);
+            }
+            float lineY = y + metrics_.cellPadY;
+            for (const TextLine& line : cells[c].lines) {
+                float lineX = cellX + metrics_.cellPadX;
+                if (cells[c].align == ColumnAlign::Center) {
+                    lineX += (innerW - line.width) * 0.5f;
+                } else if (cells[c].align == ColumnAlign::Right) {
+                    lineX += innerW - line.width;
+                }
+                PaintLineRuns(line, lineX, lineY);
+                lineY += line.height;
+            }
+            if (inner.width > 0.0f && inner.height > 0.0f) {
+                target_->PopClip();
+            }
         }
-        y += rowHeight + metrics_.cellPadY * 2.0f;
+        y += rowH;
     }
 }
 
@@ -895,7 +1133,7 @@ bool MacRenderer::YForOffset(uint32_t offset, float& y) const {
         const uint32_t contentEnd = contentStart + block.node->contentLength;
         if (offset < contentStart || offset > contentEnd) continue;
 
-        y = block.y;
+        y = block.y + block.imagesHeight;
         return true;
     }
     return false;
@@ -906,7 +1144,7 @@ uint32_t MacRenderer::HitTestPoint(float x, float y) const {
         if (y < block.y || y > block.y + block.height) continue;
         if (x < block.x || x > block.x + block.width) continue;
 
-        float lineY = block.y;
+        float lineY = block.y + block.imagesHeight;
         for (const TextLine& line : block.lines) {
             if (y >= lineY && y < lineY + line.height) {
                 bool trailing = false;
@@ -932,7 +1170,7 @@ bool MacRenderer::LineRangeAtPoint(float x, float y, uint32_t* outStart,
         if (y < block.y || y > block.y + block.height) continue;
 
         uint32_t lineStart = block.node->srcOffset;
-        float lineY = block.y;
+        float lineY = block.y + block.imagesHeight;
         for (const TextLine& line : block.lines) {
             if (y >= lineY && y < lineY + line.height) {
                 size_t length = 0;
@@ -965,7 +1203,7 @@ bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
 
         // The lines are walked with the range each one covers, so the
         // line the offset is on is the one that is found.
-        float lineY = block.y;
+        float lineY = block.y + block.imagesHeight;
         uint32_t lineStart = start;
         for (const TextLine& line : block.lines) {
             size_t length = 0;
@@ -996,45 +1234,58 @@ std::vector<Rect> MacRenderer::SelectionRects(uint32_t start,
 std::vector<Rect> MacRenderer::RectsForRange(uint32_t start,
                                              uint32_t end) const {
     std::vector<Rect> rects;
+    for (const LaidOutBlock& block : blocks_) {
+        const std::vector<Rect> blockRects =
+            RectsForRangeInBlock(block, start, end);
+        rects.insert(rects.end(), blockRects.begin(), blockRects.end());
+    }
+    return rects;
+}
+
+std::vector<Rect> MacRenderer::RectsForRangeInBlock(const LaidOutBlock& block,
+                                                     uint32_t start,
+                                                     uint32_t end) const {
+    std::vector<Rect> rects;
+    if (!block.node) return rects;
     if (end < start) {
         const uint32_t swap = start;
         start = end;
         end = swap;
     }
 
-    for (const LaidOutBlock& block : blocks_) {
-        if (!block.node) continue;
-
-        // The text of the block, in the same order the lines have it.
-        float lineY = block.y;
-        uint32_t lineStart = block.node->contentOffset;
-        for (const TextLine& line : block.lines) {
-            size_t length = 0;
-            for (const GlyphRun& run : line.runs) {
-                length += run.text.size();
-            }
-            const uint32_t lineEnd = lineStart + static_cast<uint32_t>(length);
-
-            // The part of the line the selection covers.
-            const uint32_t from = start > lineStart ? start : lineStart;
-            const uint32_t to = end < lineEnd ? end : lineEnd;
-            if (from < to) {
-                const Rect first =
-                    engine_->OffsetToRect(line, from - lineStart);
-                const Rect last = engine_->OffsetToRect(line, to - lineStart);
-                Rect rect;
-                rect.x = block.x + first.x;
-                rect.y = lineY;
-                rect.width = (block.x + last.x + last.width) - rect.x;
-                rect.height = line.height;
-                if (rect.width < 0.0f) {
-                    rect.width = 0.0f;
-                }
-                rects.push_back(rect);
-            }
-            lineStart = lineEnd;
-            lineY += line.height;
+    // The lines are walked with the range each one covers, so the
+    // rectangles land on the lines that hold the range. The text of a
+    // block starts below its images.
+    float lineY = block.y + block.imagesHeight;
+    uint32_t lineStart = block.node->contentOffset;
+    for (const TextLine& line : block.lines) {
+        size_t length = 0;
+        for (const GlyphRun& run : line.runs) {
+            length += run.text.size();
         }
+        const uint32_t lineEnd = lineStart + static_cast<uint32_t>(length);
+
+        // The part of the line the range covers.
+        const uint32_t from = start > lineStart ? start : lineStart;
+        const uint32_t to = end < lineEnd ? end : lineEnd;
+        if (from < to) {
+            const Rect first = engine_->OffsetToRect(line, from - lineStart);
+            // The right edge of the range is the left edge of the
+            // character after it, which is the rect OffsetToRect gives
+            // for that position.
+            const Rect after = engine_->OffsetToRect(line, to - lineStart);
+            Rect rect;
+            rect.x = block.x + first.x;
+            rect.y = lineY;
+            rect.width = (block.x + after.x) - rect.x;
+            rect.height = line.height;
+            if (rect.width < 0.0f) {
+                rect.width = 0.0f;
+            }
+            rects.push_back(rect);
+        }
+        lineStart = lineEnd;
+        lineY += line.height;
     }
     return rects;
 }

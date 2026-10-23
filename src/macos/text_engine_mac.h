@@ -38,6 +38,10 @@ public:
     std::vector<TextLine> MeasureWrapped(const std::vector<GlyphRun>& runs,
                                           float maxWidth,
                                           float lineSpacing) override;
+
+    // The lines of the pass before this one are dropped, so the hit
+    // tester works against the layout the renderer just made.
+    void BeginLayout() override;
     uint32_t HitTestOffset(const TextLine& line, float x,
                            bool* outTrailing) const override;
     Rect OffsetToRect(const TextLine& line, uint32_t offset) const override;

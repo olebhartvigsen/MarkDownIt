@@ -86,6 +86,26 @@ public:
         CGContextRestoreGState(context_);
     }
 
+    void StrokeRoundedRect(const Rect& rect, float radius,
+                           const Color& color, float lineWidth) override {
+        CGContextSaveGState(context_);
+        CGContextSetRGBStrokeColor(context_, color.r, color.g, color.b,
+                                   color.a);
+        CGContextSetLineWidth(context_, lineWidth > 0.0f ? lineWidth : 1.0f);
+        const CGRect bounds = CGRectMake(rect.x, rect.y, rect.width,
+                                         rect.height);
+        const CGFloat cornerRadius = radius > 0.0f ? radius : 0.0f;
+        CGMutablePathRef path = CGPathCreateMutable();
+        if (path) {
+            CGPathAddRoundedRect(path, nullptr, bounds, cornerRadius,
+                                 cornerRadius);
+            CGContextAddPath(context_, path);
+            CGContextStrokePath(context_);
+            CGPathRelease(path);
+        }
+        CGContextRestoreGState(context_);
+    }
+
     void StrokeLine(float x0, float y0, float x1, float y1, const Color& color,
                     float lineWidth) override {
         CGContextSaveGState(context_);

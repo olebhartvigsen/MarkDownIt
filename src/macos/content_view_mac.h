@@ -129,6 +129,10 @@ public:
     // settings keep.
     void SetContentWidthMode(int mode);
 
+    // Sets the zoom of the document, so the text and the spacing follow
+    // the zoom the way the Windows window does.
+    void SetZoom(float zoom);
+
 private:
     // The layout of the document, computed by the renderer.
     void Relayout();

@@ -1,0 +1,771 @@
+// The app layer's renderer, laid out against a fixed text engine.
+//
+// The shared suite covers the parser and the document model; the mac
+// renderer talks to Core Text, so its layout arithmetic is checked here
+// with an engine that measures on a fixed grid. What the tests pin is
+// the Windows parity: the reading width and its centered column, the
+// line spacing, the gaps between blocks, the equal table columns with
+// per row heights, the list marker gutter, the rule under an H1, the
+// quote bar and the zoom.
+
+#include "gtest_lite.h"
+
+#include "../src/macos/renderer_mac.h"
+
+#include <cmath>
+#include <string>
+#include <vector>
+
+using mac::FontSpec;
+using mac::GlyphRun;
+using mac::LaidOutBlock;
+using mac::MacRenderer;
+using mac::Rect;
+using mac::TextEngine;
+using mac::TextLine;
+
+namespace {
+
+// A text engine with fixed metrics: a character is half an em wide, a
+// line is as tall as the em, and every hard line break starts a new
+// line. The renderer's own arithmetic is what the tests check, so the
+// engine stays simple and deterministic.
+class FakeEngine : public TextEngine {
+public:
+    struct Call {
+        float maxWidth = 0.0f;
+        float size = 0.0f;
+        std::string text;
+    };
+    std::vector<Call> calls;
+
+    std::vector<TextLine> MeasureWrapped(const std::vector<GlyphRun>& runs,
+                                          float maxWidth,
+                                          float lineSpacing) override {
+        (void)lineSpacing;
+
+        std::string text;
+        for (const GlyphRun& run : runs) text += run.text;
+        if (text.empty()) return {};
+
+        Call call;
+        call.maxWidth = maxWidth;
+        call.size = runs[0].font.size;
+        call.text = text;
+        calls.push_back(call);
+
+        const float charWidth = runs[0].font.size * 0.5f;
+        const float width = maxWidth > 0.0f ? maxWidth : 1.0e9f;
+        size_t perLine = static_cast<size_t>(std::floor(width / charWidth));
+        if (perLine < 1) perLine = 1;
+
+        // One line per hard break, wrapped at the width. The runs are
+        // sliced at the line window the way the real engine slices
+        // them, so the styles travel with the text.
+        std::vector<TextLine> lines;
+        size_t start = 0;
+        while (start < text.size()) {
+            const size_t hard = text.find('\n', start);
+            const size_t stop =
+                hard == std::string::npos ? text.size() : hard + 1;
+            size_t pos = start;
+            while (pos < stop) {
+                size_t count = stop - pos;
+                if (count > perLine) count = perLine;
+                const size_t lineEnd = pos + count;
+
+                TextLine line;
+                line.width = static_cast<float>(count) * charWidth;
+                line.height = runs[0].font.size;
+                line.ascent = line.height;
+
+                size_t offset = 0;
+                for (const GlyphRun& run : runs) {
+                    const size_t runEnd = offset + run.text.size();
+                    if (runEnd > pos && offset < lineEnd) {
+                        const size_t from = pos > offset ? pos - offset : 0;
+                        const size_t to = lineEnd < runEnd ? lineEnd - offset
+                                                           : run.text.size();
+                        GlyphRun sliced = run;
+                        sliced.text = run.text.substr(from, to - from);
+                        sliced.x = static_cast<float>(pos + from - start) *
+                                   charWidth;
+                        line.runs.push_back(sliced);
+                    }
+                    offset = runEnd;
+                }
+                lines.push_back(line);
+                pos = lineEnd;
+            }
+            start = stop;
+        }
+        return lines;
+    }
+
+    uint32_t HitTestOffset(const TextLine& line, float x,
+                            bool* outTrailing) const override {
+        if (outTrailing) *outTrailing = false;
+        const float charWidth = CharWidth(line);
+        if (charWidth <= 0.0f) return 0;
+        const long index = static_cast<long>(x / charWidth);
+        return index <= 0 ? 0u : static_cast<uint32_t>(index);
+    }
+
+    Rect OffsetToRect(const TextLine& line, uint32_t offset) const override {
+        const float charWidth = CharWidth(line);
+        Rect rect;
+        rect.x = static_cast<float>(offset) * charWidth;
+        rect.width = charWidth;
+        rect.height = line.height;
+        return rect;
+    }
+
+    float LineHeight(const FontSpec& font) const override {
+        return font.size;
+    }
+
+private:
+    static float CharWidth(const TextLine& line) {
+        for (const GlyphRun& run : line.runs) {
+            if (run.font.size > 0.0f) return run.font.size * 0.5f;
+        }
+        return 0.0f;
+    }
+};
+
+// A target that records what was drawn, so the paint side can be
+// checked without a screen.
+class RecordingTarget : public mac::RenderTarget {
+public:
+    struct Fill {
+        Rect rect;
+        float radius = 0.0f;
+        mac::Color color;
+    };
+    struct Stroke {
+        float x0 = 0.0f;
+        float y0 = 0.0f;
+        float x1 = 0.0f;
+        float y1 = 0.0f;
+        float width = 0.0f;
+        mac::Color color;
+    };
+    struct Text {
+        std::string text;
+        float x = 0.0f;
+        float baseline = 0.0f;
+        mac::Color color;
+    };
+
+    std::vector<Fill> fills;
+    std::vector<Stroke> strokes;
+    std::vector<Text> texts;
+    int clips = 0;
+
+    void FillRect(const Rect& rect, const mac::Color& color) override {
+        Fill fill;
+        fill.rect = rect;
+        fill.color = color;
+        fills.push_back(fill);
+    }
+    void FillRoundedRect(const Rect& rect, float radius,
+                          const mac::Color& color) override {
+        Fill fill;
+        fill.rect = rect;
+        fill.radius = radius;
+        fill.color = color;
+        fills.push_back(fill);
+    }
+    void StrokeRect(const Rect& rect, const mac::Color& color,
+                    float lineWidth) override {
+        Stroke stroke;
+        stroke.x0 = rect.x;
+        stroke.y0 = rect.y;
+        stroke.x1 = rect.x + rect.width;
+        stroke.y1 = rect.y + rect.height;
+        stroke.width = lineWidth;
+        stroke.color = color;
+        strokes.push_back(stroke);
+    }
+    void StrokeRoundedRect(const Rect& rect, float radius,
+                            const mac::Color& color,
+                            float lineWidth) override {
+        (void)radius;
+        StrokeRect(rect, color, lineWidth);
+    }
+    void StrokeLine(float x0, float y0, float x1, float y1,
+                    const mac::Color& color, float lineWidth) override {
+        Stroke stroke;
+        stroke.x0 = x0;
+        stroke.y0 = y0;
+        stroke.x1 = x1;
+        stroke.y1 = y1;
+        stroke.width = lineWidth;
+        stroke.color = color;
+        strokes.push_back(stroke);
+    }
+    void DrawText(const std::string& utf8, const FontSpec& font, float x,
+                  float baselineY, const mac::Color& color) override {
+        (void)font;
+        Text text;
+        text.text = utf8;
+        text.x = x;
+        text.baseline = baselineY;
+        text.color = color;
+        texts.push_back(text);
+    }
+    void DrawBitmap(mac::BitmapHandle image, const Rect& rect) override {
+        (void)image;
+        (void)rect;
+    }
+    void FillEllipse(const Rect& rect, const mac::Color& color) override {
+        (void)rect;
+        (void)color;
+    }
+    void StrokeEllipse(const Rect& rect, const mac::Color& color,
+                        float lineWidth) override {
+        (void)rect;
+        (void)color;
+        (void)lineWidth;
+    }
+    void FillPolygon(const std::vector<mac::Point>& points,
+                      const mac::Color& color) override {
+        (void)points;
+        (void)color;
+    }
+    void StrokePolygon(const std::vector<mac::Point>& points,
+                        const mac::Color& color, float lineWidth,
+                        bool closed) override {
+        (void)points;
+        (void)color;
+        (void)lineWidth;
+        (void)closed;
+    }
+    void FillPieSlice(const Rect& rect, float startAngle, float endAngle,
+                       const mac::Color& color) override {
+        (void)rect;
+        (void)startAngle;
+        (void)endAngle;
+        (void)color;
+    }
+    void PushClip(const Rect& rect) override {
+        (void)rect;
+        ++clips;
+    }
+    void PopClip() override { --clips; }
+};
+
+// --- The hand-built documents -------------------------------------------
+//
+// The tests build their documents directly, so the layout numbers do
+// not depend on the parser's block splitting.
+
+std::u32string Utf32(const std::string& text) {
+    std::u32string out;
+    for (unsigned char c : text) out.push_back(static_cast<char32_t>(c));
+    return out;
+}
+
+struct NodeBuilder {
+    Node node;
+    NodeBuilder(BlockKind kind, const std::string& text) {
+        node.block = kind;
+        InlineBlock child;
+        child.kind = InlineKind::Text;
+        child.text = Utf32(text);
+        node.children.push_back(child);
+        node.contentLength = static_cast<uint32_t>(text.size());
+    }
+};
+
+Node Para(const std::string& text) {
+    return NodeBuilder(BlockKind::Paragraph, text).node;
+}
+
+Node Heading(int level, const std::string& text) {
+    Node node = Para(text);
+    node.block = BlockKind::Heading;
+    node.level = level;
+    return node;
+}
+
+Node ListItem(bool ordered, int depth, const std::string& text) {
+    Node node = Para(text);
+    node.block = BlockKind::List;
+    node.ordered = ordered;
+    node.depth = depth;
+    return node;
+}
+
+Node Code(const std::string& text) {
+    Node node = Para(text);
+    node.block = BlockKind::CodeBlock;
+    return node;
+}
+
+Node Table(const std::vector<std::vector<std::string>>& rows) {
+    Node node;
+    node.block = BlockKind::Table;
+    for (size_t r = 0; r < rows.size(); ++r) {
+        TableRow row;
+        for (const std::string& text : rows[r]) {
+            TableCell cell;
+            cell.text = Utf32(text);
+            cell.isHeader = (r == 0);
+            row.cells.push_back(cell);
+        }
+        node.rows.push_back(row);
+    }
+    return node;
+}
+
+Document Doc(std::vector<Node> nodes) {
+    Document doc;
+    doc.nodes = std::move(nodes);
+    return doc;
+}
+
+// The theme metrics the renderer starts from, and the numbers the
+// tests derive from them.
+constexpr float kPadX = 56.0f;
+constexpr float kPadTop = 32.0f;
+constexpr float kCap = 800.0f;
+constexpr float kPtToDip = 96.0f / 72.0f;
+const float kBodyEm = 13.5f * kPtToDip;   // 18
+const float kH1Em = 23.0f * kPtToDip;     // 30.667
+const float kCodeEm = 11.5f * kPtToDip;   // 15.333
+
+}  // namespace
+
+TEST(RendererMac, CentersTheTextColumn) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    const Document doc = Doc({Para("hello world")});
+    renderer.Measure(doc, 1400.0f);
+    EXPECT_NEAR(renderer.contentWidth(), kCap, 0.01f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    const LaidOutBlock& para = renderer.blocks()[0];
+    EXPECT_NEAR(para.x, (1400.0f - kCap) * 0.5f, 0.01f);
+    EXPECT_NEAR(para.width, kCap, 0.01f);
+    // The first block has no gap before it.
+    EXPECT_NEAR(para.y, kPadTop, 0.01f);
+
+    // A narrow window: the padding eats into the column and there is
+    // nothing left to center.
+    renderer.Measure(doc, 500.0f);
+    EXPECT_NEAR(renderer.contentWidth(), 500.0f - 2.0f * kPadX, 0.01f);
+    EXPECT_NEAR(renderer.blocks()[0].x, kPadX, 0.01f);
+
+    // With the wrap off the text gets one wide line, and the column
+    // sits at the left padding.
+    renderer.SetWrap(false);
+    renderer.Measure(doc, 1400.0f);
+    EXPECT_NEAR(renderer.contentWidth(), 10000.0f, 0.01f);
+    EXPECT_NEAR(renderer.blocks()[0].x, kPadX, 0.01f);
+}
+
+TEST(RendererMac, UsesTheWindowsLineSpacing) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    const Document doc =
+        Doc({Heading(1, "Title"), Para("body text"), Code("code")});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 3u);
+
+    // H1: the em with the heading spacing (1.25), the baseline on the
+    // top of the line. The rule under it takes its room inside the
+    // block: ruleGapAbove + ruleGapBelow.
+    const LaidOutBlock& heading = renderer.blocks()[0];
+    ASSERT_EQ(heading.lines.size(), 1u);
+    EXPECT_NEAR(heading.lines[0].height, kH1Em * 1.25f, 0.02f);
+    EXPECT_NEAR(heading.lines[0].ascent, kH1Em, 0.02f);
+    EXPECT_NEAR(heading.height, kH1Em * 1.25f + 28.0f, 0.02f);
+
+    // Body: 1.3 times the em, baseline at 1.24 times the em.
+    const LaidOutBlock& body = renderer.blocks()[1];
+    ASSERT_EQ(body.lines.size(), 1u);
+    EXPECT_NEAR(body.lines[0].height, kBodyEm * 1.3f, 0.02f);
+    EXPECT_NEAR(body.lines[0].ascent, kBodyEm * 1.24f, 0.02f);
+
+    // Code: 1.45 times the em, and the padding above and below.
+    const LaidOutBlock& code = renderer.blocks()[2];
+    ASSERT_EQ(code.lines.size(), 1u);
+    EXPECT_NEAR(code.lines[0].height, kCodeEm * 1.45f, 0.02f);
+    EXPECT_NEAR(code.height, kCodeEm * 1.45f + 28.0f, 0.02f);
+}
+
+TEST(RendererMac, SpacesBlocksLikeWindows) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    const Document doc = Doc({
+        Para("one"), Para("two"), Heading(2, "Head"), Para("three"),
+        ListItem(true, 0, "item"), ListItem(true, 0, "item"), Code("code"),
+        Para("tail"),
+    });
+    renderer.Measure(doc, 1400.0f);
+    const std::vector<LaidOutBlock>& blocks = renderer.blocks();
+    ASSERT_EQ(blocks.size(), 8u);
+
+    auto gap = [&](size_t i) {
+        return blocks[i + 1].y - (blocks[i].y + blocks[i].height);
+    };
+    EXPECT_NEAR(gap(0), 16.0f, 0.02f);  // paragraph to paragraph
+    EXPECT_NEAR(gap(1), 32.0f, 0.02f);  // the gap before a heading
+    EXPECT_NEAR(gap(2), 10.0f, 0.02f);  // the gap after a heading
+    EXPECT_NEAR(gap(3), 16.0f, 0.02f);  // the gap before a list
+    EXPECT_NEAR(gap(4), 4.0f, 0.02f);   // between two list items
+    EXPECT_NEAR(gap(5), 16.0f, 0.02f);  // the gap after a list
+    EXPECT_NEAR(gap(6), 18.0f, 0.02f);  // the gap around a code block
+}
+
+TEST(RendererMac, ScalesEverythingWithTheZoom) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    renderer.SetZoom(2.0f);
+
+    const Document doc = Doc({Para("body")});
+    renderer.Measure(doc, 3000.0f);
+    EXPECT_NEAR(renderer.contentWidth(), kCap * 2.0f, 0.01f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    EXPECT_NEAR(renderer.blocks()[0].x, (3000.0f - kCap * 2.0f) * 0.5f,
+                0.01f);
+
+    // The font the engine measured with is the point size converted
+    // and zoomed: 13.5 * 4/3 * 2 = 36, and the line follows.
+    ASSERT_TRUE(!engine.calls.empty());
+    EXPECT_NEAR(engine.calls.back().size, kBodyEm * 2.0f, 0.01f);
+    ASSERT_EQ(renderer.blocks()[0].lines.size(), 1u);
+    EXPECT_NEAR(renderer.blocks()[0].lines[0].height, kBodyEm * 2.0f * 1.3f,
+                0.02f);
+}
+
+TEST(RendererMac, MeasuresTablesTheWindowsWay) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    // A wrapping cell in the second column of the second row: the
+    // columns are equal, and the rows are as tall as their tallest
+    // cell.
+    const Document doc = Doc({Table({
+        {"a", "b"},
+        {"c", std::string(60, 'x')},
+    })});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    const LaidOutBlock& table = renderer.blocks()[0];
+    ASSERT_TRUE(table.table != nullptr);
+
+    const float colW = kCap / 2.0f;
+    EXPECT_NEAR(table.tableLayout.colW, colW, 0.01f);
+    EXPECT_NEAR(table.width, kCap, 0.01f);
+    ASSERT_EQ(table.tableLayout.rowHeights.size(), 2u);
+
+    // The cells were measured against the column width less the
+    // padding.
+    const float innerW = colW - 24.0f;
+    bool sawInner = false;
+    for (const FakeEngine::Call& call : engine.calls) {
+        if (std::fabs(call.maxWidth - innerW) < 0.01f) sawInner = true;
+    }
+    EXPECT_TRUE(sawInner);
+
+    const float lineH = kBodyEm * 1.3f;
+    EXPECT_NEAR(table.tableLayout.rowHeights[0], lineH + 16.0f, 0.02f);
+    EXPECT_GT(table.tableLayout.rowHeights[1], table.tableLayout.rowHeights[0]);
+    EXPECT_NEAR(table.height,
+                table.tableLayout.rowHeights[0] + table.tableLayout.rowHeights[1],
+                0.01f);
+}
+
+TEST(RendererMac, GivesListsTheMarkerGutter) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    RecordingTarget target;
+    renderer.SetRenderTarget(&target);
+
+    const Document doc = Doc({
+        ListItem(true, 0, "first"),
+        ListItem(true, 0, "second"),
+        ListItem(true, 0, "third"),
+    });
+    renderer.Measure(doc, 1400.0f);
+    const std::vector<LaidOutBlock>& blocks = renderer.blocks();
+    ASSERT_EQ(blocks.size(), 3u);
+
+    // The text sits after the indent and wraps in what is left of the
+    // marker gutter.
+    const float originX = (1400.0f - kCap) * 0.5f;
+    const float markerW = 28.0f * 0.6f + 4.0f;
+    EXPECT_NEAR(blocks[0].x, originX + 28.0f, 0.01f);
+    ASSERT_TRUE(!engine.calls.empty());
+    EXPECT_NEAR(engine.calls[0].maxWidth, kCap - 28.0f - markerW, 0.01f);
+
+    renderer.Render(doc, 0.0f);
+    bool sawFirst = false, sawSecond = false, sawThird = false;
+    for (const RecordingTarget::Text& text : target.texts) {
+        if (text.text == "1. " &&
+            std::fabs(text.x - (originX + 28.0f)) < 0.01f) {
+            sawFirst = true;
+        }
+        if (text.text == "2. ") sawSecond = true;
+        if (text.text == "3. ") sawThird = true;
+    }
+    EXPECT_TRUE(sawFirst);
+    EXPECT_TRUE(sawSecond);
+    EXPECT_TRUE(sawThird);
+
+    // The count restarts when the list is interrupted.
+    target.texts.clear();
+    const Document split = Doc({
+        ListItem(true, 0, "one"),
+        Para("break"),
+        ListItem(true, 0, "two"),
+    });
+    renderer.Measure(split, 1400.0f);
+    renderer.Render(split, 0.0f);
+    int ones = 0;
+    for (const RecordingTarget::Text& text : target.texts) {
+        if (text.text == "1. ") ++ones;
+    }
+    EXPECT_EQ(ones, 2);
+}
+
+TEST(RendererMac, PaintsTheRuleTheBarAndTheBreak) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    RecordingTarget target;
+    renderer.SetRenderTarget(&target);
+
+    Node quote = Para("quote");
+    quote.block = BlockKind::BlockQuote;
+    Node breaking;
+    breaking.block = BlockKind::ThematicBreak;
+
+    const Document doc =
+        Doc({Heading(1, "Title"), quote, breaking, Para("tail")});
+    renderer.Measure(doc, 1400.0f);
+    const std::vector<LaidOutBlock>& blocks = renderer.blocks();
+    ASSERT_EQ(blocks.size(), 4u);
+    renderer.Render(doc, 0.0f);
+
+    // The H1 rule sits under the text, ruleGapAbove below it.
+    const float ruleY = blocks[0].y + kH1Em * 1.25f + 8.0f;
+    bool sawRule = false;
+    for (const RecordingTarget::Stroke& stroke : target.strokes) {
+        if (std::fabs(stroke.y0 - ruleY) < 0.02f &&
+            std::fabs(stroke.x0 - blocks[0].x) < 0.01f &&
+            std::fabs(stroke.x1 - (blocks[0].x + blocks[0].width)) < 0.01f) {
+            sawRule = true;
+        }
+    }
+    EXPECT_TRUE(sawRule);
+
+    // The quote bar: centered four points left of the indented text,
+    // as tall as the text.
+    const float barX = blocks[1].x - 20.0f + 4.0f - 2.0f;
+    bool sawBar = false;
+    for (const RecordingTarget::Fill& fill : target.fills) {
+        if (std::fabs(fill.rect.x - barX) < 0.02f &&
+            std::fabs(fill.rect.width - 4.0f) < 0.01f &&
+            std::fabs(fill.rect.height - kBodyEm * 1.3f) < 0.02f) {
+            sawBar = true;
+        }
+    }
+    EXPECT_TRUE(sawBar);
+
+    // The thematic break: a 12 point band with the rule in the middle.
+    EXPECT_NEAR(blocks[2].height, 12.0f, 0.01f);
+    bool sawBreak = false;
+    for (const RecordingTarget::Fill& fill : target.fills) {
+        if (std::fabs(fill.rect.y - (blocks[2].y + 6.0f)) < 0.02f &&
+            std::fabs(fill.rect.height - 1.0f) < 0.01f) {
+            sawBreak = true;
+        }
+    }
+    EXPECT_TRUE(sawBreak);
+}
+
+TEST(RendererMac, FillsTheInlineCodeBackground) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    RecordingTarget target;
+    renderer.SetRenderTarget(&target);
+
+    Node para;
+    para.block = BlockKind::Paragraph;
+    InlineBlock before;
+    before.kind = InlineKind::Text;
+    before.text = Utf32("text ");
+    InlineBlock span;
+    span.kind = InlineKind::Text;
+    span.text = Utf32("code");
+    span.code = true;
+    InlineBlock after;
+    after.kind = InlineKind::Text;
+    after.text = Utf32(" tail");
+    para.children = {before, span, after};
+
+    const Document doc = Doc({para});
+    renderer.Measure(doc, 1400.0f);
+    renderer.Render(doc, 0.0f);
+
+    // The fill behind the span: the four characters of the span, two
+    // points of padding on either side.
+    const float charW = kBodyEm * 0.5f;
+    const float expectedWidth = 4.0f * charW + 4.0f;
+    bool sawBackground = false;
+    for (const RecordingTarget::Fill& fill : target.fills) {
+        if (std::fabs(fill.rect.width - expectedWidth) < 0.05f) {
+            sawBackground = true;
+        }
+    }
+    EXPECT_TRUE(sawBackground);
+}
+
+TEST(RendererMac, UnderlinesLinks) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    RecordingTarget target;
+    renderer.SetRenderTarget(&target);
+
+    Node para;
+    para.block = BlockKind::Paragraph;
+    InlineBlock before;
+    before.kind = InlineKind::Text;
+    before.text = Utf32("go ");
+    InlineBlock link;
+    link.kind = InlineKind::Link;
+    link.text = Utf32("here");
+    link.url = "https://example.invalid/";
+    InlineBlock after;
+    after.kind = InlineKind::Text;
+    after.text = Utf32(" now");
+    para.children = {before, link, after};
+
+    const Document doc = Doc({para});
+    renderer.Measure(doc, 1400.0f);
+    renderer.Render(doc, 0.0f);
+
+    // The underline runs under the link, from its own characters, two
+    // points under the baseline.
+    const float charW = kBodyEm * 0.5f;
+    const float underlineY = 32.0f + kBodyEm * 1.24f + 2.0f;
+    bool sawUnderline = false;
+    for (const RecordingTarget::Stroke& stroke : target.strokes) {
+        if (std::fabs(stroke.y0 - underlineY) < 0.02f &&
+            std::fabs(stroke.x0 - (300.0f + 3.0f * charW)) < 0.02f &&
+            std::fabs(stroke.x1 - (300.0f + 7.0f * charW)) < 0.02f) {
+            sawUnderline = true;
+        }
+    }
+    EXPECT_TRUE(sawUnderline);
+}
+
+TEST(RendererMac, DrawsImagesAboveTheirParagraph) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    RecordingTarget target;
+    renderer.SetRenderTarget(&target);
+
+    Node para;
+    para.block = BlockKind::Paragraph;
+    InlineBlock before;
+    before.kind = InlineKind::Text;
+    before.text = Utf32("text ");
+    InlineBlock image;
+    image.kind = InlineKind::Image;
+    image.url = "no-such-file.png";
+    InlineBlock after;
+    after.kind = InlineKind::Text;
+    after.text = Utf32(" after");
+    para.children = {before, image, after};
+
+    const Document doc = Doc({para});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    const LaidOutBlock& block = renderer.blocks()[0];
+
+    // The image keeps its reserved room above the text: the fallback
+    // height and the paragraph gap the Windows layout charges.
+    EXPECT_NEAR(block.imagesHeight, 100.0f + 16.0f, 0.01f);
+
+    renderer.Render(doc, 0.0f);
+    bool sawText = false;
+    for (const RecordingTarget::Text& text : target.texts) {
+        if (text.text.find("text") != std::string::npos &&
+            text.baseline > block.y + block.imagesHeight) {
+            sawText = true;
+        }
+    }
+    EXPECT_TRUE(sawText);
+
+    // The hit tester puts the caret in the text, not in the image
+    // slot.
+    float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
+    EXPECT_TRUE(renderer.OffsetToRect(0, &x, &y, &w, &h));
+    EXPECT_GE(y, block.y + block.imagesHeight - 0.01f);
+}
+
+TEST(RendererMac, KeepsACaretLineForABlankParagraph) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    Node blank;
+    blank.block = BlockKind::Paragraph;
+    blank.virtualEmptyParagraph = true;
+
+    const Document doc = Doc({blank});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+
+    // The blank paragraph keeps one line, so the caret has a place to
+    // sit.
+    const LaidOutBlock& block = renderer.blocks()[0];
+    ASSERT_EQ(block.lines.size(), 1u);
+    EXPECT_NEAR(block.height, kBodyEm * 1.3f, 0.02f);
+    float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
+    EXPECT_TRUE(renderer.OffsetToRect(0, &x, &y, &w, &h));
+    EXPECT_NEAR(h, kBodyEm * 1.3f, 0.02f);
+}
+
+TEST(RendererMac, GivesAnEmptyParagraphNoHeight) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    Node blank;
+    blank.block = BlockKind::Paragraph;
+
+    const Document doc = Doc({blank});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    EXPECT_NEAR(renderer.blocks()[0].height, 0.0f, 0.01f);
+    float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
+    EXPECT_TRUE(!renderer.OffsetToRect(0, &x, &y, &w, &h));
+}

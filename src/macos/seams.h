@@ -50,6 +50,10 @@ struct GlyphRun {
     float a = 1.0f;
     // The horizontal offset of the run inside its line, in points.
     float x = 0.0f;
+    // The run is a link, drawn with an underline under the glyphs.
+    bool underline = false;
+    // The run is struck through.
+    bool strike = false;
 };
 
 // One laid out line of text.
@@ -89,6 +93,12 @@ struct Rect {
 class TextEngine {
 public:
     virtual ~TextEngine() = default;
+
+    // Called before a full layout pass, so the engine can drop the
+    // measurements of the pass before it. The default keeps everything;
+    // an engine that keeps its lines alive for hit testing overrides
+    // it.
+    virtual void BeginLayout() {}
 
     // Lays the runs out. The runs are measured and broken into lines that
     // fit maxWidth. A maxWidth of zero means one unbounded line.
@@ -175,6 +185,11 @@ public:
     // Strokes a rectangle with a one point line.
     virtual void StrokeRect(const Rect& rect, const Color& color,
                             float lineWidth) = 0;
+
+    // Strokes a rounded rectangle, the outline of the geometry
+    // FillRoundedRect fills. The radius is in points.
+    virtual void StrokeRoundedRect(const Rect& rect, float radius,
+                                   const Color& color, float lineWidth) = 0;
 
     // Strokes a straight line.
     virtual void StrokeLine(float x0, float y0, float x1, float y1,

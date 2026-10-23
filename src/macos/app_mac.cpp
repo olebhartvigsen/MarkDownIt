@@ -455,17 +455,6 @@ void App::Reparse() {
 void App::ClearFormat() {
     if (sel_.Empty()) return;
 
-    // The markers at the start of the line the selection is in. A
-    // heading, a quote and a list item each leave a marker, and they
-    // leave the same text behind.
-    struct LineMarker {
-        char ch;       // the character of the marker
-        uint32_t count; // how many of them
-    };
-    const LineMarker lineMarkers[] = {
-        {'#', 0}, {'>', 0}, {'-', 0}, {'*', 0}, {'+', 0},
-    };
-
     uint32_t start = sel_.Start();
     uint32_t end = sel_.End();
 

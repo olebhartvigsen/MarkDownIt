@@ -202,3 +202,25 @@ TEST(TextEngineMac, HitTestsAndPlacesOffsets) {
     EXPECT_TRUE(rect.x >= 0.0f);
     EXPECT_GT(rect.height, 0.0f);
 }
+
+
+TEST(TextEngineMac, KeepsTheBlankLinesOfACodeBlock) {
+    // A code block is measured as one run whose text holds the hard
+    // line breaks, so a blank line in the source stays a line on
+    // screen instead of disappearing: the same lines the Windows
+    // layout keeps for the block.
+    CoreTextEngine engine;
+    const std::vector<TextLine> lines =
+        engine.MeasureWrapped({Run("one\n\ntwo")}, 10000.0f, 0.0f);
+    ASSERT_GE(lines.size(), 3u);
+    EXPECT_EQ(Rebuild(lines), std::string("one\n\ntwo"));
+
+    int blank = 0;
+    for (const TextLine& line : lines) {
+        if (CoreTextEngine::LineTextUtf8(line).find_first_not_of("\r\n") ==
+            std::string::npos) {
+            ++blank;
+        }
+    }
+    EXPECT_EQ(blank, 1);
+}

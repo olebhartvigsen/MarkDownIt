@@ -194,6 +194,7 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
         contentWidthMode_ = 0;
     }
     content_->SetContentWidthMode(contentWidthMode_);
+    content_->SetZoom(zoom_);
 
     // The window. A document based app would use NSWindowController, but
     // this app has a single window, so the delegate owns it.
@@ -1096,6 +1097,8 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 - (void)setZoom:(float)factor {
     zoom_ = zoom::Clamp(factor);
     settings_.settings().zoomFactor = zoom_;
+    // The document follows the zoom, the way the Windows window does.
+    content_->SetZoom(zoom_);
     [view_ setNeedsDisplay:YES];
 }
 

@@ -44,8 +44,22 @@ struct LaidOutBlock {
     int level = 0;
     // The table rows, for a table.
     const Node* table = nullptr;
-    // The images of the block, drawn under its text.
+    // The images of the block, drawn above its text.
     std::vector<std::string> images;
+    // The height the images take above the text.
+    float imagesHeight = 0.0f;
+    // The table cells, laid out: the lines and the row heights, so the
+    // painter draws exactly what the layout measured.
+    struct TableCellLayout {
+        std::vector<TextLine> lines;
+        ColumnAlign align = ColumnAlign::Default;
+    };
+    struct TableLayout {
+        float colW = 0.0f;
+        std::vector<float> rowHeights;
+        std::vector<std::vector<TableCellLayout>> rows;
+    };
+    TableLayout tableLayout;
 };
 
 // The mac renderer.
@@ -71,10 +85,12 @@ public:
 
     // Sets the zoom of the document.
     //
-    // The mermaid diagrams follow the zoom, the way they do on Windows.
-    // The rest of the document follows the theme metrics, so the caller
-    // has to scale those as well.
-    void SetZoom(float zoom) { zoom_ = zoom; }
+    // The metrics are resolved again, so the text, the spacing and the
+    // diagrams all follow the zoom, the way they do on Windows.
+    void SetZoom(float zoom) {
+        zoom_ = zoom;
+        metrics_ = ComputeMetrics();
+    }
 
     // Turns the word wrap on or off.
     //
@@ -99,7 +115,8 @@ public:
     // The theme. The mac theme variant supplies macOS font names, the
     // shared one supplies the spacing.
     void SetTheme(const LayoutMetrics& metrics, const Palette& palette) {
-        metrics_ = metrics;
+        baseMetrics_ = metrics;
+        metrics_ = ComputeMetrics();
         palette_ = palette;
     }
 
@@ -164,10 +181,12 @@ private:
     void LayoutBlock(const Node& node, float x, float width, float* y);
 
     // Charges the block for the room its images take and remembers them.
-    void ChargeForImages(LaidOutBlock* block);
+    // Returns the height the images take above the text.
+    float ChargeForImages(LaidOutBlock* block);
 
-    // The width the text column is capped at, in points.
-    float ContentWidthLimit() const;
+    // The metrics of the current zoom and width mode, resolved the way
+    // the Windows renderer resolves them.
+    LayoutMetrics ComputeMetrics() const;
 
     // Draws the images of a block under its text.
     void PaintImages(const LaidOutBlock& block, float top, float width);
@@ -178,18 +197,59 @@ private:
     // The rectangles a range of offsets covers.
     std::vector<Rect> RectsForRange(uint32_t start, uint32_t end) const;
 
+    // The rectangles of a range inside one block.
+    std::vector<Rect> RectsForRangeInBlock(const LaidOutBlock& block,
+                                            uint32_t start,
+                                            uint32_t end) const;
+
     // The runs of a block's inline children, with the styles applied.
     std::vector<GlyphRun> BuildRuns(const Node& node, float baseSize,
                                      bool bold, bool italic,
                                      const Color& color,
                                      bool monospace) const;
 
-    // The font for a run.
+    // The font for a run of the document text. The theme sizes are
+    // points; the font is converted to the layout unit and scaled by
+    // the zoom, the same numbers the Windows renderer creates its text
+    // formats with.
     FontSpec FontFor(const Node& node, float baseSize, bool bold,
                       bool italic, bool monospace) const;
 
-    // Draws a laid out block.
-    void PaintBlock(const LaidOutBlock& block, float scrollOffset);
+    // The font for a run that lives outside the document layout, like a
+    // mermaid label. Those painters scale by the zoom themselves, so
+    // this font stays unzoomed.
+    FontSpec DiagramFontFor(const Node& node, float baseSize, bool bold,
+                             bool italic, bool monospace) const;
+
+    // Applies the Windows line spacing to measured lines: every line is
+    // as tall as heightMult times the em, and its baseline sits
+    // baselineMult times the em below the top of the line.
+    void ApplyLineSpacing(std::vector<TextLine>* lines, float ptSize,
+                          float heightMult, float baselineMult) const;
+
+    // The runs of a table cell, cut at the boundaries of its inline
+    // spans, so a cell carries the same styles the Windows renderer
+    // gives it.
+    std::vector<GlyphRun> BuildCellRuns(const TableCell& cell, bool bold,
+                                         const Color& color) const;
+
+    // Draws the lines of a block, with their underlines and their
+    // strike-throughs.
+    void PaintLines(const std::vector<TextLine>& lines, float x,
+                    float top) const;
+
+    // Draws the runs of one line.
+    void PaintLineRuns(const TextLine& line, float x, float y) const;
+
+    // Draws the background of the inline code spans of a block, behind
+    // its text.
+    void PaintInlineCodeBg(const LaidOutBlock& block,
+                           float scrollOffset) const;
+
+    // Draws a laid out block. The marker is the ordered list marker for
+    // a list block, and empty for every other kind.
+    void PaintBlock(const LaidOutBlock& block, float scrollOffset,
+                    const std::string& marker);
 
     // Draws a table.
     void PaintTable(const LaidOutBlock& block, float scrollOffset);
@@ -200,11 +260,17 @@ private:
     TextEngine* diagramEngine_ = nullptr;
     RenderTarget* target_ = nullptr;
 
+    // The theme metrics as given, and the ones the renderer works with
+    // (scaled by the zoom, with the width cap of the mode applied).
+    LayoutMetrics baseMetrics_{};
     LayoutMetrics metrics_{};
     Palette palette_{};
 
     std::vector<LaidOutBlock> blocks_;
     float contentWidth_ = 0.0f;
+    // The x of the left edge of the text column, which centers the
+    // column when it is narrower than the view.
+    float originX_ = 0.0f;
     float totalHeight_ = 0.0f;
     // True when an image of the document is still being fetched.
     bool needsLayout_ = false;
