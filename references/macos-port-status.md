@@ -128,7 +128,9 @@ What is left is the work that needs a person in front of a Mac:
 - the next attempt can be watched from the start-up breadcrumbs in
   `~/Library/Logs/MarkDownIt/crash_trace.log`
 - the editing, the dragging, the printing and the file associations
-  still wait for a hand run
+  still wait for a hand run, and so does the layout: CI pins the
+  layout numbers against the Windows ones, but only a person at a Mac
+  can say whether the two windows look the same
 - the bundle is signed ad hoc and checked by `tools/check_mac_bundle.py`,
   but it is not notarized, so the first launch asks once by design
 - the app is not in the Mac App Store
@@ -344,3 +346,67 @@ range, the clamping and the label text.
 The mouse, keyboard, narrow-window and multi-display cases still need a
 person at a Mac. CI compiles the picker and runs the model tests, but it
 cannot hover a cell or press an arrow key.
+
+## The layout, measured with the Windows numbers
+
+`.hermes/plans/2026-08-12_105500-markdown-layout-typography.md` was
+written for the Windows renderer, and the mac renderer had answers of
+its own for most of it: one fixed gap after every block instead of the
+gap that belongs to the pair of blocks, table columns sized by their
+content instead of equal columns with a row height per row, no rule
+under the H1 and the H2, no step in the quote bar, and a zoom that
+reached the viewport and the diagrams but never the layout. The mac
+renderer now runs the Windows arithmetic, ported from
+`src/renderer.cpp` and checked against it rule by rule.
+
+- **The unit.** The theme writes its font sizes in points and its
+  spacing in the layout unit the plan uses, and the Windows renderer
+  converts every font with 96/72 when it builds its text formats. The
+  mac renderer did not, so its text came out smaller than the layout
+  around it and the lines broke at other words. It converts the same
+  way now, and with Selawik's matching advance widths a paragraph
+  breaks at the same word on both systems.
+- **The spacing.** The gaps come from the same transition rule the
+  Windows renderer uses: a heading gets its wide gap before it and
+  its narrow gap after it, a list keeps its items tight and keeps its
+  distance from the blocks around it, and a code block keeps its
+  wider gap on both sides.
+- **The line spacing.** Every block sets its line height and its
+  baseline from the Windows numbers: the body at 1.3 and 1.24 of the
+  em, a heading at 1.25 with its baseline on the top of the line, a
+  code line at 1.45.
+- **The column.** The text column is the window width less the theme
+  padding, capped at the reading width and centered in what is left,
+  so a document sits where it sits on Windows. The cap follows the
+  width setting and the zoom.
+- **The headings.** An H1 and an H2 carry their rule again, inside
+  the room the block reserves for it, so the next block keeps the
+  same distance from the rule as it does on Windows.
+- **The quotes, the lists, the tables and the code.** A quote steps
+  its bar inward with its nesting depth, a list keeps the marker
+  gutter and its markers count (1., 2., 3.) across a run of items, a
+  table splits its width into equal columns and measures every row on
+  its own, a code block draws its border around the same rounded
+  outline as its fill, and an inline code span gets its own face, its
+  own size and its background.
+- **The zoom.** The zoom scales the metrics, the fonts and the layout
+  together, and the width setting is applied in the same place. The
+  mermaid painters still get the unzoomed font, because they scale
+  their own text, the way the Windows measure format stays unzoomed.
+
+Two pieces of plumbing had to move for that. The text engine keeps the
+lines of the current layout alive for the hit tester and drops them
+when the next layout starts, so a click at the bottom of a document
+finds its own line instead of the last one the engine happened to
+measure; and the rectangle of a range ends at the left edge of the
+character after it, the way the Windows range boxes do, which the
+selection, the search marks and the code backgrounds all draw.
+
+`tests/renderer_mac_test.cpp` drives the renderer with a text engine
+that measures on a fixed grid, so those numbers run in CI on every
+push: the column and its centering, the line heights, the gaps between
+the blocks, the table columns and rows, the marker gutter, the rule,
+the bar, the code background, the link underline, the images above
+their paragraph and the zoom. What CI cannot see is whether the window
+looks like the Windows window; that one still waits for a person at a
+Mac.

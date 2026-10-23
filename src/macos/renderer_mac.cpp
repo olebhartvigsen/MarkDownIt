@@ -974,7 +974,8 @@ void MacRenderer::PaintLineRuns(const TextLine& line, float x,
 
         // The underline of a link and the strike-through of a struck
         // span. The seam has no draw call for the two decorations, so
-        // they are stroked where DirectWrite puts them.
+        // they are stroked: two points under the baseline for the link,
+        // and across the middle of the x for the strike.
         if (!run.underline && !run.strike) continue;
         float runWidth = line.width - run.x;
         if (i + 1 < line.runs.size()) {
