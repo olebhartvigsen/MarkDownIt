@@ -10,6 +10,7 @@ that generates them.
 Regenerate with:
     python3 tools/unicode-tables/gen_unicode_fold.py
 """
+import os
 import sys
 import unicodedata
 
@@ -119,7 +120,9 @@ def main():
     lines.append("}  // namespace unicode")
     lines.append("")
 
-    out = "/workspace/MarkDownIt/src/unicode_fold_tables.h"
+    root = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))
+    out = os.path.join(root, "src", "unicode_fold_tables.h")
     with open(out, "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines))
     print("wrote %s: %d decomposition entries, %d fold entries"
