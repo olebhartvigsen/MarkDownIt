@@ -211,6 +211,7 @@ add_executable(MarkDownIt WIN32
     src/office/docx_import.cpp
     src/office/docx_export.cpp
     src/office/pdf_export.cpp
+    src/office/pdf_import.cpp
     src/office/markdown_bridge.cpp
 )
 
@@ -361,6 +362,7 @@ if(BUILD_TESTS AND APPLE)
         tests/office_docx_import_test.cpp
         tests/office_docx_export_test.cpp
         tests/office_pdf_export_test.cpp
+        tests/office_pdf_import_test.cpp
         tests/office_markdown_bridge_test.cpp
         tests/table_picker_test.cpp
         src/parser.cpp
@@ -491,6 +493,7 @@ elseif(BUILD_TESTS)
         tests/office_docx_import_test.cpp
         tests/office_docx_export_test.cpp
         tests/office_pdf_export_test.cpp
+        tests/office_pdf_import_test.cpp
         tests/office_markdown_bridge_test.cpp
         tests/table_picker_test.cpp
         src/parser.cpp
@@ -635,6 +638,7 @@ if(APPLE)
         src/macos/text_engine_mac.cpp
         src/macos/fonts_mac.mm
         src/macos/clipboard_mac.mm
+        src/macos/pdf_ocr_mac.mm
         src/macos/settings_mac.cpp
             src/macos/menu_mac.mm
         src/macos/outline_pane_mac.cpp
@@ -657,6 +661,7 @@ if(APPLE)
         src/macos/content_view_mac.mm
         src/macos/clipboard_mac.mm
         src/macos/menu_mac.mm
+        src/macos/pdf_ocr_mac.mm
         src/macos/image_mac.mm
         src/macos/image_draw_mac.mm
         src/macos/findbar_mac.mm
@@ -677,6 +682,7 @@ if(APPLE)
             "-framework CoreText"
             "-framework AppKit"
             "-framework CoreServices"
+            "-framework Vision"
     )
     target_compile_features(MarkDownItMac PRIVATE cxx_std_17)
 

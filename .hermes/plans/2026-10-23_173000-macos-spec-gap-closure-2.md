@@ -119,3 +119,12 @@ run. Goldens never change.
   pypdf: a wrong password opens nothing, the user password unlocks
   it, printing is allowed, copying and changing are refused, and the
   unlocked pages match the same golden the plain export uses.
+
+- The PDF import (OFF-01) follows as its own step inside Batch E:
+  pdf_import.cpp reads text, headings, lists, paragraphs, link
+  annotations and the page breaks of a text-based PDF into the model,
+  keeps the page setup of page one, warns about everything the model
+  cannot hold, asks for the password of a protected file, and offers
+  OCR for scanned pages through a seam. macOS fills the seam with
+  Vision (Danish included), and File > Office carries Import from
+  PDF....

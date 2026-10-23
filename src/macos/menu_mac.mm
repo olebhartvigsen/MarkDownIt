@@ -100,9 +100,10 @@ NSMenu* BuildMainMenu() {
         NSMenu* officeMenu = BuildSubmenu(
             "Office",
             {{"Import from Word...", @selector(importWord:)},
+             {"Import from PDF...", @selector(importPdf:)},
              {"Export as Word...", @selector(exportWord:)},
              {"Export as PDF...", @selector(exportPdf:)}},
-            {"", "", ""});
+            {"", "", "", ""});
         NSMenuItem* officeItem =
             [[NSMenuItem alloc] initWithTitle:@"Office"
                                        action:nil

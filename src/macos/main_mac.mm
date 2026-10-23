@@ -19,6 +19,7 @@
 #include "outline_nsview_mac.h"
 #include "outline_pane_mac.h"
 #include "content_view_mac.h"
+#include "pdf_ocr_mac.h"
 #include <sstream>
 
 #include "formatting.h"
@@ -26,6 +27,7 @@
 #include "office/docx_import.h"
 #include "office/markdown_bridge.h"
 #include "office/pdf_export.h"
+#include "office/pdf_import.h"
 #include "welcome_mac.h"
 #include "findbar_mac.h"
 #include "menu_mac.h"
@@ -129,6 +131,7 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 - (void)saveDocumentAs:(id)sender;
 - (void)closeDocument:(id)sender;
 - (void)importWord:(id)sender;
+- (void)importPdf:(id)sender;
 - (void)exportWord:(id)sender;
 - (void)exportPdf:(id)sender;
 - (void)undo:(id)sender;
@@ -178,6 +181,15 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 - (void)toggleMark:(id)sender;
 - (void)clearFormat:(id)sender;
 @end
+
+// The OCR seam for the PDF import: the shared importer asks about a
+// page with no text, and Vision answers (Danish included; the
+// shared side never links Vision itself).
+static std::string OcrPdfPage(void* data, const std::string& path,
+                              std::size_t page_index) {
+    (void)data;
+    return mac::RecognizePdfPage(path, page_index);
+}
 
 @implementation MdAppDelegate
 
@@ -505,6 +517,7 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 - (void)saveDocumentAs:(id)sender { (void)sender; [self OnSaveAs]; }
 - (void)closeDocument:(id)sender { (void)sender; [self OnClose]; }
 - (void)importWord:(id)sender { (void)sender; [self OnImportWord]; }
+- (void)importPdf:(id)sender { (void)sender; [self OnImportPdf]; }
 - (void)exportWord:(id)sender { (void)sender; [self OnExportWord]; }
 - (void)exportPdf:(id)sender { (void)sender; [self OnExportPdf]; }
 - (void)findDocument:(id)sender { (void)sender; [self OnFind]; }
@@ -733,6 +746,69 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 
     // The report gains everything markdown has no form for, and it is
     // shown the way the Windows build shows it.
+    NSString* notes = [self compatNotesText:report];
+    if ([notes length] > 0) {
+        [self reportInfo:[NSString stringWithFormat:
+            @"The document was imported with these compatibility notes:"
+            @"\n\n%@", notes]];
+    }
+}
+
+- (void)OnImportPdf {
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+    [panel setAllowsMultipleSelection:NO];
+    [panel setCanChooseDirectories:NO];
+    [panel setAllowedFileTypes:@[@"pdf"]];
+    if ([panel runModal] != NSModalResponseOK) return;
+
+    const std::string path = [[panel URL] path].UTF8String;
+
+    office::PdfImportOptions options;
+    // Scanned pages go through Vision, so a page without text is read
+    // instead of being skipped (office spec, PDF import).
+    options.ocr = OcrPdfPage;
+
+    office::DocModel model;
+    office::CompatReport report;
+    std::string error;
+    bool imported = office::PdfImport(path, options, model, report, error);
+
+    if (!imported && error.find("password") != std::string::npos) {
+        // The password is asked for before the file is opened (office
+        // spec, PDF import).
+        NSAlert* ask = [[NSAlert alloc] init];
+        ask.messageText = @"The PDF is password-protected.";
+        ask.informativeText = @"Give the password to open it.";
+        NSSecureTextField* field = [[NSSecureTextField alloc]
+            initWithFrame:NSMakeRect(0, 0, 260, 24)];
+        ask.accessoryView = field;
+        [ask addButtonWithTitle:@"Open"];
+        [ask addButtonWithTitle:@"Cancel"];
+        if ([ask runModal] != NSAlertFirstButtonReturn) return;
+        const char* typed = field.stringValue.UTF8String;
+        options.password = typed != nullptr ? typed : "";
+        imported = office::PdfImport(path, options, model, report, error);
+    }
+
+    if (!imported) {
+        NSString* text = @"The PDF could not be read.";
+        if (!error.empty()) {
+            text = [NSString stringWithFormat:@"%@\n\n%s", text,
+                                              error.c_str()];
+        }
+        [self reportError:text];
+        return;
+    }
+
+    // The document becomes the markdown of the PDF. It has no file of
+    // its own yet: untitled and dirty, the same contract the Word
+    // import has.
+    const std::string markdown = office::OfficeModelToMarkdown(model, report);
+    app_->AdoptImportedText(markdown);
+    [window_ setTitle:@"Untitled"];
+    [self hideWelcomeScreen];
+    [view_ setNeedsDisplay:YES];
+
     NSString* notes = [self compatNotesText:report];
     if ([notes length] > 0) {
         [self reportInfo:[NSString stringWithFormat:
