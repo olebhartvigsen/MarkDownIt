@@ -3,5 +3,8 @@
 # committed goldens stay reproducible.
 python-docx==1.2.0
 pypdf==6.19.0
+# pypdf needs cryptography for AES decryption, which the protected
+# PDF check reads.
+cryptography==50.0.2
 reportlab==5.0.1
 lxml==6.1.2

@@ -816,6 +816,60 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
         }
     }
 
+    // Protection (office spec, PDF export): an optional password pair
+    // with the print, copy and change flags, applied through the PDF
+    // standard security handler.
+    if (asPdf) {
+        NSAlert* protect = [[NSAlert alloc] init];
+        protect.messageText = @"Protect the PDF?";
+        protect.informativeText =
+            @"A user password opens the file, an owner password guards "
+            @"the permissions.";
+        NSView* box = [[NSView alloc]
+            initWithFrame:NSMakeRect(0, 0, 260, 140)];
+        NSSecureTextField* userField = [[NSSecureTextField alloc]
+            initWithFrame:NSMakeRect(0, 112, 260, 24)];
+        userField.placeholderString = @"User password (to open)";
+        NSSecureTextField* ownerField = [[NSSecureTextField alloc]
+            initWithFrame:NSMakeRect(0, 84, 260, 24)];
+        ownerField.placeholderString = @"Owner password";
+        NSButton* printBox = [NSButton checkboxWithTitle:@"Allow printing"
+                                                  target:nil action:nil];
+        printBox.frame = NSMakeRect(0, 58, 260, 20);
+        printBox.state = NSControlStateValueOn;
+        NSButton* copyBox = [NSButton checkboxWithTitle:@"Allow copying"
+                                                 target:nil action:nil];
+        copyBox.frame = NSMakeRect(0, 36, 260, 20);
+        copyBox.state = NSControlStateValueOn;
+        NSButton* modifyBox = [NSButton checkboxWithTitle:@"Allow changes"
+                                                   target:nil action:nil];
+        modifyBox.frame = NSMakeRect(0, 14, 260, 20);
+        modifyBox.state = NSControlStateValueOn;
+        [box addSubview:userField];
+        [box addSubview:ownerField];
+        [box addSubview:printBox];
+        [box addSubview:copyBox];
+        [box addSubview:modifyBox];
+        protect.accessoryView = box;
+        [protect addButtonWithTitle:@"Protect"];
+        [protect addButtonWithTitle:@"No protection"];
+        if ([protect runModal] == NSAlertFirstButtonReturn) {
+            const char* owner_text = ownerField.stringValue.UTF8String;
+            if (owner_text == nullptr || *owner_text == '\0') {
+                [self reportError:@"The owner password is needed to protect "
+                                    @"the PDF."];
+                return;
+            }
+            options.encrypt = true;
+            options.owner_password = owner_text;
+            const char* user_text = userField.stringValue.UTF8String;
+            options.user_password = user_text != nullptr ? user_text : "";
+            options.allow_printing = printBox.state == NSControlStateValueOn;
+            options.allow_copying = copyBox.state == NSControlStateValueOn;
+            options.allow_modifying = modifyBox.state == NSControlStateValueOn;
+        }
+    }
+
     // The marked area exports the selection's own markdown, so the
     // file holds the text the user marked and nothing else.
     std::string source = app_->sourceText();

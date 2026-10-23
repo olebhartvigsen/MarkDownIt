@@ -107,3 +107,15 @@ run. Goldens never change.
   table, document with a reset whenever the caret moves, and Up/Down
   in a cell keep the column. The ranges and the tier step are shared
   helpers, covered by the portable suite.
+
+- Batch E (office) is implemented: the PDF export asks what it should
+  hold (whole document, page range, marked area), a protected export
+  carries a user and an owner password plus the print, copy and change
+  flags through the standard security handler, the compatibility
+  report is shown before anything lands on disk, a failed import or
+  export carries the importer's own message into the alert, and the
+  open panel offers .doc files so a legacy document explains itself.
+  The suite writes reference_protected.pdf, and CI checks it with
+  pypdf: a wrong password opens nothing, the user password unlocks
+  it, printing is allowed, copying and changing are refused, and the
+  unlocked pages match the same golden the plain export uses.
