@@ -64,20 +64,70 @@ TEST(Formatting, ToggleBoldEmptySelection) {
 }
 
 TEST(Formatting, ToggleBoldPartialSelection) {
-    // Selecting half of an existing bold run.
+    // Selecting half of an existing bold run and toggling bold: the
+    // selection loses the bold and the rest of the run keeps it, split
+    // at the selection (guide rules 5 and 8).
     TextBuffer b;
     b.SetText("**hello world**");
     Selection s;
     // Select just "hello" (inside the bold markers, positions 2-7).
     s.anchor = {2}; s.active = {7};
     ToggleInlineMarker(&b, &s, "**");
-    // This should wrap "hello" in its own bold, splitting the run.
-    // Result: **[**hello** world]** -> not exactly this, but the text
-    // should have the markers added correctly.
-    // The behavior: we add ** around the selection, which is inside
-    // the existing bold. This is the naive case that splits runs.
-    std::string text = b.Text();
-    EXPECT_TRUE(text.find("**hello**") != std::string::npos);
+    EXPECT_EQ(b.Text(), "hello **world**");
+    EXPECT_EQ(s.Start(), 0u);
+    EXPECT_EQ(s.Length(), 5u);
+}
+
+TEST(Formatting, ToggleBoldExtendsPartialRun) {
+    // A selection that only partly overlaps a bold run applies bold to
+    // the whole selection, extending the run instead of nesting a
+    // second pair inside it (guide rules 3 and 8).
+    TextBuffer b;
+    b.SetText("a **b** c");
+    Selection s;
+    s.anchor = {0}; s.active = {5};   // The visible text "a b".
+    ToggleInlineMarker(&b, &s, "**");
+    EXPECT_EQ(b.Text(), "**a b** c");
+}
+
+TEST(Formatting, ToggleBoldExtendsPartialRunRight) {
+    TextBuffer b;
+    b.SetText("a **b** c");
+    Selection s;
+    s.anchor = {4}; s.active = {9};   // The visible text "b c".
+    ToggleInlineMarker(&b, &s, "**");
+    EXPECT_EQ(b.Text(), "a **b c**");
+}
+
+TEST(Formatting, ToggleBoldExtendsRunLeakingPastSelection) {
+    // The run's content reaches past the selection: the extension
+    // covers the run whole, so the unselected bold text stays bold.
+    TextBuffer b;
+    b.SetText("x **bold** y");
+    Selection s;
+    s.anchor = {0}; s.active = {5};   // The visible text "x bol".
+    ToggleInlineMarker(&b, &s, "**");
+    EXPECT_EQ(b.Text(), "**x bold** y");
+}
+
+TEST(Formatting, ToggleItalicOnBoldAddsInsteadOfStripping) {
+    // Ctrl+I on bold text adds italic, and the bold stays (guide rule
+    // 9: the formats combine).
+    TextBuffer b;
+    b.SetText("**bold**");
+    Selection s;
+    s.anchor = {2}; s.active = {6};
+    ToggleInlineMarker(&b, &s, "*");
+    EXPECT_EQ(b.Text(), "***bold***");
+}
+
+TEST(Formatting, ToggleItalicOnPartialBoldKeepsTheBold) {
+    TextBuffer b;
+    b.SetText("a **b** c");
+    Selection s;
+    s.anchor = {0}; s.active = {5};   // The visible text "a b".
+    ToggleInlineMarker(&b, &s, "*");
+    EXPECT_EQ(b.Text(), "*a **b*** c");
 }
 
 TEST(Formatting, IsWrappedIn) {

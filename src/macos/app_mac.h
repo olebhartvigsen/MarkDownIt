@@ -99,6 +99,20 @@ public:
     // text as it is.
     void ClearFormat();
 
+    // The bold and italic commands. With a selection the shared marker
+    // toggle applies the guide's rules (extend a run instead of
+    // nesting, split it at the selection, strip what is already
+    // formatted). An empty caret toggles the pending typing format
+    // instead and writes nothing to the document (text guide, fed og
+    // kursiv rules and the empty caret rules).
+    void ToggleBold();
+    void ToggleItalic();
+
+    // What the strip shows for the bold and italic buttons: the
+    // pending typing format first, then the format under the selection
+    // or the caret.
+    bool FormatButtonOn(const std::string& marker) const;
+
     // The text markers, the highlights the user marked. A selection
     // that touches a marker takes it away, and any other selection
     // makes one.
@@ -309,6 +323,27 @@ public:
     void ReplaceAllMatches(const std::wstring& query,
                            const std::wstring& replacement);
 
+    // The shared body of the bold and italic commands.
+    void ToggleInlineWithPending(const std::string& marker, bool bold);
+
+    // Puts typed text through the pending format: the first character
+    // opens the markers around itself, the next ones extend the run.
+    void ApplyPendingTypingFormat(const std::string& value);
+
+    // Records a pending toggle as its own undo step.
+    void RecordPendingFormatUndo(bool beforeBold, bool beforeItalic,
+                                 bool beforeBoldSet, bool beforeItalicSet);
+
+    // Restores the pending state an undo or redo entry carries.
+    void RestorePendingFormat(const UndoEntry& entry, bool redo);
+
+    // Whether the caret sits in a span of the format, which is where a
+    // pending toggle starts from.
+    bool CaretFormatIsActive(const std::string& marker) const;
+
+    // Ends the pending format and the typing run.
+    void ClearPendingFormat();
+
     // Undoes the last edit.
     void Undo();
 
@@ -330,6 +365,17 @@ private:
     Selection sel_;
     EditController editor_;
     UndoStack undo_;
+    // The pending typing format: bold or italic toggled with an empty
+    // caret, waiting for the next typed characters (text guide, fed og
+    // kursiv ved et tomt caret).
+    bool pendingBold_ = false;
+    bool pendingItalic_ = false;
+    bool pendingBoldSet_ = false;
+    bool pendingItalicSet_ = false;
+    // Whether the caret still sits on the suffix markers of the run
+    // being typed, which lets the next characters extend that run.
+    bool pendingRunActive_ = false;
+    uint32_t pendingRunSuffixBytes_ = 0;
     // Whether the welcome screen is shown instead of a document.
     bool welcomeMode_ = false;
     // The handler that opens a file.

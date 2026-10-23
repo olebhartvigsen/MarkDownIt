@@ -132,13 +132,21 @@ arrows), 18 (selection start), 43-45, 51-52.
   selection changes nothing (text spec, links on a selection).
 - Cmd+Shift+H marks (highlighting spec 20).
 
-## Batch 4b: the format toggles (next push)
+## Batch 4b: the format toggles (this push)
 
-- Partial bold extends without nesting, Ctrl+I on bold text adds
-  italic instead of stripping bold, and an empty caret keeps a pending
-  format with no document change: the pending-format port the Windows
-  build already carries (text spec, fed and kursiv rules, empty-caret
-  rules).
+- The shared marker toggle follows the guide for partial selections:
+  an overlap extends the run instead of nesting a second pair inside
+  it, and a selection inside a run splits it at the selection, so the
+  text outside keeps its formatting (text spec, fed og kursiv rules
+  2, 3, 5 and 8).
+- Ctrl+I on bold text adds the emphasis and keeps the bold (rule 9).
+- An empty caret keeps a pending typing format for the next typed
+  characters and writes nothing to the document; each toggle is one
+  undo step (text spec, fed og kursiv ved et tomt caret rules 1, 2
+  and 5).
+- The changes live in the shared `ToggleInlineMarker`, so the Windows
+  build gets the same rules; the pending model is the one the Windows
+  build already carries.
 
 ## Batch 5: outline, office, mermaid
 

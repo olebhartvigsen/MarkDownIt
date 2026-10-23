@@ -192,6 +192,7 @@ void App::NewDocument() {
     // A new document has no markers: the layer goes with the old
     // document's identity (highlighting guide 37).
     LoadMarkers();
+    ClearPendingFormat();
 }
 
 bool App::ReloadFile() {
@@ -323,6 +324,9 @@ void App::SetText(const std::string& text) {
     sel_.Collapse(CaretPos{0});
     dirty_ = true;
     Reparse();
+    // A document that is replaced wholesale starts without a pending
+    // typing format.
+    ClearPendingFormat();
 }
 
 // The table the caret is in, and where in it the caret is.
@@ -721,6 +725,170 @@ void App::ClearFormat() {
     ClearInlineFormatting(document_, &buffer_, &sel_, &undo_);
 }
 
+// The two marker commands carry the pending typing format.
+void App::ToggleBold() { ToggleInlineWithPending("**", true); }
+
+void App::ToggleItalic() { ToggleInlineWithPending("*", false); }
+
+// With a selection the shared marker toggle applies the guide's rules.
+// An empty caret toggles what the NEXT characters get and changes
+// nothing in the document (text guide, fed og kursiv ved et tomt
+// caret rules 1 and 2).
+void App::ToggleInlineWithPending(const std::string& marker, bool bold) {
+    if (!sel_.Empty()) {
+        ClearPendingFormat();
+        ToggleInlineMarker(&buffer_, &sel_, marker, &undo_);
+        editor_.BreakUndoCoalesce();
+        OnTextChanged();
+        return;
+    }
+
+    const bool beforeBold = pendingBold_;
+    const bool beforeItalic = pendingItalic_;
+    const bool beforeBoldSet = pendingBoldSet_;
+    const bool beforeItalicSet = pendingItalicSet_;
+
+    bool& value = bold ? pendingBold_ : pendingItalic_;
+    bool& set = bold ? pendingBoldSet_ : pendingItalicSet_;
+    // The pending state starts from the format the caret sits in when
+    // nothing is pending yet, the way the Windows build reads it.
+    const bool current = set ? value : CaretFormatIsActive(marker);
+    value = !current;
+    set = true;
+    pendingRunActive_ = false;
+    pendingRunSuffixBytes_ = 0;
+    RecordPendingFormatUndo(beforeBold, beforeItalic, beforeBoldSet,
+                            beforeItalicSet);
+    editor_.BreakUndoCoalesce();
+    OnSelectionChanged();
+}
+
+// The pending format reaches the document only when text does. The
+// first typed character opens the markers around itself; the next ones
+// replace the run's closing markers with themselves plus the markers,
+// so the run extends instead of nesting (text guide, fed og kursiv ved
+// et tomt caret rules 1 and 2).
+void App::ApplyPendingTypingFormat(const std::string& value) {
+    std::string prefix;
+    std::string suffix;
+    if (pendingBoldSet_ && pendingBold_) {
+        prefix += "**";
+        suffix = "**" + suffix;
+    }
+    if (pendingItalicSet_ && pendingItalic_) {
+        prefix += "*";
+        suffix = "*" + suffix;
+    }
+
+    if (suffix.empty()) {
+        editor_.InsertText(value);
+        pendingRunActive_ = false;
+        pendingRunSuffixBytes_ = 0;
+        return;
+    }
+
+    const std::string& source = buffer_.Text();
+    const uint32_t caret = sel_.active.offset;
+    const uint32_t suffixBytes = static_cast<uint32_t>(suffix.size());
+    const bool extend = pendingRunActive_ && sel_.Empty() &&
+        pendingRunSuffixBytes_ == suffixBytes && caret >= suffixBytes &&
+        source.compare(caret - suffixBytes, suffixBytes, suffix) == 0;
+
+    if (extend) {
+        editor_.ReplaceTextRange(caret - suffixBytes, suffixBytes,
+                                 value + suffix, EditType::Insert);
+    } else {
+        editor_.InsertText(prefix + value + suffix);
+    }
+    pendingRunActive_ = true;
+    pendingRunSuffixBytes_ = suffixBytes;
+}
+
+// One undo step for a pending toggle, so Cmd+Z brings the old pending
+// state back before it touches any text (text guide, fed og kursiv ved
+// et tomt caret rule 5).
+void App::RecordPendingFormatUndo(bool beforeBold, bool beforeItalic,
+                                  bool beforeBoldSet, bool beforeItalicSet) {
+    UndoEntry entry{};
+    entry.offset = sel_.active.offset;
+    entry.selBefore = sel_;
+    entry.selAfter = sel_;
+    entry.timestamp = 0;
+    entry.type = EditType::PendingFormat;
+    entry.hasPendingFormat = true;
+    entry.pendingBold = beforeBold;
+    entry.pendingItalic = beforeItalic;
+    entry.pendingBoldSet = beforeBoldSet;
+    entry.pendingItalicSet = beforeItalicSet;
+    entry.afterPendingBold = pendingBold_;
+    entry.afterPendingItalic = pendingItalic_;
+    entry.afterPendingBoldSet = pendingBoldSet_;
+    entry.afterPendingItalicSet = pendingItalicSet_;
+    undo_.Push(entry);
+}
+
+void App::RestorePendingFormat(const UndoEntry& entry, bool redo) {
+    if (!entry.hasPendingFormat) return;
+    if (redo) {
+        pendingBold_ = entry.afterPendingBold;
+        pendingItalic_ = entry.afterPendingItalic;
+        pendingBoldSet_ = entry.afterPendingBoldSet;
+        pendingItalicSet_ = entry.afterPendingItalicSet;
+    } else {
+        pendingBold_ = entry.pendingBold;
+        pendingItalic_ = entry.pendingItalic;
+        pendingBoldSet_ = entry.pendingBoldSet;
+        pendingItalicSet_ = entry.pendingItalicSet;
+    }
+    pendingRunActive_ = false;
+    pendingRunSuffixBytes_ = 0;
+}
+
+// Whether the caret sits inside a span of the format, which is where
+// the pending toggle starts from (text guide, fed og kursiv ved et
+// tomt caret rule 3).
+bool App::CaretFormatIsActive(const std::string& marker) const {
+    const bool wantBold = marker == "**";
+    const uint32_t caret = sel_.active.offset;
+    for (const auto& node : document_.nodes) {
+        const uint32_t blockStart = node.srcOffset;
+        const uint32_t blockEnd = blockStart + node.srcLength;
+        if (caret < blockStart || caret > blockEnd) continue;
+        for (const auto& child : node.children) {
+            const uint32_t start = child.srcOffset;
+            const uint32_t end = start + child.srcLength;
+            if (start <= caret && caret <= end) {
+                if (wantBold && child.strong) return true;
+                if (!wantBold && child.em) return true;
+            }
+        }
+    }
+    return false;
+}
+
+// What the strip reads for the bold and italic buttons. The pending
+// typing format shows pressed first; with a selection the wrapped
+// check answers for the rest.
+bool App::FormatButtonOn(const std::string& marker) const {
+    const bool bold = marker == "**";
+    if (bold && pendingBoldSet_) return pendingBold_;
+    if (!bold && pendingItalicSet_) return pendingItalic_;
+    if (sel_.Empty()) return CaretFormatIsActive(marker);
+    return IsWrappedIn(buffer_.Text(), sel_.Start(),
+                       sel_.Start() + sel_.Length(), marker);
+}
+
+// A caret move ends the pending format: the next characters start
+// fresh wherever the caret lands (text guide, fed og kursiv ved et
+// tomt caret rule 3). Every click and caret move arrives through
+// SetCaret or SetSelection.
+void App::ClearPendingFormat() {
+    pendingBoldSet_ = false;
+    pendingItalicSet_ = false;
+    pendingRunActive_ = false;
+    pendingRunSuffixBytes_ = 0;
+}
+
 // Whether the selection overlaps any marker. A partial overlap counts,
 // and an unresolved marker counts too: the button shows the state the
 // next click will change (highlighting guide 4 and 6).
@@ -831,6 +999,7 @@ void App::SetCaret(uint32_t offset) {
     const uint32_t length = buffer_.Length();
     if (offset > length) offset = length;
     sel_.Collapse(CaretPos{offset});
+    ClearPendingFormat();
     editor_.BreakUndoCoalesce();
     OnSelectionChanged();
 }
@@ -841,6 +1010,7 @@ void App::SetSelection(uint32_t start, uint32_t end) {
     if (end > length) end = length;
     sel_.anchor = CaretPos{start};
     sel_.active = CaretPos{end};
+    ClearPendingFormat();
     editor_.BreakUndoCoalesce();
     OnSelectionChanged();
 }
@@ -967,7 +1137,7 @@ void App::InsertText(const std::string& text) {
     const std::string escaped =
         EscapeForInsert(buffer_, sel_.active.offset, text,
                         IsOffsetInTable(document_, sel_.active.offset));
-    editor_.InsertText(escaped);
+    ApplyPendingTypingFormat(escaped);
 
     // A character that finishes a markdown pattern turns the text around
     // it, the way a space after a dash makes a list.
@@ -978,6 +1148,12 @@ void App::InsertText(const std::string& text) {
 }
 
 void App::DeleteBackward() {
+    // A delete resets the typing run but keeps the pending format: the
+    // next characters still get it, without an empty format object
+    // left behind (text guide, fed og kursiv ved et tomt caret rule
+    // 4).
+    pendingRunActive_ = false;
+    pendingRunSuffixBytes_ = 0;
     if (!sel_.Empty()) {
         editor_.DeleteSelection();
         OnTextChanged();
@@ -994,6 +1170,12 @@ void App::DeleteBackward() {
 }
 
 void App::DeleteForward() {
+    // A delete resets the typing run but keeps the pending format: the
+    // next characters still get it, without an empty format object
+    // left behind (text guide, fed og kursiv ved et tomt caret rule
+    // 4).
+    pendingRunActive_ = false;
+    pendingRunSuffixBytes_ = 0;
     if (!sel_.Empty()) {
         editor_.DeleteSelection();
         OnTextChanged();
@@ -1008,6 +1190,12 @@ void App::DeleteForward() {
 }
 
 void App::DeleteWordBackward() {
+    // A delete resets the typing run but keeps the pending format: the
+    // next characters still get it, without an empty format object
+    // left behind (text guide, fed og kursiv ved et tomt caret rule
+    // 4).
+    pendingRunActive_ = false;
+    pendingRunSuffixBytes_ = 0;
     if (!sel_.Empty()) {
         editor_.DeleteSelection();
         OnTextChanged();
@@ -1021,6 +1209,12 @@ void App::DeleteWordBackward() {
 }
 
 void App::DeleteWordForward() {
+    // A delete resets the typing run but keeps the pending format: the
+    // next characters still get it, without an empty format object
+    // left behind (text guide, fed og kursiv ved et tomt caret rule
+    // 4).
+    pendingRunActive_ = false;
+    pendingRunSuffixBytes_ = 0;
     if (!sel_.Empty()) {
         editor_.DeleteSelection();
         OnTextChanged();
@@ -1045,14 +1239,20 @@ void App::InsertParagraphBreak() {
 }
 
 void App::Undo() {
-    if (editor_.Undo()) {
+    UndoEntry entry{};
+    if (editor_.Undo(&entry)) {
+        RestorePendingFormat(entry, false);
         OnTextChanged();
+        OnSelectionChanged();
     }
 }
 
 void App::Redo() {
-    if (editor_.Redo()) {
+    UndoEntry entry{};
+    if (editor_.Redo(&entry)) {
+        RestorePendingFormat(entry, true);
         OnTextChanged();
+        OnSelectionChanged();
     }
 }
 

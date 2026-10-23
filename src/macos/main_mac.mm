@@ -873,10 +873,13 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     if ([commandId isEqualToString:@"cmdWrap"]) return wrap_;
     if ([commandId isEqualToString:@"cmdOutline"]) return outlineVisible_;
     if ([commandId isEqualToString:@"cmdViewSource"]) return sourceView_;
+    // The bold and italic buttons read the pending typing format when
+    // it is set, so a Cmd+B with an empty caret shows pressed without
+    // writing anything.
     if ([commandId isEqualToString:@"cmdBold"])
-        return hasSelection && IsWrappedIn(text, start, end, "**");
+        return app_->FormatButtonOn("**") ? YES : NO;
     if ([commandId isEqualToString:@"cmdItalic"])
-        return hasSelection && IsWrappedIn(text, start, end, "*");
+        return app_->FormatButtonOn("*") ? YES : NO;
     if ([commandId isEqualToString:@"cmdStrike"])
         return hasSelection && IsWrappedIn(text, start, end, "~~");
     if ([commandId isEqualToString:@"cmdCode"])
@@ -1098,15 +1101,15 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 }
 
 - (void)OnToggleBold {
-    ToggleInlineMarker(&app_->buffer(), &app_->selection(), "**", &app_->undo());
-    app_->OnTextChanged();
+    app_->ToggleBold();
     [view_ setNeedsDisplay:YES];
+    [self ribbonSync];
 }
 
 - (void)OnToggleItalic {
-    ToggleInlineMarker(&app_->buffer(), &app_->selection(), "*", &app_->undo());
-    app_->OnTextChanged();
+    app_->ToggleItalic();
     [view_ setNeedsDisplay:YES];
+    [self ribbonSync];
 }
 
 - (void)OnToggleCode {
