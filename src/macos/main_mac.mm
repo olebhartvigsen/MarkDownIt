@@ -539,6 +539,16 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 - (void)indentBlock:(id)sender { (void)sender; [self OnIndent]; }
 - (void)outdentBlock:(id)sender { (void)sender; [self OnOutdent]; }
 - (void)insertTable:(id)sender { (void)sender; [self OnInsertTable]; }
+
+// The Insert Table item greys out while the caret is inside a table;
+// there is already one (table guidelines 54 and 58).
+- (BOOL)validateMenuItem:(NSMenuItem*)item {
+    if ([item action] == @selector(insertTable:)) {
+        tableedit::TableLocation location;
+        return !app_->CaretTable(&location);
+    }
+    return YES;
+}
 - (void)addRowAbove:(id)sender { (void)sender; [self OnAddTableRow:NO]; }
 - (void)addRowBelow:(id)sender { (void)sender; [self OnAddTableRow:YES]; }
 - (void)removeRow:(id)sender { (void)sender; [self OnRemoveTableRow]; }
@@ -1007,6 +1017,7 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     if ([commandId isEqualToString:@"cmdUndo"]) return app_->undo().CanUndo();
     if ([commandId isEqualToString:@"cmdRedo"]) return app_->undo().CanRedo();
     if ([commandId hasPrefix:@"cmdAdd"] || [commandId hasPrefix:@"cmdAlign"] ||
+        [commandId isEqualToString:@"cmdInsertTable"] ||
         [commandId isEqualToString:@"cmdRemoveRow"] ||
         [commandId isEqualToString:@"cmdRemoveColumn"] ||
         [commandId isEqualToString:@"cmdSplitCell"] ||

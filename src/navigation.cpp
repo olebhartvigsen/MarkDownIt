@@ -600,6 +600,32 @@ std::string TableBlankRow(int columnCount) {
     return row;
 }
 
+bool TableAppendRow(const Document& doc, const std::string& source,
+                    uint32_t caretOffset, std::string* rowText,
+                    uint32_t* insertPos, uint32_t* caretAfter) {
+    for (size_t ti = 0; ti < doc.nodes.size(); ++ti) {
+        const Node& node = doc.nodes[ti];
+        if (node.block != BlockKind::Table) continue;
+        const uint32_t start = node.srcOffset;
+        const uint32_t end = start + node.srcLength;
+        if (caretOffset < start || caretOffset > end) continue;
+
+        const int cols = static_cast<int>(TableColumnCount(doc, ti));
+        if (cols <= 0) return false;
+
+        std::string row = TableBlankRow(cols);
+        // A table that runs into the next block needs its own line.
+        const bool neededBreak =
+            end > 0 && end <= source.size() && source[end - 1] != '\n';
+        if (neededBreak) row.insert(0, "\n");
+        if (rowText) *rowText = std::move(row);
+        if (insertPos) *insertPos = end;
+        if (caretAfter) *caretAfter = end + (neededBreak ? 2u : 1u);
+        return true;
+    }
+    return false;
+}
+
 std::string TableDelimitersFor(int columnCount) {
     std::string row = "|";
     for (int c = 0; c < columnCount; ++c) row += "--------|";

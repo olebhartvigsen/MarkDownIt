@@ -1040,3 +1040,68 @@ TEST(RendererMac, TableClicksLandInTheClickedCell) {
         block.x + colW + BaseMetrics().cellPadX + 2.0f, midY2, &offset));
     EXPECT_EQ(offset, 3u);
 }
+
+// Regression (empty-cell click): an empty cell renders no text, so the
+// nearest drawn span lives in a different cell. A click must activate
+// the clicked cell itself: the caret parks at the cell's own content
+// start and has a rect to draw at (table guideline 7).
+TEST(RendererMac, EmptyTableCellClickKeepsCaretInClickedCell) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    Node table = Table({{"A"}, {""}});
+    table.rows[0].cells[0].srcOffset = 2;
+    table.rows[0].cells[0].srcEnd = 3;
+    table.rows[0].cells[0].u16ToSrc = {2};
+    table.rows[0].cells[0].u16ToSrcEnd = {3};
+    table.rows[1].cells[0].srcOffset = 24;
+    table.rows[1].cells[0].srcEnd = 24;
+
+    const Document doc = Doc({table});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    const LaidOutBlock& block = renderer.blocks()[0];
+    ASSERT_EQ(block.tableLayout.rows.size(), 2u);
+
+    const float emptyY =
+        block.y + block.tableLayout.rowHeights[0] +
+        block.tableLayout.rowHeights[1] * 0.5f;
+    uint32_t offset = 0;
+    EXPECT_TRUE(renderer.PointToOffset(
+        block.x + BaseMetrics().cellPadX + 2.0f, emptyY, &offset));
+    EXPECT_EQ(offset, 24u);
+    EXPECT_EQ(renderer.NormalizeToRenderedCaret(24u), 24u);
+
+    // Cursor visible: the empty cell has a rect to draw the caret at.
+    float rx = 0.0f, ry = 0.0f, rw = 0.0f, rh = 0.0f;
+    EXPECT_TRUE(renderer.OffsetToRect(24u, &rx, &ry, &rw, &rh));
+}
+
+// Regression (blank paragraph click): a blank line between
+// paragraphs is a node of its own, and a click on its band must park
+// the caret there, on the placeholder line, not in a neighbour.
+TEST(RendererMac, BlankParagraphClickKeepsTheCaretOnTheLine) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    Node blank;
+    blank.block = BlockKind::Paragraph;
+    blank.virtualEmptyParagraph = true;
+    blank.contentOffset = 7;
+
+    const Document doc = Doc({Para("First"), blank, Para("Second")});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 3u);
+    const LaidOutBlock& block = renderer.blocks()[1];
+    ASSERT_TRUE(!block.lines.empty());
+
+    uint32_t offset = 0xFFFFFFFFu;
+    EXPECT_TRUE(renderer.PointToOffset(
+        block.x + 30.0f, block.y + block.lines[0].height * 0.5f, &offset));
+    EXPECT_EQ(offset, 7u);
+    EXPECT_EQ(renderer.NormalizeToRenderedCaret(offset), 7u);
+}

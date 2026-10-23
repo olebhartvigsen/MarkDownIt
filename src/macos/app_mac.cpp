@@ -626,29 +626,19 @@ void App::HandleTab(bool backwards) {
 // in its first cell, so a table grows by keyboard alone. One undo step
 // covers the row and the caret.
 void App::AppendRowToTable() {
-    const std::string& text = buffer_.Text();
-    for (size_t ti = 0; ti < document_.nodes.size(); ++ti) {
-        const Node& node = document_.nodes[ti];
-        if (node.block != BlockKind::Table) continue;
-        const uint32_t start = node.srcOffset;
-        const uint32_t end = start + node.srcLength;
-        if (sel_.active.offset < start || sel_.active.offset > end) continue;
-
-        const int cols = static_cast<int>(TableColumnCount(document_, ti));
-        if (cols <= 0) return;
-
-        std::string row = TableBlankRow(cols);
-        const uint32_t insertPos = end;
-        // A table that runs into the next block needs its own line.
-        const bool neededBreak = insertPos > 0 && text[insertPos - 1] != '\n';
-        if (neededBreak) row.insert(0, "\n");
-
-        editor_.ReplaceTextRange(insertPos, 0, row, EditType::Insert);
-        editor_.BreakUndoCoalesce();
-        sel_.Collapse({insertPos + (neededBreak ? 2u : 1u)});
-        OnTextChanged();
+    // The splice itself is shared with the portable suite, so the
+    // combined Tab command is covered by a test (spec X2).
+    std::string row;
+    uint32_t insertPos = 0;
+    uint32_t caretAfter = 0;
+    if (!TableAppendRow(document_, buffer_.Text(), sel_.active.offset, &row,
+                        &insertPos, &caretAfter)) {
         return;
     }
+    editor_.ReplaceTextRange(insertPos, 0, row, EditType::Insert);
+    editor_.BreakUndoCoalesce();
+    sel_.Collapse({caretAfter});
+    OnTextChanged();
 }
 
 void App::PasteFromClipboard() {

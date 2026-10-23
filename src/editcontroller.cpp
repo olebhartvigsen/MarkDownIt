@@ -489,6 +489,22 @@ bool EditController::DeleteForward(const Document* doc) {
     if (at >= buf_->Length()) return false;
 
     const uint32_t separatorLength = ParagraphSeparatorLengthAt(buf_->Text(), at);
+    // The separator in front of a table is structural too: deleting it
+    // pulls the table up into the paragraph above and destroys it
+    // (spec section 45, "deleteBeforeTable"). Refuse at that boundary,
+    // the same way the backward delete refuses behind it. The whole run
+    // of newlines behind the caret counts, so the blank line directly
+    // above the table is refused as well, not only the double newline
+    // above that.
+    if (doc) {
+        const std::string& text = buf_->Text();
+        uint32_t run = 0;
+        while (at + run < text.size() &&
+               (text[at + run] == '\n' || text[at + run] == '\r')) {
+            ++run;
+        }
+        if (run > 0 && TableStartsAt(*doc, text, at + run)) return false;
+    }
     if (IsParagraphSeparator(doc, at, separatorLength)) {
         RecordAndApply(at, separatorLength, "", EditType::Delete);
         return true;

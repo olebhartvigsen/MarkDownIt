@@ -1255,3 +1255,97 @@ TEST(TableSplit, SurroundingTextIsNotDuplicated) {
     const Document d = ParseDoc(whole);
     EXPECT_TRUE(d.nodes.size() >= 3u);
 }
+
+// ─── The combined Tab command and the table boundary guards ───────────
+
+// X2: Tab from the last cell is one command: exactly one new row and
+// one undo entry, also at end of file without a trailing newline.
+TEST(TableInteraction, TabFromTheLastCellAppendsOneRowAndOneUndoEntry) {
+    const std::string sources[] = {
+        "| a | b |\n|---|---|\n| c | d |\n",
+        "| a | b |\n|---|---|\n| c | d |",
+    };
+    for (const std::string& source : sources) {
+        TextBuffer b;
+        b.SetText(source);
+        Document doc;
+        ASSERT_TRUE(ParseMarkdown(source, doc));
+        const size_t ti = TableIndexOf(doc);
+        ASSERT_TRUE(ti != SIZE_MAX);
+        const Node& table = doc.nodes[ti];
+        const TableRow& lastRow = table.rows.back();
+        const TableCell& lastCell = lastRow.cells.back();
+
+        Selection s;
+        s.Collapse({lastCell.srcEnd});
+
+        UndoStack undo;
+        EditController ec(&b, &s);
+        ec.SetUndoStack(&undo);
+
+        // The caret is on the last cell, so the move has nowhere to go
+        // and the append is what runs.
+        uint32_t moved = 0;
+        EXPECT_FALSE(MoveTableCell(doc, s.active.offset, false, &moved));
+
+        std::string row;
+        uint32_t insertPos = 0;
+        uint32_t caretAfter = 0;
+        ASSERT_TRUE(TableAppendRow(doc, b.Text(), s.active.offset, &row,
+                                   &insertPos, &caretAfter));
+        ec.ReplaceTextRange(insertPos, 0, row, EditType::Insert);
+        ec.BreakUndoCoalesce();
+
+        Document after;
+        ASSERT_TRUE(ParseMarkdown(b.Text(), after));
+        const size_t ti2 = TableIndexOf(after);
+        ASSERT_TRUE(ti2 != SIZE_MAX);
+        // Exactly one new row, with the same column count, and exactly
+        // one undo entry for the whole command.
+        EXPECT_EQ(after.nodes[ti2].rows.size(), table.rows.size() + 1);
+        EXPECT_EQ(after.nodes[ti2].rows.back().cells.size(),
+                  lastRow.cells.size());
+        UndoEntry entry;
+        EXPECT_TRUE(undo.Undo(entry));
+        UndoEntry extra;
+        EXPECT_FALSE(undo.Undo(extra));
+    }
+}
+
+// Section 45, "deleteBeforeTable": deleting the blank separator in front
+// of a table used to pull it into the paragraph above and the table was
+// gone.
+TEST(TableInteraction, DeleteForwardBeforeATableKeepsTheTable) {
+    const std::string source = "Hello\n\n| a |\n|---|\n";
+    TextBuffer b;
+    b.SetText(source);
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(source, doc));
+    ASSERT_TRUE(TableIndexOf(doc) != SIZE_MAX);
+
+    Selection s;
+    s.Collapse({5});
+    EditController ec(&b, &s);
+    EXPECT_FALSE(ec.DeleteForward(&doc));
+    EXPECT_EQ(b.Text(), source);
+
+    Document after;
+    ASSERT_TRUE(ParseMarkdown(b.Text(), after));
+    EXPECT_TRUE(TableIndexOf(after) != SIZE_MAX);
+}
+
+// The same key one byte later, in the blank line itself, is the same
+// boundary and must stay refused too.
+TEST(TableInteraction, DeleteForwardInTheBlankLineBeforeATableKeepsTheTable) {
+    const std::string source = "Hello\n\n| a |\n|---|\n";
+    TextBuffer b;
+    b.SetText(source);
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(source, doc));
+
+    Selection s;
+    s.Collapse({6});
+    EditController ec(&b, &s);
+    EXPECT_FALSE(ec.DeleteForward(&doc));
+    EXPECT_EQ(b.Text(), source);
+}

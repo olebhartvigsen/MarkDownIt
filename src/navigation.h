@@ -83,6 +83,14 @@ size_t TableColumnCount(const Document& doc, size_t tableIndex);
 // Compose the source text of a blank row with columnCount cells.
 std::string TableBlankRow(int columnCount);
 
+// The row a Tab press appends when the caret sits in the last cell of a
+// table: fills the row text, the splice position and where the caret
+// lands in the new first cell. False when the caret is not inside a
+// table.
+bool TableAppendRow(const Document& doc, const std::string& source,
+                    uint32_t caretOffset, std::string* rowText,
+                    uint32_t* insertPos, uint32_t* caretAfter);
+
 // Compose the source text of the table's delimiter row (dashes only,
 // default alignment) for a fresh column count.
 std::string TableDelimitersFor(int columnCount);

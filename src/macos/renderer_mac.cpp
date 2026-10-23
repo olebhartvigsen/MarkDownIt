@@ -864,8 +864,17 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
                     if (c < node.aligns.size()) {
                         laid.align = node.aligns[c];
                     }
-                    const std::vector<GlyphRun> runs = BuildCellRuns(
+                    std::vector<GlyphRun> runs = BuildCellRuns(
                         cell, cell.isHeader, ToColor(palette_.textPrimary));
+                    if (runs.empty()) {
+                        // An empty cell keeps a placeholder line, the
+                        // same one a blank paragraph keeps, so the
+                        // caret has a rect to draw at and the vertical
+                        // moves have a line (table guideline 7).
+                        runs = BuildRuns(TextNode(U" "), metrics_.bodyFontSize,
+                                         cell.isHeader, false,
+                                         ToColor(palette_.textPrimary), false);
+                    }
                     laid.lines = engine_->MeasureWrapped(
                         runs, innerW > 0.0f ? innerW : 1.0f, 0.0f);
                     ApplyLineSpacing(&laid.lines, metrics_.bodyFontSize,
@@ -1518,7 +1527,20 @@ void MacRenderer::CollectRenderedSpans(std::vector<RenderedSpan>* out) const {
     for (const TextRegion& region : TextRegions()) {
         const std::vector<uint32_t>& visToSrc = *region.visToSrc;
         const std::vector<uint32_t>& visToSrcEnd = *region.visToSrcEnd;
-        if (visToSrc.size() < 2) continue;
+        if (visToSrc.size() < 2) {
+            // A block with no drawn text (a blank paragraph, an empty
+            // cell) keeps one addressable position, its content start,
+            // and a caret there is valid. A point span carries it, so
+            // the normalizer leaves the position alone instead of
+            // snapping it into a neighbour (table guideline 7).
+            if (visToSrc.size() == 1 && visToSrcEnd.size() == 1) {
+                RenderedSpan span;
+                span.start = visToSrc.front();
+                span.end = span.start;
+                out->push_back(span);
+            }
+            continue;
+        }
         for (size_t i = 0; i + 1 < visToSrc.size(); ++i) {
             RenderedSpan span;
             span.start = visToSrc[i];
@@ -1709,7 +1731,15 @@ uint32_t MacRenderer::NormalizeToRenderedCaret(uint32_t offset) const {
                     continue;
                 }
                 if (snapped < cell.srcCellStart || snapped > cell.srcCellEnd) {
-                    return cell.visToSrc.empty() ? cell.srcCellStart : snapped;
+                    // A snapped position outside the clicked cell would
+                    // move the caret into a different cell, so it clamps
+                    // back inside. The cell mapping always ends with a
+                    // sentinel, so "no drawn text" is a mapping of one
+                    // entry, and such a cell parks the caret at its own
+                    // content start (table guideline 7).
+                    if (cell.visToSrc.size() <= 1) return cell.srcCellStart;
+                    return snapped < cell.srcCellStart ? cell.srcCellStart
+                                                       : cell.srcCellEnd;
                 }
                 return snapped;
             }
@@ -1808,7 +1838,9 @@ uint32_t MacRenderer::StepGrapheme(uint32_t offset, bool left) const {
         }
 
         // The edge of the region: the nearest drawn text on the other
-        // side of the marker gap.
+        // side of the marker gap. A cell edge is a wall, though: an
+        // arrow never steps into the next cell (table guideline 12).
+        if (region.cell) return clamped;
         uint32_t edge = clamped;
         bool found = false;
         std::vector<RenderedSpan> spans;

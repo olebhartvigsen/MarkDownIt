@@ -91,3 +91,7 @@ run. Goldens never change.
   checks, 0 failures), and an aarch64 compile of every touched app
   file with ARC and the app flags, all green. CI is the authority for
   the link stage.
+- Batch B (tables) is implemented: the empty-cell clamp and its
+  placeholder line, the cell wall for the arrows, the forward delete
+  guard before a table, the shared row append with portable tests
+  (X2), and the Insert Table gating in the menu and the strip.
