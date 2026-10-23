@@ -91,6 +91,18 @@ public:
     // outside the document model never lands inside a marker.
     uint32_t NormalizeToRenderedCaret(uint32_t offset) const;
 
+    // The source offset one grapheme cluster to the left or right. The
+    // step walks the drawn text, so a hidden marker is skipped.
+    uint32_t StepGrapheme(uint32_t offset, bool left) const;
+
+    // The source offset one word to the left or right, on the shared
+    // word boundaries.
+    uint32_t StepWord(uint32_t offset, bool left) const;
+
+    // The first or the last source offset of the visual line that
+    // holds the offset.
+    uint32_t LineBoundary(uint32_t offset, bool end) const;
+
     // The rectangle a document offset occupies, in document coordinates.
     bool OffsetToRect(uint32_t offset, float* outX, float* outY,
                       float* outWidth, float* outHeight) const;
@@ -102,8 +114,10 @@ public:
     // double or a triple click calls.
     void SelectWordOrParagraphAt(float x, float y, bool paragraph);
 
-    // Selects from the anchor to a view point, which a drag calls.
-    void ExtendSelectionTo(float x, float y);
+    // Selects from the anchor to a view point, which a drag calls. The
+    // mode is the one the last click started: a character, a word or a
+    // paragraph drag.
+    void ExtendSelectionTo(float x, float y, int mode);
 
     // The height of the caret at the current offset, in points.
     float CaretHeight() const;

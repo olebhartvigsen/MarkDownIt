@@ -297,6 +297,9 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 
     [window_ setContentView:container_];
     [window_ makeKeyAndOrderFront:nil];
+    // The document view takes the keyboard from the start, so typing
+    // reaches the edit controller without a click first.
+    [window_ makeFirstResponder:view_];
     mac::TraceMac("the window is on screen");
 
     // The delegate takes the files that are dropped on the window.

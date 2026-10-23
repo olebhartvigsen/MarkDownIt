@@ -192,9 +192,20 @@ public:
     // Selects the word around an offset, the way a double click does.
     void SelectWordAt(uint32_t offset);
 
+    // The source range of the word that holds the offset, snapped to
+    // drawn text. A drag after a double click moves the edge by it.
+    bool WordSpanForOffset(uint32_t offset, uint32_t* outStart,
+                           uint32_t* outEnd) const;
+
     // Selects the paragraph around an offset, the way a triple click
     // does.
     void SelectParagraphAt(uint32_t offset);
+
+    // The source range of the paragraph that holds the offset,
+    // including the break that ends it. A drag after a triple click
+    // moves the edge by it.
+    bool ParagraphRangeForOffset(uint32_t offset, uint32_t* outStart,
+                                 uint32_t* outEnd) const;
 
     // The text of the document as it goes on the disk.
     //

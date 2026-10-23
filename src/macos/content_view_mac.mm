@@ -28,30 +28,6 @@ namespace {
 constexpr float kDefaultWidth = 900.0f;
 constexpr float kDefaultHeight = 700.0f;
 
-// The offset of the character before the given offset.
-uint32_t PreviousCharacter(const std::string& text, uint32_t offset) {
-    if (offset == 0 || text.empty()) return 0;
-
-    uint32_t start = offset - 1;
-    // Walk back over the continuation bytes of a multi byte character.
-    while (start > 0 && (static_cast<unsigned char>(text[start]) & 0xC0) == 0x80) {
-        --start;
-    }
-    return start;
-}
-
-// The offset of the character after the given offset.
-uint32_t NextCharacter(const std::string& text, uint32_t offset) {
-    if (offset >= text.size()) return static_cast<uint32_t>(text.size());
-
-    uint32_t end = offset + 1;
-    while (end < text.size() &&
-           (static_cast<unsigned char>(text[end]) & 0xC0) == 0x80) {
-        ++end;
-    }
-    return end;
-}
-
 }  // namespace
 
 
@@ -158,8 +134,9 @@ void ContentView::Draw(RenderTarget* target) {
 
     renderer_.Render(app_->GetDocument(), scrollOffset_);
 
-    // The caret goes on top of the text.
-    if (caretVisible_) {
+    // The caret goes on top of the text, but not over a selection:
+    // the selection is the marker of where the next edit lands.
+    if (caretVisible_ && selection.Empty()) {
         float x = 0.0f;
         float y = 0.0f;
         float width = 0.0f;
@@ -260,7 +237,7 @@ void ContentView::SelectWordOrParagraphAt(float x, float y, bool paragraph) {
     }
 }
 
-void ContentView::ExtendSelectionTo(float x, float y) {
+void ContentView::ExtendSelectionTo(float x, float y, int mode) {
     if (!app_) return;
 
     uint32_t offset = 0;
@@ -273,7 +250,38 @@ void ContentView::ExtendSelectionTo(float x, float y) {
             return;
         }
     }
-    app_->SetSelection(app_->selection().anchor.offset, offset);
+
+    const uint32_t anchor = app_->selection().anchor.offset;
+    if (mode == 1) {
+        // A drag that started with a double click moves the edge by
+        // whole words.
+        uint32_t spanStart = 0;
+        uint32_t spanEnd = 0;
+        if (app_->WordSpanForOffset(offset, &spanStart, &spanEnd)) {
+            offset = offset <= anchor ? spanStart : spanEnd;
+        }
+    } else if (mode == 2) {
+        // A drag that started with a triple click moves the edge by
+        // whole paragraphs.
+        uint32_t paraStart = 0;
+        uint32_t paraEnd = 0;
+        if (app_->ParagraphRangeForOffset(offset, &paraStart, &paraEnd)) {
+            offset = offset <= anchor ? paraStart : paraEnd;
+        }
+    }
+    app_->SetSelection(anchor, offset);
+}
+
+uint32_t ContentView::StepGrapheme(uint32_t offset, bool left) const {
+    return renderer_.StepGrapheme(offset, left);
+}
+
+uint32_t ContentView::StepWord(uint32_t offset, bool left) const {
+    return renderer_.StepWord(offset, left);
+}
+
+uint32_t ContentView::LineBoundary(uint32_t offset, bool end) const {
+    return renderer_.LineBoundary(offset, end);
 }
 
 Color ContentView::SelectionColor() const {
@@ -360,6 +368,17 @@ float ContentView::CaretHeight() const {
     NSTimer* blinkTimer_;
     // The area that tells the view the mouse moved over it.
     NSTrackingArea* trackingArea_;
+    // The x the vertical moves aim for, in document coordinates. A
+    // fresh click or a horizontal move drops it, the way the Windows
+    // window keeps its own desired x.
+    float desiredX_;
+    // The unit a drag moves by: 0 is a character, 1 a word, 2 a
+    // paragraph. The second and third click of a multiple click set it.
+    int dragMode_;
+    // The timer that keeps scrolling while a drag pulls past an edge.
+    NSTimer* autoscrollTimer_;
+    // The last point a drag reached, which the autoscroll extends to.
+    NSPoint lastDragPoint_;
 }
 
 - (instancetype)initWithContent:(mac::ContentView*)content app:(mac::App*)app {
@@ -367,8 +386,21 @@ float ContentView::CaretHeight() const {
     if (self) {
         content_ = content;
         app_ = app;
+        desiredX_ = -1.0f;
+        dragMode_ = 0;
+        lastDragPoint_ = NSMakePoint(0.0, 0.0);
     }
     return self;
+}
+
+- (BOOL)acceptsFirstResponder {
+    // The document view takes the keyboard: typing and the key
+    // commands arrive as the text input messages below.
+    return YES;
+}
+
+- (BOOL)canBecomeKeyView {
+    return YES;
 }
 
 - (BOOL)isFlipped {
@@ -416,10 +448,31 @@ float ContentView::CaretHeight() const {
         }
     }
 
-    // A double click takes the word and a triple click takes the
-    // paragraph, the way the Windows app does it.
+    // The click takes the keyboard, so typing goes to the document
+    // without a detour through the menu bar.
+    [self.window makeFirstResponder:self];
+    desiredX_ = -1.0f;
+    [self caretMoved];
+
     const NSInteger clicks = [event clickCount];
+    const NSEventModifierFlags flags =
+        [event modifierFlags] & NSEventModifierFlagDeviceIndependentFlagsMask;
+
+    // A shift click extends the selection from the anchor instead of
+    // placing a caret, the way the Windows window works.
+    if (clicks == 1 && (flags & NSEventModifierFlagShift) != 0) {
+        dragMode_ = 0;
+        content_->ExtendSelectionTo(static_cast<float>(point.x),
+                                     static_cast<float>(point.y), dragMode_);
+        [self setNeedsDisplay:YES];
+        return;
+    }
+
+    // A double click takes the word and a triple click takes the
+    // paragraph, the way the Windows app does it. A drag that follows
+    // keeps moving the edge by the same unit.
     if (clicks >= 2) {
+        dragMode_ = clicks >= 3 ? 2 : 1;
         content_->SelectWordOrParagraphAt(static_cast<float>(point.x),
                                            static_cast<float>(point.y),
                                            clicks >= 3);
@@ -427,6 +480,7 @@ float ContentView::CaretHeight() const {
         return;
     }
 
+    dragMode_ = 0;
     content_->PlaceCaretAt(static_cast<float>(point.x),
                            static_cast<float>(point.y));
     [self setNeedsDisplay:YES];
@@ -446,7 +500,6 @@ float ContentView::CaretHeight() const {
 - (void)stopBlinking {
     [blinkTimer_ invalidate];
     blinkTimer_ = nil;
-    if (content_) content_->SetCaretVisible(true);
 }
 
 - (void)blink:(NSTimer*)timer {
@@ -455,14 +508,38 @@ float ContentView::CaretHeight() const {
     content_->SetCaretVisible(!content_->caretVisible());
 }
 
+// A fresh edit or a move shows the caret again and restarts the blink,
+// so the caret never stays hidden right after typing.
+- (void)resetCaretBlink {
+    if (content_) content_->SetCaretVisible(true);
+    if (blinkTimer_) {
+        [blinkTimer_ invalidate];
+        blinkTimer_ = nil;
+    }
+    if ([self.window firstResponder] == self) {
+        [self startBlinking];
+    }
+}
+
+// The caret moved or the document changed: the blink restarts and the
+// view redraws.
+- (void)caretMoved {
+    [self resetCaretBlink];
+    [self setNeedsDisplay:YES];
+}
+
 - (BOOL)becomeFirstResponder {
     const BOOL result = [super becomeFirstResponder];
+    if (content_) content_->SetCaretVisible(true);
     [self startBlinking];
     return result;
 }
 
 - (BOOL)resignFirstResponder {
     [self stopBlinking];
+    // The caret is hidden while the view is not focused, the way the
+    // Windows window hides it.
+    if (content_) content_->SetCaretVisible(false);
     return [super resignFirstResponder];
 }
 
@@ -570,13 +647,51 @@ float ContentView::CaretHeight() const {
     if (!content_) return;
     const NSPoint point = [self convertPoint:[event locationInWindow]
                                     fromView:nil];
+    lastDragPoint_ = point;
     content_->ExtendSelectionTo(static_cast<float>(point.x),
-                                 static_cast<float>(point.y));
+                                 static_cast<float>(point.y), dragMode_);
+    [self updateAutoscroll];
     [self setNeedsDisplay:YES];
 }
 
 - (void)mouseUp:(NSEvent*)event {
     (void)event;
+    [self stopAutoscroll];
+    [self setNeedsDisplay:YES];
+}
+
+// The autoscroll: while a drag pulls past the top or the bottom of the
+// view, a timer keeps scrolling and the selection keeps following the
+// pointer, so a long drag can reach past the window.
+- (void)updateAutoscroll {
+    const BOOL outside = lastDragPoint_.y < 0.0 ||
+                         lastDragPoint_.y > self.bounds.size.height;
+    if (outside && !autoscrollTimer_) {
+        autoscrollTimer_ =
+            [NSTimer scheduledTimerWithTimeInterval:0.05
+                                             target:self
+                                           selector:@selector(autoscrollStep:)
+                                           userInfo:nil
+                                            repeats:YES];
+    } else if (!outside && autoscrollTimer_) {
+        [self stopAutoscroll];
+    }
+}
+
+- (void)stopAutoscroll {
+    [autoscrollTimer_ invalidate];
+    autoscrollTimer_ = nil;
+}
+
+- (void)autoscrollStep:(NSTimer*)timer {
+    (void)timer;
+    if (!content_) return;
+    // Eight points a tick, the step the Windows window uses.
+    const float step = lastDragPoint_.y < 0.0 ? -8.0f : 8.0f;
+    content_->SetScrollOffset(content_->scrollOffset() + step);
+    content_->ExtendSelectionTo(static_cast<float>(lastDragPoint_.x),
+                                 static_cast<float>(lastDragPoint_.y),
+                                 dragMode_);
     [self setNeedsDisplay:YES];
 }
 
@@ -599,20 +714,22 @@ float ContentView::CaretHeight() const {
         return;
     }
 
-    // AppKit translates the key event into the right command selector,
-    // which doCommandBySelector: below handles. The return key needs
-    // the shift variant, which AppKit does not distinguish on its own.
+    // AppKit turns the key event into insertText: or a command
+    // selector, which doCommandBySelector: handles below. That is what
+    // makes typing, Return, Tab, the arrows and the deletions work.
+    // The shift-return soft break is the one key AppKit does not
+    // distinguish on its own.
     if ([event keyCode] == 36) {
         const NSEventModifierFlags flags =
             [event modifierFlags] & NSEventModifierFlagDeviceIndependentFlagsMask;
         if ((flags & NSEventModifierFlagShift) != 0) {
-            app_->InsertText("\n");
-            [self setNeedsDisplay:YES];
+            app_->InsertSoftBreak();
+            [self caretMoved];
             return;
         }
     }
 
-    [super keyDown:event];
+    [self interpretKeyEvents:@[event]];
 }
 
 - (void)insertText:(NSString*)text {
@@ -624,7 +741,7 @@ float ContentView::CaretHeight() const {
     if (utf8) {
         app_->InsertText(std::string(utf8));
     }
-    [self setNeedsDisplay:YES];
+    [self caretMoved];
 }
 
 - (void)doCommandBySelector:(SEL)selector {
@@ -635,67 +752,181 @@ float ContentView::CaretHeight() const {
 
     if (selector == @selector(insertNewline:)) {
         app_->InsertParagraphBreak();
-        [self setNeedsDisplay:YES];
+        [self caretMoved];
         return;
     }
 
     if (selector == @selector(insertTab:) ||
         selector == @selector(insertBacktab:)) {
         app_->InsertText("\t");
-        [self setNeedsDisplay:YES];
+        [self caretMoved];
         return;
     }
 
-    if (selector == @selector(deleteBackward:) ||
-        selector == @selector(deleteWordBackward:)) {
+    if (selector == @selector(deleteBackward:)) {
         app_->DeleteBackward();
-        [self setNeedsDisplay:YES];
+        [self caretMoved];
         return;
     }
 
-    if (selector == @selector(deleteForward:) ||
-        selector == @selector(deleteWordForward:)) {
+    if (selector == @selector(deleteForward:)) {
         app_->DeleteForward();
-        [self setNeedsDisplay:YES];
+        [self caretMoved];
         return;
     }
 
-    if (selector == @selector(moveLeft:) || selector == @selector(moveRight:)) {
-        [self moveCaretHorizontally:selector == @selector(moveLeft:)];
-        [self setNeedsDisplay:YES];
+    // The word deletions use the shared word boundaries, the same ones
+    // the double click and the word moves use. Command-backspace is the
+    // line variant of it.
+    if (selector == @selector(deleteWordBackward:) ||
+        selector == @selector(deleteToBeginningOfLine:)) {
+        app_->DeleteWordBackward();
+        [self caretMoved];
         return;
     }
 
-    if (selector == @selector(moveUp:) || selector == @selector(moveDown:)) {
-        [self moveCaretVertically:selector == @selector(moveUp:)];
-        [self setNeedsDisplay:YES];
+    if (selector == @selector(deleteWordForward:)) {
+        app_->DeleteWordForward();
+        [self caretMoved];
+        return;
+    }
+
+    // The arrows: one grapheme per press, one word with the option key.
+    if (selector == @selector(moveLeft:)) {
+        [self moveHorizontal:YES word:NO extend:NO];
+        return;
+    }
+    if (selector == @selector(moveRight:)) {
+        [self moveHorizontal:NO word:NO extend:NO];
+        return;
+    }
+    if (selector == @selector(moveLeftAndModifySelection:)) {
+        [self moveHorizontal:YES word:NO extend:YES];
+        return;
+    }
+    if (selector == @selector(moveRightAndModifySelection:)) {
+        [self moveHorizontal:NO word:NO extend:YES];
+        return;
+    }
+    if (selector == @selector(moveWordLeft:)) {
+        [self moveHorizontal:YES word:YES extend:NO];
+        return;
+    }
+    if (selector == @selector(moveWordRight:)) {
+        [self moveHorizontal:NO word:YES extend:NO];
+        return;
+    }
+    if (selector == @selector(moveWordLeftAndModifySelection:)) {
+        [self moveHorizontal:YES word:YES extend:YES];
+        return;
+    }
+    if (selector == @selector(moveWordRightAndModifySelection:)) {
+        [self moveHorizontal:NO word:YES extend:YES];
+        return;
+    }
+
+    // Up and down keep the column, and the page keys move by most of a
+    // windowful.
+    if (selector == @selector(moveUp:)) {
+        [self moveVertical:YES extend:NO];
+        return;
+    }
+    if (selector == @selector(moveDown:)) {
+        [self moveVertical:NO extend:NO];
+        return;
+    }
+    if (selector == @selector(moveUpAndModifySelection:)) {
+        [self moveVertical:YES extend:YES];
+        return;
+    }
+    if (selector == @selector(moveDownAndModifySelection:)) {
+        [self moveVertical:NO extend:YES];
+        return;
+    }
+    if (selector == @selector(scrollPageUp:)) {
+        [self moveVerticalPage:YES extend:NO];
+        return;
+    }
+    if (selector == @selector(scrollPageDown:)) {
+        [self moveVerticalPage:NO extend:NO];
+        return;
+    }
+
+    // Home and End move inside the visual line; the command variants
+    // reach the edges of the document.
+    if (selector == @selector(moveToBeginningOfLine:)) {
+        [self moveToLineEdge:YES extend:NO];
+        return;
+    }
+    if (selector == @selector(moveToEndOfLine:)) {
+        [self moveToLineEdge:NO extend:NO];
+        return;
+    }
+    if (selector == @selector(moveToBeginningOfLineAndModifySelection:)) {
+        [self moveToLineEdge:YES extend:YES];
+        return;
+    }
+    if (selector == @selector(moveToEndOfLineAndModifySelection:)) {
+        [self moveToLineEdge:NO extend:YES];
+        return;
+    }
+    if (selector == @selector(moveToBeginningOfDocument:) ||
+        selector == @selector(scrollToBeginningOfDocument:)) {
+        [self moveToDocumentEdge:YES extend:NO];
+        return;
+    }
+    if (selector == @selector(moveToEndOfDocument:) ||
+        selector == @selector(scrollToEndOfDocument:)) {
+        [self moveToDocumentEdge:NO extend:NO];
+        return;
+    }
+    if (selector == @selector(moveToBeginningOfDocumentAndModifySelection:)) {
+        [self moveToDocumentEdge:YES extend:YES];
+        return;
+    }
+    if (selector == @selector(moveToEndOfDocumentAndModifySelection:)) {
+        [self moveToDocumentEdge:NO extend:YES];
         return;
     }
 
     [super doCommandBySelector:selector];
 }
 
-// Moves the caret one character left or right.
-- (void)moveCaretHorizontally:(bool)left {
+// Moves the caret one grapheme or one word to the left or right.
+- (void)moveHorizontal:(bool)left word:(bool)word extend:(bool)extend {
     if (!app_ || !content_) return;
+    desiredX_ = -1.0f;
 
     const Selection& selection = app_->selection();
-    const std::string& text = app_->sourceText();
-
     uint32_t target = selection.active.offset;
     if (selection.Empty()) {
-        target = left ? mac::PreviousCharacter(text, target)
-                      : mac::NextCharacter(text, target);
-    } else {
-        // A selection collapses to its edge.
+        target = word ? (left ? content_->StepWord(target, true)
+                              : content_->StepWord(target, false))
+                      : (left ? content_->StepGrapheme(target, true)
+                              : content_->StepGrapheme(target, false));
+    } else if (!extend) {
+        // A move without the shift key collapses the selection to the
+        // edge it moves from.
         target = left ? selection.Start() : selection.End();
     }
-
-    [self setCaret:target extend:NO];
+    [self setCaret:target extend:extend];
+    [self caretMoved];
 }
 
-// Moves the caret one line up or down, keeping the horizontal position.
-- (void)moveCaretVertically:(bool)up {
+// Moves the caret to the line above or below.
+- (void)moveVertical:(bool)up extend:(bool)extend {
+    [self moveVerticallyBy:0.0f up:up extend:extend];
+}
+
+// Moves the caret by most of a windowful, which the page keys do.
+- (void)moveVerticalPage:(bool)up extend:(bool)extend {
+    if (!content_) return;
+    [self moveVerticallyBy:content_->viewHeight() * 0.9f
+                        up:up
+                    extend:extend];
+}
+
+- (void)moveVerticallyBy:(float)distance up:(bool)up extend:(bool)extend {
     if (!app_ || !content_) return;
 
     const Selection& selection = app_->selection();
@@ -705,21 +936,48 @@ float ContentView::CaretHeight() const {
     float y = 0.0f;
     float width = 0.0f;
     float height = 0.0f;
-    if (!content_->OffsetToRect(caret, &x, &y, &width, &height)) {
-        return;
-    }
+    if (!content_->OffsetToRect(caret, &x, &y, &width, &height)) return;
 
-    // The document y becomes a view y, and the line height is the
-    // distance the caret moves.
-    const float lineHeight = height > 0.0f ? height : 16.0f;
+    // The column the moves aim for, kept across the run until a fresh
+    // click or a horizontal move drops it, so a short line does not
+    // pull the caret left on the way down.
+    if (desiredX_ < 0.0f) desiredX_ = x;
+
+    const float step = distance > 0.0f
+        ? distance
+        : (height > 0.0f ? height : 16.0f);
     float viewY = y - content_->scrollOffset();
-    viewY += up ? -lineHeight : lineHeight;
+    viewY += up ? -step : step;
 
-    const uint32_t target = content_->HitTestPoint(x, viewY);
+    const uint32_t target = content_->HitTestPoint(desiredX_, viewY);
     if (target == UINT32_MAX) return;
-    if (target == caret) return;
 
-    [self setCaret:target extend:NO];
+    [self setCaret:target extend:extend];
+    [self caretMoved];
+}
+
+// Home and End: the edges of the visual line.
+- (void)moveToLineEdge:(bool)start extend:(bool)extend {
+    if (!app_ || !content_) return;
+    desiredX_ = -1.0f;
+
+    const uint32_t target =
+        content_->LineBoundary(app_->selection().active.offset, !start);
+    [self setCaret:target extend:extend];
+    [self caretMoved];
+}
+
+// Command-up and command-down: the edges of the document.
+- (void)moveToDocumentEdge:(bool)start extend:(bool)extend {
+    if (!app_ || !content_) return;
+    desiredX_ = -1.0f;
+
+    const uint32_t target = start
+        ? 0
+        : static_cast<uint32_t>(app_->sourceText().size());
+    [self setCaret:target extend:extend];
+    content_->ScrollToOffset(target);
+    [self caretMoved];
 }
 
 // Sets the caret, extending the selection when the shift key is down.

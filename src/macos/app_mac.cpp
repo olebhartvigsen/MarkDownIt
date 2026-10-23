@@ -603,22 +603,20 @@ void App::SetSelection(uint32_t start, uint32_t end) {
     OnSelectionChanged();
 }
 
-void App::SelectWordAt(uint32_t offset) {
-    const std::string& text = buffer_.Text();
-    if (text.empty()) return;
+bool App::WordSpanForOffset(uint32_t offset, uint32_t* outStart,
+                            uint32_t* outEnd) const {
+    if (buffer_.Text().empty()) return false;
 
-    // The shared word span is the same boundary the word-wise caret
-    // moves and the word deletions use, so a double click and a
-    // Ctrl+Backspace can never disagree about where a word ends. A
-    // click on punctuation selects that punctuation, the way the
-    // Windows selection does.
+    // The shared word span is the boundary the word-wise caret moves
+    // and the word deletion use, so a double click and a word move can
+    // never disagree about where a word ends.
     uint32_t start = 0;
     uint32_t end = 0;
     WordSpanAt(buffer_, offset, &start, &end);
-    if (end <= start) return;
+    if (end <= start) return false;
 
-    // The ends snap to drawn text, so a double click never drags a
-    // Markdown marker into the selection.
+    // The ends snap to drawn text, so a mark never lands on a hidden
+    // marker.
     if (contentView_) {
         start = contentView_->NormalizeToRenderedCaret(start);
         end = contentView_->NormalizeToRenderedCaret(end);
@@ -628,13 +626,23 @@ void App::SelectWordAt(uint32_t offset) {
         start = end;
         end = swap;
     }
-    if (end <= start) return;
+    if (end <= start) return false;
+    if (outStart) *outStart = start;
+    if (outEnd) *outEnd = end;
+    return true;
+}
+
+void App::SelectWordAt(uint32_t offset) {
+    uint32_t start = 0;
+    uint32_t end = 0;
+    if (!WordSpanForOffset(offset, &start, &end)) return;
     SetSelection(start, end);
 }
 
-void App::SelectParagraphAt(uint32_t offset) {
+bool App::ParagraphRangeForOffset(uint32_t offset, uint32_t* outStart,
+                                  uint32_t* outEnd) const {
     const std::string& text = buffer_.Text();
-    if (text.empty()) return;
+    if (text.empty()) return false;
 
     // The paragraph is the block the offset sits in: its drawn text and
     // the break that ends it. A list item keeps its marker, the next
@@ -676,7 +684,16 @@ void App::SelectParagraphAt(uint32_t offset) {
         start = static_cast<uint32_t>(s);
         end = static_cast<uint32_t>(e);
     }
-    if (end <= start) return;
+    if (end <= start) return false;
+    if (outStart) *outStart = start;
+    if (outEnd) *outEnd = end;
+    return true;
+}
+
+void App::SelectParagraphAt(uint32_t offset) {
+    uint32_t start = 0;
+    uint32_t end = 0;
+    if (!ParagraphRangeForOffset(offset, &start, &end)) return;
     SetSelection(start, end);
 }
 
