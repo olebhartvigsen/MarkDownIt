@@ -756,9 +756,18 @@ float ContentView::CaretHeight() const {
         return;
     }
 
-    if (selector == @selector(insertTab:) ||
-        selector == @selector(insertBacktab:)) {
-        app_->InsertText("\t");
+    if (selector == @selector(insertTab:)) {
+        // Tab is structural inside a table, and the column the vertical
+        // moves aim for starts fresh after the caret changed.
+        desiredX_ = -1.0f;
+        app_->HandleTab(false);
+        [self caretMoved];
+        return;
+    }
+
+    if (selector == @selector(insertBacktab:)) {
+        desiredX_ = -1.0f;
+        app_->HandleTab(true);
         [self caretMoved];
         return;
     }

@@ -437,6 +437,141 @@ void App::InsertTable(int cols, int rows) {
     OnTextChanged();
 }
 
+void App::HandleTab(bool backwards) {
+    // Markdown tables keep each cell on one source line, so inside a
+    // table Tab moves between cells through the shared table model
+    // instead of inserting indentation. The selection's anchor side
+    // decides, the same rule the Windows build uses.
+    if (IsOffsetInTable(document_, sel_.active.offset) ||
+        (!sel_.Empty() && IsOffsetInTable(document_, sel_.Start()))) {
+        uint32_t tableOffset = 0;
+        if (MoveTableCell(document_, sel_.active.offset, backwards,
+                          &tableOffset)) {
+            SetCaret(tableOffset);
+            return;
+        }
+        if (!backwards) {
+            // Tab from the last cell appends a blank row and puts the
+            // caret in its first cell.
+            AppendRowToTable();
+        }
+        // Shift+Tab from the first cell stays where it is.
+        return;
+    }
+
+    // Outside a table a tab is the indentation character.
+    InsertText("\t");
+}
+
+// Appends a blank row with the table's column count and puts the caret
+// in its first cell, so a table grows by keyboard alone. One undo step
+// covers the row and the caret.
+void App::AppendRowToTable() {
+    const std::string& text = buffer_.Text();
+    for (size_t ti = 0; ti < document_.nodes.size(); ++ti) {
+        const Node& node = document_.nodes[ti];
+        if (node.block != BlockKind::Table) continue;
+        const uint32_t start = node.srcOffset;
+        const uint32_t end = start + node.srcLength;
+        if (sel_.active.offset < start || sel_.active.offset > end) continue;
+
+        const int cols = static_cast<int>(TableColumnCount(document_, ti));
+        if (cols <= 0) return;
+
+        std::string row = TableBlankRow(cols);
+        const uint32_t insertPos = end;
+        // A table that runs into the next block needs its own line.
+        const bool neededBreak = insertPos > 0 && text[insertPos - 1] != '\n';
+        if (neededBreak) row.insert(0, "\n");
+
+        editor_.ReplaceTextRange(insertPos, 0, row, EditType::Insert);
+        editor_.BreakUndoCoalesce();
+        sel_.Collapse({insertPos + (neededBreak ? 2u : 1u)});
+        OnTextChanged();
+        return;
+    }
+}
+
+void App::PasteFromClipboard() {
+    std::string text = ClipboardText();
+    if (text.empty()) return;
+
+    // Only the clipboard's plain text is pasted, and its line endings
+    // are normalized to the document's own, the way the Windows build
+    // normalizes CRLF and CR.
+    std::string normalized;
+    normalized.reserve(text.size());
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\r') {
+            if (i + 1 < text.size() && text[i + 1] == '\n') ++i;
+            normalized.push_back('\n');
+        } else {
+            normalized.push_back(text[i]);
+        }
+    }
+    text = normalized;
+
+    const bool inTable = IsOffsetInTable(document_, sel_.active.offset) ||
+        (!sel_.Empty() && IsOffsetInTable(document_, sel_.Start()));
+
+    // A paste into a cell keeps the row intact: the shared rule strips
+    // pipes and row breaks, the cell's structural validation.
+    if (inTable) text = SanitizePasteForTableCell(text);
+
+    // Tab separated rows (a spreadsheet block) become a Markdown table
+    // in one paste.
+    if (!inTable) {
+        std::string table;
+        uint32_t cellCaret = 0;
+        if (TabSeparatedToMarkdownTable(text, &table, &cellCaret)) {
+            InsertPastedTable(table, cellCaret);
+            return;
+        }
+    }
+
+    if (text.empty()) return;
+
+    // The paste is its own undo step: it must not merge into the typing
+    // run before it, and typing afterwards must not merge back.
+    editor_.BreakUndoCoalesce();
+    editor_.InsertText(text);
+    editor_.BreakUndoCoalesce();
+    OnTextChanged();
+}
+
+// A pasted block of tab separated rows becomes a table at the caret,
+// with the plumbing the Windows build uses: a blank separator line in
+// front where the block would otherwise merge into the block before
+// it, and one undo step for the separators, the table and the caret.
+void App::InsertPastedTable(const std::string& table,
+                            uint32_t firstCellCaret) {
+    // A table never nests, so a pasted table does nothing inside one.
+    if (tableedit::ContainingTable(document_, sel_.active.offset)) return;
+
+    uint32_t insertPos = sel_.active.offset;
+    uint32_t replaceLen = 0;
+    if (!sel_.Empty()) {
+        insertPos = sel_.Start();
+        replaceLen = sel_.Length();
+    }
+
+    const std::string& text = buffer_.Text();
+    std::string insertText;
+    insertText.append(TableSeparatorNewlinesBefore(text, insertPos), '\n');
+    const uint32_t prefixLen = static_cast<uint32_t>(insertText.size());
+    insertText += table;
+    if (insertPos + replaceLen < text.size() &&
+        text[insertPos + replaceLen] != '\n') {
+        insertText += "\n";
+    }
+
+    editor_.ReplaceTextRange(insertPos, replaceLen, insertText,
+                              EditType::Insert);
+    editor_.BreakUndoCoalesce();
+    sel_.Collapse({insertPos + prefixLen + firstCellCaret});
+    OnTextChanged();
+}
+
 void App::Reparse() {
     // The parse is the shared one. A parse failure leaves the previous
     // document in place, which is what the Windows build does too. The
@@ -736,49 +871,70 @@ void App::InsertText(const std::string& text) {
 }
 
 void App::DeleteBackward() {
-    if (sel_.Empty()) {
-        editor_.DeleteBackward(&document_);
-    } else {
+    if (!sel_.Empty()) {
         editor_.DeleteSelection();
+        OnTextChanged();
+        return;
     }
-    OnTextChanged();
+
+    // Inside a cell the boundary rule is the cell's own: the pipe that
+    // opens the cell is never consumed. A refused edit leaves the
+    // document clean.
+    const bool changed = IsOffsetInTable(document_, sel_.active.offset)
+        ? editor_.DeleteBackwardInCell(document_)
+        : editor_.DeleteBackward(&document_);
+    if (changed) OnTextChanged();
 }
 
 void App::DeleteForward() {
-    if (sel_.Empty()) {
-        editor_.DeleteForward(&document_);
-    } else {
+    if (!sel_.Empty()) {
         editor_.DeleteSelection();
+        OnTextChanged();
+        return;
     }
-    OnTextChanged();
+
+    // Inside a cell the closing pipe is never consumed.
+    const bool changed = IsOffsetInTable(document_, sel_.active.offset)
+        ? editor_.DeleteForwardInCell(document_)
+        : editor_.DeleteForward(&document_);
+    if (changed) OnTextChanged();
 }
 
 void App::DeleteWordBackward() {
-    if (sel_.Empty()) {
-        editor_.DeleteWordBackward();
-    } else {
+    if (!sel_.Empty()) {
         editor_.DeleteSelection();
+        OnTextChanged();
+        return;
     }
-    OnTextChanged();
+
+    // A word deletion that ate nothing is not a change.
+    const size_t lengthBefore = buffer_.Length();
+    editor_.DeleteWordBackward();
+    if (buffer_.Length() != lengthBefore) OnTextChanged();
 }
 
 void App::DeleteWordForward() {
-    if (sel_.Empty()) {
-        editor_.DeleteWordForward();
-    } else {
+    if (!sel_.Empty()) {
         editor_.DeleteSelection();
+        OnTextChanged();
+        return;
     }
-    OnTextChanged();
+
+    const size_t lengthBefore = buffer_.Length();
+    editor_.DeleteWordForward();
+    if (buffer_.Length() != lengthBefore) OnTextChanged();
 }
 
 void App::InsertSoftBreak() {
-    editor_.InsertSoftBreak(document_);
-    OnTextChanged();
+    // A table row does not take a soft break; a refused edit must not
+    // mark the document dirty.
+    if (editor_.InsertSoftBreak(document_)) OnTextChanged();
 }
 
 void App::InsertParagraphBreak() {
-    editor_.InsertParagraphBreak(document_);
-    OnTextChanged();
+    // The shared controller refuses the break the table model has no
+    // place for; a refused edit is not a change.
+    if (editor_.InsertParagraphBreak(document_)) OnTextChanged();
 }
 
 void App::Undo() {

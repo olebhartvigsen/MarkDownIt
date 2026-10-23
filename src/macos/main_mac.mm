@@ -714,9 +714,10 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 }
 
 - (void)OnPaste {
-    const std::string text = app_->ClipboardText();
-    if (text.empty()) return;
-    app_->InsertText(text);
+    // The paste pipeline is the app's: plain text, LF endings, inside a
+    // cell the structural sanitizing, and tab separated rows become a
+    // table.
+    app_->PasteFromClipboard();
     [view_ setNeedsDisplay:YES];
 }
 

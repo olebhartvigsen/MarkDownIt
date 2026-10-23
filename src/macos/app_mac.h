@@ -109,6 +109,14 @@ public:
     void InsertTable(int cols, int rows);
     void AddTableRow(bool below);
     void RemoveTableRow();
+
+    // Appends a blank row to the table the caret is in, the way Tab
+    // from the last cell does.
+    void AppendRowToTable();
+
+    // Pastes a converted table at the caret in one undo step.
+    void InsertPastedTable(const std::string& table,
+                           uint32_t firstCellCaret);
     void AddTableColumn(bool right);
     void RemoveTableColumn();
     void SplitTableCell();
@@ -227,6 +235,16 @@ public:
 
     // Inserts text at the caret, replacing the selection when there is one.
     void InsertText(const std::string& text);
+
+    // Pastes the clipboard's plain text at the caret, replacing the
+    // selection. Inside a table cell the text is sanitized to one row
+    // line, and tab separated rows become a table in one undo step.
+    void PasteFromClipboard();
+
+    // Tab and Shift+Tab. Inside a table they move between cells through
+    // the shared model, and Tab from the last cell appends a row.
+    // Outside a table a tab character is inserted.
+    void HandleTab(bool backwards);
 
     // Deletes the selection, or the character before the caret.
     void DeleteBackward();

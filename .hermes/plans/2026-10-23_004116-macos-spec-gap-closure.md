@@ -32,7 +32,7 @@ caret, and no key event reached the document. One canonical position
 model runs through mouse, keyboard and clipboard, and the mouse hit
 test never decides document semantics on its own.
 
-Renderer half (this push):
+Renderer half (landed in `5816224`):
 
 - The visible-to-source map per block and per table cell, built the way
   `src/renderer.cpp` builds `u16ToSrc` (inline children carry their
@@ -47,7 +47,7 @@ Renderer half (this push):
 - The old line-select hit test is gone; the Word-like line selection
   survives only for clicks that miss the text.
 
-App half (this push):
+App half (landed in `5816224`):
 
 - `MoveWordLeftInString` / `MoveWordRightInString` shared with the
   buffer-based moves, so double click, word deletion and Ctrl+Arrow
@@ -60,11 +60,12 @@ App half (this push):
   and triple click select word and paragraph, drag extends with
   autoscroll, clicks below the last line go to the document end.
 
-Keyboard half (next push): first responder, `interpretKeyEvents`,
-the blink lifecycle, `desiredX` for vertical movement, word and line
-selectors, Tab and Shift+Return routing, drag autoscroll timers.
+Keyboard half (landed in `8262d3b`): first responder,
+`interpretKeyEvents`, the blink lifecycle, `desiredX` for vertical
+movement, word and line selectors, Tab and Shift+Return routing, drag
+autoscroll timers.
 
-Rows this closes when both halves are green: text spec M1-M8, U1-U3,
+Rows this closes (both halves are green): text spec M1-M8, U1-U3,
 S2, S4, S5, S6, S7, C2 (partly), Z1; wp-guidelines A, B, C, D, E, G,
 H (new tests), ARCH-1, ARCH-2; table rules 5-7 and 12-13 (hit test and
 arrows), 18 (selection start), 43-45, 51-52.
@@ -77,7 +78,10 @@ arrows), 18 (selection start), 43-45, 51-52.
   the soft break and does not break a row (rule 37).
 - Paste sanitizes into a cell and converts tab separated text into a
   table (rules 39, 40, 55; text spec C6).
-- Z2: paste ends an undo coalescing run.
+- Z2: paste ends an undo coalescing run. The mac paste is its own
+  undo step now; the Windows paste path shares the merge-into-the-
+  typing-run pattern (audit note), and the shared-controller fix for
+  it is a follow-up.
 
 ## Batch 3: find bar and zoom
 
