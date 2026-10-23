@@ -558,3 +558,27 @@ matching treatment. Out of scope here. `theme.h` should be shaped so a
 
 **Open question: syntax highlighting.** Out of scope. It needs a lexer and a
 language map, which is a separate project of its own size.
+
+## Status on macOS (October 23, 2026)
+
+The overhaul was built twice: first for the Windows renderer, then
+ported to the macOS renderer (`f6211fe`, `cd4d7b6`, `9e253a3`). Every
+task below is in place on both platforms, with the shared
+`src/theme.h` carrying the tokens and each renderer routing its
+measure and paint through `ComputeMetrics`:
+
+| Task | Evidence in the mac renderer |
+|------|------------------------------|
+| 1. The token struct | `src/theme.h` is shared; `MacRenderer` reads `metrics_` and `palette_` from it |
+| 2. Route through `ComputeMetrics` | `MacRenderer::ComputeMetrics` (renderer_mac.cpp:547), resolved again on zoom (renderer_mac.h) |
+| 3. Line height and measure cap | `ApplyLineSpacing` uses `metrics_.bodyLineHeight`; `contentWidth_ = min(available, maxContentWidth)` (renderer_mac.cpp:578); the width modes scale the cap (621-625) |
+| 4. Type scale and colour pass | `FontFor` builds every run from the metric sizes, headings from `headingSizes[level]` (699); every fill reads `palette_` |
+| 5. Differentiated block spacing | `GapBefore` uses `paraGap`, `headingGapBefore/After`, `listItemGap`, `listGap` |
+| 6. Table height and marker width | Table rows are measured for real (`rowHeights` from the measured cell lines plus `cellPadY`); the marker gutter uses `markerGutter` |
+| 7. Code, quote and table polish | Code blocks draw `FillRoundedRect`/`StrokeRoundedRect` with `codeRadius`, `codeBg` and `codeBorder` (1110-1113); quote bars use `quoteBar` (1134); the table header and the alt rows use `tableHeaderBg` and `tableRowAlt` (1351-1353); the H1 and H2 rules use `ruleGapAbove/Below` (711, 1219) |
+
+Colour parity: the table and quote colours are read from the one
+shared `Palette` on both platforms (`tableHeaderBg` 0xF6F8FA,
+`tableRowAlt` 0xFAFBFC, `quoteBar` 0xD0D7DE, `quoteText` 0x656D76),
+so the two builds cannot drift. A dark palette is still the open
+question above: night mode is not implemented on either platform.

@@ -2,13 +2,14 @@
 
 The plan is `.hermes/plans/2026-09-12_203000-macos-port.md`. This is the
 state of the port against that plan, written on October 22, 2026, when
-the branch `feat/macos-port` was green on both platforms.
+the branch `feat/macos-port` was green on both platforms. It was
+refreshed on October 23, 2026, after the five-batch spec-gap closure.
 
 ## The gates
 
 | Gate | Where it runs | State |
 |------|----------------|-------|
-| `Tests (macOS, Apple Silicon)` | GitHub Actions, `macos-26` | 7433 checks, 0 failures, 625 passed |
+| `Tests (macOS, Apple Silicon)` | GitHub Actions, `macos-26` | 7683 checks, 0 failures, 662 passed, 1 known gap |
 | `Build (macOS, Apple Silicon)` | GitHub Actions, `macos-26` | the app bundle builds, is signed ad hoc and passes the bundle check |
 | `Build (x64)` | GitHub Actions, `windows-2022` | green |
 | The office and the mermaid oracles | GitHub Actions | green |
@@ -81,18 +82,33 @@ Everything the plan asked for in tasks 1 to 7 is there:
 - The caret blinks, the selection is drawn, the mouse selects, and a
   double click takes a word and a triple click takes a paragraph.
 - The editing, the undo, the autoformat, the formatting commands and
-  the find bar are the shared ones.
+  the find bar are the shared ones. The find bar steps with Enter and
+  Shift+Enter, closes with Escape, counts its matches and reports its
+  replacements. The bold and italic commands follow the shared marker
+  rules, including the typing format a toggle sets at an empty caret.
 - The clipboard keeps the custom markdown format next to the text.
 - The source view, the zoom, the wrapping and the width of the column
   are in the View menu.
 - The menus carry the file, the edit, the view, the format and the
   office commands.
+- The office commands import a Word file and export Word or PDF. Both
+  exports show the compatibility report, the PDF export reports its
+  page count, and an import starts an untitled, dirty document, so a
+  Save cannot write the imported text over the file that was open
+  before.
+- The mermaid flowcharts are measured with the Core Text engine in the
+  live renderer and cached by fence source and zoom, the way the
+  Windows build measures with DirectWrite.
 - The welcome screen shows the recent files as cards, and a click on a
   card opens that file.
 - The commands that throw the document away ask about the changes
   first.
 - The outline pane is there. It shows the headings, a collapsed heading
   hides its subtree, and a click on a heading moves the caret there.
+  The pane scrolls on its own, the active heading follows the caret,
+  the arrows, Enter, Home, End and the left and right arrows drive a
+  selection, and the outline is a list of headings to assistive
+  technology.
 - The window keeps its place between the runs, and the settings live
   in `~/Library/Application Support/MarkDownIt/settings.json`.
 - The bundle carries the icon and the document types, the CI signs
@@ -157,6 +173,34 @@ came down to:
 
 The shared marker type is called `TextMarker` now, because
 CarbonCore has a `struct Marker` of its own and AppKit pulls it in.
+
+## The spec-gap closure
+
+Five batches then took every standing spec in `references/` and closed
+what the mac build was missing, each one a push with its CI run green
+(the list is in `.hermes/plans/2026-10-23_004116-macos-spec-gap-closure.md`):
+
+- the caret model (the text spec's M rules and the word-processor
+  guidelines' acceptance list), the table keyboard and paste, and the
+  find bar's keys, counter and status line
+- the zoom: the scroll view carries the document, and a zoom holds its
+  anchor under the gesture or the viewport centre
+- the mark: only drawn text is stored, the overlap test sees
+  unresolved markers, the link dialog keeps the label, and Save As
+  adopts the new path for the sidecar
+- the format toggles follow the shared marker-run rules, and the
+  pending typing format is ported, so an empty caret can carry a bold
+  or an italic into the next characters
+- the outline pane, the office reports and the import identity, and
+  the mermaid measurement
+
+The typography plan
+(`.hermes/plans/2026-08-12_105500-markdown-layout-typography.md`)
+was walked task by task; its status section lists the evidence for
+each task on the mac renderer. The palette is shared
+(`src/theme.h`), so the table, quote, code and text colours cannot
+drift between the two builds. Night mode is not implemented on either
+platform, so its spec stays out of scope for the port.
 
 ## The plan items that were decided differently
 
