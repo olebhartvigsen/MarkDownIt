@@ -34,6 +34,10 @@ constexpr float kTriangleSizeDip = 8.0f;
 // The size of the font of a heading.
 constexpr float kFontSizeDip = 13.0f;
 
+// The number of characters a heading may show before it is cut. The
+// tooltip carries the whole heading (outline spec 16).
+constexpr size_t kMaxTextChars = 64;
+
 // The family of the font of a heading.
 const char* kFontFamily = "Segoe UI";
 
@@ -95,6 +99,10 @@ void OutlinePane::SetCaretOffset(uint32_t offset) {
     // The heading of the section the caret is in is the one that is
     // highlighted.
     currentItem_ = ItemIndexForOffset(items_, offset);
+    // The keyboard selection starts at the active row; once the user
+    // has moved it with the keys it stays where they left it (outline
+    // spec 13).
+    if (selectedVisibleRow_ < 0) selectedVisibleRow_ = ActiveVisibleRow();
 }
 
 void OutlinePane::SetNavigateCallback(std::function<void(uint32_t offset)> cb) {
@@ -115,6 +123,11 @@ void OutlinePane::Refresh() {
     collapse_.ReResolve(items_.size());
     visible_ = VisibleItems(items_, collapse_);
     currentItem_ = ItemIndexForOffset(items_, caretOffset_);
+    // A shorter list may have taken the selection and the hover away.
+    if (selectedVisibleRow_ >= static_cast<int>(visible_.size()))
+        selectedVisibleRow_ = static_cast<int>(visible_.size()) - 1;
+    if (hoveredVisibleRow_ >= static_cast<int>(visible_.size()))
+        hoveredVisibleRow_ = -1;
 }
 
 float OutlinePane::ContentHeight() const {
@@ -132,6 +145,106 @@ float OutlinePane::IndentFor(const OutlineItem& item) const {
     const int levels = item.level > 0 ? item.level - 1 : 0;
     const float indent = static_cast<float>(levels) * kIndentStepDip;
     return kPadXDip + std::min(indent, kIndentMaxDip);
+}
+
+int OutlinePane::ActiveVisibleRow() const {
+    if (currentItem_ < 0) return -1;
+    for (size_t row = 0; row < visible_.size(); row++) {
+        if (visible_[row] == currentItem_) return static_cast<int>(row);
+    }
+    return -1;
+}
+
+int OutlinePane::VisibleRowAt(float y) const {
+    if (y < 0.0f) return -1;
+    const int row = static_cast<int>(y / kRowHeightDip);
+    if (row < 0 || row >= static_cast<int>(visible_.size())) return -1;
+    return row;
+}
+
+Rect OutlinePane::RowBounds(int visibleRow, float width) const {
+    Rect out;
+    out.x = 0.0f;
+    out.y = RowY(visibleRow);
+    out.width = width;
+    out.height = kRowHeightDip;
+    return out;
+}
+
+void OutlinePane::SetSelectedVisibleRow(int row) {
+    if (visible_.empty()) {
+        selectedVisibleRow_ = -1;
+        return;
+    }
+    if (row < 0) row = 0;
+    if (row >= static_cast<int>(visible_.size()))
+        row = static_cast<int>(visible_.size()) - 1;
+    selectedVisibleRow_ = row;
+}
+
+void OutlinePane::MoveSelection(int delta) {
+    if (visible_.empty()) return;
+    const int start =
+        selectedVisibleRow_ < 0 ? ActiveVisibleRow() : selectedVisibleRow_;
+    SetSelectedVisibleRow((start < 0 ? 0 : start) + delta);
+}
+
+bool OutlinePane::SelectionHasChildren() const {
+    if (selectedVisibleRow_ < 0 ||
+        selectedVisibleRow_ + 1 >= static_cast<int>(visible_.size()))
+        return false;
+    const int item = visible_[selectedVisibleRow_];
+    const int next = visible_[selectedVisibleRow_ + 1];
+    return items_[next].level > items_[item].level;
+}
+
+void OutlinePane::SetSelectionCollapsed(bool collapsed) {
+    if (selectedVisibleRow_ < 0 || !SelectionHasChildren()) return;
+    const int item = visible_[selectedVisibleRow_];
+    if (collapse_.IsCollapsed(item) == collapsed) return;
+    collapse_.Toggle(item);
+    visible_ = VisibleItems(items_, collapse_);
+    // The tree renumbered under the selection: keep the same heading
+    // selected.
+    for (size_t row = 0; row < visible_.size(); row++) {
+        if (visible_[row] == item) {
+            selectedVisibleRow_ = static_cast<int>(row);
+            break;
+        }
+    }
+}
+
+void OutlinePane::ActivateSelection() {
+    if (selectedVisibleRow_ < 0) return;
+    const int item = visible_[selectedVisibleRow_];
+    if (navigate_ && item >= 0 && item < static_cast<int>(items_.size())) {
+        navigate_(items_[item].offset);
+    }
+}
+
+std::string OutlinePane::FullTextAt(int visibleRow) const {
+    if (visibleRow < 0 || visibleRow >= static_cast<int>(visible_.size()))
+        return std::string();
+    return ToUtf8(items_[visible_[visibleRow]].text);
+}
+
+bool OutlinePane::IsTruncated(int visibleRow) const {
+    if (visibleRow < 0 || visibleRow >= static_cast<int>(visible_.size()))
+        return false;
+    const OutlineItem& heading = items_[visible_[visibleRow]];
+    if (heading.text.size() > kMaxTextChars) return true;
+    const float textX = IndentFor(heading) + kTriangleSizeDip + 4.0f;
+    const float available = lastWidth_ - textX - kPadXDip;
+    const float estimated = static_cast<float>(heading.text.size()) * 7.0f;
+    return estimated > available;
+}
+
+void OutlinePane::SetFocused(bool focused) {
+    focused_ = focused;
+}
+
+void OutlinePane::SetHoveredVisibleRow(int row) {
+    hoveredVisibleRow_ = row;
 }
 
 int OutlinePane::ItemAt(float y) const {
@@ -190,6 +303,20 @@ void OutlinePane::Draw(RenderTarget* target, float width, float height) {
     background.width = width;
     background.height = height;
     target->FillRect(background, background_);
+    lastWidth_ = width;
+
+    // An empty outline says so, and says what fills it (outline spec
+    // 17).
+    if (items_.empty()) {
+        FontSpec emptyFont;
+        emptyFont.family = kFontFamily;
+        emptyFont.size = kFontSizeDip;
+        target->DrawText("No headings in this document.", emptyFont,
+                         kPadXDip, kRowHeightDip, text_);
+        target->DrawText("Add headings to your document to create an outline.",
+                         emptyFont, kPadXDip, kRowHeightDip * 2.0f, muted_);
+        return;
+    }
 
     FontSpec font;
     font.family = kFontFamily;
@@ -202,7 +329,9 @@ void OutlinePane::Draw(RenderTarget* target, float width, float height) {
         const OutlineItem& heading = items_[item];
         const float y = RowY(static_cast<int>(row));
 
-        // The heading the caret is in gets a highlight behind it.
+        // The heading the caret is in gets a highlight behind it. It
+        // stays identifiable whether or not the pane has the focus
+        // (outline spec 13).
         if (item == currentItem_) {
             Rect band;
             band.x = 0.0f;
@@ -210,6 +339,32 @@ void OutlinePane::Draw(RenderTarget* target, float width, float height) {
             band.width = width;
             band.height = kRowHeightDip;
             target->FillRect(band, highlight_);
+        }
+
+        // The hover is a line under the row, the keyboard selection is
+        // a ring around it, and both are distinct from the caret's
+        // band (outline spec 13).
+        if (static_cast<int>(row) == hoveredVisibleRow_) {
+            Rect line;
+            line.x = 0.0f;
+            line.y = y + kRowHeightDip - 1.0f;
+            line.width = width;
+            line.height = 1.0f;
+            target->FillRect(line, muted_);
+        }
+        if (focused_ && static_cast<int>(row) == selectedVisibleRow_) {
+            Rect ring;
+            ring.x = 0.0f;
+            ring.y = y + 0.5f;
+            ring.width = width;
+            ring.height = kRowHeightDip - 1.0f;
+            target->FillRect(ring, text_);
+            Rect inner;
+            inner.x = 1.0f;
+            inner.y = y + 1.5f;
+            inner.width = width - 2.0f;
+            inner.height = kRowHeightDip - 3.0f;
+            target->FillRect(inner, background_);
         }
 
         // The triangle, when the heading has a subtree. A heading
@@ -246,10 +401,22 @@ void OutlinePane::Draw(RenderTarget* target, float width, float height) {
         // The text of the heading, indented by its level.
         const float textX = IndentFor(heading) + kTriangleSizeDip + 4.0f;
         const float baseline = y + kRowHeightDip * 0.5f + kFontSizeDip * 0.35f;
-        const size_t maxChars = 64;
+        const size_t maxChars = kMaxTextChars;
         const Color color = (item == currentItem_) ? text_ : muted_;
         target->DrawText(TrimmedText(heading, maxChars), font, textX, baseline,
                          color);
+    }
+
+    // The keyboard focus is visible as a ring around the pane (outline
+    // spec 22).
+    if (focused_) {
+        Rect edges[4] = {
+            {0.0f, 0.0f, width, 1.0f},
+            {0.0f, height - 1.0f, width, 1.0f},
+            {0.0f, 0.0f, 1.0f, height},
+            {width - 1.0f, 0.0f, 1.0f, height},
+        };
+        for (const Rect& edge : edges) target->FillRect(edge, text_);
     }
 }
 

@@ -57,6 +57,45 @@ public:
     // The headings that are visible under the collapse state.
     const std::vector<int>& Visible() const { return visible_; }
 
+    // The visible row of the heading the caret is in, or -1 when the
+    // caret is in no section (outline spec 6 and 21).
+    int ActiveVisibleRow() const;
+
+    // The visible row a y coordinate lands in, or -1 (outline spec 13:
+    // the hover and the click both read it).
+    int VisibleRowAt(float y) const;
+
+    // The bounds of a visible row, which the scroller and the
+    // accessibility tree read.
+    Rect RowBounds(int visibleRow, float width) const;
+
+    // The keyboard selection. It is the outline's own state, distinct
+    // from the current location, and it starts at the active row
+    // (outline spec 13 and 14).
+    int SelectedVisibleRow() const { return selectedVisibleRow_; }
+    void SetSelectedVisibleRow(int row);
+    void MoveSelection(int delta);
+    bool SelectionHasChildren() const;
+    void SetSelectionCollapsed(bool collapsed);
+    // Enter on the selection: asks the owner to jump there.
+    void ActivateSelection();
+
+    // The full text of a visible row, for the tooltip of a truncated
+    // heading (outline spec 16).
+    std::string FullTextAt(int visibleRow) const;
+
+    // Whether the heading of a row is wider than the pane shows, which
+    // calls for the tooltip.
+    bool IsTruncated(int visibleRow) const;
+
+    // Whether the pane has the keyboard focus: the focus draws a ring
+    // around the pane (outline spec 22).
+    void SetFocused(bool focused);
+
+    // The row under the pointer, for the hover treatment (outline spec
+    // 13).
+    void SetHoveredVisibleRow(int row);
+
     // The height the pane needs, in points.
     float ContentHeight() const;
 
@@ -101,6 +140,14 @@ private:
     OutlineCollapse collapse_;
 
     int currentItem_ = -1;
+    // The row the keyboard selected, and the row under the pointer.
+    // Both are rows into the visible list.
+    int selectedVisibleRow_ = -1;
+    int hoveredVisibleRow_ = -1;
+    // Whether the pane holds the keyboard focus, and the width of the
+    // last draw, which the truncation test reads.
+    bool focused_ = false;
+    float lastWidth_ = 0.0f;
 
     std::function<void(uint32_t offset)> navigate_;
 

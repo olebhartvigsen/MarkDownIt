@@ -21,4 +21,12 @@ class OutlinePane;
 // Creates a view that draws the given pane.
 - (instancetype)initWithPane:(mac::OutlinePane*)pane;
 
+// Scrolls a visible row into view, with a small margin, so the active
+// heading and the keyboard selection stay readable (outline spec 6.1).
+- (void)scrollRowIntoView:(int)row;
+
+// Registers the tooltip rectangles for the visible rows, so a heading
+// that shows truncated carries its whole text (outline spec 16).
+- (void)refreshToolTips;
+
 @end

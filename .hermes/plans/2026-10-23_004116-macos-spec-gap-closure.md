@@ -148,12 +148,29 @@ arrows), 18 (selection start), 43-45, 51-52.
   build gets the same rules; the pending model is the one the Windows
   build already carries.
 
-## Batch 5: outline, office, mermaid
+## Batch 5a: the outline pane (this push)
 
-- Outline pane: independent scrolling, the active heading follows the
-  caret and the scroll, keyboard navigation, accessibility exposure,
-  empty state, tooltip for truncated headings (outline spec 2, 6, 6.1,
-  13, 14, 16, 17, 22, 23).
+- The pane scrolls on its own, so a long table of contents keeps every
+  heading reachable (outline spec 16).
+- The active heading follows the caret, and the pane scrolls it into
+  view when the caret enters another section (spec 6 and 6.1). A
+  document change relayouts the pane and brings the active heading
+  back into view.
+- The keyboard drives the pane: the arrows move the selection, Enter
+  jumps to it, the left and right arrows close and open a subtree,
+  and Home and End go to the edges (spec 14).
+- The three states of the spec are told apart: the caret's band, the
+  hover line and the selection ring, and the keyboard focus draws a
+  ring around the pane (spec 13 and 22).
+- An empty outline says so and says how to fill it (spec 17), and a
+  row that shows a truncated heading carries the whole text as a
+  tooltip (spec 16).
+- Assistive technology sees the outline as a list of headings, each
+  with its text, its level and whether it is the heading the caret is
+  in (spec 22).
+
+## Batch 5b: office and mermaid (next push)
+
 - Office: the compatibility report is shown, an import does not keep
   the previous file path (data loss risk), PDF export options reach
   the UI (office spec, general clauses; audit blocking gaps 2, 3, 5,

@@ -82,6 +82,7 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     // The outline pane and the view that draws it.
     mac::OutlinePane* outlinePane_;
     MdOutlineView* outlineView_;
+    NSScrollView* outlineScroll_;
     NSSplitView* splitView_;
     bool outlineVisible_;
     mac::MacSettings settings_;
@@ -250,7 +251,17 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     outlinePane_ = new mac::OutlinePane();
     outlineView_ = [[MdOutlineView alloc] initWithPane:outlinePane_];
     outlineVisible_ = settings_.settings().outlineVisible;
-    [outlineView_ setHidden:!outlineVisible_];
+
+    // The pane scrolls on its own, so a long table of contents stays
+    // reachable whatever the window height (outline spec 16).
+    outlineScroll_ =
+        [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, 220, 400)];
+    [outlineScroll_ setDocumentView:outlineView_];
+    [outlineScroll_ setHasVerticalScroller:YES];
+    [outlineScroll_ setAutohidesScrollers:YES];
+    [outlineScroll_ setDrawsBackground:NO];
+    [outlineView_ setAutoresizingMask:NSViewWidthSizable];
+    [outlineScroll_ setHidden:!outlineVisible_];
 
     // The pane borrows the document of the app and reads it again
     // after every reparse.
@@ -267,6 +278,10 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     // reads the state again after every move of the caret.
     app_->SetSelectionChangedHandler([self] {
         [self ribbonSync];
+        // The active heading follows the caret, and the pane scrolls
+        // it into view when the caret enters another section (outline
+        // spec 6 and 6.1).
+        [self outlineActiveRefresh];
     });
 
     // A click on a heading puts the caret there and scrolls it into
@@ -297,7 +312,7 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     splitView_ = [[NSSplitView alloc] initWithFrame:frame];
     [splitView_ setVertical:YES];
     [splitView_ setDividerStyle:NSSplitViewDividerStyleThin];
-    [splitView_ addSubview:outlineView_];
+    [splitView_ addSubview:outlineScroll_];
     [splitView_ addSubview:scrollView_];
     // The place of the divider is the width of the pane, because the
     // pane is the first of the two.
@@ -939,26 +954,51 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     [ribbon_ refresh];
 }
 
+// Gives the pane the height its rows need, so the scroll view can
+// scroll it, and keeps the width of the scroll host (outline spec 16).
+- (void)outlineLayout {
+    CGFloat height = outlinePane_->ContentHeight();
+    const CGFloat visibleHeight = [outlineScroll_ contentSize].height;
+    if (height < visibleHeight) height = visibleHeight;
+    NSRect frame = NSMakeRect(0, 0, [outlineScroll_ contentSize].width,
+                              height);
+    [outlineView_ setFrame:frame];
+}
+
+// The caret moved: the active heading follows it, and the pane scrolls
+// it into view when another section was entered (outline spec 6.1).
+- (void)outlineActiveRefresh {
+    outlinePane_->SetCaretOffset(app_->selection().Start());
+    const int row = outlinePane_->ActiveVisibleRow();
+    if (row >= 0 && outlineVisible_) {
+        [outlineView_ scrollRowIntoView:row];
+    }
+    [outlineView_ setNeedsDisplay:YES];
+}
+
 // The document changed, so the pane reads it again.
 - (void)outlinePaneRefresh {
     outlinePane_->SetDocument(&app_->GetDocument());
     outlinePane_->SetCaretOffset(app_->selection().Start());
-    [outlineView_ setNeedsDisplay:YES];
+    [self outlineLayout];
+    [outlineView_ refreshToolTips];
+    [self outlineActiveRefresh];
 }
 
 - (void)OnToggleOutline {
     outlineVisible_ = !outlineVisible_;
     // Hiding the view takes the divider with it, so the document takes
     // the whole width.
-    [outlineView_ setHidden:!outlineVisible_];
+    [outlineScroll_ setHidden:!outlineVisible_];
 
     // The width is remembered, so the pane comes back the way it was
     // left.
     if (outlineVisible_) {
         [splitView_ setPosition:settings_.settings().outlineWidthDip
                    ofDividerAtIndex:0];
+        [self outlineLayout];
     } else {
-        const NSRect frame = [outlineView_ frame];
+        const NSRect frame = [outlineScroll_ frame];
         if (frame.size.width > 0.0) {
             settings_.settings().outlineWidthDip =
                 static_cast<float>(frame.size.width);
