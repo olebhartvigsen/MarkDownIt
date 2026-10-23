@@ -196,6 +196,7 @@ add_executable(MarkDownIt WIN32
     src/autoformat.cpp
     src/inputfilter.cpp
     src/searchreplace.cpp
+    src/unicode_fold.cpp
     src/findstate.cpp
     src/findbar_model.cpp
     src/findbar.cpp
@@ -336,6 +337,7 @@ if(BUILD_TESTS AND APPLE)
         tests/inputfilter_test.cpp
         tests/editor_features_test.cpp
         tests/findstate_test.cpp
+        tests/unicode_fold_test.cpp
         tests/findbar_ids_test.cpp
         tests/markers_test.cpp
         tests/outline_test.cpp
@@ -467,6 +469,7 @@ elseif(BUILD_TESTS)
         tests/inputfilter_test.cpp
         tests/editor_features_test.cpp
         tests/findstate_test.cpp
+        tests/unicode_fold_test.cpp
         tests/findbar_ids_test.cpp
         tests/findbar_window_test.cpp
         tests/markers_test.cpp

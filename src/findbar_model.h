@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "findstate.h"
 
@@ -49,11 +50,27 @@
 // The owner reads caretOffset() when a navigation is requested, so the bar
 // never caches a position of its own (guide 31).
 
+// A document at or above this size gets its search debounced by the
+// bar's owner instead of running on every keystroke, so typing never
+// blocks on a large search (find spec, large documents). The delay
+// belongs to the owner; the threshold is shared.
+constexpr std::size_t kFindDebounceThresholdBytes = 512u * 1024u;
+
+inline bool FindRefreshDebounceNeeded(std::size_t document_bytes) {
+    return document_bytes >= kFindDebounceThresholdBytes;
+}
+
 struct FindBarListener {
     // Where a navigation should start from, in document byte offsets. The
     // bar asks for this every time instead of remembering a position, so the
     // answer is always against the live document.
     std::function<uint32_t()> caretOffset;
+
+    // How large the document is right now, in bytes. The bar's owner
+    // uses it to decide whether a keystroke searches at once or waits
+    // for a pause, so a large document stays responsive (find spec,
+    // large documents).
+    std::function<std::size_t()> documentSize;
 
     // The query, the options or the scope changed. The owner must refresh
     // bar.state() against the current document, choose the current match
@@ -141,6 +158,16 @@ public:
     void SetSearchText(const std::wstring& text);
     const std::wstring& GetSearchText() const { return searchText_; }
 
+    // The session's recently used queries, most recent first, one
+    // entry per query and capped (find spec: the session remembers
+    // recently used search strings). An empty query is never
+    // remembered.
+    static constexpr std::size_t kHistoryMax = 10;
+    void RememberSearchQuery(const std::wstring& query);
+    const std::vector<std::wstring>& RecentSearchQueries() const {
+        return recentSearches_;
+    }
+
     // Changing the replacement cannot change which ranges match, so this
     // does not fire onSearchChanged and needs no re-search.
     void SetReplaceText(const std::wstring& text);
@@ -209,6 +236,7 @@ protected:
     // The field text as the bar last saw it, cached so text set BEFORE the
     // window exists is not lost and so GetSearchText works while hidden.
     std::wstring searchText_;
+    std::vector<std::wstring> recentSearches_;
     std::wstring replaceText_;
     std::wstring statusText_;
 

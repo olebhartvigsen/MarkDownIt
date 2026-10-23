@@ -1,16 +1,23 @@
 #include "findbar_model.h"
 
+#include "find_strings.h"
 #include "textenc.h"
 
-namespace {
-
-// The strings the model itself needs. The rest of the bar's strings live
-// with the widget, because only the widget shows them (guide 46).
-const wchar_t* const kStrNoMatches = L"No matches";
-const wchar_t* const kStrReadOnlyHint = L"Replacing is not available in this view.";
-const wchar_t* const kCounterSeparator = L" of ";
-
-}  // namespace
+// The history keeps the session's queries: most recent first, one
+// entry per query, capped (find spec: the session remembers recently
+// used search strings).
+void FindBarModel::RememberSearchQuery(const std::wstring& query) {
+    if (query.empty()) return;
+    for (std::size_t i = 0; i < recentSearches_.size(); ++i) {
+        if (recentSearches_[i] == query) {
+            recentSearches_.erase(recentSearches_.begin() +
+                                  static_cast<std::ptrdiff_t>(i));
+            break;
+        }
+    }
+    recentSearches_.insert(recentSearches_.begin(), query);
+    if (recentSearches_.size() > kHistoryMax) recentSearches_.resize(kHistoryMax);
+}
 
 void FindBarModel::SetSearchText(const std::wstring& text) {
     searchText_ = text;
@@ -145,7 +152,7 @@ std::wstring FindBarModel::FormatStatusText() const {
     // on screen and unavailable (guide 4).
     if (!statusText_.empty()) return statusText_;
     if (mode_ == FindBarMode::FindReplace && !replaceEnabled_) {
-        return kStrReadOnlyHint;
+        return findstrings::kReadOnlyHint;
     }
     return std::wstring();
 }
