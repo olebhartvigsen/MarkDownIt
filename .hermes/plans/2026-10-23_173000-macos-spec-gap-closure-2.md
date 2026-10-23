@@ -128,3 +128,15 @@ run. Goldens never change.
   OCR for scanned pages through a seam. macOS fills the seam with
   Vision (Danish included), and File > Office carries Import from
   PDF....
+
+- Batch F (find minors) is implemented: the search folds the text the
+  way the spec asks (canonical decomposition plus case folding, with
+  the tables generated from the Unicode data, and a match that has to
+  cover whole characters), the model keeps the session's recent
+  queries and the mac bar shows them behind a history button, a large
+  document gets a debounced search instead of a search per keystroke,
+  and the bar's strings sit in tables a translation can replace. A
+  find jump into a table finds its row through the cell's own rendered
+  map, the same map the hit test reads. The zoom guide records why the
+  bare plus and minus keys stay out of an editor, and Command with the
+  plain equals key zooms in beside them.
