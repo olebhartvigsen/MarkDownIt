@@ -116,15 +116,23 @@ NSMenu* BuildMainMenu() {
     {
         NSMenu* editMenu = BuildSubmenu(
             "Edit",
-            {{"Undo", @selector(undoEdit:)},
-             {"Redo", @selector(redoEdit:)},
-             {"Cut", @selector(cutSelection:)},
-             {"Copy", @selector(copySelection:)},
-             {"Paste", @selector(pasteSelection:)},
+            {{"Undo", @selector(undo:)},
+             {"Redo", @selector(redo:)},
+             {"Cut", @selector(cut:)},
+             {"Copy", @selector(copy:)},
+             {"Paste", @selector(paste:)},
              {"Select All", @selector(selectAll:)},
              {"Find...", @selector(findDocument:)},
              {"Replace...", @selector(replaceInDocument:)}},
-            {"z", "Z", "x", "c", "v", "a", "f", "h"});
+            {"z", "Z", "x", "c", "v", "a", "f", ""});
+        // The standard selectors travel the responder chain, so a
+        // focused text field handles its own undo and clipboard before
+        // the document does (spec AC-01). Replace opens with
+        // Cmd+Option+F, because Cmd+H belongs to Hide (spec AC-11).
+        [[editMenu itemWithTitle:@"Replace..."] setKeyEquivalent:@"f"];
+        [[editMenu itemWithTitle:@"Replace..."]
+            setKeyEquivalentModifierMask:NSEventModifierFlagCommand |
+                                        NSEventModifierFlagOption];
         AddTopLevel(mainMenu, "Edit", editMenu);
     }
 

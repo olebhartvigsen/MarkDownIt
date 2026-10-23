@@ -260,7 +260,26 @@ public:
     std::string ClipboardText() const;
 
     // Puts text on the clipboard.
-    void SetClipboardText(const std::string& text);
+    // Puts the text on the clipboard and reports whether the write
+    // went through; the cut path only deletes on success (text spec
+    // C3).
+    bool SetClipboardText(const std::string& text);
+
+    // Copy and cut of the selection through the clipboard text of
+    // SelectionForClipboard.
+    void CopyToClipboard();
+    void CutToClipboard();
+
+    // The clipboard text of the selection: the raw bytes in the
+    // source view, drawn text everywhere else, so hidden markers and
+    // fence lines never leak into a copy (text spec C2).
+    std::string SelectionForClipboard() const;
+
+    // Selects the whole document.
+    void SelectAll();
+
+    // The view shows the raw Markdown, so a copy is byte for byte.
+    void SetSourceView(bool on) { sourceView_ = on; }
 
     // Inserts text at the caret, replacing the selection when there is one.
     void InsertText(const std::string& text);
@@ -367,6 +386,8 @@ private:
     DocumentChangedHandler documentChanged_;
     SelectionChangedHandler selectionChanged_;
     TextBuffer buffer_;
+    // True while the window shows the raw source (spec C2).
+    bool sourceView_ = false;
     Selection sel_;
     EditController editor_;
     UndoStack undo_;

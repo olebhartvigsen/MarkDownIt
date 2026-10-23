@@ -15,6 +15,11 @@ class UndoStack;
 void ToggleInlineMarker(TextBuffer* buf, Selection* sel, const std::string& marker,
                         UndoStack* undo = nullptr);
 
+// The destination of the link the selection covers exactly (the
+// whole construct or exactly its label), for the dialog to seed.
+bool LinkDestinationAt(const TextBuffer& buf, const Selection& sel,
+                       std::string* outUrl);
+
 // Insert a link around the selection: [text](url)
 // If the selection is empty, inserts [](url) with caret between [ and ].
 void InsertLink(TextBuffer* buf, Selection* sel, const std::string& url,

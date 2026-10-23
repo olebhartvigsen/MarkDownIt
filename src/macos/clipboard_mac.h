@@ -19,7 +19,9 @@ public:
     std::string GetText() const;
 
     // Puts text on the clipboard, replacing what was there.
-    void SetText(const std::string& text);
+    // Puts the text on the pasteboard and reports whether the write
+    // went through (text spec C3).
+    bool SetText(const std::string& text);
 
     // Whether the clipboard holds text.
     bool HasText() const;

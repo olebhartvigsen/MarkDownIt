@@ -115,11 +115,11 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 - (void)importWord:(id)sender;
 - (void)exportWord:(id)sender;
 - (void)exportPdf:(id)sender;
-- (void)undoEdit:(id)sender;
-- (void)redoEdit:(id)sender;
-- (void)cutSelection:(id)sender;
-- (void)copySelection:(id)sender;
-- (void)pasteSelection:(id)sender;
+- (void)undo:(id)sender;
+- (void)redo:(id)sender;
+- (void)cut:(id)sender;
+- (void)copy:(id)sender;
+- (void)paste:(id)sender;
 - (void)selectAll:(id)sender;
 - (void)zoomIn:(id)sender;
 - (void)zoomOut:(id)sender;
@@ -493,11 +493,30 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 - (void)exportPdf:(id)sender { (void)sender; [self OnExportPdf]; }
 - (void)findDocument:(id)sender { (void)sender; [self OnFind]; }
 - (void)replaceInDocument:(id)sender { (void)sender; [self OnReplace]; }
-- (void)undoEdit:(id)sender { (void)sender; [self OnUndo]; }
-- (void)redoEdit:(id)sender { (void)sender; [self OnRedo]; }
-- (void)cutSelection:(id)sender { (void)sender; [self OnCut]; }
-- (void)copySelection:(id)sender { (void)sender; [self OnCopy]; }
-- (void)pasteSelection:(id)sender { (void)sender; [self OnPaste]; }
+// The Edit menu sends the standard selectors, so a focused text field
+// handles its own undo and clipboard before the document ever sees the
+// command (spec AC-01). The document paths answer here.
+- (void)undo:(id)sender {
+    (void)sender;
+    NSResponder* first = [window_ firstResponder];
+    if ([first isKindOfClass:[NSTextView class]]) {
+        [[(NSTextView*)first undoManager] undo];
+        return;
+    }
+    [self OnUndo];
+}
+- (void)redo:(id)sender {
+    (void)sender;
+    NSResponder* first = [window_ firstResponder];
+    if ([first isKindOfClass:[NSTextView class]]) {
+        [[(NSTextView*)first undoManager] redo];
+        return;
+    }
+    [self OnRedo];
+}
+- (void)cut:(id)sender { (void)sender; [self OnCut]; }
+- (void)copy:(id)sender { (void)sender; [self OnCopy]; }
+- (void)paste:(id)sender { (void)sender; [self OnPaste]; }
 - (void)selectAll:(id)sender { (void)sender; [self OnSelectAll]; }
 - (void)zoomIn:(id)sender { (void)sender; [self OnZoomIn]; }
 - (void)zoomOut:(id)sender { (void)sender; [self OnZoomOut]; }
@@ -808,15 +827,12 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 }
 
 - (void)OnCut {
-    if (!app_->HasSelection()) return;
-    app_->SetClipboardText(app_->SelectedText());
-    app_->DeleteBackward();
+    app_->CutToClipboard();
     [view_ setNeedsDisplay:YES];
 }
 
 - (void)OnCopy {
-    if (!app_->HasSelection()) return;
-    app_->SetClipboardText(app_->SelectedText());
+    app_->CopyToClipboard();
 }
 
 - (void)OnPaste {
@@ -824,11 +840,11 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     // cell the structural sanitizing, and tab separated rows become a
     // table.
     app_->PasteFromClipboard();
-    [view_ setNeedsDisplay:YES];
+    [view_ documentEdited];
 }
 
 - (void)OnSelectAll {
-    app_->SetSelection(0, static_cast<uint32_t>(app_->buffer().Length()));
+    app_->SelectAll();
     [view_ setNeedsDisplay:YES];
 }
 
@@ -846,6 +862,9 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 
 - (void)OnToggleSourceView {
     sourceView_ = !sourceView_;
+    // The app needs the flag too: it decides what a copy carries
+    // (spec C2).
+    app_->SetSourceView(sourceView_);
     [self ribbonSync];
     [view_ setNeedsDisplay:YES];
 }
@@ -1222,6 +1241,13 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 
     NSTextField* urlField =
         [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 264, 24)];
+    // A selection that is exactly a link shows its destination, so the
+    // dialog edits the link instead of retyping it (guide rule 6).
+    std::string existing;
+    if (LinkDestinationAt(app_->buffer(), app_->selection(), &existing) &&
+        !existing.empty()) {
+        [urlField setStringValue:[NSString stringWithUTF8String:existing.c_str()]];
+    }
     [alert setAccessoryView:urlField];
 
     [alert beginSheetModalForWindow:window_

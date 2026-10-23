@@ -207,10 +207,21 @@ void App::ShowFind(FindBarMode mode) {
     // window returns the same way.
     if (WelcomeMode()) return;
 
-    // The field starts with the selected text, the way the Windows bar
-    // does it, so the user can widen the query.
-    const std::wstring query = textenc::Utf8ToWide(SelectedText());
-    findBar_->model().SetSearchText(query);
+    // A second search command while the bar is up only returns focus
+    // to the field and keeps the query; the Windows bar behaves the
+    // same (find spec 2.1).
+    if (findBar_->IsVisible()) {
+        findBar_->Show(mode);
+        findBar_->FocusSearchField();
+        return;
+    }
+
+    // The field starts with the selected text when it holds nothing
+    // yet, so the last search survives a reopen (find spec 54).
+    if (findBar_->model().GetSearchText().empty()) {
+        const std::wstring query = textenc::Utf8ToWide(SelectedText());
+        findBar_->model().SetSearchText(query);
+    }
     findBar_->model().SetReplaceEnabled(true);
     findBar_->Show(mode);
     // The strip has its height now, so the window lays the document
@@ -273,7 +284,14 @@ void App::ReplaceMatch(uint32_t offset, uint32_t length) {
     // The field holding nothing means the match goes away, which is
     // what replacing it with an empty string is.
     const std::wstring replacement = findBar_->model().GetReplaceText();
-    const std::string text = textenc::WideToUtf8(replacement);
+    std::string text = textenc::WideToUtf8(replacement);
+
+    // A replacement inside a table cell goes through the same
+    // sanitizing a paste does, or a pipe or a row break could turn
+    // the cell into table syntax (spec rule 10 and AC-10).
+    if (IsOffsetInTable(document_, offset)) {
+        text = SanitizePasteForTableCell(text);
+    }
 
     SetSelection(offset, offset + length);
     editor_.ReplaceTextRange(offset, length, text, EditType::Other);
@@ -282,6 +300,11 @@ void App::ReplaceMatch(uint32_t offset, uint32_t length) {
     editor_.BreakUndoCoalesce();
     OnTextChanged();
     RefreshFindResults(false);
+    // The next occurrence of the query becomes the current match; when
+    // none is left, the inserted text stays selected (spec AC-12).
+    if (!findBar_->model().SelectMatchAt(sel_.active.offset)) {
+        SetSelection(offset, offset + static_cast<uint32_t>(text.size()));
+    }
 }
 
 void App::ReplaceAllMatches(const std::wstring& query,
@@ -548,8 +571,55 @@ void App::HandleTab(bool backwards) {
         return;
     }
 
-    // Outside a table a tab is the indentation character.
-    InsertText("\t");
+    // Inside a code block Tab writes the indentation the block needs
+    // and Shift+Tab strips one level of it; elsewhere the line is
+    // indented or outdented, the split the Windows build uses (spec
+    // rules 6 and 7 and rules 934-948).
+    const std::string& source = buffer_.Text();
+    bool inCodeBlock = false;
+    for (const Node& node : document_.nodes) {
+        if ((node.block == BlockKind::CodeBlock ||
+             node.block == BlockKind::MermaidFlowchart ||
+             node.block == BlockKind::MermaidPie ||
+             node.block == BlockKind::MermaidSequence) &&
+            sel_.active.offset >= node.srcOffset &&
+            sel_.active.offset <= node.srcOffset + node.srcLength) {
+            inCodeBlock = true;
+            break;
+        }
+    }
+    if (inCodeBlock) {
+        if (!backwards) {
+            InsertText("    ");
+            return;
+        }
+        const size_t newline = sel_.active.offset == 0
+            ? std::string::npos
+            : source.rfind('\n', sel_.active.offset - 1);
+        const uint32_t lineStart = newline == std::string::npos
+            ? 0
+            : static_cast<uint32_t>(newline + 1);
+        uint32_t spaces = 0;
+        while (lineStart + spaces < source.size() && spaces < 4 &&
+               source[lineStart + spaces] == ' ') {
+            ++spaces;
+        }
+        if (spaces == 4) {
+            editor_.ReplaceTextRange(lineStart, 4, "", EditType::Other);
+        }
+        editor_.BreakUndoCoalesce();
+        OnTextChanged();
+        return;
+    }
+
+    // Outside a code block the line follows its list level.
+    if (backwards) {
+        OutdentLine(&buffer_, &sel_, &undo_);
+    } else {
+        IndentLine(&buffer_, &sel_, &undo_);
+    }
+    editor_.BreakUndoCoalesce();
+    OnTextChanged();
 }
 
 // Appends a blank row with the table's column count and puts the caret
@@ -1058,6 +1128,22 @@ void App::SelectWordAt(uint32_t offset) {
     uint32_t start = 0;
     uint32_t end = 0;
     if (!WordSpanForOffset(offset, &start, &end)) return;
+    // On an empty line the word span is the whitespace run around the
+    // break; selecting it would grab the neighbouring line's text, so
+    // the caret simply lands on the line (spec rule 5).
+    const std::string& text = buffer_.Text();
+    bool blank = true;
+    for (uint32_t at = start; at < end && at < text.size(); ++at) {
+        const char c = text[at];
+        if (c != ' ' && c != '\t' && c != '\n' && c != '\r') {
+            blank = false;
+            break;
+        }
+    }
+    if (blank) {
+        SetCaret(offset);
+        return;
+    }
     SetSelection(start, end);
 }
 
@@ -1134,8 +1220,58 @@ std::string App::ClipboardText() const {
     return TheClipboard().GetText();
 }
 
-void App::SetClipboardText(const std::string& text) {
-    TheClipboard().SetText(text);
+bool App::SetClipboardText(const std::string& text) {
+    return TheClipboard().SetText(text);
+}
+
+std::string App::SelectionForClipboard() const {
+    const std::string& source = buffer_.Text();
+    const uint32_t start = std::min<uint32_t>(
+        sel_.Start(), static_cast<uint32_t>(source.size()));
+    const uint32_t end = std::min<uint32_t>(
+        start + sel_.Length(), static_cast<uint32_t>(source.size()));
+    if (start >= end) return std::string();
+
+    // The source view shows the raw Markdown, so the clipboard gets it
+    // byte for byte, the same rule the Windows selection follows.
+    if (sourceView_) return source.substr(start, end - start);
+
+    // Everywhere else the clipboard carries the drawn text: markdown
+    // delimiters and fence markers are not on screen and must not
+    // leak into it (text spec C2).
+    std::string visible;
+    for (uint32_t at = start; at < end;) {
+        const uint32_t next = NextGraphemeBoundary(source, at);
+        if (next <= at) break;
+        const bool rendered =
+            contentView_ && contentView_->renderer().OffsetIsRendered(at);
+        const bool lineBreak = source[at] == '\n' || source[at] == '\r';
+        if (rendered || lineBreak) visible.append(source, at, next - at);
+        at = next;
+    }
+    if (visible.empty() &&
+        (!contentView_ || contentView_->renderer().blocks().empty())) {
+        // A document whose layout is not ready yet still copies its
+        // bytes rather than copying nothing.
+        visible = source.substr(start, end - start);
+    }
+    return visible;
+}
+
+void App::CopyToClipboard() {
+    if (!HasSelection()) return;
+    SetClipboardText(SelectionForClipboard());
+}
+
+void App::CutToClipboard() {
+    if (!HasSelection()) return;
+    // The text only leaves the document once the clipboard holds it;
+    // a failed write must not lose anything (text spec C3).
+    if (SetClipboardText(SelectionForClipboard())) DeleteBackward();
+}
+
+void App::SelectAll() {
+    SetSelection(0, static_cast<uint32_t>(buffer_.Length()));
 }
 
 void App::InsertText(const std::string& text) {

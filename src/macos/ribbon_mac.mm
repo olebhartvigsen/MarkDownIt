@@ -60,8 +60,8 @@ struct RibbonTab {
 
 // Home.
 const RibbonCommand kHomeHistory[] = {
-    {"cmdUndo", "Undo", "undoEdit:", "undo", false, "Undo (\u2318Z)"},
-    {"cmdRedo", "Redo", "redoEdit:", "redo", false, "Redo (\u21e7\u2318Z)"},
+    {"cmdUndo", "Undo", "undo:", "undo", false, "Undo (\u2318Z)"},
+    {"cmdRedo", "Redo", "redo:", "redo", false, "Redo (\u21e7\u2318Z)"},
 };
 const RibbonCommand kHomeView[] = {
     {"cmdZoomIn", "Zoom In", "zoomIn:", "zoom-in", false, "Zoom In (\u2318+)"},
@@ -143,8 +143,8 @@ const RibbonTab kTabs[] = {
 // The Quick Access Toolbar, the small strip at the top left.
 const RibbonCommand kQuickAccess[] = {
     {"cmdSave", "Save", "saveDocument:", "save", false, "Save (\u2318S)"},
-    {"cmdUndo", "Undo", "undoEdit:", "undo", false, "Undo (\u2318Z)"},
-    {"cmdRedo", "Redo", "redoEdit:", "redo", false, "Redo (\u21e7\u2318Z)"},
+    {"cmdUndo", "Undo", "undo:", "undo", false, "Undo (\u2318Z)"},
+    {"cmdRedo", "Redo", "redo:", "redo", false, "Redo (\u21e7\u2318Z)"},
 };
 
 // The menu of the Table Tools button, group for group like the markup.

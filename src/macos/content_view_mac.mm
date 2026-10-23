@@ -693,6 +693,16 @@ static const CGFloat kPinchStepMagnification = 0.1;
     [self setNeedsDisplay:YES];
 }
 
+// An edit replaced the context the remembered column stood for, so
+// the vertical moves start over from the new caret (navigation rule
+// 8), and the view double-blinks like after a move.
+- (void)documentEdited {
+    desiredX_ = -1.0f;
+    [self resetCaretBlink];
+    [self scrollCaretIntoView];
+    [self setNeedsDisplay:YES];
+}
+
 // Keeps the caret inside the viewport, with a small margin, the way
 // the Windows window scrolls it into view after every edit.
 - (void)scrollCaretIntoView {
@@ -986,7 +996,7 @@ static const CGFloat kPinchStepMagnification = 0.1;
     if (utf8) {
         app_->InsertText(std::string(utf8));
     }
-    [self caretMoved];
+    [self documentEdited];
 }
 
 - (void)doCommandBySelector:(SEL)selector {
@@ -997,35 +1007,33 @@ static const CGFloat kPinchStepMagnification = 0.1;
 
     if (selector == @selector(insertNewline:)) {
         app_->InsertParagraphBreak();
-        [self caretMoved];
+        [self documentEdited];
         return;
     }
 
     if (selector == @selector(insertTab:)) {
         // Tab is structural inside a table, and the column the vertical
         // moves aim for starts fresh after the caret changed.
-        desiredX_ = -1.0f;
         app_->HandleTab(false);
-        [self caretMoved];
+        [self documentEdited];
         return;
     }
 
     if (selector == @selector(insertBacktab:)) {
-        desiredX_ = -1.0f;
         app_->HandleTab(true);
-        [self caretMoved];
+        [self documentEdited];
         return;
     }
 
     if (selector == @selector(deleteBackward:)) {
         app_->DeleteBackward();
-        [self caretMoved];
+        [self documentEdited];
         return;
     }
 
     if (selector == @selector(deleteForward:)) {
         app_->DeleteForward();
-        [self caretMoved];
+        [self documentEdited];
         return;
     }
 
@@ -1035,13 +1043,13 @@ static const CGFloat kPinchStepMagnification = 0.1;
     if (selector == @selector(deleteWordBackward:) ||
         selector == @selector(deleteToBeginningOfLine:)) {
         app_->DeleteWordBackward();
-        [self caretMoved];
+        [self documentEdited];
         return;
     }
 
     if (selector == @selector(deleteWordForward:)) {
         app_->DeleteWordForward();
-        [self caretMoved];
+        [self documentEdited];
         return;
     }
 
@@ -1105,6 +1113,15 @@ static const CGFloat kPinchStepMagnification = 0.1;
         [self moveVerticalPage:NO extend:NO];
         return;
     }
+    // Shift+Page selects the page it moves by (spec AC-02).
+    if (selector == @selector(pageUpAndModifySelection:)) {
+        [self moveVerticalPage:YES extend:YES];
+        return;
+    }
+    if (selector == @selector(pageDownAndModifySelection:)) {
+        [self moveVerticalPage:NO extend:YES];
+        return;
+    }
 
     // Home and End move inside the visual line; the command variants
     // reach the edges of the document.
@@ -1121,6 +1138,24 @@ static const CGFloat kPinchStepMagnification = 0.1;
         return;
     }
     if (selector == @selector(moveToEndOfLineAndModifySelection:)) {
+        [self moveToLineEdge:NO extend:YES];
+        return;
+    }
+    // The line-edge selectors carry Command+Left/Right and the Home and
+    // End keys; the modify variants select (spec S7).
+    if (selector == @selector(moveToLeftEndOfLine:)) {
+        [self moveToLineEdge:YES extend:NO];
+        return;
+    }
+    if (selector == @selector(moveToRightEndOfLine:)) {
+        [self moveToLineEdge:NO extend:NO];
+        return;
+    }
+    if (selector == @selector(moveToLeftEndOfLineAndModifySelection:)) {
+        [self moveToLineEdge:YES extend:YES];
+        return;
+    }
+    if (selector == @selector(moveToRightEndOfLineAndModifySelection:)) {
         [self moveToLineEdge:NO extend:YES];
         return;
     }

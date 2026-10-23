@@ -124,6 +124,14 @@ static std::wstring CounterText(const FindBarModel& model) {
     closeButton_ = [self makeButton:@"\u2715" tooltip:@"Close the find bar"
                             action:@selector(closeBar:)];
 
+    // The glyph buttons need real names for assistive technology
+    // (find spec 2.3 and 44).
+    [previousButton_ setAccessibilityLabel:@"Previous match"];
+    [nextButton_ setAccessibilityLabel:@"Next match"];
+    [closeButton_ setAccessibilityLabel:@"Close find bar"];
+    [searchField_ setAccessibilityLabel:@"Search text"];
+    [replaceField_ setAccessibilityLabel:@"Replace text"];
+
     counterLabel_ = [NSTextField labelWithString:@""];
     [counterLabel_ setAlignment:NSTextAlignmentRight];
     [counterLabel_ setTextColor:[NSColor secondaryLabelColor]];

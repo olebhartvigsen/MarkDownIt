@@ -356,6 +356,25 @@ static bool FindSimpleLinkContaining(const std::string& text,
     return false;
 }
 
+bool LinkDestinationAt(const TextBuffer& buf, const Selection& sel,
+                       std::string* outUrl) {
+    if (!outUrl) return false;
+    const std::string& text = buf.Text();
+    SimpleLinkSpan link;
+    if (!FindSimpleLinkContaining(text, sel.Start(), sel.End(), &link)) {
+        return false;
+    }
+    // The destination shows only when the selection covers the whole
+    // link: the construct itself or exactly its label (guide rule 6).
+    const uint32_t start = sel.Start();
+    const uint32_t end = sel.End();
+    const bool wholeLink = start == link.linkStart && end == link.linkEnd;
+    const bool wholeLabel = start == link.labelStart && end == link.labelEnd;
+    if (!wholeLink && !wholeLabel) return false;
+    *outUrl = text.substr(link.urlStart, link.urlEnd - link.urlStart);
+    return true;
+}
+
 static void UpdateLinkDestination(TextBuffer* buf, Selection* sel,
                                   const std::string& url,
                                   const SimpleLinkSpan& link,

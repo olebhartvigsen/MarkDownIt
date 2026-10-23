@@ -45,7 +45,7 @@ std::string Clipboard::GetText() const {
     return std::string([text UTF8String]);
 }
 
-void Clipboard::SetText(const std::string& text) {
+bool Clipboard::SetText(const std::string& text) {
     NSPasteboard* pasteboard = GeneralPasteboard();
     [pasteboard clearContents];
 
@@ -55,12 +55,13 @@ void Clipboard::SetText(const std::string& text) {
     NSString* value = [[NSString alloc] initWithBytes:text.data()
                                                 length:text.size()
                                               encoding:NSUTF8StringEncoding];
-    if (!value) return;
+    if (!value) return false;
     [pasteboard setString:value forType:NSPasteboardTypeString];
 
     // The raw markdown goes on the pasteboard under its own type as
     // well, so the copy keeps the structure the text alone would lose.
     [pasteboard setString:value forType:MarkdownPasteboardType()];
+    return true;
 }
 
 bool Clipboard::HasText() const {
