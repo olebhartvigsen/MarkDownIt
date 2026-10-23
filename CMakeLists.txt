@@ -380,6 +380,7 @@ if(BUILD_TESTS AND APPLE)
         src/autoformat.cpp
         src/inputfilter.cpp
         src/searchreplace.cpp
+        src/unicode_fold.cpp
         src/findstate.cpp
         src/findbar_model.cpp
         src/markers.cpp
@@ -407,6 +408,7 @@ if(BUILD_TESTS AND APPLE)
         src/office/docx_import.cpp
         src/office/docx_export.cpp
         src/office/pdf_export.cpp
+        src/office/pdf_import.cpp
         src/office/markdown_bridge.cpp
     )
     target_include_directories(MarkDownIt.tests PRIVATE
@@ -512,6 +514,7 @@ elseif(BUILD_TESTS)
         src/autoformat.cpp
         src/inputfilter.cpp
         src/searchreplace.cpp
+        src/unicode_fold.cpp
         src/findstate.cpp
         src/findbar.cpp
         src/findbar_model.cpp
@@ -540,6 +543,7 @@ elseif(BUILD_TESTS)
         src/office/docx_import.cpp
         src/office/docx_export.cpp
         src/office/pdf_export.cpp
+        src/office/pdf_import.cpp
         src/office/markdown_bridge.cpp
     )
     target_link_libraries(MarkDownIt.tests PRIVATE
@@ -591,6 +595,7 @@ if(APPLE)
         src/autoformat.cpp
         src/inputfilter.cpp
         src/searchreplace.cpp
+        src/unicode_fold.cpp
         src/findstate.cpp
         src/findbar_model.cpp
         src/markers.cpp
@@ -612,6 +617,7 @@ if(APPLE)
         src/office/docx_import.cpp
         src/office/docx_export.cpp
         src/office/pdf_export.cpp
+        src/office/pdf_import.cpp
         src/office/markdown_bridge.cpp
     )
 
