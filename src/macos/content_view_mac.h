@@ -11,6 +11,7 @@
 // drawing code testable and keeps the platform API in one file.
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -58,8 +59,24 @@ public:
     // The view's size in points, set by the window.
     void SetSize(float width, float height);
 
-    // The vertical scroll offset, in points.
+    // The vertical scroll offset, in points. It mirrors the scroll
+    // view's place; the scrolling itself belongs to the scroll view.
     void SetScrollOffset(float offset);
+
+    // The zoom the layout is at.
+    float zoom() const;
+
+    // The scroll asks the platform layer to move, because the scroll
+    // view owns the place and its scrollers have to stay in step.
+    void SetScrollToHandler(std::function<void(float)> handler) {
+        scrollTo_ = handler;
+    }
+
+    // The content changed size, so the platform layer can let the
+    // document view take the content's size.
+    void SetLayoutChangedHandler(std::function<void()> handler) {
+        layoutChanged_ = handler;
+    }
 
     // Scrolls the place of the offset into view, so the outline pane
     // can jump to a heading.
@@ -171,6 +188,10 @@ private:
     float contentWidth_ = 0.0f;
     float documentHeight_ = 0.0f;
     float scrollOffset_ = 0.0f;
+    // The platform layer's scroll request.
+    std::function<void(float)> scrollTo_;
+    // The platform layer's layout request.
+    std::function<void()> layoutChanged_;
     // Whether the caret is showing right now.
     bool caretVisible_ = true;
 };

@@ -109,6 +109,9 @@ public:
         metrics_ = ComputeMetrics();
     }
 
+    // The zoom the layout is at.
+    float zoom() const { return zoom_; }
+
     // Turns the word wrap on or off.
     //
     // With the wrap off the text is laid out on one very wide line and

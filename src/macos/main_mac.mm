@@ -126,6 +126,8 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 // The find bar's layout hook: its height and the focus follow its
 // visibility.
 - (void)syncFindBarLayout:(BOOL)visible;
+// The zoom landed somewhere, so the saved value follows.
+- (void)zoomDidChange:(float)factor;
 - (void)toggleSourceView:(id)sender;
 - (void)toggleOutline:(id)sender;
 - (void)toggleWrap:(id)sender;
@@ -228,9 +230,18 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     // The content view goes in a scroll view, so the document scrolls
     // when it is longer than the window.
     view_ = [[MdContentView alloc] initWithContent:content_ app:app_];
+    // The view applies the zoom (the wheel, a pinch and the menu all
+    // go through it, so the anchor point stays put), and the window
+    // keeps and saves what it landed on.
+    __weak id weakZoomSelf = self;
+    [view_ setZoomChangedHandler:^(float factor) {
+        [weakZoomSelf zoomDidChange:factor];
+    }];
     scrollView_ = [[NSScrollView alloc] initWithFrame:frame];
     [scrollView_ setHasVerticalScroller:YES];
-    [scrollView_ setHasHorizontalScroller:NO];
+    // The horizontal axis is for the nowrap lines a wide zoomed column
+    // produces (zoom guideline 4).
+    [scrollView_ setHasHorizontalScroller:YES];
     [scrollView_ setAutohidesScrollers:YES];
     [scrollView_ setDocumentView:view_];
 
@@ -1124,12 +1135,17 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 }
 
 // Sets the zoom factor, and stores it for the next launch.
+// The zoom goes through the view, which keeps the anchor point where
+// it was (zoom guideline 1.3 and 2.3).
 - (void)setZoom:(float)factor {
-    zoom_ = zoom::Clamp(factor);
-    settings_.settings().zoomFactor = zoom_;
-    // The document follows the zoom, the way the Windows window does.
-    content_->SetZoom(zoom_);
-    [view_ setNeedsDisplay:YES];
+    [view_ zoomTo:factor];
+}
+
+// The zoom landed somewhere: the window keeps the value, so the next
+// settings write saves it.
+- (void)zoomDidChange:(float)factor {
+    zoom_ = factor;
+    settings_.settings().zoomFactor = factor;
 }
 
 // Shows an error to the user.

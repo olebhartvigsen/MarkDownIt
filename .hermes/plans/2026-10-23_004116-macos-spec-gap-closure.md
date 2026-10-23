@@ -83,7 +83,7 @@ arrows), 18 (selection start), 43-45, 51-52.
   typing-run pattern (audit note), and the shared-controller fix for
   it is a follow-up.
 
-## Batch 3a: the find bar (this push)
+## Batch 3a: the find bar (landed in `2ec6586`)
 
 - The find bar's height constraint follows its visibility, so the
   strip takes its 68 points when it opens and gives them back on
@@ -104,12 +104,21 @@ arrows), 18 (selection start), 43-45, 51-52.
   and the table-cell highlight half of F14 was closed by the
   caret-model batch.
 
-## Batch 3b: zoom (next push)
+## Batch 3b: zoom (this push)
 
-- Cmd+wheel, scroll clamping, a horizontal scroller bound to the
-  content, and the axis centred when the content is smaller (zoom
-  guideline 1.4, 1.6, 4; find/replace audit Z8, Z9, Z11-Z14, Z21, Z22,
-  Z24).
+- The scroll view does the scrolling: the document view takes the
+  content's size at the current zoom, so the scrollers span the whole
+  document, the horizontal axis reaches nowrap lines, and a viewport
+  resize keeps the place and clamps it (zoom guideline 4 and 6.15;
+  find/replace audit Z21, Z22, Z24).
+- Cmd+wheel and a trackpad pinch zoom with accumulated deltas; the
+  anchor point stays under the gesture, the menu and the buttons
+  anchor at the middle of the viewport, and the wheel without the
+  modifier scrolls as before (zoom guideline 1.3 and 1.6; Z8, Z11,
+  Z12, Z13, Z14).
+- Zooming and editing keep the caret in view, and the text column
+  stays centered while it is narrower than the viewport (zoom
+  guideline 1.4).
 
 ## Batch 4: markers, links, format toggles
 

@@ -24,4 +24,11 @@ class ContentView;
 - (instancetype)initWithContent:(mac::ContentView*)content
                             app:(mac::App*)app;
 
+// Applies the zoom around the middle of the viewport, the way the menu
+// and the buttons do it.
+- (void)zoomTo:(float)factor;
+
+// Told every time the zoom lands somewhere, so the window can save it.
+- (void)setZoomChangedHandler:(void (^)(float))handler;
+
 @end

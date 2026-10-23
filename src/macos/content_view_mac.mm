@@ -19,6 +19,7 @@
 #include "cg_target_mac.h"
 #include "text_engine_mac.h"
 #include "image_draw_mac.h"
+#include "zoommodel.h"
 
 namespace mac {
 
@@ -93,6 +94,10 @@ void ContentView::Relayout() {
     // the column, the same arithmetic the Windows renderer uses.
     documentHeight_ = renderer_.Measure(app_->GetDocument(), width_);
     contentWidth_ = renderer_.contentWidth();
+
+    // The platform layer follows: its document view takes the
+    // content's size, so the scrollers span the whole document.
+    if (layoutChanged_) layoutChanged_();
 }
 
 void ContentView::SetWelcomeFiles(const std::vector<RecentFile>& files) {
@@ -120,19 +125,19 @@ void ContentView::Draw(RenderTarget* target) {
     target_ = target;
     renderer_.SetRenderTarget(target);
 
-    // The selection goes under the text, so it is drawn first.
+    // The selection goes under the text, so it is drawn first. The
+    // rectangles are in document coordinates, the space this view
+    // draws in now that the scroll view scrolls it.
     const Selection& selection = app_->selection();
     if (!selection.Empty()) {
         const uint32_t from = selection.Start();
         const uint32_t to = selection.End();
         for (const Rect& rect : renderer_.SelectionRects(from, to)) {
-            Rect drawn = rect;
-            drawn.y -= scrollOffset_;
-            target->FillRect(drawn, SelectionColor());
+            target->FillRect(rect, SelectionColor());
         }
     }
 
-    renderer_.Render(app_->GetDocument(), scrollOffset_);
+    renderer_.Render(app_->GetDocument(), 0.0f);
 
     // The caret goes on top of the text, but not over a selection:
     // the selection is the marker of where the next edit lands.
@@ -145,7 +150,7 @@ void ContentView::Draw(RenderTarget* target) {
         if (renderer_.OffsetToRect(caret, &x, &y, &width, &height)) {
             Rect drawn;
             drawn.x = x;
-            drawn.y = y - scrollOffset_;
+            drawn.y = y;
             drawn.width = 1.0f;
             drawn.height = height > 0.0f ? height : CaretHeight();
             target->FillRect(drawn, CaretColor());
@@ -160,14 +165,21 @@ void ContentView::ScrollToOffset(uint32_t offset) {
     if (!renderer_.YForOffset(offset, y)) return;
 
     // The place is put a third of the way down the view, so the reader
-    // sees the text around it.
+    // sees the text around it. The scrolling itself belongs to the
+    // platform layer, so the scrollers follow along.
     const float target = y - height_ * 0.35f;
-    SetScrollOffset(target < 0.0f ? 0.0f : target);
+    if (scrollTo_) scrollTo_(target < 0.0f ? 0.0f : target);
+}
+
+float ContentView::zoom() const {
+    return renderer_.zoom();
 }
 
 uint32_t ContentView::HitTestPoint(float x, float y) const {
+    // The point arrives in document coordinates, because the scroll
+    // view scrolls the whole view.
     uint32_t offset = 0;
-    if (!renderer_.PointToOffset(x, y + scrollOffset_, &offset)) {
+    if (!renderer_.PointToOffset(x, y, &offset)) {
         return UINT32_MAX;
     }
     return offset;
@@ -188,15 +200,14 @@ void ContentView::PlaceCaretAt(float x, float y) {
     // A point on drawn text is a caret: the renderer decides the
     // character, and the caret never lands inside a marker.
     uint32_t offset = 0;
-    if (renderer_.PointToOffset(x, y + scrollOffset_, &offset)) {
+    if (renderer_.PointToOffset(x, y, &offset)) {
         app_->SetCaret(offset);
         return;
     }
 
     // Below the last of the text the caret goes to the end of the
     // document.
-    if (y + scrollOffset_ >= renderer_.TextBottom() &&
-        app_->buffer().Length() > 0) {
+    if (y >= renderer_.TextBottom() && app_->buffer().Length() > 0) {
         app_->SetCaret(app_->buffer().Length());
         return;
     }
@@ -205,8 +216,7 @@ void ContentView::PlaceCaretAt(float x, float y) {
     // selects the line it is level with, the way Word does it.
     uint32_t lineStart = 0;
     uint32_t lineEnd = 0;
-    if (renderer_.LineRangeAtPoint(x, y + scrollOffset_, &lineStart,
-                                   &lineEnd)) {
+    if (renderer_.LineRangeAtPoint(x, y, &lineStart, &lineEnd)) {
         app_->SetSelection(lineStart, lineEnd);
         return;
     }
@@ -218,13 +228,12 @@ void ContentView::SelectWordOrParagraphAt(float x, float y, bool paragraph) {
     if (!app_) return;
 
     uint32_t offset = 0;
-    if (!renderer_.PointToOffset(x, y + scrollOffset_, &offset)) {
+    if (!renderer_.PointToOffset(x, y, &offset)) {
         // A click in the margin has no word or paragraph either, so it
         // keeps the Word-like line selection.
         uint32_t lineStart = 0;
         uint32_t lineEnd = 0;
-        if (renderer_.LineRangeAtPoint(x, y + scrollOffset_, &lineStart,
-                                       &lineEnd)) {
+        if (renderer_.LineRangeAtPoint(x, y, &lineStart, &lineEnd)) {
             app_->SetSelection(lineStart, lineEnd);
         }
         return;
@@ -241,10 +250,10 @@ void ContentView::ExtendSelectionTo(float x, float y, int mode) {
     if (!app_) return;
 
     uint32_t offset = 0;
-    if (!renderer_.PointToOffset(x, y + scrollOffset_, &offset)) {
+    if (!renderer_.PointToOffset(x, y, &offset)) {
         // A pointer below the document extends to its end; a pointer
         // that left the text keeps the selection's edge.
-        if (y + scrollOffset_ >= renderer_.TextBottom()) {
+        if (y >= renderer_.TextBottom()) {
             offset = app_->buffer().Length();
         } else {
             return;
@@ -356,6 +365,13 @@ float ContentView::CaretHeight() const {
 // The NSView
 // ---------------------------------------------------------------------------
 
+// One wheel step for the command zoom: a mouse notch counts for this
+// much, and a trackpad's finer deltas add up to it.
+static const CGFloat kZoomWheelUnitsPerStep = 120.0;
+
+// How much a pinch has to add up to before the zoom moves a step.
+static const CGFloat kPinchStepMagnification = 0.1;
+
 // The content view of the window.
 //
 // The view draws the document, shows the caret and the selection, and
@@ -379,6 +395,12 @@ float ContentView::CaretHeight() const {
     NSTimer* autoscrollTimer_;
     // The last point a drag reached, which the autoscroll extends to.
     NSPoint lastDragPoint_;
+    // The wheel deltas the command zoom has not stepped on yet.
+    CGFloat wheelZoomAcc_;
+    // The pinch magnification the zoom has not stepped on yet.
+    CGFloat pinchAcc_;
+    // Told every time the zoom changes, so the window can save it.
+    void (^zoomChangedHandler_)(float);
 }
 
 - (instancetype)initWithContent:(mac::ContentView*)content app:(mac::App*)app {
@@ -389,8 +411,158 @@ float ContentView::CaretHeight() const {
         desiredX_ = -1.0f;
         dragMode_ = 0;
         lastDragPoint_ = NSMakePoint(0.0, 0.0);
+
+        // The view asks the platform layer to scroll and to follow the
+        // content size, because the scroll view owns the place and its
+        // scrollers.
+        __weak MdContentView* weakSelf = self;
+        content_->SetScrollToHandler([weakSelf](float y) {
+            [weakSelf scrollToDocumentY:y];
+        });
+        content_->SetLayoutChangedHandler([weakSelf] {
+            [weakSelf syncFrameToContent];
+        });
     }
     return self;
+}
+
+// The view joined the scroll view: the clip view reports every scroll
+// and every size change from here on.
+- (void)viewDidMoveToSuperview {
+    [super viewDidMoveToSuperview];
+    NSClipView* clip = [self enclosingScrollView].contentView;
+    if (!clip) return;
+
+    [clip setPostsFrameChangedNotifications:YES];
+    [clip setPostsBoundsChangedNotifications:YES];
+    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+    [center addObserver:self
+               selector:@selector(clipChanged:)
+                   name:NSViewFrameDidChangeNotification
+                 object:clip];
+    [center addObserver:self
+               selector:@selector(clipChanged:)
+                   name:NSViewBoundsDidChangeNotification
+                 object:clip];
+    [self clipChanged:nil];
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+// The clip view scrolled or changed size. The content lays itself out
+// for the viewport, and the document view takes the content's size, so
+// the scrollers describe the whole document at the current zoom
+// (zoom guideline 4).
+- (void)clipChanged:(NSNotification*)notification {
+    (void)notification;
+    NSClipView* clip = [self enclosingScrollView].contentView;
+    if (!clip || !content_) return;
+
+    const NSRect clipBounds = [clip bounds];
+    content_->SetSize(static_cast<float>(clipBounds.size.width),
+                      static_cast<float>(clipBounds.size.height));
+    content_->SetScrollOffset(static_cast<float>(clipBounds.origin.y));
+    [self setNeedsDisplay:YES];
+}
+
+// The document view takes the content's size. A smaller frame can
+// leave the place past the new edge (a resize or a zoom out), so the
+// place is clamped and the position survives (zoom guideline 6.15).
+- (void)syncFrameToContent {
+    if (!content_) return;
+    NSClipView* clip = [self enclosingScrollView].contentView;
+    if (!clip) return;
+
+    const NSSize clipSize = [clip bounds].size;
+    NSSize size = clipSize;
+    if (app_ && !app_->WelcomeMode()) {
+        const float width = content_->ContentWidth();
+        const float height = content_->DocumentHeight();
+        if (width > size.width) size.width = width;
+        if (height > size.height) size.height = height;
+    }
+    if (!NSEqualSizes(size, [self frame].size)) {
+        [self setFrameSize:size];
+    }
+
+    [clip scrollToPoint:[clip constrainBoundsRect:[clip bounds]].origin];
+}
+
+// Scrolls the clip view to the given place, clamped to the content.
+- (void)scrollToDocumentPoint:(NSPoint)point {
+    NSClipView* clip = [self enclosingScrollView].contentView;
+    if (!clip) return;
+
+    NSRect bounds = [clip bounds];
+    bounds.origin = point;
+    [clip scrollToPoint:[clip constrainBoundsRect:bounds].origin];
+}
+
+- (void)scrollToDocumentY:(float)y {
+    NSClipView* clip = [self enclosingScrollView].contentView;
+    if (!clip) return;
+
+    NSRect bounds = [clip bounds];
+    bounds.origin.y = y;
+    [clip scrollToPoint:[clip constrainBoundsRect:bounds].origin];
+}
+
+// The zoom the document is at.
+- (float)zoomFactor {
+    return content_ ? content_->zoom() : 1.0f;
+}
+
+- (void)setZoomChangedHandler:(void (^)(float))handler {
+    zoomChangedHandler_ = handler;
+}
+
+// One press of + or -, anchored where the gesture happened.
+- (void)zoomStepAt:(NSPoint)anchorDoc increase:(BOOL)increase {
+    const float next = zoom::Step([self zoomFactor], increase ? true : false);
+    if (next == [self zoomFactor]) return;
+    [self applyZoom:next anchorDoc:anchorDoc];
+}
+
+// The menu and the buttons: the middle of the viewport is the anchor.
+- (void)zoomTo:(float)factor {
+    if (!content_) return;
+    factor = zoom::Clamp(factor);
+    if (factor == [self zoomFactor]) return;
+
+    const NSRect visible = [self visibleRect];
+    [self applyZoom:factor
+          anchorDoc:NSMakePoint(NSMidX(visible), NSMidY(visible))];
+}
+
+// Applies the zoom and puts the anchor point back where it was, the
+// arithmetic the Windows window uses: the content point under the
+// anchor stays under it (zoom guideline 1.3).
+- (void)applyZoom:(float)factor anchorDoc:(NSPoint)anchor {
+    NSClipView* clip = [self enclosingScrollView].contentView;
+    if (!clip) return;
+
+    const NSPoint origin = [clip bounds].origin;
+    const float oldZoom = [self zoomFactor];
+    const float scale = oldZoom > 0.0f ? factor / oldZoom : 1.0f;
+    // Where the anchor sat inside the viewport, in points.
+    const CGFloat insetX = anchor.x - origin.x;
+    const CGFloat insetY = anchor.y - origin.y;
+
+    content_->SetZoom(factor);
+
+    // The frame follows the new content size through the layout hook,
+    // so the scroll below lands on settled geometry.
+    NSRect bounds = [clip bounds];
+    bounds.origin = NSMakePoint(anchor.x * scale - insetX,
+                                anchor.y * scale - insetY);
+    [clip scrollToPoint:[clip constrainBoundsRect:bounds].origin];
+    [self setNeedsDisplay:YES];
+
+    if (zoomChangedHandler_) {
+        zoomChangedHandler_(factor);
+    }
 }
 
 - (BOOL)acceptsFirstResponder {
@@ -408,14 +580,6 @@ float ContentView::CaretHeight() const {
     // the view is flipped. The whole drawing code then works in the
     // same direction as the rest of the app.
     return YES;
-}
-
-- (void)setFrameSize:(NSSize)size {
-    [super setFrameSize:size];
-    if (content_) {
-        content_->SetSize(static_cast<float>(size.width),
-                          static_cast<float>(size.height));
-    }
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
@@ -521,11 +685,48 @@ float ContentView::CaretHeight() const {
     }
 }
 
-// The caret moved or the document changed: the blink restarts and the
-// view redraws.
+// The caret moved or the document changed: the blink restarts, the
+// caret is brought back into view and the view redraws.
 - (void)caretMoved {
     [self resetCaretBlink];
+    [self scrollCaretIntoView];
     [self setNeedsDisplay:YES];
+}
+
+// Keeps the caret inside the viewport, with a small margin, the way
+// the Windows window scrolls it into view after every edit.
+- (void)scrollCaretIntoView {
+    if (!content_ || !app_) return;
+
+    float x = 0.0f;
+    float y = 0.0f;
+    float width = 0.0f;
+    float height = 0.0f;
+    if (!content_->OffsetToRect(app_->selection().active.offset, &x, &y,
+                                &width, &height)) {
+        return;
+    }
+    if (height <= 0.0f) height = 16.0f;
+
+    const NSRect visible = [self visibleRect];
+    const CGFloat margin = 8.0;
+    NSPoint target = visible.origin;
+
+    if (y - margin < NSMinY(visible)) {
+        target.y = y - margin;
+    } else if (y + height + margin > NSMaxY(visible)) {
+        target.y = y + height + margin - visible.size.height;
+    }
+
+    if (x - margin < NSMinX(visible)) {
+        target.x = x - margin;
+    } else if (x + width + margin > NSMaxX(visible)) {
+        target.x = x + width + margin - visible.size.width;
+    }
+
+    if (!NSEqualPoints(target, visible.origin)) {
+        [self scrollToDocumentPoint:target];
+    }
 }
 
 - (BOOL)becomeFirstResponder {
@@ -664,8 +865,9 @@ float ContentView::CaretHeight() const {
 // view, a timer keeps scrolling and the selection keeps following the
 // pointer, so a long drag can reach past the window.
 - (void)updateAutoscroll {
-    const BOOL outside = lastDragPoint_.y < 0.0 ||
-                         lastDragPoint_.y > self.bounds.size.height;
+    const NSRect visible = [self visibleRect];
+    const BOOL outside = lastDragPoint_.y < NSMinY(visible) ||
+                         lastDragPoint_.y > NSMaxY(visible);
     if (outside && !autoscrollTimer_) {
         autoscrollTimer_ =
             [NSTimer scheduledTimerWithTimeInterval:0.05
@@ -687,25 +889,68 @@ float ContentView::CaretHeight() const {
     (void)timer;
     if (!content_) return;
     // Eight points a tick, the step the Windows window uses.
-    const float step = lastDragPoint_.y < 0.0 ? -8.0f : 8.0f;
-    content_->SetScrollOffset(content_->scrollOffset() + step);
+    const NSRect visible = [self visibleRect];
+    const float step = lastDragPoint_.y < NSMinY(visible) ? -8.0f : 8.0f;
+    NSClipView* clip = [self enclosingScrollView].contentView;
+    if (clip) {
+        NSRect bounds = [clip bounds];
+        bounds.origin.y += step;
+        [clip scrollToPoint:[clip constrainBoundsRect:bounds].origin];
+    }
     content_->ExtendSelectionTo(static_cast<float>(lastDragPoint_.x),
                                  static_cast<float>(lastDragPoint_.y),
                                  dragMode_);
     [self setNeedsDisplay:YES];
 }
 
+// The wheel with the command key zooms, with deltas that accumulate so
+// a notched mouse and a smooth trackpad step alike (zoom guideline
+// 1.6). Everything else is the scroll view's: the plain wheel scrolls,
+// shift and the wheel scroll sideways, and the scrollers follow.
 - (void)scrollWheel:(NSEvent*)event {
-    if (!content_) return;
-    CGFloat delta = [event scrollingDeltaY];
-    if (delta == 0.0) {
-        delta = [event scrollingDeltaX];
+    if (!content_) {
+        [super scrollWheel:event];
+        return;
     }
-    // A positive delta asks for the part of the document above the
-    // current place, so the offset goes down instead of up.
-    const float offset = content_->scrollOffset() - static_cast<float>(delta);
-    content_->SetScrollOffset(offset);
-    [self setNeedsDisplay:YES];
+
+    const NSEventModifierFlags flags =
+        [event modifierFlags] & NSEventModifierFlagDeviceIndependentFlagsMask;
+    if ((flags & NSEventModifierFlagCommand) != 0) {
+        const CGFloat raw = [event scrollingDeltaY];
+        wheelZoomAcc_ += [event hasPreciseScrollingDeltas] ? raw
+                                                           : raw * 120.0;
+        const NSPoint anchor = [self convertPoint:[event locationInWindow]
+                                         fromView:nil];
+        while (wheelZoomAcc_ >= kZoomWheelUnitsPerStep) {
+            wheelZoomAcc_ -= kZoomWheelUnitsPerStep;
+            [self zoomStepAt:anchor increase:YES];
+        }
+        while (wheelZoomAcc_ <= -kZoomWheelUnitsPerStep) {
+            wheelZoomAcc_ += kZoomWheelUnitsPerStep;
+            [self zoomStepAt:anchor increase:NO];
+        }
+        return;
+    }
+
+    [super scrollWheel:event];
+}
+
+// A trackpad pinch zooms around the gesture, the way a magnifying
+// gesture is expected to (zoom guideline 1.6).
+- (void)magnifyWithEvent:(NSEvent*)event {
+    if (!content_) return;
+
+    pinchAcc_ += [event magnification];
+    const NSPoint anchor = [self convertPoint:[event locationInWindow]
+                                     fromView:nil];
+    while (pinchAcc_ >= kPinchStepMagnification) {
+        pinchAcc_ -= kPinchStepMagnification;
+        [self zoomStepAt:anchor increase:YES];
+    }
+    while (pinchAcc_ <= -kPinchStepMagnification) {
+        pinchAcc_ += kPinchStepMagnification;
+        [self zoomStepAt:anchor increase:NO];
+    }
 }
 
 - (void)keyDown:(NSEvent*)event {
@@ -955,10 +1200,12 @@ float ContentView::CaretHeight() const {
     const float step = distance > 0.0f
         ? distance
         : (height > 0.0f ? height : 16.0f);
-    float viewY = y - content_->scrollOffset();
-    viewY += up ? -step : step;
+    // The point comes back in document coordinates, the space the hit
+    // tester works in.
+    float docY = y;
+    docY += up ? -step : step;
 
-    const uint32_t target = content_->HitTestPoint(desiredX_, viewY);
+    const uint32_t target = content_->HitTestPoint(desiredX_, docY);
     if (target == UINT32_MAX) return;
 
     [self setCaret:target extend:extend];
