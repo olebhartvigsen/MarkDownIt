@@ -122,3 +122,33 @@ both platforms.
   run steps and reaches the welcome screen.
 - The gap plan closes its last batch, and every remaining audit row is
   either implemented or explicitly marked as open on both platforms.
+
+## What happened
+
+- The icns writer was fixed (`51423d5`): the block lengths now include
+  their own eight byte header, `installer/macos/app.icns` was rebuilt
+  from the fixed writer, and `tools/check_mac_bundle.py` parses the
+  icon block by block, reads the executable the way dyld reads it and
+  requires the plist keys a first launch wants.
+- The launch smoke was added in the same commit and runs in the mac
+  build job before the zip step: the app is started the way a double
+  click starts it, the window trace is awaited in
+  `~/Library/Logs/MarkDownIt/crash_trace.log`, crash breadcrumbs fail
+  the job, and the app is quit again.
+- Batch H (accessibility, IME composition, find announcements) landed
+  in `8f10ce6`; its first runner compile surfaced three defects that
+  are fixed in `9d36293` (the accessibility map used the renderer's
+  private region list, the nested type was not named, and the model's
+  UTF-32 cell text went into a UTF-8 label).
+- The green run is `41247337901` (`9d36293`): every job passed,
+  including the launch smoke; the mac suite reports 7918 checks, 0
+  failures, 694 passed, 1 known gap.
+- The delivery at `/workspace/MarkDownIt-macos-arm64/` was rebuilt
+  from that run (zip md5 `563da6efca12cdc5b52fe4976e41545e`, 1,961,081
+  bytes) and the repaired icon is verified inside the shipped bundle.
+- The local mac compile gate was restored (the 11.3 SDK is the arm64
+  capable one; the 10.15 SDK predates Apple Silicon) and eight mac
+  sources compile clean against it; the recipe lives in the
+  `markdownit-linux-portable-tests` skill.
+- The fresh audit of all reference specs was started on October 31,
+  2026; its gap list closes the last acceptance bullet.

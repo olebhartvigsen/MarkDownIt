@@ -235,12 +235,19 @@ The pipeline answers the first three points. A step after the build runs
 `codesign --force --sign -` on the bundle, which seals the executable,
 the icon and the Info.plist as one unit, and `tools/check_mac_bundle.py`
 checks the layout, the plist values, the executable bit and the
-signature before the zip is made; the shipped zip is then unpacked
+signature before the zip is made, and parses the icon block by
+block (an icns whose block lengths leave out the eight byte block
+header makes macOS show a generic icon; that bug shipped once); the shipped zip is then unpacked
 again and put through the same check, so the download path is tested
 and not only the build tree. The sign step cannot sit in the CMake
 post-build hook: the bundle's resource copy runs after that hook, so
 the seal would cover a bundle that is still missing its icon (checked
-in the probe bundle).
+in the probe bundle). One more step runs before the zip ships: the
+launch smoke starts the built app on the runner
+(`tools/macos-smoke/launch_smoke.sh`), waits for the window trace in
+`~/Library/Logs/MarkDownIt/crash_trace.log`, fails on any crash
+breadcrumb, and quits the app again, so a bundle that cannot open
+never reaches the download page.
 
 The quarantine flag is a fact of distribution, not a defect. An ad hoc
 signature cannot be notarized, so the launch check stands between a
