@@ -689,6 +689,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 }
 
 - (BOOL)validateMenuItem:(NSMenuItem*)item {
+    if ([item action] == @selector(toggleFullScreen:)) {
+        // The system's own wording: the same item enters and exits
+        // full screen, so its title follows the window.
+        [item setTitle:([window_ styleMask] & NSWindowStyleMaskFullScreen)
+                           ? @"Exit Full Screen"
+                           : @"Enter Full Screen"];
+        return YES;
+    }
     if ([item action] == @selector(editMode:)) {
         // A checked item shows which mode the document is in.
         [item setState:(app_->Editing() ? NSControlStateValueOn

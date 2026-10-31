@@ -525,3 +525,19 @@ weight the Windows formats use) and inline strong spans are semibold
 emphasis; task list items draw a checkbox in the marker gutter, empty
 for an open task and checked for a done one. The mermaid diagrams keep
 mermaid's default-theme colours on purpose.
+
+
+## Update: the standard mac furniture (b37aed5)
+
+The menu bar now wears what a mac app wears: Services, Hide Others and
+Show All in the app menu; Open Recent and Reload (Command-R) in File;
+the Find submenu with Find Next and Find Previous in Edit; Edit Mode
+and Enter Full Screen in View; and Window and Help menus handed to
+NSApp. Settings opens a real settings window of standard controls
+instead of the JSON file, the title bar is a document title bar
+(display name, proxy icon, edited dot), and the strip's tooltips spell
+the shortcuts the way the menus do.
+
+A crash the launch smoke caught on the way is fixed with it: the
+palette refresh ran during view setup, before the outline pane
+existed, and the handler reached a still nil pane.

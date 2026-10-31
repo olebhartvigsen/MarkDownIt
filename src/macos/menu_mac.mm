@@ -206,7 +206,7 @@ NSMenu* BuildMainMenu() {
              {"Outline", @selector(toggleOutline:)},
              {"Wrap Text", @selector(toggleWrap:)},
              {"Wider Content", @selector(cycleContentWidth:)}},
-            {"+", "-", "0", "", "", "", "", ""});
+            {"+", "-", "0", "", "", "O", "", ""});
         [viewMenu addItem:[NSMenuItem separatorItem]];
         // Full screen is a View command on the mac, with the system's
         // own key: Control, Command, F.

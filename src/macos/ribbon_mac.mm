@@ -29,7 +29,43 @@
 
 #import <Foundation/Foundation.h>
 
+#include <cstring>
 #include <string>
+#include <utility>
+
+namespace {
+
+// The tooltips carry the commands' shortcuts in the Windows spelling
+// (Ctrl+F). The strip covers the same commands the mac menu carries,
+// so the shortcuts are the menu's: the transform reads the Windows
+// words and writes the Apple ones, with the one command whose key
+// differs (replace is Command-Option-F here, because Command-H hides
+// the app) named first.
+std::string MacShortcutWords(const std::string& text) {
+    std::string out = text;
+    const std::pair<const char*, const char*> words[] = {
+        {"Ctrl+H", "\u2318\u2325F"},   // Replace: Command-Option-F.
+        {"Ctrl+", "\u2318"},            // Command, the Apple key symbol.
+        {"Shift+", "\u21E7"},           // Shift.
+        {"Alt+", "\u2325"},             // Option.
+    };
+    for (const auto& word : words) {
+        std::string::size_type at = 0;
+        while ((at = out.find(word.first, at)) != std::string::npos) {
+            out.replace(at, std::strlen(word.first), word.second);
+            at += std::strlen(word.second);
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+// The tooltip text for a command, with the shortcuts in the Apple
+// spelling.
+NSString* MacShortcutText(const std::string& text) {
+    return [NSString stringWithUTF8String:MacShortcutWords(text).c_str()];
+}
 
 // ---------------------------------------------------------------------------
 // The command table, mirroring src/ribbon.xml
@@ -549,7 +585,7 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
     NSString* base = [NSString stringWithFormat:@"%s_%.0f", command.icon, size];
     NSImage* image = RibbonIcon(base, size);
     if (image) [button setImage:image];
-    [button setToolTip:[NSString stringWithUTF8String:command.tooltip]];
+    [button setToolTip:MacShortcutText(command.tooltip)];
     if (withLabel) {
         [button setTitle:[NSString stringWithUTF8String:command.label]];
     } else {

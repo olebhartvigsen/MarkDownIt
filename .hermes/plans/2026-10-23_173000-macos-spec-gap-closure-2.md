@@ -282,3 +282,27 @@ shape carries the state, not the colour). The mermaid diagrams keep
 mermaid's own default-theme colours on purpose. The parser smoke suite
 gains a task list mapping test; the text engine test follows the
 fixed-pitch mapping.
+
+
+### Batch M: the standard mac furniture (b37aed5)
+
+One more runthrough against the style guide and the macOS conventions:
+the app menu gains Services, Hide Others and Show All, and every item
+that opens a panel carries the Apple ellipsis; File gains Open Recent
+(filled from the same list the welcome screen shows) and Reload gets
+Command-R; Edit gains the standard Find submenu with Find Next and
+Find Previous carried out by the delegate; Edit Mode moves to View and
+Enter Full Screen joins it (with the system's own key, and the item
+renames itself the way the system's does); a Window menu and a Help
+menu join the bar and are handed to NSApp; the Settings command opens
+a real window of standard controls, with the width mode and the
+outline switch going through the same commands the View menu uses; the
+title bar becomes a document title bar (display name, proxy icon,
+edited dot); and the strip's tooltips read the shortcuts in the Apple
+spelling (Command-Option-F for replace, because Command-H hides the
+app; Outline gains the Command-Shift-O the tooltip names).
+
+The launch smoke caught a crash on the way: the palette refresh fired
+during view setup, before the outline pane existed, and the handler
+reached a still nil pane. The handler is wired where the pane is, and
+it checks before it calls.
