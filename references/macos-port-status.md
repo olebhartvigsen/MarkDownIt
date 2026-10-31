@@ -458,3 +458,34 @@ the bar, the code background, the link underline, the images above
 their paragraph and the zoom. What CI cannot see is whether the window
 looks like the Windows window; that one still waits for a person at a
 Mac.
+
+## The Return crash, and the audit's second round
+
+A shipped 0.2.1.0 crash report (Return in the editor, wild pointer
+inside md4c's leave-block callback) turned out to sit in shared code
+that both platforms carry: the parser parsed in place, so every reparse
+kept the previous parse's nodes while the callbacks' offset table
+started empty, and the first text callback ran past the table. The
+Windows build's structured exception guard turned the same overrun into
+a silent failed parse; macOS, with no such guard, crashed. The parser
+now builds into a fresh document and swaps it in only when the parse
+succeeds, a failed parse leaves the previous document fully in place,
+and two regression tests pin the two visible halves down (no node
+accumulation; a removed heading's title goes away with it). Verified
+with an AddressSanitizer harness of the exact edit-and-reparse flow:
+30,000 rounds and 76,859 edits, and 200,000 random documents, with no
+report.
+
+The compliance audit's second round (three read-only audits covering
+the text, table, highlighting, outline, night-mode, find, zoom, ribbon,
+office and mermaid specs) returned 222+ compliant rows and confirmed
+that Batch I had already closed most of the mac-side gaps it found. The
+handful that remained are closed here too: the strip's table group now
+asks the shared TableCapabilitiesFor the same question the commands do,
+so a button can never be enabled where its command would refuse, and
+Insert Table is enabled outside a table only; Replace and Replace All
+are localizable like every other bar string. The office findings in
+that round (page setup on export, PDF/A, image payload, section-break
+warnings) and the ribbon's icon tiers are open on Windows as well, and
+stay tracked in the gap-closure plan for one shared batch.
+
