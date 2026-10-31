@@ -110,9 +110,10 @@ re-audit (2026-10-23) reconciled every row: 239 compliant, 9 blocking
 and 69 minor. The blocking rows and the minors are closed batch by
 batch in
 `.hermes/plans/2026-10-23_173000-macos-spec-gap-closure-2.md`
-(batches A through G landed; H, accessibility and ribbon, remains),
-and the rows that have no mac side at all are listed there as open on
-both platforms.
+(batches A through J landed: H, accessibility and ribbon, in `8f10ce6`;
+the first audit round's twelve mac gaps as Batch I; the second round's
+leftovers as Batch J), and the rows that have no mac side at all are
+listed there as open on both platforms.
 
 ## Acceptance
 
@@ -152,3 +153,14 @@ both platforms.
   `markdownit-linux-portable-tests` skill.
 - The fresh audit of all reference specs was started on October 31,
   2026; its gap list closes the last acceptance bullet.
+- The audit finished: the first round (three read-only audits of every
+  reference doc) found twelve mac gaps, closed as Batch I; the second
+  round (three more, covering the rest of the docs) returned 222
+  compliant rows and three mac-side leftovers, closed as Batch J.
+  Everything else it listed is open on both platforms and stays
+  tracked in the gap-closure plan.
+- The Return crash (the user's report) was root-caused with an ASan
+  repro of the edit flow and fixed (`fb41a9a`, `75d247b`); the fix and
+  Batch J passed CI, and the delivery was rebuilt from the newest
+  green run (`41250669654`, zip md5
+  `d999568904a74c35df53418e974845a6`, 1,966,571 bytes).

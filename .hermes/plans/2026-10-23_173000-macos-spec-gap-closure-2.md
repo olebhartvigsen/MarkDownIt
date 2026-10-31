@@ -74,8 +74,10 @@ no design yet), night mode (nothing implements it anywhere), AC-04
 (the Unicode conformance test data), the image carrying in the office
 model (OFF-03, OFF-13, OFF-19), PDF/A (OFF-08), page setup kept across
 import and export (OFF-16) AC-08 (a Remove Link command is missing on
-Windows too), and the two ribbon layout notes that only matter below
-the current minimum width.
+Windows too), and the two ribbon layout notes (RIB-01: the icon tiers
+need the Windows markup, so both platforms change in one batch; RIB-02:
+the mac strip's compact and small states landed in Batch I5, the
+collapse step and the Windows side stay with the shared decision).
 
 ## Method
 

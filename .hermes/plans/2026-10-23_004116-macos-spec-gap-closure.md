@@ -199,3 +199,17 @@ These stay as they are, with the reason on record:
 - Clipboard formats: `NSPasteboardTypeString` with LF is the platform
   equivalent of CF_UNICODETEXT with CRLF; the real work is the hidden
   marker filtering (batch 1 and 4).
+## Update 2026-10-31
+
+Two items in "Recorded as not a macOS gap" have since been implemented,
+so that note is history, not status:
+
+- PDF import landed on both platforms: the shared importer
+  (`src/office/pdf_import.cpp`) with the mac Vision OCR seam
+  (`src/macos/pdf_ocr_mac.h`), wired to File > Import from PDF on mac.
+- The read-only view/edit split is ported: the mac document opens in
+  read mode, every mutation entry point and the replace half gate on
+  it, and Edit Mode (Cmd+E) mirrors the Windows state (Batch I3).
+
+Night mode remains unbuilt on both platforms, and its mixed-appearance
+follow-up (dark chrome, light document) stays open as recorded.
