@@ -499,9 +499,11 @@ font note asks for. The two sections above describe the parity faces
 stay for a parity comparison or a future setting, but nothing draws
 with them by default.
 
-The window also forces the light appearance: the app draws one light
-theme, and under a dark system appearance the adaptive AppKit colors
-painted dark chrome around a light document.
+The window used to force the light appearance, to keep a dark-mode Mac
+from mixing dark chrome with a light document. That stand-in is gone as
+of the style guide batch: the palette resolves from the system's
+semantic colours, so the chrome and the document both follow the
+appearance (see the update at the end).
 
 One trap to remember for this layer: the model side's `Invalidate()` is
 a no-op on mac, because the view owns the drawing. The caret blink was
@@ -509,3 +511,17 @@ broken by exactly that, a timer that flipped the visibility flag with
 nobody to repaint it. Every model-side state change that has to be seen
 needs a `setNeedsDisplay` on the AppKit side, which is what the blink,
 focus and defocus paths now do.
+
+
+## Update: the visual style guide is followed (7307732)
+
+references/osx-markdown-visual-style-guide.md adds the mac display
+rules, and the build follows them: the document palette resolves from
+the system's semantic colours (label, link, separator, selection) so
+Light Mode and Dark Mode each get their own colours, and the window no
+longer forces the light appearance; code draws in the system's
+fixed-pitch face through the platform API; headings draw semibold (the
+weight the Windows formats use) and inline strong spans are semibold
+emphasis; task list items draw a checkbox in the marker gutter, empty
+for an open task and checked for a done one. The mermaid diagrams keep
+mermaid's default-theme colours on purpose.

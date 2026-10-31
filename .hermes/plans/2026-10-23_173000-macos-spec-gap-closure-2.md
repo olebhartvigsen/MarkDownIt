@@ -250,3 +250,35 @@ run. Goldens never change.
   PDF/A, image payload, section breaks, field warnings) are open on both
   platforms and tracked for one shared batch.
 
+
+
+### Batch K: what the shipped build showed (ce6764f, and the italic fix fb727f3)
+
+A run of the shipped build settled four of the visual gaps: the caret
+blinked its flag but nothing repainted (`ContentView::Invalidate()` was
+a stub), so the blink, focus and defocus paths repaint now; the document
+and the chrome draw with the platform's own faces instead of the
+bundled Selawik and Cascadia Mono (the port plan's font note); the
+ribbon labels draw in the control-size system font in wider cells; and
+the window stayed light while the palette was fixed, so a dark-mode Mac
+could not mix appearances. The italic path learned that Core Text can
+answer the slant trait with the upright face: the engine asks for the
+italic through the symbolic trait first and shears the font itself
+(tan 12 degrees) when the answer is unchanged, so an italic run is
+never drawn upright (fb727f3).
+
+### Batch L: the mac visual style guide (7307732)
+
+references/osx-markdown-visual-style-guide.md landed as a standing
+requirement, and the display now follows it: the palette resolves from
+AppKit's semantic colours, so the document belongs to Light Mode and
+Dark Mode (the forced light appearance is gone) and the outline pane
+refreshes when the appearance changes; code draws in the system's
+fixed-pitch face through the platform API; headings and inline strong
+spans draw semibold, the weight the Windows heading formats use; and
+task list items draw a checkbox in the marker gutter (the parser
+records the check state and drops the "[ ]" from the rendered text; the
+shape carries the state, not the colour). The mermaid diagrams keep
+mermaid's own default-theme colours on purpose. The parser smoke suite
+gains a task list mapping test; the text engine test follows the
+fixed-pitch mapping.
