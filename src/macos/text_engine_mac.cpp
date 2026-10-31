@@ -164,43 +164,87 @@ CTFontRef CreateSystemFont(const FontSpec& spec, bool semibold) {
     CTFontRef base = CTFontCreateUIFontForLanguage(kCTFontUIFontSystem,
                                                    spec.size, nullptr);
     if (!base) return nullptr;
-    if (!spec.bold && !semibold && !spec.italic) return base;
 
-    CFMutableDictionaryRef traits = CFDictionaryCreateMutable(
-        kCFAllocatorDefault, 2, &kCFTypeDictionaryKeyCallBacks,
-        &kCFTypeDictionaryValueCallBacks);
+    // The weight first: bold and semibold are weight traits Core Text
+    // selects a face with.
     if (spec.bold || semibold) {
         const double weight = spec.bold ? kBoldWeight : kSemiboldWeight;
         CFNumberRef number =
             CFNumberCreate(kCFAllocatorDefault, kCFNumberDoubleType, &weight);
+        CFMutableDictionaryRef traits = CFDictionaryCreateMutable(
+            kCFAllocatorDefault, 1, &kCFTypeDictionaryKeyCallBacks,
+            &kCFTypeDictionaryValueCallBacks);
         if (number) {
             CFDictionarySetValue(traits, kCTFontWeightTrait, number);
             CFRelease(number);
         }
-    }
-    if (spec.italic) {
-        const double slant = kItalicSlant;
-        CFNumberRef number =
-            CFNumberCreate(kCFAllocatorDefault, kCFNumberDoubleType, &slant);
-        if (number) {
-            CFDictionarySetValue(traits, kCTFontSlantTrait, number);
-            CFRelease(number);
+        CFMutableDictionaryRef attrs = CFDictionaryCreateMutable(
+            kCFAllocatorDefault, 1, &kCFTypeDictionaryKeyCallBacks,
+            &kCFTypeDictionaryValueCallBacks);
+        CFDictionarySetValue(attrs, kCTFontTraitsAttribute, traits);
+        CTFontDescriptorRef desc = CTFontDescriptorCreateWithAttributes(attrs);
+        CTFontRef weighted =
+            desc ? CTFontCreateCopyWithAttributes(base, spec.size, nullptr,
+                                                  desc)
+                 : nullptr;
+        if (desc) CFRelease(desc);
+        CFRelease(attrs);
+        CFRelease(traits);
+        if (weighted) {
+            CFRelease(base);
+            base = weighted;
         }
     }
-    CFMutableDictionaryRef attrs = CFDictionaryCreateMutable(
-        kCFAllocatorDefault, 1, &kCFTypeDictionaryKeyCallBacks,
-        &kCFTypeDictionaryValueCallBacks);
-    CFDictionarySetValue(attrs, kCTFontTraitsAttribute, traits);
-    CTFontDescriptorRef desc = CTFontDescriptorCreateWithAttributes(attrs);
-    CTFontRef styled =
-        desc ? CTFontCreateCopyWithAttributes(base, spec.size, nullptr, desc)
-             : nullptr;
-    if (desc) CFRelease(desc);
-    CFRelease(attrs);
-    CFRelease(traits);
-    if (styled) {
-        CFRelease(base);
-        return styled;
+
+    if (spec.italic) {
+        // The real italic face first: the symbolic trait selects one
+        // where the family carries it. A face that comes back as the
+        // upright one (a system without italics, or a family the
+        // trait cannot reach) gets the shear instead, tan(12 degrees),
+        // so an italic run is never drawn upright.
+        CTFontRef slanted = CTFontCreateCopyWithSymbolicTraits(
+            base, spec.size, nullptr, kCTFontItalicTrait,
+            kCTFontItalicTrait);
+        bool different = false;
+        if (slanted) {
+            CFStringRef upright = CTFontCopyPostScriptName(base);
+            CFStringRef asked = CTFontCopyPostScriptName(slanted);
+            different = upright && asked &&
+                        CFStringCompare(upright, asked, 0) !=
+                            kCFCompareEqualTo;
+            if (upright) CFRelease(upright);
+            if (asked) CFRelease(asked);
+        }
+        if (different) {
+            CFRelease(base);
+            base = slanted;
+        } else {
+            if (slanted) CFRelease(slanted);
+            CGAffineTransform matrix =
+                CGAffineTransformMake(1.0, 0.0, 0.2126, 1.0, 0.0, 0.0);
+            CFDataRef data = CFDataCreate(
+                kCFAllocatorDefault, reinterpret_cast<const UInt8*>(&matrix),
+                sizeof(matrix));
+            CFMutableDictionaryRef shearAttrs = CFDictionaryCreateMutable(
+                kCFAllocatorDefault, 1, &kCFTypeDictionaryKeyCallBacks,
+                &kCFTypeDictionaryValueCallBacks);
+            if (data) {
+                CFDictionarySetValue(shearAttrs, kCTFontMatrixAttribute, data);
+                CFRelease(data);
+            }
+            CTFontDescriptorRef shearDesc =
+                CTFontDescriptorCreateWithAttributes(shearAttrs);
+            CTFontRef sheared =
+                shearDesc ? CTFontCreateCopyWithAttributes(base, spec.size,
+                                                           nullptr, shearDesc)
+                          : nullptr;
+            if (shearDesc) CFRelease(shearDesc);
+            CFRelease(shearAttrs);
+            if (sheared) {
+                CFRelease(base);
+                base = sheared;
+            }
+        }
     }
     return base;
 }
