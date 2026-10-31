@@ -9,8 +9,8 @@ refreshed on October 23, 2026, after the five-batch spec-gap closure.
 
 | Gate | Where it runs | State |
 |------|----------------|-------|
-| `Tests (macOS, Apple Silicon)` | GitHub Actions, `macos-26` | 7683 checks, 0 failures, 662 passed, 1 known gap |
-| `Build (macOS, Apple Silicon)` | GitHub Actions, `macos-26` | the app bundle builds, is signed ad hoc and passes the bundle check |
+| `Tests (macOS, Apple Silicon)` | GitHub Actions, `macos-26` | 7918 checks, 0 failures, 694 passed, 1 known gap |
+| `Build (macOS, Apple Silicon)` | GitHub Actions, `macos-26` | the bundle builds, is signed ad hoc, passes the deep bundle check (the icon is parsed block by block, the executable is read the way dyld reads it, the plist keys a first launch wants are required) and the launch smoke starts it: the window comes up, no crash is traced on the way in or out, and the zip only ships when all of that held |
 | `Build (x64)` | GitHub Actions, `windows-2022` | green |
 | The office and the mermaid oracles | GitHub Actions | green |
 
@@ -136,12 +136,16 @@ it into view.
 
 What is left is the work that needs a person in front of a Mac:
 
-- the first attempt at running the app on a Mac, on October 22, 2026,
-  did not open the app for the person who tried it. The log from that
-  machine names the two build defects that are fixed now (the bundle
-  had no seal, and its minimum system version was empty); see
-  "Signing and the first launch" in `references/macos-build-pipeline.md`
-- the next attempt can be watched from the start-up breadcrumbs in
+- the October 22, 2026 attempt at opening the app on a Mac failed. The
+  log named two build defects that are fixed (the bundle had no seal,
+  and its minimum system version was empty), and the icon was wrong
+  for a third reason: the icns writer stored each block's length
+  without the eight byte header the format counts, so macOS lost the
+  thread after the first block and fell back to a generic icon. All
+  three are fixed, and the bundle check now reads the icon, the
+  executable and the plist the way macOS does
+- every launch is watched now, on the runner before the zip ships and
+  on a real Mac through the start-up breadcrumbs in
   `~/Library/Logs/MarkDownIt/crash_trace.log`
 - the editing, the dragging, the printing and the file associations
   still wait for a hand run, and so does the layout: CI pins the
