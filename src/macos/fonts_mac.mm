@@ -1,10 +1,10 @@
 // The font registration.
 //
-// See fonts_mac.h for why the mac build bundles fonts. Registration is
+// See fonts_mac.h for the font story. Registration is
 // a process wide Core Text call, so the faces are usable from the
 // moment didFinishLaunching runs and nothing is installed on the
 // system. A failed registration is a breadcrumb, not a fatal error:
-// the text engine falls back to the system faces.
+// the text engine keeps drawing with the system faces.
 
 #include "fonts_mac.h"
 
@@ -67,9 +67,8 @@ int RegisterBundledFonts() {
 }
 
 #ifdef __OBJC__
-NSFont* BundledUIFont(float size) {
-    NSFont* font = [NSFont fontWithName:@"Selawik" size:size];
-    return font ? font : [NSFont systemFontOfSize:size];
+NSFont* SystemUIFont(float size) {
+    return [NSFont systemFontOfSize:size];
 }
 #endif
 

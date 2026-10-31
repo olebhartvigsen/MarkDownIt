@@ -43,34 +43,26 @@
 namespace mac {
 namespace {
 
-// The font families the theme asks for by name, mapped to the faces the
-// build ships. The theme keeps the Windows names, and the mac build
-// bundles metric compatible stands in for them (see fonts_mac.h), so a
-// document lays out the same way on both systems. A family that is not
-// bundled passes through untouched.
+// The family name that stands for "the platform's own UI face". Core
+// Text is asked for the system font itself (see CreateSystemFont), so
+// the OS provides whichever family is current.
+const char* const kSystemFamily = "System UI";
+
+// The font families the theme asks for by name, mapped to the platform
+// faces. The theme keeps the Windows names; the mac build draws with
+// the system stack (body: the system UI font; code: Menlo), as the port
+// plan's font note asks. A family that is not one of the mapped names
+// passes through untouched.
 std::string ResolveFamily(const std::string& family, bool monospace) {
     if (monospace) {
-        // The face the Windows build asks for first, and this build
-        // ships it.
-        return "Cascadia Mono";
+        // The code face: the mac system's own mono face, Menlo.
+        return "Menlo";
     }
-    if (family == "Segoe UI Semibold") {
-        // Core Text reads the Selawik files as one family with three
-        // weights, so the semibold is a style inside the family, not a
-        // family of its own. WantsSemibold says which runs carry it.
-        return "Selawik";
-    }
-    if (family == "Segoe UI" || family.empty()) {
-        return "Selawik";
+    if (family == "Segoe UI Semibold" || family == "Segoe UI" ||
+        family.empty()) {
+        return kSystemFamily;
     }
     return family;
-}
-
-// True for the bundled sans families. Neither ships an italic face, so
-// the engine slants them itself instead of letting Core Text answer
-// with a substitute.
-bool IsBundledSans(const std::string& resolved) {
-    return resolved == "Selawik";
 }
 
 // True for the runs the theme marks semibold. The Windows build spells
@@ -79,8 +71,8 @@ bool WantsSemibold(const std::string& family) {
     return family == "Segoe UI Semibold";
 }
 
-// The faces the engine used before the fonts were bundled. They answer
-// even when the bundle's font resources are missing.
+// The last resort faces, for a system that fails to answer with the
+// family that was asked for.
 const char* const kFallbackSans = "Helvetica Neue";
 const char* const kFallbackMono = "Menlo";
 
@@ -95,11 +87,10 @@ const double kItalicSlant = 0.25;
 
 // A font, cached. CTFont creation is not cheap and the renderer asks for
 // the same handful of fonts over and over.
-// One CTFont for a resolved family and a style. The italic of a bundled
-// sans is a shear on the font itself, because that family ships no
-// italic face; every other style is a Core Text trait.
+// One CTFont for a resolved family and a style: bold, semibold and
+// italic are Core Text traits the descriptor carries.
 CTFontRef CreateFont(const std::string& family, const FontSpec& spec,
-                     bool syntheticItalic, bool semibold) {
+                     bool semibold) {
     CFStringRef familyRef =
         CFStringCreateWithCString(kCFAllocatorDefault, family.c_str(),
                                   kCFStringEncodingUTF8);
@@ -111,7 +102,7 @@ CTFontRef CreateFont(const std::string& family, const FontSpec& spec,
                                   &kCFTypeDictionaryValueCallBacks);
     CFDictionarySetValue(attrs, kCTFontFamilyNameAttribute, familyRef);
 
-    if (spec.bold || semibold || (spec.italic && !syntheticItalic)) {
+    if (spec.bold || semibold || spec.italic) {
         CFMutableDictionaryRef traits =
             CFDictionaryCreateMutable(kCFAllocatorDefault, 2,
                                       &kCFTypeDictionaryKeyCallBacks,
@@ -126,7 +117,7 @@ CTFontRef CreateFont(const std::string& family, const FontSpec& spec,
                 CFRelease(number);
             }
         }
-        if (spec.italic && !syntheticItalic) {
+        if (spec.italic) {
             const double slant = kItalicSlant;
             CFNumberRef number =
                 CFNumberCreate(kCFAllocatorDefault, kCFNumberDoubleType,
@@ -140,20 +131,6 @@ CTFontRef CreateFont(const std::string& family, const FontSpec& spec,
         CFRelease(traits);
     }
 
-    if (syntheticItalic) {
-        // tan(12 degrees): the slant the system synthesizes for a
-        // family that has no italics.
-        CGAffineTransform matrix =
-            CGAffineTransformMake(1.0, 0.0, 0.2126, 1.0, 0.0, 0.0);
-        CFDataRef data = CFDataCreate(
-            kCFAllocatorDefault, reinterpret_cast<const UInt8*>(&matrix),
-            sizeof(matrix));
-        if (data) {
-            CFDictionarySetValue(attrs, kCTFontMatrixAttribute, data);
-            CFRelease(data);
-        }
-    }
-
     CTFontDescriptorRef desc = CTFontDescriptorCreateWithAttributes(attrs);
     CFRelease(attrs);
     CFRelease(familyRef);
@@ -165,8 +142,8 @@ CTFontRef CreateFont(const std::string& family, const FontSpec& spec,
 }
 
 // True when the font's family is the one that was asked for. The engine
-// reads this to notice that a bundled face is not registered, in which
-// case Core Text answers with a substitute.
+// reads this to notice that a named face did not answer, in which case
+// Core Text returned a substitute.
 bool FamilyMatches(CTFontRef font, const std::string& family) {
     if (!font) return false;
     CFStringRef want = CFStringCreateWithCString(
@@ -180,6 +157,54 @@ bool FamilyMatches(CTFontRef font, const std::string& family) {
     return match;
 }
 
+// The platform's own UI face at the wanted style: Core Text resolves
+// the system font, so the OS provides whichever family is current, and
+// the weight and slant traits pick semibold, bold and italic from it.
+CTFontRef CreateSystemFont(const FontSpec& spec, bool semibold) {
+    CTFontRef base = CTFontCreateUIFontForLanguage(kCTFontUIFontSystem,
+                                                   spec.size, nullptr);
+    if (!base) return nullptr;
+    if (!spec.bold && !semibold && !spec.italic) return base;
+
+    CFMutableDictionaryRef traits = CFDictionaryCreateMutable(
+        kCFAllocatorDefault, 2, &kCFTypeDictionaryKeyCallBacks,
+        &kCFTypeDictionaryValueCallBacks);
+    if (spec.bold || semibold) {
+        const double weight = spec.bold ? kBoldWeight : kSemiboldWeight;
+        CFNumberRef number =
+            CFNumberCreate(kCFAllocatorDefault, kCFNumberDoubleType, &weight);
+        if (number) {
+            CFDictionarySetValue(traits, kCTFontWeightTrait, number);
+            CFRelease(number);
+        }
+    }
+    if (spec.italic) {
+        const double slant = kItalicSlant;
+        CFNumberRef number =
+            CFNumberCreate(kCFAllocatorDefault, kCFNumberDoubleType, &slant);
+        if (number) {
+            CFDictionarySetValue(traits, kCTFontSlantTrait, number);
+            CFRelease(number);
+        }
+    }
+    CFMutableDictionaryRef attrs = CFDictionaryCreateMutable(
+        kCFAllocatorDefault, 1, &kCFTypeDictionaryKeyCallBacks,
+        &kCFTypeDictionaryValueCallBacks);
+    CFDictionarySetValue(attrs, kCTFontTraitsAttribute, traits);
+    CTFontDescriptorRef desc = CTFontDescriptorCreateWithAttributes(attrs);
+    CTFontRef styled =
+        desc ? CTFontCreateCopyWithAttributes(base, spec.size, nullptr, desc)
+             : nullptr;
+    if (desc) CFRelease(desc);
+    CFRelease(attrs);
+    CFRelease(traits);
+    if (styled) {
+        CFRelease(base);
+        return styled;
+    }
+    return base;
+}
+
 CTFontRef GetFont(const FontSpec& spec) {
     static std::map<std::string, CTFontRef> cache;
     const bool semibold = WantsSemibold(spec.family);
@@ -191,18 +216,20 @@ CTFontRef GetFont(const FontSpec& spec) {
     auto it = cache.find(key);
     if (it != cache.end()) return it->second;
 
-    const bool syntheticItalic = spec.italic && IsBundledSans(resolved);
-    CTFontRef font = CreateFont(resolved, spec, syntheticItalic, semibold);
-    if (font && IsBundledSans(resolved) && !FamilyMatches(font, resolved)) {
-        // The bundled faces are not registered (a build without the
-        // font resources). The system faces keep text drawing.
+    const bool systemFamily = (resolved == kSystemFamily);
+    CTFontRef font = systemFamily
+                         ? CreateSystemFont(spec, semibold)
+                         : CreateFont(resolved, spec, semibold);
+    if (!systemFamily && font && !FamilyMatches(font, resolved)) {
+        // A named face did not answer (unusual on macOS). The fallback
+        // faces keep text drawing.
         CFRelease(font);
         font = CreateFont(spec.monospace ? kFallbackMono : kFallbackSans,
-                          spec, false, false);
+                          spec, false);
         static bool logged = false;
         if (!logged) {
-            TraceMac("the bundled fonts are not registered; "
-                     "the system faces take over");
+            TraceMac("a text face did not resolve; "
+                     "the fallback faces take over");
             logged = true;
         }
     }

@@ -187,7 +187,7 @@ namespace {
 
 constexpr CGFloat kTabRowHeight = 28.0;
 constexpr CGFloat kGroupRowHeight = 68.0;
-constexpr CGFloat kCommandWidth = 74.0;
+constexpr CGFloat kCommandWidth = 80.0;
 constexpr CGFloat kCommandHeight = 52.0;
 constexpr CGFloat kLargeIcon = 32.0;
 constexpr CGFloat kSmallIcon = 16.0;
@@ -484,7 +484,7 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
         [button setButtonType:NSButtonTypeMomentaryPushIn];
         [button setBordered:NO];
         [button setTitle:[NSString stringWithUTF8String:kTabs[i].label]];
-        [button setFont:mac::BundledUIFont(12.0f)];
+        [button setFont:mac::SystemUIFont(11.0f)];
         [button setTarget:self];
         [button setAction:@selector(selectTab:)];
         [button setTag:i];
@@ -518,7 +518,7 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
             }
             NSTextField* label = [NSTextField
                 labelWithString:[NSString stringWithUTF8String:group.label]];
-            [label setFont:mac::BundledUIFont(10.0f)];
+            [label setFont:mac::SystemUIFont(10.0f)];
             [label setTextColor:[NSColor secondaryLabelColor]];
             [label setAlignment:NSTextAlignmentCenter];
             [label setFrame:NSMakeRect(0.0, kCommandHeight + 4.0, width, 12.0)];
@@ -545,7 +545,7 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
     [button setBordered:NO];
     [button setImagePosition:(withLabel ? NSImageAbove : NSImageOnly)];
     [button setAlignment:NSTextAlignmentCenter];
-    [button setFont:mac::BundledUIFont(withLabel ? 11.0f : 10.0f)];
+    [button setFont:mac::SystemUIFont(withLabel ? 11.0f : 10.0f)];
     NSString* base = [NSString stringWithFormat:@"%s_%.0f", command.icon, size];
     NSImage* image = RibbonIcon(base, size);
     if (image) [button setImage:image];

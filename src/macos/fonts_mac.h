@@ -1,18 +1,16 @@
 #pragma once
 
-// The fonts the mac build bundles.
+// The font registration, and the chrome's face.
 //
-// The Windows build renders with Segoe UI and Cascadia Mono. So that a
-// document lays out the same way on both systems, the mac build ships
-// metric compatible stand ins and registers them at launch: Selawik,
-// Microsoft's open replacement for Segoe UI (the advance widths match,
-// so line breaks land where they land on Windows), and Cascadia Mono
-// itself, the code face the Windows build asks for first.
+// The mac build draws with the platform's own faces: the system UI
+// font for text and chrome, Menlo for code, as the port plan's font
+// note asks. The bundle still ships the metric compatible stand ins
+// the Windows build uses (Selawik for Segoe UI, Cascadia Mono) and
+// registers them at launch, so a parity comparison or a future
+// setting can pick them without a rebuild.
 //
 // The files sit in third_party/ and are copied into the app bundle as
-// Contents/Resources/Fonts. The text engine maps the theme's family
-// names onto them, see text_engine_mac.cpp, and falls back to the
-// system fonts when the registration found nothing.
+// Contents/Resources/Fonts.
 
 #include <string>
 
@@ -32,10 +30,9 @@ int RegisterFontsFromDirectory(const std::string& dir);
 int RegisterBundledFonts();
 
 #ifdef __OBJC__
-// A UI font: Selawik when it is registered, the system font otherwise.
-// The chrome asks for this so its labels carry the face the Windows
-// chrome uses.
-NSFont* BundledUIFont(float size);
+// The chrome's face: the platform's own UI font, so the strip, the
+// find bar and the status rows look native.
+NSFont* SystemUIFont(float size);
 #endif
 
 }  // namespace mac

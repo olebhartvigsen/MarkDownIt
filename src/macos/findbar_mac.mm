@@ -153,7 +153,7 @@ static std::wstring CounterText(const FindBarModel& model) {
 
     statusLabel_ = [NSTextField labelWithString:@""];
     [statusLabel_ setTextColor:[NSColor secondaryLabelColor]];
-    [statusLabel_ setFont:mac::BundledUIFont(11.0f)];
+    [statusLabel_ setFont:mac::SystemUIFont(11.0f)];
 }
 
 // A button with a title, a tooltip and an action.

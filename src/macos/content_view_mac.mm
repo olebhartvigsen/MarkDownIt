@@ -917,6 +917,10 @@ static const CGFloat kPinchStepMagnification = 0.1;
     (void)timer;
     if (!content_) return;
     content_->SetCaretVisible(!content_->caretVisible());
+    // The flip only lands on screen through a redraw: the model's
+    // Invalidate is a no-op on this platform, because the view owns
+    // the drawing.
+    [self setNeedsDisplay:YES];
 }
 
 // A fresh edit or a move shows the caret again and restarts the blink,
@@ -990,6 +994,7 @@ static const CGFloat kPinchStepMagnification = 0.1;
     const BOOL result = [super becomeFirstResponder];
     if (content_) content_->SetCaretVisible(true);
     [self startBlinking];
+    [self setNeedsDisplay:YES];
     return result;
 }
 
@@ -998,6 +1003,7 @@ static const CGFloat kPinchStepMagnification = 0.1;
     // The caret is hidden while the view is not focused, the way the
     // Windows window hides it.
     if (content_) content_->SetCaretVisible(false);
+    [self setNeedsDisplay:YES];
     return [super resignFirstResponder];
 }
 

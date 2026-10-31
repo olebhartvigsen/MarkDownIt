@@ -256,6 +256,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [window_ setDelegate:self];
     [window_ setTitle:@"MarkDownIt"];
     [window_ setMinSize:NSMakeSize(480, 320)];
+    // The app draws one light theme, so the chrome stays light with
+    // it: under a dark system appearance the adaptive AppKit colors
+    // would paint dark chrome around a light document (night mode is
+    // its own follow-up).
+    [window_ setAppearance:
+        [NSAppearance appearanceNamed:NSAppearanceNameAqua]];
 
     // The content view goes in a scroll view, so the document scrolls
     // when it is longer than the window.
