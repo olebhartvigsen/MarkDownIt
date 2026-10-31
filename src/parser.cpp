@@ -272,6 +272,12 @@ struct NodeOffsetInfo {
     uint32_t firstTextOffset = 0;
     uint32_t lastTextEnd = 0;
     bool hasText = false;
+    // A task list item drops its checkbox from the visible text, so
+    // the item reads as a box followed by its text. The trim walks the
+    // run "[", the mark, "]" and the space that may close it, across
+    // as many text chunks as md4c splits it into.
+    bool taskTrimActive = false;
+    int taskTrimStep = 0;
 };
 
 struct ParserCtx {
@@ -613,6 +619,15 @@ int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
             ctx->doc->nodes[idx].block = BlockKind::List;
             ctx->doc->nodes[idx].ordered = ordered;
             ctx->doc->nodes[idx].depth = ctx->list_depth - 1;
+            // A task list item ("- [ ]" / "- [x]"): the check state is
+            // recorded and the mark is dropped from the text, so the
+            // checkbox is drawn, not read.
+            const auto* li = static_cast<const MD_BLOCK_LI_DETAIL*>(detail);
+            if (li && li->is_task) {
+                ctx->doc->nodes[idx].taskMark =
+                    (li->task_mark == ' ') ? 0 : 1;
+                ctx->nodeOffsets[idx].taskTrimActive = true;
+            }
             SetListSourceRange(*ctx, ctx->doc->nodes[idx]);
             // merge_inlines: subsequent P inside this LI adds to this node
             ctx->block_stack.push_back({type, idx, true, true});
@@ -1066,6 +1081,39 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
     if (idx < 0) return 0;
 
     Node& node = ctx->doc->nodes[idx];
+
+    // A task list item drops its checkbox from the visible text: the
+    // glyph is drawn in the marker gutter instead. The trim walks "[",
+    // the mark, "]" and the space that may close the run, across as
+    // many chunks as md4c splits it into, and the offsets travel with
+    // the kept text.
+    {
+        auto& info = ctx->nodeOffsets[idx];
+        if (info.taskTrimActive && ctx->input && textInInput) {
+            MD_SIZE drop = 0;
+            while (drop < size && info.taskTrimStep < 4) {
+                const char c = text[drop];
+                const int step = info.taskTrimStep;
+                const bool ok = (step == 0 && c == '[') ||
+                                (step == 1 && (c == ' ' || c == 'x' ||
+                                               c == 'X')) ||
+                                (step == 2 && c == ']') ||
+                                (step == 3 && c == ' ');
+                if (!ok) break;
+                ++drop;
+                ++info.taskTrimStep;
+            }
+            if (info.taskTrimStep >= 4 || drop < size) {
+                // The mark was dropped whole, or the run held a
+                // character that is not one: from here the text is
+                // plain text.
+                info.taskTrimActive = false;
+            }
+            text += drop;
+            size -= drop;
+            textOffset += static_cast<uint32_t>(drop);
+        }
+    }
 
     // Track source offsets for this node.
     //

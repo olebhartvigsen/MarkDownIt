@@ -26,6 +26,32 @@ TEST(EmptyListMapping, MarkerOnlyItemsAtEof) {
     }
 }
 
+TEST(TaskListMapping, CheckStateAndTrimmedText) {
+    // "- [ ] todo" / "- [x] done": the check state lands on the node
+    // and the mark leaves the rendered text, so the renderer draws a
+    // checkbox and the item text starts after it.
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown("- [ ] todo\n- [x] done\n- plain", doc));
+    ASSERT_EQ(doc.nodes.size(), 3u);
+
+    const Node& open = doc.nodes[0];
+    EXPECT_EQ(open.taskMark, 0);
+    ASSERT_EQ(open.children.size(), 1u);
+    EXPECT_TRUE(open.children[0].text == U"todo");
+    EXPECT_EQ(open.contentOffset, 6u);   // past "- [ ] "
+    EXPECT_EQ(open.contentLength, 4u);
+
+    const Node& done = doc.nodes[1];
+    EXPECT_EQ(done.taskMark, 1);
+    ASSERT_EQ(done.children.size(), 1u);
+    EXPECT_TRUE(done.children[0].text == U"done");
+
+    const Node& plain = doc.nodes[2];
+    EXPECT_EQ(plain.taskMark, -1);
+    ASSERT_EQ(plain.children.size(), 1u);
+    EXPECT_TRUE(plain.children[0].text == U"plain");
+}
+
 TEST(EmptyListMapping, ConsecutiveMiddleAndNestedItems) {
     struct Case { const char* source; uint32_t start; uint32_t length; int depth; };
     const Case cases[] = {

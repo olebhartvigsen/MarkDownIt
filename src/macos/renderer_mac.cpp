@@ -132,11 +132,15 @@ float GapForTransition(BlockKind prev, BlockKind cur, BlockKind next,
     return m.paraGap;
 }
 
-// A font, in the layout unit.
+// A font, in the layout unit. The family override names the face a
+// heading asks for: the theme spells semibold as a family of its own,
+// the way the Windows build spells it in its heading formats.
 FontSpec MakeFont(const LayoutMetrics& metrics, float size, bool bold,
-                  bool italic, bool monospace) {
+                  bool italic, bool monospace,
+                  const char* family = nullptr) {
     FontSpec font;
-    font.family = monospace ? metrics.codeFont : metrics.bodyFont;
+    font.family = monospace ? metrics.codeFont
+                            : (family ? family : metrics.bodyFont);
     font.size = size;
     font.bold = bold;
     font.italic = italic;
@@ -414,10 +418,11 @@ MacRenderer::~MacRenderer() {
 }
 
 FontSpec MacRenderer::FontFor(const Node& node, float baseSize, bool bold,
-                               bool italic, bool monospace) const {
+                               bool italic, bool monospace,
+                               const char* family) const {
     (void)node;
     return MakeFont(metrics_, baseSize * kPtToDip * zoom_, bold, italic,
-                    monospace);
+                    monospace, family);
 }
 
 FontSpec MacRenderer::DiagramFontFor(const Node& node, float baseSize,
@@ -517,7 +522,8 @@ std::vector<GlyphRun> MacRenderer::BuildCellRuns(const TableCell& cell,
 std::vector<GlyphRun> MacRenderer::BuildRuns(const Node& node, float baseSize,
                                               bool bold, bool italic,
                                               const Color& color,
-                                              bool monospace) const {
+                                              bool monospace,
+                                              const char* family) const {
     std::vector<GlyphRun> runs;
 
     // The children are walked one by one, so a run carries the style of
@@ -534,8 +540,18 @@ std::vector<GlyphRun> MacRenderer::BuildRuns(const Node& node, float baseSize,
         // renderer sets codeFontSize on the span.
         const bool childCode = child.code;
         const float runSize = childCode ? metrics_.codeFontSize : baseSize;
-        run.font = FontFor(node, runSize, bold || child.strong,
-                           italic || child.em, monospace || childCode);
+        // A strong span draws in the semibold face, the emphasis the
+        // style guide asks for within a sentence. A heading already
+        // draws in that family, so its strong spans keep it.
+        const char* runFamily = family;
+        bool runBold = bold;
+        if (child.strong && runFamily == nullptr) {
+            runFamily = THEME_BODY_FONT_SEMIBOLD;
+            runBold = false;
+        }
+        run.font = FontFor(node, runSize, runBold,
+                           italic || child.em, monospace || childCode,
+                           runFamily);
         // A link is drawn in the link colour, everything else in the text
         // colour of the block.
         const bool link = child.kind == InlineKind::Link;
@@ -750,8 +766,12 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
             const int level =
                 node.level < 1 ? 1 : (node.level > 6 ? 6 : node.level);
             const float size = metrics_.headingSizes[level];
+            // Headings draw in the semibold face, the weight the
+            // Windows formats use: size and weight carry the level
+            // together, the way the style guide asks.
             const std::vector<GlyphRun> runs = BuildRuns(
-                node, size, true, false, ToColor(palette_.heading), false);
+                node, size, false, false, ToColor(palette_.heading), false,
+                THEME_BODY_FONT_SEMIBOLD);
             block.lines = engine_->MeasureWrapped(runs, drawW, 0.0f);
             ApplyLineSpacing(&block.lines, size, metrics_.headingLineHeight,
                              1.0f);
@@ -1070,14 +1090,17 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
     for (const LaidOutBlock& block : blocks_) {
         std::string marker;
         const int depth = block.node ? block.node->depth : 0;
+        const int taskMark = block.node ? block.node->taskMark : -1;
         if (block.kind == BlockKind::List) {
             if (prevKind != BlockKind::List || depth != prevDepth) {
                 listCounter = 0;
             }
             if (block.node && block.node->ordered) {
                 ++listCounter;
-                marker = std::to_string(listCounter) + ". ";
-            } else {
+                if (taskMark < 0) {
+                    marker = std::to_string(listCounter) + ". ";
+                }
+            } else if (taskMark < 0) {
                 marker = "\xE2\x80\xA2 ";
             }
         } else {
@@ -1212,6 +1235,36 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset,
                 textHeight += line.height;
             }
             const float textTop = top + block.imagesHeight;
+            const int taskMark = block.node ? block.node->taskMark : -1;
+            if (taskMark >= 0) {
+                // A task item draws its checkbox in the gutter where
+                // the bullet would sit: an empty box for an open task,
+                // a box with a check for a done one. The shape carries
+                // the state, not the colour.
+                float box = markerW - 6.0f;
+                if (box > 11.0f) box = 11.0f;
+                if (box < 8.0f) box = 8.0f;
+                const float lineH = block.lines.empty()
+                                        ? metrics_.bodyFontSize
+                                        : block.lines.front().height;
+                Rect r;
+                r.x = block.x + 1.0f;
+                r.y = textTop + (lineH - box) * 0.5f;
+                r.width = box;
+                r.height = box;
+                const Color ink = ToColor(palette_.textPrimary);
+                target_->StrokeRoundedRect(r, 2.0f, ink, 1.2f);
+                if (taskMark > 0) {
+                    target_->StrokeLine(r.x + box * 0.22f,
+                                        r.y + box * 0.55f,
+                                        r.x + box * 0.42f,
+                                        r.y + box * 0.78f, ink, 1.2f);
+                    target_->StrokeLine(r.x + box * 0.42f,
+                                        r.y + box * 0.78f,
+                                        r.x + box * 0.82f,
+                                        r.y + box * 0.25f, ink, 1.2f);
+                }
+            }
             if (!marker.empty()) {
                 const FontSpec markerFont = FontFor(
                     *block.node, metrics_.bodyFontSize, false, false, false);

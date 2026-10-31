@@ -110,6 +110,10 @@ struct Node {
     std::vector<InlineBlock>   children;     // inline spans
     bool                       ordered = false;  // list: ordered vs unordered
     int                        depth = 0;       // list nesting depth (0=top)
+    // A task list item ("- [ ]" or "- [x]"): -1 is not a task, 0 open,
+    // 1 done. The checkbox is drawn in the marker gutter and the mark
+    // itself is hidden from the rendered text, the way other syntax is.
+    int                        taskMark = -1;
     uint32_t                   srcOffset = 0;  // byte offset into UTF-8 source
     uint32_t                   srcLength = 0;  // byte length of this block in source
     uint32_t                   contentOffset = 0; // where editable text starts, after markers

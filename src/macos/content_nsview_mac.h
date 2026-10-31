@@ -36,6 +36,11 @@ class ContentView;
 // Told every time the zoom lands somewhere, so the window can save it.
 - (void)setZoomChangedHandler:(void (^)(float))handler;
 
+// Told when the palette was resolved again for a changed system
+// appearance, so the windows around the document refresh their own
+// colours.
+- (void)setThemeChangedHandler:(void (^)(void))handler;
+
 // The document changed under the caret: the blink restarts, the caret
 // is brought back into view, the remembered column is dropped and the
 // view redraws. The window calls this after a paste that does not go

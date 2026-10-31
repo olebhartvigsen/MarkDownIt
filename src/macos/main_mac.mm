@@ -19,6 +19,7 @@
 #include "outline_nsview_mac.h"
 #include "outline_pane_mac.h"
 #include "content_view_mac.h"
+#include "system_theme_mac.h"
 #include "navigation.h"
 #include "pdf_ocr_mac.h"
 #include <sstream>
@@ -256,16 +257,21 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [window_ setDelegate:self];
     [window_ setTitle:@"MarkDownIt"];
     [window_ setMinSize:NSMakeSize(480, 320)];
-    // The app draws one light theme, so the chrome stays light with
-    // it: under a dark system appearance the adaptive AppKit colors
-    // would paint dark chrome around a light document (night mode is
-    // its own follow-up).
-    [window_ setAppearance:
-        [NSAppearance appearanceNamed:NSAppearanceNameAqua]];
+    // The window keeps the system's own appearance: the document
+    // palette is resolved from the system's semantic colours, so the
+    // chrome and the document both belong to Light Mode or Dark Mode
+    // (the visual style guide asks for it).
 
     // The content view goes in a scroll view, so the document scrolls
     // when it is longer than the window.
     view_ = [[MdContentView alloc] initWithContent:content_ app:app_];
+    // The palette follows the system appearance, so a switch refreshes
+    // the outline pane beside the document too: its colours come from
+    // the same palette.
+    [view_ setThemeChangedHandler:^{
+        outlinePane_->SetPalette(mac::SystemPalette());
+        [outlineView_ setNeedsDisplay:YES];
+    }];
     // The view applies the zoom (the wheel, a pinch and the menu all
     // go through it, so the anchor point stays put), and the window
     // keeps and saves what it landed on.
@@ -301,7 +307,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // The pane borrows the document of the app and reads it again
     // after every reparse.
     outlinePane_->SetDocument(&app_->GetDocument());
-    outlinePane_->SetPalette(BasePalette());
+    outlinePane_->SetPalette(mac::SystemPalette());
     app_->SetDocumentChangedHandler([self] {
         [self outlinePaneRefresh];
         // The strip follows the document: its toggles and its table

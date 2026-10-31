@@ -88,12 +88,12 @@ std::string PostscriptOf(const FontSpec& spec) {
 TEST(TextEngineMac, UsesThePlatformFonts) {
     // The mapping the theme's family names travel through: the Windows
     // names land on the platform's own faces, the port plan's font
-    // note (the system UI font for text, Menlo for code).
+    // note (the system UI font for text, the system's fixed-pitch face for code).
     EXPECT_EQ(mac::ResolvedFamily("Segoe UI", false),
               std::string("System UI"));
     EXPECT_EQ(mac::ResolvedFamily("Segoe UI Semibold", false),
               std::string("System UI"));
-    EXPECT_EQ(mac::ResolvedFamily("", true), std::string("Menlo"));
+    EXPECT_EQ(mac::ResolvedFamily("", true), std::string("System Mono"));
     EXPECT_EQ(mac::ResolvedFamily("Helvetica Neue", false),
               std::string("Helvetica Neue"));
 

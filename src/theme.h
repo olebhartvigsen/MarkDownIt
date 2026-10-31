@@ -69,6 +69,11 @@ inline ThemeColor MakeColor(uint32_t rgb, float alpha = 1.0f) {
 #define THEME_CODE_FONT L"Cascadia Mono"
 #else
 #define THEME_BODY_FONT "Segoe UI"
+// The family the heading runs ask for. The Windows build draws
+// headings with the semibold weight of the body face; the mac
+// build spells that intent as this name, which its engine maps
+// onto the system face's semibold weight.
+#define THEME_BODY_FONT_SEMIBOLD "Segoe UI Semibold"
 #define THEME_CODE_FONT "Cascadia Mono"
 #endif
 

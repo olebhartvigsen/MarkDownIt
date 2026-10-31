@@ -8,6 +8,7 @@
 // only place in the mac layer that talks to Core Graphics directly.
 
 #include "content_view_mac.h"
+#include "system_theme_mac.h"
 
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
@@ -46,7 +47,7 @@ ContentView::ContentView(App* app)
     // expects it.
     renderer_.SetDiagramTextEngine(new CoreTextEngine());
     renderer_.SetTextEngine(engine_);
-    renderer_.SetTheme(BaseMetrics(), BasePalette());
+    renderer_.SetTheme(BaseMetrics(), mac::SystemPalette());
     renderer_.SetStandaloneSvg(app_ && app_->IsStandaloneSvg());
     // The renderer reads the source when it normalizes a caret past a
     // marker, the same pointer the Windows cache holds.
@@ -185,6 +186,10 @@ void ContentView::Invalidate() {
     // The window asks the view to redraw. The view itself does not know
     // about the window, so the platform layer polls this through the
     // AppShell seam. On the mac side the NSView invalidates itself.
+}
+
+void ContentView::RefreshTheme() {
+    renderer_.SetTheme(BaseMetrics(), mac::SystemPalette());
 }
 
 void ContentView::SetSize(float width, float height) {
@@ -612,6 +617,9 @@ static const CGFloat kPinchStepMagnification = 0.1;
     CGFloat pinchAcc_;
     // Told every time the zoom changes, so the window can save it.
     void (^zoomChangedHandler_)(float);
+    // Told when the palette was resolved again, so the window can
+    // refresh the colours of the views beside the document.
+    void (^themeChangedHandler_)(void);
 }
 
 - (instancetype)initWithContent:(mac::ContentView*)content app:(mac::App*)app {
@@ -656,6 +664,28 @@ static const CGFloat kPinchStepMagnification = 0.1;
                    name:NSViewBoundsDidChangeNotification
                  object:clip];
     [self clipChanged:nil];
+
+    // The startup palette resolution lands under the view's own
+    // appearance: the first one ran without it.
+    [self resolvePalette];
+}
+
+// The palette belongs to the appearance: resolve it again whenever the
+// system or the display changes it, and at startup. The window around
+// the document is told, so it can refresh its own colours.
+- (void)resolvePalette {
+    [self.effectiveAppearance performAsCurrentDrawingAppearance:^{
+        content_->RefreshTheme();
+    }];
+    if (themeChangedHandler_) {
+        themeChangedHandler_();
+    }
+    [self setNeedsDisplay:YES];
+}
+
+- (void)viewDidChangeEffectiveAppearance {
+    [super viewDidChangeEffectiveAppearance];
+    [self resolvePalette];
 }
 
 - (void)dealloc {
@@ -724,6 +754,10 @@ static const CGFloat kPinchStepMagnification = 0.1;
 // The zoom the document is at.
 - (float)zoomFactor {
     return content_ ? content_->zoom() : 1.0f;
+}
+
+- (void)setThemeChangedHandler:(void (^)(void))handler {
+    themeChangedHandler_ = handler;
 }
 
 - (void)setZoomChangedHandler:(void (^)(float))handler {

@@ -1346,7 +1346,12 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
                 float markerW = 0.0f;
                 if (n.block == BlockKind::List) {
                     markerW = m.listIndent * 0.6f + m.markerGutter;
-                    text32 += n.ordered ? U"1. " : U"\u2022  ";
+                    // A task item keeps the gutter width but not the
+                    // glyph: the checkbox is drawn in the paint pass,
+                    // where a bullet would sit.
+                    text32 += n.taskMark >= 0
+                                  ? U"   "
+                                  : (n.ordered ? U"1. " : U"\u2022  ");
                 }
                 for (const auto& ib : n.children) text32 += ib.text;
                 if (text32.empty() && n.virtualEmptyParagraph) text32 = U" ";
@@ -1608,11 +1613,13 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             }
             if (n.ordered) {
                 ++listCounter;
-                char buf[16];
-                snprintf(buf, sizeof(buf), "%d. ", listCounter);
-                for (const char* p = buf; *p; ++p)
-                    marker16.push_back(static_cast<char16_t>(*p));
-            } else {
+                if (n.taskMark < 0) {
+                    char buf[16];
+                    snprintf(buf, sizeof(buf), "%d. ", listCounter);
+                    for (const char* p = buf; *p; ++p)
+                        marker16.push_back(static_cast<char16_t>(*p));
+                }
+            } else if (n.taskMark < 0) {
                 marker16 += u"\u2022 ";
             }
         } else {
@@ -1881,7 +1888,37 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             codeBg->Release();
         }
 
-        if (!marker16.empty()) {
+        if (n.taskMark >= 0) {
+            // The task checkbox: an outlined box in the gutter, with a
+            // check when the item is done. The shape carries the state,
+            // not the colour. The box is centred on the first line, so
+            // it sits where the bullet of a plain item sits.
+            float box = markerW - 6.0f;
+            if (box > 11.0f) box = 11.0f;
+            if (box < 8.0f) box = 8.0f;
+            float lineH = 21.0f;
+            DWRITE_LINE_METRICS lineMetrics;
+            UINT32 lineCount = 0;
+            if (SUCCEEDED(layout->GetLineMetrics(&lineMetrics, 1,
+                                                 &lineCount)) &&
+                lineCount > 0) {
+                lineH = lineMetrics.height;
+            }
+            const float bx = drawX + 1.0f;
+            const float by = curY + (lineH - box) * 0.5f;
+            D2D1_RECT_F boxRect = D2D1::RectF(bx, by, bx + box, by + box);
+            rt->DrawRectangle(boxRect, blockBrush, 1.2f);
+            if (n.taskMark > 0) {
+                rt->DrawLine(
+                    D2D1::Point2F(bx + box * 0.22f, by + box * 0.55f),
+                    D2D1::Point2F(bx + box * 0.42f, by + box * 0.78f),
+                    blockBrush, 1.2f);
+                rt->DrawLine(
+                    D2D1::Point2F(bx + box * 0.42f, by + box * 0.78f),
+                    D2D1::Point2F(bx + box * 0.82f, by + box * 0.25f),
+                    blockBrush, 1.2f);
+            }
+        } else if (!marker16.empty()) {
             IDWriteTextLayout* markerLayout = nullptr;
             hr = dw->CreateTextLayout(
                 reinterpret_cast<const WCHAR*>(marker16.data()),

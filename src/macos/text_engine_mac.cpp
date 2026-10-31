@@ -47,6 +47,10 @@ namespace {
 // Text is asked for the system font itself (see CreateSystemFont), so
 // the OS provides whichever family is current.
 const char* const kSystemFamily = "System UI";
+// The fixed-pitch sibling: the code face resolves to the
+// platform's fixed-pitch UI font through the same API, so the
+// OS decides which mono face is current.
+const char* const kSystemMonoFamily = "System Mono";
 
 // The font families the theme asks for by name, mapped to the platform
 // faces. The theme keeps the Windows names; the mac build draws with
@@ -55,8 +59,10 @@ const char* const kSystemFamily = "System UI";
 // passes through untouched.
 std::string ResolveFamily(const std::string& family, bool monospace) {
     if (monospace) {
-        // The code face: the mac system's own mono face, Menlo.
-        return "Menlo";
+        // The code face: the platform's fixed-pitch UI font through
+        // the system API, the same way the text face resolves, so the
+        // OS picks the current mono face.
+        return kSystemMonoFamily;
     }
     if (family == "Segoe UI Semibold" || family == "Segoe UI" ||
         family.empty()) {
@@ -160,9 +166,13 @@ bool FamilyMatches(CTFontRef font, const std::string& family) {
 // The platform's own UI face at the wanted style: Core Text resolves
 // the system font, so the OS provides whichever family is current, and
 // the weight and slant traits pick semibold, bold and italic from it.
-CTFontRef CreateSystemFont(const FontSpec& spec, bool semibold) {
-    CTFontRef base = CTFontCreateUIFontForLanguage(kCTFontUIFontSystem,
-                                                   spec.size, nullptr);
+// The fixed-pitch flag asks for the system's mono face through the
+// same API, for code.
+CTFontRef CreateSystemFont(const FontSpec& spec, bool semibold,
+                           bool monospace) {
+    CTFontRef base = CTFontCreateUIFontForLanguage(
+        monospace ? kCTFontUIFontUserFixedPitch : kCTFontUIFontSystem,
+        spec.size, nullptr);
     if (!base) return nullptr;
 
     // The weight first: bold and semibold are weight traits Core Text
@@ -261,10 +271,12 @@ CTFontRef GetFont(const FontSpec& spec) {
     if (it != cache.end()) return it->second;
 
     const bool systemFamily = (resolved == kSystemFamily);
-    CTFontRef font = systemFamily
-                         ? CreateSystemFont(spec, semibold)
+    const bool systemMono = (resolved == kSystemMonoFamily);
+    CTFontRef font = (systemFamily || systemMono)
+                         ? CreateSystemFont(spec, semibold, systemMono)
                          : CreateFont(resolved, spec, semibold);
-    if (!systemFamily && font && !FamilyMatches(font, resolved)) {
+    if (!systemFamily && !systemMono && font &&
+        !FamilyMatches(font, resolved)) {
         // A named face did not answer (unusual on macOS). The fallback
         // faces keep text drawing.
         CFRelease(font);

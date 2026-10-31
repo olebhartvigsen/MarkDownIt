@@ -352,17 +352,21 @@ private:
                                             uint32_t end) const;
 
     // The runs of a block's inline children, with the styles applied.
+    // The family override names the face a heading asks for: the theme
+    // spells semibold as a family of its own.
     std::vector<GlyphRun> BuildRuns(const Node& node, float baseSize,
                                      bool bold, bool italic,
                                      const Color& color,
-                                     bool monospace) const;
+                                     bool monospace,
+                                     const char* family = nullptr) const;
 
     // The font for a run of the document text. The theme sizes are
     // points; the font is converted to the layout unit and scaled by
     // the zoom, the same numbers the Windows renderer creates its text
     // formats with.
     FontSpec FontFor(const Node& node, float baseSize, bool bold,
-                      bool italic, bool monospace) const;
+                      bool italic, bool monospace,
+                      const char* family = nullptr) const;
 
     // The font for a run that lives outside the document layout, like a
     // mermaid label. Those painters scale by the zoom themselves, so

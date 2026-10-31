@@ -49,6 +49,12 @@ public:
     // Redraws the content area.
     void Invalidate();
 
+    // Resolves the palette again, for the appearance the view is in
+    // now. The platform layer calls this at startup and whenever the
+    // effective appearance changes, so Light Mode and Dark Mode both
+    // get the colours that belong to them.
+    void RefreshTheme();
+
     // The height of the whole document, in points. The scroll view needs
     // it to size the content.
     float DocumentHeight() const { return documentHeight_; }
