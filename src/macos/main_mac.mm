@@ -19,6 +19,7 @@
 #include "outline_nsview_mac.h"
 #include "outline_pane_mac.h"
 #include "content_view_mac.h"
+#import "settings_window_mac.h"
 #include "system_theme_mac.h"
 #include "navigation.h"
 #include "pdf_ocr_mac.h"
@@ -90,7 +91,8 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 // implements the AppKit selectors, which the menu items and the command
 // strip are wired to.
 @interface MdAppDelegate
-    : NSObject <NSApplicationDelegate, NSWindowDelegate, MdRibbonHost> {
+    : NSObject <NSApplicationDelegate, NSWindowDelegate, MdRibbonHost,
+                NSMenuDelegate, MacSettingsHost> {
     mac::App* app_;
     mac::ContentView* content_;
     // The window content, which holds the command strip, the find bar
@@ -117,12 +119,19 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     int contentWidthMode_;
     // The find bar's height, which follows its visibility.
     NSLayoutConstraint* findBarHeightConstraint_;
+    // The Settings window, made the first time the menu asks for it.
+    MacSettingsWindow* settingsWindow_;
 }
 - (instancetype)init;
 - (void)OpenPath:(const std::string&)path;
 
 // The menu commands, as AppKit selectors.
 - (void)newDocument:(id)sender;
+- (void)findNext:(id)sender;
+- (void)findPrevious:(id)sender;
+- (void)openRecentItem:(id)sender;
+- (void)clearOpenRecentMenu:(id)sender;
+- (void)showHelp:(id)sender;
 - (void)openDocument:(id)sender;
 - (void)reloadDocument:(id)sender;
 - (void)openSettings:(id)sender;
@@ -265,13 +274,6 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // The content view goes in a scroll view, so the document scrolls
     // when it is longer than the window.
     view_ = [[MdContentView alloc] initWithContent:content_ app:app_];
-    // The palette follows the system appearance, so a switch refreshes
-    // the outline pane beside the document too: its colours come from
-    // the same palette.
-    [view_ setThemeChangedHandler:^{
-        outlinePane_->SetPalette(mac::SystemPalette());
-        [outlineView_ setNeedsDisplay:YES];
-    }];
     // The view applies the zoom (the wheel, a pinch and the menu all
     // go through it, so the anchor point stays put), and the window
     // keeps and saves what it landed on.
@@ -308,7 +310,20 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // after every reparse.
     outlinePane_->SetDocument(&app_->GetDocument());
     outlinePane_->SetPalette(mac::SystemPalette());
+    // The palette belongs to the appearance, so a switch refreshes the
+    // outline pane beside the document too. Wired here, after the pane
+    // exists: with the handler wired early, the first palette resolve
+    // (which happens during view setup) reached a still nil pane, and
+    // the launch smoke caught the crash.
+    [view_ setThemeChangedHandler:^{
+        if (outlinePane_) {
+            outlinePane_->SetPalette(mac::SystemPalette());
+            [outlineView_ setNeedsDisplay:YES];
+        }
+    }];
     app_->SetDocumentChangedHandler([self] {
+        // The window carries the edited dot while there are changes.
+        [window_ setDocumentEdited:YES];
         [self outlinePaneRefresh];
         // The strip follows the document: its toggles and its table
         // commands depend on what the caret is in.
@@ -509,6 +524,22 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     settings_.Save();
 }
 
+// The title bar a document app wears: the display name as the title
+// and the file itself as the represented file, which gives the title
+// its icon and its path popup, and the edited dot off until the next
+// change.
+- (void)refreshWindowTitle:(const std::string&)path {
+    if (path.empty()) {
+        [window_ setTitle:@"Untitled"];
+        [window_ setRepresentedFilename:@""];
+    } else {
+        NSString* full = [NSString stringWithUTF8String:path.c_str()];
+        [window_ setTitle:[full lastPathComponent]];
+        [window_ setRepresentedFilename:full];
+    }
+    [window_ setDocumentEdited:NO];
+}
+
 // Opens a file, and reports a failure to the user.
 - (void)OpenPath:(const std::string&)path {
     mac::TraceMac("open: %s", path.c_str());
@@ -523,7 +554,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     settings_.AddRecentFile(path);
     settings_.Save();
 
-    [window_ setTitle:[NSString stringWithUTF8String:path.c_str()]];
+    [self refreshWindowTitle:path];
     [view_ setNeedsDisplay:YES];
     mac::TraceMac("open: done");
 }
@@ -536,6 +567,30 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)openDocument:(id)sender { (void)sender; [self OnOpen]; }
 - (void)reloadDocument:(id)sender { (void)sender; [self OnReload]; }
 - (void)openSettings:(id)sender { (void)sender; [self OnOpenSettings]; }
+- (void)findNext:(id)sender { (void)sender; [self OnFindNext]; }
+- (void)findPrevious:(id)sender { (void)sender; [self OnFindPrevious]; }
+- (void)openRecentItem:(id)sender {
+    NSMenuItem* item = (NSMenuItem*)sender;
+    NSString* path = [item representedObject];
+    if (![path isKindOfClass:[NSString class]]) return;
+    if (![self confirmDiscardChanges]) return;
+    [self OpenPath:std::string([path UTF8String])];
+}
+- (void)clearOpenRecentMenu:(id)sender {
+    (void)sender;
+    settings_.settings().recentFiles.clear();
+    settings_.Save();
+    // The welcome screen shows the same list, so it reads again.
+    if (app_->WelcomeMode()) {
+        [self showWelcomeScreen];
+    }
+}
+- (void)showHelp:(id)sender {
+    (void)sender;
+    // The project page carries the readme and the guides.
+    [[NSWorkspace sharedWorkspace]
+        openURL:[NSURL URLWithString:@"https://github.com/olebhartvigsen/MarkDownIt"]];
+}
 - (void)setAsDefaultReader:(id)sender {
     (void)sender;
     [self OnSetAsDefaultReader];
@@ -598,6 +653,41 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
 // The Insert Table item greys out while the caret is inside a table;
 // there is already one (table guidelines 54 and 58).
+// The Open Recent menu fills itself when it opens. The recent list
+// is the same one the welcome screen shows, so the menu and the screen
+// can never disagree.
+- (void)menuNeedsUpdate:(NSMenu*)menu {
+    if (![[menu title] isEqualToString:@"Open Recent"]) return;
+    [menu removeAllItems];
+
+    const std::vector<std::string>& recent = settings_.recentFiles();
+    if (recent.empty()) {
+        NSMenuItem* none = [[NSMenuItem alloc]
+            initWithTitle:@"No Recent Documents"
+                   action:nil
+            keyEquivalent:@""];
+        [none setEnabled:NO];
+        [menu addItem:none];
+        return;
+    }
+    for (const std::string& path : recent) {
+        NSString* full = [NSString stringWithUTF8String:path.c_str()];
+        NSMenuItem* item = [[NSMenuItem alloc]
+            initWithTitle:[full lastPathComponent]
+                   action:@selector(openRecentItem:)
+            keyEquivalent:@""];
+        [item setRepresentedObject:full];
+        [item setToolTip:full];
+        [menu addItem:item];
+    }
+    [menu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem* clear = [[NSMenuItem alloc]
+        initWithTitle:@"Clear Menu"
+               action:@selector(clearOpenRecentMenu:)
+        keyEquivalent:@""];
+    [menu addItem:clear];
+}
+
 - (BOOL)validateMenuItem:(NSMenuItem*)item {
     if ([item action] == @selector(editMode:)) {
         // A checked item shows which mode the document is in.
@@ -665,7 +755,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)OnNewDocument {
     if (![self confirmDiscardChanges]) return;
     app_->NewDocument();
-    [window_ setTitle:@"Untitled"];
+    [self refreshWindowTitle:std::string()];
     [self showWelcomeScreen];
     [view_ setNeedsDisplay:YES];
 }
@@ -706,6 +796,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     }
     if (![self writeToPath:app_->filePath()]) return NO;
     app_->MarkClean();
+    [window_ setDocumentEdited:NO];
     return YES;
 }
 
@@ -730,6 +821,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The changes are gone, so nothing asks a second time when the
         // window closes or the app quits right after.
         app_->MarkClean();
+        [window_ setDocumentEdited:NO];
         return YES;
     }
     return NO;
@@ -757,7 +849,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     app_->MarkClean();
     settings_.AddRecentFile(path);
     settings_.Save();
-    [window_ setTitle:[NSString stringWithUTF8String:path.c_str()]];
+    [self refreshWindowTitle:path];
     return YES;
 }
 
@@ -803,7 +895,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // and closing asks whether to save.
     const std::string markdown = office::OfficeModelToMarkdown(model, report);
     app_->AdoptImportedText(markdown);
-    [window_ setTitle:@"Untitled"];
+    [self refreshWindowTitle:std::string()];
+    [window_ setDocumentEdited:YES];
     [self hideWelcomeScreen];
     [view_ setNeedsDisplay:YES];
 
@@ -868,7 +961,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // import has.
     const std::string markdown = office::OfficeModelToMarkdown(model, report);
     app_->AdoptImportedText(markdown);
-    [window_ setTitle:@"Untitled"];
+    [self refreshWindowTitle:std::string()];
+    [window_ setDocumentEdited:YES];
     [self hideWelcomeScreen];
     [view_ setNeedsDisplay:YES];
 
@@ -910,7 +1004,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         NSAlert* scope = [[NSAlert alloc] init];
         scope.messageText = @"What should the PDF hold?";
         [scope addButtonWithTitle:@"Whole document"];
-        [scope addButtonWithTitle:@"Page range..."];
+        [scope addButtonWithTitle:@"Page range\u2026"];
         const bool hasSelection = !app_->selection().Empty();
         if (hasSelection) {
             [scope addButtonWithTitle:@"Selection"];
@@ -1221,14 +1315,23 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [view_ setNeedsDisplay:YES];
 }
 
+// The steps the Find menu takes. They are the same steps the find
+// bar's own buttons take, from the same place: the caret.
+- (void)OnFindNext {
+    app_->findBar().model().NavigateNext(app_->selection().Start());
+}
+
+- (void)OnFindPrevious {
+    app_->findBar().model().NavigatePrevious(app_->selection().Start());
+}
+
 - (void)OnOpenSettings {
-    // The settings are a JSON file, so they open in the editor the user
-    // already has. The path is in the same place the Windows build keeps
-    // its settings.
-    NSString* path = [NSString stringWithFormat:
-        @"~/Library/Application Support/MarkDownIt/settings.json"];
-    NSString* full = [path stringByExpandingTildeInPath];
-    [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:full]];
+    // The settings are a standard window now, with the system's own
+    // controls. The JSON file stays the place they live.
+    if (!settingsWindow_) {
+        settingsWindow_ = [[MacSettingsWindow alloc] initWithHost:self];
+    }
+    [settingsWindow_ showSettings];
 }
 
 - (void)OnSetAsDefaultReader {
@@ -1265,14 +1368,38 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [view_ setNeedsDisplay:YES];
 }
 
-- (void)OnCycleContentWidth {
-    // The width modes are the ones the settings keep, and the command
-    // walks through them.
-    contentWidthMode_ = (contentWidthMode_ + 1) % 4;
+// Applies a width mode. The View menu command walks through the
+// modes with it, and the Settings window picks one; one path, so the
+// two can never disagree.
+- (void)applyContentWidthMode:(NSInteger)mode {
+    if (mode < 0 || mode > 3) return;
+    if (static_cast<int>(mode) == contentWidthMode_) return;
+    contentWidthMode_ = static_cast<int>(mode);
     content_->SetContentWidthMode(contentWidthMode_);
     settings_.settings().contentWidthMode = contentWidthMode_;
     settings_.Save();
     [view_ setNeedsDisplay:YES];
+}
+
+- (NSInteger)settingsContentWidthMode {
+    return contentWidthMode_;
+}
+
+- (void)OnCycleContentWidth {
+    // The width modes are the ones the settings keep, and the command
+    // walks through them.
+    [self applyContentWidthMode:(contentWidthMode_ + 1) % 4];
+}
+
+// The outline switch reads the pane and goes through the same command
+// the View menu takes.
+- (BOOL)settingsOutlineVisible {
+    return outlineVisible_;
+}
+
+- (void)applyOutlineVisible:(BOOL)visible {
+    if (visible == outlineVisible_) return;
+    [self OnToggleOutline];
 }
 
 // The two questions the command strip asks. The strip carries its

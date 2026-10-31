@@ -23,7 +23,17 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MACOS = os.path.join(REPO, "src", "macos")
 
 # The selectors AppKit carries out itself. They are not app commands.
-APPKIT = {"hide", "terminate", "orderFrontStandardAboutPanel"}
+APPKIT = {
+    "hide",
+    "hideOtherApplications",
+    "unhideAllApplications",
+    "terminate",
+    "orderFrontStandardAboutPanel",
+    "performMiniaturize",
+    "performZoom",
+    "arrangeInFront",
+    "toggleFullScreen",
+}
 
 
 def main() -> int:

@@ -650,6 +650,8 @@ if(APPLE)
         src/macos/fonts_mac.mm
         src/macos/system_theme_mac.mm
         src/macos/system_theme_mac.h
+        src/macos/settings_window_mac.mm
+        src/macos/settings_window_mac.h
         src/macos/clipboard_mac.mm
         src/macos/pdf_ocr_mac.mm
         src/macos/settings_mac.cpp
