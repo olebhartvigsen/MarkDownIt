@@ -489,3 +489,23 @@ that round (page setup on export, PDF/A, image payload, section-break
 warnings) and the ribbon's icon tiers are open on Windows as well, and
 stay tracked in the gap-closure plan for one shared batch.
 
+## Update: the platform faces are the live ones
+
+A run of the shipped build settled the font question: the document and
+the chrome now draw with the platform's own faces, the system UI font
+for text and chrome and Menlo for code, which is what the port plan's
+font note asks for. The two sections above describe the parity faces
+(Selawik, Cascadia Mono) that the build still ships and registers; they
+stay for a parity comparison or a future setting, but nothing draws
+with them by default.
+
+The window also forces the light appearance: the app draws one light
+theme, and under a dark system appearance the adaptive AppKit colors
+painted dark chrome around a light document.
+
+One trap to remember for this layer: the model side's `Invalidate()` is
+a no-op on mac, because the view owns the drawing. The caret blink was
+broken by exactly that, a timer that flipped the visibility flag with
+nobody to repaint it. Every model-side state change that has to be seen
+needs a `setNeedsDisplay` on the AppKit side, which is what the blink,
+focus and defocus paths now do.
