@@ -279,8 +279,11 @@ private:
     // the Windows renderer resolves them.
     LayoutMetrics ComputeMetrics() const;
 
+public:
     // One addressable piece of drawn text: a block's own lines or one
     // of its table cells, with the geometry and the map of its text.
+    // The content view's accessibility layer reads the regions, so a
+    // table, its rows and its cells can be named where they are drawn.
     struct TextRegion {
         const std::vector<TextLine>* lines = nullptr;
         const std::vector<uint32_t>* visToSrc = nullptr;
@@ -304,6 +307,7 @@ private:
     };
     std::vector<TextRegion> TextRegions() const;
 
+private:
     // A rendered span of the document, in source bytes.
     struct RenderedSpan {
         uint32_t start = 0;
@@ -337,9 +341,11 @@ private:
     // Paints the marks of the find bar under the text.
     void PaintSearchHighlights(float scrollOffset);
 
+public:
     // The rectangles a range of offsets covers.
     std::vector<Rect> RectsForRange(uint32_t start, uint32_t end) const;
 
+private:
     // The rectangles of a range inside one block.
     std::vector<Rect> RectsForRangeInBlock(const LaidOutBlock& block,
                                             uint32_t start,

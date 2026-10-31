@@ -55,11 +55,36 @@ ContentView::ContentView(App* app)
     Relayout();
 }
 
+// The model keeps table cell text as UTF-32; an accessibility label
+// wants UTF-8.
+static std::string AxCellTextUtf8(const std::u32string& text) {
+    std::string out;
+    for (char32_t cp : text) {
+        if (cp < 0x80) {
+            out.push_back(static_cast<char>(cp));
+        } else if (cp < 0x800) {
+            out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        } else if (cp < 0x10000) {
+            out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        } else {
+            out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+        }
+    }
+    return out;
+}
+
 std::vector<ContentView::AxTable> ContentView::AccessibilityTables() const {
     std::vector<AxTable> tables;
     const Document& doc = app_->GetDocument();
     if (doc.nodes.empty()) return tables;
-    const std::vector<TextRegion> regions = renderer_.TextRegions();
+    const std::vector<MacRenderer::TextRegion> regions =
+        renderer_.TextRegions();
     const Selection& selection = app_->selection();
     const uint32_t caret =
         selection.Empty() ? selection.active.offset : selection.Start();
@@ -70,8 +95,8 @@ std::vector<ContentView::AxTable> ContentView::AccessibilityTables() const {
         const uint32_t tableEnd = node.contentOffset + node.contentLength;
         // The cell regions of this table, in document order, which is
         // the order of the model's rows and cells.
-        std::vector<const TextRegion*> cellRegions;
-        for (const TextRegion& region : regions) {
+        std::vector<const MacRenderer::TextRegion*> cellRegions;
+        for (const MacRenderer::TextRegion& region : regions) {
             if (region.cell && region.srcStart >= tableStart &&
                 region.srcEnd <= tableEnd) {
                 cellRegions.push_back(&region);
@@ -86,7 +111,8 @@ std::vector<ContentView::AxTable> ContentView::AccessibilityTables() const {
             int columnIndex = 0;
             for (const TableCell& cell : row.cells) {
                 if (index >= cellRegions.size()) break;
-                const TextRegion& region = *cellRegions[index++];
+                const MacRenderer::TextRegion& region =
+                    *cellRegions[index++];
                 AxCell ax;
                 const std::vector<Rect> rects =
                     renderer_.RectsForRange(region.srcStart, region.srcEnd);
@@ -111,7 +137,7 @@ std::vector<ContentView::AxTable> ContentView::AccessibilityTables() const {
                     ax.width = maxX - minX;
                     ax.height = maxY - minY;
                 }
-                ax.text = cell.text;
+                ax.text = AxCellTextUtf8(cell.text);
                 ax.row = rowIndex;
                 ax.column = columnIndex;
                 ax.header = rowIndex == 0;
