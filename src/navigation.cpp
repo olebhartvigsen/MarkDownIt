@@ -144,6 +144,31 @@ uint32_t TableSeparatorNewlinesBefore(const std::string& text,
     return 2 - newlines;
 }
 
+// The start of a list item's own text: see the header for the rule.
+uint32_t ListItemContentStart(const Node& node, const std::string& source) {
+    uint32_t cursor = node.srcOffset;
+    const uint32_t limit = std::min<uint32_t>(
+        node.contentOffset, static_cast<uint32_t>(source.size()));
+    while (cursor < limit &&
+           (source[cursor] == ' ' || source[cursor] == '\t')) ++cursor;
+    // Skip blockquote markers first, mirroring the parser's own scan,
+    // so a quoted item's '>' is never mistaken for the bullet: the
+    // selection must still skip the '-'.
+    while (cursor < limit && source[cursor] == '>') {
+        ++cursor;
+        while (cursor < limit &&
+               (source[cursor] == ' ' || source[cursor] == '\t')) ++cursor;
+    }
+    if (node.ordered) {
+        while (cursor < limit && source[cursor] >= '0' &&
+               source[cursor] <= '9') ++cursor;
+    }
+    if (cursor < limit) ++cursor; // bullet or ordered delimiter
+    while (cursor < limit &&
+           (source[cursor] == ' ' || source[cursor] == '\t')) ++cursor;
+    return cursor; // before any opening inline syntax
+}
+
 bool GetBlockSelectionRange(const Document* doc, const LayoutCache& cache,
                             int blockIndex, uint32_t* start, uint32_t* end) {
     if (!cache.GetRenderedBlockRange(blockIndex, start, end)) return false;
@@ -151,33 +176,15 @@ bool GetBlockSelectionRange(const Document* doc, const LayoutCache& cache,
     if (doc && block.nodeIndex < doc->nodes.size()) {
         const Node& node = doc->nodes[block.nodeIndex];
         if (node.block == BlockKind::List) {
-            // Include closing inline syntax in the selected item, but not its
-            // newline or the next item's marker. Otherwise deletion nests the
-            // next item under the empty prefix left on this source line.
-            *start = node.contentOffset;
+            // Include closing inline syntax in the selected item, but not
+            // its newline or the next item's marker. Otherwise deletion
+            // nests the next item under the empty prefix left on this
+            // source line.
             const std::string* source = cache.SourceText();
             if (source && node.srcOffset < source->size()) {
-                uint32_t cursor = node.srcOffset;
-                const uint32_t limit = std::min<uint32_t>(
-                    node.contentOffset, static_cast<uint32_t>(source->size()));
-                while (cursor < limit &&
-                       ((*source)[cursor] == ' ' || (*source)[cursor] == '\t')) ++cursor;
-                // Skip blockquote markers first, mirroring the parser's
-                // own scan, so a quoted item's '>' is never mistaken for
-                // the bullet: the selection must still skip the '-'.
-                while (cursor < limit && (*source)[cursor] == '>') {
-                    ++cursor;
-                    while (cursor < limit &&
-                           ((*source)[cursor] == ' ' || (*source)[cursor] == '\t')) ++cursor;
-                }
-                if (node.ordered) {
-                    while (cursor < limit && (*source)[cursor] >= '0' &&
-                           (*source)[cursor] <= '9') ++cursor;
-                }
-                if (cursor < limit) ++cursor; // bullet or ordered delimiter
-                while (cursor < limit &&
-                       ((*source)[cursor] == ' ' || (*source)[cursor] == '\t')) ++cursor;
-                *start = cursor; // before any opening inline syntax
+                *start = ListItemContentStart(node, *source);
+            } else {
+                *start = node.contentOffset;
             }
             *end = node.srcOffset + node.srcLength;
         }

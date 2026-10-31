@@ -197,6 +197,23 @@ float ContentView::zoom() const {
     return renderer_.zoom();
 }
 
+void ContentView::NotifyScrollChanged() {
+    if (scrollChanged_) scrollChanged_();
+}
+
+bool ContentView::CaretIsOnScreen() const {
+    float y = 0.0f;
+    if (!renderer_.YForOffset(app_->selection().Start(), y)) return false;
+    return y >= scrollOffset_ - 1.0f &&
+           y <= scrollOffset_ + viewHeight_ + 1.0f;
+}
+
+uint32_t ContentView::ViewportProbeOffset() const {
+    // The reading line, a quarter down the viewport, at the middle
+    // of the text column (outline spec 19 and 21).
+    return HitTestPoint(width_ * 0.5f, scrollOffset_ + viewHeight_ * 0.25f);
+}
+
 uint32_t ContentView::HitTestPoint(float x, float y) const {
     // The point arrives in document coordinates, because the scroll
     // view scrolls the whole view.
@@ -528,6 +545,7 @@ static const CGFloat kPinchStepMagnification = 0.1;
     content_->SetSize(static_cast<float>(clipBounds.size.width),
                       static_cast<float>(clipBounds.size.height));
     content_->SetScrollOffset(static_cast<float>(clipBounds.origin.y));
+    content_->NotifyScrollChanged();
     [self setNeedsDisplay:YES];
 }
 

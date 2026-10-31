@@ -78,10 +78,28 @@ public:
         layoutChanged_ = handler;
     }
 
+    // The scroll place moved. The platform layer calls it from its
+    // own clip-view notification, so a reader watching the viewport
+    // (the outline) can follow (outline spec 19).
+    void SetScrollChangedHandler(std::function<void()> handler) {
+        scrollChanged_ = handler;
+    }
+    void NotifyScrollChanged();
+
     // Scrolls the place of the offset into view, so the outline pane
     // can jump to a heading.
     void ScrollToOffset(uint32_t offset);
     float scrollOffset() const { return scrollOffset_; }
+
+    // Whether the caret is inside the visible band right now. The
+    // outline keeps the caret's section highlighted only while the
+    // caret is on screen (outline spec 6 and 19).
+    bool CaretIsOnScreen() const;
+
+    // The source offset at the reading line, a quarter down the
+    // visible area, so scrolling moves the outline highlight. It is
+    // UINT32_MAX when nothing is drawn there (outline spec 19).
+    uint32_t ViewportProbeOffset() const;
 
     // The view's bounds, for the hit tester.
     float viewWidth() const { return width_; }
@@ -202,6 +220,7 @@ private:
     float contentWidth_ = 0.0f;
     float documentHeight_ = 0.0f;
     float scrollOffset_ = 0.0f;
+    std::function<void()> scrollChanged_;
     // The platform layer's scroll request.
     std::function<void(float)> scrollTo_;
     // The platform layer's layout request.

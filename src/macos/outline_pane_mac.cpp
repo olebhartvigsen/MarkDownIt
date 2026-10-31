@@ -94,6 +94,12 @@ void OutlinePane::SetDocument(const Document* doc) {
     Refresh();
 }
 
+bool OutlinePane::TakeListChanged() {
+    const bool changed = listChanged_;
+    listChanged_ = false;
+    return changed;
+}
+
 void OutlinePane::SetCaretOffset(uint32_t offset) {
     caretOffset_ = offset;
     // The heading of the section the caret is in is the one that is
@@ -111,23 +117,36 @@ void OutlinePane::SetNavigateCallback(std::function<void(uint32_t offset)> cb) {
 
 void OutlinePane::Refresh() {
     if (!doc_) {
+        if (!items_.empty()) listChanged_ = true;
         items_.clear();
         visible_.clear();
         currentItem_ = -1;
         return;
     }
 
-    items_ = CollectHeadings(*doc_);
-    // The collapse state is keyed by the place in the list, so a
-    // reparse that shortens the list drops the entries that are gone.
-    collapse_.ReResolve(items_.size());
-    visible_ = VisibleItems(items_, collapse_);
+    std::vector<OutlineItem> fresh = CollectHeadings(*doc_);
+    // Editing body text leaves the headings as they are. When the list
+    // is unchanged the pane keeps its rows and its state and only
+    // re-reads the offsets, so a long document is not reconstructed for
+    // every keystroke (outline spec 23).
+    if (HeadingsUnchanged(fresh, items_)) {
+        for (std::size_t i = 0; i < items_.size(); ++i) {
+            items_[i].offset = fresh[i].offset;
+        }
+    } else {
+        listChanged_ = true;
+        items_ = std::move(fresh);
+        // The collapse state is keyed by the place in the list, so a
+        // reparse that shortens the list drops the entries that are gone.
+        collapse_.ReResolve(items_.size());
+        visible_ = VisibleItems(items_, collapse_);
+        // A shorter list may have taken the selection and the hover away.
+        if (selectedVisibleRow_ >= static_cast<int>(visible_.size()))
+            selectedVisibleRow_ = static_cast<int>(visible_.size()) - 1;
+        if (hoveredVisibleRow_ >= static_cast<int>(visible_.size()))
+            hoveredVisibleRow_ = -1;
+    }
     currentItem_ = ItemIndexForOffset(items_, caretOffset_);
-    // A shorter list may have taken the selection and the hover away.
-    if (selectedVisibleRow_ >= static_cast<int>(visible_.size()))
-        selectedVisibleRow_ = static_cast<int>(visible_.size()) - 1;
-    if (hoveredVisibleRow_ >= static_cast<int>(visible_.size()))
-        hoveredVisibleRow_ = -1;
 }
 
 float OutlinePane::ContentHeight() const {

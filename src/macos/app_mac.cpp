@@ -1188,7 +1188,10 @@ bool App::ParagraphRangeForOffset(uint32_t offset, uint32_t* outStart,
     uint32_t start = 0;
     uint32_t end = 0;
     if (node && node->block == BlockKind::List) {
-        start = node->contentOffset;
+        // The item's own text, past the bullet and any blockquote
+        // marker, through the shared rule so a triple click never
+        // selects the bullet (highlighting spec 5.1).
+        start = ListItemContentStart(*node, text);
         end = node->srcOffset + node->srcLength;
     } else if (node) {
         start = node->contentOffset;

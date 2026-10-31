@@ -140,3 +140,16 @@ run. Goldens never change.
   map, the same map the hit test reads. The zoom guide records why the
   bare plus and minus keys stay out of an editor, and Command with the
   plain equals key zooms in beside them.
+
+- Batch G (outline and mark minors) is implemented: the outline keeps
+  the caret's section while the caret is on screen and follows the
+  reading line once it is out of view, scrolling updates the highlight,
+  a jump from the pane returns the keyboard to the document, and a
+  reparse that leaves the headings alone keeps the pane's rows instead
+  of rebuilding them (outline spec 7, 19 and 23). A mark or a selection
+  inside a table cell follows the column alignment the painter uses
+  (highlighting spec 8). The text of a list item starts past the bullet
+  through one shared helper both platforms read, so the triple click and
+  the backspace after it never eat the bullet (highlighting spec 5.1),
+  and the spec records where the mac side keeps its marker sidecar
+  (highlighting spec 12.1).

@@ -2088,7 +2088,9 @@ void MacRenderer::AppendRangeRects(const std::vector<TextLine>& lines,
                                     const std::vector<uint32_t>& visToSrc,
                                     float x, float top, uint32_t start,
                                     uint32_t end,
-                                    std::vector<Rect>* rects) const {
+                                    std::vector<Rect>* rects,
+                                    ColumnAlign align,
+                                    float innerWidth) const {
     if (lines.empty() || visToSrc.empty()) return;
     if (end < start) {
         const uint32_t swap = start;
@@ -2117,13 +2119,21 @@ void MacRenderer::AppendRangeRects(const std::vector<TextLine>& lines,
         const uint32_t from = visStart > lineStartVis ? visStart : lineStartVis;
         const uint32_t to = visEnd < lineEndVis ? visEnd : lineEndVis;
         if (from < to) {
+            // The line sits at the column alignment when the region is
+            // a cell, the same shift the painter applies.
+            float lineX = x;
+            if (align == ColumnAlign::Center) {
+                lineX += (innerWidth - line.width) * 0.5f;
+            } else if (align == ColumnAlign::Right) {
+                lineX += innerWidth - line.width;
+            }
             const Rect first = engine_->OffsetToRect(line, from - lineStartVis);
             // The right edge of the range is the left edge of the
             // character after it, the rect OffsetToRect gives for that
             // position.
             const Rect after = engine_->OffsetToRect(line, to - lineStartVis);
             Rect rect;
-            rect.x = x + first.x;
+            rect.x = lineX + first.x;
             rect.y = lineTop;
             rect.width = after.x - first.x;
             rect.height = line.height;
@@ -2153,13 +2163,14 @@ std::vector<Rect> MacRenderer::RectsForRangeInBlock(const LaidOutBlock& block,
                 block.tableLayout.rows[r];
             for (size_t c = 0; c < cells.size(); ++c) {
                 const LaidOutBlock::TableCellLayout& cell = cells[c];
-                AppendRangeRects(cell.lines, cell.visToSrc,
-                                 block.x +
-                                     static_cast<float>(c) *
-                                         block.tableLayout.colW +
-                                     metrics_.cellPadX,
-                                 rowTop + metrics_.cellPadY, start, end,
-                                 &rects);
+                AppendRangeRects(
+                    cell.lines, cell.visToSrc,
+                    block.x +
+                        static_cast<float>(c) * block.tableLayout.colW +
+                        metrics_.cellPadX,
+                    rowTop + metrics_.cellPadY, start, end, &rects,
+                    cell.align,
+                    block.tableLayout.colW - 2.0f * metrics_.cellPadX);
             }
             if (r < block.tableLayout.rowHeights.size()) {
                 rowTop += block.tableLayout.rowHeights[r];

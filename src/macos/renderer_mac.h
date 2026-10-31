@@ -320,11 +320,16 @@ private:
     // The width the text of a block wraps at.
     float TextWidth(const LaidOutBlock& block) const;
 
-    // The rectangles a source range covers inside one region.
+    // The rectangles a source range covers inside one region. A cell
+    // draws its lines at the column alignment, so the caller passes
+    // the alignment and the inner width and the rectangles land on
+    // the drawn text (highlighting spec 8).
     void AppendRangeRects(const std::vector<TextLine>& lines,
                           const std::vector<uint32_t>& visToSrc, float x,
                           float top, uint32_t start, uint32_t end,
-                          std::vector<Rect>* rects) const;
+                          std::vector<Rect>* rects,
+                          ColumnAlign align = ColumnAlign::Default,
+                          float innerWidth = 0.0f) const;
 
     // Draws the images of a block under its text.
     void PaintImages(const LaidOutBlock& block, float top, float width);

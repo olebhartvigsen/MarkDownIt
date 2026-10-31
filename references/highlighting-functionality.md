@@ -400,6 +400,12 @@ The exact directory MUST be determined through the operating system/runtime's st
 On Windows the shipped directory is %TEMP%\MarkDownIt, created on
 demand when the first marker is saved.
 
+On macOS the same shared code asks the operating system for its
+per-user temporary directory, $TMPDIR as the system hands it over
+through the C++ filesystem library, so the sidecar lands in the
+user's own temporary area. Nothing is hard-coded and the document
+directory is never written to.
+
 ---
 
 ## 12.2 Annotation filename

@@ -47,6 +47,15 @@ std::vector<int> VisibleItems(const std::vector<OutlineItem>& items,
     return visible;
 }
 
+bool HeadingsUnchanged(const std::vector<OutlineItem>& a,
+                       const std::vector<OutlineItem>& b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (a[i].level != b[i].level || a[i].text != b[i].text) return false;
+    }
+    return true;
+}
+
 int ItemIndexForOffset(const std::vector<OutlineItem>& items, uint32_t offset) {
     // Section ownership: last item whose offset is <= the given offset.
     int idx = -1;

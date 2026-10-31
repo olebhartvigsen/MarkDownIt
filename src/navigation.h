@@ -37,6 +37,14 @@ bool IsOffsetInTable(const Document& doc, uint32_t offset);
 bool GetBlockSelectionRange(const Document* doc, const LayoutCache& cache,
                             int blockIndex, uint32_t* start, uint32_t* end);
 
+// The source byte where a list item's own text begins: past the
+// indentation, a blockquote marker, the bullet or the ordered
+// delimiter, and the spaces after it. Inline syntax counts as part of
+// the item, so a selection or a mark starts before it. Both the
+// Windows selection and the mac one go through here, so neither can
+// eat the bullet (highlighting spec 5.1).
+uint32_t ListItemContentStart(const Node& node, const std::string& source);
+
 // Move to the adjacent Markdown table cell. Returns false outside a table
 // or at the requested document edge.
 bool MoveTableCell(const Document& doc, uint32_t offset, bool backwards,

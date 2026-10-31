@@ -317,7 +317,18 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     outlinePane_->SetNavigateCallback([self](uint32_t offset) {
         app_->SetCaret(offset);
         content_->ScrollToOffset(offset);
+        // The document takes the keyboard back after the jump, so
+        // typing resumes in the editor (outline spec 7).
+        [window_ makeFirstResponder:view_];
         [view_ setNeedsDisplay:YES];
+    });
+
+    // Scrolling moves the highlight when the caret is out of view,
+    // so reading through a long document keeps the pane in step
+    // (outline spec 19).
+    content_->SetScrollChangedHandler([self] {
+        if (!outlineVisible_) return;
+        [self outlineActiveRefresh];
     });
 
     // The find bar sits above the document. It is in the layout from
@@ -1303,8 +1314,18 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
 // The caret moved: the active heading follows it, and the pane scrolls
 // it into view when another section was entered (outline spec 6.1).
+//
+// The caret's section owns the highlight while the caret is on
+// screen. Once the caret has been scrolled out of view, the reading
+// line takes over, so scrolling updates the highlight the way the
+// outline spec asks (19). It is the rule the Windows window applies.
 - (void)outlineActiveRefresh {
-    outlinePane_->SetCaretOffset(app_->selection().Start());
+    uint32_t offset = app_->selection().Start();
+    if (!content_->CaretIsOnScreen()) {
+        const uint32_t probe = content_->ViewportProbeOffset();
+        if (probe != UINT32_MAX) offset = probe;
+    }
+    outlinePane_->SetCaretOffset(offset);
     const int row = outlinePane_->ActiveVisibleRow();
     if (row >= 0 && outlineVisible_) {
         [outlineView_ scrollRowIntoView:row];
@@ -1312,12 +1333,17 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [outlineView_ setNeedsDisplay:YES];
 }
 
-// The document changed, so the pane reads it again.
+// The document changed, so the pane reads it again. The rows are
+// only rebuilt when the headings themselves changed, so editing
+// body text keeps the pane's rows, its place and its state (outline
+// spec 23).
 - (void)outlinePaneRefresh {
     outlinePane_->SetDocument(&app_->GetDocument());
     outlinePane_->SetCaretOffset(app_->selection().Start());
     [self outlineLayout];
-    [outlineView_ refreshToolTips];
+    if (outlinePane_->TakeListChanged()) {
+        [outlineView_ refreshToolTips];
+    }
     [self outlineActiveRefresh];
 }
 

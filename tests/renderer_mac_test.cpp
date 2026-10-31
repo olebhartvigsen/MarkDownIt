@@ -1194,3 +1194,47 @@ TEST(RendererMac, YForOffsetFindsTextInsideTableCells) {
     ASSERT_TRUE(renderer.YForOffset(2, y));
     EXPECT_TRUE(std::fabs(y - (rowTwo + BaseMetrics().cellPadY)) < 0.5f);
 }
+
+// A mark or a selection in a table cell must sit on the drawn line, and
+// a cell draws its line at the column alignment. The range rectangles
+// read the same alignment, so the highlight is not stuck at the left
+// padding (highlighting spec 8).
+TEST(RendererMac, RangeRectsFollowTheCellAlignment) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    Node table = Table({{"A", "B"}});
+    table.aligns = {ColumnAlign::Center, ColumnAlign::Right};
+    uint32_t src = 0;
+    for (TableRow& row : table.rows) {
+        for (TableCell& cell : row.cells) {
+            cell.srcOffset = src;
+            cell.srcEnd = src + 1;
+            cell.u16ToSrc = {src};
+            cell.u16ToSrcEnd = {src + 1};
+            ++src;
+        }
+    }
+
+    const Document doc = Doc({table});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    const LaidOutBlock& block = renderer.blocks()[0];
+
+    const float leftEdge = block.x + BaseMetrics().cellPadX;
+    const float innerW = block.tableLayout.colW - 2.0f * BaseMetrics().cellPadX;
+
+    // The centered cell: the rect is pushed toward the middle.
+    const std::vector<Rect> centered = renderer.SelectionRects(0, 1);
+    ASSERT_EQ(centered.size(), 1u);
+    EXPECT_TRUE(centered[0].x > leftEdge + 1.0f);
+
+    // The right-aligned cell: the rect ends at the right edge of the
+    // line, inside the padding.
+    const std::vector<Rect> right = renderer.SelectionRects(1, 2);
+    ASSERT_EQ(right.size(), 1u);
+    EXPECT_TRUE(std::fabs((right[0].x + right[0].width) -
+                          (leftEdge + innerW)) < 1.0f);
+}

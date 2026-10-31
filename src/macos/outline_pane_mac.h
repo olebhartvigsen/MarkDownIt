@@ -54,6 +54,12 @@ public:
     // The list of the headings, in document order.
     const std::vector<OutlineItem>& Items() const { return items_; }
 
+    // Whether the heading list changed since the last call. A
+    // refresh that only moved the offsets leaves it false, so the
+    // view keeps its rows instead of rebuilding them (outline spec
+    // 23).
+    bool TakeListChanged();
+
     // The headings that are visible under the collapse state.
     const std::vector<int>& Visible() const { return visible_; }
 
@@ -132,6 +138,7 @@ private:
     // The visible item under the point, or -1.
     int ItemAt(float y) const;
 
+    bool listChanged_ = false;
     const Document* doc_ = nullptr;
     uint32_t caretOffset_ = 0;
 
