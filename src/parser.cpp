@@ -1444,14 +1444,27 @@ static int ParseMarkdownInner(const std::string& utf8, Document& out) {
 }
 
 bool ParseMarkdown(const std::string& utf8, Document& out) {
+    // Every parse builds the document from nothing and the result is
+    // swapped in only when the parse succeeded. The app reparses into
+    // the same Document on every edit; parsing in place kept the
+    // previous parse's nodes, so the callbacks' node indices counted
+    // from the old size while their offset table started empty, and the
+    // first text run landed past the table. That is the wild pointer
+    // the mac build crashed on inside cb_text; the Windows build's
+    // structured exception guard turned the same overrun into a silent
+    // failed parse. A failed parse now also leaves the previous
+    // document fully in place, which the comment below promised and the
+    // in-place version could not keep.
+    Document fresh;
 #ifdef _WIN32
     // The structured-exception guard is MSVC-only syntax: clang cannot
     // parse __try/__except at all, so the macOS build takes the plain
     // path below. The portable body is identical either way.
     __try {
-        const int rc = ParseMarkdownInner(utf8, out);
+        const int rc = ParseMarkdownInner(utf8, fresh);
         if (rc != 0) return false;
-        AddVirtualEmptyParagraphs(utf8, out);
+        AddVirtualEmptyParagraphs(utf8, fresh);
+        out = std::move(fresh);
         return true;
     } __except(EXCEPTION_EXECUTE_HANDLER) {
         // Crash in parser; log and return false instead of CTD. Write to
@@ -1476,9 +1489,10 @@ bool ParseMarkdown(const std::string& utf8, Document& out) {
 #else
     // No SEH on clang: a crash in the parser is a crash. The body is the
     // same as the guarded path above, minus the crash log.
-    const int rc = ParseMarkdownInner(utf8, out);
+    const int rc = ParseMarkdownInner(utf8, fresh);
     if (rc != 0) return false;
-    AddVirtualEmptyParagraphs(utf8, out);
+    AddVirtualEmptyParagraphs(utf8, fresh);
+    out = std::move(fresh);
     return true;
 #endif
 }

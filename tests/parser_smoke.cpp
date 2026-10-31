@@ -785,3 +785,34 @@ TEST(ParserNul, NodeOffsetsStayInRange) {
         }
     }
 }
+
+// The app reparses into one Document on every edit. The second parse
+// must build from nothing: when the nodes were parsed in place, their
+// indices counted the previous parse's nodes while the callbacks' offset
+// table started empty, and the first text run read past the table. That
+// is the wild pointer the mac build crashed on; on Windows the same
+// overrun became a silently failed parse. Regression coverage for both
+// halves: no accumulation, and the title of a removed heading goes too.
+TEST(Reparse, IntoTheSameDocumentStartsFresh) {
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(
+        "para one\n\npara two\n\npara three\n", doc));
+    const size_t firstCount = doc.nodes.size();
+    EXPECT_TRUE(firstCount > 0u);
+
+    ASSERT_TRUE(ParseMarkdown("solo\n", doc));
+    EXPECT_LE(doc.nodes.size(), firstCount);
+    for (const Node& node : doc.nodes) {
+        EXPECT_LE(static_cast<size_t>(node.srcOffset) + node.srcLength,
+                  5u);
+    }
+}
+
+TEST(Reparse, TitleFollowsTheReparse) {
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown("# First heading\n\ntext\n", doc));
+    EXPECT_FALSE(doc.title.empty());
+
+    ASSERT_TRUE(ParseMarkdown("no heading here\n", doc));
+    EXPECT_TRUE(doc.title.empty());
+}

@@ -217,3 +217,18 @@ run. Goldens never change.
   The strip carries the edit toggle now (38 commands) and the menu 55
   commands, both enforced by the checkers, and eight mac sources
   compile against the 11.3 SDK in the local gate.
+
+- Crash fix (the user's report): the shipped mac build died inside
+  md4c's callbacks when editing reparsed the document. Root cause
+  found with an ASan fuzz of the app's exact edit-then-reparse flow:
+  ParseMarkdown parsed in place, so a reparse into the same Document
+  kept the previous parse's nodes while the callbacks' offset table
+  started empty, and the first text run read past the table. The
+  Windows build carried the same overrun behind its structured
+  exception guard, which turned it into a silent failed parse. The
+  parse now builds into a fresh Document and swaps it in on success,
+  a failed parse leaves the previous document fully in place, and two
+  regression tests (Reparse.IntoTheSameDocumentStartsFresh,
+  Reparse.TitleFollowsTheReparse) pin both halves. Verified with the
+  ASan edit fuzz (30k rounds) and the parser smoke suite (399 checks,
+  0 failures) before the commit.
