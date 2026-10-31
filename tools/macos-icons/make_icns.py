@@ -2,9 +2,12 @@
 """Pack the rendered PNGs into a macOS icns file.
 
 The icns container is a list of typed blocks. Each block carries a
-four byte type, a four byte length and the image data. The types
-follow the naming Apple uses: the two letter prefix says the size and
-the number says the pixel size or the scale.
+four byte type, a four byte length and the image data. The length
+counts the eight byte header itself, the way the format defines it; a
+length of the data alone desynchronises every reader, macOS included,
+and the system then falls back to a generic icon. The types follow the
+naming Apple uses: the two letter prefix says the size and the number
+says the pixel size or the scale.
 
     ic04  16x16      ic05  32x32      ic07  128x128
     ic08  256x256    ic09  512x512    ic10  1024x1024
@@ -46,8 +49,9 @@ def build(png_dir, out_path):
             data = handle.read()
         blocks.append((type_name, data))
 
+    # The length is the block header plus the data, per the format.
     body = b"".join(
-        struct.pack(">4sI", type_name.encode("ascii"), len(data)) + data
+        struct.pack(">4sI", type_name.encode("ascii"), len(data) + 8) + data
         for type_name, data in blocks)
 
     with open(out_path, "wb") as handle:

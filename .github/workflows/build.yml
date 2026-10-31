@@ -216,6 +216,13 @@ jobs:
           test -f "$RUNNER_TEMP/roundtrip/read-me-first-run.txt"
           python3 tools/check_mac_bundle.py "$RUNNER_TEMP/roundtrip/MarkDownIt.app"
 
+      # The app is actually started, not only built. The trace log the
+      # app writes is the oracle, so a bundle that dies in main() fails
+      # here instead of on the Mac of the person who downloads it.
+      - name: Launch smoke
+        run: |
+          bash tools/macos-smoke/launch_smoke.sh build-mac/MarkDownIt.app
+
       - name: Upload app bundle
         uses: actions/upload-artifact@v4
         with:
