@@ -13,4 +13,12 @@ inline const std::wstring kNoMatches = L"No matches";
 inline const std::wstring kReadOnlyHint = L"Replacing is not available in this view.";
 inline const std::wstring kCounterSeparator = L" of ";
 
+// Find announcements (find spec 44): a screen reader is told when a
+// search finds nothing, when the current match changes, and when
+// Replace All finishes.
+inline const std::wstring kAnnounceNoMatches = L"No matches found.";
+inline const std::wstring kAnnounceMatchPrefix = L"Match ";
+inline const std::wstring kAnnounceReplacedPrefix = L"Replaced ";
+inline const std::wstring kAnnounceReplacedSuffix = L" matches.";
+
 }  // namespace findstrings

@@ -309,6 +309,18 @@ public:
     // Inserts text at the caret, replacing the selection when there is one.
     void InsertText(const std::string& text);
 
+    // IME composition (marked text), so a composed character is text
+    // input whose temporary state stays out of the history until it is
+    // confirmed (text editing spec, "Almindeligt tekstinput").
+    void SetMarkedText(const std::string& utf8);
+    void UnmarkText();
+    bool HasMarkedText() const;
+
+    // The marked range and the selection, in UTF-16 units as the input
+    // method expects them.
+    void MarkedRangeUtf16(uint32_t* location, uint32_t* length) const;
+    void SelectionRangeUtf16(uint32_t* location, uint32_t* length) const;
+
     // Pastes the clipboard's plain text at the caret, replacing the
     // selection. Inside a table cell the text is sanitized to one row
     // line, and tab separated rows become a table in one undo step.

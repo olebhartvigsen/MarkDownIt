@@ -153,3 +153,21 @@ run. Goldens never change.
   the backspace after it never eat the bullet (highlighting spec 5.1),
   and the spec records where the mac side keeps its marker sidecar
   (highlighting spec 12.1).
+
+- Batch H (accessibility, input, answer to the reader) is implemented.
+  An input method writes marked text through the content view, and the
+  composition lives in the shared edit controller: it creates no undo
+  entry before the text is confirmed, the confirmation is exactly one
+  entry, and a cancelled composition puts the text and the selection
+  back (text editing spec, AC-05; a system IME stays a Windows manual
+  exception by the spec's own wording, the model side is covered by
+  tests). The find bar announces no results, the match the navigation
+  moved to, and the count Replace All replaced (find spec 44). The
+  tables, their rows, header row and cells are exposed to a screen
+  reader from the same geometry the painter uses (table spec 47).
+  RIB-01 (large and small icon tiers) and RIB-02 (condensed groups)
+  stay with the two ribbon layout notes as a decision for both
+  platforms at once: the Windows ribbon is RibbonX markup whose buttons
+  are all small, the mac strip mirrors it by policy (check_mac_ribbon),
+  and a tier change must land on both sides in one batch, below the
+  minimum window width where the condensed state would live.

@@ -55,6 +55,91 @@ ContentView::ContentView(App* app)
     Relayout();
 }
 
+std::vector<ContentView::AxTable> ContentView::AccessibilityTables() const {
+    std::vector<AxTable> tables;
+    const Document& doc = app_->GetDocument();
+    if (doc.nodes.empty()) return tables;
+    const std::vector<TextRegion> regions = renderer_.TextRegions();
+    const Selection& selection = app_->selection();
+    const uint32_t caret =
+        selection.Empty() ? selection.active.offset : selection.Start();
+
+    for (const Node& node : doc.nodes) {
+        if (node.block != BlockKind::Table) continue;
+        const uint32_t tableStart = node.contentOffset;
+        const uint32_t tableEnd = node.contentOffset + node.contentLength;
+        // The cell regions of this table, in document order, which is
+        // the order of the model's rows and cells.
+        std::vector<const TextRegion*> cellRegions;
+        for (const TextRegion& region : regions) {
+            if (region.cell && region.srcStart >= tableStart &&
+                region.srcEnd <= tableEnd) {
+                cellRegions.push_back(&region);
+            }
+        }
+        if (cellRegions.empty()) continue;
+
+        AxTable table;
+        size_t index = 0;
+        int rowIndex = 0;
+        for (const TableRow& row : node.rows) {
+            int columnIndex = 0;
+            for (const TableCell& cell : row.cells) {
+                if (index >= cellRegions.size()) break;
+                const TextRegion& region = *cellRegions[index++];
+                AxCell ax;
+                const std::vector<Rect> rects =
+                    renderer_.RectsForRange(region.srcStart, region.srcEnd);
+                if (rects.empty()) {
+                    // An empty cell keeps its box addressable.
+                    ax.x = region.trackX;
+                    ax.y = region.top - scrollOffset_;
+                    ax.width = (region.x + region.width) - region.trackX;
+                    ax.height = region.emptyBandHeight;
+                } else {
+                    float minX = rects[0].x, minY = rects[0].y;
+                    float maxX = rects[0].x + rects[0].width;
+                    float maxY = rects[0].y + rects[0].height;
+                    for (const Rect& rect : rects) {
+                        if (rect.x < minX) minX = rect.x;
+                        if (rect.y < minY) minY = rect.y;
+                        if (rect.x + rect.width > maxX) maxX = rect.x + rect.width;
+                        if (rect.y + rect.height > maxY) maxY = rect.y + rect.height;
+                    }
+                    ax.x = minX;
+                    ax.y = minY - scrollOffset_;
+                    ax.width = maxX - minX;
+                    ax.height = maxY - minY;
+                }
+                ax.text = cell.text;
+                ax.row = rowIndex;
+                ax.column = columnIndex;
+                ax.header = rowIndex == 0;
+                ax.caretCell = caret >= region.srcStart && caret <= region.srcEnd;
+                table.cells.push_back(ax);
+                ++columnIndex;
+            }
+            ++rowIndex;
+        }
+        if (table.cells.empty()) continue;
+        float minX = table.cells[0].x, minY = table.cells[0].y;
+        float maxX = table.cells[0].x + table.cells[0].width;
+        float maxY = table.cells[0].y + table.cells[0].height;
+        for (const AxCell& cell : table.cells) {
+            if (cell.x < minX) minX = cell.x;
+            if (cell.y < minY) minY = cell.y;
+            if (cell.x + cell.width > maxX) maxX = cell.x + cell.width;
+            if (cell.y + cell.height > maxY) maxY = cell.y + cell.height;
+        }
+        table.x = minX;
+        table.y = minY;
+        table.width = maxX - minX;
+        table.height = maxY - minY;
+        tables.push_back(table);
+    }
+    return tables;
+}
+
 ContentView::~ContentView() {
     delete engine_;
     engine_ = nullptr;
@@ -205,13 +290,13 @@ bool ContentView::CaretIsOnScreen() const {
     float y = 0.0f;
     if (!renderer_.YForOffset(app_->selection().Start(), y)) return false;
     return y >= scrollOffset_ - 1.0f &&
-           y <= scrollOffset_ + viewHeight_ + 1.0f;
+           y <= scrollOffset_ + viewHeight() + 1.0f;
 }
 
 uint32_t ContentView::ViewportProbeOffset() const {
     // The reading line, a quarter down the viewport, at the middle
     // of the text column (outline spec 19 and 21).
-    return HitTestPoint(width_ * 0.5f, scrollOffset_ + viewHeight_ * 0.25f);
+    return HitTestPoint(width_ * 0.5f, scrollOffset_ + viewHeight() * 0.25f);
 }
 
 uint32_t ContentView::HitTestPoint(float x, float y) const {
@@ -1155,6 +1240,180 @@ static const CGFloat kPinchStepMagnification = 0.1;
         app_->InsertText(std::string(utf8));
     }
     [self documentEdited];
+}
+
+// The input method's commit, the one that carries a replacement range.
+// The committed string replaces the marked text in the buffer; the
+// shared controller turns that into exactly one undo entry.
+- (void)insertText:(id)string replacementRange:(NSRange)replacementRange {
+    (void)replacementRange;
+    NSString* plain = [string isKindOfClass:[NSAttributedString class]]
+        ? [string string]
+        : string;
+    if (!app_ || plain == nil) return;
+    const char* utf8 = [plain UTF8String];
+    if (utf8) {
+        app_->InsertText(std::string(utf8));
+        [self documentEdited];
+    }
+}
+
+// The input method asks whether a composition is being written. The
+// marked text lives in the buffer, so the painter draws it like any
+// other text and the history stays untouched until the confirmation
+// (text editing spec, "Almindeligt tekstinput").
+- (BOOL)hasMarkedText {
+    return app_ && app_->HasMarkedText();
+}
+
+- (NSRange)markedRange {
+    if (!app_ || !app_->HasMarkedText()) {
+        return NSMakeRange(NSNotFound, 0);
+    }
+    uint32_t location = 0;
+    uint32_t length = 0;
+    app_->MarkedRangeUtf16(&location, &length);
+    return NSMakeRange(location, length);
+}
+
+- (NSRange)selectedRange {
+    if (!app_) return NSMakeRange(NSNotFound, 0);
+    uint32_t location = 0;
+    uint32_t length = 0;
+    app_->SelectionRangeUtf16(&location, &length);
+    return NSMakeRange(location, length);
+}
+
+- (void)setMarkedText:(id)string
+        selectedRange:(NSRange)selectedRange
+     replacementRange:(NSRange)replacementRange {
+    (void)selectedRange;
+    (void)replacementRange;
+    NSString* plain = [string isKindOfClass:[NSAttributedString class]]
+        ? [string string]
+        : string;
+    if (!app_ || plain == nil) return;
+    const char* utf8 = [plain UTF8String];
+    if (utf8) {
+        app_->SetMarkedText(std::string(utf8));
+        [self documentEdited];
+    }
+}
+
+- (void)unmarkText {
+    if (!app_) return;
+    app_->UnmarkText();
+    [self documentEdited];
+}
+
+- (NSArray*)validAttributesForMarkedText {
+    return @[];
+}
+
+- (NSAttributedString*)attributedSubstringForProposedRange:(NSRange)range
+    actualRange:(NSRangePointer)actualRange {
+    (void)range;
+    if (actualRange) *actualRange = NSMakeRange(NSNotFound, 0);
+    return nil;
+}
+
+- (NSUInteger)characterIndexForPoint:(NSPoint)point {
+    (void)point;
+    return NSNotFound;
+}
+
+- (NSRect)firstRectForCharacterRange:(NSRange)range
+    actualRange:(NSRangePointer)actualRange {
+    (void)range;
+    if (actualRange) *actualRange = NSMakeRange(NSNotFound, 0);
+    // No rectangle: AppKit places the candidate window itself.
+    return NSZeroRect;
+}
+
+// The accessibility layer (table spec 47). The document tells a screen
+// reader where its tables, their rows, headers and cells sit, from the
+// same geometry the painter and the hit test use.
+- (BOOL)isAccessibilityElement {
+    return YES;
+}
+
+- (NSString*)accessibilityRole {
+    return NSAccessibilityTextAreaRole;
+}
+
+- (NSString*)accessibilityLabel {
+    return @"Document";
+}
+
+- (NSRect)axFrameForRect:(const mac::Rect*)rect {
+    NSRect inView = NSMakeRect(rect->x, rect->y, rect->width, rect->height);
+    NSRect inWindow = [self convertRect:inView toView:nil];
+    return [self.window convertRectToScreen:inWindow];
+}
+
+- (NSArray*)accessibilityChildren {
+    NSMutableArray* children = [NSMutableArray array];
+    if (!content_) return children;
+    const std::vector<mac::ContentView::AxTable> tables =
+        content_->AccessibilityTables();
+    for (const mac::ContentView::AxTable& table : tables) {
+        const mac::Rect tableRect{table.x, table.y, table.width, table.height};
+        NSAccessibilityElement* tableElement =
+            [NSAccessibilityElement accessibilityElementWithRole:
+                                        NSAccessibilityTableRole
+                                                       frame:[self axFrameForRect:&tableRect]
+                                                       label:@"Table"
+                                                      parent:self];
+        NSMutableArray* rows = [NSMutableArray array];
+        size_t i = 0;
+        while (i < table.cells.size()) {
+            const int rowIndex = table.cells[i].row;
+            NSMutableArray* rowCells = [NSMutableArray array];
+            const mac::ContentView::AxCell& first = table.cells[i];
+            float minX = first.x, minY = first.y;
+            float maxX = first.x + first.width;
+            float maxY = first.y + first.height;
+            while (i < table.cells.size() && table.cells[i].row == rowIndex) {
+                const mac::ContentView::AxCell& cell = table.cells[i];
+                if (cell.x < minX) minX = cell.x;
+                if (cell.y < minY) minY = cell.y;
+                if (cell.x + cell.width > maxX) maxX = cell.x + cell.width;
+                if (cell.y + cell.height > maxY) maxY = cell.y + cell.height;
+                const mac::Rect cellRect{cell.x, cell.y, cell.width, cell.height};
+                NSAccessibilityElement* cellElement =
+                    [NSAccessibilityElement accessibilityElementWithRole:
+                                                NSAccessibilityStaticTextRole
+                                                               frame:[self axFrameForRect:&cellRect]
+                                                               label:[NSString
+                                                                   stringWithUTF8String:
+                                                                       cell.text.c_str()]
+                                                              parent:self];
+                [cellElement setAccessibilityRowIndexRange:
+                    NSMakeRange(static_cast<NSUInteger>(cell.row), 1)];
+                [cellElement setAccessibilityColumnIndexRange:
+                    NSMakeRange(static_cast<NSUInteger>(cell.column), 1)];
+                [cellElement setAccessibilitySelected:cell.caretCell];
+                [rowCells addObject:cellElement];
+                ++i;
+            }
+            const mac::Rect rowRect{minX, minY, maxX - minX, maxY - minY};
+            NSAccessibilityElement* rowElement =
+                [NSAccessibilityElement accessibilityElementWithRole:
+                                            NSAccessibilityRowRole
+                                                           frame:[self axFrameForRect:&rowRect]
+                                                           label:(rowIndex == 0
+                                                               ? @"Header row"
+                                                               : @"Row")
+                                                          parent:self];
+            [rowElement setAccessibilityRowIndexRange:
+                NSMakeRange(static_cast<NSUInteger>(rowIndex), 1)];
+            [rowElement setAccessibilityChildren:rowCells];
+            [rows addObject:rowElement];
+        }
+        [tableElement setAccessibilityChildren:rows];
+        [children addObject:tableElement];
+    }
+    return children;
 }
 
 - (void)doCommandBySelector:(SEL)selector {

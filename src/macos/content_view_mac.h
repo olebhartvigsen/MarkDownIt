@@ -117,6 +117,23 @@ public:
     // The renderer, which holds the laid out blocks.
     const MacRenderer& renderer() const { return renderer_; }
 
+    // The accessibility map (table spec 47): the tables of the current
+    // layout with their rows, cells and the header row, in view
+    // coordinates, straight from the geometry the painter and the hit
+    // test already share.
+    struct AxCell {
+        float x = 0.0f, y = 0.0f, width = 0.0f, height = 0.0f;
+        std::string text;
+        int row = 0, column = 0;
+        bool header = false;
+        bool caretCell = false;
+    };
+    struct AxTable {
+        float x = 0.0f, y = 0.0f, width = 0.0f, height = 0.0f;
+        std::vector<AxCell> cells;
+    };
+    std::vector<AxTable> AccessibilityTables() const;
+
     // The offset of the document point that a view point falls on.
     // UINT32_MAX when the point is in the margin, where the Word-like
     // line selection takes over.

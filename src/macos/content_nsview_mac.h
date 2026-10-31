@@ -17,7 +17,12 @@ class ContentView;
 }  // namespace mac
 
 // The content view of the window.
-@interface MdContentView : NSView
+//
+// The view takes part in the text input protocol so that an input
+// method (a composed accented letter, an IME) can write marked text
+// through it; the composition itself lives in the shared edit
+// controller, where the history rules of the text editing spec apply.
+@interface MdContentView : NSView <NSTextInputClient>
 
 // Creates a view that draws the given content. The app is where the
 // edits go.

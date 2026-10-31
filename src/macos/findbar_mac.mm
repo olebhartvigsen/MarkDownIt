@@ -71,6 +71,7 @@ static std::wstring CounterText(const FindBarModel& model) {
 - (void)setReplaceMode:(BOOL)replaceMode;
 - (void)updateFromModel;
 - (void)focusSearchField;
+- (void)announceSearchOutcome;
 @end
 
 @implementation MdFindBarView {
@@ -89,6 +90,9 @@ static std::wstring CounterText(const FindBarModel& model) {
     NSTextField* statusLabel_;
     NSStackView* searchRow_;
     NSStackView* replaceRow_;
+    // The outcome that was last read aloud, so the same result is not
+    // repeated while the user keeps typing (find spec 44).
+    std::wstring announced_;
 }
 
 - (instancetype)initWithModel:(FindBarModel*)model {
@@ -269,6 +273,52 @@ static std::wstring CounterText(const FindBarModel& model) {
     [statusLabel_ setStringValue:NarrowText(model_->FormatStatusText())];
 }
 
+// One line to the screen reader (find spec 44).
+- (void)announce:(const std::wstring&)text {
+    if (text.empty()) return;
+    NSAccessibilityPostNotificationWithUserInfo(
+        self.window ? (id)self.window : (id)NSApp,
+        NSAccessibilityAnnouncementRequestedNotification,
+        @{ NSAccessibilityAnnouncementKey : NarrowText(text),
+           NSAccessibilityPriorityKey : @(NSAccessibilityPriorityMedium) });
+}
+
+// What the reader would hear about the current search, as a short key
+// so repeats can be filtered. Empty when there is no search to talk
+// about.
+- (std::wstring)outcomeKey {
+    if (!model_->state().HasQuery()) return std::wstring();
+    if (model_->status() == FindStatus::NoMatches || model_->countTotal() == 0) {
+        return L"none";
+    }
+    std::wstring key = L"m";
+    key += std::to_wstring(model_->countCurrent());
+    return key;
+}
+
+// The announcements the find spec asks for: no results, the match the
+// navigation moved to. Replace All announces itself at its own call
+// site, where the count before the replacement is known.
+- (void)announceSearchOutcome {
+    const std::wstring key = [self outcomeKey];
+    if (key.empty()) {
+        announced_.clear();
+        return;
+    }
+    if (key == announced_) return;
+    announced_ = key;
+    if (key == L"none") {
+        [self announce:findstrings::kAnnounceNoMatches];
+        return;
+    }
+    std::wstring text = findstrings::kAnnounceMatchPrefix;
+    text += std::to_wstring(model_->countCurrent());
+    text += findstrings::kCounterSeparator;
+    text += std::to_wstring(model_->countTotal());
+    text += L".";
+    [self announce:text];
+}
+
 - (void)focusSearchField {
     [self.window makeFirstResponder:searchField_];
 }
@@ -298,6 +348,9 @@ static std::wstring CounterText(const FindBarModel& model) {
             if (listener.onSearchChanged) {
                 listener.onSearchChanged();
             }
+            // A small document searched right away: the outcome for
+            // this keystroke is announced here.
+            [self announceSearchOutcome];
         }
         // The count and the buttons move with every keystroke.
         [self updateFromModel];
@@ -323,6 +376,7 @@ static std::wstring CounterText(const FindBarModel& model) {
         listener.onSearchChanged();
     }
     [self updateFromModel];
+    [self announceSearchOutcome];
 }
 
 - (void)optionsChanged:(id)sender {
@@ -334,6 +388,7 @@ static std::wstring CounterText(const FindBarModel& model) {
         listener.onSearchChanged();
     }
     [self updateFromModel];
+    [self announceSearchOutcome];
 }
 
 // The caret offset the navigation starts from.
@@ -356,6 +411,7 @@ static std::wstring CounterText(const FindBarModel& model) {
     // The counter reads the ordinal the navigation just moved.
     model_->SyncFromState();
     [self updateFromModel];
+    [self announceSearchOutcome];
 }
 
 - (void)previousMatch:(id)sender {
@@ -365,6 +421,7 @@ static std::wstring CounterText(const FindBarModel& model) {
     // The counter reads the ordinal the navigation just moved.
     model_->SyncFromState();
     [self updateFromModel];
+    [self announceSearchOutcome];
 }
 
 - (void)replaceCurrent:(id)sender {
@@ -383,11 +440,22 @@ static std::wstring CounterText(const FindBarModel& model) {
     (void)sender;
     [self rememberQuery];
     const FindBarListener& listener = model_->listener();
+    // The count before the replacement is what was replaced.
+    const size_t replaced = model_->countTotal();
     if (listener.onReplaceAll) {
         listener.onReplaceAll(model_->GetSearchText(), model_->GetReplaceText(),
                               model_->state().Options());
     }
     model_->SyncFromState();
+    if (replaced > 0) {
+        std::wstring text = findstrings::kAnnounceReplacedPrefix;
+        text += std::to_wstring(replaced);
+        text += findstrings::kAnnounceReplacedSuffix;
+        [self announce:text];
+        // The count already spoke; do not repeat the empty result the
+        // counter reads now.
+        announced_ = [self outcomeKey];
+    }
     [self updateFromModel];
 }
 

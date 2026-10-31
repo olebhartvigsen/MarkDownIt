@@ -1325,6 +1325,70 @@ void App::SelectAll() {
     selectAllCaret_ = sel_.active.offset;
 }
 
+// Counts the UTF-16 code units of a UTF-8 string, the unit an input
+// method counts in.
+static uint32_t Utf16Length(const std::string& text) {
+    uint32_t units = 0;
+    for (size_t i = 0; i < text.size();) {
+        const unsigned char c = static_cast<unsigned char>(text[i]);
+        uint32_t codePoint = 0;
+        size_t step = 1;
+        if (c < 0x80) {
+            codePoint = c;
+        } else if ((c & 0xE0) == 0xC0 && i + 1 < text.size()) {
+            codePoint = ((c & 0x1F) << 6) |
+                        (static_cast<unsigned char>(text[i + 1]) & 0x3F);
+            step = 2;
+        } else if ((c & 0xF0) == 0xE0 && i + 2 < text.size()) {
+            codePoint = ((c & 0x0F) << 12) |
+                        ((static_cast<unsigned char>(text[i + 1]) & 0x3F) << 6) |
+                        (static_cast<unsigned char>(text[i + 2]) & 0x3F);
+            step = 3;
+        } else if (i + 3 < text.size()) {
+            codePoint = ((c & 0x07) << 18) |
+                        ((static_cast<unsigned char>(text[i + 1]) & 0x3F) << 12) |
+                        ((static_cast<unsigned char>(text[i + 2]) & 0x3F) << 6) |
+                        (static_cast<unsigned char>(text[i + 3]) & 0x3F);
+            step = 4;
+        } else {
+            break;
+        }
+        units += codePoint > 0xFFFF ? 2u : 1u;
+        i += step;
+    }
+    return units;
+}
+
+void App::SetMarkedText(const std::string& utf8) {
+    if (!editor_.HasComposition()) editor_.BeginComposition();
+    editor_.SetCompositionText(utf8);
+}
+
+void App::UnmarkText() {
+    // The input method let the composition go without committing it:
+    // the text it covered comes back and the history stays untouched.
+    if (editor_.HasComposition()) editor_.CancelComposition();
+}
+
+bool App::HasMarkedText() const {
+    return editor_.HasComposition();
+}
+
+void App::MarkedRangeUtf16(uint32_t* location, uint32_t* length) const {
+    uint32_t start = 0;
+    uint32_t len = 0;
+    editor_.CompositionRange(&start, &len);
+    const std::string& text = buffer_.Text();
+    *location = Utf16Length(text.substr(0, start));
+    *length = Utf16Length(text.substr(start, len));
+}
+
+void App::SelectionRangeUtf16(uint32_t* location, uint32_t* length) const {
+    const std::string& text = buffer_.Text();
+    *location = Utf16Length(text.substr(0, sel_.Start()));
+    *length = Utf16Length(text.substr(sel_.Start(), sel_.Length()));
+}
+
 void App::InsertText(const std::string& text) {
     if (text.empty()) return;
 
@@ -1334,7 +1398,16 @@ void App::InsertText(const std::string& text) {
     const std::string escaped =
         EscapeForInsert(buffer_, sel_.active.offset, text,
                         IsOffsetInTable(document_, sel_.active.offset));
-    ApplyPendingTypingFormat(escaped);
+    if (editor_.HasComposition()) {
+        // The committed string of an input method arrives here while
+        // the marked text still sits in the buffer: it replaces that
+        // text and closes the composition with one undo entry, instead
+        // of being inserted a second time.
+        editor_.SetCompositionText(escaped);
+        editor_.CommitComposition();
+    } else {
+        ApplyPendingTypingFormat(escaped);
+    }
 
     // A character that finishes a markdown pattern turns the text around
     // it, the way a space after a dash makes a list.

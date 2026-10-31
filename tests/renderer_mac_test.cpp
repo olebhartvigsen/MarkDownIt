@@ -1231,10 +1231,11 @@ TEST(RendererMac, RangeRectsFollowTheCellAlignment) {
     ASSERT_EQ(centered.size(), 1u);
     EXPECT_TRUE(centered[0].x > leftEdge + 1.0f);
 
-    // The right-aligned cell: the rect ends at the right edge of the
-    // line, inside the padding.
+    // The right-aligned cell: the rect ends at the right edge of its
+    // own column's line box, inside the padding.
     const std::vector<Rect> right = renderer.SelectionRects(1, 2);
     ASSERT_EQ(right.size(), 1u);
+    const float secondLeftEdge = leftEdge + block.tableLayout.colW;
     EXPECT_TRUE(std::fabs((right[0].x + right[0].width) -
-                          (leftEdge + innerW)) < 1.0f);
+                          (secondLeftEdge + innerW)) < 1.0f);
 }

@@ -327,6 +327,7 @@ if(BUILD_TESTS AND APPLE)
         tests/caret_test.cpp
         tests/hittest_test.cpp
         tests/editcontroller_test.cpp
+        tests/composition_test.cpp
         tests/navigation_test.cpp
         tests/undo_test.cpp
         tests/incremental_test.cpp
@@ -462,6 +463,7 @@ elseif(BUILD_TESTS)
         tests/caret_test.cpp
         tests/hittest_test.cpp
         tests/editcontroller_test.cpp
+        tests/composition_test.cpp
         tests/navigation_test.cpp
         tests/undo_test.cpp
         tests/incremental_test.cpp
