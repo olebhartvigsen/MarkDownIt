@@ -24,9 +24,9 @@ CMAKE = os.path.join(REPO, "CMakeLists.txt")
 ICONS = os.path.join(REPO, "src", "icons")
 
 # The commands the mac build leaves out on purpose, with the reason.
-OMITTED = {
-    "cmdEditToggle": "the mac app has no view/edit split",
-}
+# Nothing is left out right now: the edit toggle joined the strip
+# together with the edit mode itself.
+OMITTED = {}
 
 # The one command whose menu of the markup turns into a dropdown on the
 # mac strip; its menu items follow as entries of their own.

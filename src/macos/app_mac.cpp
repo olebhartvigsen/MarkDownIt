@@ -11,6 +11,7 @@
 #include <sstream>
 
 #include "autoformat.h"
+#include "clipboard.h"
 #include "clipboard_mac.h"
 #include "content_view_mac.h"
 #include "findbar_mac.h"
@@ -188,6 +189,21 @@ std::string App::TextForSaving() const {
     return buffer_.Text();
 }
 
+void App::SetEditing(bool on) {
+    editing_ = on;
+    // Find works in every mode, but Replace only where the document
+    // can change. Re-gate whenever the mode flips, so a bar left open
+    // across the toggle greys the buttons (find spec 4 and 60), the
+    // way the Windows window re-gates on SetEdit.
+    if (findBar_) {
+        findBar_->model().SetReplaceEnabled(on);
+        if (findBar_->IsVisible()) findBar_->SyncControls();
+    }
+    // The command strip and the menu read the format and mode state
+    // through the selection handler.
+    if (selectionChanged_) selectionChanged_();
+}
+
 void App::NewDocument() {
     filePath_.clear();
     isSvg_ = false;
@@ -201,6 +217,9 @@ void App::NewDocument() {
     // document's identity (highlighting guide 37).
     LoadMarkers();
     ClearPendingFormat();
+    // A new document is for writing: the mode comes back on, the way
+    // the Windows window enters edit mode for a new document.
+    SetEditing(true);
 }
 
 bool App::ReloadFile() {
@@ -230,7 +249,7 @@ void App::ShowFind(FindBarMode mode) {
         const std::wstring query = textenc::Utf8ToWide(SelectedText());
         findBar_->model().SetSearchText(query);
     }
-    findBar_->model().SetReplaceEnabled(true);
+    findBar_->model().SetReplaceEnabled(Editing());
     findBar_->Show(mode);
     // The strip has its height now, so the window lays the document
     // out under it before the first match is scrolled into view.
@@ -287,6 +306,7 @@ void App::RefreshFindResults(bool adoptCurrentMatch) {
 }
 
 void App::ReplaceMatch(uint32_t offset, uint32_t length) {
+    if (!editing_) return;
     if (length == 0) return;
 
     // The field holding nothing means the match goes away, which is
@@ -317,6 +337,7 @@ void App::ReplaceMatch(uint32_t offset, uint32_t length) {
 
 void App::ReplaceAllMatches(const std::wstring& query,
                             const std::wstring& replacement) {
+    if (!editing_) return;
     if (query.empty()) return;
 
     const std::string text = textenc::WideToUtf8(replacement);
@@ -393,6 +414,7 @@ bool App::TableSpan(uint32_t* start, uint32_t* end) const {
 // in one edit, so one table operation is one undo step.
 void App::RewriteTable(uint32_t start, uint32_t end,
                        const std::string& text, uint32_t caret) {
+    if (!editing_) return;
     editor_.ReplaceTextRange(start, end - start, text, EditType::Insert);
     editor_.BreakUndoCoalesce();
     sel_.Collapse({caret});
@@ -526,6 +548,7 @@ void App::RemoveTable() {
 
 // Inserts a new table at the caret.
 void App::InsertTable(int cols, int rows) {
+    if (!editing_) return;
     // A table never nests, so the command does nothing inside one.
     if (tableedit::ContainingTable(document_, sel_.active.offset)) return;
 
@@ -558,6 +581,7 @@ void App::InsertTable(int cols, int rows) {
 }
 
 void App::HandleTab(bool backwards) {
+    if (!editing_) return;
     // Markdown tables keep each cell on one source line, so inside a
     // table Tab moves between cells through the shared table model
     // instead of inserting indentation. The selection's anchor side
@@ -634,6 +658,7 @@ void App::HandleTab(bool backwards) {
 // in its first cell, so a table grows by keyboard alone. One undo step
 // covers the row and the caret.
 void App::AppendRowToTable() {
+    if (!editing_) return;
     // The splice itself is shared with the portable suite, so the
     // combined Tab command is covered by a test (spec X2).
     std::string row;
@@ -649,7 +674,25 @@ void App::AppendRowToTable() {
     OnTextChanged();
 }
 
+// Control characters never reach the buffer: typing drops everything
+// below 0x20 except tab (the Windows rule), a paste also keeps the line
+// breaks its own normalization just made.
+static std::string DropControlChars(const std::string& text,
+                                    bool keepNewlines) {
+    std::string out;
+    out.reserve(text.size());
+    for (char c : text) {
+        const unsigned char byte = static_cast<unsigned char>(c);
+        if (byte < 0x20 && c != '\t' && !(keepNewlines && c == '\n')) {
+            continue;
+        }
+        out += c;
+    }
+    return out;
+}
+
 void App::PasteFromClipboard() {
+    if (!editing_) return;
     std::string text = ClipboardText();
     if (text.empty()) return;
 
@@ -668,6 +711,13 @@ void App::PasteFromClipboard() {
     }
     text = normalized;
 
+    // Markdown syntax in a pasted block stays literal text: the paste
+    // is escaped the way the Windows build escapes it, so a paste can
+    // never construct hidden syntax. The raw text is kept for the
+    // spreadsheet detector, which needs the tabs and quotes intact.
+    const std::string raw = text;
+    text = EscapeMarkdown(raw);
+
     const bool inTable = IsOffsetInTable(document_, sel_.active.offset) ||
         (!sel_.Empty() && IsOffsetInTable(document_, sel_.Start()));
 
@@ -680,12 +730,15 @@ void App::PasteFromClipboard() {
     if (!inTable) {
         std::string table;
         uint32_t cellCaret = 0;
-        if (TabSeparatedToMarkdownTable(text, &table, &cellCaret)) {
+        if (TabSeparatedToMarkdownTable(raw, &table, &cellCaret)) {
             InsertPastedTable(table, cellCaret);
             return;
         }
     }
 
+    // No control characters survive into the buffer; tab is content
+    // and the normalized line breaks were just made on purpose.
+    text = DropControlChars(text, true);
     if (text.empty()) return;
 
     // The paste is its own undo step: it must not merge into the typing
@@ -702,6 +755,7 @@ void App::PasteFromClipboard() {
 // it, and one undo step for the separators, the table and the caret.
 void App::InsertPastedTable(const std::string& table,
                             uint32_t firstCellCaret) {
+    if (!editing_) return;
     // A table never nests, so a pasted table does nothing inside one.
     if (tableedit::ContainingTable(document_, sel_.active.offset)) return;
 
@@ -745,6 +799,7 @@ void App::Reparse() {
 // markers go last, by the shared module, so the two builds clear the
 // same way.
 void App::ClearFormat() {
+    if (!editing_) return;
     if (sel_.Empty()) return;
 
     uint32_t start = sel_.Start();
@@ -804,15 +859,18 @@ void App::ClearFormat() {
 }
 
 // The two marker commands carry the pending typing format.
-void App::ToggleBold() { ToggleInlineWithPending("**", true); }
+void App::ToggleBold() {
+    if (!editing_) return; ToggleInlineWithPending("**", true); }
 
-void App::ToggleItalic() { ToggleInlineWithPending("*", false); }
+void App::ToggleItalic() {
+    if (!editing_) return; ToggleInlineWithPending("*", false); }
 
 // With a selection the shared marker toggle applies the guide's rules.
 // An empty caret toggles what the NEXT characters get and changes
 // nothing in the document (text guide, fed og kursiv ved et tomt
 // caret rules 1 and 2).
 void App::ToggleInlineWithPending(const std::string& marker, bool bold) {
+    if (!editing_) return;
     if (!sel_.Empty()) {
         ClearPendingFormat();
         ToggleInlineMarker(&buffer_, &sel_, marker, &undo_);
@@ -1294,6 +1352,7 @@ void App::CopyToClipboard() {
 }
 
 void App::CutToClipboard() {
+    if (!editing_) return;
     if (!HasSelection()) return;
     // The text only leaves the document once the clipboard holds it;
     // a failed write must not lose anything (text spec C3).
@@ -1360,6 +1419,7 @@ static uint32_t Utf16Length(const std::string& text) {
 }
 
 void App::SetMarkedText(const std::string& utf8) {
+    if (!editing_) return;
     if (!editor_.HasComposition()) editor_.BeginComposition();
     editor_.SetCompositionText(utf8);
 }
@@ -1390,13 +1450,20 @@ void App::SelectionRangeUtf16(uint32_t* location, uint32_t* length) const {
 }
 
 void App::InsertText(const std::string& text) {
+    if (!editing_) return;
     if (text.empty()) return;
+
+    // Control characters never reach the buffer through typing: the
+    // Windows build drops everything below 0x20 except tab, and the
+    // same rule holds here.
+    const std::string filtered = DropControlChars(text, false);
+    if (filtered.empty()) return;
 
     // A typed character that would otherwise be markdown syntax is
     // escaped, so the text stays plain text. This is what the Windows
     // application does as well.
     const std::string escaped =
-        EscapeForInsert(buffer_, sel_.active.offset, text,
+        EscapeForInsert(buffer_, sel_.active.offset, filtered,
                         IsOffsetInTable(document_, sel_.active.offset));
     if (editor_.HasComposition()) {
         // The committed string of an input method arrives here while
@@ -1418,6 +1485,7 @@ void App::InsertText(const std::string& text) {
 }
 
 void App::DeleteBackward() {
+    if (!editing_) return;
     // A delete resets the typing run but keeps the pending format: the
     // next characters still get it, without an empty format object
     // left behind (text guide, fed og kursiv ved et tomt caret rule
@@ -1440,6 +1508,7 @@ void App::DeleteBackward() {
 }
 
 void App::DeleteForward() {
+    if (!editing_) return;
     // A delete resets the typing run but keeps the pending format: the
     // next characters still get it, without an empty format object
     // left behind (text guide, fed og kursiv ved et tomt caret rule
@@ -1460,6 +1529,7 @@ void App::DeleteForward() {
 }
 
 void App::DeleteWordBackward() {
+    if (!editing_) return;
     // A delete resets the typing run but keeps the pending format: the
     // next characters still get it, without an empty format object
     // left behind (text guide, fed og kursiv ved et tomt caret rule
@@ -1479,6 +1549,7 @@ void App::DeleteWordBackward() {
 }
 
 void App::DeleteWordForward() {
+    if (!editing_) return;
     // A delete resets the typing run but keeps the pending format: the
     // next characters still get it, without an empty format object
     // left behind (text guide, fed og kursiv ved et tomt caret rule
@@ -1497,18 +1568,21 @@ void App::DeleteWordForward() {
 }
 
 void App::InsertSoftBreak() {
+    if (!editing_) return;
     // A table row does not take a soft break; a refused edit must not
     // mark the document dirty.
     if (editor_.InsertSoftBreak(document_)) OnTextChanged();
 }
 
 void App::InsertParagraphBreak() {
+    if (!editing_) return;
     // The shared controller refuses the break the table model has no
     // place for; a refused edit is not a change.
     if (editor_.InsertParagraphBreak(document_)) OnTextChanged();
 }
 
 void App::Undo() {
+    if (!editing_) return;
     UndoEntry entry{};
     if (editor_.Undo(&entry)) {
         RestorePendingFormat(entry, false);
@@ -1518,6 +1592,7 @@ void App::Undo() {
 }
 
 void App::Redo() {
+    if (!editing_) return;
     UndoEntry entry{};
     if (editor_.Redo(&entry)) {
         RestorePendingFormat(entry, true);
@@ -1651,6 +1726,7 @@ bool App::MoveTableRow(bool up, uint32_t* out) {
 }
 
 bool App::MoveSelectedText(uint32_t drop) {
+    if (!editing_) return false;
     if (sel_.Empty()) return false;
 
     // The drop runs through the canonical position model: the point

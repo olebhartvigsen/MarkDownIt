@@ -124,8 +124,9 @@ NSMenu* BuildMainMenu() {
              {"Paste", @selector(paste:)},
              {"Select All", @selector(selectAll:)},
              {"Find...", @selector(findDocument:)},
-             {"Replace...", @selector(replaceInDocument:)}},
-            {"z", "Z", "x", "c", "v", "a", "f", ""});
+             {"Replace...", @selector(replaceInDocument:)},
+             {"Edit Mode", @selector(editMode:)}},
+            {"z", "Z", "x", "c", "v", "a", "f", "e"});
         // The standard selectors travel the responder chain, so a
         // focused text field handles its own undo and clipboard before
         // the document does (spec AC-01). Replace opens with

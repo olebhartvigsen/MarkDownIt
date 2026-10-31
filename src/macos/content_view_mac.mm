@@ -17,6 +17,7 @@
 #include <cmath>
 
 #include "content_nsview_mac.h"
+#include "navigation.h"
 #include "cg_target_mac.h"
 #include "text_engine_mac.h"
 #include "image_draw_mac.h"
@@ -252,8 +253,9 @@ void ContentView::Draw(RenderTarget* target) {
     renderer_.Render(app_->GetDocument(), 0.0f);
 
     // The caret goes on top of the text, but not over a selection:
-    // the selection is the marker of where the next edit lands.
-    if (caretVisible_ && selection.Empty()) {
+    // the selection is the marker of where the next edit lands, and
+    // read mode shows no caret at all.
+    if (caretVisible_ && app_->Editing() && selection.Empty()) {
         float x = 0.0f;
         float y = 0.0f;
         float width = 0.0f;
@@ -428,6 +430,23 @@ void ContentView::ExtendSelectionTo(float x, float y, int mode) {
             offset = offset <= anchor ? paraStart : paraEnd;
         }
     }
+
+    // A drag that began inside a table cell never leaves that cell:
+    // the fixed end decides and the dragged end is clamped to the
+    // cell's walls, so a text selection cannot escape the way a click
+    // cannot (table spec: mouse drag over cells).
+    TableCellRef dragCell;
+    if (TableCellAtOffset(app_->GetDocument(), app_->buffer().Text(),
+                          anchor, &dragCell) && !dragCell.separatorRow) {
+        const uint32_t textLen =
+            static_cast<uint32_t>(app_->buffer().Text().size());
+        if (offset < dragCell.srcOffset) {
+            offset = std::min(dragCell.srcOffset, textLen);
+        } else if (offset > dragCell.srcEnd) {
+            offset = std::min(dragCell.srcEnd, textLen);
+        }
+    }
+
     app_->SetSelection(anchor, offset);
 }
 
@@ -1157,13 +1176,21 @@ static const CGFloat kPinchStepMagnification = 0.1;
 - (void)autoscrollStep:(NSTimer*)timer {
     (void)timer;
     if (!content_) return;
-    // Eight points a tick, the step the Windows window uses.
+    // The step grows with how far the pointer is held past the edge,
+    // with the Windows floor and ceiling: a drag a little outside
+    // scrolls slowly, a drag far outside runs at the ceiling (spec:
+    // drag selection with autoscroll).
     const NSRect visible = [self visibleRect];
-    const float step = lastDragPoint_.y < NSMinY(visible) ? -8.0f : 8.0f;
+    const bool above = lastDragPoint_.y < NSMinY(visible);
+    const float outsideBy = above
+        ? static_cast<float>(NSMinY(visible) - lastDragPoint_.y)
+        : static_cast<float>(lastDragPoint_.y - NSMaxY(visible));
+    const float step = std::min(96.0f, std::max(24.0f, outsideBy * 0.5f));
+    const float direction = above ? -1.0f : 1.0f;
     NSClipView* clip = [self enclosingScrollView].contentView;
     if (clip) {
         NSRect bounds = [clip bounds];
-        bounds.origin.y += step;
+        bounds.origin.y += direction * step;
         [clip scrollToPoint:[clip constrainBoundsRect:bounds].origin];
     }
     content_->ExtendSelectionTo(static_cast<float>(lastDragPoint_.x),
@@ -1251,6 +1278,38 @@ static const CGFloat kPinchStepMagnification = 0.1;
         content_->CancelTextDrag();
         [self setNeedsDisplay:YES];
         return;
+    }
+
+    // The Windows clipboard alias keys, for keyboards that carry them:
+    // Ctrl+Insert copies, Shift+Insert pastes, Shift+Delete cuts and
+    // Ctrl+Y redoes. Each reaches the same command its Cmd shortcut
+    // reaches (spec: the required standard shortcuts).
+    const NSEventModifierFlags aliasFlags =
+        [event modifierFlags] & NSEventModifierFlagDeviceIndependentFlagsMask;
+    const bool aliasCtrl = (aliasFlags & NSEventModifierFlagControl) != 0;
+    const bool aliasCmd = (aliasFlags & NSEventModifierFlagCommand) != 0;
+    const bool aliasShift = (aliasFlags & NSEventModifierFlagShift) != 0;
+    if (!aliasCmd) {
+        const unsigned short key = [event keyCode];
+        if (aliasCtrl && !aliasShift && key == 114) {  // Ctrl+Insert
+            app_->CopyToClipboard();
+            return;
+        }
+        if (!aliasCtrl && aliasShift && key == 114) {  // Shift+Insert
+            app_->PasteFromClipboard();
+            [self documentEdited];
+            return;
+        }
+        if (!aliasCtrl && aliasShift && key == 117) {  // Shift+Delete
+            app_->CutToClipboard();
+            [self setNeedsDisplay:YES];
+            return;
+        }
+        if (aliasCtrl && !aliasShift && key == 16) {   // Ctrl+Y
+            app_->Redo();
+            [self documentEdited];
+            return;
+        }
     }
 
     [self interpretKeyEvents:@[event]];
@@ -1647,6 +1706,16 @@ static const CGFloat kPinchStepMagnification = 0.1;
 
 // Moves the caret to the line above or below.
 - (void)moveVertical:(bool)up extend:(bool)extend {
+    // A vertical move without the shift key collapses a selection to
+    // the edge it moves from: Up to the start, Down to the end, without
+    // stepping to another line first, the Windows rule. The remembered
+    // column is kept, exactly as the Windows build keeps it.
+    if (app_ && !extend && !app_->selection().Empty()) {
+        const Selection& selection = app_->selection();
+        [self setCaret:(up ? selection.Start() : selection.End()) extend:NO];
+        [self caretMoved];
+        return;
+    }
     // Inside a table cell Up and Down walk rows and keep the
     // column (spec AC-10): the logical move comes first and the
     // visual line move is the fallback, the order the Windows
@@ -1703,13 +1772,21 @@ static const CGFloat kPinchStepMagnification = 0.1;
     [self caretMoved];
 }
 
-// Home and End: the edges of the visual line.
+// Home and End: the edges of the visual line. A collapsed move with
+// a selection goes to the first (Home) or the last (End) line of the
+// selection, not to the active edge, the way the Windows build does
+// it.
 - (void)moveToLineEdge:(bool)start extend:(bool)extend {
     if (!app_ || !content_) return;
     desiredX_ = -1.0f;
 
-    const uint32_t target =
-        content_->LineBoundary(app_->selection().active.offset, !start);
+    const Selection& selection = app_->selection();
+    uint32_t from = selection.active.offset;
+    if (!extend && !selection.Empty()) {
+        from = start ? selection.Start() : selection.End();
+    }
+
+    const uint32_t target = content_->LineBoundary(from, !start);
     [self setCaret:target extend:extend];
     [self caretMoved];
 }

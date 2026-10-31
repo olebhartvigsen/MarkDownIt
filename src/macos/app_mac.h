@@ -411,6 +411,15 @@ public:
     // Redoes the last undone edit.
     void Redo();
 
+    // The edit mode. The document can only change in edit mode: every
+    // mutation entry point returns early when it is off, the way the
+    // Windows window gates them behind SetEdit (text spec, state and
+    // commands). Reading, selecting, copying, finding, zooming and
+    // marking the highlights keep working in both modes.
+    void SetEditing(bool on);
+    void ToggleEditing() { SetEditing(!editing_); }
+    bool Editing() const { return editing_; }
+
     // Takes ownership of the content view, which the window creates.
     void SetContentView(ContentView* view);
 
@@ -434,6 +443,9 @@ private:
     uint32_t selectAllCaret_ = UINT32_MAX;
     EditController editor_;
     UndoStack undo_;
+    // Edit mode is on until a caller turns it off; a fresh document
+    // turns it back on, the way the Windows build does.
+    bool editing_ = true;
     // The pending typing format: bold or italic toggled with an empty
     // caret, waiting for the next typed characters (text guide, fed og
     // kursiv ved et tomt caret).

@@ -331,8 +331,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [self outlineActiveRefresh];
     });
 
-    // The find bar sits above the document. It is in the layout from
-    // the start, hidden until it is used.
+    // The find bar sits at the bottom of the window, the one strip
+    // position the find spec names. It is in the layout from the
+    // start, hidden until it is used.
     //
     // The height read here is zero, because the bar starts hidden, so
     // the constraint is kept and the bar pushes its real height
@@ -369,8 +370,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [[ribbon_ heightAnchor]
         constraintEqualToConstant:[MdRibbonView ribbonHeight]].active = YES;
     [container_ addArrangedSubview:ribbon_];
-    [container_ addArrangedSubview:findBarView];
     [container_ addArrangedSubview:splitView_];
+    // The strip is the last row of the stack, so it docks at the
+    // bottom of the window (find spec: one strip at the bottom).
+    [container_ addArrangedSubview:findBarView];
 
     [window_ setContentView:container_];
     [window_ makeKeyAndOrderFront:nil];
@@ -583,11 +586,46 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // The Insert Table item greys out while the caret is inside a table;
 // there is already one (table guidelines 54 and 58).
 - (BOOL)validateMenuItem:(NSMenuItem*)item {
+    if ([item action] == @selector(editMode:)) {
+        // A checked item shows which mode the document is in.
+        [item setState:(app_->Editing() ? NSControlStateValueOn
+                                        : NSControlStateValueOff)];
+        return YES;
+    }
+    // Every command that changes the document follows edit mode, the
+    // way the Windows ribbon greys its format commands in view mode.
+    if (!app_->Editing() && [self actionChangesTheDocument:[item action]]) {
+        return NO;
+    }
     if ([item action] == @selector(insertTable:)) {
         tableedit::TableLocation location;
         return !app_->CaretTable(&location);
     }
     return YES;
+}
+
+// The menu actions that change the document: the format, paragraph,
+// heading, table, undo and clipboard cut commands. Copy, Find, the
+// zoom, the view switches and the markers keep working in read mode.
+- (BOOL)actionChangesTheDocument:(SEL)action {
+    static const char* const kMutatingActions[] = {
+        "undo:", "redo:", "cut:", "paste:",
+        "toggleBold:", "toggleItalic:", "toggleStrike:", "toggleCode:",
+        "setHeading1:", "setHeading2:", "setHeading3:",
+        "toggleBullets:", "toggleNumbering:", "toggleQuote:",
+        "indentBlock:", "outdentBlock:", "toggleLink:", "clearFormat:",
+        "insertTable:", "addRowAbove:", "addRowBelow:", "removeRow:",
+        "addColumnLeft:", "addColumnRight:", "removeColumn:",
+        "removeTable:", "splitCell:",
+        "alignLeft:", "alignCenter:", "alignRight:",
+    };
+    for (const char* const name : kMutatingActions) {
+        if (action == NSSelectorFromString(
+                          [NSString stringWithUTF8String:name])) {
+            return YES;
+        }
+    }
+    return NO;
 }
 - (void)addRowAbove:(id)sender { (void)sender; [self OnAddTableRow:NO]; }
 - (void)addRowBelow:(id)sender { (void)sender; [self OnAddTableRow:YES]; }
@@ -605,6 +643,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)toggleLink:(id)sender { (void)sender; [self OnToggleLink]; }
 - (void)toggleMark:(id)sender { (void)sender; [self OnToggleMark]; }
 - (void)clearFormat:(id)sender { (void)sender; [self OnClearFormat]; }
+- (void)editMode:(id)sender { (void)sender; [self OnToggleEditMode]; }
 
 // ---------------------------------------------------------------------------
 // The commands
@@ -1088,12 +1127,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
 - (void)OnUndo {
     app_->Undo();
-    [view_ setNeedsDisplay:YES];
+    // An undo is an edit: the restored selection must come back into
+    // view, the way the Windows window scrolls the caret after undo.
+    [view_ documentEdited];
 }
 
 - (void)OnRedo {
     app_->Redo();
-    [view_ setNeedsDisplay:YES];
+    [view_ documentEdited];
 }
 
 - (void)OnCut {
@@ -1234,6 +1275,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     if ([commandId isEqualToString:@"cmdWrap"]) return wrap_;
     if ([commandId isEqualToString:@"cmdOutline"]) return outlineVisible_;
     if ([commandId isEqualToString:@"cmdViewSource"]) return sourceView_;
+    if ([commandId isEqualToString:@"cmdEditToggle"]) return app_->Editing();
     // The bold and italic buttons read the pending typing format when
     // it is set, so a Cmd+B with an empty caret shows pressed without
     // writing anything.
@@ -1274,6 +1316,22 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     return NO;
 }
 
+// The strip commands that change the document: they follow edit mode
+// the way the Windows ribbon's format and table commands do.
+- (BOOL)commandChangesTheDocument:(NSString*)commandId {
+    static NSArray<NSString*>* mutating = nil;
+    if (!mutating) {
+        mutating = @[ @"cmdBold", @"cmdItalic", @"cmdStrike", @"cmdCode",
+                      @"cmdLink", @"cmdClearFormat",
+                      @"cmdBullets", @"cmdNumbering", @"cmdQuote",
+                      @"cmdIndent", @"cmdOutdent",
+                      @"cmdHeading1", @"cmdHeading2", @"cmdHeading3",
+                      @"cmdInsertTable", @"cmdTableTools",
+                      @"cmdUndo", @"cmdRedo" ];
+    }
+    return [mutating containsObject:commandId];
+}
+
 // Whether a strip command is available right now. The table commands
 // need the caret in a table; the undo pair needs something to undo.
 - (BOOL)ribbonCommandAvailable:(NSString*)commandId {
@@ -1281,6 +1339,21 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The welcome screen holds no document, so a document command
         // has nothing to act on.
         return NO;
+    }
+    if (!app_->Editing() && [self commandChangesTheDocument:commandId]) {
+        // Every command that changes the document follows edit mode
+        // (the Windows rule); reading, finding, zooming and marking
+        // stay available.
+        return NO;
+    }
+    // At either end of the zoom range the button that cannot act dims:
+    // a live-looking button that does nothing reads as broken (zoom
+    // guide). The Windows build dims through CanZoomIn/CanZoomOut.
+    if ([commandId isEqualToString:@"cmdZoomIn"]) {
+        return zoom_ < zoom::kMaxZoom - 1e-4f;
+    }
+    if ([commandId isEqualToString:@"cmdZoomOut"]) {
+        return zoom_ > zoom::kMinZoom + 1e-4f;
     }
     if ([commandId isEqualToString:@"cmdUndo"]) return app_->undo().CanUndo();
     if ([commandId isEqualToString:@"cmdRedo"]) return app_->undo().CanRedo();
@@ -1375,6 +1448,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
 - (void)OnToggleMark {
     app_->ToggleMarkSelection();
+    [self ribbonSync];
+    [view_ setNeedsDisplay:YES];
+}
+
+- (void)OnToggleEditMode {
+    app_->ToggleEditing();
     [self ribbonSync];
     [view_ setNeedsDisplay:YES];
 }

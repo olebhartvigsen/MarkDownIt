@@ -88,6 +88,8 @@ const RibbonGroup kHomeGroups[] = {
 
 // Edit.
 const RibbonCommand kEditEditing[] = {
+    {"cmdEditToggle", "Edit", "editMode:", "edit", true,
+     "Edit or read the document"},
     {"cmdViewSource", "View Source", "toggleSourceView:", "code", true,
      "Show the markdown source"},
     {"cmdReplace", "Replace", "replaceInDocument:", "replace", false,
@@ -128,7 +130,7 @@ const RibbonCommand kEditTable[] = {
      false, "Rows, columns and alignment"},
 };
 const RibbonGroup kEditGroups[] = {
-    {"Editing", kEditEditing, 2},
+    {"Editing", kEditEditing, 3},
     {"Format", kEditFormat, 6},
     {"Paragraph", kEditParagraph, 5},
     {"Headings", kEditHeadings, 3},
@@ -190,6 +192,15 @@ constexpr CGFloat kCommandHeight = 52.0;
 constexpr CGFloat kLargeIcon = 32.0;
 constexpr CGFloat kSmallIcon = 16.0;
 constexpr CGFloat kGroupPad = 8.0;
+// The compact and small layout states of the ribbon spec: icon-only
+// buttons with tighter padding, so a narrow window keeps every command
+// reachable instead of clipping the right hand groups.
+constexpr CGFloat kCompactCommandWidth = 44.0;
+constexpr CGFloat kCompactPad = 6.0;
+constexpr CGFloat kCompactGap = 6.0;
+constexpr CGFloat kSmallCommandWidth = 20.0;
+constexpr CGFloat kSmallPad = 3.0;
+constexpr CGFloat kSmallGap = 3.0;
 
 // An icon from the bundle's Resources/icons, with the next size up as
 // the 2x representation when it is there, so the strip stays crisp on
@@ -240,6 +251,11 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
 // Whether the command shows as pressed while it is on. The markup says
 // which commands are toggles, and the button carries that with it.
 @property(nonatomic, assign) BOOL isToggle;
+// The icon base name and the full label, so the layout states can
+// rebuild the image at another size and drop the label without losing
+// either.
+@property(nonatomic, copy) NSString* iconBase;
+@property(nonatomic, copy) NSString* fullTitle;
 @end
 
 @implementation MdRibbonButton {
@@ -273,6 +289,25 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
 
 - (void)highlight:(BOOL)flag {
     [super highlight:flag];
+    [self setNeedsDisplay:YES];
+}
+
+// Rebuilds the button for a layout state: full (icon and label),
+// compact and small (icon only). The tooltip and the accessible name
+// carry the label in the icon only states, so nothing goes missing for
+// a screen reader or a hover.
+- (void)applyLayoutState:(int)state {
+    const CGFloat iconSize = (state == 2) ? 16.0 : 32.0;
+    NSImage* image = RibbonIcon(self.iconBase, iconSize);
+    if (image) [self setImage:image];
+    if (state == 0) {
+        [self setTitle:self.fullTitle];
+        [self setImagePosition:NSImageAbove];
+    } else {
+        [self setTitle:@""];
+        [self setImagePosition:NSImageOnly];
+        [self setAccessibilityLabel:self.fullTitle];
+    }
     [self setNeedsDisplay:YES];
 }
 
@@ -397,6 +432,9 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
     NSMenu* tableToolsMenu_;
     NSUInteger activeTab_;
     CGFloat qatEndX_;
+    // The layout state each page currently draws in, so the buttons
+    // are only rebuilt when the state changes.
+    int pageState_[2];
 }
 
 + (CGFloat)ribbonHeight {
@@ -426,6 +464,8 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
     pageGroups_ = [NSMutableArray array];
     quickAccessButtons_ = [NSMutableArray array];
     activeTab_ = 0;
+    pageState_[0] = -1;
+    pageState_[1] = -1;
 
     // The Quick Access Toolbar, the small strip the Windows build keeps
     // in its caption.
@@ -517,6 +557,8 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
         [button setAccessibilityLabel:
             [NSString stringWithUTF8String:command.label]];
     }
+    button.iconBase = base;
+    button.fullTitle = [NSString stringWithUTF8String:command.label];
 
     const std::string selector(command.selector);
     if (selector == "showTableToolsMenu:") {
@@ -584,6 +626,53 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
     [self setNeedsDisplay:YES];
 }
 
+// The width a page needs in a layout state: the groups, their
+// padding and the gaps, computed the same way placeGroups frames them.
+- (CGFloat)neededWidthForGroups:(NSArray<MdRibbonGroupView*>*)groups
+                          state:(int)state {
+    const CGFloat pad = (state == 0 ? kGroupPad
+                                    : (state == 1 ? kCompactPad : kSmallPad));
+    const CGFloat gap = (state == 0 ? 8.0
+                                    : (state == 1 ? kCompactGap : kSmallGap));
+    const CGFloat cw = (state == 0 ? kCommandWidth
+                                   : (state == 1 ? kCompactCommandWidth
+                                                 : kSmallCommandWidth));
+    CGFloat total = 10.0;
+    for (MdRibbonGroupView* groupView in groups) {
+        const NSUInteger count = [groupView subviews].count;
+        if (count == 0) continue;
+        total += 2.0 * pad + count * cw + (count - 1) * 2.0 + gap;
+    }
+    return total;
+}
+
+// Frames the groups of a page in a layout state.
+- (void)placeGroups:(NSArray<MdRibbonGroupView*>*)groups state:(int)state {
+    const CGFloat pad = (state == 0 ? kGroupPad
+                                    : (state == 1 ? kCompactPad : kSmallPad));
+    const CGFloat gap = (state == 0 ? 8.0
+                                    : (state == 1 ? kCompactGap : kSmallGap));
+    const CGFloat cw = (state == 0 ? kCommandWidth
+                                   : (state == 1 ? kCompactCommandWidth
+                                                 : kSmallCommandWidth));
+    CGFloat groupX = 10.0;
+    for (MdRibbonGroupView* groupView in groups) {
+        NSArray<NSView*>* subs = [groupView subviews];
+        CGFloat x = pad;
+        for (NSView* sub in subs) {
+            if (![sub isKindOfClass:[MdRibbonButton class]]) continue;
+            [sub setFrame:NSMakeRect(x, 2.0, cw, NSHeight([sub frame]))];
+            x += cw + 2.0;
+        }
+        if (subs.count == 0) continue;
+        const CGFloat groupWidth =
+            2.0 * pad + subs.count * cw + (subs.count - 1) * 2.0;
+        [groupView setFrame:NSMakeRect(groupX, 0.0, groupWidth,
+                                       kGroupRowHeight)];
+        groupX += groupWidth + gap;
+    }
+}
+
 - (void)layout {
     [super layout];
     const CGFloat width = NSWidth(self.bounds);
@@ -606,16 +695,26 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
     for (NSUInteger t = 0; t < tabPages_.count; ++t) {
         NSView* page = [tabPages_ objectAtIndex:t];
         [page setFrame:NSMakeRect(0.0, kTabRowHeight, width, kGroupRowHeight)];
-        CGFloat groupX = 10.0;
         NSMutableArray<MdRibbonGroupView*>* groups =
             [pageGroups_ objectAtIndex:t];
-        for (NSUInteger g = 0; g < groups.count; ++g) {
-            MdRibbonGroupView* groupView = [groups objectAtIndex:g];
-            [groupView setFrame:NSMakeRect(groupX, 0.0,
-                                           NSWidth([groupView frame]),
-                                           kGroupRowHeight)];
-            groupX += NSWidth([groupView frame]) + 8.0;
+        // The layout states of the ribbon spec: the full state draws
+        // icon and label, the compact and small states draw the icon
+        // only with tighter padding, so the right hand groups stay
+        // reachable instead of being clipped on a narrow window.
+        int state = 0;
+        if ([self neededWidthForGroups:groups state:0] > width) state = 1;
+        if ([self neededWidthForGroups:groups state:1] > width) state = 2;
+        if (pageState_[t] != state) {
+            pageState_[t] = state;
+            for (MdRibbonGroupView* groupView in groups) {
+                for (NSView* sub in [groupView subviews]) {
+                    if ([sub isKindOfClass:[MdRibbonButton class]]) {
+                        [(MdRibbonButton*)sub applyLayoutState:state];
+                    }
+                }
+            }
         }
+        [self placeGroups:groups state:state];
     }
 }
 

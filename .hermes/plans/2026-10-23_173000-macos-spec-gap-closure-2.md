@@ -171,3 +171,49 @@ run. Goldens never change.
   are all small, the mac strip mirrors it by policy (check_mac_ribbon),
   and a tier change must land on both sides in one batch, below the
   minimum window width where the condensed state would live.
+
+- Batch I (the reference audit's gaps, closed) is implemented. A
+  read-only audit of every reference document against the mac sources
+  at HEAD found twelve gaps on the mac side and no Windows
+  regression; each one is now closed:
+  - The edit mode exists. One flag on the App gates every mutation
+    entry point (typing, composition, paste, replace, every delete,
+    both breaks, the paragraph break, undo, redo, the format toggles,
+    the clear format command, cut, the text drag and every table
+    rewrite), the find bar's replace half follows it, the caret hides
+    in read mode, and the mode is in the menu (Edit Mode, Cmd+E) and
+    on the strip as the toggle the markup already lists. Everything
+    that only reads, finds, zooms, selects, copies or marks stays
+    available, and the mutating commands grey out the way the Windows
+    ribbon greys them (text editing spec, state and commands, AC-06,
+    error and write protection).
+  - A pasted block is escaped the way the Windows build escapes it, so
+    pasted markdown syntax stays literal text; the raw copy still
+    feeds the spreadsheet table detector, and an in-cell paste is
+    sanitized after the escape (text editing spec, clipboard paste,
+    AC-05). Control characters never reach the buffer through typing
+    or paste.
+  - Up and Down with a selection collapse to Start and End, and Home
+    and End use the selection's first and last line, the Windows
+    rules (spec navigation, AC-02).
+  - The Windows alias keys Ctrl+Insert, Shift+Insert, Shift+Delete
+    and Ctrl+Y reach the same commands their Cmd forms reach
+    (spec AC-01).
+  - The drag autoscroll step scales with the pointer distance with the
+    Windows floor and ceiling instead of a constant step (spec mouse
+    drag), and a drag that starts inside a table cell never leaves
+    that cell (table spec 20).
+  - Undo and redo bring the restored caret back into view through the
+    same follow an edit uses (spec undo, state after undo).
+  - The zoom buttons dim at the ends of the range (zoom guide).
+  - The find strip docks at the bottom of the window. It sat above the
+    document before, while the find spec names one strip position: the
+    bottom of the application window (find spec 27).
+  - The strip has three layout states now: full, compact and small,
+    chosen by the window width, so the right hand groups stay
+    reachable instead of being clipped on a narrow window (ribbon
+    guide 8, RIB-02 on the mac side; the icon tier question of RIB-01
+    still needs the Windows markup and stays a shared decision).
+  The strip carries the edit toggle now (38 commands) and the menu 55
+  commands, both enforced by the checkers, and eight mac sources
+  compile against the 11.3 SDK in the local gate.
