@@ -126,10 +126,10 @@ static std::wstring CounterText(const FindBarModel& model) {
                                    action:@selector(optionsChanged:)];
     wholeWordButton_ = [self makeCheckbox:macstrings::kWholeWord
                                   action:@selector(optionsChanged:)];
-    replaceButton_ = [self makeButton:@"Replace"
+    replaceButton_ = [self makeButton:macstrings::kReplaceButton
                               tooltip:macstrings::kReplaceTheMatch
                               action:@selector(replaceCurrent:)];
-    replaceAllButton_ = [self makeButton:@"All"
+    replaceAllButton_ = [self makeButton:macstrings::kReplaceAllButton
                                 tooltip:macstrings::kReplaceEveryMatch
                                 action:@selector(replaceAll:)];
     closeButton_ = [self makeButton:@"\u2715" tooltip:macstrings::kCloseFindBar

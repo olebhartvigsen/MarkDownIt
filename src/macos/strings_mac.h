@@ -20,6 +20,8 @@ static NSString* const kWholeWord = @"Whole word";
 static NSString* const kCloseFindBarLabel = @"Close find bar";
 static NSString* const kSearchText = @"Search text";
 static NSString* const kReplaceText = @"Replace text";
+static NSString* const kReplaceButton = @"Replace";
+static NSString* const kReplaceAllButton = @"Replace All";
 static NSString* const kRecentSearches = @"Recent searches";
 static NSString* const kNoRecentSearches = @"No recent searches";
 

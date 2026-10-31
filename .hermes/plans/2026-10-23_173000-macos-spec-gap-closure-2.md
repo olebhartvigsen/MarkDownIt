@@ -232,3 +232,19 @@ run. Goldens never change.
   Reparse.TitleFollowsTheReparse) pin both halves. Verified with the
   ASan edit fuzz (30k rounds) and the parser smoke suite (399 checks,
   0 failures) before the commit.
+
+- Batch J, after the second audit round (deleg_f0e21924, three read-only
+  audits at 677cb1e): 222+ compliant rows across the nine remaining
+  reference docs; the mac gaps it found were mostly the ones Batch I had
+  already closed. Three survived and are closed here: the Insert Table
+  strip button was enabled only inside a table (the menu was right); the
+  rest of the table group ignored the shared capability table, so buttons
+  the guards refuse stayed live; and the find bar's Replace and All titles
+  were the only hard-coded strings left. The strip now asks
+  TableCapabilitiesFor for every row/column/split command, Insert Table
+  enables outside a table, and the whole table group follows read mode.
+  Checkers green: 38 strip commands, 55 menu commands. Office and mermaid
+  rows were fully compliant; the office gaps in that audit (page setup,
+  PDF/A, image payload, section breaks, field warnings) are open on both
+  platforms and tracked for one shared batch.
+

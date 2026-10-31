@@ -19,6 +19,7 @@
 #include "outline_nsview_mac.h"
 #include "outline_pane_mac.h"
 #include "content_view_mac.h"
+#include "navigation.h"
 #include "pdf_ocr_mac.h"
 #include <sstream>
 
@@ -1327,13 +1328,19 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                       @"cmdIndent", @"cmdOutdent",
                       @"cmdHeading1", @"cmdHeading2", @"cmdHeading3",
                       @"cmdInsertTable", @"cmdTableTools",
+                      @"cmdAddRow", @"cmdAddRowAbove", @"cmdRemoveRow",
+                      @"cmdAddColumn", @"cmdAddColumnLeft", @"cmdRemoveColumn",
+                      @"cmdRemoveTable", @"cmdSplitCell",
+                      @"cmdAlignLeft", @"cmdAlignCenter", @"cmdAlignRight",
                       @"cmdUndo", @"cmdRedo" ];
     }
     return [mutating containsObject:commandId];
 }
 
 // Whether a strip command is available right now. The table commands
-// need the caret in a table; the undo pair needs something to undo.
+// follow the shared capability table, so an enabled button can never be
+// one that refuses; Insert Table acts outside a table; the undo pair
+// needs something to undo.
 - (BOOL)ribbonCommandAvailable:(NSString*)commandId {
     if (app_->WelcomeMode()) {
         // The welcome screen holds no document, so a document command
@@ -1357,14 +1364,35 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     }
     if ([commandId isEqualToString:@"cmdUndo"]) return app_->undo().CanUndo();
     if ([commandId isEqualToString:@"cmdRedo"]) return app_->undo().CanRedo();
+    if ([commandId isEqualToString:@"cmdInsertTable"]) {
+        // It acts outside a table; inside one it is disabled, because a
+        // table may never contain a table (the Windows rule).
+        tableedit::TableLocation location;
+        return !app_->CaretTable(&location);
+    }
     if ([commandId hasPrefix:@"cmdAdd"] || [commandId hasPrefix:@"cmdAlign"] ||
-        [commandId isEqualToString:@"cmdInsertTable"] ||
         [commandId isEqualToString:@"cmdRemoveRow"] ||
         [commandId isEqualToString:@"cmdRemoveColumn"] ||
         [commandId isEqualToString:@"cmdSplitCell"] ||
         [commandId isEqualToString:@"cmdRemoveTable"]) {
         tableedit::TableLocation location;
-        return app_->CaretTable(&location);
+        if (!app_->CaretTable(&location)) return NO;
+        // Alignment rewrites the delimiter row of any table the caret is
+        // in, and Delete Table is always available inside one.
+        if ([commandId hasPrefix:@"cmdAlign"] ||
+            [commandId isEqualToString:@"cmdRemoveTable"]) {
+            return YES;
+        }
+        const TableCapabilities caps =
+            TableCapabilitiesFor(location.rowIndex, location.numCols);
+        if ([commandId isEqualToString:@"cmdAddRow"]) return caps.addRowBelow;
+        if ([commandId isEqualToString:@"cmdAddRowAbove"]) return caps.addRowAbove;
+        if ([commandId isEqualToString:@"cmdRemoveRow"]) return caps.removeRow;
+        if ([commandId isEqualToString:@"cmdAddColumn"]) return caps.addColumnRight;
+        if ([commandId isEqualToString:@"cmdAddColumnLeft"]) return caps.addColumnLeft;
+        if ([commandId isEqualToString:@"cmdRemoveColumn"]) return caps.removeColumn;
+        if ([commandId isEqualToString:@"cmdSplitCell"]) return caps.splitCell;
+        return YES;
     }
     return YES;
 }
