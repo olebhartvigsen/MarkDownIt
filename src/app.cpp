@@ -350,6 +350,12 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow, const std::wstring& cmdLine)
         }
         // Apply content width setting to the renderer.
         renderer_.SetContentWidthMode(settings_.contentWidthMode);
+        // The window opens reading: push the mode so the very first
+        // paint draws the blank line next to a list as a strip. The
+        // renderer's own default keeps the editing heights for the
+        // export paths, so the app states its mode here, the way the
+        // mac app does before its first document.
+        renderer_.SetEditing(editing_);
 
         // The saved width must also be visible in the File menu. The
         // framework drops a Label invalidation for a command whose
