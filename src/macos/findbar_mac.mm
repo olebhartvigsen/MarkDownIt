@@ -219,22 +219,24 @@ static std::wstring CounterText(const FindBarModel& model) {
     [rows setAlignment:NSLayoutAttributeLeading];
     [rows setSpacing:4.0];
 
-    NSStackView* everything =
-        [NSStackView stackViewWithViews:@[rows, closeButton_]];
-    [everything setOrientation:NSUserInterfaceLayoutOrientationHorizontal];
-    [everything setAlignment:NSLayoutAttributeCenterY];
-    [everything setSpacing:8.0];
-
-    [self addSubview:everything];
-    [everything setTranslatesAutoresizingMaskIntoConstraints:NO];
+    // The rows hug the leading edge and Close the trailing one, the
+    // way a find bar arranges its controls. One outer stack holds
+    // them no longer: a stack spreads its views across whatever width
+    // it is given, which floated the whole group in the middle.
+    [self addSubview:rows];
+    [self addSubview:closeButton_];
+    [rows setTranslatesAutoresizingMaskIntoConstraints:NO];
     [closeButton_ setTranslatesAutoresizingMaskIntoConstraints:NO];
 
     [NSLayoutConstraint activateConstraints:@[
-        [everything.leadingAnchor constraintEqualToAnchor:self.leadingAnchor
-                                                 constant:8.0],
-        [everything.trailingAnchor constraintEqualToAnchor:self.trailingAnchor
-                                                  constant:-8.0],
-        [everything.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+        [rows.leadingAnchor constraintEqualToAnchor:self.leadingAnchor
+                                           constant:8.0],
+        [rows.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+        [closeButton_.trailingAnchor constraintEqualToAnchor:
+                                          self.trailingAnchor constant:-8.0],
+        [closeButton_.leadingAnchor
+            constraintGreaterThanOrEqualToAnchor:rows.trailingAnchor
+                                        constant:8.0],
         [closeButton_.topAnchor constraintEqualToAnchor:self.topAnchor
                                                 constant:4.0],
         // The two labels share a width, so the fields line up under
