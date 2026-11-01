@@ -41,38 +41,40 @@ public:
             return;
         }
         const CGRect bounds = CGRectMake(rect.x, rect.y, rect.width, rect.height);
-        const CGRect box = CGRectInset(bounds, radius, radius);
+        // The radius may not overrun the shape, so a thin band keeps
+        // sensible ends.
+        const CGFloat r =
+            std::min<CGFloat>(radius, std::min(bounds.size.width,
+                                               bounds.size.height) * 0.5f);
 
+        // The middle strip runs the full height between the rounded
+        // ends, and the four corner circles round the ends off. An
+        // earlier take filled an ellipse between the corners, which
+        // pinched the middle: a lens with round ends, not a
+        // rectangle.
         CGContextSaveGState(context_);
         CGContextSetRGBFillColor(context_, color.r, color.g, color.b, color.a);
-        CGContextBeginPath(context_);
-        CGContextAddRect(context_, box);
-        CGContextClip(context_);
-        CGContextFillEllipseInRect(context_,
-                                   CGRectMake(box.origin.x, box.origin.y,
-                                              box.size.width, box.size.height));
-        CGContextRestoreGState(context_);
-
-        // The four corners.
-        CGContextSaveGState(context_);
-        CGContextSetRGBFillColor(context_, color.r, color.g, color.b, color.a);
+        CGContextFillRect(context_,
+                          CGRectMake(bounds.origin.x + r, bounds.origin.y,
+                                     bounds.size.width - 2.0f * r,
+                                     bounds.size.height));
         CGContextFillEllipseInRect(
-            context_, CGRectMake(bounds.origin.x, bounds.origin.y, radius * 2.0f,
-                                 radius * 2.0f));
+            context_, CGRectMake(bounds.origin.x, bounds.origin.y, 2.0f * r,
+                                 2.0f * r));
         CGContextFillEllipseInRect(
             context_,
-            CGRectMake(bounds.origin.x + bounds.size.width - radius * 2.0f,
-                       bounds.origin.y, radius * 2.0f, radius * 2.0f));
+            CGRectMake(bounds.origin.x + bounds.size.width - 2.0f * r,
+                       bounds.origin.y, 2.0f * r, 2.0f * r));
         CGContextFillEllipseInRect(
             context_,
             CGRectMake(bounds.origin.x,
-                       bounds.origin.y + bounds.size.height - radius * 2.0f,
-                       radius * 2.0f, radius * 2.0f));
+                       bounds.origin.y + bounds.size.height - 2.0f * r,
+                       2.0f * r, 2.0f * r));
         CGContextFillEllipseInRect(
             context_,
-            CGRectMake(bounds.origin.x + bounds.size.width - radius * 2.0f,
-                       bounds.origin.y + bounds.size.height - radius * 2.0f,
-                       radius * 2.0f, radius * 2.0f));
+            CGRectMake(bounds.origin.x + bounds.size.width - 2.0f * r,
+                       bounds.origin.y + bounds.size.height - 2.0f * r,
+                       2.0f * r, 2.0f * r));
         CGContextRestoreGState(context_);
     }
 
