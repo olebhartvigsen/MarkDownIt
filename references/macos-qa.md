@@ -323,6 +323,19 @@ loop that now runs on every build.
 - Screenshot: the walk's mac captures show the sidebar and the bar.
 - Status: lands with this entry; see references/macos-native-chrome.md.
 
+### The Windows picture caught a blinking caret (Nov 1)
+- The capture parity failed once on the edit pair: the Windows
+  picture had caught the native caret mid blink, a two by forty pixel
+  bar at the first line, and the compared first text row moved by the
+  bar's height. The mac walk photographs no caret, it parks the caret
+  off; the Windows walk kept the caret's place while the caret stayed
+  visible, so the blink phase rode into the frame. The Windows walk
+  hides the caret for its pictures now, and the two paths that could
+  show it stand down while the walk drives. The rounded rectangle fix
+  the same run carried was not the cause.
+- Screenshot: a Windows QA capture with no caret at the first line.
+- Status: fix lands here.
+
 <!--
 Entry format:
 

@@ -1297,14 +1297,17 @@ void AppWindow::UpdateCaretPosition() {
         // from body text to a heading or vice versa).
         int newH = static_cast<int>(h * dpix);
         if (newH < 1) newH = 1;
-        if (caret_height_ != newH) {
+        if (!qa_active_ && caret_height_ != newH) {
             DestroyCaret();
             caret_visible_ = false; // caret destroyed; must re-show
             CreateCaret(hwnd_content_, nullptr, 2, newH);
             caret_height_ = newH;
         }
         SetCaretPos(cx, cy);
-        if (!caret_visible_) { ShowCaret(hwnd_content_); caret_visible_ = true; }
+        if (!qa_active_ && !caret_visible_) {
+            ShowCaret(hwnd_content_);
+            caret_visible_ = true;
+        }
     } else {
         // OffsetToCaretRect failed (offset not in any block or block has
         // no layout). Hide the caret so it doesn't appear at a stale
@@ -2058,6 +2061,10 @@ void AppWindow::OnLButtonUp(HWND hwnd) {
 // The flags always mirror reality: caret_visible_ true means a shown
 // caret exists, so a focus loss that destroys the caret clears them.
 bool AppWindow::EnsureCaretVisible() {
+    // The QA walk drives its pictures with no caret at all: a still
+    // frame must not depend on the blink phase, the rule the mac walk
+    // follows when it parks the caret off.
+    if (qa_active_) return false;
     if (!has_focus_ || !hwnd_content_) return false;
     // While a selection is shown, the caret is the selection's active
     // end, not a separate blinking line (cursor-blinking guide), so
@@ -3322,6 +3329,12 @@ void AppWindow::StartQAWalk(const std::string& states) {
     }
     if (qa_states_.empty()) return;
     qa_active_ = true;
+    // Any caret already up comes down: the pictures carry no caret,
+    // the rule the mac walk follows too.
+    if (caret_visible_) {
+        HideCaret(hwnd_content_);
+        caret_visible_ = false;
+    }
 
     char logPath[2048] = {};
     if (GetEnvironmentVariableA("MARKDOWNIT_QA_LOG", logPath,
