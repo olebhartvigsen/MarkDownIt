@@ -3502,6 +3502,10 @@ void AppWindow::NewDocument() {
 
 void AppWindow::SetEdit(bool on) {
     editing_ = on;
+    // The layout follows the mode: reading draws the blank line next
+    // to a list as a thin strip, editing keeps its full line. The next
+    // paint re-measures and picks the new height up.
+    renderer_.SetEditing(on);
     // Find works in every view, but Replace only makes sense where the
     // document can change. Re-gate whenever edit mode flips, so a bar left
     // open across the toggle greys the two buttons out (guide 4).

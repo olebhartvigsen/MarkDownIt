@@ -95,6 +95,10 @@ constexpr float kImageMaxHeight = 400.0f;
 // laid out on one very wide line and the user scrolls to its end.
 constexpr float kNoWrapContentWidthDip = 10000.0f;
 
+// The height of a blank line while reading: the caret paragraph next
+// to a list keeps its line, but not a full empty row.
+constexpr float kReadBlankLineStripDip = 4.0f;
+
 // The theme sizes are points, and the Windows renderer converts them to
 // DIPs with this factor (kPtToDip there) when it creates its text
 // formats. The mac renderer applies the same factor, so a document lays
@@ -813,6 +817,15 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
             block.lines = engine_->MeasureWrapped(runs, drawW, 0.0f);
             ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight,
                              kBodyBaselineOffset);
+            if (!editing_ && node.virtualEmptyParagraph) {
+                // While reading, the blank line next to a list is a
+                // thin strip: the blank lines in the source separate
+                // blocks, they do not open empty rows in the text.
+                // Editing keeps the full line for the caret.
+                for (TextLine& line : block.lines) {
+                    line.height = kReadBlankLineStripDip;
+                }
+            }
             for (const TextLine& line : block.lines) {
                 block.height += line.height;
             }

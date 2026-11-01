@@ -225,6 +225,11 @@ public:
     // the zoom the way the Windows window does.
     void SetZoom(float zoom);
 
+    // Sets the reading or editing presentation: reading draws the
+    // blank line next to a list as a thin strip, editing keeps its
+    // full line, and the layout is rebuilt for the new mode.
+    void SetEditing(bool on);
+
 private:
     // The layout of the document, computed by the renderer.
     void Relayout();

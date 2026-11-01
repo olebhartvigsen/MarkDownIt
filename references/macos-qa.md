@@ -116,9 +116,11 @@ loop that now runs on every build.
   that line is dead space on top of the block gaps.
 - Screenshot: `qa/doc.png`; measured pixel rows in the bullet
   section (bands 448-465, 559-571, 614-626, 693-705).
-- Status: open. The fix has to keep the caret's place in edit mode,
-  so it goes through the paragraph model, with the word-processor
-  guidelines as the checklist.
+- Status: fixed in this commit. The blank line keeps a full line in
+  edit mode, so the caret's place stays, and renders as a thin strip
+  while reading, so blocks around a list sit at their normal distance.
+  Both renderers follow the mode; a mac renderer test holds the two
+  heights apart.
 
 ### The outline hint line clipped at the pane edge (Nov 1)
 - The second empty-state line ran past the 200 DIP pane and was cut

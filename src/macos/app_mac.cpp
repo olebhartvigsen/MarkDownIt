@@ -194,6 +194,10 @@ std::string App::TextForSaving() const {
 
 void App::SetEditing(bool on) {
     editing_ = on;
+    // The layout follows the mode: reading draws the blank line next
+    // to a list as a thin strip, editing keeps its full line, so the
+    // document view re-measures.
+    if (contentView_) contentView_->SetEditing(on);
     // Find works in every mode, but Replace only where the document
     // can change. Re-gate whenever the mode flips, so a bar left open
     // across the toggle greys the buttons (find spec 4 and 60), the

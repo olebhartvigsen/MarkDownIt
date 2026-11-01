@@ -1391,7 +1391,12 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
                     if (SUCCEEDED(hr) && layout) {
                         DWRITE_TEXT_METRICS tm = {};
                         layout->GetMetrics(&tm);
-                        blockH += tm.height;
+                        // While reading, the blank line next to a list
+                        // charges only its thin strip, the height the
+                        // draw pass advances by.
+                        blockH += (!editing_ && n.virtualEmptyParagraph)
+                            ? kReadBlankLineStripDip
+                            : tm.height;
                         layout->Release();
                     }
                 }
@@ -1759,6 +1764,12 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         DWRITE_TEXT_METRICS metrics = {};
         layout->GetMetrics(&metrics);
 
+        // While reading, the blank line next to a list takes the thin
+        // strip Measure charges for it, so both passes agree.
+        const float blankAdvance =
+            (!editing_ && n.virtualEmptyParagraph) ? kReadBlankLineStripDip
+                                                   : metrics.height;
+
         bool drewImages = false;
         for (const auto& ib : n.children) {
             if (ib.kind == InlineKind::Image && !ib.url.empty()) {
@@ -2038,7 +2049,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             bl.x = textX;
             bl.y = curY;
             bl.width = textW > 0 ? textW : drawW;
-            bl.height = metrics.height;
+            bl.height = blankAdvance;
             bl.srcOffset = n.srcOffset;
             bl.srcLength = n.srcLength;
             bl.textStartOffset = n.contentOffset;
@@ -2054,7 +2065,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
 
         // Advance curY past the text AND the H1/H2 underline gap.
-        curY += metrics.height;
+        curY += blankAdvance;
         if (n.block == BlockKind::Heading && n.level <= 2) {
             curY += m.ruleGapAbove + m.ruleGapBelow;
         }

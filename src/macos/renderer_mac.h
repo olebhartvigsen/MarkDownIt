@@ -232,6 +232,12 @@ public:
     // behind the text, like the search matches.
     void SetMarkers(const std::vector<TextMatch>* markers);
 
+    // While editing, a blank line next to a list keeps a full line so
+    // the caret has a place to sit. While reading it renders as a thin
+    // strip, so the blank lines in the source do not open wide holes
+    // around lists in the text.
+    void SetEditing(bool on) { editing_ = on; }
+
     void SetSearchMatches(const std::vector<TextMatch>* matches,
                           int currentIndex);
 
@@ -433,6 +439,7 @@ private:
     bool needsLayout_ = false;
     // Whether the text is wrapped.
     bool wrap_ = true;
+    bool editing_ = true;
     // The width of the text column.
     int contentWidthMode_ = 0;
     // The image cache, which holds the images of the document.

@@ -188,6 +188,15 @@ void ContentView::Invalidate() {
     // AppShell seam. On the mac side the NSView invalidates itself.
 }
 
+void ContentView::SetEditing(bool on) {
+    // The layout follows the mode: reading draws the blank line next
+    // to a list as a thin strip, editing keeps its full line, so the
+    // document is laid out again.
+    renderer_.SetEditing(on);
+    Relayout();
+    Invalidate();
+}
+
 void ContentView::RefreshTheme() {
     renderer_.SetTheme(BaseMetrics(), mac::SystemPalette());
 }

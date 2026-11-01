@@ -1239,3 +1239,31 @@ TEST(RendererMac, RangeRectsFollowTheCellAlignment) {
     EXPECT_TRUE(std::fabs((right[0].x + right[0].width) -
                           (secondLeftEdge + innerW)) < 1.0f);
 }
+
+// A blank line next to a list is a caret paragraph in the model (the
+// word-processor guidelines keep it addressable). While reading it must
+// not open a full empty row, so the mode decides its height.
+TEST(RendererMac, CollapsesTheBlankLineWhileReading) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    Node heading = Para("H");
+    heading.block = BlockKind::Heading;
+    heading.level = 2;
+    Node blank;
+    blank.block = BlockKind::Paragraph;
+    blank.virtualEmptyParagraph = true;
+    const Document doc = Doc({heading, blank, ListItem(false, 0, "i")});
+
+    renderer.SetEditing(true);
+    const float editing = renderer.Measure(doc, 1400.0f);
+    renderer.SetEditing(false);
+    const float reading = renderer.Measure(doc, 1400.0f);
+
+    // The blank line keeps its line either way, one strip shorter
+    // while reading: more than the strip, less than a full line.
+    EXPECT_TRUE(editing - reading > 4.0f);
+    EXPECT_TRUE(editing - reading < 40.0f);
+}
