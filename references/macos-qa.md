@@ -83,9 +83,42 @@ mode"); a screenshot of the screen makes it exact.
 
 ## The issue log
 
-Newest first. The first three came from the window capture the smoke
-took on run 41293719752 (artifact `MarkDownIt-window-capture`), the
-first time the app was photographed on the runner.
+Newest first. The first entries came from the window capture the smoke
+took on run 41293719752; the rest from the six state captures of the QA
+walk (artifact `MarkDownIt-window-capture`, run 41294080796), the same
+loop that now runs on every build.
+
+### The outline row clipped a long heading (Nov 1)
+- "The smallest heading" drew cut mid-word at the pane edge ("The
+  smallest hea"), with no ellipsis.
+- Screenshot: `qa/doc.png` (light), also visible in `qa/dark.png`.
+- Status: fixed in this commit. The row is trimmed to the width the
+  pane can give it and ends in an ellipsis; the Windows pane puts a
+  trailing ellipsis sign on its row layout for the same result.
+
+### The outline expanders drew as squares (Nov 1)
+- Rows with a subtree showed a small filled square in the arrow zone,
+  the same shape in both states, where the pane's own comment says
+  triangle.
+- Screenshot: `qa/doc.png` and `qa/dark.png`.
+- Status: fixed in this commit. A filled triangle points right while
+  the subtree is folded and down while it is open, the shape Windows
+  and the Finder use.
+
+### Blank lines push blocks apart (Nov 1)
+- The showcase capture shows about 90 px between the "Lists and
+  tasks" heading and its first bullet, and about 65 px between the
+  bullet list and the numbered list. The metrics allow for roughly
+  30 px (10 + 16 and 4 + 16 plus line leading).
+- Cause: every blank line is a virtual empty paragraph in the node
+  stream (parser.cpp marks them), and both renderers give it a full
+  line's height so the caret has a place to sit. In the read view
+  that line is dead space on top of the block gaps.
+- Screenshot: `qa/doc.png`; measured pixel rows in the bullet
+  section (bands 448-465, 559-571, 614-626, 693-705).
+- Status: open. The fix has to keep the caret's place in edit mode,
+  so it goes through the paragraph model, with the word-processor
+  guidelines as the checklist.
 
 ### The outline hint line clipped at the pane edge (Nov 1)
 - The second empty-state line ran past the 200 DIP pane and was cut

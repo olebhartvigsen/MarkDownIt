@@ -13,6 +13,7 @@
 #include "outline_pane_mac.h"
 
 #include <algorithm>
+#include <vector>
 
 namespace mac {
 
@@ -397,34 +398,38 @@ void OutlinePane::Draw(RenderTarget* target, float width, float height) {
             (row + 1) < visible_.size() &&
             items_[visible_[row + 1]].level > heading.level;
         if (hasChildren) {
+            // A small filled triangle in the arrow zone: pointing right
+            // while the subtree is folded, down while it is open. The
+            // shape carries the state, the same way the Windows pane
+            // and the Finder draw theirs.
             const bool collapsed = collapse_.IsCollapsed(item);
             const float centerX = kPadXDip + kTriangleSizeDip * 0.5f;
             const float centerY = y + kRowHeightDip * 0.5f;
-            const float half = kTriangleSizeDip * 0.35f;
-
-            Rect shape;
-            shape.x = centerX - half;
-            shape.y = centerY - half;
-            shape.width = half * 2.0f;
-            shape.height = half * 2.0f;
-            target->FillRect(shape, muted_);
-
-            // A collapsed heading shows a bar, so the two states do not
-            // rely on the shape alone.
+            const float half = kTriangleSizeDip * 0.5f;
+            std::vector<Point> triangle;
             if (collapsed) {
-                Rect bar;
-                bar.x = shape.x;
-                bar.y = centerY - 0.5f;
-                bar.width = shape.width;
-                bar.height = 1.0f;
-                target->FillRect(bar, background_);
+                triangle = {Point{centerX - half * 0.6f, centerY - half},
+                            Point{centerX + half * 0.6f, centerY},
+                            Point{centerX - half * 0.6f, centerY + half}};
+            } else {
+                triangle = {Point{centerX - half, centerY - half * 0.6f},
+                            Point{centerX + half, centerY - half * 0.6f},
+                            Point{centerX, centerY + half * 0.6f}};
             }
+            target->FillPolygon(triangle, muted_);
         }
 
-        // The text of the heading, indented by its level.
+        // The text of the heading, indented by its level and trimmed to
+        // the width the pane can give it, with an ellipsis where the
+        // heading is longer than that. The estimate is the one
+        // IsTruncated uses, so the tooltip and the drawn row agree.
         const float textX = IndentFor(heading) + kTriangleSizeDip + 4.0f;
         const float baseline = y + kRowHeightDip * 0.5f + kFontSizeDip * 0.35f;
-        const size_t maxChars = kMaxTextChars;
+        const float available = lastWidth_ - textX - kPadXDip;
+        const size_t fitChars = available > 0.0f
+            ? static_cast<size_t>(available / 7.0f)
+            : 0;
+        const size_t maxChars = std::min(kMaxTextChars, fitChars);
         const Color color = (item == currentItem_) ? text_ : muted_;
         target->DrawText(TrimmedText(heading, maxChars), font, textX, baseline,
                          color);

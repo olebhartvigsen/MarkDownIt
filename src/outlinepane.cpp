@@ -439,7 +439,12 @@ void OutlinePane::PaintRows(ID2D1RenderTarget* rt, const D2D1_RECT_F& rc) {
                 DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
             DWRITE_TRIMMING trim = {};
             trim.granularity = DWRITE_TRIMMING_GRANULARITY_CHARACTER;
-            layout->SetTrimming(&trim, nullptr);
+            // A trailing ellipsis where a long heading overruns the
+            // row, so it reads as cut instead of running off the pane.
+            IDWriteInlineObject* ellipsis = nullptr;
+            dw_->CreateEllipsisTrimmingSign(fmtItem_, &ellipsis);
+            layout->SetTrimming(&trim, ellipsis);
+            if (ellipsis) ellipsis->Release();
             rt->DrawTextLayout(
                 D2D1::Point2F(textRc.left, textRc.top), layout, brush_);
             layout->Release();
