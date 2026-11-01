@@ -272,6 +272,26 @@ loop that now runs on every build.
 - dark and settings are mac-only states; the report names them and
   skips them.
 
+### The caret above the first heading (2026-11-01)
+- The Windows pane lost its highlight between the find and edit states:
+  with the caret parked in the document's opening lines, the caret's
+  section resolved to nothing, because the first heading starts after
+  offset zero. The viewport probe and the mac pane both read that
+  position as the first section, and the caret rule now clamps to the
+  first row the same way, so the highlight stays lit through every
+  state.
+- Screenshot: the edit and outline captures in MarkDownIt-capture-parity.
+- Status: fixed in 74c9c06 (CI run 41305014659).
+
+### The edit picture's scroll (2026-11-01)
+- The mac walk entered the edit state wherever the caret reveal had
+  scrolled to, while the Windows walk sat at the top of the document,
+  so the parity gate flagged fifteen pixels in some runs. The walk now
+  sets the core's scroll offset and the scroller together as it enters
+  the state, which is where the Windows side already is.
+- Screenshot: the edit pair in MarkDownIt-capture-parity.
+- Status: fixed in 84a1905 (CI run 41305853691).
+
 <!--
 Entry format:
 
