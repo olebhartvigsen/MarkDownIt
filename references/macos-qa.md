@@ -379,6 +379,13 @@ loop that now runs on every build.
   label already carries its own faint alpha, so the wash came out
   darker than the header instead of fainter. It sits at half the
   header's weight now.
+- The first comparison of the pictures failed on row pairing the eye
+  could not see: the mac draws its grids and box borders with the
+  system separator colour and Windows with its lighter hairline, so a
+  border crossing the pane banded a row on one side only and shifted
+  every pair below it. A row counts as text from six ink pixels up now,
+  and a band under four rows tall is never a text row; the seven states
+  pair row for row.
 - Screenshot: the end state, the code block showing its lines and the
   table row a faint wash.
 - Status: fix lands here.

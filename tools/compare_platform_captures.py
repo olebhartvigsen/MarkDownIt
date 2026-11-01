@@ -53,6 +53,7 @@ WRAP_STATES = {"source"}
 WRAP_TOL_COUNT = 4
 
 TRIM_RIGHT = 20  # the scrollbar edge
+kRowInk = 6  # ink pixels in a row before the row counts as text
 
 
 def parse_rects(path):
@@ -87,12 +88,16 @@ def band_starts(pane):
     for i, v in enumerate(data):
         if abs(v - bg) > 55:
             rows[i // W] += 1
+    # A text row carries real ink. A hairline or a grid line crossing
+    # the pane can leave one or two pixels in a row, and the two sides
+    # draw their grids at different strengths, so a row counts as ink
+    # from kRowInk pixels up.
     bands = []
     start = None
     for yy, c in enumerate(rows):
-        if c and start is None:
+        if c >= kRowInk and start is None:
             start = yy
-        elif not c and start is not None:
+        elif c < kRowInk and start is not None:
             bands.append((start, yy))
             start = None
     if start is not None:
@@ -122,13 +127,18 @@ def compare_state(mac_pane, win_pane, name):
         ink = ink_percent(pane)
         tag = "PASS" if ink >= MIN_INK else "FAIL"
         print("  %-8s %-4s %s %.2f%% ink, %d text rows"
-              % (name, side, tag, ink, len(band_starts(pane))))
+              % (name, side, tag, ink,
+                 len([b for b in band_starts(pane) if b[1] - b[0] >= 4])))
         if ink < MIN_INK:
             fails.append("%s shows almost no readable text (%.2f%% ink)"
                          % (side, ink))
 
-    m_bands = band_starts(mac_pane)
-    w_bands = band_starts(win_pane)
+    # Text rows only: a border, a rule or a box edge can be a single ink
+    # row, and the two sides draw their hairlines at different strengths,
+    # so the hairline would count as a row on one side only. The outline
+    # chrome check already reads bands with the same four-pixel rule.
+    m_bands = [b for b in band_starts(mac_pane) if b[1] - b[0] >= 4]
+    w_bands = [b for b in band_starts(win_pane) if b[1] - b[0] >= 4]
     common = min(mac_pane.size[1], win_pane.size[1])
     m_in = [b for b in m_bands if b[0] < common]
     w_in = [b for b in w_bands if b[0] < common]
