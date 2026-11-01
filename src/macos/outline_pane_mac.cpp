@@ -88,6 +88,7 @@ OutlinePane::OutlinePane() {
     highlight_ = Color{0.9f, 0.94f, 1.0f, 1.0f};
     muted_ = Color{0.5f, 0.5f, 0.5f, 1.0f};
     arrow_ = Color{0.42f, 0.38f, 0.33f, 1.0f};
+    activeText_ = Color{0.1f, 0.1f, 0.1f, 1.0f};
 }
 
 OutlinePane::~OutlinePane() = default;
@@ -308,12 +309,14 @@ void OutlinePane::SetColors(const Color& background, const Color& text,
 }
 
 void OutlinePane::SetChromePalette(const ChromePalette& palette) {
-    // The pane wears the shared chrome palette, not the document's:
-    // the warm paper tone and tan active row the Windows build has.
+    // The pane wears the palette the owner resolved, and not the
+    // document's: the shared chrome palette on the Windows window, the
+    // sidebar palette on the mac.
     const ChromePalette& c = palette;
     background_ = ToColor(c.paneBg);
     text_ = ToColor(c.paneText);
     highlight_ = ToColor(c.paneActiveBg);
+    activeText_ = ToColor(c.paneActiveText);
     muted_ = ToColor(c.paneTextMuted);
     arrow_ = ToColor(c.paneArrow);
 }
@@ -369,12 +372,14 @@ void OutlinePane::Draw(RenderTarget* target, float width, float height) {
         // stays identifiable whether or not the pane has the focus
         // (outline spec 13).
         if (item == currentItem_) {
+            // The caret's row wears the selection colour, inset and
+            // rounded the way a sidebar marks its choice.
             Rect band;
-            band.x = 0.0f;
-            band.y = y;
-            band.width = width;
-            band.height = kRowHeightDip;
-            target->FillRect(band, highlight_);
+            band.x = 4.0f;
+            band.y = y + 1.0f;
+            band.width = width - 8.0f;
+            band.height = kRowHeightDip - 2.0f;
+            target->FillRoundedRect(band, 5.0f, highlight_);
         }
 
         // The hover is a line under the row, the keyboard selection is
@@ -410,27 +415,18 @@ void OutlinePane::Draw(RenderTarget* target, float width, float height) {
             (row + 1) < visible_.size() &&
             items_[visible_[row + 1]].level > heading.level;
         if (hasChildren) {
-            // A small filled triangle in the arrow zone: pointing right
-            // while the subtree is folded, down while it is open. The
-            // shape carries the state, the same way the Windows pane
-            // and the Finder draw theirs.
+            // A disclosure mark in the arrow zone, pointing right
+            // while the subtree is folded and down while it is open.
+            // The mac target draws the system's own chevron symbol;
+            // targets without symbols draw the small triangle the
+            // Windows pane and the Finder use.
             const bool collapsed = collapse_.IsCollapsed(item);
-            const float centerX = kPadXDip + kTriangleSizeDip * 0.5f;
-            // Near the text's top, the spot the Windows pane puts its
-            // mark in.
-            const float centerY = y + 7.0f;
-            const float half = kTriangleSizeDip * 0.5f;
-            std::vector<Point> triangle;
-            if (collapsed) {
-                triangle = {Point{centerX - half * 0.6f, centerY - half},
-                            Point{centerX + half * 0.6f, centerY},
-                            Point{centerX - half * 0.6f, centerY + half}};
-            } else {
-                triangle = {Point{centerX - half, centerY - half * 0.6f},
-                            Point{centerX + half, centerY - half * 0.6f},
-                            Point{centerX, centerY + half * 0.6f}};
-            }
-            target->FillPolygon(triangle, arrow_);
+            Rect mark;
+            mark.x = kPadXDip - 2.0f;
+            mark.y = y + 6.0f;
+            mark.width = kTriangleSizeDip + 5.0f;
+            mark.height = kTriangleSizeDip + 5.0f;
+            target->DrawChevron(mark, !collapsed, arrow_);
         }
 
         // The text of the heading, indented by its level and trimmed to
@@ -444,9 +440,10 @@ void OutlinePane::Draw(RenderTarget* target, float width, float height) {
             ? static_cast<size_t>(available / 7.0f)
             : 0;
         const size_t maxChars = std::min(kMaxTextChars, fitChars);
-        // The Windows pane paints every row's heading in the same
-        // tone; the highlight is what marks the caret's row.
-        const Color color = text_;
+        // The caret's row speaks in the selection's text colour, the
+        // rest in the label colour, the way a sidebar marks its
+        // current row.
+        const Color color = (item == currentItem_) ? activeText_ : text_;
         target->DrawText(TrimmedText(heading, maxChars), font, textX, baseline,
                          color);
     }

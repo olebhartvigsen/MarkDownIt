@@ -85,6 +85,38 @@ ChromePalette ChromePaletteForAppearance(NSAppearance* appearance) {
     return BaseChromePalette();
 }
 
+// The colours of the sidebar, resolved from the system's own
+// semantic colours under the asked appearance, so the pane follows
+// Light Mode, Dark Mode, the user's accent colour and the contrast
+// settings the way the rest of the system does.
+ChromePalette SidebarPaletteForAppearance(NSAppearance* appearance) {
+    ChromePalette c = {};
+    __block ThemeColor text = {};
+    __block ThemeColor muted = {};
+    __block ThemeColor activeBg = {};
+    __block ThemeColor activeText = {};
+    void (^resolve)(void) = ^{
+        text = FromColor([NSColor labelColor]);
+        muted = FromColor([NSColor secondaryLabelColor]);
+        activeBg = FromColor([NSColor selectedContentBackgroundColor]);
+        activeText = FromColor([NSColor alternateSelectedControlTextColor]);
+    };
+    if (appearance) {
+        [appearance performAsCurrentDrawingAppearance:resolve];
+    } else {
+        resolve();
+    }
+    // The material below the pane is the backdrop; the pane itself
+    // stays clear.
+    c.paneBg = ThemeColor{0.0f, 0.0f, 0.0f, 0.0f};
+    c.paneText = text;
+    c.paneTextMuted = muted;
+    c.paneActiveBg = activeBg;
+    c.paneActiveText = activeText;
+    c.paneArrow = muted;
+    return c;
+}
+
 ChromePalette SystemChromePalette() {
     return ChromePaletteForAppearance(nil);
 }

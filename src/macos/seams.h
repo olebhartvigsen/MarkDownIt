@@ -217,6 +217,28 @@ public:
     virtual void FillPolygon(const std::vector<Point>& points,
                              const Color& color) = 0;
 
+    // Draws a disclosure mark for a subtree: a chevron, pointing down
+    // while the subtree is open and right while it is folded. The
+    // base draws the small filled triangle the desktop pane uses; the
+    // mac target overrides it with the system's own chevron symbol.
+    virtual void DrawChevron(const Rect& rect, bool expanded,
+                             const Color& color) {
+        const float half = rect.height * 0.28f;
+        const float cx = rect.x + rect.width * 0.5f;
+        const float cy = rect.y + rect.height * 0.5f;
+        std::vector<Point> triangle;
+        if (expanded) {
+            triangle = {Point{cx - half, cy - half * 0.6f},
+                        Point{cx + half, cy - half * 0.6f},
+                        Point{cx, cy + half * 0.6f}};
+        } else {
+            triangle = {Point{cx - half * 0.6f, cy - half},
+                        Point{cx + half * 0.6f, cy},
+                        Point{cx - half * 0.6f, cy + half}};
+        }
+        FillPolygon(triangle, color);
+    }
+
     // Strokes a polygon. The points are in the order they are given,
     // and the last point is joined back to the first when the shape is
     // closed.

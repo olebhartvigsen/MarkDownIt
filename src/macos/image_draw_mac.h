@@ -20,4 +20,10 @@ namespace mac {
 void DrawImageIntoContext(CGContextRef context, BitmapHandle image,
                           const Rect& rect);
 
+// Draws a disclosure chevron with the system's own symbol, in the
+// asked colour, into the rectangle. Returns false when the symbol is
+// not available, so the caller can draw its own mark instead.
+bool DrawChevronIntoContext(CGContextRef context, const Rect& rect,
+                            bool expanded, const Color& color);
+
 }  // namespace mac

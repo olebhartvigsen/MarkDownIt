@@ -180,6 +180,15 @@ public:
         mac::DrawImageIntoContext(context_, image, rect);
     }
 
+    void DrawChevron(const Rect& rect, bool expanded,
+                     const Color& color) override {
+        // The system's own chevron symbol, and the small triangle as
+        // the fallback when the symbol is not there.
+        if (!mac::DrawChevronIntoContext(context_, rect, expanded, color)) {
+            RenderTarget::DrawChevron(rect, expanded, color);
+        }
+    }
+
     void FillEllipse(const Rect& rect, const Color& color) override {
         CGContextSaveGState(context_);
         CGContextSetRGBFillColor(context_, color.r, color.g, color.b, color.a);

@@ -27,6 +27,13 @@ ChromePalette SystemChromePalette();
 // window follows that window's appearance, which can differ from the
 // app's.
 ChromePalette ChromePaletteForAppearance(NSAppearance* appearance);
+
+// The outline pane as a sidebar: the window material below the pane
+// supplies the backdrop, so the pane paints nothing of its own; the
+// words and the marks take the system's label colours, and the active
+// row wears the system's selection colour with its matching text
+// colour, the way a sidebar marks where you are.
+ChromePalette SidebarPaletteForAppearance(NSAppearance* appearance);
 #endif
 
 }  // namespace mac

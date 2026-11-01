@@ -166,6 +166,8 @@ private:
     Color highlight_;
     Color muted_;
     Color arrow_;
+    // The colour of the words on the row the caret is in.
+    Color activeText_;
 };
 
 }  // namespace mac

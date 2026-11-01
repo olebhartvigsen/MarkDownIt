@@ -79,6 +79,8 @@ bool OpenExternalUrl(const std::string& url) {
     mac::OutlinePane* outlinePane_;
     MdOutlineView* outlineView_;
     NSScrollView* outlineScroll_;
+    // The window material the pane sits on.
+    NSVisualEffectView* backdrop_;
     NSSplitView* splitView_;
     bool outlineVisible_;
     mac::MacSettings settings_;
@@ -284,13 +286,24 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [outlineScroll_ setAutohidesScrollers:YES];
     [outlineScroll_ setDrawsBackground:NO];
     [outlineView_ setAutoresizingMask:NSViewWidthSizable];
-    [outlineScroll_ setHidden:!outlineVisible_];
+    [outlineScroll_ setAutoresizingMask:NSViewWidthSizable |
+                                        NSViewHeightSizable];
+    // The pane sits on the window's sidebar material: the vibrancy
+    // below supplies the backdrop, the system supplies the selection
+    // and label colours, and the pane paints no paper of its own, the
+    // way a sidebar does it.
+    backdrop_ = [[NSVisualEffectView alloc]
+        initWithFrame:NSMakeRect(0, 0, 220, 400)];
+    [backdrop_ setMaterial:NSVisualEffectMaterialSidebar];
+    [backdrop_ setBlendingMode:NSVisualEffectBlendingModeBehindWindow];
+    [backdrop_ setState:NSVisualEffectStateFollowsWindowActiveState];
+    [backdrop_ setHidden:!outlineVisible_];
 
     // The pane borrows the document of the app and reads it again
     // after every reparse.
     outlinePane_->SetDocument(&app_->GetDocument());
     outlinePane_->SetChromePalette(
-        mac::ChromePaletteForAppearance([view_ effectiveAppearance]));
+        mac::SidebarPaletteForAppearance([view_ effectiveAppearance]));
     // The palette belongs to the appearance, so a switch refreshes the
     // outline pane beside the document too. Wired here, after the pane
     // exists: with the handler wired early, the first palette resolve
@@ -304,8 +317,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     __weak MdContentView* themeContentView = view_;
     [view_ setThemeChangedHandler:^{
         if (themePane) {
-            themePane->SetChromePalette(mac::ChromePaletteForAppearance(
-                [themeContentView effectiveAppearance]));
+            themePane->SetChromePalette(
+                mac::SidebarPaletteForAppearance(
+                    [themeContentView effectiveAppearance]));
             [themePaneView setNeedsDisplay:YES];
         }
     }];
@@ -368,7 +382,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     splitView_ = [[NSSplitView alloc] initWithFrame:frame];
     [splitView_ setVertical:YES];
     [splitView_ setDividerStyle:NSSplitViewDividerStyleThin];
-    [splitView_ addSubview:outlineScroll_];
+    [backdrop_ setAutoresizingMask:NSViewWidthSizable |
+                                   NSViewHeightSizable];
+    [backdrop_ addSubview:outlineScroll_];
+    [splitView_ addSubview:backdrop_];
     [splitView_ addSubview:scrollView_];
     // The place of the divider is the width of the pane, because the
     // pane is the first of the two.
@@ -1597,7 +1614,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     outlineVisible_ = !outlineVisible_;
     // Hiding the view takes the divider with it, so the document takes
     // the whole width.
-    [outlineScroll_ setHidden:!outlineVisible_];
+    [backdrop_ setHidden:!outlineVisible_];
 
     // The width is remembered, so the pane comes back the way it was
     // left.
@@ -1606,7 +1623,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                    ofDividerAtIndex:0];
         [self outlineLayout];
     } else {
-        const NSRect frame = [outlineScroll_ frame];
+        const NSRect frame = [backdrop_ frame];
         if (frame.size.width > 0.0) {
             settings_.settings().outlineWidthDip =
                 static_cast<float>(frame.size.width);

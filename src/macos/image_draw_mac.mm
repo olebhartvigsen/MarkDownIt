@@ -51,4 +51,37 @@ void DrawImageIntoContext(CGContextRef context, BitmapHandle image,
     }
 }
 
+bool DrawChevronIntoContext(CGContextRef context, const Rect& rect,
+                            bool expanded, const Color& color) {
+    if (!context) return false;
+    NSString* name = expanded ? @"chevron.down" : @"chevron.right";
+    NSImage* image = [NSImage imageWithSystemSymbolName:name
+                               accessibilityDescription:nil];
+    if (!image) return false;
+    NSImageSymbolConfiguration* config = [NSImageSymbolConfiguration
+        configurationWithPointSize:rect.height * 0.78
+                            weight:NSFontWeightSemibold];
+    image = [image imageWithSymbolConfiguration:config];
+    if (!image) return false;
+
+    NSGraphicsContext* gc = [NSGraphicsContext
+        graphicsContextWithCGContext:context flipped:YES];
+    if (!gc) return false;
+
+    const NSRect box = NSMakeRect(rect.x, rect.y, rect.width, rect.height);
+    [NSGraphicsContext saveGraphicsState];
+    [NSGraphicsContext setCurrentContext:gc];
+    // The symbol draws as a template, so the colour comes from
+    // filling its box first and knocking that fill down to the
+    // shape of the glyph.
+    [[NSColor colorWithSRGBRed:color.r green:color.g blue:color.b
+                         alpha:color.a] set];
+    NSRectFillUsingOperation(box, NSCompositingOperationCopy);
+    [image drawInRect:box fromRect:NSZeroRect
+            operation:NSCompositingOperationDestinationIn
+             fraction:1.0 respectFlipped:YES hints:nil];
+    [NSGraphicsContext restoreGraphicsState];
+    return true;
+}
+
 }  // namespace mac
