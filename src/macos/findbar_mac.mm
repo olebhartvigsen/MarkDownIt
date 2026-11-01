@@ -76,6 +76,8 @@ static std::wstring CounterText(const FindBarModel& model) {
 
 @implementation MdFindBarView {
     FindBarModel* model_;
+    NSTextField* findLabel_;
+    NSTextField* replaceLabel_;
     NSTextField* searchField_;
     NSTextField* replaceField_;
     NSButton* previousButton_;
@@ -118,9 +120,15 @@ static std::wstring CounterText(const FindBarModel& model) {
     [replaceField_ setPlaceholderString:macstrings::kReplacePlaceholder];
     [replaceField_ setDelegate:self];
 
-    previousButton_ = [self makeButton:@"\u25B2" tooltip:macstrings::kPreviousMatch
+    findLabel_ = [NSTextField labelWithString:@"Find:"];
+    [findLabel_ setFont:mac::SystemUIFont(12.0f)];
+    replaceLabel_ = [NSTextField labelWithString:@"Replace:"];
+    [replaceLabel_ setFont:mac::SystemUIFont(12.0f)];
+
+    // Named the way the Windows bar names them, in the same order.
+    previousButton_ = [self makeButton:@"Previous" tooltip:macstrings::kPreviousMatch
                               action:@selector(previousMatch:)];
-    nextButton_ = [self makeButton:@"\u25BC" tooltip:macstrings::kNextMatch
+    nextButton_ = [self makeButton:@"Next" tooltip:macstrings::kNextMatch
                           action:@selector(nextMatch:)];
     matchCaseButton_ = [self makeCheckbox:macstrings::kMatchCase
                                    action:@selector(optionsChanged:)];
@@ -132,24 +140,20 @@ static std::wstring CounterText(const FindBarModel& model) {
     replaceAllButton_ = [self makeButton:macstrings::kReplaceAllButton
                                 tooltip:macstrings::kReplaceEveryMatch
                                 action:@selector(replaceAll:)];
-    closeButton_ = [self makeButton:@"\u2715" tooltip:macstrings::kCloseFindBar
+    closeButton_ = [self makeButton:@"Close" tooltip:macstrings::kCloseFindBar
                             action:@selector(closeBar:)];
-    historyButton_ = [self makeButton:@"\u25BE"
-                             tooltip:macstrings::kRecentSearches
-                              action:@selector(showHistory:)];
 
     // The glyph buttons need real names for assistive technology
     // (find spec 2.3 and 44).
     [previousButton_ setAccessibilityLabel:macstrings::kPreviousMatch];
     [nextButton_ setAccessibilityLabel:macstrings::kNextMatch];
     [closeButton_ setAccessibilityLabel:macstrings::kCloseFindBarLabel];
-    [historyButton_ setAccessibilityLabel:macstrings::kRecentSearches];
     [searchField_ setAccessibilityLabel:macstrings::kSearchText];
     [replaceField_ setAccessibilityLabel:macstrings::kReplaceText];
 
     counterLabel_ = [NSTextField labelWithString:@""];
     [counterLabel_ setAlignment:NSTextAlignmentRight];
-    [counterLabel_ setTextColor:[NSColor secondaryLabelColor]];
+    [counterLabel_ setTextColor:[NSColor labelColor]];
 
     statusLabel_ = [NSTextField labelWithString:@""];
     [statusLabel_ setTextColor:[NSColor secondaryLabelColor]];
@@ -179,15 +183,16 @@ static std::wstring CounterText(const FindBarModel& model) {
 // The two rows of controls.
 - (void)buildRows {
     searchRow_ = [NSStackView stackViewWithViews:@[
-        searchField_, previousButton_, nextButton_, matchCaseButton_,
-        wholeWordButton_, counterLabel_, historyButton_
+        findLabel_, searchField_, previousButton_, nextButton_,
+        matchCaseButton_, wholeWordButton_, counterLabel_
     ]];
     [searchRow_ setOrientation:NSUserInterfaceLayoutOrientationHorizontal];
     [searchRow_ setAlignment:NSLayoutAttributeCenterY];
     [searchRow_ setSpacing:8.0];
 
     replaceRow_ = [NSStackView stackViewWithViews:@[
-        replaceField_, replaceButton_, replaceAllButton_, statusLabel_
+        replaceLabel_, replaceField_, replaceButton_, replaceAllButton_,
+        statusLabel_
     ]];
     [replaceRow_ setOrientation:NSUserInterfaceLayoutOrientationHorizontal];
     [replaceRow_ setAlignment:NSLayoutAttributeCenterY];
@@ -216,6 +221,10 @@ static std::wstring CounterText(const FindBarModel& model) {
         [everything.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
         [closeButton_.topAnchor constraintEqualToAnchor:self.topAnchor
                                                 constant:4.0],
+        // The two labels share a width, so the fields line up under
+        // each other the way the Windows rows do.
+        [findLabel_.widthAnchor constraintEqualToConstant:68.0],
+        [replaceLabel_.widthAnchor constraintEqualToConstant:68.0],
         [searchField_.widthAnchor constraintEqualToConstant:kFindFieldWidth],
         [replaceField_.widthAnchor constraintEqualToConstant:kFindFieldWidth],
         [counterLabel_.widthAnchor constraintEqualToConstant:kCounterWidth],

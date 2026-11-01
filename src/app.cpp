@@ -3336,11 +3336,24 @@ void AppWindow::StartQAWalk(const std::string& states) {
     RECT want = {0, 0, 1000, 760};
     if (AdjustWindowRectEx(&want, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                            FALSE, WS_EX_ACCEPTFILES)) {
-        const int w = want.right - want.left;
-        const int h = want.bottom - want.top;
-        const int sw = GetSystemMetrics(SM_CXSCREEN);
-        const int sh = GetSystemMetrics(SM_CYSCREEN);
-        SetWindowPos(hwnd_, nullptr, (sw - w) / 2, (sh - h) / 2, w, h,
+        int w = want.right - want.left;
+        int h = want.bottom - want.top;
+        // The whole window must be on screen for the capture, so it is
+        // clamped to the work area and centered inside it: a window
+        // taller than the screen put the find bar's replace row under
+        // the taskbar in the picture.
+        RECT work = {};
+        if (!SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0)) {
+            work.left = 0;
+            work.top = 0;
+            work.right = GetSystemMetrics(SM_CXSCREEN);
+            work.bottom = GetSystemMetrics(SM_CYSCREEN);
+        }
+        if (w > work.right - work.left) w = work.right - work.left;
+        if (h > work.bottom - work.top) h = work.bottom - work.top;
+        const int x = work.left + ((work.right - work.left) - w) / 2;
+        const int y = work.top + ((work.bottom - work.top) - h) / 2;
+        SetWindowPos(hwnd_, nullptr, x, y, w, h,
                      SWP_NOZORDER | SWP_NOACTIVATE);
         ResizeContentWindow();
         Repaint();

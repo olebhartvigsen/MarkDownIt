@@ -479,7 +479,16 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // watcher can capture it; the app then moves on by itself and quits at
 // the end, so a run needs no input at all.
 - (void)runQAStates:(NSString*)list {
-    [self qaStep:[list componentsSeparatedByString:@","] at:0];
+    NSArray<NSString*>* states = [list componentsSeparatedByString:@","];
+    // A beat before the first state, with the window brought forward:
+    // without it the first picture raced the window onto the screen and
+    // showed the desktop behind it.
+    [window_ makeKeyAndOrderFront:nil];
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
+        dispatch_get_main_queue(), ^{
+            [self qaStep:states at:0];
+        });
 }
 
 - (void)qaStep:(NSArray<NSString*>*)states at:(NSUInteger)index {
