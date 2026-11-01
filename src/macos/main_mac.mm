@@ -7,7 +7,6 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <fstream>
 #include <string>
 
@@ -35,7 +34,7 @@
 #include "welcome_mac.h"
 #include "findbar_mac.h"
 #include "menu_mac.h"
-#include "ribbon_mac.h"
+#include "toolbar_mac.h"
 #include "table_picker_mac.h"
 
 namespace mac {
@@ -58,50 +57,23 @@ bool OpenExternalUrl(const std::string& url) {
 #include "settings_mac.h"
 #include "zoommodel.h"
 
-// The helpers of the command strip. The strip asks what state the
-// caret is in, and these read the text for it.
-namespace {
-
-// The heading level of the line at |lineStart|, 0 when the line is not
-// a heading. The strip lights H1 to H3 from this.
-int HeadingLevelAt(const std::string& text, uint32_t lineStart) {
-    size_t level = 0;
-    while (lineStart + level < text.size() && text[lineStart + level] == '#') {
-        ++level;
-    }
-    if (level == 0 || level > 6) return 0;
-    const size_t after = lineStart + level;
-    if (after < text.size() && text[after] == ' ')
-        return static_cast<int>(level);
-    return 0;
-}
-
-// Whether the line at |lineStart| opens with |prefix|.
-bool LineHasPrefix(const std::string& text, uint32_t lineStart,
-                   const char* prefix) {
-    const size_t length = std::strlen(prefix);
-    return lineStart + length <= text.size() &&
-           text.compare(lineStart, length, prefix) == 0;
-}
-
-}  // namespace
-
 // The window and the app.
 //
 // The delegate owns the app object, the window and the content view. It
 // implements the AppKit selectors, which the menu items and the command
 // strip are wired to.
 @interface MdAppDelegate
-    : NSObject <NSApplicationDelegate, NSWindowDelegate, MdRibbonHost,
+    : NSObject <NSApplicationDelegate, NSWindowDelegate,
                 NSMenuDelegate, MacSettingsHost> {
     mac::App* app_;
     mac::ContentView* content_;
     // The window content, which holds the command strip, the find bar
     // and the document.
     NSStackView* container_;
-    // The command strip, the mac twin of the Windows ribbon.
-    MdRibbonView* ribbon_;
-    MdQuickAccessView* qatView_;
+    // The native toolbar, the standard mac command surface. The
+    // Windows window keeps its ribbon; this window follows the
+    // system's own window design.
+    MdToolbarController* toolbar_;
 
     // The outline pane and the view that draws it.
     mac::OutlinePane* outlinePane_;
@@ -271,9 +243,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // it is asked before the window closes with unsaved changes.
     [window_ setDelegate:self];
     [window_ setTitle:@"MarkDownIt"];
-    // The title lives in the title bar accessory beside the toolbar
-    // buttons, so the system's centred copy is hidden.
-    [window_ setTitleVisibility:NSWindowTitleHidden];
+    // The window wears the standard title bar; the document name
+    // goes on it through refreshWindowTitle, with the file icon.
     [window_ setMinSize:NSMakeSize(480, 320)];
     // The window keeps the system's own appearance: the document
     // palette is resolved from the system's semantic colours, so the
@@ -342,15 +313,15 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The window carries the edited dot while there are changes.
         [window_ setDocumentEdited:YES];
         [self outlinePaneRefresh];
-        // The strip follows the document: its toggles and its table
-        // commands depend on what the caret is in.
-        [self ribbonSync];
+        // The toolbar follows the document: undo and redo depend on
+        // what is pending, and the buttons mirror it.
+        [self toolbarSync];
     });
 
-    // The strip lights its format toggles from the selection, so it
-    // reads the state again after every move of the caret.
+    // The toolbar reads the command states again from the selection,
+    // the way the menu bar revalidates around the caret.
     app_->SetSelectionChangedHandler([self] {
-        [self ribbonSync];
+        [self toolbarSync];
         // The active heading follows the caret, and the pane scrolls
         // it into view when the caret enters another section (outline
         // spec 6 and 6.1).
@@ -408,24 +379,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [container_ setOrientation:NSUserInterfaceLayoutOrientationVertical];
     [container_ setDistribution:NSStackViewDistributionFill];
 
-    // The command strip sits at the top, the way the Windows ribbon
-    // does.
-    ribbon_ = [MdRibbonView ribbonWithHost:self];
-    // The Quick Access Toolbar rides the title bar at the leading edge
-    // (after the traffic lights), where the Windows build keeps it.
-    qatView_ = [MdQuickAccessView viewWithHost:self];
-    [qatView_ setTitleText:[window_ title]];
-    {
-        NSTitlebarAccessoryViewController* access =
-            [[NSTitlebarAccessoryViewController alloc] init];
-        [access setView:qatView_];
-        [access setLayoutAttribute:NSLayoutAttributeLeading];
-        [window_ addTitlebarAccessoryViewController:access];
-    }
-    [ribbon_ setTranslatesAutoresizingMaskIntoConstraints:NO];
-    [[ribbon_ heightAnchor]
-        constraintEqualToConstant:[MdRibbonView ribbonHeight]].active = YES;
-    [container_ addArrangedSubview:ribbon_];
+    // The native toolbar goes with the window: one standard row of
+    // commands in the title bar, with system symbols, the way the
+    // macOS guidelines ask for.
+    toolbar_ = [MdToolbarController controllerWithHost:self];
+    [window_ setToolbar:[toolbar_ toolbar]];
     [container_ addArrangedSubview:splitView_];
     // The strip is the last row of the stack, so it docks at the
     // bottom of the window (find spec: one strip at the bottom).
@@ -433,6 +391,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
     [window_ setContentView:container_];
     [window_ makeKeyAndOrderFront:nil];
+    // The window is up, so the toolbar is built; the commands start
+    // in the state the document is in.
+    [self toolbarSync];
     // The document view takes the keyboard from the start, so typing
     // reaches the edit controller without a click first.
     [window_ makeFirstResponder:view_];
@@ -556,9 +517,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         app_->RefreshFindResults(false);
     } else if ([state isEqualToString:@"edit"]) {
         app_->SetEditing(true);
-        // The walk stays on the default page, the way the Windows
-        // walk does; its ribbon framework cannot be told to switch
-        // tabs, so both pictures show the same page.
+        // The mac window has no ribbon tabs, so there is no page to
+        // switch here; both walks show the state their app opens on.
         [window_ makeFirstResponder:view_];
         // Land at the top of the document, the way the Windows walk
         // arrives: its caret rule leaves the view there, so the two
@@ -569,7 +529,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         NSClipView* clip = [scrollView_ contentView];
         [clip scrollToPoint:NSMakePoint(0.0, 0.0)];
         [scrollView_ reflectScrolledClipView:clip];
-        [self ribbonSync];
+        [self toolbarSync];
         [self outlineActiveRefresh];
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"outline"]) {
@@ -587,7 +547,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         if (sourceView_) [self OnToggleSourceView];
         window_.appearance =
             [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
-        [self ribbonSync];
+        [self toolbarSync];
         [view_ setNeedsDisplay:YES];
     }
 }
@@ -676,16 +636,19 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)refreshWindowTitle:(const std::string&)path {
     if (path.empty()) {
         [window_ setTitle:@"MarkDownIt"];
+        [window_ setSubtitle:@""];
         [window_ setRepresentedFilename:@""];
     } else {
         NSString* full = [NSString stringWithUTF8String:path.c_str()];
-        // The same caption the Windows build shows: the app name, a
-        // dash, and the file.
-        [window_ setTitle:[NSString stringWithFormat:@"MarkDownIt - %@",
-                                                     [full lastPathComponent]]];
+        // The document name is the title, the way document windows
+        // do it; the app name lives in the menu bar. The folder shows
+        // as the subtitle, shortened with the system's own '~'.
+        [window_ setTitle:[full lastPathComponent]];
+        [window_ setSubtitle:
+            [[full stringByDeletingLastPathComponent]
+                stringByAbbreviatingWithTildeInPath]];
         [window_ setRepresentedFilename:full];
     }
-    [qatView_ setTitleText:[window_ title]];
     [window_ setDocumentEdited:NO];
 }
 
@@ -923,13 +886,13 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     app_->SetWelcomeMode(true);
     content_->SetWelcomeFiles(settings_.recentFilesWithPreview());
     // The strip's document commands have nothing to act on here.
-    [self ribbonSync];
+    [self toolbarSync];
 }
 
 // Hides the welcome screen, because a document is open now.
 - (void)hideWelcomeScreen {
     app_->SetWelcomeMode(false);
-    [self ribbonSync];
+    [self toolbarSync];
 }
 
 - (void)OnOpen {
@@ -1449,7 +1412,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     if (app_->findBar().IsVisible()) {
         app_->RefreshFindResults(false);
     }
-    [self ribbonSync];
+    [self toolbarSync];
 }
 
 - (void)OnReload {
@@ -1521,7 +1484,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)OnToggleWrap {
     wrap_ = !wrap_;
     content_->SetWrap(wrap_);
-    [self ribbonSync];
+    [self toolbarSync];
     [view_ setNeedsDisplay:YES];
 }
 
@@ -1559,154 +1522,29 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [self OnToggleOutline];
 }
 
-// The two questions the command strip asks. The strip carries its
-// commands out through the same selectors the menu items use; these
-// methods only report the state the buttons show.
-
-- (BOOL)ribbonCommandOn:(NSString*)commandId {
-    const std::string& text = app_->sourceText();
-    const uint32_t start = app_->selection().Start();
-    const uint32_t end = app_->selection().End();
-    const bool hasSelection = !app_->selection().Empty();
-
-    if ([commandId isEqualToString:@"cmdWrap"]) return wrap_;
-    if ([commandId isEqualToString:@"cmdOutline"]) return outlineVisible_;
-    if ([commandId isEqualToString:@"cmdViewSource"]) return sourceView_;
-    if ([commandId isEqualToString:@"cmdEditToggle"]) return app_->Editing();
-    // The bold and italic buttons read the pending typing format when
-    // it is set, so a Cmd+B with an empty caret shows pressed without
-    // writing anything.
-    if ([commandId isEqualToString:@"cmdBold"])
-        return app_->FormatButtonOn("**") ? YES : NO;
-    if ([commandId isEqualToString:@"cmdItalic"])
-        return app_->FormatButtonOn("*") ? YES : NO;
-    if ([commandId isEqualToString:@"cmdStrike"])
-        return hasSelection && IsWrappedIn(text, start, end, "~~");
-    if ([commandId isEqualToString:@"cmdCode"])
-        return hasSelection && IsWrappedIn(text, start, end, "`");
-    if ([commandId isEqualToString:@"cmdMark"]) {
-        if (!hasSelection) return NO;
-        // The button is pressed whenever the selection overlaps a
-        // marker, a partial overlap and an unresolved marker included
-        // (highlighting guide 4 and 6).
-        return app_->SelectionHasMarker() ? YES : NO;
-    }
-
-    const uint32_t lineStart = app_->buffer().LineStart(start);
-    if ([commandId isEqualToString:@"cmdHeading1"])
-        return HeadingLevelAt(text, lineStart) == 1;
-    if ([commandId isEqualToString:@"cmdHeading2"])
-        return HeadingLevelAt(text, lineStart) == 2;
-    if ([commandId isEqualToString:@"cmdHeading3"])
-        return HeadingLevelAt(text, lineStart) == 3;
-    if ([commandId isEqualToString:@"cmdBullets"])
-        return LineHasPrefix(text, lineStart, "- ") ||
-               LineHasPrefix(text, lineStart, "* ") ||
-               LineHasPrefix(text, lineStart, "+ ");
-    if ([commandId isEqualToString:@"cmdNumbering"]) {
-        return lineStart + 2 < text.size() && text[lineStart] >= '0' &&
-               text[lineStart] <= '9' && text[lineStart + 1] == '.' &&
-               text[lineStart + 2] == ' ';
-    }
-    if ([commandId isEqualToString:@"cmdQuote"])
-        return LineHasPrefix(text, lineStart, "> ");
-    return NO;
-}
-
-// The strip commands that change the document: they follow edit mode
-// the way the Windows ribbon's format and table commands do.
-- (BOOL)commandChangesTheDocument:(NSString*)commandId {
-    static NSArray<NSString*>* mutating = nil;
-    if (!mutating) {
-        mutating = @[ @"cmdBold", @"cmdItalic", @"cmdStrike", @"cmdCode",
-                      @"cmdLink", @"cmdClearFormat",
-                      @"cmdBullets", @"cmdNumbering", @"cmdQuote",
-                      @"cmdIndent", @"cmdOutdent",
-                      @"cmdHeading1", @"cmdHeading2", @"cmdHeading3",
-                      @"cmdInsertTable", @"cmdTableTools",
-                      @"cmdAddRow", @"cmdAddRowAbove", @"cmdRemoveRow",
-                      @"cmdAddColumn", @"cmdAddColumnLeft", @"cmdRemoveColumn",
-                      @"cmdRemoveTable", @"cmdSplitCell",
-                      @"cmdAlignLeft", @"cmdAlignCenter", @"cmdAlignRight",
-                      @"cmdUndo", @"cmdRedo" ];
-    }
-    return [mutating containsObject:commandId];
-}
-
-// Whether a strip command is available right now. The table commands
-// follow the shared capability table, so an enabled button can never be
-// one that refuses; Insert Table acts outside a table; the undo pair
-// needs something to undo.
-- (void)ribbonShowFileMenuFrom:(NSView*)anchor {
-    NSMenu* fileMenu = [[[NSApp mainMenu] itemWithTitle:@"File"] submenu];
-    if (!fileMenu || !anchor) return;
-    // The strip is flipped, so the tab's bottom edge is at its height.
-    [fileMenu popUpMenuPositioningItem:nil
-                            atLocation:NSMakePoint(2.0,
-                                                   NSHeight([anchor bounds]))
-                              inView:anchor];
-}
-
-- (BOOL)ribbonCommandAvailable:(NSString*)commandId {
-    if (app_->WelcomeMode()) {
-        // The welcome screen holds no document, so a document command
-        // has nothing to act on.
-        return NO;
-    }
-    if (!app_->Editing() && [self commandChangesTheDocument:commandId]) {
-        // Every command that changes the document follows edit mode
-        // (the Windows rule); reading, finding, zooming and marking
-        // stay available.
-        return NO;
-    }
-    // At either end of the zoom range the button that cannot act dims:
-    // a live-looking button that does nothing reads as broken (zoom
-    // guide). The Windows build dims through CanZoomIn/CanZoomOut.
-    if ([commandId isEqualToString:@"cmdZoomIn"]) {
-        return zoom_ < zoom::kMaxZoom - 1e-4f;
-    }
-    if ([commandId isEqualToString:@"cmdZoomOut"]) {
-        return zoom_ > zoom::kMinZoom + 1e-4f;
-    }
-    if ([commandId isEqualToString:@"cmdUndo"]) return app_->undo().CanUndo();
-    if ([commandId isEqualToString:@"cmdRedo"]) return app_->undo().CanRedo();
-    if ([commandId isEqualToString:@"cmdInsertTable"]) {
-        // It acts outside a table; inside one it is disabled, because a
-        // table may never contain a table (the Windows rule).
-        tableedit::TableLocation location;
-        return !app_->CaretTable(&location);
-    }
-    if ([commandId hasPrefix:@"cmdAdd"] || [commandId hasPrefix:@"cmdAlign"] ||
-        [commandId isEqualToString:@"cmdRemoveRow"] ||
-        [commandId isEqualToString:@"cmdRemoveColumn"] ||
-        [commandId isEqualToString:@"cmdSplitCell"] ||
-        [commandId isEqualToString:@"cmdRemoveTable"]) {
-        tableedit::TableLocation location;
-        if (!app_->CaretTable(&location)) return NO;
-        // Alignment rewrites the delimiter row of any table the caret is
-        // in, and Delete Table is always available inside one.
-        if ([commandId hasPrefix:@"cmdAlign"] ||
-            [commandId isEqualToString:@"cmdRemoveTable"]) {
-            return YES;
+// Re-reads the command states of the toolbar: the edit switch reads
+// Edit or Done, and the document commands grey out when there is
+// nothing for them to act on, the same edit-mode rule the menu bar
+// applies.
+- (void)toolbarSync {
+    for (NSToolbarItem* item in [[window_ toolbar] items]) {
+        NSString* identifier = [item itemIdentifier];
+        if ([identifier isEqualToString:@"MdEditMode"]) {
+            NSButton* button = (NSButton*)[item view];
+            if ([button isKindOfClass:[NSButton class]]) {
+                [button setTitle:(app_->Editing() ? @"Done" : @"Edit")];
+            }
+        } else if ([identifier isEqualToString:@"MdSave"] ||
+                   [identifier isEqualToString:@"MdFind"]) {
+            [item setEnabled:!app_->WelcomeMode()];
+        } else if ([identifier isEqualToString:@"MdUndo"]) {
+            [item setEnabled:(!app_->WelcomeMode() &&
+                               app_->undo().CanUndo())];
+        } else if ([identifier isEqualToString:@"MdRedo"]) {
+            [item setEnabled:(!app_->WelcomeMode() &&
+                               app_->undo().CanRedo())];
         }
-        const TableCapabilities caps =
-            TableCapabilitiesFor(location.rowIndex, location.numCols);
-        if ([commandId isEqualToString:@"cmdAddRow"]) return caps.addRowBelow;
-        if ([commandId isEqualToString:@"cmdAddRowAbove"]) return caps.addRowAbove;
-        if ([commandId isEqualToString:@"cmdRemoveRow"]) return caps.removeRow;
-        if ([commandId isEqualToString:@"cmdAddColumn"]) return caps.addColumnRight;
-        if ([commandId isEqualToString:@"cmdAddColumnLeft"]) return caps.addColumnLeft;
-        if ([commandId isEqualToString:@"cmdRemoveColumn"]) return caps.removeColumn;
-        if ([commandId isEqualToString:@"cmdSplitCell"]) return caps.splitCell;
-        return YES;
     }
-    return YES;
-}
-
-// Re-reads the command states of the strip.
-- (void)ribbonSync {
-    [ribbon_ refresh];
-    [qatView_ refresh];
 }
 
 // Gives the pane the height its rows need, so the scroll view can
@@ -1777,19 +1615,19 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     settings_.settings().outlineVisible = outlineVisible_;
     settings_.Save();
 
-    [self ribbonSync];
+    [self toolbarSync];
     [view_ setNeedsDisplay:YES];
 }
 
 - (void)OnToggleMark {
     app_->ToggleMarkSelection();
-    [self ribbonSync];
+    [self toolbarSync];
     [view_ setNeedsDisplay:YES];
 }
 
 - (void)OnToggleEditMode {
     app_->ToggleEditing();
-    [self ribbonSync];
+    [self toolbarSync];
     [view_ setNeedsDisplay:YES];
 }
 
@@ -1831,28 +1669,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 }
 
 - (void)OnInsertTable {
-    // The same Word-style grid picker the Windows build opens, hung below
-    // the Table button in the strip. When the command comes from the menu
-    // bar the button may be on another tab, so the picker hangs below the
-    // strip at the pointer instead. The guideline forbids following the
-    // document caret, and this never does.
-    NSView* anchor = [ribbon_ viewForCommand:@"cmdInsertTable"];
-    NSPoint point = NSZeroPoint;
-    BOOL anchored = NO;
-    if (anchor && [anchor window] && ![anchor isHiddenOrHasHiddenAncestor]) {
-        const NSRect inWindow = [anchor convertRect:[anchor bounds] toView:nil];
-        const NSRect onScreen = [[anchor window] convertRectToScreen:inWindow];
-        // AppKit counts y upward, so the button's bottom edge is its minY,
-        // and the picker's top-left corner hangs from there.
-        point = NSMakePoint(NSMinX(onScreen), NSMinY(onScreen));
-        anchored = YES;
-    }
-    if (!anchored) {
-        const NSPoint pointer = [NSEvent mouseLocation];
-        const NSRect strip = [ribbon_ convertRect:[ribbon_ bounds] toView:nil];
-        const NSRect onScreen = [[ribbon_ window] convertRectToScreen:strip];
-        point = NSMakePoint(pointer.x, NSMinY(onScreen));
-    }
+    // The same Word-style grid picker the Windows build opens. The
+    // Windows picker hangs below its Table button; the mac has no
+    // Table button on the toolbar, so the picker opens below the
+    // pointer. The guideline forbids following the document caret,
+    // and this never does.
+    const NSPoint point = [NSEvent mouseLocation];
 
     __weak MdAppDelegate* weakSelf = self;
     [MdTablePicker presentBelowAnchor:point
@@ -1900,7 +1722,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
 - (void)OnRemoveTable {
     app_->RemoveTable();
-    [self ribbonSync];
+    [self toolbarSync];
     [view_ setNeedsDisplay:YES];
 }
 
@@ -1919,13 +1741,13 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)OnToggleBold {
     app_->ToggleBold();
     [view_ setNeedsDisplay:YES];
-    [self ribbonSync];
+    [self toolbarSync];
 }
 
 - (void)OnToggleItalic {
     app_->ToggleItalic();
     [view_ setNeedsDisplay:YES];
-    [self ribbonSync];
+    [self toolbarSync];
 }
 
 - (void)OnToggleCode {

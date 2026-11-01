@@ -8,7 +8,6 @@ would fail on the Mac of whoever downloads it.
 """
 import os
 import plistlib
-import re
 import struct
 import subprocess
 import sys
@@ -31,55 +30,17 @@ def run(*args):
     return done.returncode, (done.stdout + done.stderr).strip()
 
 
-# The command strip draws the icons the Windows ribbon names. The
-# table in src/macos/ribbon_mac.mm is the one the strip builds from, so
-# the names it carries are the names the bundle has to hold.
-RIBBON_ROW = re.compile(
-    r'\{"(cmd[^"]+)",\s+"((?:[^"\\]|\\.)*)",\s+"([A-Za-z0-9]+:)",\s+'
-    r'"([a-z0-9-]+)",\s+(true|false),')
-
-
-def strip_icon_bases():
-    path = os.path.join(REPO, "src", "macos", "ribbon_mac.mm")
-    with open(path, encoding="utf-8") as fh:
-        code = fh.read()
-    bases = []
-    for row in RIBBON_ROW.findall(code):
-        if row[3] not in bases:
-            bases.append(row[3])
-    return bases
+# The mac window wears native chrome, so the bundle carries no strip
+# icons any more; the toolbar and the sidebar draw system material.
+# The check keeps the raster set from creeping back in.
 
 
 def check_strip_icons(app):
-    """Every icon the strip asks for has to be in the bundle."""
-    bases = strip_icon_bases()
-    if not bases:
-        fail("the strip table names no icons, so the check cannot run")
+    """The bundle carries no strip icons any more."""
     icons_dir = os.path.join(app, "Contents", "Resources", "icons")
-    problems = []
-    for base in bases:
-        for size in (16, 32):
-            name = "%s_%d.png" % (base, size)
-            path = os.path.join(icons_dir, name)
-            if not os.path.isfile(path):
-                problems.append("%s is not there" % name)
-                continue
-            # A flat 16px glyph can be under 150 bytes, so a byte count
-            # proves nothing. The PNG header does: signature, then the
-            # width and height in the IHDR chunk.
-            with open(path, "rb") as fh:
-                head = fh.read(24)
-            if head[:8] != b"\x89PNG\r\n\x1a\n":
-                problems.append("%s is not a PNG" % name)
-                continue
-            width = int.from_bytes(head[16:20], "big")
-            height = int.from_bytes(head[20:24], "big")
-            if (width, height) != (size, size):
-                problems.append("%s is %dx%d" % (name, width, height))
-    if problems:
-        fail("the bundle's strip icons are wrong: %s"
-             % ", ".join(problems))
-    print("the bundle carries the %d strip icons" % (len(bases) * 2))
+    if os.path.isdir(icons_dir):
+        fail("the bundle still carries the strip icons at %s" % icons_dir)
+    print("the bundle carries no strip icons")
 
 
 

@@ -218,12 +218,21 @@ def write_pictures(mac_pane, win_pane, out_dir, name):
     over.save(os.path.join(out_dir, "%s_overlay.png" % name))
 
 
-# The chrome landmarks: the surfaces around the document must wear the
-# same paint on both platforms. Each block sits in a blank stretch (the
-# strip right of the buttons, the pane's empty bottom, the tail of the
-# active outline row), far from text and antialiasing; any real palette
-# difference sits far outside the tolerance.
+# The Windows chrome landmarks: the surfaces the Windows window draws
+# around the document still wear the shared palette. Each sampled
+# block sits in a blank stretch (the strip right of the buttons, the
+# pane's empty bottom, the tail of the active outline row), far from
+# text and antialiasing, so a palette drift sits far outside the
+# tolerance. The mac window wears the system's chrome now (toolbar,
+# sidebar and standard controls, whose colours follow the system
+# appearance, the accent colour and the wallpaper), so it is not
+# sampled here; the per-side readability checks still cover it.
 CHROME_TOL = 16
+WIN_EXPECTED = {
+    "strip": (245, 246, 247),
+    "pane": (250, 246, 241),
+    "row": (232, 220, 200),
+}
 
 
 def sample_block(img, cx, cy, w=20, h=8, dom=False):
@@ -300,30 +309,30 @@ def main():
         write_pictures(mac_pane, win_pane, args.out, state)
         compared += 1
 
-    # The chrome: the surfaces the app draws around the document.
+    # The Windows chrome: the surfaces the Windows window draws still
+    # wear the shared palette, so each is checked against its own
+    # value.
     for state in STATES:
-        if state not in mac_rects or state not in win_rects:
+        if state not in win_rects:
             continue
-        m_png = os.path.join(args.macos, "%s.png" % state)
         w_png = os.path.join(args.windows, "%s.png" % state)
-        if not os.path.exists(m_png) or not os.path.exists(w_png):
+        if not os.path.exists(w_png):
             continue
-        m_img = Image.open(m_png).convert("RGB")
         w_img = Image.open(w_png).convert("RGB")
-        m_spots = chrome_landmarks(state, mac_rects[state], m_png)
-        w_spots = chrome_landmarks(state, win_rects[state], w_png)
-        for (label, mx, my, mw, mh, dm), (_, wx, wy, ww, wh, dw) in zip(
-                m_spots, w_spots):
-            mc = sample_block(m_img, mx, my, mw, mh, dm)
+        for (label, wx, wy, ww, wh, dw) in chrome_landmarks(
+                state, win_rects[state], w_png):
+            want = WIN_EXPECTED.get(label)
+            if want is None:
+                continue
             wc = sample_block(w_img, wx, wy, ww, wh, dw)
-            delta = max(abs(mc[i] - wc[i]) for i in range(3))
+            delta = max(abs(wc[i] - want[i]) for i in range(3))
             if delta > CHROME_TOL:
                 failed += 1
-                print("  %-8s chrome FAIL %s: mac %s vs windows %s "
-                      "(delta %d)" % (state, label, mc, wc, delta))
+                print("  %-8s chrome FAIL %s: windows %s, want %s "
+                      "(delta %d)" % (state, label, wc, want, delta))
             else:
-                print("  %-8s chrome ok   %s: mac %s windows %s"
-                      % (state, label, mc, wc))
+                print("  %-8s chrome ok   %s: windows %s" %
+                      (state, label, wc))
 
     print("compared %d states, %d failed" % (compared, failed))
     sys.exit(1 if failed else 0)

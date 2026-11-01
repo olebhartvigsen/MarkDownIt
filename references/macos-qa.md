@@ -292,6 +292,19 @@ loop that now runs on every build.
 - Screenshot: the edit pair in MarkDownIt-capture-parity.
 - Status: fixed in 84a1905 (CI run 41305853691).
 
+### The mac window wears native chrome (2026-11-01)
+- The strip that mirrored the Windows ribbon read as a Windows
+  control drawn into a mac window, which the macOS guidelines warn
+  against ("avoid custom window UI"). The strip is gone; the window
+  now carries a standard toolbar (Save, Undo, Redo, Find, the edit
+  switch, the outline toggle) built from system symbols, with the
+  document name in a standard title bar and no titlebar accessories.
+  The outline pane and the find bar follow in the next steps. The
+  Windows window keeps its ribbon.
+- Screenshot: every mac capture of the walk shows the toolbar.
+- Status: the toolbar lands here; see
+  references/macos-native-chrome.md.
+
 <!--
 Entry format:
 
