@@ -46,9 +46,13 @@ references/macos-native-chrome.md, with the citations.
 - [x] HC, the find bar: the system's search field, a segmented
       control with the system's chevrons for the match steps,
       standard push buttons; behaviour unchanged.
-- [ ] HD, the finish: screenshots reviewed on CI, docs updated
-      (macos-qa.md, macos-native-chrome.md statuses), any drift the
-      checker missed folded in.
+- [x] HD, the finish: screenshots reviewed on CI, docs updated. The
+      review found real drift the checker could not: the chevron's
+      tint punched a square hole in the selection band, the rounded
+      rectangle fill pinched every rounded shape, the find bar's rows
+      floated mid-bar, and a Windows capture caught its blinking
+      caret. All four are fixed and recorded in references/macos-qa.md
+      (f686ed9, 2c622b6, cbe7547, a3b7e3e).
 
 ## Verification
 
