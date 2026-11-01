@@ -19,6 +19,7 @@
 #include "outline_nsview_mac.h"
 #include "outline_pane_mac.h"
 #include "content_view_mac.h"
+#include "outline.h"
 #import "settings_window_mac.h"
 #include "system_theme_mac.h"
 #include "navigation.h"
@@ -104,7 +105,8 @@ bool OpenExternalUrl(const std::string& url) {
 - (void)runQAStates:(NSString*)list;
 - (void)qaStep:(NSArray<NSString*>*)states at:(NSUInteger)index;
 - (void)applyQAState:(NSString*)state;
-- (void)qaScrollToFraction:(float)fraction;
+- (void)qaScrollToHeading:(int)index;
+- (void)qaScrollToTop;
 
 // The menu commands, as AppKit selectors.
 - (void)newDocument:(id)sender;
@@ -564,17 +566,19 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     } else if ([state isEqualToString:@"lower"]) {
         // The lower half of the page: the tasks, the quote, the table
         // and the code block, which the states above cannot reach. The
-        // fraction is fixed, so the picture is the same every run.
-        [self qaScrollToFraction:0.46f];
+        // jump anchors to a heading's own offset, so both platforms
+        // frame the same content even though their metrics drift a few
+        // pixels apart.
+        [self qaScrollToHeading:2];
     } else if ([state isEqualToString:@"end"]) {
         // The foot of the page: the small headings, the break and the
         // diagram.
-        [self qaScrollToFraction:1.0f];
+        [self qaScrollToHeading:5];
     } else if ([state isEqualToString:@"dark"]) {
         if (sourceView_) [self OnToggleSourceView];
         // The top of the page in the dark appearance, so the picture
         // shows the page's head the way the doc state does.
-        [self qaScrollToFraction:0.0f];
+        [self qaScrollToTop];
         window_.appearance =
             [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
         [self toolbarSync];
@@ -582,16 +586,25 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     }
 }
 
-// The QA walk's scroll: a fraction of the scrollable range, set on the
-// core's offset and the scroller together, the way the edit state lands
-// at the top of the page.
-- (void)qaScrollToFraction:(float)fraction {
-    float maxOffset = content_->DocumentHeight() - content_->viewHeight();
-    if (maxOffset < 0.0f) maxOffset = 0.0f;
-    const float offset = fraction * maxOffset;
-    content_->SetScrollOffset(offset);
+// The QA walk's scroll, anchored to a heading: the offset comes from
+// the same outline data the pane shows, and the placement is the pane's
+// own jump, so the two platforms frame the same content even when their
+// title metrics drift a few pixels apart.
+- (void)qaScrollToHeading:(int)index {
+    const std::vector<OutlineItem> items =
+        CollectHeadings(app_->GetDocument());
+    if (index < 0 || index >= static_cast<int>(items.size())) return;
+    content_->ScrollToOffset(items[index].offset);
+    [self outlineActiveRefresh];
+    [view_ setNeedsDisplay:YES];
+}
+
+// The top of the page, on the core's offset and the scroller together,
+// the way the edit state lands there.
+- (void)qaScrollToTop {
+    content_->SetScrollOffset(0.0f);
     NSClipView* clip = [scrollView_ contentView];
-    [clip scrollToPoint:NSMakePoint(0.0, offset)];
+    [clip scrollToPoint:NSMakePoint(0.0, 0.0)];
     [scrollView_ reflectScrolledClipView:clip];
     [self outlineActiveRefresh];
     [view_ setNeedsDisplay:YES];
