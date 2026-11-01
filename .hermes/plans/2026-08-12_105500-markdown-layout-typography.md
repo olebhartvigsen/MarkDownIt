@@ -563,7 +563,9 @@ language map, which is a separate project of its own size.
 
 The overhaul was built twice: first for the Windows renderer, then
 ported to the macOS renderer (`f6211fe`, `cd4d7b6`, `9e253a3`). Every
-task below is in place on both platforms, with the shared
+task below is in place on both platforms in outline (the closure note
+at the end records the four places the shipped code answers
+differently), with the shared
 `src/theme.h` carrying the tokens and each renderer routing its
 measure and paint through `ComputeMetrics`:
 
@@ -582,3 +584,39 @@ shared `Palette` on both platforms (`tableHeaderBg` 0xF6F8FA,
 `tableRowAlt` 0xFAFBFC, `quoteBar` 0xD0D7DE, `quoteText` 0x656D76),
 so the two builds cannot drift. A dark palette is still the open
 question above: night mode is not implemented on either platform.
+
+
+---
+
+## Audit closure (October 31, 2026)
+
+Two open steps were closed in the renderer pair together:
+
+- Task 4, step 3: H6 draws muted on both platforms
+  (`src/renderer.cpp`, `src/macos/renderer_mac.cpp`).
+- Task 5, step 1: the smaller headings (H3-H6) take
+  `headingGapBeforeMinor`; `GapForTransition` now carries the heading
+  level.
+
+Four places keep a different answer than the plan, on purpose:
+
+- Task 6, step 1: `MeasureTable` serves `Measure`; `DrawTable` measures
+  its rows for real during the draw with the same helper code. The
+  scrollbar accuracy the extraction targeted is fixed; the call-site
+  merge was not made.
+- Task 6, step 2: the marker width stays the shared formula
+  (`listIndent * 0.6 + markerGutter`) on both platforms, pinned by the
+  mac renderer test. Measuring the widest marker was not built.
+- Task 7, step 2: blockquotes keep the bar and the muted text; no
+  background tint. The macOS visual style guide allows the restrained
+  cue, and the palette carries no quote background token.
+- Task 7, step 3: table columns stay equal. That is now a recorded
+  cross-platform parity decision (`references/macos-port-status.md`),
+  not an open item.
+
+The acceptance fixture `tests/fixtures/layout-showcase.md` was never
+created; the layout is covered by `tests/renderer_mac_test.cpp` and the
+Windows renderer tests. The numeric tables in this plan were superseded
+by later tweaks (commit `0b9bcf9` line heights, `c44e1af` measure cap,
+`c8954c4` type scale) and by the four-mode content width setting; the
+shipped values live in `src/theme.h`.
