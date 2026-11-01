@@ -136,6 +136,11 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     if kill -0 "$PID" 2>/dev/null; then
         kill -9 "$PID" 2>/dev/null
     fi
+    # Keep the app's trace with the captures, so the artifact carries
+    # everything the run said.
+    if [ -f "$LOG" ]; then
+        cp "$LOG" "$QA_DIR/crash_trace.log"
+    fi
     if grep -q '\*\*\* crash' "$LOG" 2>/dev/null; then
         echo "launch smoke FAILED: a crash was traced during the QA walk"
         tail -60 "$LOG"

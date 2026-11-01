@@ -134,6 +134,7 @@ jobs:
             build-win/qa/*.png
             build-win/qa/rects.txt
             build-win/qa/walk.log
+            build-win/qa/crash_trace.log
           if-no-files-found: ignore
 
   # The native macOS gate. The same test suite the Windows build runs,
@@ -250,6 +251,7 @@ jobs:
             build-mac/window.png
             build-mac/qa/*.png
             build-mac/qa/rects.txt
+            build-mac/qa/crash_trace.log
           if-no-files-found: ignore
 
       - name: Upload app bundle
@@ -287,12 +289,15 @@ jobs:
           name: MarkDownIt-windows-capture
           path: captures/windows
 
+      - name: Show what was downloaded
+        run: find captures -type f | sort
+
       - name: Compare the states
         run: |
           python3 -m pip install --quiet pillow
           python3 tools/compare_platform_captures.py \
-            --macos captures/macos/build-mac/qa \
-            --windows captures/windows/build-win/qa \
+            --macos captures/macos/qa \
+            --windows captures/windows \
             --out parity-out
 
       - name: Upload the comparison

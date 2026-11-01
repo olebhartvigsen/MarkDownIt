@@ -76,6 +76,14 @@ while ((Get-Date) -lt $deadline) {
 
 Set-Content -Path (Join-Path $OutDir "rects.txt") -Value $rects
 
+# Keep the app's own trace with the captures: it names every state and
+# carries the startup argument and any diagnostic, so the artifact
+# explains what the run did even when it succeeded.
+$appTrace = Join-Path $env:LOCALAPPDATA "MarkDownIt\crash_trace.log"
+if (Test-Path $appTrace) {
+    Copy-Item $appTrace (Join-Path $OutDir "crash_trace.log") -ErrorAction SilentlyContinue
+}
+
 # The walk quits the app itself when it is done; close it either way so
 # the runner never hangs on a stray window.
 if (-not $proc.HasExited) {
