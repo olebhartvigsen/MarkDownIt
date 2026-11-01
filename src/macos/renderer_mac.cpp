@@ -682,7 +682,9 @@ const SvgDoc* MacRenderer::GetSvgDoc(const Node& node) {
     }
 
     SvgDoc doc;
-    if (!doc.Load(InlineTextUtf8(node))) return nullptr;
+    // A fenced block keeps its text in raw, the way the Windows draw
+    // reads it; the inline children are empty for a fence.
+    if (!doc.Load(Utf32ToUtf8(node.raw))) return nullptr;
     svgDocs_.emplace_back(node.srcOffset, std::move(doc));
     return &svgDocs_.back().second;
 }
@@ -859,8 +861,9 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
             }
 
             // The raw text, with the trailing newlines stripped the way
-            // the Windows measure pass strips them.
-            std::string code = InlineTextUtf8(node);
+            // the Windows measure pass strips them. A fenced block keeps
+            // its text in raw, not in inline children.
+            std::string code = Utf32ToUtf8(node.raw);
             while (!code.empty() &&
                    (code.back() == '\n' || code.back() == '\r')) {
                 code.pop_back();
@@ -1056,7 +1059,9 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
             break;
 
         case BlockKind::CodeBlock: {
-            std::string code = InlineTextUtf8(node);
+            // The fence's text lives in raw; the inline children are
+            // empty for a code block.
+            std::string code = Utf32ToUtf8(node.raw);
             while (!code.empty() &&
                    (code.back() == '\n' || code.back() == '\r')) {
                 code.pop_back();

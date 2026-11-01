@@ -298,8 +298,12 @@ Node ListItem(bool ordered, int depth, const std::string& text) {
 }
 
 Node Code(const std::string& text) {
-    Node node = Para(text);
+    Node node;
     node.block = BlockKind::CodeBlock;
+    // The parser keeps a fenced block's text in raw, not in inline
+    // children; build the node the same way so the tests match the
+    // document the renderer actually sees.
+    node.raw = Utf32(text);
     return node;
 }
 

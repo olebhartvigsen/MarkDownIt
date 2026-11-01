@@ -62,7 +62,10 @@ Palette SystemPalette() {
     p.rule = FromColor([NSColor separatorColor]);
     p.tableBorder = FromColor([NSColor separatorColor]);
     p.tableHeaderBg = FromColor([NSColor quaternaryLabelColor]);
-    p.tableRowAlt = Faded([NSColor quaternaryLabelColor], 0.55);
+    // Half the header's weight: setting a label colour's alpha means
+    // its own strength, and 0.55 read darker than the header, not
+    // fainter.
+    p.tableRowAlt = Faded([NSColor quaternaryLabelColor], 0.05);
     p.selectionBg = FromColor([NSColor selectedContentBackgroundColor]);
     p.selectionText = FromColor([NSColor selectedTextColor]);
     p.findMatchBg = Faded([NSColor systemYellowColor], 0.30);

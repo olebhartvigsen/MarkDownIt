@@ -365,6 +365,24 @@ loop that now runs on every build.
 - Screenshot: the doc state, the H1 with its air and no rule.
 - Status: fix lands here.
 
+### The fold's first pictures caught two bugs (Nov 1)
+- The first photographs of the page below the fold showed a fenced code
+  block drawn as an empty box on the mac: the renderer read the block's
+  text from the inline children, and the parser keeps a fence's text in
+  raw, the field the Windows draw reads. Every code block on the mac
+  rendered empty, and the test helper built the node with the children
+  shape, which is why the suite never saw it. Both read raw now, the
+  helper matches the parser, and the same read backs the standalone SVG
+  path.
+- The same pictures showed the table's alternating row as a solid grey
+  band on the mac: its wash set a label colour's alpha to 0.55, and the
+  label already carries its own faint alpha, so the wash came out
+  darker than the header instead of fainter. It sits at half the
+  header's weight now.
+- Screenshot: the end state, the code block showing its lines and the
+  table row a faint wash.
+- Status: fix lands here.
+
 <!--
 Entry format:
 
