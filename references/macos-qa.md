@@ -260,8 +260,9 @@ loop that now runs on every build.
   and end states scroll the page so the elements below the fold (the
   tasks, the quote, the table, the code block, the small headings and
   the diagram) are photographed and compared too; the jump anchors to a
-  heading's own offset with the pane's placement, so the picture is the
-  same every run and both platforms frame the same content. With
+  heading's own offset a fixed drop below the frame's top (the source
+  state's raw view is left behind first), so the picture is the same
+  every run and both platforms frame the same content. With
   MARKDOWNIT_QA_STATES set, src/app.cpp walks the states on a timer,
   writes "qa state ready: <name> rect=x,y,w,h" into the log named by
   MARKDOWNIT_QA_LOG, and closes itself at the end;

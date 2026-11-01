@@ -105,7 +105,7 @@ bool OpenExternalUrl(const std::string& url) {
 - (void)runQAStates:(NSString*)list;
 - (void)qaStep:(NSArray<NSString*>*)states at:(NSUInteger)index;
 - (void)applyQAState:(NSString*)state;
-- (void)qaScrollToHeading:(int)index;
+- (void)qaScrollToHeading:(int)index drop:(float)drop;
 - (void)qaScrollToTop;
 
 // The menu commands, as AppKit selectors.
@@ -566,14 +566,18 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     } else if ([state isEqualToString:@"lower"]) {
         // The lower half of the page: the tasks, the quote, the table
         // and the code block, which the states above cannot reach. The
-        // jump anchors to a heading's own offset, so both platforms
-        // frame the same content even though their metrics drift a few
-        // pixels apart.
-        [self qaScrollToHeading:2];
+        // source state leaves the raw view on, so the picture goes
+        // back to the rendered page first; the jump anchors to a
+        // heading's own offset a fixed drop below the top, so both
+        // platforms frame the same content even though their bars and
+        // metrics differ a little.
+        if (sourceView_) [self OnToggleSourceView];
+        [self qaScrollToHeading:2 drop:96.0f];
     } else if ([state isEqualToString:@"end"]) {
         // The foot of the page: the small headings, the break and the
         // diagram.
-        [self qaScrollToHeading:5];
+        if (sourceView_) [self OnToggleSourceView];
+        [self qaScrollToHeading:5 drop:96.0f];
     } else if ([state isEqualToString:@"dark"]) {
         if (sourceView_) [self OnToggleSourceView];
         // The top of the page in the dark appearance, so the picture
@@ -587,14 +591,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 }
 
 // The QA walk's scroll, anchored to a heading: the offset comes from
-// the same outline data the pane shows, and the placement is the pane's
-// own jump, so the two platforms frame the same content even when their
-// title metrics drift a few pixels apart.
-- (void)qaScrollToHeading:(int)index {
+// the same outline data the pane shows, and the fixed drop puts the
+// heading just below the top of the frame, so the two platforms frame
+// the same content even when their bars and metrics differ a little.
+- (void)qaScrollToHeading:(int)index drop:(float)drop {
     const std::vector<OutlineItem> items =
         CollectHeadings(app_->GetDocument());
     if (index < 0 || index >= static_cast<int>(items.size())) return;
-    content_->ScrollToOffset(items[index].offset);
+    content_->ScrollToOffsetPlaced(items[index].offset, drop);
     [self outlineActiveRefresh];
     [view_ setNeedsDisplay:YES];
 }

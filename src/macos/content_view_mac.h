@@ -95,6 +95,11 @@ public:
     // Scrolls the place of the offset into view, so the outline pane
     // can jump to a heading.
     void ScrollToOffset(uint32_t offset);
+
+    // The same jump with a fixed drop: the place lands `drop` points
+    // below the top of the view. The QA walk uses it, so the two
+    // platforms can frame the same content.
+    void ScrollToOffsetPlaced(uint32_t offset, float drop);
     float scrollOffset() const { return scrollOffset_; }
 
     // Whether the caret is inside the visible band right now. The

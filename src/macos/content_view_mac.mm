@@ -317,13 +317,18 @@ void ContentView::Draw(RenderTarget* target) {
 }
 
 void ContentView::ScrollToOffset(uint32_t offset) {
+    // A third of the way down the view, so the reader sees the text
+    // around it.
+    ScrollToOffsetPlaced(offset, height_ * 0.35f);
+}
+
+void ContentView::ScrollToOffsetPlaced(uint32_t offset, float drop) {
     float y = 0.0f;
     if (!renderer_.YForOffset(offset, y)) return;
 
-    // The place is put a third of the way down the view, so the reader
-    // sees the text around it. The scrolling itself belongs to the
-    // platform layer, so the scrollers follow along.
-    const float target = y - height_ * 0.35f;
+    // The scrolling itself belongs to the platform layer, so the
+    // scrollers follow along.
+    const float target = y - drop;
     if (scrollTo_) scrollTo_(target < 0.0f ? 0.0f : target);
 }
 

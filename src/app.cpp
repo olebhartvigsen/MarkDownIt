@@ -3415,19 +3415,20 @@ void AppWindow::QAAdvance() {
     } else if (state == "lower" || state == "end") {
         // The lower half of the page and its foot: the tasks, the
         // quote, the table, the code block and the diagram, the parts
-        // the states above cannot photograph. The jump anchors to a
-        // heading's own offset and takes the pane's placement (a third
-        // of the viewport down), so both platforms frame the same
-        // content even though their metrics drift a few pixels apart.
+        // the states above cannot photograph. The source state leaves
+        // the raw view on, so the picture goes back to the rendered
+        // page first (the toggle rebuilds the layout in one pass); the
+        // jump anchors to a heading's own offset a fixed drop below
+        // the top, so both platforms frame the same content even
+        // though their bars and metrics differ a little.
+        if (IsSourceView()) ToggleSourceView();
         const int heading = state == "lower" ? 2 : 5;
         if (heading < static_cast<int>(outline_items_.size())) {
             int blkIdx = layout_cache_.BlockForOffset(
                 outline_items_[heading].offset);
             if (blkIdx >= 0) {
                 const auto& blocks = layout_cache_.Blocks();
-                float viewH = static_cast<float>(clientH_);
-                if (rt_) viewH = rt_->GetSize().height;
-                float target = blocks[blkIdx].y - viewH * 0.35f;
+                float target = blocks[blkIdx].y - 96.0f;
                 if (target < 0.0f) target = 0.0f;
                 scrollY_ = ClampScroll(target);
                 StopScrollAnimation();
