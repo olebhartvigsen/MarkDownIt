@@ -12,10 +12,13 @@ Fonts and window chrome differ by design, so the comparison is
 structural, not pixel exact. What it catches is the class of defect the
 pipeline exists for: a block that went missing or moved on one
 platform, a spacing regression that grows a gap by a line height, a
-state that stopped drawing. Per state it writes a side-by-side picture
-and an overlay (mac ink in red, windows ink in green, agreement in
-yellow) into the output directory, prints a table, and exits 1 when a
-state fails.
+state that stopped drawing. Every state is also checked on its own
+side first: a document pane that shows almost no text fails, which is
+how a dark mode that draws dark ink on the dark page is caught.
+
+Per pair it writes a side-by-side picture and an overlay (mac ink in
+red, windows ink in green, agreement in yellow) into the output
+directory, prints a table, and exits 1 when a state fails.
 """
 import argparse
 import io
@@ -116,6 +119,44 @@ def block_gaps(gaps):
 
 def max_gap(gaps):
     return max(gaps) if gaps else 0
+
+
+def check_side(name, side, img_path, rect, args):
+    """One platform's state on its own: the pane must show readable text.
+
+    Readable text is strong, monochrome ink: a pixel far from the
+    background in lightness and close to grey. That separates glyphs
+    from the coloured fills (a find highlight, a marker wash), so a
+    document drawn in the background colour fails here even when its
+    highlights would still form bands. This is how a dark mode that
+    paints dark ink on the dark page is caught.
+    """
+    try:
+        pane = crop_pane(Image.open(img_path), rect, args.width)
+    except ValueError as exc:
+        return "FAIL", "rect outside the capture: %s" % exc
+    bands, _gaps, _ink, _shape = scan_bands(pane)
+
+    rgb = Image.open(img_path).convert("RGB")
+    x, y, w, h = rect
+    box = (max(0, x), max(0, y),
+           min(rgb.width, x + w - 20), min(rgb.height, y + h))
+    region = rgb.crop(box).resize(pane.size, Image.LANCZOS)
+    grey = list(pane.tobytes())
+    data = list(region.tobytes())
+    background = sorted(grey)[len(grey) // 2]
+    strong = 0
+    for i, v in enumerate(grey):
+        r = data[i * 3]
+        b = data[i * 3 + 2]
+        if abs(v - background) > 90 and abs(r - b) < 50:
+            strong += 1
+    share = strong / float(len(grey))
+    if len(bands) < 5 or share < 0.0025:
+        return "FAIL", ("renders almost no readable text "
+                        "(%d bands, strong ink %.2f%%)"
+                        % (len(bands), share * 100.0))
+    return "PASS", "%d bands, strong ink %.2f%%" % (len(bands), share * 100.0)
 
 
 def compare_state(name, mac_img, mac_rect, win_img, win_rect, args, out_dir):
@@ -229,10 +270,11 @@ def main():
               "scripts did not run" % (len(mac_rects), len(win_rects)))
         return 1
 
-    common = [s for s in ("doc", "find", "edit", "outline", "source")
+    all_states = [s for s in ("doc", "find", "edit", "outline", "source",
+                              "dark", "settings")
+                  if s in mac_rects or s in win_rects]
+    common = [s for s in all_states
               if s in mac_rects and s in win_rects]
-    mac_only = sorted(set(mac_rects) - set(win_rects))
-    win_only = sorted(set(win_rects) - set(mac_rects))
     if len(common) < args.min_states:
         print("only %d common states (%s): the comparison needs at least %d"
               % (len(common), ", ".join(common), args.min_states))
@@ -243,6 +285,23 @@ def main():
 
     report = []
     failed = 0
+
+    # Every state is checked on its own first, on each side that has a
+    # capture: a pane without text is a failure even without a pair.
+    for state in all_states:
+        for side, root, rects in (("mac", args.macos, mac_rects),
+                                  ("win", args.windows, win_rects)):
+            if state not in rects:
+                continue
+            path = os.path.join(root, state + ".png")
+            status, detail = check_side(state, side, path, rects[state],
+                                        args)
+            if status == "FAIL":
+                failed += 1
+            print("%-8s %-5s %-4s %s" % (state, side, status, detail))
+            report.append("%s (%s) on its own: %s - %s"
+                          % (state, side, status, detail))
+
     for state in common:
         mac_img = Image.open(os.path.join(args.macos, state + ".png"))
         win_img = Image.open(os.path.join(args.windows, state + ".png"))
@@ -251,8 +310,8 @@ def main():
             args, args.out)
         if status == "FAIL":
             failed += 1
-        print("%-8s %-4s %s" % (state, status, detail))
-        report.append("state %s: %s - %s" % (state, status, detail))
+        print("%-8s %-5s %-4s %s" % (state, "pair", status, detail))
+        report.append("state %s, pair: %s - %s" % (state, status, detail))
         if facts:
             report.append("  mac:     %d bands, ink %d px, height %d"
                           % (facts["mac"][0], facts["mac"][2], facts["mac"][3]))
@@ -264,18 +323,20 @@ def main():
             report.append("  windows block gaps: %s"
                           % ", ".join(str(g) for g in win_block))
 
+    mac_only = [s for s in all_states if s in mac_rects and s not in win_rects]
+    win_only = [s for s in all_states if s in win_rects and s not in mac_rects]
     if mac_only:
-        report.append("mac-only states, not compared: %s"
-                      % ", ".join(mac_only))
+        report.append("mac-only states, not paired: %s" % ", ".join(mac_only))
     if win_only:
-        report.append("windows-only states, not compared: %s"
+        report.append("windows-only states, not paired: %s"
                       % ", ".join(win_only))
 
     with io.open(os.path.join(args.out, "report.txt"), "w",
                  encoding="utf-8") as f:
         f.write("\n".join(report) + "\n")
 
-    print("compared %d states, %d failed" % (len(common), failed))
+    print("compared %d states in %d pairs, %d failed"
+          % (len(all_states), len(common), failed))
     return 1 if failed else 0
 
 

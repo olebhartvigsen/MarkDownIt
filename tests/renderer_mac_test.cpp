@@ -1240,6 +1240,33 @@ TEST(RendererMac, RangeRectsFollowTheCellAlignment) {
                           (secondLeftEdge + innerW)) < 1.0f);
 }
 
+// The laid-out runs carry the palette's colours inside them, so a
+// theme change must lay the document out again before it can draw in
+// the new appearance: dark mode once kept the light theme's dark ink
+// on the dark page.
+TEST(RendererMac, RecoloursTheRunsWhenTheThemeChanges) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    const Document doc = Doc({Para("one")});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    ASSERT_EQ(renderer.blocks()[0].lines.size(), 1u);
+    const TextLine& light = renderer.blocks()[0].lines[0];
+    ASSERT_EQ(light.runs.size(), 1u);
+    EXPECT_TRUE(light.runs[0].r < 0.3f);  // the light theme's dark ink
+
+    Palette dark = BasePalette();
+    dark.textPrimary = ThemeColor{0.9f, 0.9f, 0.9f, 1.0f};
+    renderer.SetTheme(BaseMetrics(), dark);
+    renderer.Measure(doc, 1400.0f);
+    const TextLine& fresh = renderer.blocks()[0].lines[0];
+    ASSERT_EQ(fresh.runs.size(), 1u);
+    EXPECT_TRUE(fresh.runs[0].r > 0.8f);  // the new appearance's ink
+}
+
 // A blank line next to a list is a caret paragraph in the model (the
 // word-processor guidelines keep it addressable). While reading it must
 // not open a full empty row, so the mode decides its height.

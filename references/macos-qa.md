@@ -153,6 +153,18 @@ loop that now runs on every build.
   document.", which is text about a document that does not exist.
 - Status: open; the welcome behaviour needs a decision first.
 
+### Dark mode drew the light appearance's ink (Nov 1)
+- The dark capture showed the dark page with the document text still
+  in the light theme's near-black ink, unreadable; the strip and the
+  outline pane had adapted. Root cause: the renderer bakes the palette
+  into the laid-out runs, and ContentView::RefreshTheme re-set the
+  palette without laying the document out again.
+- Fixed: RefreshTheme lays the document out again and invalidates.
+  Pinned by tests/renderer_mac_test.cpp
+  (RecoloursTheRunsWhenTheThemeChanges) and by the capture-parity tool,
+  which now fails any captured state whose document pane shows almost
+  no text, the way a dark-on-dark document does.
+
 ### Cross-platform capture parity (Nov 1)
 - The Windows build photographs itself in the same named states as the
   mac build (doc, find, edit, outline, source). With

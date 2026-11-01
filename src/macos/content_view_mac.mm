@@ -199,6 +199,13 @@ void ContentView::SetEditing(bool on) {
 
 void ContentView::RefreshTheme() {
     renderer_.SetTheme(BaseMetrics(), mac::SystemPalette());
+    // The laid-out runs carry the palette's colours inside them, so the
+    // document is laid out again. Without that a palette switch kept
+    // the previous appearance baked into the text: dark mode drew the
+    // light appearance's dark ink on the dark page, which the launch
+    // smoke photographed.
+    Relayout();
+    Invalidate();
 }
 
 void ContentView::SetSize(float width, float height) {
