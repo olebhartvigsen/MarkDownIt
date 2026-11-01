@@ -222,12 +222,23 @@ const int kTableToolsGroups[] = {0, 7, 10};
 namespace {
 
 constexpr CGFloat kTabRowHeight = 28.0;
-constexpr CGFloat kGroupRowHeight = 68.0;
-constexpr CGFloat kCommandWidth = 80.0;
-constexpr CGFloat kCommandHeight = 52.0;
+constexpr CGFloat kGroupRowHeight = 88.0;
+constexpr CGFloat kCommandWidth = 56.0;
+constexpr CGFloat kCommandHeight = 60.0;
 constexpr CGFloat kLargeIcon = 32.0;
 constexpr CGFloat kSmallIcon = 16.0;
 constexpr CGFloat kGroupPad = 8.0;
+
+// "Zoom In" over two lines, the way the Windows button wraps a two
+// word command on its button.
+static NSString* TwoLineTitle(NSString* title) {
+    const NSRange space = [title rangeOfString:@" "];
+    if (space.location != NSNotFound && [title length] <= 8) {
+        return [title stringByReplacingCharactersInRange:space
+                                             withString:@"\n"];
+    }
+    return title;
+}
 // The compact and small layout states of the ribbon spec: icon-only
 // buttons with tighter padding, so a narrow window keeps every command
 // reachable instead of clipping the right hand groups.
@@ -342,7 +353,7 @@ static NSColor* ChromeColor(const ThemeColor& c) {
     NSImage* image = RibbonIcon(self.iconBase, iconSize);
     if (image) [self setImage:image];
     if (state == 0) {
-        [self setTitle:self.fullTitle];
+        [self setTitle:TwoLineTitle(self.fullTitle)];
         [self setImagePosition:NSImageAbove];
     } else {
         [self setTitle:@""];
@@ -614,7 +625,7 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
                                       size:kLargeIcon
                                  withLabel:YES];
                 [button setFrame:NSMakeRect(
-                    kGroupPad + c * (kCommandWidth + 2.0), 2.0,
+                    kGroupPad + c * (kCommandWidth + 2.0), 13.0,
                     kCommandWidth, kCommandHeight)];
                 [groupView addSubview:button];
             }
@@ -625,7 +636,8 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
                 mac::ChromePaletteForAppearance(self.effectiveAppearance)
                     .groupLabel)];
             [label setAlignment:NSTextAlignmentCenter];
-            [label setFrame:NSMakeRect(0.0, kCommandHeight + 4.0, width, 12.0)];
+            [label setFrame:NSMakeRect(0.0, kCommandHeight + 14.0, width,
+                                       12.0)];
             [groupView addSubview:label];
             [groups addObject:groupView];
             [page addSubview:groupView];
@@ -782,7 +794,8 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
         CGFloat x = pad;
         for (NSView* sub in subs) {
             if (![sub isKindOfClass:[MdRibbonButton class]]) continue;
-            [sub setFrame:NSMakeRect(x, 2.0, cw, NSHeight([sub frame]))];
+            [sub setFrame:NSMakeRect(x, 13.0, cw,
+                                     NSHeight([sub frame]))];
             x += cw + 2.0;
         }
         if (count == 0) continue;

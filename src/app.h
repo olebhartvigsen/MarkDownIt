@@ -71,6 +71,8 @@ public:
 
     void ToggleOutline();
     bool IsOutlineVisible() const;
+    // True while the QA walk runs: the outline sync logs its picks.
+    bool qa_active_ = false;
     void NavigateToHeading(uint32_t offset);
     void UpdateOutlineActive();
     void UpdateOutlineActiveFromView();
