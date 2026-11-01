@@ -55,14 +55,34 @@ bool DrawChevronIntoContext(CGContextRef context, const Rect& rect,
                             bool expanded, const Color& color) {
     if (!context) return false;
     NSString* name = expanded ? @"chevron.down" : @"chevron.right";
-    NSImage* image = [NSImage imageWithSystemSymbolName:name
-                               accessibilityDescription:nil];
-    if (!image) return false;
+    NSImage* symbol = [NSImage imageWithSystemSymbolName:name
+                                  accessibilityDescription:nil];
+    if (!symbol) return false;
     NSImageSymbolConfiguration* config = [NSImageSymbolConfiguration
         configurationWithPointSize:rect.height * 0.78
                             weight:NSFontWeightSemibold];
-    image = [image imageWithSymbolConfiguration:config];
-    if (!image) return false;
+    symbol = [symbol imageWithSymbolConfiguration:config];
+    if (!symbol) return false;
+
+    // The symbol draws as a template, so the colour comes from filling
+    // its box and knocking that fill down to the shape of the glyph.
+    // The two steps are played out in a small picture of their own:
+    // the knocking-down step clears everything it covers, and played
+    // on the window's own context it left a square hole in whatever
+    // lay under the mark, the selection band included.
+    const NSSize size = NSMakeSize(rect.width, rect.height);
+    NSColor* tint = [NSColor colorWithSRGBRed:color.r green:color.g
+                                        blue:color.b alpha:color.a];
+    NSImage* tinted = [NSImage imageWithSize:size flipped:YES
+                              drawingHandler:^BOOL(NSRect dst) {
+        [tint set];
+        NSRectFillUsingOperation(dst, NSCompositingOperationCopy);
+        [symbol drawInRect:dst fromRect:NSZeroRect
+                 operation:NSCompositingOperationDestinationIn
+                  fraction:1.0 respectFlipped:YES hints:nil];
+        return YES;
+    }];
+    if (!tinted) return false;
 
     NSGraphicsContext* gc = [NSGraphicsContext
         graphicsContextWithCGContext:context flipped:YES];
@@ -71,15 +91,9 @@ bool DrawChevronIntoContext(CGContextRef context, const Rect& rect,
     const NSRect box = NSMakeRect(rect.x, rect.y, rect.width, rect.height);
     [NSGraphicsContext saveGraphicsState];
     [NSGraphicsContext setCurrentContext:gc];
-    // The symbol draws as a template, so the colour comes from
-    // filling its box first and knocking that fill down to the
-    // shape of the glyph.
-    [[NSColor colorWithSRGBRed:color.r green:color.g blue:color.b
-                         alpha:color.a] set];
-    NSRectFillUsingOperation(box, NSCompositingOperationCopy);
-    [image drawInRect:box fromRect:NSZeroRect
-            operation:NSCompositingOperationDestinationIn
-             fraction:1.0 respectFlipped:YES hints:nil];
+    [tinted drawInRect:box fromRect:NSZeroRect
+             operation:NSCompositingOperationSourceOver
+              fraction:1.0 respectFlipped:YES hints:nil];
     [NSGraphicsContext restoreGraphicsState];
     return true;
 }

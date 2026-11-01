@@ -426,7 +426,10 @@ void OutlinePane::Draw(RenderTarget* target, float width, float height) {
             mark.y = y + 6.0f;
             mark.width = kTriangleSizeDip + 5.0f;
             mark.height = kTriangleSizeDip + 5.0f;
-            target->DrawChevron(mark, !collapsed, arrow_);
+            // On the caret's row the mark speaks in the selection's
+            // text colour, the way a sidebar keeps its own contrast.
+            target->DrawChevron(mark, !collapsed,
+                                item == currentItem_ ? activeText_ : arrow_);
         }
 
         // The text of the heading, indented by its level and trimmed to
