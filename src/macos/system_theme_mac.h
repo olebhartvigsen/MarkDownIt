@@ -2,6 +2,12 @@
 
 #include "theme.h"
 
+#ifdef __OBJC__
+// Forward, so the header works before Cocoa is imported; the Objective-C
+// declaration itself has to live at global scope.
+@class NSAppearance;
+#endif
+
 namespace mac {
 
 // The document's colours: the theme's colour slots, resolved from the

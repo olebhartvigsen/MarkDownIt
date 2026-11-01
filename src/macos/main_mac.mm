@@ -325,11 +325,17 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // exists: with the handler wired early, the first palette resolve
     // (which happens during view setup) reached a still nil pane, and
     // the launch smoke caught the crash.
+    // Locals, so the block does not capture self: the handler lives on
+    // the content view, and a self capture would make the two keep
+    // each other alive.
+    mac::OutlinePane* themePane = outlinePane_;
+    NSView* themePaneView = outlineView_;
+    __weak MdContentView* themeContentView = view_;
     [view_ setThemeChangedHandler:^{
-        if (outlinePane_) {
-            outlinePane_->SetChromePalette(
-                mac::ChromePaletteForAppearance([view_ effectiveAppearance]));
-            [outlineView_ setNeedsDisplay:YES];
+        if (themePane) {
+            themePane->SetChromePalette(mac::ChromePaletteForAppearance(
+                [themeContentView effectiveAppearance]));
+            [themePaneView setNeedsDisplay:YES];
         }
     }];
     app_->SetDocumentChangedHandler([self] {
