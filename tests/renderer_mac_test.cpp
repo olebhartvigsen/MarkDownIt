@@ -5,7 +5,7 @@
 // with an engine that measures on a fixed grid. What the tests pin is
 // the Windows parity: the reading width and its centered column, the
 // line spacing, the gaps between blocks, the equal table columns with
-// per row heights, the list marker gutter, the rule under an H1, the
+// per row heights, the list marker gutter, the air under an H1, the
 // quote bar and the zoom.
 
 #include "gtest_lite.h"
@@ -379,7 +379,7 @@ TEST(RendererMac, UsesTheWindowsLineSpacing) {
     ASSERT_EQ(renderer.blocks().size(), 3u);
 
     // H1: the em with the heading spacing (1.25), the baseline on the
-    // top of the line. The rule under it takes its room inside the
+    // top of the line. The air the rule used to sit in stays inside the
     // block: ruleGapAbove + ruleGapBelow.
     const LaidOutBlock& heading = renderer.blocks()[0];
     ASSERT_EQ(heading.lines.size(), 1u);
@@ -545,7 +545,7 @@ TEST(RendererMac, GivesListsTheMarkerGutter) {
     EXPECT_EQ(ones, 2);
 }
 
-TEST(RendererMac, PaintsTheRuleTheBarAndTheBreak) {
+TEST(RendererMac, PaintsTheBarAndTheBreakNoRule) {
     FakeEngine engine;
     MacRenderer renderer;
     renderer.SetTextEngine(&engine);
@@ -565,7 +565,8 @@ TEST(RendererMac, PaintsTheRuleTheBarAndTheBreak) {
     ASSERT_EQ(blocks.size(), 4u);
     renderer.Render(doc, 0.0f);
 
-    // The H1 rule sits under the text, ruleGapAbove below it.
+    // The H1 wears no rule: no stroke spans the block under its text
+    // where the rule used to sit (ruleGapAbove below the text).
     const float ruleY = blocks[0].y + kH1Em * 1.25f + 8.0f;
     bool sawRule = false;
     for (const RecordingTarget::Stroke& stroke : target.strokes) {
@@ -575,7 +576,7 @@ TEST(RendererMac, PaintsTheRuleTheBarAndTheBreak) {
             sawRule = true;
         }
     }
-    EXPECT_TRUE(sawRule);
+    EXPECT_FALSE(sawRule);
 
     // The quote bar: centered four points left of the indented text,
     // as tall as the text.

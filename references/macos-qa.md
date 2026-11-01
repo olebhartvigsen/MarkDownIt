@@ -336,6 +336,24 @@ loop that now runs on every build.
 - Screenshot: a Windows QA capture with no caret at the first line.
 - Status: fix lands here.
 
+### The document styling review (Nov 1)
+- The chrome review's eye turned on the markdown text itself, against
+  references/osx-markdown-visual-style-guide.md. The findings were
+  small and one of them wanted a change: the hairline rule under the
+  H1 and the H2 is not hierarchy by size, weight and spacing, which is
+  what the guide asks for, and it reads as a web convention in a mac
+  window. It is gone on both platforms; the air it sat in stays
+  reserved, so the rhythm and the row pairing in the comparison are
+  untouched. Everything else held up: the system faces through the
+  platform APIs (the bundled Selawik and Cascadia copies are stand-ins
+  only), the modest heading scale, semantic colours throughout, the
+  checkbox carried by its shape, the restrained quote, table and code
+  block, and the comfortable paragraph versus section spacing.
+- One doc bug fell out too: theme.h still claimed the mac drew with
+  the bundled copies; it tells the system-face story now.
+- Screenshot: the doc state, the H1 with its air and no rule.
+- Status: fix lands here.
+
 <!--
 Entry format:
 

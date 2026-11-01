@@ -804,8 +804,9 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
             for (const TextLine& line : block.lines) {
                 block.height += line.height;
             }
-            // The rule under an H1 and an H2 lives inside the block, so
-            // the next block keeps its distance from the rule.
+            // The air the H1 and the H2 keep under their text, the
+            // same reservation the Windows layout makes: the rule that
+            // used to sit in it is gone, the rhythm is not.
             if (level <= 2 && !block.lines.empty()) {
                 block.height += metrics_.ruleGapAbove + metrics_.ruleGapBelow;
             }
@@ -1358,18 +1359,9 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset,
             PaintInlineCodeBg(block, scrollOffset);
             PaintLines(block.lines, block.x, textTop);
 
-            // The rule under an H1 and an H2, inside the room the layout
-            // reserved: under the text, the gap of the rule above it.
-            if (block.kind == BlockKind::Heading && block.level <= 2) {
-                float textHeight = 0.0f;
-                for (const TextLine& line : block.lines) {
-                    textHeight += line.height;
-                }
-                const float ruleY =
-                    textTop + textHeight + metrics_.ruleGapAbove;
-                target_->StrokeLine(block.x, ruleY, block.x + block.width,
-                                    ruleY, ToColor(palette_.rule), 1.0f);
-            }
+            // The H1 and the H2 wear no rule: hierarchy comes from
+            // size, weight and spacing. The air the rule sat in stays,
+            // reserved by the layout above.
             break;
         }
     }

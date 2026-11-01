@@ -1400,6 +1400,8 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
                         layout->Release();
                     }
                 }
+                // The air the H1 and the H2 keep under their text: the
+                // rule that used to sit in it is gone, the rhythm is not.
                 if (n.block == BlockKind::Heading && n.level <= 2) {
                     blockH += m.ruleGapAbove + m.ruleGapBelow;
                 }
@@ -2030,18 +2032,9 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             rt->DrawLine(p1, p2, quoteBorder, m.quoteBarWidth);
         }
 
-        if (n.block == BlockKind::Heading && n.level <= 2) {
-            ID2D1SolidColorBrush* hrBrush = nullptr;
-            rt->CreateSolidColorBrush(pal.rule, &hrBrush);
-            if (hrBrush) {
-                float ruleY = curY + metrics.height + m.ruleGapAbove;
-                D2D1_POINT_2F p1 = D2D1::Point2F(drawX, ruleY);
-                D2D1_POINT_2F p2 = D2D1::Point2F(
-                    drawX + drawW, ruleY);
-                rt->DrawLine(p1, p2, hrBrush, 1.0f);
-                hrBrush->Release();
-            }
-        }
+        // The H1 and the H2 wear no rule: hierarchy comes from size,
+        // weight and spacing on both platforms. The air the rule sat in
+        // stays reserved by the layout above.
 
         if (cache_) {
             BlockLayout bl;
