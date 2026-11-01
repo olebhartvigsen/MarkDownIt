@@ -499,6 +499,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // it as it lands.
     } else if ([state isEqualToString:@"find"]) {
         app_->ShowFind(FindBarMode::Find);
+        // A live query, so the picture carries the match highlighting
+        // and the count, not just an empty bar.
+        app_->findBar().model().SetSearchText(L"list");
+        app_->RefreshFindResults(false);
     } else if ([state isEqualToString:@"edit"]) {
         app_->SetEditing(true);
         // The Edit page carries the editing toggles, so the picture
@@ -509,6 +513,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"outline"]) {
         [self applyOutlineVisible:YES];
+    } else if ([state isEqualToString:@"settings"]) {
+        // The Settings window is a surface of its own; it stays up
+        // for its picture and the walk quits with it open.
+        [self OnOpenSettings];
     } else if ([state isEqualToString:@"source"]) {
         // The raw markdown view: the renderer lays the buffer out as
         // one monospace block, its own drawing path.
