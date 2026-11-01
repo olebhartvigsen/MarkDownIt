@@ -228,7 +228,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MarkDownIt-window-capture
-          path: build-mac/window.png
+          path: |
+            build-mac/window.png
+            build-mac/qa/*.png
           if-no-files-found: ignore
 
       - name: Upload app bundle

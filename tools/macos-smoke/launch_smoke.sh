@@ -87,3 +87,55 @@ if grep -q '\*\*\* crash' "$LOG"; then
 fi
 
 echo "launch smoke: launched, drew its window, quit, no crash traced"
+
+# The QA walk: the app opens the showcase document and steps through
+# its states by itself, announcing each one in the trace. The watcher
+# here photographs the window on every announcement, so the CI run
+# carries pictures of the states without any UI driving.
+QA_DIR="build-mac/qa"
+DOC="$(pwd)/tests/fixtures/layout-showcase.md"
+if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
+    rm -rf "$QA_DIR"
+    mkdir -p "$QA_DIR"
+    rm -f "$LOG"
+    MARKDOWNIT_QA_STATES="doc,find,edit,outline,dark" "$BIN" "$DOC" &
+    PID=$!
+    seen=" "
+    waited=0
+    while [ "$waited" -lt 240 ]; do
+        for name in doc find edit outline dark; do
+            case "$seen" in *" $name "*) continue ;; esac
+            if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
+                sleep 0.6
+                if screencapture -x "$QA_DIR/$name.png" 2>/dev/null; then
+                    echo "launch smoke: captured $QA_DIR/$name.png"
+                fi
+                seen="$seen$name "
+            fi
+        done
+        if grep -q "qa states done" "$LOG" 2>/dev/null; then
+            break
+        fi
+        kill -0 "$PID" 2>/dev/null || break
+        sleep 0.5
+        waited=$((waited + 1))
+    done
+    # The app quits itself at the end of its walk; make sure it is
+    # gone either way.
+    for _ in $(seq 1 20); do
+        kill -0 "$PID" 2>/dev/null || break
+        sleep 0.5
+    done
+    if kill -0 "$PID" 2>/dev/null; then
+        kill -9 "$PID" 2>/dev/null
+    fi
+    if grep -q '\*\*\* crash' "$LOG" 2>/dev/null; then
+        echo "launch smoke FAILED: a crash was traced during the QA walk"
+        tail -60 "$LOG"
+        exit 1
+    fi
+    shots=$(ls "$QA_DIR"/*.png 2>/dev/null | wc -l | tr -d ' ')
+    echo "launch smoke: the QA walk produced $shots state captures"
+else
+    echo "launch smoke: no showcase fixture (or SMOKE_QA=0), the QA walk was skipped"
+fi

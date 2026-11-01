@@ -1,0 +1,61 @@
+# MarkDownIt layout showcase
+
+One document with every element the renderer draws, so a single
+screenshot shows the whole typographic system at once. The launch smoke
+opens this file on the CI runner and photographs the states.
+
+The paragraph carries **bold**, *italic*, `inline code`, a
+[link](https://example.com), and ~~struck text~~, so the inline
+treatments sit in one line, the way the style guide describes them.
+
+## Lists and tasks
+
+- A bullet, plain
+- A bullet with **bold** inside
+  - Nested one level, for the indent
+
+1. First numbered item
+2. Second numbered item
+3. Third numbered item
+
+- [x] A finished task
+- [ ] An open task
+
+## A quote
+
+> Quoted text keeps the bar and reads muted, one restrained cue.
+
+### A table
+
+| Column | Meaning | Number |
+|--------|---------|--------|
+| First  | A short cell | 1 |
+| Second | A longer cell, to give the column something to hold | 22 |
+| Third  | Another | 333 |
+
+#### Code
+
+```cpp
+// A fenced block in the monospaced face.
+int main() {
+    return 0;
+}
+```
+
+##### A small heading
+
+Body text below the smaller headings keeps the rhythm.
+
+###### The smallest heading
+
+It reads muted, the quietest step of the scale.
+
+---
+
+## A diagram
+
+```mermaid
+graph LR
+    A[Document] --> B(Parse)
+    B --> C{Render}
+```

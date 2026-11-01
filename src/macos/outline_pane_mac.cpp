@@ -332,8 +332,12 @@ void OutlinePane::Draw(RenderTarget* target, float width, float height) {
         emptyFont.size = kFontSizeDip;
         target->DrawText("No headings in this document.", emptyFont,
                          kPadXDip, kRowHeightDip, text_);
-        target->DrawText("Add headings to your document to create an outline.",
-                         emptyFont, kPadXDip, kRowHeightDip * 2.0f, muted_);
+        // Two lines, because the pane is narrow: one line ran past the
+        // edge and was cut mid-phrase.
+        target->DrawText("Add headings to your document", emptyFont,
+                         kPadXDip, kRowHeightDip * 2.0f, muted_);
+        target->DrawText("to create an outline.", emptyFont,
+                         kPadXDip, kRowHeightDip * 3.0f, muted_);
         return;
     }
 

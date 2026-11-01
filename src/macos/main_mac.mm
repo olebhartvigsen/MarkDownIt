@@ -6,6 +6,7 @@
 // the command line or from the Finder.
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -124,6 +125,10 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
 }
 - (instancetype)init;
 - (void)OpenPath:(const std::string&)path;
+// The QA walk: the states the launch smoke photographs.
+- (void)runQAStates:(NSString*)list;
+- (void)qaStep:(NSArray<NSString*>*)states at:(NSUInteger)index;
+- (void)applyQAState:(NSString*)state;
 
 // The menu commands, as AppKit selectors.
 - (void)newDocument:(id)sender;
@@ -444,6 +449,67 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         if ([argument hasPrefix:@"-"]) continue;
         [self OpenPath:[argument UTF8String]];
         break;
+    }
+
+    // The QA walk: with MARKDOWNIT_QA_STATES set, the app steps
+    // through the named states and announces each one in the launch
+    // trace. A watcher outside the app photographs the window on every
+    // announcement, so a CI run carries pictures of the real states
+    // without driving the UI: no accessibility permission, nothing to
+    // click. Without the variable, none of this runs.
+    const char* qaStates = getenv("MARKDOWNIT_QA_STATES");
+    if (qaStates && *qaStates) {
+        [self runQAStates:[NSString stringWithUTF8String:qaStates]];
+    }
+}
+
+// The QA walk, one state per step. Each state is applied, announced
+// in the launch trace, and left on the screen for a beat so the
+// watcher can capture it; the app then moves on by itself and quits at
+// the end, so a run needs no input at all.
+- (void)runQAStates:(NSString*)list {
+    [self qaStep:[list componentsSeparatedByString:@","] at:0];
+}
+
+- (void)qaStep:(NSArray<NSString*>*)states at:(NSUInteger)index {
+    if (index >= states.count) {
+        mac::TraceMac("qa states done");
+        // One more beat for the last capture, then the walk is over.
+        dispatch_after(
+            dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4 * NSEC_PER_SEC)),
+            dispatch_get_main_queue(), ^{
+                [NSApp terminate:nil];
+            });
+        return;
+    }
+    [self applyQAState:states[index]];
+    NSString* line = [NSString stringWithFormat:@"qa state ready: %@",
+                                               states[index]];
+    mac::TraceMac([line UTF8String]);
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)),
+        dispatch_get_main_queue(), ^{
+            [self qaStep:states at:index + 1];
+        });
+}
+
+- (void)applyQAState:(NSString*)state {
+    if ([state isEqualToString:@"doc"]) {
+        // The document opened at launch; the state is the picture of
+        // it as it lands.
+    } else if ([state isEqualToString:@"find"]) {
+        app_->ShowFind(FindBarMode::Find);
+    } else if ([state isEqualToString:@"edit"]) {
+        app_->SetEditing(true);
+        [self ribbonSync];
+        [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"outline"]) {
+        [self applyOutlineVisible:YES];
+    } else if ([state isEqualToString:@"dark"]) {
+        window_.appearance =
+            [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+        [self ribbonSync];
+        [view_ setNeedsDisplay:YES];
     }
 }
 

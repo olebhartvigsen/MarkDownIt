@@ -614,9 +614,10 @@ Four places keep a different answer than the plan, on purpose:
   cross-platform parity decision (`references/macos-port-status.md`),
   not an open item.
 
-The acceptance fixture `tests/fixtures/layout-showcase.md` was never
-created; the layout is covered by `tests/renderer_mac_test.cpp` and the
-Windows renderer tests. The numeric tables in this plan were superseded
+The acceptance fixture `tests/fixtures/layout-showcase.md` exists now;
+the launch smoke opens it on the runner and photographs every state, so
+the layout is judged in pixels as well as in
+`tests/renderer_mac_test.cpp` and the Windows renderer tests. The numeric tables in this plan were superseded
 by later tweaks (commit `0b9bcf9` line heights, `c44e1af` measure cap,
 `c8954c4` type scale) and by the four-mode content width setting; the
 shipped values live in `src/theme.h`.
