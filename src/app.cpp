@@ -6160,8 +6160,13 @@ void AppWindow::UpdateOutlineActive() {
         }
         // (ViewHeightDip: the DIP height of the content viewport.)
         if (caretVisible) {
-            const int idx = ItemIndexForOffset(outline_items_,
-                                               sel_.active.offset);
+            int idx = ItemIndexForOffset(outline_items_, sel_.active.offset);
+            // A caret above the first heading belongs to the first
+            // section, the way the viewport probe reads the same
+            // position and the mac pane shows it; without this the
+            // highlight vanished whenever the caret sat in the
+            // document's opening lines.
+            if (idx < 0 && !outline_items_.empty()) idx = 0;
             if (outline_.Active() != idx) outline_.SetActive(idx);
             return;
         }
