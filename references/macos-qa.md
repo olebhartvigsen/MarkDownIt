@@ -88,6 +88,58 @@ took on run 41293719752; the rest from the six state captures of the QA
 walk (artifact `MarkDownIt-window-capture`, run 41294080796), the same
 loop that now runs on every build.
 
+### The two windows looked like different applications (Nov 1)
+- The side-by-side captures showed the same document in two unrelated
+  windows: the mac drew its own system neutrals around the page (a
+  white pane over a blue selection, a white strip, accent underlines)
+  where the Windows build has always painted a warm paper palette, and
+  the strip missed the ribbon's furniture: no File tab, no tab cards,
+  the captions in the wrong tone, the Quick Access Toolbar in the
+  wrong place, and a different caption.
+- Cause: the Windows surfaces came from fixed warm values the app had
+  carried for years, while the mac layer resolved everything from
+  system colours; nothing shared a palette.
+- Screenshot: `pairs/doc_full.png`, `pairs/ribbon_left.png` beside
+  `pairs/ribbon_right.png` from run 41299580745.
+- Status: fixed in the convergence commits. One chrome palette now
+  lives in `theme.h` (`ChromePalette`; the light values come from the
+  Windows paint: pane `0xFAF6F1`, active row `0xE8DCC8`, strip
+  `0xF5F6F7`, File tab `0x1979CA`, pressed pills `0xC9E0F7` with a
+  `0x62A2E4` edge). The Windows pane and strip read it unchanged, and
+  the mac resolves it against its window's appearance, with warm-dark
+  counterparts in Dark Mode. The mac strip gained the File tab (it
+  pops up the same menu the menu bar carries), ribbon-shaped tab
+  cards, the captions in their measured tone, and the Quick Access
+  Toolbar moved into the title bar beside the traffic lights with the
+  caption following it. The find bar wears the Windows controls:
+  Previous and Next, Close, the Find: and Replace with: labels, flat
+  white fields whose hairline turns blue while edited, no history
+  triangle. The pane paints every row in one tone, with the Windows
+  pane's smaller right-pointing mark in the arrow brown.
+
+### The colour gate (Nov 1)
+- The capture comparison samples chrome colours beside the layout now:
+  the strip above the document (`doc`, `find`, `edit`), the pane's
+  ground, and the dominant colour of the active row's first text band
+  (`outline`); each pair must match within 16 per channel.
+- Calibrated against the Windows captures: the strip reads
+  `(245,246,247)`, the pane ground `(250,246,241)`, and the active row
+  `(232,220,200)` on both platforms, exactly.
+
+### The walk keeps each state clean (Nov 1)
+- The Windows outline capture showed no highlighted row at all: the
+  viewport probe refused to run in edit mode, so once the find state
+  had scrolled the view, the pane held no row through the edit and
+  outline states. Both walks re-derive the pane's highlight when they
+  enter those states, so a picture never depends on what the previous
+  state's scroll left behind.
+- The Windows window is clamped to the work area: the 1000x760 window
+  was taller than the runner's screen, so the find bar's replace row
+  sat under the taskbar in every picture.
+- The mac walk waits two seconds before its first state, with the
+  window brought forward: the first picture used to race the window
+  onto the screen and catch the desktop behind it.
+
 ### The outline row clipped a long heading (Nov 1)
 - "The smallest heading" drew cut mid-word at the pane edge ("The
   smallest hea"), with no ellipsis.
