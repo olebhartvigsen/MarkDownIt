@@ -74,8 +74,8 @@ Palette SystemPalette() {
 
 // The chrome palette for the current appearance: the shared fixed
 // values in Light Mode, the warm-dark counterparts in Dark Mode.
-ChromePalette SystemChromePalette() {
-    NSAppearanceName best = [NSApp.effectiveAppearance
+ChromePalette ChromePaletteForAppearance(NSAppearance* appearance) {
+    NSAppearanceName best = [(appearance ? appearance : NSApp.effectiveAppearance)
         bestMatchFromAppearancesWithNames:@[
             NSAppearanceNameAqua, NSAppearanceNameDarkAqua
         ]];
@@ -83,6 +83,10 @@ ChromePalette SystemChromePalette() {
         return DarkChromePalette();
     }
     return BaseChromePalette();
+}
+
+ChromePalette SystemChromePalette() {
+    return ChromePaletteForAppearance(nil);
 }
 
 }  // namespace mac

@@ -271,6 +271,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // it is asked before the window closes with unsaved changes.
     [window_ setDelegate:self];
     [window_ setTitle:@"MarkDownIt"];
+    // The title lives in the title bar accessory beside the toolbar
+    // buttons, so the system's centred copy is hidden.
+    [window_ setTitleVisibility:NSWindowTitleHidden];
     [window_ setMinSize:NSMakeSize(480, 320)];
     // The window keeps the system's own appearance: the document
     // palette is resolved from the system's semantic colours, so the
@@ -315,7 +318,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // The pane borrows the document of the app and reads it again
     // after every reparse.
     outlinePane_->SetDocument(&app_->GetDocument());
-    outlinePane_->SetPalette(mac::SystemPalette());
+    outlinePane_->SetChromePalette(
+        mac::ChromePaletteForAppearance([view_ effectiveAppearance]));
     // The palette belongs to the appearance, so a switch refreshes the
     // outline pane beside the document too. Wired here, after the pane
     // exists: with the handler wired early, the first palette resolve
@@ -323,7 +327,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // the launch smoke caught the crash.
     [view_ setThemeChangedHandler:^{
         if (outlinePane_) {
-            outlinePane_->SetPalette(mac::SystemPalette());
+            outlinePane_->SetChromePalette(
+                mac::ChromePaletteForAppearance([view_ effectiveAppearance]));
             [outlineView_ setNeedsDisplay:YES];
         }
     }];
@@ -403,6 +408,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // The Quick Access Toolbar rides the title bar at the leading edge
     // (after the traffic lights), where the Windows build keeps it.
     qatView_ = [MdQuickAccessView viewWithHost:self];
+    [qatView_ setTitleText:[window_ title]];
     {
         NSTitlebarAccessoryViewController* access =
             [[NSTitlebarAccessoryViewController alloc] init];
@@ -549,9 +555,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [ribbon_ activateTab:1];
         [window_ makeFirstResponder:view_];
         [self ribbonSync];
+        [self outlineActiveRefresh];
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"outline"]) {
         [self applyOutlineVisible:YES];
+        [self outlineActiveRefresh];
     } else if ([state isEqualToString:@"settings"]) {
         // The Settings window is a surface of its own; it stays up
         // for its picture and the walk quits with it open.
@@ -662,6 +670,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                                                      [full lastPathComponent]]];
         [window_ setRepresentedFilename:full];
     }
+    [qatView_ setTitleText:[window_ title]];
     [window_ setDocumentEdited:NO];
 }
 

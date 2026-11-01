@@ -42,6 +42,8 @@
 @interface MdQuickAccessView : NSView
 + (MdQuickAccessView*)viewWithHost:(id<MdRibbonHost>)host;
 - (void)refresh;
+// The window title shown beside the toolbar buttons.
+- (void)setTitleText:(NSString*)title;
 @end
 
 @interface MdRibbonView : NSView

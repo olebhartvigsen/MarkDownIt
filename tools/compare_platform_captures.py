@@ -218,6 +218,55 @@ def write_pictures(mac_pane, win_pane, out_dir, name):
     over.save(os.path.join(out_dir, "%s_overlay.png" % name))
 
 
+# The chrome landmarks: the surfaces around the document must wear the
+# same paint on both platforms. Each block sits in a blank stretch (the
+# strip right of the buttons, the pane's empty bottom, the tail of the
+# active outline row), far from text and antialiasing; any real palette
+# difference sits far outside the tolerance.
+CHROME_TOL = 16
+
+
+def sample_block(img, cx, cy, w=20, h=8, dom=False):
+    """The block's average colour, or its dominant colour with dom."""
+    x1 = min(img.width, cx + w)
+    y1 = min(img.height, cy + h)
+    box = img.crop((max(0, cx), max(0, cy), x1, y1))
+    raw = box.tobytes()
+    data = list(zip(raw[0::3], raw[1::3], raw[2::3]))
+    if not data:
+        return (0, 0, 0)
+    if dom:
+        return max(set(data), key=data.count)
+    n = len(data)
+    return (sum(p[0] for p in data) // n, sum(p[1] for p in data) // n,
+            sum(p[2] for p in data) // n)
+
+
+def chrome_landmarks(state, rect, png_path):
+    """The spots to sample for a state, relative to its pane rect."""
+    x, y, w, h = rect
+    spots = []
+    if state in ("doc", "find", "edit"):
+        # The strip's blank right of the button row, above the pane.
+        spots.append(("strip", 952, y - 30, 20, 8, False))
+    if state == "outline":
+        # The outline pane is left of the document pane; the rect marks
+        # the document, so the pane region is derived from it.
+        spots.append(("pane", 20, y + h - 34, 24, 10, False))
+        # The active row: the dominant colour of its first text band,
+        # which is the fill behind the heading's letters.
+        outline = load_pane(png_path, (12, y, x - 36, h))
+        # Hairlines at the pane's edge are bands too; a text row is
+        # taller.
+        bands = [b for b in band_starts(outline) if b[1] - b[0] >= 4]
+        if bands:
+            y0 = y + bands[0][0]
+            y1 = y + bands[0][1] + 2
+            spots.append(("row", 14, y0, max(2, x - 42),
+                          max(2, y1 - y0), True))
+    return spots
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--macos", required=True)
@@ -250,6 +299,31 @@ def main():
             print("  %-8s pair PASS" % state)
         write_pictures(mac_pane, win_pane, args.out, state)
         compared += 1
+
+    # The chrome: the surfaces the app draws around the document.
+    for state in STATES:
+        if state not in mac_rects or state not in win_rects:
+            continue
+        m_png = os.path.join(args.macos, "%s.png" % state)
+        w_png = os.path.join(args.windows, "%s.png" % state)
+        if not os.path.exists(m_png) or not os.path.exists(w_png):
+            continue
+        m_img = Image.open(m_png).convert("RGB")
+        w_img = Image.open(w_png).convert("RGB")
+        m_spots = chrome_landmarks(state, mac_rects[state], m_png)
+        w_spots = chrome_landmarks(state, win_rects[state], w_png)
+        for (label, mx, my, mw, mh, dm), (_, wx, wy, ww, wh, dw) in zip(
+                m_spots, w_spots):
+            mc = sample_block(m_img, mx, my, mw, mh, dm)
+            wc = sample_block(w_img, wx, wy, ww, wh, dw)
+            delta = max(abs(mc[i] - wc[i]) for i in range(3))
+            if delta > CHROME_TOL:
+                failed += 1
+                print("  %-8s chrome FAIL %s: mac %s vs windows %s "
+                      "(delta %d)" % (state, label, mc, wc, delta))
+            else:
+                print("  %-8s chrome ok   %s: mac %s windows %s"
+                      % (state, label, mc, wc))
 
     print("compared %d states, %d failed" % (compared, failed))
     sys.exit(1 if failed else 0)

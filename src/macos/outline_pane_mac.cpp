@@ -31,7 +31,7 @@ Color ToColor(const ThemeColor& c) {
 }
 
 // The size of the triangle that opens and closes a subtree.
-constexpr float kTriangleSizeDip = 8.0f;
+constexpr float kTriangleSizeDip = 6.5f;
 
 // The size of the font of a heading.
 constexpr float kFontSizeDip = 13.0f;
@@ -87,6 +87,7 @@ OutlinePane::OutlinePane() {
     text_ = Color{0.1f, 0.1f, 0.1f, 1.0f};
     highlight_ = Color{0.9f, 0.94f, 1.0f, 1.0f};
     muted_ = Color{0.5f, 0.5f, 0.5f, 1.0f};
+    arrow_ = Color{0.42f, 0.38f, 0.33f, 1.0f};
 }
 
 OutlinePane::~OutlinePane() = default;
@@ -306,15 +307,21 @@ void OutlinePane::SetColors(const Color& background, const Color& text,
     muted_ = muted;
 }
 
-void OutlinePane::SetPalette(const Palette& palette) {
+void OutlinePane::SetChromePalette(const ChromePalette& palette) {
     // The pane wears the shared chrome palette, not the document's:
     // the warm paper tone and tan active row the Windows build has.
-    (void)palette;
-    const ChromePalette c = SystemChromePalette();
+    const ChromePalette& c = palette;
     background_ = ToColor(c.paneBg);
     text_ = ToColor(c.paneText);
     highlight_ = ToColor(c.paneActiveBg);
     muted_ = ToColor(c.paneTextMuted);
+    arrow_ = ToColor(c.paneArrow);
+}
+
+// The pane's own surfaces come from the chrome palette above, so the
+// document palette no longer reaches it.
+void OutlinePane::SetPalette(const Palette& palette) {
+    (void)palette;
 }
 
 void OutlinePane::Draw(RenderTarget* target, float width, float height) {
@@ -409,7 +416,9 @@ void OutlinePane::Draw(RenderTarget* target, float width, float height) {
             // and the Finder draw theirs.
             const bool collapsed = collapse_.IsCollapsed(item);
             const float centerX = kPadXDip + kTriangleSizeDip * 0.5f;
-            const float centerY = y + kRowHeightDip * 0.5f;
+            // Near the text's top, the spot the Windows pane puts its
+            // mark in.
+            const float centerY = y + 7.0f;
             const float half = kTriangleSizeDip * 0.5f;
             std::vector<Point> triangle;
             if (collapsed) {
@@ -421,7 +430,7 @@ void OutlinePane::Draw(RenderTarget* target, float width, float height) {
                             Point{centerX + half, centerY - half * 0.6f},
                             Point{centerX, centerY + half * 0.6f}};
             }
-            target->FillPolygon(triangle, muted_);
+            target->FillPolygon(triangle, arrow_);
         }
 
         // The text of the heading, indented by its level and trimmed to
@@ -435,7 +444,9 @@ void OutlinePane::Draw(RenderTarget* target, float width, float height) {
             ? static_cast<size_t>(available / 7.0f)
             : 0;
         const size_t maxChars = std::min(kMaxTextChars, fitChars);
-        const Color color = (item == currentItem_) ? text_ : muted_;
+        // The Windows pane paints every row's heading in the same
+        // tone; the highlight is what marks the caret's row.
+        const Color color = text_;
         target->DrawText(TrimmedText(heading, maxChars), font, textX, baseline,
                          color);
     }

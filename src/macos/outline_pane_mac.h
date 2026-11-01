@@ -124,6 +124,9 @@ public:
 
     // The colours of the theme, so the pane looks like the document.
     void SetPalette(const Palette& palette);
+    // The chrome colours, resolved for the window's appearance by the
+    // caller.
+    void SetChromePalette(const ChromePalette& palette);
 
 private:
     // Rebuilds the list of the headings from the document.
@@ -162,6 +165,7 @@ private:
     Color text_;
     Color highlight_;
     Color muted_;
+    Color arrow_;
 };
 
 }  // namespace mac

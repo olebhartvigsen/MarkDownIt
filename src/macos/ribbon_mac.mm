@@ -359,7 +359,8 @@ static NSColor* ChromeColor(const ThemeColor& c) {
                                                         yRadius:4.0];
     const BOOL on = (self.state == NSControlStateValueOn);
     const BOOL pressed = [self isHighlighted];
-    const ChromePalette chrome = mac::SystemChromePalette();
+    const ChromePalette chrome =
+        mac::ChromePaletteForAppearance(NSAppearance.currentAppearance);
     if (on && self.enabled) {
         [ChromeColor(chrome.pillBg) setFill];
         [path fill];
@@ -409,7 +410,8 @@ static NSColor* ChromeColor(const ThemeColor& c) {
 
 // The title in the palette's tab colour for the tab's state.
 - (void)updateChromeTitle {
-    const ChromePalette chrome = mac::SystemChromePalette();
+    const ChromePalette chrome =
+        mac::ChromePaletteForAppearance(self.effectiveAppearance);
     NSColor* color = nil;
     if (self.fileTab) {
         color = ChromeColor(chrome.tabFileText);
@@ -457,7 +459,8 @@ static NSColor* ChromeColor(const ThemeColor& c) {
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
-    const ChromePalette chrome = mac::SystemChromePalette();
+    const ChromePalette chrome =
+        mac::ChromePaletteForAppearance(NSAppearance.currentAppearance);
     if (self.fileTab) {
         NSBezierPath* card = [NSBezierPath
             bezierPathWithRoundedRect:NSInsetRect(self.bounds, 1.0, 1.0)
@@ -619,7 +622,8 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
                 labelWithString:[NSString stringWithUTF8String:group.label]];
             [label setFont:mac::SystemUIFont(10.0f)];
             [label setTextColor:ChromeColor(
-                mac::SystemChromePalette().groupLabel)];
+                mac::ChromePaletteForAppearance(self.effectiveAppearance)
+                    .groupLabel)];
             [label setAlignment:NSTextAlignmentCenter];
             [label setFrame:NSMakeRect(0.0, kCommandHeight + 4.0, width, 12.0)];
             [groupView addSubview:label];
@@ -836,7 +840,8 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
 
 - (void)drawRect:(NSRect)dirtyRect {
     (void)dirtyRect;
-    const ChromePalette chrome = mac::SystemChromePalette();
+    const ChromePalette chrome =
+        mac::ChromePaletteForAppearance(NSAppearance.currentAppearance);
     [ChromeColor(chrome.stripBg) setFill];
     [[NSBezierPath bezierPathWithRect:self.bounds] fill];
 
@@ -885,8 +890,8 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
     // tab titles and the captions from it.
     [fileTabButton_ updateChromeTitle];
     for (MdRibbonTabButton* tab in tabButtons_) [tab updateChromeTitle];
-    NSColor* captionColor =
-        ChromeColor(mac::SystemChromePalette().groupLabel);
+    NSColor* captionColor = ChromeColor(
+        mac::ChromePaletteForAppearance(self.effectiveAppearance).groupLabel);
     for (NSArray<MdRibbonGroupView*>* groups in pageGroups_) {
         for (MdRibbonGroupView* group in groups) {
             for (NSView* sub in [group subviews]) {
@@ -897,6 +902,11 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
         }
     }
     [self setNeedsDisplay:YES];
+}
+
+- (void)viewDidChangeEffectiveAppearance {
+    [super viewDidChangeEffectiveAppearance];
+    [self refresh];
 }
 
 - (NSView*)viewForCommand:(NSString*)commandId {
@@ -919,11 +929,18 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
 @implementation MdQuickAccessView {
     NSMutableArray<MdRibbonButton*>* buttons_;
     id<MdRibbonHost> host_;
+    NSTextField* titleLabel_;
+}
+
+// The window title shown beside the toolbar buttons.
+- (void)setTitleText:(NSString*)title {
+    [titleLabel_ setStringValue:(title ? title : @"")];
 }
 
 + (MdQuickAccessView*)viewWithHost:(id<MdRibbonHost>)host {
+    // Room for the three buttons and the window title beside them.
     MdQuickAccessView* view = [[MdQuickAccessView alloc]
-        initWithFrame:NSMakeRect(0.0, 0.0, 3.0 * 28.0 + 10.0, 28.0)];
+        initWithFrame:NSMakeRect(0.0, 0.0, 3.0 * 28.0 + 10.0 + 320.0, 28.0)];
     view->host_ = host;
     view->buttons_ = [NSMutableArray array];
     for (int i = 0; i < 3; ++i) {
@@ -951,6 +968,13 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
         [view addSubview:button];
         [view->buttons_ addObject:button];
     }
+    view->titleLabel_ = [NSTextField labelWithString:@""];
+    [view->titleLabel_ setFrame:NSMakeRect(5.0 + 3.0 * 28.0 + 2.0, 6.0,
+                                           300.0, 16.0)];
+    [view->titleLabel_ setFont:[NSFont systemFontOfSize:13.0]];
+    [view->titleLabel_ setLineBreakMode:NSLineBreakByTruncatingTail];
+    [view->titleLabel_ setMaximumNumberOfLines:1];
+    [view addSubview:view->titleLabel_];
     [view refresh];
     return view;
 }

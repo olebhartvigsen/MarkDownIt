@@ -3381,8 +3381,12 @@ void AppWindow::QAAdvance() {
         RefreshFindResults(false);
     } else if (state == "edit") {
         SetEdit(true);
+        // The picture must not depend on what the find state's scroll
+        // left behind: re-derive the pane's highlight.
+        UpdateOutlineActive();
     } else if (state == "outline") {
         if (!IsOutlineVisible()) ToggleOutline();
+        UpdateOutlineActive();
     } else if (state == "source") {
         if (!IsSourceView()) ToggleSourceView();
     }
@@ -6155,9 +6159,11 @@ void AppWindow::UpdateOutlineActiveFromView() {
     // View-mode highlight: the heading whose section owns the reading
     // line, 25% down the viewport, is the one being read. Runs on
     // every scroll change (UpdateScrollInfo funnels all scroll paths)
-    // and on load/toggle; edit mode never reaches it (caret rules).
+    // and on load/toggle; in edit mode it runs once the caret has been
+    // scrolled out of view, when reading takes over (UpdateOutlineActive
+    // sends only that case here).
     if (!outline_.IsCreated() || !outline_.IsVisible()) return;
-    if (editing_ || welcome_mode_) return;
+    if (welcome_mode_) return;
     float viewH = static_cast<float>(clientH_);
     if (rt_) viewH = rt_->GetSize().height;
     const float probeY = scrollY_ + viewH * 0.25f;

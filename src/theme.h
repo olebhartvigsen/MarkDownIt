@@ -296,11 +296,13 @@ inline ChromePalette BaseChromePalette() {
     c.stripBg = MakeColor(0xF5F6F7);
     c.stripLine = MakeColor(0xDADBDC);
     c.stripLineSoft = MakeColor(0xE3E4E5);
-    c.groupLabel = MakeColor(0x788BAA);
+    c.groupLabel = MakeColor(0x5A5A5A);
     c.tabFileBg = MakeColor(0x1979CA);
     c.tabFileText = MakeColor(0xFFFFFF);
     c.tabActiveBg = MakeColor(0xFFFFFF);
-    c.tabActiveText = MakeColor(0x788BAA);
+    // Both tab captions are dark; the card behind the active tab is
+    // what marks it, the way the ribbon does it.
+    c.tabActiveText = MakeColor(0x3C3C3C);
     c.tabInactiveText = MakeColor(0x333333);
     c.pillBg = MakeColor(0xC9E0F7);
     c.pillBorder = MakeColor(0x62A2E4);
@@ -323,7 +325,7 @@ inline ChromePalette DarkChromePalette() {
     c.stripBg = MakeColor(0x2B2B2B);
     c.stripLine = MakeColor(0x3D3D3D);
     c.stripLineSoft = MakeColor(0x383838);
-    c.groupLabel = MakeColor(0x8FA0BD);
+    c.groupLabel = MakeColor(0x9A9A9A);
     c.tabFileBg = MakeColor(0x1979CA);
     c.tabFileText = MakeColor(0xFFFFFF);
     c.tabActiveBg = MakeColor(0x3A3A3A);

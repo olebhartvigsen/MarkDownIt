@@ -16,5 +16,11 @@ Palette SystemPalette();
 // Dark Mode. The light values are fixed, so the two platforms match
 // pixel for pixel there.
 ChromePalette SystemChromePalette();
+#ifdef __OBJC__
+// The same palette, resolved against one appearance. The chrome of a
+// window follows that window's appearance, which can differ from the
+// app's.
+ChromePalette ChromePaletteForAppearance(NSAppearance* appearance);
+#endif
 
 }  // namespace mac
