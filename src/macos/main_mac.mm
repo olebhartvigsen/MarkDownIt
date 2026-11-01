@@ -556,9 +556,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         app_->RefreshFindResults(false);
     } else if ([state isEqualToString:@"edit"]) {
         app_->SetEditing(true);
-        // The Edit page carries the editing toggles, so the picture
-        // shows it, with the caret's view focused.
-        [ribbon_ activateTab:1];
+        // The walk stays on the default page, the way the Windows
+        // walk does; its ribbon framework cannot be told to switch
+        // tabs, so both pictures show the same page.
         [window_ makeFirstResponder:view_];
         // Land at the top of the document, the way the Windows walk
         // arrives: its caret rule leaves the view there, so the two
