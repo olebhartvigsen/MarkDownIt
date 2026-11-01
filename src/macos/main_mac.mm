@@ -483,8 +483,24 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         return;
     }
     [self applyQAState:states[index]];
-    NSString* line = [NSString stringWithFormat:@"qa state ready: %@",
-                                               states[index]];
+    // The document pane in screen pixels with a top-left origin, the
+    // same reporting the Windows walk does: the capture is cropped to
+    // this rectangle so the platforms are compared over the part they
+    // share. The backing scale keeps the numbers in capture pixels on
+    // a retina display too.
+    NSRect paneInWindow = [scrollView_ convertRect:[scrollView_ bounds]
+                                            toView:nil];
+    NSRect paneOnScreen = [window_ convertRectToScreen:paneInWindow];
+    const CGFloat screenHeight =
+        NSHeight([[[NSScreen screens] firstObject] frame]);
+    const CGFloat scale = window_.backingScaleFactor;
+    NSString* line = [NSString stringWithFormat:
+        @"qa state ready: %@ rect=%d,%d,%d,%d",
+        states[index],
+        (int)lround(NSMinX(paneOnScreen) * scale),
+        (int)lround((screenHeight - NSMaxY(paneOnScreen)) * scale),
+        (int)lround(NSWidth(paneOnScreen) * scale),
+        (int)lround(NSHeight(paneOnScreen) * scale)];
     mac::TraceMac([line UTF8String]);
     dispatch_after(
         dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)),

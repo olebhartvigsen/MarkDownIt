@@ -118,6 +118,24 @@ jobs:
           name: MarkDownIt-x64
           path: build/Release/MarkDownIt.exe
 
+      # The app photographs itself in the named states, the same walk
+      # the mac build runs. The capture-parity job compares the two
+      # picture sets once both platforms are done.
+      - name: Capture the states (QA walk)
+        shell: powershell
+        run: powershell -File tools/windows-smoke/capture.ps1 -Exe build/Release/MarkDownIt.exe -Doc tests/fixtures/layout-showcase.md
+
+      - name: Upload the state captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MarkDownIt-windows-capture
+          path: |
+            build-win/qa/*.png
+            build-win/qa/rects.txt
+            build-win/qa/walk.log
+          if-no-files-found: ignore
+
   # The native macOS gate. The same test suite the Windows build runs,
   # compiled and executed on Apple Silicon. Every change to the shared
   # core goes through this job before it reaches the macOS app.
@@ -231,6 +249,7 @@ jobs:
           path: |
             build-mac/window.png
             build-mac/qa/*.png
+            build-mac/qa/rects.txt
           if-no-files-found: ignore
 
       - name: Upload app bundle
@@ -239,6 +258,50 @@ jobs:
           name: MarkDownIt-macos-arm64
           path: MarkDownIt-macos-arm64.zip
           if-no-files-found: error
+
+  # The two platforms photograph themselves in the same named states
+  # (tools/windows-smoke/capture.ps1 and tools/macos-smoke/launch_smoke.sh),
+  # and this job compares the picture sets: how many text bands each
+  # document pane shows, where its large gaps sit, how much ink there
+  # is. Fonts and window chrome differ by design, so the comparison is
+  # structural; a block that went missing or moved on either platform
+  # fails the run, and the side-by-side and overlay pictures land as an
+  # artifact for the eye.
+  capture-parity:
+    name: Capture parity (Windows vs macOS)
+    needs: [build, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download the mac captures
+        uses: actions/download-artifact@v4
+        with:
+          name: MarkDownIt-window-capture
+          path: captures/macos
+
+      - name: Download the Windows captures
+        uses: actions/download-artifact@v4
+        with:
+          name: MarkDownIt-windows-capture
+          path: captures/windows
+
+      - name: Compare the states
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 tools/compare_platform_captures.py \
+            --macos captures/macos/build-mac/qa \
+            --windows captures/windows/build-win/qa \
+            --out parity-out
+
+      - name: Upload the comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MarkDownIt-capture-parity
+          path: parity-out/
+          if-no-files-found: ignore
 
   oracle:
     name: Mermaid oracle (golden geometry)

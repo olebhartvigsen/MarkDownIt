@@ -153,6 +153,30 @@ loop that now runs on every build.
   document.", which is text about a document that does not exist.
 - Status: open; the welcome behaviour needs a decision first.
 
+### Cross-platform capture parity (Nov 1)
+- The Windows build photographs itself in the same named states as the
+  mac build (doc, find, edit, outline, source). With
+  MARKDOWNIT_QA_STATES set, src/app.cpp walks the states on a timer,
+  writes "qa state ready: <name> rect=x,y,w,h" into the log named by
+  MARKDOWNIT_QA_LOG, and closes itself at the end;
+  tools/windows-smoke/capture.ps1 polls that log and takes a screen
+  capture per state. The mac walk (src/macos/main_mac.mm) announces
+  the same rectangle for its pane, and tools/macos-smoke/launch_smoke.sh
+  records both the pictures and the rectangles into build-mac/qa.
+- tools/compare_platform_captures.py crops each pair to its document
+  pane, scales both sides to one width, and compares the text band
+  count, the large gaps between the bands and the ink share. Fonts and
+  window chrome differ by design, so the comparison is structural: a
+  state fails when a block went missing or moved past the tolerances
+  (2 bands, 12 px gaps, 8 px first row). The tool runs the same way
+  locally: point --macos and --windows at two capture directories.
+- The capture-parity job in .github/workflows/build.yml runs the
+  comparison as a fixed step whenever both platform builds passed; the
+  side-by-side and overlay pictures (mac ink red, Windows ink green)
+  land as the MarkDownIt-capture-parity artifact on every run.
+- dark and settings are mac-only states; the report names them and
+  skips them.
+
 <!--
 Entry format:
 

@@ -330,6 +330,16 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow, const std::wstring& cmdLine)
     // callback may fire asynchronously, so this is a safety net.
     SetTimer(hwnd_, 1, 300, nullptr);
 
+    // The capture pipeline drives a state walk through the environment;
+    // an ordinary launch never enters it.
+    {
+        char qaStates[1024] = {};
+        if (GetEnvironmentVariableA("MARKDOWNIT_QA_STATES", qaStates,
+                                    sizeof(qaStates)) > 0) {
+            StartQAWalk(qaStates);
+        }
+    }
+
     // Register .md/.markdown file association based on the saved setting.
     // (settings_ was already loaded in OnCreate, before LoadSampleDoc.)
     {
@@ -3272,6 +3282,110 @@ void AppWindow::OnContentPaint(HWND hwnd) {
     UpdateCaretPosition();
 }
 
+
+// ---------------------------------------------------------------------
+// The QA walk
+// ---------------------------------------------------------------------
+// The capture pipeline photographs the app in named states. With
+// MARKDOWNIT_QA_STATES set, the window walks that list on a timer: each
+// state is applied, announced in the QA log (MARKDOWNIT_QA_LOG) with
+// the document rectangle the capture script crops to, and the window
+// closes itself at the end. An ordinary launch never enters this path.
+
+static const UINT_PTR kQATimerId = 7;
+
+void AppWindow::QALogLine(const std::string& line) const {
+    if (qa_log_path_.empty()) return;
+    if (FILE* log = fopen(qa_log_path_.c_str(), "a")) {
+        fprintf(log, "%s\n", line.c_str());
+        fclose(log);
+    }
+}
+
+void AppWindow::StartQAWalk(const std::string& states) {
+    qa_states_.clear();
+    size_t start = 0;
+    while (start <= states.size()) {
+        const size_t comma = states.find(',', start);
+        const size_t stop =
+            comma == std::string::npos ? states.size() : comma;
+        if (stop > start)
+            qa_states_.push_back(states.substr(start, stop - start));
+        if (comma == std::string::npos) break;
+        start = comma + 1;
+    }
+    if (qa_states_.empty()) return;
+
+    char logPath[2048] = {};
+    if (GetEnvironmentVariableA("MARKDOWNIT_QA_LOG", logPath,
+                                sizeof(logPath)) > 0) {
+        qa_log_path_ = logPath;
+    } else {
+        qa_log_path_ = "markdownit-qa.log";
+    }
+    remove(qa_log_path_.c_str());
+
+    // The walk pins the window to the size the mac walk uses, so the
+    // two captures line up.
+    RECT want = {0, 0, 1000, 760};
+    if (AdjustWindowRectEx(&want, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+                           FALSE, WS_EX_ACCEPTFILES)) {
+        const int w = want.right - want.left;
+        const int h = want.bottom - want.top;
+        const int sw = GetSystemMetrics(SM_CXSCREEN);
+        const int sh = GetSystemMetrics(SM_CYSCREEN);
+        SetWindowPos(hwnd_, nullptr, (sw - w) / 2, (sh - h) / 2, w, h,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        ResizeContentWindow();
+        Repaint();
+    }
+    // The pane is half of the mac window, and the capture wants both.
+    if (!IsOutlineVisible()) ToggleOutline();
+
+    qa_index_ = 0;
+    SetTimer(hwnd_, kQATimerId, 2500, nullptr);
+}
+
+void AppWindow::QAAdvance() {
+    if (qa_index_ >= qa_states_.size()) {
+        QALogLine("qa states done");
+        KillTimer(hwnd_, kQATimerId);
+        PostMessage(hwnd_, WM_CLOSE, 0, 0);
+        return;
+    }
+    const std::string state = qa_states_[qa_index_];
+    if (state == "find") {
+        ShowFindReplace(false);
+        // A live query, so the capture carries the match count and the
+        // highlight, like the mac walk's find state.
+        find_bar_.SetSearchText(L"list");
+        RefreshFindResults(false);
+    } else if (state == "edit") {
+        SetEdit(true);
+    } else if (state == "outline") {
+        if (!IsOutlineVisible()) ToggleOutline();
+    } else if (state == "source") {
+        if (!IsSourceView()) ToggleSourceView();
+    }
+
+    // The document rectangle in screen pixels with a top-left origin:
+    // the capture script crops the picture to the part the two
+    // platforms share.
+    RECT rc = {0, 0, 0, 0};
+    POINT origin = {0, 0};
+    if (hwnd_content_) {
+        GetClientRect(hwnd_content_, &rc);
+        ClientToScreen(hwnd_content_, &origin);
+    }
+    char line[256];
+    snprintf(line, sizeof(line), "qa state ready: %s rect=%ld,%ld,%ld,%ld",
+             state.c_str(), origin.x, origin.y,
+             rc.right - rc.left, rc.bottom - rc.top);
+    QALogLine(line);
+
+    ++qa_index_;
+    SetTimer(hwnd_, kQATimerId, 5000, nullptr);
+}
 
 void AppWindow::ProcessPendingFile() {
     if (pending_file_.empty()) return;
@@ -6381,7 +6495,9 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         case WM_TIMER:
-            if (wp == 1) {
+            if (wp == kQATimerId) {
+                QAAdvance();
+            } else if (wp == 1) {
                 KillTimer(hwnd_, 1);
                 ResizeContentWindow();
                 Repaint();

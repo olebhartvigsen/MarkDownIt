@@ -110,6 +110,13 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
                 if screencapture -x "$QA_DIR/$name.png" 2>/dev/null; then
                     echo "launch smoke: captured $QA_DIR/$name.png"
                 fi
+                # The state's document rectangle, so the cross-platform
+                # comparison crops both sides to the same part.
+                rect=$(grep -m1 "qa state ready: $name " "$LOG" \
+                    | sed -n 's/.* rect=//p')
+                if [ -n "$rect" ]; then
+                    echo "$name $rect" >> "$QA_DIR/rects.txt"
+                fi
                 seen="$seen$name "
             fi
         done
