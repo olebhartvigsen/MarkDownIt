@@ -501,11 +501,20 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         app_->ShowFind(FindBarMode::Find);
     } else if ([state isEqualToString:@"edit"]) {
         app_->SetEditing(true);
+        // The Edit page carries the editing toggles, so the picture
+        // shows it, with the caret's view focused.
+        [ribbon_ activateTab:1];
+        [window_ makeFirstResponder:view_];
         [self ribbonSync];
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"outline"]) {
         [self applyOutlineVisible:YES];
+    } else if ([state isEqualToString:@"source"]) {
+        // The raw markdown view: the renderer lays the buffer out as
+        // one monospace block, its own drawing path.
+        if (!sourceView_) [self OnToggleSourceView];
     } else if ([state isEqualToString:@"dark"]) {
+        if (sourceView_) [self OnToggleSourceView];
         window_.appearance =
             [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
         [self ribbonSync];

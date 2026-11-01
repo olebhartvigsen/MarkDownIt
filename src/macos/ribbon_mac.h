@@ -39,6 +39,10 @@
 + (MdRibbonView*)ribbonWithHost:(id<MdRibbonHost>)host;
 // Re-reads the command states from the host.
 - (void)refresh;
+
+// Switches the visible page the way a click on its tab does. The QA
+// walk uses it to photograph every page.
+- (void)activateTab:(NSInteger)index;
 // The view that draws a command, or nil when the strip has no such
 // command. The table-size picker hangs below the Table button, so it
 // asks for the button's current bounds instead of following the caret.

@@ -671,6 +671,17 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
     [self setNeedsDisplay:YES];
 }
 
+- (void)activateTab:(NSInteger)index {
+    if (index < 0 || (NSUInteger)index >= tabPages_.count) return;
+    activeTab_ = (NSUInteger)index;
+    for (NSUInteger i = 0; i < tabPages_.count; ++i) {
+        [[tabPages_ objectAtIndex:i] setHidden:(i != (NSUInteger)index)];
+        [[tabButtons_ objectAtIndex:i] setActive:(i == (NSUInteger)index)];
+        [[tabButtons_ objectAtIndex:i] setNeedsDisplay:YES];
+    }
+    [self setNeedsDisplay:YES];
+}
+
 // The width a page needs in a layout state: the groups, their
 // padding and the gaps, computed the same way placeGroups frames them.
 - (CGFloat)neededWidthForGroups:(NSArray<MdRibbonGroupView*>*)groups
