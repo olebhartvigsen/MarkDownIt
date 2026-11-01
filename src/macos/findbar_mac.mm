@@ -120,9 +120,25 @@ static std::wstring CounterText(const FindBarModel& model) {
     [replaceField_ setPlaceholderString:macstrings::kReplacePlaceholder];
     [replaceField_ setDelegate:self];
 
+    // The Windows bar's field is a plain white box with a hairline
+    // border, blue while it is being edited. AppKit's rounded well and
+    // its wide focus ring are replaced with exactly that.
+    for (NSTextField* field in @[searchField_, replaceField_]) {
+        [field setBezeled:NO];
+        [field setFocusRingType:NSFocusRingTypeNone];
+        [field setDrawsBackground:YES];
+        [field setBackgroundColor:[NSColor whiteColor]];
+        [field setWantsLayer:YES];
+        [field layer].cornerRadius = 3.0;
+        [field layer].borderWidth = 1.0;
+        [field layer].borderColor =
+            [[NSColor colorWithSRGBRed:0.67 green:0.67 blue:0.67
+                                 alpha:1.0] CGColor];
+    }
+
     findLabel_ = [NSTextField labelWithString:@"Find:"];
     [findLabel_ setFont:mac::SystemUIFont(12.0f)];
-    replaceLabel_ = [NSTextField labelWithString:@"Replace:"];
+    replaceLabel_ = [NSTextField labelWithString:@"Replace with:"];
     [replaceLabel_ setFont:mac::SystemUIFont(12.0f)];
 
     // Named the way the Windows bar names them, in the same order.
@@ -337,6 +353,26 @@ static std::wstring CounterText(const FindBarModel& model) {
 // ---------------------------------------------------------------------------
 
 // The text of the search field changed.
+// While a field is being edited its hairline border turns the
+// Windows bar's focus blue; it returns to grey afterwards.
+- (void)controlTextDidBeginEditing:(NSNotification*)notification {
+    NSTextField* field = [notification object];
+    if ([field isKindOfClass:[NSTextField class]]) {
+        [field layer].borderColor =
+            [[NSColor colorWithSRGBRed:25.0 / 255.0 green:121.0 / 255.0
+                                 blue:202.0 / 255.0 alpha:1.0] CGColor];
+    }
+}
+
+- (void)controlTextDidEndEditing:(NSNotification*)notification {
+    NSTextField* field = [notification object];
+    if ([field isKindOfClass:[NSTextField class]]) {
+        [field layer].borderColor =
+            [[NSColor colorWithSRGBRed:0.67 green:0.67 blue:0.67
+                                 alpha:1.0] CGColor];
+    }
+}
+
 - (void)controlTextDidChange:(NSNotification*)notification {
     (void)notification;
     if ([notification.object isEqual:searchField_]) {
