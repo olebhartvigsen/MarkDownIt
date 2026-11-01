@@ -560,6 +560,15 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // shows it, with the caret's view focused.
         [ribbon_ activateTab:1];
         [window_ makeFirstResponder:view_];
+        // Land at the top of the document, the way the Windows walk
+        // arrives: its caret rule leaves the view there, so the two
+        // pictures show the same part of the page. Both the core's
+        // offset and the scroller take the position; setting only the
+        // scroller left the drawing where the caret reveal had put it.
+        content_->SetScrollOffset(0.0f);
+        NSClipView* clip = [scrollView_ contentView];
+        [clip scrollToPoint:NSMakePoint(0.0, 0.0)];
+        [scrollView_ reflectScrolledClipView:clip];
         [self ribbonSync];
         [self outlineActiveRefresh];
         [view_ setNeedsDisplay:YES];
