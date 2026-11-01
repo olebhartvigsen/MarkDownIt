@@ -450,6 +450,16 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
 }
 @end
 
+// The buttons of a group, without the caption label that sits in the
+// same subview list: widths and frames count commands, never captions.
+static NSUInteger CommandCount(NSArray<NSView*>* subs) {
+    NSUInteger count = 0;
+    for (NSView* sub in subs) {
+        if ([sub isKindOfClass:[MdRibbonButton class]]) ++count;
+    }
+    return count;
+}
+
 // ---------------------------------------------------------------------------
 // The strip
 // ---------------------------------------------------------------------------
@@ -674,7 +684,7 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
                                                  : kSmallCommandWidth));
     CGFloat total = 10.0;
     for (MdRibbonGroupView* groupView in groups) {
-        const NSUInteger count = [groupView subviews].count;
+        const NSUInteger count = CommandCount([groupView subviews]);
         if (count == 0) continue;
         total += 2.0 * pad + count * cw + (count - 1) * 2.0 + gap;
     }
@@ -693,15 +703,16 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
     CGFloat groupX = 10.0;
     for (MdRibbonGroupView* groupView in groups) {
         NSArray<NSView*>* subs = [groupView subviews];
+        const NSUInteger count = CommandCount(subs);
         CGFloat x = pad;
         for (NSView* sub in subs) {
             if (![sub isKindOfClass:[MdRibbonButton class]]) continue;
             [sub setFrame:NSMakeRect(x, 2.0, cw, NSHeight([sub frame]))];
             x += cw + 2.0;
         }
-        if (subs.count == 0) continue;
+        if (count == 0) continue;
         const CGFloat groupWidth =
-            2.0 * pad + subs.count * cw + (subs.count - 1) * 2.0;
+            2.0 * pad + count * cw + (count - 1) * 2.0;
         [groupView setFrame:NSMakeRect(groupX, 0.0, groupWidth,
                                        kGroupRowHeight)];
         groupX += groupWidth + gap;

@@ -93,12 +93,18 @@ first time the app was photographed on the runner.
 - Screenshot: the welcome capture, `window.png`.
 - Status: fixed in this commit; the mac pane draws it as two lines now.
 
-### The strip draws a stray trio and dead space (Nov 1)
-- Three small unboxed icons (new, undo, redo) sit in the tab band left
-  of the Home tab; undo and redo appear again as the large History
-  items; about 150 px of blank space trails the Highlight group.
+### The strip dropped a size step and left dead space (Nov 1)
+- The command strip always drew its items icon-only inside oversized
+  group boxes, with a wide dead zone to the right. Each group puts its
+  caption label in the same subview list as its buttons, and both the
+  width calculation and the group framing counted the caption as one
+  more command, so every group was one command too wide and the full
+  (icon and label) layout never fit any window.
 - Screenshot: the welcome capture, `window.png`.
-- Status: open. The strip layout model needs a walk before a fix.
+- Status: fixed in this commit. Only buttons count now, so a 1000 px
+  window draws the full layout with correctly sized groups. The three
+  small icons at the top left are the Quick Access Toolbar, which
+  mirrors the Windows caption strip on purpose, and stay.
 
 ### The outline pane shows at the welcome screen (Nov 1)
 - With no document open, the pane offers "No headings in this
