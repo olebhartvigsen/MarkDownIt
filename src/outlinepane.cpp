@@ -450,17 +450,31 @@ void OutlinePane::PaintRows(ID2D1RenderTarget* rt, const D2D1_RECT_F& rc) {
 void OutlinePane::PaintEmptyState(ID2D1RenderTarget* rt,
                                   const D2D1_RECT_F& rc) {
     if (!brush_ || !fmtEmpty_) return;
-    brush_->SetColor(colTextMuted_);
-    const wchar_t* msg = L"No headings in this document.";
-    const float w = rc.right - 2.f * kPadXDip * (dpi_ / 96.f);
-    IDWriteTextLayout* layout = nullptr;
-    if (SUCCEEDED(dw_->CreateTextLayout(
-            msg, static_cast<UINT32>(wcslen(msg)), fmtEmpty_, w,
-            40.f * dpi_ / 96.f, &layout)) && layout) {
-        rt->DrawTextLayout(D2D1::Point2F(kPadXDip * (dpi_ / 96.f),
-                                         10.f * dpi_ / 96.f), layout,
-                           brush_);
-        layout->Release();
+    // The pane says it is empty and says what fills it, the two lines
+    // the mac pane draws (outline spec 17).
+    const float scale = dpi_ / 96.f;
+    const float w = rc.right - 2.f * kPadXDip * scale;
+    struct EmptyLine {
+        const wchar_t* text;
+        D2D1_COLOR_F color;
+        float y;
+    };
+    const EmptyLine lines[] = {
+        {L"No headings in this document.", colText_, 10.f},
+        {L"Add headings to your document to create an outline.",
+         colTextMuted_, 40.f},
+    };
+    for (const EmptyLine& line : lines) {
+        IDWriteTextLayout* layout = nullptr;
+        if (SUCCEEDED(dw_->CreateTextLayout(
+                line.text, static_cast<UINT32>(wcslen(line.text)), fmtEmpty_,
+                w, 40.f * scale, &layout)) && layout) {
+            brush_->SetColor(line.color);
+            rt->DrawTextLayout(
+                D2D1::Point2F(kPadXDip * scale, line.y * scale), layout,
+                brush_);
+            layout->Release();
+        }
     }
 }
 

@@ -181,6 +181,9 @@ bool App::OpenFile(const std::string& path) {
     Reparse();
     // The highlights of the document come with it.
     LoadMarkers();
+    // Reading first: the document waits in read mode until the Edit
+    // toggle, the same default the Windows window opens files with.
+    SetEditing(false);
     return true;
 }
 

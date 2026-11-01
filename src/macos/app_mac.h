@@ -445,7 +445,10 @@ private:
     UndoStack undo_;
     // Edit mode is on until a caller turns it off; a fresh document
     // turns it back on, the way the Windows build does.
-    bool editing_ = true;
+    // A file opens for reading first, the default the Windows window
+    // uses; the Edit toggle turns writing on. A new document starts
+    // editable, the way Windows starts one.
+    bool editing_ = false;
     // The pending typing format: bold or italic toggled with an empty
     // caret, waiting for the next typed characters (text guide, fed og
     // kursiv ved et tomt caret).

@@ -428,11 +428,15 @@ LayoutMetrics Renderer::ComputeMetrics() const {
 
 float Renderer::GapForTransition(BlockKind prev, BlockKind cur,
                                   BlockKind next, int curDepth,
-                                  int prevDepth, const LayoutMetrics& m) {
+                                  int prevDepth, int curHeading,
+                                  const LayoutMetrics& m) {
     // Heading spacing: large gap before, small gap after.
     if (cur == BlockKind::Heading) {
         if (prev == BlockKind::Heading) return m.headingGapAfter;
         // Gap before a heading (between previous block and this heading).
+        // The smaller headings take the minor gap, the way the
+        // typography plan asks (Task 5, step 1).
+        if (curHeading >= 3) return m.headingGapBeforeMinor;
         return m.headingGapBefore;
     }
     if (prev == BlockKind::Heading) return m.headingGapAfter;
@@ -1369,7 +1373,8 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
                 }
                 if (text32.empty() && imageH == 0.0f) {
                     curY += GapForTransition(prevBlock, n.block,
-                        BlockKind::Paragraph, n.depth, prevDepth, m);
+                        BlockKind::Paragraph, n.depth, prevDepth,
+                        (n.block == BlockKind::Heading ? n.level : 0), m);
                     prevBlock = n.block;
                     prevDepth = n.depth;
                     continue;
@@ -1398,7 +1403,8 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
 
         float gap = GapForTransition(prevBlock, n.block,
                                     BlockKind::Paragraph,
-                                    n.depth, prevDepth, m);
+                                    n.depth, prevDepth,
+                        (n.block == BlockKind::Heading ? n.level : 0), m);
         // First block: no gap before it.
         bool isFirst = (prevBlock == BlockKind::Paragraph &&
                         prevDepth == -1 && curY == m.padTop + topOffsetDip);
@@ -1515,7 +1521,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (!isFirst) {
             gap = GapForTransition(prevBlock, n.block,
                                    BlockKind::Paragraph,
-                                   n.depth, prevDepth, m);
+                                   n.depth, prevDepth,
+                        (n.block == BlockKind::Heading ? n.level : 0), m);
         }
         curY += gap;
 
@@ -1588,7 +1595,13 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             if (lvl < 1) lvl = 1;
             if (lvl > 6) lvl = 6;
             fmt = heading_fmt_[lvl];
-            blockBrush = headingBrush ? headingBrush : textBrush;
+            // The smallest heading reads muted, the way the typography
+            // plan asks: a heading still, quieter than the ones above.
+            if (lvl >= 6 && mutedBrush) {
+                blockBrush = mutedBrush;
+            } else {
+                blockBrush = headingBrush ? headingBrush : textBrush;
+            }
         } else if (n.block == BlockKind::Paragraph ||
                    n.block == BlockKind::BlockQuote ||
                    n.block == BlockKind::List) {

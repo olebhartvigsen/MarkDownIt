@@ -342,10 +342,9 @@ same groups and commands, drawn with the same icon files. The table in
 - Deleting a table is a mac command as well now, in the Table menu and
   in the dropdown. The shared table module had every other table
   command.
-- One command is left out on purpose: the Windows Edit toggle that
-  switches between reading and editing. The mac app has no such split,
-  so there is nothing for it to switch, and
-  `tools/check_mac_ribbon.py` carries the omission in its allowlist.
+- The Edit toggle is on the strip and in the View menu: it switches
+  the document between reading and editing, and an opened file waits
+  in read mode, the default the Windows window uses.
 - The check compares the two files tab for tab, group for group and
   command for command: order, labels, toggles and icon files. CI fails
   when they drift apart.

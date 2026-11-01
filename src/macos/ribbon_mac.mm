@@ -18,11 +18,10 @@
 // carry out the same code. The strip asks the host what it cannot know
 // itself: whether a toggle is on, and whether a command is available.
 //
-// One deviation, on purpose: the Windows Edit tab opens with an Edit
-// toggle that switches the window between reading and editing. The mac
-// app has no such split, the document is editable all the time, so
-// there is nothing for that toggle to switch. The check tool carries
-// the omission in its allowlist.
+// The strip carries every command the Windows markup carries, tab for
+// tab: the Edit toggle switches the document between reading and
+// editing, and a file opens for reading first, the default the Windows
+// window uses.
 
 #include "ribbon_mac.h"
 #include "fonts_mac.h"

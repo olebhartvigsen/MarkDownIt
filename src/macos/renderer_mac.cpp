@@ -112,12 +112,16 @@ constexpr float kBodyBaselineOffset = 1.24f;
 // so the two platforms leave the same space between the same pair of
 // blocks.
 float GapForTransition(BlockKind prev, BlockKind cur, BlockKind next,
-                       int curDepth, int prevDepth, const LayoutMetrics& m) {
+                       int curDepth, int prevDepth, int curHeading,
+                       const LayoutMetrics& m) {
     (void)next;
     (void)curDepth;
     (void)prevDepth;
     if (cur == BlockKind::Heading) {
         if (prev == BlockKind::Heading) return m.headingGapAfter;
+        // The smaller headings take the minor gap, the same rule the
+        // Windows renderer applies (typography plan Task 5, step 1).
+        if (curHeading >= 3) return m.headingGapBeforeMinor;
         return m.headingGapBefore;
     }
     if (prev == BlockKind::Heading) return m.headingGapAfter;
@@ -618,7 +622,9 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
         // block gets none, the same model the Windows renderer uses.
         if (!first) {
             y += GapForTransition(prevBlock, node.block, BlockKind::Paragraph,
-                                  node.depth, prevDepth, metrics_);
+                                  node.depth, prevDepth,
+                                  (node.block == BlockKind::Heading ? node.level : 0),
+                                  metrics_);
         }
         first = false;
         LayoutBlock(node, originX_, contentWidth_, &y);
@@ -769,8 +775,13 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
             // Headings draw in the semibold face, the weight the
             // Windows formats use: size and weight carry the level
             // together, the way the style guide asks.
+            // The smallest heading reads muted, the same rule the
+            // Windows renderer applies (typography plan Task 4,
+            // step 3): a heading still, quieter than the ones above.
+            const ThemeColor headingColor = level >= 6 ? palette_.quoteText
+                                                       : palette_.heading;
             const std::vector<GlyphRun> runs = BuildRuns(
-                node, size, false, false, ToColor(palette_.heading), false,
+                node, size, false, false, ToColor(headingColor), false,
                 THEME_BODY_FONT_SEMIBOLD);
             block.lines = engine_->MeasureWrapped(runs, drawW, 0.0f);
             ApplyLineSpacing(&block.lines, size, metrics_.headingLineHeight,

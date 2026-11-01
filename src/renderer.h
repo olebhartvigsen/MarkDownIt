@@ -198,7 +198,8 @@ private:
     LayoutMetrics ComputeMetrics() const;
     static float GapForTransition(BlockKind prev, BlockKind cur,
                                   BlockKind next, int curDepth,
-                                  int prevDepth, const LayoutMetrics& m);
+                                  int prevDepth, int curHeading,
+                                  const LayoutMetrics& m);
 
     std::u16string ToUtf16(const std::u32string& s32);
 
