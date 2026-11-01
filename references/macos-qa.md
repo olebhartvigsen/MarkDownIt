@@ -95,6 +95,8 @@ loop that now runs on every build.
 - Status: fixed in this commit. The row is trimmed to the width the
   pane can give it and ends in an ellipsis; the Windows pane puts a
   trailing ellipsis sign on its row layout for the same result.
+- Checked in the next capture (run 41294774955): the long rows end in
+  an ellipsis and nothing runs off the pane.
 
 ### The outline expanders drew as squares (Nov 1)
 - Rows with a subtree showed a small filled square in the arrow zone,
@@ -104,6 +106,8 @@ loop that now runs on every build.
 - Status: fixed in this commit. A filled triangle points right while
   the subtree is folded and down while it is open, the shape Windows
   and the Finder use.
+- Checked in the same run: every row with a subtree carries a
+  triangle, down while open, and leaf rows carry none.
 
 ### Blank lines push blocks apart (Nov 1)
 - The showcase capture shows about 90 px between the "Lists and
@@ -140,6 +144,9 @@ loop that now runs on every build.
   window draws the full layout with correctly sized groups. The three
   small icons at the top left are the Quick Access Toolbar, which
   mirrors the Windows caption strip on purpose, and stay.
+- Checked in the next captures (runs 41294189793 and 41294774955):
+  every button carries its label and the groups are as wide as their
+  buttons.
 
 ### The outline pane shows at the welcome screen (Nov 1)
 - With no document open, the pane offers "No headings in this
