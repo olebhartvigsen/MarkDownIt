@@ -40,10 +40,11 @@ references/macos-native-chrome.md, with the citations.
       from the bundle, tools/check_mac_chrome.py added,
       check_mac_bundle.py loses the strip-icon check, the comparison
       tool checks the Windows palette only.
-- [ ] HB, the sidebar: the outline pane wears the sidebar material
+- [x] HB, the sidebar: the outline pane wears the sidebar material
       (vibrancy backdrop, system selection colour with rounded corner,
-      label colours, disclosure chevrons).
-- [ ] HC, the find bar: standard search field, symbol buttons,
+      label colours, disclosure chevrons). Landed in 2e522b7.
+- [x] HC, the find bar: the system's search field, a segmented
+      control with the system's chevrons for the match steps,
       standard push buttons; behaviour unchanged.
 - [ ] HD, the finish: screenshots reviewed on CI, docs updated
       (macos-qa.md, macos-native-chrome.md statuses), any drift the

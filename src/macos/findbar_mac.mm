@@ -80,14 +80,12 @@ static std::wstring CounterText(const FindBarModel& model) {
     NSTextField* replaceLabel_;
     NSTextField* searchField_;
     NSTextField* replaceField_;
-    NSButton* previousButton_;
-    NSButton* nextButton_;
+    NSSegmentedControl* previousNext_;
     NSButton* matchCaseButton_;
     NSButton* wholeWordButton_;
     NSButton* replaceButton_;
     NSButton* replaceAllButton_;
     NSButton* closeButton_;
-    NSButton* historyButton_;
     NSTextField* counterLabel_;
     NSTextField* statusLabel_;
     NSStackView* searchRow_;
@@ -112,40 +110,44 @@ static std::wstring CounterText(const FindBarModel& model) {
 // Builds the controls. Every control is created here, so the layout
 // code only has to place them.
 - (void)buildControls {
-    searchField_ = [NSTextField textFieldWithString:@""];
+    // The system's own search field: the magnifier, the rounded well,
+    // the clear button and the focus ring come with it, and it
+    // follows the appearance and the contrast settings.
+    searchField_ = [[NSSearchField alloc] initWithFrame:NSZeroRect];
     [searchField_ setPlaceholderString:macstrings::kFindPlaceholder];
     [searchField_ setDelegate:self];
 
+    // The system's own text field beside it, bezel and all.
     replaceField_ = [NSTextField textFieldWithString:@""];
     [replaceField_ setPlaceholderString:macstrings::kReplacePlaceholder];
     [replaceField_ setDelegate:self];
-
-    // The Windows bar's field is a plain white box with a hairline
-    // border, blue while it is being edited. AppKit's rounded well and
-    // its wide focus ring are replaced with exactly that.
-    for (NSTextField* field in @[searchField_, replaceField_]) {
-        [field setBezeled:NO];
-        [field setFocusRingType:NSFocusRingTypeNone];
-        [field setDrawsBackground:YES];
-        [field setBackgroundColor:[NSColor whiteColor]];
-        [field setWantsLayer:YES];
-        [field layer].cornerRadius = 3.0;
-        [field layer].borderWidth = 1.0;
-        [field layer].borderColor =
-            [[NSColor colorWithSRGBRed:0.67 green:0.67 blue:0.67
-                                 alpha:1.0] CGColor];
-    }
 
     findLabel_ = [NSTextField labelWithString:@"Find:"];
     [findLabel_ setFont:mac::SystemUIFont(12.0f)];
     replaceLabel_ = [NSTextField labelWithString:@"Replace with:"];
     [replaceLabel_ setFont:mac::SystemUIFont(12.0f)];
 
-    // Named the way the Windows bar names them, in the same order.
-    previousButton_ = [self makeButton:@"Previous" tooltip:macstrings::kPreviousMatch
-                              action:@selector(previousMatch:)];
-    nextButton_ = [self makeButton:@"Next" tooltip:macstrings::kNextMatch
-                          action:@selector(nextMatch:)];
+    // The system's find-bar pair: one segmented control, back and
+    // forward, with the system's chevrons. The glyphs are the ones the
+    // Windows bar shows, up for the previous match and down for the
+    // next.
+    previousNext_ = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
+    [previousNext_ setSegmentCount:2];
+    [previousNext_ setTrackingMode:NSSegmentSwitchTrackingMomentary];
+    [previousNext_ setSegmentStyle:NSSegmentStyleAutomatic];
+    [previousNext_
+        setImage:[NSImage imageWithSystemSymbolName:@"chevron.up"
+                           accessibilityDescription:macstrings::kPreviousMatch]
+       forSegment:0];
+    [previousNext_
+        setImage:[NSImage imageWithSystemSymbolName:@"chevron.down"
+                           accessibilityDescription:macstrings::kNextMatch]
+       forSegment:1];
+    [previousNext_ setToolTip:macstrings::kPreviousMatch forSegment:0];
+    [previousNext_ setToolTip:macstrings::kNextMatch forSegment:1];
+    [previousNext_ setTarget:self];
+    [previousNext_ setAction:@selector(navigationSegment:)];
+    [previousNext_ setAccessibilityLabel:macstrings::kPreviousMatch];
     matchCaseButton_ = [self makeCheckbox:macstrings::kMatchCase
                                    action:@selector(optionsChanged:)];
     wholeWordButton_ = [self makeCheckbox:macstrings::kWholeWord
@@ -161,8 +163,6 @@ static std::wstring CounterText(const FindBarModel& model) {
 
     // The glyph buttons need real names for assistive technology
     // (find spec 2.3 and 44).
-    [previousButton_ setAccessibilityLabel:macstrings::kPreviousMatch];
-    [nextButton_ setAccessibilityLabel:macstrings::kNextMatch];
     [closeButton_ setAccessibilityLabel:macstrings::kCloseFindBarLabel];
     [searchField_ setAccessibilityLabel:macstrings::kSearchText];
     [replaceField_ setAccessibilityLabel:macstrings::kReplaceText];
@@ -199,7 +199,7 @@ static std::wstring CounterText(const FindBarModel& model) {
 // The two rows of controls.
 - (void)buildRows {
     searchRow_ = [NSStackView stackViewWithViews:@[
-        findLabel_, searchField_, previousButton_, nextButton_,
+        findLabel_, searchField_, previousNext_,
         matchCaseButton_, wholeWordButton_, counterLabel_
     ]];
     [searchRow_ setOrientation:NSUserInterfaceLayoutOrientationHorizontal];
@@ -283,8 +283,8 @@ static std::wstring CounterText(const FindBarModel& model) {
     const bool replaceAvailable =
         replaceUsable && model_->IsReplaceEnabled() && navigable;
 
-    [previousButton_ setEnabled:navigable];
-    [nextButton_ setEnabled:navigable];
+    [previousNext_ setEnabled:navigable forSegment:0];
+    [previousNext_ setEnabled:navigable forSegment:1];
     [replaceField_ setEnabled:replaceUsable && model_->IsReplaceEnabled()];
     [replaceButton_ setEnabled:replaceAvailable];
     [replaceAllButton_ setEnabled:replaceAvailable];
@@ -353,26 +353,6 @@ static std::wstring CounterText(const FindBarModel& model) {
 // ---------------------------------------------------------------------------
 
 // The text of the search field changed.
-// While a field is being edited its hairline border turns the
-// Windows bar's focus blue; it returns to grey afterwards.
-- (void)controlTextDidBeginEditing:(NSNotification*)notification {
-    NSTextField* field = [notification object];
-    if ([field isKindOfClass:[NSTextField class]]) {
-        [field layer].borderColor =
-            [[NSColor colorWithSRGBRed:25.0 / 255.0 green:121.0 / 255.0
-                                 blue:202.0 / 255.0 alpha:1.0] CGColor];
-    }
-}
-
-- (void)controlTextDidEndEditing:(NSNotification*)notification {
-    NSTextField* field = [notification object];
-    if ([field isKindOfClass:[NSTextField class]]) {
-        [field layer].borderColor =
-            [[NSColor colorWithSRGBRed:0.67 green:0.67 blue:0.67
-                                 alpha:1.0] CGColor];
-    }
-}
-
 - (void)controlTextDidChange:(NSNotification*)notification {
     (void)notification;
     if ([notification.object isEqual:searchField_]) {
@@ -449,6 +429,16 @@ static std::wstring CounterText(const FindBarModel& model) {
     model_->RememberSearchQuery(model_->GetSearchText());
 }
 
+// The navigation segment: 0 is back, 1 is forward, the two
+// commands the Windows bar keeps under Previous and Next.
+- (void)navigationSegment:(NSSegmentedControl*)sender {
+    if ([sender selectedSegment] == 0) {
+        [self previousMatch:sender];
+    } else {
+        [self nextMatch:sender];
+    }
+}
+
 - (void)nextMatch:(id)sender {
     (void)sender;
     [self rememberQuery];
@@ -511,46 +501,6 @@ static std::wstring CounterText(const FindBarModel& model) {
     if (listener.onClose) {
         listener.onClose();
     }
-}
-
-// The session's recent queries, as a menu under the history button.
-- (void)showHistory:(NSButton*)sender {
-    const std::vector<std::wstring>& recent = model_->RecentSearchQueries();
-    NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
-    if (recent.empty()) {
-        NSMenuItem* item = [menu addItemWithTitle:macstrings::kNoRecentSearches
-                                           action:nil
-                                    keyEquivalent:@""];
-        [item setEnabled:NO];
-    } else {
-        for (std::size_t i = 0; i < recent.size(); ++i) {
-            NSMenuItem* item =
-                [menu addItemWithTitle:NarrowText(recent[i])
-                                action:@selector(selectHistoryQuery:)
-                         keyEquivalent:@""];
-            [item setTarget:self];
-            [item setTag:static_cast<NSInteger>(i)];
-        }
-    }
-    [menu popUpMenuPositioningItem:nil
-                        atLocation:NSMakePoint(0, NSHeight(sender.bounds))
-                            inView:sender];
-}
-
-// A query from the history becomes the current one and searches
-// again, the same as typing it would.
-- (void)selectHistoryQuery:(NSMenuItem*)item {
-    const std::vector<std::wstring>& recent = model_->RecentSearchQueries();
-    const std::size_t index = static_cast<std::size_t>(item.tag);
-    if (index >= recent.size()) return;
-    [searchField_ setStringValue:NarrowText(recent[index])];
-    model_->SetSearchText(recent[index]);
-    model_->RememberSearchQuery(recent[index]);
-    const FindBarListener& listener = model_->listener();
-    if (listener.onSearchChanged) {
-        listener.onSearchChanged();
-    }
-    [self updateFromModel];
 }
 
 // The keys the guide gives the bar: Enter steps to the next match,

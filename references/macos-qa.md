@@ -35,13 +35,17 @@ mode"); a screenshot of the screen makes it exact.
 - Open Recent fills, and an entry opens the file.
 - Services, Hide Others, Show All, the window list, Help.
 
-### The command strip
-- Tab labels, icons, labels under the icons; nothing clipped at tab
-  edges.
-- A toggle shows pressed state (Bold on a bold selection, Edit in edit
-  mode).
-- Tooltips name the Apple shortcut (Command-F, not Ctrl-F).
-- A narrow window reflows the strip without overlap.
+### The toolbar
+- The six items in order: Save, Undo, Redo, Find, the edit switch,
+  the outline switch.
+- Undo and Redo grey out with nothing to undo or redo, and in the
+  welcome window.
+- The edit switch reads Edit while reading and Done while editing;
+  the outline switch matches the View menu.
+- Tooltips and accessibility names on every item; the shortcuts read
+  Command-F, not Ctrl-F.
+- A narrow window reflows without overlap; the toolbar customizes and
+  the user's set survives a relaunch.
 
 ### The document
 - Heading sizes step down clearly; H6 reads muted.
@@ -60,9 +64,11 @@ mode"); a screenshot of the screen makes it exact.
 ### The find bar
 - Opens with Command-F, and Command-Option-F for replace; docks at the
   bottom edge with the document above it, nothing covered.
-- Enter and Shift-Enter walk matches; the counter updates.
+- The search field carries the system's magnifier and clear button;
+  the chevron pair walks matches; the counter updates.
+- Enter and Shift-Enter walk matches too.
 - The replace buttons are live only in edit mode.
-- Close (Escape, the arrow at the right) returns the space.
+- Close (Escape, or the Close button) returns the space.
 
 ### The outline pane
 - Lists the headings; clicking one scrolls the document there.
@@ -73,7 +79,7 @@ mode"); a screenshot of the screen makes it exact.
 ### Files and editing
 - A file opens from Finder, from the terminal, and from Open Recent.
 - Typing needs the Edit toggle; the toggle is reachable from the
-  strip and the View menu.
+  toolbar and the View menu.
 - Save, Save As, and the edited dot clearing on save.
 - Undo and redo step through edits.
 - Copy and paste text; dragging a selection moves it.
@@ -304,6 +310,18 @@ loop that now runs on every build.
 - Screenshot: every mac capture of the walk shows the toolbar.
 - Status: the toolbar lands here; see
   references/macos-native-chrome.md.
+
+### The sidebar and the find bar wear native chrome (Nov 1)
+- The outline pane sits on the window's sidebar material now, marks
+  the caret's row with the system selection colour in a rounded inset
+  band, texts its rows in the label colours, and opens subtrees with
+  the system's own chevron symbol (2e522b7). The find bar uses the
+  system's search field, magnifier, rounded well, clear button and
+  focus ring, and a segmented control with the system's chevrons for
+  the match steps in place of the text buttons; the Windows field
+  hairlines and a dead history menu are gone.
+- Screenshot: the walk's mac captures show the sidebar and the bar.
+- Status: lands with this entry; see references/macos-native-chrome.md.
 
 <!--
 Entry format:

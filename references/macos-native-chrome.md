@@ -69,10 +69,11 @@ that reason.
 ## The find bar wears standard controls
 
 The find bar stays at the bottom of the window, and its controls are
-the system's own: a search field, a replace field, symbol buttons for
-the match steps, and standard push buttons for Replace and Replace
-All. Its behaviour is unchanged; find-replace.md remains the spec for
-that.
+the system's own: a search field with its magnifier and clear button,
+a plain replace field, a segmented control with the system's chevrons
+for the match steps, and standard push buttons for Replace and
+Replace All. Its behaviour is unchanged; find-replace.md remains the
+spec for that.
 
 ## Rules for this window
 
