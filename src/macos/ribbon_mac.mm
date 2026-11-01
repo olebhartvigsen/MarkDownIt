@@ -27,6 +27,7 @@
 #include "fonts_mac.h"
 
 #import <Foundation/Foundation.h>
+#include "system_theme_mac.h"
 
 #include <cstring>
 #include <string>
@@ -293,6 +294,11 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
 @property(nonatomic, copy) NSString* fullTitle;
 @end
 
+// A chrome palette colour as an NSColor.
+static NSColor* ChromeColor(const ThemeColor& c) {
+    return [NSColor colorWithSRGBRed:c.r green:c.g blue:c.b alpha:c.a];
+}
+
 @implementation MdRibbonButton {
     NSTrackingArea* tracking_;
     BOOL hover_;
@@ -353,11 +359,11 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
                                                         yRadius:4.0];
     const BOOL on = (self.state == NSControlStateValueOn);
     const BOOL pressed = [self isHighlighted];
-    NSColor* accent = [NSColor controlAccentColor];
+    const ChromePalette chrome = mac::SystemChromePalette();
     if (on && self.enabled) {
-        [[accent colorWithAlphaComponent:(pressed ? 0.34 : 0.20)] setFill];
+        [ChromeColor(chrome.pillBg) setFill];
         [path fill];
-        [[accent colorWithAlphaComponent:0.40] setStroke];
+        [ChromeColor(chrome.pillBorder) setStroke];
         [path setLineWidth:1.0];
         [path stroke];
     } else if (pressed && self.enabled) {
@@ -372,16 +378,53 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
 
 @end
 
-// A tab of the strip: plain text, filled while it is the active one,
-// with the accent line along its bottom edge the way the ribbon has
-// it.
+// A tab of the strip: the File tab wears the ribbon's blue, the
+// active tab a white card, and the inactive ones plain text. The
+// colours come from the shared chrome palette, so the two platforms
+// show the same tabs.
 @interface MdRibbonTabButton : NSButton
 @property(nonatomic, assign) BOOL active;
+// The File tab: the ribbon's application button, in the accent blue.
+@property(nonatomic, assign) BOOL fileTab;
+@property(nonatomic, copy) NSString* plainTitle;
+- (void)updateChromeTitle;
 @end
 
 @implementation MdRibbonTabButton {
     NSTrackingArea* tracking_;
     BOOL hover_;
+}
+
+- (void)setActive:(BOOL)active {
+    _active = active;
+    [self updateChromeTitle];
+    [self setNeedsDisplay:YES];
+}
+
+- (void)setFileTab:(BOOL)fileTab {
+    _fileTab = fileTab;
+    [self updateChromeTitle];
+    [self setNeedsDisplay:YES];
+}
+
+// The title in the palette's tab colour for the tab's state.
+- (void)updateChromeTitle {
+    const ChromePalette chrome = mac::SystemChromePalette();
+    NSColor* color = nil;
+    if (self.fileTab) {
+        color = ChromeColor(chrome.tabFileText);
+    } else if (self.active) {
+        color = ChromeColor(chrome.tabActiveText);
+    } else {
+        color = ChromeColor(chrome.tabInactiveText);
+    }
+    NSDictionary* attrs = @{
+        NSForegroundColorAttributeName : color,
+        NSFontAttributeName : mac::SystemUIFont(11.0f),
+    };
+    NSString* text = self.plainTitle ? self.plainTitle : self.title;
+    self.attributedTitle =
+        [[NSAttributedString alloc] initWithString:text attributes:attrs];
 }
 
 - (void)updateTrackingAreas {
@@ -414,14 +457,24 @@ NSImage* RibbonIcon(NSString* base, CGFloat size) {
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
-    if (self.active) {
-        [[NSColor windowBackgroundColor] setFill];
-        [[NSBezierPath bezierPathWithRect:NSInsetRect(self.bounds, 1.0, 1.0)]
-            fill];
-        [[NSColor controlAccentColor] setFill];
-        [[NSBezierPath bezierPathWithRect:NSMakeRect(
-            NSMinX(self.bounds) + 2.0, NSMinY(self.bounds) + 0.5,
-            NSWidth(self.bounds) - 4.0, 2.0)] fill];
+    const ChromePalette chrome = mac::SystemChromePalette();
+    if (self.fileTab) {
+        NSBezierPath* card = [NSBezierPath
+            bezierPathWithRoundedRect:NSInsetRect(self.bounds, 1.0, 1.0)
+                              xRadius:3.0
+                              yRadius:3.0];
+        [ChromeColor(chrome.tabFileBg) setFill];
+        [card fill];
+    } else if (self.active) {
+        NSBezierPath* card = [NSBezierPath
+            bezierPathWithRoundedRect:NSInsetRect(self.bounds, 1.0, 1.0)
+                              xRadius:3.0
+                              yRadius:3.0];
+        [ChromeColor(chrome.tabActiveBg) setFill];
+        [card fill];
+        [ChromeColor(chrome.stripLine) setStroke];
+        [card setLineWidth:1.0];
+        [card stroke];
     } else if (([self isHighlighted] || hover_) && self.enabled) {
         [[[NSColor labelColor] colorWithAlphaComponent:0.07] setFill];
         [[NSBezierPath bezierPathWithRect:NSInsetRect(self.bounds, 1.0, 1.0)]
@@ -470,13 +523,12 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
 
 @implementation MdRibbonView {
     NSMutableArray<MdRibbonButton*>* commandButtons_;
+    MdRibbonTabButton* fileTabButton_;
     NSMutableArray<MdRibbonTabButton*>* tabButtons_;
     NSMutableArray<NSView*>* tabPages_;
     NSMutableArray<NSMutableArray<MdRibbonGroupView*>*>* pageGroups_;
-    NSMutableArray<MdRibbonButton*>* quickAccessButtons_;
     NSMenu* tableToolsMenu_;
     NSUInteger activeTab_;
-    CGFloat qatEndX_;
     // The layout state each page currently draws in, so the buttons
     // are only rebuilt when the state changes.
     int pageState_[2];
@@ -507,33 +559,35 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
     tabButtons_ = [NSMutableArray array];
     tabPages_ = [NSMutableArray array];
     pageGroups_ = [NSMutableArray array];
-    quickAccessButtons_ = [NSMutableArray array];
     activeTab_ = 0;
     pageState_[0] = -1;
     pageState_[1] = -1;
 
-    // The Quick Access Toolbar, the small strip the Windows build keeps
-    // in its caption.
-    for (int i = 0; i < 3; ++i) {
-        MdRibbonButton* button = [self buttonForCommand:kQuickAccess[i]
-                                                   size:kSmallIcon
-                                              withLabel:NO];
-        [quickAccessButtons_ addObject:button];
-        [self addSubview:button];
-    }
+    // The tab row: the File tab first, the way the ribbon has it.
+    fileTabButton_ = [[MdRibbonTabButton alloc] initWithFrame:NSZeroRect];
+    [fileTabButton_ setButtonType:NSButtonTypeMomentaryPushIn];
+    [fileTabButton_ setBordered:NO];
+    fileTabButton_.plainTitle = @"File";
+    [fileTabButton_ setTitle:@"File"];
+    [fileTabButton_ setFont:mac::SystemUIFont(11.0f)];
+    [fileTabButton_ setTarget:self];
+    [fileTabButton_ setAction:@selector(selectFileMenu:)];
+    [fileTabButton_ setFileTab:YES];
+    [self addSubview:fileTabButton_];
 
-    // The tab row.
     for (int i = 0; i < 2; ++i) {
         MdRibbonTabButton* button =
             [[MdRibbonTabButton alloc] initWithFrame:NSZeroRect];
         [button setButtonType:NSButtonTypeMomentaryPushIn];
         [button setBordered:NO];
-        [button setTitle:[NSString stringWithUTF8String:kTabs[i].label]];
+        button.plainTitle = [NSString stringWithUTF8String:kTabs[i].label];
+        [button setTitle:button.plainTitle];
         [button setFont:mac::SystemUIFont(11.0f)];
         [button setTarget:self];
         [button setAction:@selector(selectTab:)];
         [button setTag:i];
         [button setActive:(i == 0)];
+        [button updateChromeTitle];
         [tabButtons_ addObject:button];
         [self addSubview:button];
     }
@@ -564,7 +618,8 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
             NSTextField* label = [NSTextField
                 labelWithString:[NSString stringWithUTF8String:group.label]];
             [label setFont:mac::SystemUIFont(10.0f)];
-            [label setTextColor:[NSColor secondaryLabelColor]];
+            [label setTextColor:ChromeColor(
+                mac::SystemChromePalette().groupLabel)];
             [label setAlignment:NSTextAlignmentCenter];
             [label setFrame:NSMakeRect(0.0, kCommandHeight + 4.0, width, 12.0)];
             [groupView addSubview:label];
@@ -659,6 +714,11 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
     }
 }
 
+- (void)selectFileMenu:(id)sender {
+    (void)sender;
+    [self.host ribbonShowFileMenuFrom:self];
+}
+
 - (void)selectTab:(id)sender {
     const NSUInteger index = (NSUInteger)[(NSButton*)sender tag];
     if (index >= tabPages_.count) return;
@@ -735,12 +795,11 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
     const CGFloat width = NSWidth(self.bounds);
 
     CGFloat x = 10.0;
-    for (MdRibbonButton* button in quickAccessButtons_) {
-        [button setFrame:NSMakeRect(x, 3.0, 26.0, 22.0)];
-        x += 28.0;
+    if (fileTabButton_) {
+        [fileTabButton_ setFrame:NSMakeRect(x, 1.0, 58.0,
+                                            kTabRowHeight - 2.0)];
+        x += 60.0;
     }
-    qatEndX_ = x + 3.0;
-    x += 9.0;
 
     for (MdRibbonTabButton* button in tabButtons_) {
         const NSSize fitted = [button intrinsicContentSize];
@@ -777,15 +836,17 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
 
 - (void)drawRect:(NSRect)dirtyRect {
     (void)dirtyRect;
-    [[NSColor windowBackgroundColor] setFill];
+    const ChromePalette chrome = mac::SystemChromePalette();
+    [ChromeColor(chrome.stripBg) setFill];
     [[NSBezierPath bezierPathWithRect:self.bounds] fill];
 
     // The line under the tab row, broken under the active tab so the
-    // tab reads as attached to the page below it.
+    // tab card reads as attached to the page below it, the way the
+    // Windows ribbon draws it.
     const NSRect active = (activeTab_ < tabButtons_.count
                                ? [[tabButtons_ objectAtIndex:activeTab_] frame]
                                : NSZeroRect);
-    [[NSColor separatorColor] setFill];
+    [ChromeColor(chrome.stripLineSoft) setFill];
     const CGFloat lineY = kTabRowHeight - 1.0;
     if (NSWidth(active) > 0.0) {
         [[NSBezierPath bezierPathWithRect:NSMakeRect(0.0, lineY,
@@ -799,12 +860,8 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
                                                      1.0)] fill];
     }
 
-    // The separator between the quick access tools and the tabs.
-    [[[NSColor separatorColor] colorWithAlphaComponent:0.8] setFill];
-    [[NSBezierPath bezierPathWithRect:NSMakeRect(qatEndX_, 4.0, 1.0,
-                                                 kTabRowHeight - 9.0)] fill];
-
     // The bottom line of the strip.
+    [ChromeColor(chrome.stripLine) setFill];
     [[NSBezierPath bezierPathWithRect:NSMakeRect(0.0, NSHeight(self.bounds) - 1.0,
                                                  NSWidth(self.bounds), 1.0)]
         fill];
@@ -824,6 +881,21 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
         }
         [button setNeedsDisplay:YES];
     }
+    // The palette may have changed appearance under us: refresh the
+    // tab titles and the captions from it.
+    [fileTabButton_ updateChromeTitle];
+    for (MdRibbonTabButton* tab in tabButtons_) [tab updateChromeTitle];
+    NSColor* captionColor =
+        ChromeColor(mac::SystemChromePalette().groupLabel);
+    for (NSArray<MdRibbonGroupView*>* groups in pageGroups_) {
+        for (MdRibbonGroupView* group in groups) {
+            for (NSView* sub in [group subviews]) {
+                if ([sub isKindOfClass:[NSTextField class]]) {
+                    [(NSTextField*)sub setTextColor:captionColor];
+                }
+            }
+        }
+    }
     [self setNeedsDisplay:YES];
 }
 
@@ -831,10 +903,67 @@ static NSUInteger CommandCount(NSArray<NSView*>* subs) {
     for (MdRibbonButton* button in commandButtons_) {
         if ([button.commandId isEqualToString:commandId]) return button;
     }
-    for (MdRibbonButton* button in quickAccessButtons_) {
-        if ([button.commandId isEqualToString:commandId]) return button;
-    }
     return nil;
+}
+
+@end
+
+// ---------------------------------------------------------------------------
+// The Quick Access Toolbar
+// ---------------------------------------------------------------------------
+
+// The small icon-only strip the Windows build keeps at the leading
+// edge of its window caption: Save, Undo, Redo. The mac window carries
+// it in its title bar through a leading titlebar accessory, so the two
+// captions open the same way.
+@implementation MdQuickAccessView {
+    NSMutableArray<MdRibbonButton*>* buttons_;
+    id<MdRibbonHost> host_;
+}
+
++ (MdQuickAccessView*)viewWithHost:(id<MdRibbonHost>)host {
+    MdQuickAccessView* view = [[MdQuickAccessView alloc]
+        initWithFrame:NSMakeRect(0.0, 0.0, 3.0 * 28.0 + 10.0, 28.0)];
+    view->host_ = host;
+    view->buttons_ = [NSMutableArray array];
+    for (int i = 0; i < 3; ++i) {
+        const RibbonCommand& command = kQuickAccess[i];
+        MdRibbonButton* button =
+            [[MdRibbonButton alloc] initWithFrame:NSMakeRect(
+                5.0 + i * 28.0, 3.0, 26.0, 22.0)];
+        button.commandId = [NSString stringWithUTF8String:command.id];
+        button.isToggle = command.toggle;
+        [button setButtonType:NSButtonTypeMomentaryPushIn];
+        [button setBordered:NO];
+        [button setImagePosition:NSImageOnly];
+        NSString* base = [NSString stringWithFormat:@"%s_16",
+                                                   command.icon];
+        NSImage* image = RibbonIcon(base, kSmallIcon);
+        if (image) [button setImage:image];
+        [button setToolTip:MacShortcutText(command.tooltip)];
+        [button setAccessibilityLabel:
+            [NSString stringWithUTF8String:command.label]];
+        button.iconBase = base;
+        button.fullTitle = [NSString stringWithUTF8String:command.label];
+        [button setTarget:host];
+        [button setAction:NSSelectorFromString(
+            [NSString stringWithUTF8String:command.selector])];
+        [view addSubview:button];
+        [view->buttons_ addObject:button];
+    }
+    [view refresh];
+    return view;
+}
+
+- (void)refresh {
+    id<MdRibbonHost> host = host_;
+    if (!host) return;
+    for (MdRibbonButton* button in buttons_) {
+        NSString* commandId = button.commandId;
+        [button setEnabled:[host ribbonCommandAvailable:commandId]];
+        [button setNeedsDisplay:YES];
+    }
+    [self setNeedsDisplay:YES];
 }
 
 @end

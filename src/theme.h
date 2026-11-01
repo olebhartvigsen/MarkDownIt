@@ -254,3 +254,82 @@ inline Palette BasePalette() {
     p.markerLine = MakeColor(0xB8860B);
     return p;
 }
+
+// The chrome palette: the surfaces the app draws around the document,
+// the outline pane and the command strip. One source for both builds,
+// so the two platforms keep the same look. The light values are the
+// ones the Windows build has always painted; the strip follows the
+// Windows ribbon's own theme (its light grey panel, the blue File tab
+// and the pale blue pressed pills).
+struct ChromePalette {
+    ThemeColor paneBg;
+    ThemeColor paneSep;
+    ThemeColor paneText;
+    ThemeColor paneTextMuted;
+    ThemeColor paneActiveBg;
+    ThemeColor paneActiveText;
+    ThemeColor paneHoverBg;
+    ThemeColor paneArrow;
+    ThemeColor stripBg;
+    ThemeColor stripLine;
+    ThemeColor stripLineSoft;
+    ThemeColor groupLabel;
+    ThemeColor tabFileBg;
+    ThemeColor tabFileText;
+    ThemeColor tabActiveBg;
+    ThemeColor tabActiveText;
+    ThemeColor tabInactiveText;
+    ThemeColor pillBg;
+    ThemeColor pillBorder;
+};
+
+inline ChromePalette BaseChromePalette() {
+    ChromePalette c = {};
+    c.paneBg = MakeColor(0xFAF6F1);
+    c.paneSep = MakeColor(0xE0D6CC);
+    c.paneText = MakeColor(0x3A342C);
+    c.paneTextMuted = MakeColor(0x8A8072);
+    c.paneActiveBg = MakeColor(0xE8DCC8);
+    c.paneActiveText = MakeColor(0x2A2118);
+    c.paneHoverBg = MakeColor(0xF0E9DF);
+    c.paneArrow = MakeColor(0x6B6154);
+    c.stripBg = MakeColor(0xF5F6F7);
+    c.stripLine = MakeColor(0xDADBDC);
+    c.stripLineSoft = MakeColor(0xE3E4E5);
+    c.groupLabel = MakeColor(0x788BAA);
+    c.tabFileBg = MakeColor(0x1979CA);
+    c.tabFileText = MakeColor(0xFFFFFF);
+    c.tabActiveBg = MakeColor(0xFFFFFF);
+    c.tabActiveText = MakeColor(0x788BAA);
+    c.tabInactiveText = MakeColor(0x333333);
+    c.pillBg = MakeColor(0xC9E0F7);
+    c.pillBorder = MakeColor(0x62A2E4);
+    return c;
+}
+
+// The dark counterparts. The Windows build is light only, so these are
+// the mac's warm-dark neutrals: the same shapes and accents, kept
+// readable in Dark Mode.
+inline ChromePalette DarkChromePalette() {
+    ChromePalette c = {};
+    c.paneBg = MakeColor(0x2A2622);
+    c.paneSep = MakeColor(0x494139);
+    c.paneText = MakeColor(0xE6DED2);
+    c.paneTextMuted = MakeColor(0x9C9083);
+    c.paneActiveBg = MakeColor(0x4A3E2E);
+    c.paneActiveText = MakeColor(0xFFF3E2);
+    c.paneHoverBg = MakeColor(0x363029);
+    c.paneArrow = MakeColor(0xB8AC9C);
+    c.stripBg = MakeColor(0x2B2B2B);
+    c.stripLine = MakeColor(0x3D3D3D);
+    c.stripLineSoft = MakeColor(0x383838);
+    c.groupLabel = MakeColor(0x8FA0BD);
+    c.tabFileBg = MakeColor(0x1979CA);
+    c.tabFileText = MakeColor(0xFFFFFF);
+    c.tabActiveBg = MakeColor(0x3A3A3A);
+    c.tabActiveText = MakeColor(0x9DB0D0);
+    c.tabInactiveText = MakeColor(0xD8D8D8);
+    c.pillBg = MakeColor(0x2F4A66);
+    c.pillBorder = MakeColor(0x4A86C8);
+    return c;
+}

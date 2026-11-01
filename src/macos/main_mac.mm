@@ -101,6 +101,7 @@ bool LineHasPrefix(const std::string& text, uint32_t lineStart,
     NSStackView* container_;
     // The command strip, the mac twin of the Windows ribbon.
     MdRibbonView* ribbon_;
+    MdQuickAccessView* qatView_;
 
     // The outline pane and the view that draws it.
     mac::OutlinePane* outlinePane_;
@@ -399,6 +400,16 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // The command strip sits at the top, the way the Windows ribbon
     // does.
     ribbon_ = [MdRibbonView ribbonWithHost:self];
+    // The Quick Access Toolbar rides the title bar at the leading edge
+    // (after the traffic lights), where the Windows build keeps it.
+    qatView_ = [MdQuickAccessView viewWithHost:self];
+    {
+        NSTitlebarAccessoryViewController* access =
+            [[NSTitlebarAccessoryViewController alloc] init];
+        [access setView:qatView_];
+        [access setLayoutAttribute:NSLayoutAttributeLeading];
+        [window_ addTitlebarAccessoryViewController:access];
+    }
     [ribbon_ setTranslatesAutoresizingMaskIntoConstraints:NO];
     [[ribbon_ heightAnchor]
         constraintEqualToConstant:[MdRibbonView ribbonHeight]].active = YES;
@@ -632,11 +643,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // change.
 - (void)refreshWindowTitle:(const std::string&)path {
     if (path.empty()) {
-        [window_ setTitle:@"Untitled"];
+        [window_ setTitle:@"MarkDownIt"];
         [window_ setRepresentedFilename:@""];
     } else {
         NSString* full = [NSString stringWithUTF8String:path.c_str()];
-        [window_ setTitle:[full lastPathComponent]];
+        // The same caption the Windows build shows: the app name, a
+        // dash, and the file.
+        [window_ setTitle:[NSString stringWithFormat:@"MarkDownIt - %@",
+                                                     [full lastPathComponent]]];
         [window_ setRepresentedFilename:full];
     }
     [window_ setDocumentEdited:NO];
@@ -1590,6 +1604,16 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // follow the shared capability table, so an enabled button can never be
 // one that refuses; Insert Table acts outside a table; the undo pair
 // needs something to undo.
+- (void)ribbonShowFileMenuFrom:(NSView*)anchor {
+    NSMenu* fileMenu = [[[NSApp mainMenu] itemWithTitle:@"File"] submenu];
+    if (!fileMenu || !anchor) return;
+    // The strip is flipped, so the tab's bottom edge is at its height.
+    [fileMenu popUpMenuPositioningItem:nil
+                            atLocation:NSMakePoint(2.0,
+                                                   NSHeight([anchor bounds]))
+                              inView:anchor];
+}
+
 - (BOOL)ribbonCommandAvailable:(NSString*)commandId {
     if (app_->WelcomeMode()) {
         // The welcome screen holds no document, so a document command
@@ -1649,6 +1673,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // Re-reads the command states of the strip.
 - (void)ribbonSync {
     [ribbon_ refresh];
+    [qatView_ refresh];
 }
 
 // Gives the pane the height its rows need, so the scroll view can

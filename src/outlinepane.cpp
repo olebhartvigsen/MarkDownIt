@@ -4,6 +4,8 @@
 
 #include "outlinepane.h"
 
+#include "theme.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -61,15 +63,20 @@ OutlinePane::~OutlinePane() {
 }
 
 void OutlinePane::InitColors() {
-    // Light, warm neutrals that match the app palette.
-    colBg_         = D2D1::ColorF(0xFFFAF6F1);
-    colSep_        = D2D1::ColorF(0xFFE0D6CC);
-    colText_       = D2D1::ColorF(0xFF3A342C);
-    colTextMuted_  = D2D1::ColorF(0xFF8A8072);
-    colActiveBg_   = D2D1::ColorF(0xFFE8DCC8);
-    colActiveText_ = D2D1::ColorF(0xFF2A2118);
-    colHoverBg_    = D2D1::ColorF(0xFFF0E9DF);
-    colArrow_      = D2D1::ColorF(0xFF6B6154);
+    // The warm neutrals of the shared chrome palette, the one the mac
+    // build draws its pane from too, so the two keep the same look.
+    const ChromePalette c = BaseChromePalette();
+    const auto color = [](const ThemeColor& v) {
+        return D2D1::ColorF(v.r, v.g, v.b, v.a);
+    };
+    colBg_         = color(c.paneBg);
+    colSep_        = color(c.paneSep);
+    colText_       = color(c.paneText);
+    colTextMuted_  = color(c.paneTextMuted);
+    colActiveBg_   = color(c.paneActiveBg);
+    colActiveText_ = color(c.paneActiveText);
+    colHoverBg_    = color(c.paneHoverBg);
+    colArrow_      = color(c.paneArrow);
 }
 
 bool OutlinePane::RegisterOutlineClass() {

@@ -11,4 +11,10 @@ namespace mac {
 // drawing appearance.
 Palette SystemPalette();
 
+// The chrome colours: the shared chrome palette the Windows build
+// paints its pane and strip from, with a warm-dark counterpart for
+// Dark Mode. The light values are fixed, so the two platforms match
+// pixel for pixel there.
+ChromePalette SystemChromePalette();
+
 }  // namespace mac

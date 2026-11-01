@@ -30,6 +30,18 @@
 // Whether a command is available right now. The table commands are
 // only available with the caret in a table, for example.
 - (BOOL)ribbonCommandAvailable:(NSString*)commandId;
+// Shows the application menu under the given view: the File tab of the
+// strip pops up the same menu the menu bar carries.
+- (void)ribbonShowFileMenuFrom:(NSView*)anchor;
+@end
+
+// The Quick Access Toolbar, the small Save/Undo/Redo strip the
+// Windows build keeps in its window caption. The mac window shows it
+// in its title bar, at the same leading spot, right after the traffic
+// lights.
+@interface MdQuickAccessView : NSView
++ (MdQuickAccessView*)viewWithHost:(id<MdRibbonHost>)host;
+- (void)refresh;
 @end
 
 @interface MdRibbonView : NSView

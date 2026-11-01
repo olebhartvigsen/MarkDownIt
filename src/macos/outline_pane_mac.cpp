@@ -11,6 +11,7 @@
 // the same contract the Windows pane has.
 
 #include "outline_pane_mac.h"
+#include "system_theme_mac.h"
 
 #include <algorithm>
 #include <vector>
@@ -306,10 +307,14 @@ void OutlinePane::SetColors(const Color& background, const Color& text,
 }
 
 void OutlinePane::SetPalette(const Palette& palette) {
-    background_ = ToColor(palette.codeBg);
-    text_ = ToColor(palette.textPrimary);
-    highlight_ = ToColor(palette.selectionBg);
-    muted_ = ToColor(palette.textMuted);
+    // The pane wears the shared chrome palette, not the document's:
+    // the warm paper tone and tan active row the Windows build has.
+    (void)palette;
+    const ChromePalette c = SystemChromePalette();
+    background_ = ToColor(c.paneBg);
+    text_ = ToColor(c.paneText);
+    highlight_ = ToColor(c.paneActiveBg);
+    muted_ = ToColor(c.paneTextMuted);
 }
 
 void OutlinePane::Draw(RenderTarget* target, float width, float height) {
