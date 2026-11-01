@@ -104,6 +104,7 @@ bool OpenExternalUrl(const std::string& url) {
 - (void)runQAStates:(NSString*)list;
 - (void)qaStep:(NSArray<NSString*>*)states at:(NSUInteger)index;
 - (void)applyQAState:(NSString*)state;
+- (void)qaScrollToFraction:(float)fraction;
 
 // The menu commands, as AppKit selectors.
 - (void)newDocument:(id)sender;
@@ -560,13 +561,40 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The raw markdown view: the renderer lays the buffer out as
         // one monospace block, its own drawing path.
         if (!sourceView_) [self OnToggleSourceView];
+    } else if ([state isEqualToString:@"lower"]) {
+        // The lower half of the page: the tasks, the quote, the table
+        // and the code block, which the states above cannot reach. The
+        // fraction is fixed, so the picture is the same every run.
+        [self qaScrollToFraction:0.46f];
+    } else if ([state isEqualToString:@"end"]) {
+        // The foot of the page: the small headings, the break and the
+        // diagram.
+        [self qaScrollToFraction:1.0f];
     } else if ([state isEqualToString:@"dark"]) {
         if (sourceView_) [self OnToggleSourceView];
+        // The top of the page in the dark appearance, so the picture
+        // shows the page's head the way the doc state does.
+        [self qaScrollToFraction:0.0f];
         window_.appearance =
             [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
         [self toolbarSync];
         [view_ setNeedsDisplay:YES];
     }
+}
+
+// The QA walk's scroll: a fraction of the scrollable range, set on the
+// core's offset and the scroller together, the way the edit state lands
+// at the top of the page.
+- (void)qaScrollToFraction:(float)fraction {
+    float maxOffset = content_->DocumentHeight() - content_->viewHeight();
+    if (maxOffset < 0.0f) maxOffset = 0.0f;
+    const float offset = fraction * maxOffset;
+    content_->SetScrollOffset(offset);
+    NSClipView* clip = [scrollView_ contentView];
+    [clip scrollToPoint:NSMakePoint(0.0, offset)];
+    [scrollView_ reflectScrolledClipView:clip];
+    [self outlineActiveRefresh];
+    [view_ setNeedsDisplay:YES];
 }
 
 // The frame of a window in the middle of the screen.

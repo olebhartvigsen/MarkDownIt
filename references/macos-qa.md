@@ -256,7 +256,12 @@ loop that now runs on every build.
 
 ### Cross-platform capture parity (Nov 1)
 - The Windows build photographs itself in the same named states as the
-  mac build (doc, find, edit, outline, source). With
+  mac build (doc, find, edit, outline, source, lower, end). The lower
+  and end states scroll the page so the elements below the fold (the
+  tasks, the quote, the table, the code block, the small headings and
+  the diagram) are photographed and compared too; the scroll is a fixed
+  fraction of the scrollable range, so the picture is the same every
+  run. With
   MARKDOWNIT_QA_STATES set, src/app.cpp walks the states on a timer,
   writes "qa state ready: <name> rect=x,y,w,h" into the log named by
   MARKDOWNIT_QA_LOG, and closes itself at the end;
@@ -277,6 +282,11 @@ loop that now runs on every build.
   land as the MarkDownIt-capture-parity artifact on every run.
 - dark and settings are mac-only states; the report names them and
   skips them.
+- The lower and end states came out of the document styling review
+  (Nov 1): the captures only showed the top of the page, so the styling
+  of everything below it rested on code reading. The two states put
+  those elements in front of the camera on both platforms, and the same
+  comparison checks them.
 
 ### The caret above the first heading (2026-11-01)
 - The Windows pane lost its highlight between the find and edit states:

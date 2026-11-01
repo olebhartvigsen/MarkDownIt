@@ -3412,6 +3412,20 @@ void AppWindow::QAAdvance() {
         QALogLine(line);
     } else if (state == "source") {
         if (!IsSourceView()) ToggleSourceView();
+    } else if (state == "lower" || state == "end") {
+        // The lower half of the page and its foot: the tasks, the
+        // quote, the table, the code block and the diagram, the parts
+        // the states above cannot photograph. The fraction of the
+        // scrollable range is fixed, so the picture is the same every
+        // run.
+        const float viewH =
+            rt_ ? rt_->GetSize().height : static_cast<float>(clientH_);
+        float maxScroll = totalH_ > viewH ? totalH_ - viewH : 0.0f;
+        scrollY_ =
+            ClampScroll((state == "lower" ? 0.46f : 1.0f) * maxScroll);
+        StopScrollAnimation();
+        UpdateScrollInfo();
+        Repaint();
     }
 
     // A blinking caret is a coin toss in a still picture; park it so
