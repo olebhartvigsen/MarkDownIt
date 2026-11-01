@@ -3321,6 +3321,7 @@ void AppWindow::StartQAWalk(const std::string& states) {
         start = comma + 1;
     }
     if (qa_states_.empty()) return;
+    qa_active_ = true;
 
     char logPath[2048] = {};
     if (GetEnvironmentVariableA("MARKDOWNIT_QA_LOG", logPath,
@@ -3384,9 +3385,18 @@ void AppWindow::QAAdvance() {
         // The picture must not depend on what the find state's scroll
         // left behind: re-derive the pane's highlight.
         UpdateOutlineActive();
+        char line[128];
+        snprintf(line, sizeof(line), "qa outline row after edit=%d visible=%d",
+                 outline_.Active(), outline_.IsVisible() ? 1 : 0);
+        QALogLine(line);
     } else if (state == "outline") {
         if (!IsOutlineVisible()) ToggleOutline();
         UpdateOutlineActive();
+        char line[128];
+        snprintf(line, sizeof(line),
+                 "qa outline row after outline=%d visible=%d",
+                 outline_.Active(), outline_.IsVisible() ? 1 : 0);
+        QALogLine(line);
     } else if (state == "source") {
         if (!IsSourceView()) ToggleSourceView();
     }
@@ -6141,6 +6151,13 @@ void AppWindow::UpdateOutlineActive() {
                                             &cx, &cy, &chh)
             && cy >= scrollY_ - 1.f
             && (cy + chh) <= scrollY_ + ViewHeightDip() + 1.f;
+        if (qa_active_) {
+            char line[128];
+            snprintf(line, sizeof(line),
+                     "qa outline sync: caretVisible=%d scroll=%.0f",
+                     caretVisible ? 1 : 0, scrollY_);
+            QALogLine(line);
+        }
         // (ViewHeightDip: the DIP height of the content viewport.)
         if (caretVisible) {
             const int idx = ItemIndexForOffset(outline_items_,
@@ -6181,10 +6198,23 @@ void AppWindow::UpdateOutlineActiveFromView() {
     }
     if (!haveOwner) {
         // Above the first heading: no section is being read.
+        if (qa_active_) {
+            char line[128];
+            snprintf(line, sizeof(line),
+                     "qa outline probe: no owner (probeY=%.0f)", probeY);
+            QALogLine(line);
+        }
         if (outline_.Active() != -1) outline_.SetActive(-1);
         return;
     }
     const int idx = ItemIndexForOffset(outline_items_, ownerOffset);
+    if (qa_active_) {
+        char line[128];
+        snprintf(line, sizeof(line),
+                 "qa outline probe: idx=%d ownerOffset=%u probeY=%.0f", idx,
+                 (unsigned)ownerOffset, probeY);
+        QALogLine(line);
+    }
     if (idx >= 0 && outline_.Active() != idx) {
         outline_.SetActive(idx);
         // Keep the highlighted row inside the pane's own viewport.
