@@ -446,9 +446,20 @@ void MacRenderer::ApplyLineSpacing(std::vector<TextLine>* lines, float ptSize,
                                     float heightMult,
                                     float baselineMult) const {
     const float em = ptSize * kPtToDip * zoom_;
+    // The natural line box of the block's font, not the em alone: Core
+    // Text reports the same ascent, descent and leading DirectWrite
+    // does, so both platforms scale the same base and the leading
+    // differs only by what the two fonts themselves ask for. The em
+    // stays as the fallback for a block without runs.
+    float natural = em;
+    if (engine_ && !lines->empty() && !lines->front().runs.empty()) {
+        const float measured =
+            engine_->LineHeight(lines->front().runs.front().font);
+        if (measured > 0.0f) natural = measured;
+    }
     for (TextLine& line : *lines) {
-        line.height = heightMult * em;
-        line.ascent = baselineMult * em;
+        line.height = heightMult * natural;
+        line.ascent = baselineMult * natural;
     }
 }
 
