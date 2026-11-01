@@ -223,6 +223,14 @@ jobs:
         run: |
           bash tools/macos-smoke/launch_smoke.sh build-mac/MarkDownIt.app
 
+      - name: Upload the launch capture
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MarkDownIt-window-capture
+          path: build-mac/window.png
+          if-no-files-found: ignore
+
       - name: Upload app bundle
         uses: actions/upload-artifact@v4
         with:

@@ -56,6 +56,19 @@ grep -q '\*\*\* crash' "$LOG" && fail_smoke "a crash was traced during startup"
 
 echo "launch smoke: the window is on screen and the process is alive"
 
+# A picture of what the app drew, while it is still up. Best effort: a
+# session without a screen, or without the capture permission, must not
+# turn into a smoke failure; the artifact just comes up empty.
+sleep 1
+SHOT="${SMOKE_CAPTURE:-build-mac/window.png}"
+mkdir -p "$(dirname "$SHOT")"
+if screencapture -x "$SHOT" 2>/dev/null && [ -s "$SHOT" ]; then
+    echo "launch smoke: captured the screen to $SHOT"
+else
+    echo "launch smoke: no screen capture (refused, or no display)"
+    rm -f "$SHOT"
+fi
+
 # The quit path, so a crash on the way out is caught too.
 kill "$PID" 2>/dev/null
 for _ in $(seq 1 40); do
