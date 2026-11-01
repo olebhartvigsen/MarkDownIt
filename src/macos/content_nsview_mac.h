@@ -47,4 +47,8 @@ class ContentView;
 // through the view's own key handling.
 - (void)documentEdited;
 
+// The QA walk parks the caret off and stops its blink: a still
+// capture must not depend on the blink phase.
+- (void)qaParkCaret;
+
 @end

@@ -165,6 +165,37 @@ loop that now runs on every build.
   which now fails any captured state whose document pane shows almost
   no text, the way a dark-on-dark document does.
 
+### The parity pipeline caught, in order (Nov 1)
+- Windows could not open its startup file: every Windows capture showed
+  a Could not open file dialog. The hand-stripped quote handling did
+  not survive the CI launcher; the canonical Windows parser now hands
+  over the plain path, the argument is traced, and the next captures
+  show the document rendered (trace: startup file arg=[D:\a\...]).
+- The Windows document kept a full empty line next to every list on
+  first open: the renderer keeps the editing heights by default so the
+  export goldens stay put, and the app only pushed its mode when the
+  user toggled edit. The startup now states the mode beside the width
+  push. Evidence: the Windows doc capture went from 9 to 12 text bands,
+  matching the mac's 12.
+- The mac drew 24 px line pitch where Windows draws 31: the Windows
+  renderer scales the font's natural line box (DirectWrite reports it)
+  while the mac scaled the bare em. The LineHeight seam, built with
+  exactly those DirectWrite-equivalent numbers, was never wired into
+  ApplyLineSpacing; it now is, with the em as fallback. What remains is
+  the fonts' own difference (SF asks for less leading than Segoe UI),
+  which is the part that cannot be removed.
+- The blinking caret made the outline capture differ from the edit
+  capture by 15 px at random: both walks now park the caret off, and
+  stop the mac blink timer, right before they announce a state. The
+  comparison tool was recalibrated in the same pass: the text rows are
+  paired by index and the gap after each row is compared, which holds
+  the two fonts' honest 3-5 px difference steady, and the source view
+  is measured by pitch because its monospace wrap points differ by
+  design.
+- Kept as by-design differences: fonts and their wrap points, the
+  window chrome, the outline pane's active-row tint, and the pane
+  width (Windows sizes it to its items, the mac remembers a width).
+
 ### Cross-platform capture parity (Nov 1)
 - The Windows build photographs itself in the same named states as the
   mac build (doc, find, edit, outline, source). With

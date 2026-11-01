@@ -963,6 +963,15 @@ static const CGFloat kPinchStepMagnification = 0.1;
     blinkTimer_ = nil;
 }
 
+// The QA walk parks the caret off and stops its blink: a still
+// capture must not depend on the blink phase, and the two platforms'
+// pictures are compared.
+- (void)qaParkCaret {
+    [self stopBlinking];
+    if (content_) content_->SetCaretVisible(false);
+    [self setNeedsDisplay:YES];
+}
+
 - (void)blink:(NSTimer*)timer {
     (void)timer;
     if (!content_) return;

@@ -483,6 +483,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         return;
     }
     [self applyQAState:states[index]];
+    // A blinking caret is a coin toss in a still picture; park it so
+    // every capture is in the same phase on both platforms.
+    [view_ qaParkCaret];
     // The document pane in screen pixels with a top-left origin, the
     // same reporting the Windows walk does: the capture is cropped to
     // this rectangle so the platforms are compared over the part they

@@ -3374,6 +3374,13 @@ void AppWindow::QAAdvance() {
         if (!IsSourceView()) ToggleSourceView();
     }
 
+    // A blinking caret is a coin toss in a still picture; park it so
+    // every capture is in the same phase on both platforms.
+    if (caret_visible_ && hwnd_content_) {
+        HideCaret(hwnd_content_);
+        caret_visible_ = false;
+    }
+
     // The document rectangle in screen pixels with a top-left origin:
     // the capture script crops the picture to the part the two
     // platforms share.
