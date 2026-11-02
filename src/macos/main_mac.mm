@@ -582,10 +582,15 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [self qaScrollToHeading:5 drop:96.0f];
     } else if ([state isEqualToString:@"tail"]) {
         // The foot the guideline review added: the deep nesting, the
-        // long unbroken tokens, the wide table and the long code
-        // lines, anchored close so the frame holds them all.
+        // long unbroken tokens and the wide table, anchored close so
+        // the frame holds them all.
         if (sourceView_) [self OnToggleSourceView];
         [self qaScrollToHeading:8 drop:24.0f];
+    } else if ([state isEqualToString:@"tail2"]) {
+        // The rest of the tail: the long code block, which is taller
+        // than one frame.
+        if (sourceView_) [self OnToggleSourceView];
+        [self qaScrollToHeading:10 drop:24.0f];
     } else if ([state isEqualToString:@"narrow"]) {
         // The page at a narrow window: the padding slides down and the
         // measure keeps its width.

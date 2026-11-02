@@ -31,7 +31,7 @@ from PIL import Image
 
 # The states both walks photograph, in order.
 STATES = ["doc", "find", "edit", "outline", "source", "lower", "end",
-          "dark", "settings"]
+          "tail", "tail2", "dark", "settings"]
 
 # Tolerances, calibrated on the fonts alone: the row gap differs by up
 # to 5 px (the wrap difference moves band counts by up to 2, the first

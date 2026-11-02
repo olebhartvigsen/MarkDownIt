@@ -3412,10 +3412,11 @@ void AppWindow::QAAdvance() {
         QALogLine(line);
     } else if (state == "source") {
         if (!IsSourceView()) ToggleSourceView();
-    } else if (state == "lower" || state == "end" || state == "tail") {
+    } else if (state == "lower" || state == "end" || state == "tail" ||
+               state == "tail2") {
         // The lower half of the page and its foot, and the foot the
         // guideline review added: the deep nesting, the long unbroken
-        // tokens, the wide table and the long code lines, the parts
+        // tokens, the wide table and the long code block, the parts
         // the states above cannot photograph. The source state leaves
         // the raw view on, so the picture goes back to the rendered
         // page first (the toggle rebuilds the layout in one pass); the
@@ -3423,9 +3424,17 @@ void AppWindow::QAAdvance() {
         // the top, so both platforms frame the same content even
         // though their bars and metrics differ a little.
         if (IsSourceView()) ToggleSourceView();
-        const int heading =
-            state == "lower" ? 2 : (state == "end" ? 5 : 8);
-        const float drop = state == "tail" ? 24.0f : 96.0f;
+        int heading = 10;   // tail2: the long code block
+        float drop = 24.0f;
+        if (state == "lower") {
+            heading = 2;
+            drop = 96.0f;
+        } else if (state == "end") {
+            heading = 5;
+            drop = 96.0f;
+        } else if (state == "tail") {
+            heading = 8;
+        }
         if (heading < static_cast<int>(outline_items_.size())) {
             int blkIdx = layout_cache_.BlockForOffset(
                 outline_items_[heading].offset);
