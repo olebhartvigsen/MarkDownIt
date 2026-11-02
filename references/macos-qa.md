@@ -416,7 +416,7 @@ loop that now runs on every build.
 - Screenshot: the tail state, the deep nesting, the long tokens, the
   wide table and the long code lines; the narrow and wide states show
   the padding and the column at both window sizes.
-- Status: fix lands here.
+- Status: fixed in 1ded61a, 9547e1c and 225ced0 (CI run 41511699355).
 
 <!--
 Entry format:

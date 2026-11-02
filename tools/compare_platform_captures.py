@@ -30,8 +30,13 @@ import sys
 from PIL import Image
 
 # The states both walks photograph, in order.
+# The states both platforms walk and compare row for row. tail2 is
+# walked on both but left out here: it frames the foot of the document,
+# where the two platforms clamp to the last screenful, and their total
+# page heights differ by design (the fonts resolve different leading),
+# so a foot-anchored frame cannot line its first row up.
 STATES = ["doc", "find", "edit", "outline", "source", "lower", "end",
-          "tail", "tail2", "dark", "settings"]
+          "tail", "dark", "settings"]
 
 # Tolerances, calibrated on the fonts alone: the row gap differs by up
 # to 5 px (the wrap difference moves band counts by up to 2, the first
