@@ -28,11 +28,6 @@ static NSString* const kNoRecentSearches = @"No recent searches";
 // The Settings window.
 static NSString* const kSettingsWindowTitle = @"MarkDownIt Settings";
 static NSString* const kSettingsViewSection = @"View";
-static NSString* const kSettingsWidthLabel = @"Document width:";
-static NSString* const kWidthStandard = @"Standard";
-static NSString* const kWidthWide = @"Wide";
-static NSString* const kWidthExtraWide = @"Extra wide";
-static NSString* const kWidthFull = @"Full window";
 static NSString* const kSettingsOutlineLabel = @"Show the outline pane";
 
 }  // namespace macstrings

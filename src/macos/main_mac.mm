@@ -145,7 +145,6 @@ bool OpenExternalUrl(const std::string& url) {
 - (void)toggleSourceView:(id)sender;
 - (void)toggleOutline:(id)sender;
 - (void)toggleWrap:(id)sender;
-- (void)cycleContentWidth:(id)sender;
 - (void)toggleBold:(id)sender;
 - (void)toggleStrike:(id)sender;
 - (void)setHeading:(int)level;
@@ -196,7 +195,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         zoom_ = zoom::kDefaultZoom;
         sourceView_ = false;
         wrap_ = true;
-        contentWidthMode_ = 0;
+        // The pane fits the window with a margin on the mac; the
+        // width modes belong to the Windows build.
+        contentWidthMode_ = 3;
     }
     return self;
 }
@@ -219,10 +220,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     mac::RegisterBundledFonts();
     settings_.Load();
     zoom_ = zoom::Clamp(settings_.settings().zoomFactor);
-    contentWidthMode_ = settings_.settings().contentWidthMode;
-    if (contentWidthMode_ < 0 || contentWidthMode_ > 3) {
-        contentWidthMode_ = 0;
-    }
+    // The pane always fits the window with the margin the padding
+    // leaves, the way the rest of the window sizes on the mac. The
+    // width modes belong to the Windows build, so the stored value
+    // is not consulted here.
+    contentWidthMode_ = 3;
     content_->SetContentWidthMode(contentWidthMode_);
     content_->SetZoom(zoom_);
 
@@ -809,7 +811,6 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)toggleSourceView:(id)sender { (void)sender; [self OnToggleSourceView]; }
 - (void)toggleOutline:(id)sender { (void)sender; [self OnToggleOutline]; }
 - (void)toggleWrap:(id)sender { (void)sender; [self OnToggleWrap]; }
-- (void)cycleContentWidth:(id)sender { (void)sender; [self OnCycleContentWidth]; }
 - (void)toggleBold:(id)sender { (void)sender; [self OnToggleBold]; }
 - (void)toggleStrike:(id)sender { (void)sender; [self OnToggleStrike]; }
 - (void)setHeading:(int)level { [self OnHeading:level]; }
@@ -1548,29 +1549,6 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     content_->SetWrap(wrap_);
     [self toolbarSync];
     [view_ setNeedsDisplay:YES];
-}
-
-// Applies a width mode. The View menu command walks through the
-// modes with it, and the Settings window picks one; one path, so the
-// two can never disagree.
-- (void)applyContentWidthMode:(NSInteger)mode {
-    if (mode < 0 || mode > 3) return;
-    if (static_cast<int>(mode) == contentWidthMode_) return;
-    contentWidthMode_ = static_cast<int>(mode);
-    content_->SetContentWidthMode(contentWidthMode_);
-    settings_.settings().contentWidthMode = contentWidthMode_;
-    settings_.Save();
-    [view_ setNeedsDisplay:YES];
-}
-
-- (NSInteger)settingsContentWidthMode {
-    return contentWidthMode_;
-}
-
-- (void)OnCycleContentWidth {
-    // The width modes are the ones the settings keep, and the command
-    // walks through them.
-    [self applyContentWidthMode:(contentWidthMode_ + 1) % 4];
 }
 
 // The outline switch reads the pane and goes through the same command

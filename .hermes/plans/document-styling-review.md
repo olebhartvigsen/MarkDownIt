@@ -37,7 +37,17 @@ the two platforms legitimately differ; the shared rhythm stays shared.
   `end` states added to both walks, both smoke scripts and the
   comparison (5ef6e95).
 
+## The viewport options leave the mac
+
+The pane always fits the window with the margin the padding leaves;
+that is a mac-only rule and the width modes stay with Windows. The
+Settings window's document width row and the View menu's Wider
+Content command are gone, the host plumbing behind them with them,
+and the mode is pinned to Full at launch.
+
 ## Status
 
-Lands with fbff059 (styling) and 5ef6e95 (coverage); the captures of
-the new states and the parity run that follows are the oracle.
+Lands with fbff059 (styling), 5ef6e95 (coverage), 1022589 (the
+fence's text), and 29477ac (the comparison's rows); the captures and
+the parity run that follows each are the oracle. The viewport change
+rides with this batch, with a CI run as its oracle.

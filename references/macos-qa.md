@@ -390,6 +390,18 @@ loop that now runs on every build.
   table row a faint wash.
 - Status: fix lands here.
 
+### The width options leave the mac (Nov 2)
+
+- The Settings window lost its document width row and the View menu
+  its Wider Content command: the pane always fits the window with the
+  margin the padding leaves, so the options had nothing to define. The
+  mode is pinned to the full width at launch, and a width value in an
+  old settings file is not consulted.
+- The settings photo now shows the shorter form; the other states are
+  untouched. At the capture size the width modes agree below their
+  cap, so the comparison reads the same.
+- Status: fix lands here.
+
 <!--
 Entry format:
 

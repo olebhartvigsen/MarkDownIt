@@ -9,7 +9,6 @@
 
 @implementation MacSettingsWindow {
     id<MacSettingsHost> host_;
-    NSPopUpButton* widthPopup_;
     NSButton* outlineCheckbox_;
 }
 
@@ -17,7 +16,7 @@
     // A settings window does not resize, so the style mask carries
     // only the title and the close button.
     NSWindow* window = [[NSWindow alloc]
-        initWithContentRect:NSMakeRect(0, 0, 420, 170)
+        initWithContentRect:NSMakeRect(0, 0, 380, 130)
                   styleMask:(NSWindowStyleMaskTitled |
                              NSWindowStyleMaskClosable)
                     backing:NSBackingStoreBuffered
@@ -30,35 +29,21 @@
     [window setTitle:macstrings::kSettingsWindowTitle];
     [window setReleasedWhenClosed:NO];
 
-    // The rows: a section header, the document width, and the
-    // outline switch.
+    // The rows: a section header and the outline switch. The
+    // document width row is gone on purpose: the pane always fits
+    // the window with the margin the padding leaves, so there is
+    // nothing to set.
     NSTextField* section =
         [NSTextField labelWithString:macstrings::kSettingsViewSection];
     [section setFont:[NSFont systemFontOfSize:0
                                        weight:NSFontWeightSemibold]];
-
-    NSTextField* widthLabel =
-        [NSTextField labelWithString:macstrings::kSettingsWidthLabel];
-    widthPopup_ = [[NSPopUpButton alloc]
-        initWithFrame:NSMakeRect(0, 0, 180, 0)
-           pullsDown:NO];
-    [widthPopup_ addItemsWithTitles:@[
-        macstrings::kWidthStandard, macstrings::kWidthWide,
-        macstrings::kWidthExtraWide, macstrings::kWidthFull
-    ]];
-    [widthPopup_ setTarget:self];
-    [widthPopup_ setAction:@selector(widthChanged:)];
-    NSStackView* widthRow =
-        [NSStackView stackViewWithViews:@[ widthLabel, widthPopup_ ]];
-    [widthRow setOrientation:NSUserInterfaceLayoutOrientationHorizontal];
-    [widthRow setSpacing:8.0];
 
     outlineCheckbox_ = [NSButton checkboxWithTitle:macstrings::kSettingsOutlineLabel
                                             target:self
                                             action:@selector(outlineChanged:)];
 
     NSStackView* stack =
-        [NSStackView stackViewWithViews:@[ section, widthRow, outlineCheckbox_ ]];
+        [NSStackView stackViewWithViews:@[ section, outlineCheckbox_ ]];
     [stack setOrientation:NSUserInterfaceLayoutOrientationVertical];
     [stack setAlignment:NSLayoutAttributeLeading];
     [stack setSpacing:12.0];
@@ -69,7 +54,7 @@
     // spacing.
     NSSize fit = [stack fittingSize];
     if (fit.width < 240.0 || fit.height < 100.0) {
-        fit = NSMakeSize(420.0, 170.0);
+        fit = NSMakeSize(380.0, 130.0);
     }
     [window setContentSize:fit];
     return self;
@@ -79,7 +64,6 @@
     // Read the app's state every time the window comes up, so another
     // part of the app (the View menu, the ribbon) can never leave the
     // controls stale.
-    [widthPopup_ selectItemAtIndex:[host_ settingsContentWidthMode]];
     [outlineCheckbox_
         setState:[host_ settingsOutlineVisible] ? NSControlStateValueOn
                                                 : NSControlStateValueOff];
@@ -88,13 +72,6 @@
     }
     [self showWindow:nil];
     [[self window] makeKeyAndOrderFront:nil];
-}
-
-// The document width row: the index is the width mode the settings
-// keep.
-- (void)widthChanged:(id)sender {
-    (void)sender;
-    [host_ applyContentWidthMode:[widthPopup_ indexOfSelectedItem]];
 }
 
 // The outline row: the checkbox state is the pane's visibility.

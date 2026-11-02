@@ -75,6 +75,16 @@ for the match steps, and standard push buttons for Replace and
 Replace All. Its behaviour is unchanged; find-replace.md remains the
 spec for that.
 
+## The Settings window keeps the pane's size out
+
+The Settings window is a standard titled window with a small form: a
+section header and the outline switch. It has no document width row,
+and the View menu has no Wider Content command, because the pane
+always fits the window with the margin the padding leaves. The width
+modes are a Windows idea and stay there; on the mac the mode is
+pinned to the full width at launch, and a width value in an old
+settings file is not consulted.
+
 ## Rules for this window
 
 - No custom window chrome: no titlebar accessories, no painted

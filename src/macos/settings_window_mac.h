@@ -12,14 +12,6 @@
 // The app delegate conforms; the window never knows the delegate type.
 @protocol MacSettingsHost <NSObject>
 
-// The document width mode as it is now (0..3, the modes of
-// AppSettings::contentWidthMode).
-- (NSInteger)settingsContentWidthMode;
-
-// Applies a width mode, through the same path the View menu command
-// takes.
-- (void)applyContentWidthMode:(NSInteger)mode;
-
 // Whether the outline pane is shown now.
 - (BOOL)settingsOutlineVisible;
 
