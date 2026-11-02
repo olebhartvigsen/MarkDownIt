@@ -382,9 +382,16 @@ private:
 
     // Applies the Windows line spacing to measured lines: every line is
     // as tall as heightMult times the em, and its baseline sits
-    // baselineMult times the em below the top of the line.
+    // baselineMult times the em below the top of the line. A nonzero
+    // leadEm raises the line box to at least that many ems, the body
+    // text's reading rhythm.
     void ApplyLineSpacing(std::vector<TextLine>* lines, float ptSize,
-                          float heightMult, float baselineMult) const;
+                          float heightMult, float baselineMult,
+                          float leadEm = 0.0f) const;
+
+    // The side padding for a pane width: the theme's own value, sliding
+    // down to a narrow-window minimum as the pane narrows.
+    float EffectivePadX(float widthDip) const;
 
     // The runs of a table cell, cut at the boundaries of its inline
     // spans, so a cell carries the same styles the Windows renderer

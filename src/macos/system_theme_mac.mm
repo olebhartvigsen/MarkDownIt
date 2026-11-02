@@ -49,7 +49,11 @@ ThemeColor Faded(NSColor* color, CGFloat alpha) {
 Palette SystemPalette() {
     Palette p = BasePalette();
     p.textPrimary = FromColor([NSColor labelColor]);
-    p.textMuted = FromColor([NSColor secondaryLabelColor]);
+    // The system's own secondary label measures about 3.3 to 1 over
+    // white, below the guideline's 4.5 to 1 for muted text, so the
+    // muted slot is the label colour at a gentler alpha instead;
+    // it still follows both appearances.
+    p.textMuted = Faded([NSColor labelColor], 0.62);
     p.heading = FromColor([NSColor labelColor]);
     p.link = FromColor([NSColor linkColor]);
     p.codeBg = FromColor([NSColor windowBackgroundColor]);
@@ -58,7 +62,9 @@ Palette SystemPalette() {
     // values: the diagrams keep mermaid's default theme.
     p.inlineCodeBg = FromColor([NSColor quaternaryLabelColor]);
     p.quoteBar = FromColor([NSColor separatorColor]);
-    p.quoteText = FromColor([NSColor secondaryLabelColor]);
+    // The same muted slot as the body text, for the same contrast
+    // reason.
+    p.quoteText = Faded([NSColor labelColor], 0.62);
     p.rule = FromColor([NSColor separatorColor]);
     p.tableBorder = FromColor([NSColor separatorColor]);
     p.tableHeaderBg = FromColor([NSColor quaternaryLabelColor]);

@@ -187,7 +187,9 @@ inline LayoutMetrics BaseMetrics() {
     m.listIndent = 28.0f;
     m.markerGutter = 4.0f;
     m.cellPadX = 12.0f;
-    m.cellPadY = 8.0f;
+    // The guideline's lower bound for a cell's room above and below
+    // the text, on both platforms.
+    m.cellPadY = 10.0f;
     m.bodyFontSize = 13.5f;
     m.codeFontSize = 11.5f;
     m.headingSizes[0] = 0.0f;

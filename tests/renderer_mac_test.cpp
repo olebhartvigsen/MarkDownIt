@@ -333,7 +333,7 @@ Document Doc(std::vector<Node> nodes) {
 // tests derive from them.
 constexpr float kPadX = 56.0f;
 constexpr float kPadTop = 32.0f;
-constexpr float kCap = 800.0f;
+constexpr float kCap = 690.0f;  // the mac reading width, in DIP
 constexpr float kPtToDip = 96.0f / 72.0f;
 const float kBodyEm = 13.5f * kPtToDip;   // 18
 const float kH1Em = 23.0f * kPtToDip;     // 30.667
@@ -357,11 +357,12 @@ TEST(RendererMac, CentersTheTextColumn) {
     // The first block has no gap before it.
     EXPECT_NEAR(para.y, kPadTop, 0.01f);
 
-    // A narrow window: the padding eats into the column and there is
-    // nothing left to center.
+    // A narrow window: the padding slides down from the theme's value
+    // toward its minimum, and what is left is the column.
     renderer.Measure(doc, 500.0f);
-    EXPECT_NEAR(renderer.contentWidth(), 500.0f - 2.0f * kPadX, 0.01f);
-    EXPECT_NEAR(renderer.blocks()[0].x, kPadX, 0.01f);
+    const float narrowPad = 16.0f + (kPadX - 16.0f) * (100.0f / 240.0f);
+    EXPECT_NEAR(renderer.contentWidth(), 500.0f - 2.0f * narrowPad, 0.01f);
+    EXPECT_NEAR(renderer.blocks()[0].x, narrowPad, 0.01f);
 
     // With the wrap off the text gets one wide line, and the column
     // sits at the left padding.
@@ -371,7 +372,7 @@ TEST(RendererMac, CentersTheTextColumn) {
     EXPECT_NEAR(renderer.blocks()[0].x, kPadX, 0.01f);
 }
 
-TEST(RendererMac, UsesTheWindowsLineSpacing) {
+TEST(RendererMac, AppliesTheLineSpacingAndTheReadingLead) {
     FakeEngine engine;
     MacRenderer renderer;
     renderer.SetTextEngine(&engine);
@@ -391,10 +392,12 @@ TEST(RendererMac, UsesTheWindowsLineSpacing) {
     EXPECT_NEAR(heading.lines[0].ascent, kH1Em, 0.02f);
     EXPECT_NEAR(heading.height, kH1Em * 1.25f + 28.0f, 0.02f);
 
-    // Body: 1.3 times the em, baseline at 1.24 times the em.
+    // Body: the reading lead floor at 1.62 times the em (the probe
+    // engine's natural line box is the em itself, so the floor is what
+    // shows), the baseline at 1.24 times the em.
     const LaidOutBlock& body = renderer.blocks()[1];
     ASSERT_EQ(body.lines.size(), 1u);
-    EXPECT_NEAR(body.lines[0].height, kBodyEm * 1.3f, 0.02f);
+    EXPECT_NEAR(body.lines[0].height, kBodyEm * 1.62f, 0.02f);
     EXPECT_NEAR(body.lines[0].ascent, kBodyEm * 1.24f, 0.02f);
 
     // Code: 1.45 times the em, and the padding above and below.
@@ -426,7 +429,7 @@ TEST(RendererMac, SpacesBlocksLikeWindows) {
     EXPECT_NEAR(gap(1), 32.0f, 0.02f);  // the gap before a heading
     EXPECT_NEAR(gap(2), 10.0f, 0.02f);  // the gap after a heading
     EXPECT_NEAR(gap(3), 16.0f, 0.02f);  // the gap before a list
-    EXPECT_NEAR(gap(4), 4.0f, 0.02f);   // between two list items
+    EXPECT_NEAR(gap(4), 6.0f, 0.02f);   // between two list items, the floor
     EXPECT_NEAR(gap(5), 16.0f, 0.02f);  // the gap after a list
     EXPECT_NEAR(gap(6), 18.0f, 0.02f);  // the gap around a code block
 }
@@ -450,7 +453,7 @@ TEST(RendererMac, ScalesEverythingWithTheZoom) {
     ASSERT_TRUE(!engine.calls.empty());
     EXPECT_NEAR(engine.calls.back().size, kBodyEm * 2.0f, 0.01f);
     ASSERT_EQ(renderer.blocks()[0].lines.size(), 1u);
-    EXPECT_NEAR(renderer.blocks()[0].lines[0].height, kBodyEm * 2.0f * 1.3f,
+    EXPECT_NEAR(renderer.blocks()[0].lines[0].height, kBodyEm * 2.0f * 1.62f,
                 0.02f);
 }
 
@@ -487,7 +490,7 @@ TEST(RendererMac, MeasuresTablesTheWindowsWay) {
     EXPECT_TRUE(sawInner);
 
     const float lineH = kBodyEm * 1.3f;
-    EXPECT_NEAR(table.tableLayout.rowHeights[0], lineH + 16.0f, 0.02f);
+    EXPECT_NEAR(table.tableLayout.rowHeights[0], lineH + 20.0f, 0.02f);
     EXPECT_GT(table.tableLayout.rowHeights[1], table.tableLayout.rowHeights[0]);
     EXPECT_NEAR(table.height,
                 table.tableLayout.rowHeights[0] + table.tableLayout.rowHeights[1],
@@ -589,7 +592,7 @@ TEST(RendererMac, PaintsTheBarAndTheBreakNoRule) {
     for (const RecordingTarget::Fill& fill : target.fills) {
         if (std::fabs(fill.rect.x - barX) < 0.02f &&
             std::fabs(fill.rect.width - 4.0f) < 0.01f &&
-            std::fabs(fill.rect.height - kBodyEm * 1.3f) < 0.02f) {
+            std::fabs(fill.rect.height - kBodyEm * 1.62f) < 0.02f) {
             sawBar = true;
         }
     }
@@ -683,12 +686,13 @@ TEST(RendererMac, UnderlinesLinks) {
     // The underline runs under the link, from its own characters, two
     // points under the baseline.
     const float charW = kBodyEm * 0.5f;
+    const float columnX = (1400.0f - kCap) * 0.5f;
     const float underlineY = 32.0f + kBodyEm * 1.24f + 2.0f;
     bool sawUnderline = false;
     for (const RecordingTarget::Stroke& stroke : target.strokes) {
         if (std::fabs(stroke.y0 - underlineY) < 0.02f &&
-            std::fabs(stroke.x0 - (300.0f + 3.0f * charW)) < 0.02f &&
-            std::fabs(stroke.x1 - (300.0f + 7.0f * charW)) < 0.02f) {
+            std::fabs(stroke.x0 - (columnX + 3.0f * charW)) < 0.02f &&
+            std::fabs(stroke.x1 - (columnX + 7.0f * charW)) < 0.02f) {
             sawUnderline = true;
         }
     }
@@ -760,10 +764,10 @@ TEST(RendererMac, KeepsACaretLineForABlankParagraph) {
     // sit.
     const LaidOutBlock& block = renderer.blocks()[0];
     ASSERT_EQ(block.lines.size(), 1u);
-    EXPECT_NEAR(block.height, kBodyEm * 1.3f, 0.02f);
+    EXPECT_NEAR(block.height, kBodyEm * 1.62f, 0.02f);
     float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
     EXPECT_TRUE(renderer.OffsetToRect(0, &x, &y, &w, &h));
-    EXPECT_NEAR(h, kBodyEm * 1.3f, 0.02f);
+    EXPECT_NEAR(h, kBodyEm * 1.62f, 0.02f);
 }
 
 TEST(RendererMac, GivesAnEmptyParagraphNoHeight) {
@@ -948,8 +952,10 @@ TEST(RendererMac, WrappedLineClicksLandOnTheLine) {
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
+    // A pane narrow enough that the padding has slid to its minimum:
+    // the column that is left wraps the word.
     const Document doc = Doc({Para("abcdef")});
-    renderer.Measure(doc, 140.0f);
+    renderer.Measure(doc, 60.0f);
     ASSERT_EQ(renderer.blocks().size(), 1u);
     const LaidOutBlock& block = renderer.blocks()[0];
     ASSERT_EQ(block.lines.size(), 2u);

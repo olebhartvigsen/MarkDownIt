@@ -111,6 +111,19 @@ constexpr float kPtToDip = 96.0f / 72.0f;
 // with 1.24).
 constexpr float kBodyBaselineOffset = 1.24f;
 
+// The reading rhythm the guideline asks of the body: a line box of
+// at least 1.62 em with the system face, whose own natural box is a
+// touch tighter than the reference platform's.
+constexpr float kBodyLeadEm = 1.62f;
+
+// The mac reading width, in DIP at zoom 1: about 74 characters of
+// body text, the range the guideline keeps a column in.
+constexpr float kMacReadingWidthDip = 690.0f;
+
+// The floor for the air between list items, in DIP at zoom 1: the
+// guideline's lower bound at the reading size.
+constexpr float kListItemGapFloorDip = 6.0f;
+
 // The gap before a block, from the block that came before it: the rules
 // and the numbers of the Windows renderer (Renderer::GapForTransition),
 // so the two platforms leave the same space between the same pair of
@@ -444,7 +457,8 @@ FontSpec MacRenderer::DiagramFontFor(const Node& node, float baseSize,
 
 void MacRenderer::ApplyLineSpacing(std::vector<TextLine>* lines, float ptSize,
                                     float heightMult,
-                                    float baselineMult) const {
+                                    float baselineMult,
+                                    float leadEm) const {
     const float em = ptSize * kPtToDip * zoom_;
     // The natural line box of the block's font, not the em alone: Core
     // Text reports the same ascent, descent and leading DirectWrite
@@ -458,7 +472,7 @@ void MacRenderer::ApplyLineSpacing(std::vector<TextLine>* lines, float ptSize,
         if (measured > 0.0f) natural = measured;
     }
     for (TextLine& line : *lines) {
-        line.height = heightMult * natural;
+        line.height = std::max(heightMult * natural, leadEm * em);
         line.ascent = baselineMult * natural;
     }
 }
@@ -525,8 +539,11 @@ std::vector<GlyphRun> MacRenderer::BuildCellRuns(const TableCell& cell,
         GlyphRun glyph;
         glyph.text = std::move(run);
         // The windows renderer gives a cell code span the code family
-        // at the body size, and the header its weight.
-        glyph.font = FontFor(Node{}, metrics_.bodyFontSize, strong, em, code);
+        // at the body size. A header cell and a strong span draw in
+        // the semibold face: the guideline asks a table heading for
+        // the semibold weight, not the full bold trait.
+        glyph.font = FontFor(Node{}, metrics_.bodyFontSize, false, em, code,
+                             strong ? THEME_BODY_FONT_SEMIBOLD : nullptr);
         glyph.r = color.r;
         glyph.g = color.g;
         glyph.b = color.b;
@@ -598,7 +615,7 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
 
     if (widthDip <= 0.0f) {
         contentWidth_ = 1.0f;
-        originX_ = metrics_.padX;
+        originX_ = EffectivePadX(widthDip);
         totalHeight_ = metrics_.padTop;
         return totalHeight_;
     }
@@ -609,13 +626,14 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
     // document sits the same way on both platforms. With the wrap off
     // the text gets one very wide line, and the user scrolls to its
     // end.
-    const float available = widthDip - metrics_.padX * 2.0f;
+    const float pad = EffectivePadX(widthDip);
+    const float available = widthDip - pad * 2.0f;
     contentWidth_ = wrap_ ? std::min(available, metrics_.maxContentWidth)
                           : kNoWrapContentWidthDip;
     if (contentWidth_ <= 0.0f) {
         contentWidth_ = 1.0f;
     }
-    originX_ = wrap_ ? (widthDip - contentWidth_) * 0.5f : metrics_.padX;
+    originX_ = wrap_ ? (widthDip - contentWidth_) * 0.5f : pad;
 
     float y = metrics_.padTop;
     BlockKind prevBlock = BlockKind::Paragraph;
@@ -661,17 +679,24 @@ void MacRenderer::SetContentWidthMode(int mode) {
 
 LayoutMetrics MacRenderer::ComputeMetrics() const {
     LayoutMetrics m = ScaleMetrics(baseMetrics_, zoom_);
-    // Override the content width cap based on the user's width setting.
-    // Mode 3 (Full) means no cap, so we use a very large value. The
-    // same numbers the Windows renderer resolves, zoom included.
-    switch (contentWidthMode_) {
-        case 1: m.maxContentWidth = 960.0f * zoom_; break;
-        case 2: m.maxContentWidth = 1600.0f * zoom_; break;
-        case 3: m.maxContentWidth = 100000.0f; break;
-        case 0:
-        default: m.maxContentWidth = 800.0f * zoom_; break;
-    }
+    // The mac pane keeps a reading measure instead of stretching to
+    // the window: the guideline asks for a column of about 68 to 74
+    // characters, and the width modes belong to the Windows build.
+    m.maxContentWidth = kMacReadingWidthDip * zoom_;
+    // The guideline's floor for the air between list items, a touch
+    // above the theme's own gap at the reading size.
+    m.listItemGap = std::max(m.listItemGap, kListItemGapFloorDip * zoom_);
     return m;
+}
+
+float MacRenderer::EffectivePadX(float widthDip) const {
+    // A narrow pane gives the measure its room back: the side padding
+    // slides from the theme's own value down to 16 as the pane narrows
+    // under 640, the way the guideline asks a column to keep its width.
+    const float narrow = 16.0f * zoom_;
+    if (widthDip >= 640.0f) return metrics_.padX;
+    const float t = std::max(0.0f, (widthDip - 400.0f) / 240.0f);
+    return narrow + (metrics_.padX - narrow) * std::min(1.0f, t);
 }
 
 const SvgDoc* MacRenderer::GetSvgDoc(const Node& node) {
@@ -703,9 +728,17 @@ float MacRenderer::ChargeForImages(LaidOutBlock* block) {
 
         images_.Prefetch(child.url);
 
+        // The room the paint will draw the image in: its aspect height
+        // at the column's width, under the height cap, so the text
+        // below an image lands where the image ends.
         float height = kImageFallbackHeight;
-        if (imageHeight + height > kImageMaxHeight) {
-            height = kImageMaxHeight;
+        float chargedW = 0.0f;
+        float chargedH = 0.0f;
+        if (images_.GetSize(child.url, &chargedW, &chargedH) &&
+            chargedW > 0.0f && chargedH > 0.0f) {
+            const float scale =
+                std::min(contentWidth_ / chargedW, kImageMaxHeight / chargedH);
+            height = chargedH * scale;
         }
         imageHeight += height + metrics_.paraGap;
         block->images.push_back(child.url);
@@ -830,7 +863,7 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
             }
             block.lines = engine_->MeasureWrapped(runs, drawW, 0.0f);
             ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight,
-                             kBodyBaselineOffset);
+                             kBodyBaselineOffset, kBodyLeadEm);
             if (!editing_ && node.virtualEmptyParagraph) {
                 // While reading, the blank line next to a list is a
                 // thin strip: the blank lines in the source separate
@@ -902,7 +935,7 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
                 node, size, false, false, ToColor(palette_.quoteText), false);
             block.lines = engine_->MeasureWrapped(runs, drawW, 0.0f);
             ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight,
-                             kBodyBaselineOffset);
+                             kBodyBaselineOffset, kBodyLeadEm);
             for (const TextLine& line : block.lines) {
                 block.height += line.height;
             }
@@ -941,7 +974,7 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
             block.lines = engine_->MeasureWrapped(runs, drawW - markerW,
                                                   0.0f);
             ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight,
-                             kBodyBaselineOffset);
+                             kBodyBaselineOffset, kBodyLeadEm);
             for (const TextLine& line : block.lines) {
                 block.height += line.height;
             }
@@ -1142,7 +1175,15 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
                     marker = std::to_string(listCounter) + ". ";
                 }
             } else if (taskMark < 0) {
-                marker = "\xE2\x80\xA2 ";
+                // The marker changes with the depth, the pattern the
+                // guideline asks of nesting and the platform's own
+                // bullets.
+                static const char* const kBullets[3] = {
+                    "\xE2\x80\xA2 ",  // U+2022 bullet
+                    "\xE2\x97\xA6 ",  // U+25E6 white bullet
+                    "\xE2\x96\xAA ",  // U+25AA small black square
+                };
+                marker = kBullets[((depth % 3) + 3) % 3];
             }
         } else {
             listCounter = 0;
@@ -1447,22 +1488,24 @@ void MacRenderer::PaintImages(const LaidOutBlock& block, float top,
     float y = top;
     for (const std::string& url : block.images) {
         float height = kImageFallbackHeight;
+        float drawnWidth = width;
         float imageWidth = 0.0f;
         float imageHeight = 0.0f;
         if (images_.GetSize(url, &imageWidth, &imageHeight) &&
             imageWidth > 0.0f && imageHeight > 0.0f) {
-            // The image keeps its aspect ratio and fits the width of
-            // the column.
-            height = width * (imageHeight / imageWidth);
-            if (height > kImageMaxHeight) {
-                height = kImageMaxHeight;
-            }
+            // The image keeps its aspect ratio inside the column: the
+            // smaller of the column's and the height cap's scale, so a
+            // tall picture narrows instead of stretching.
+            const float scale =
+                std::min(width / imageWidth, kImageMaxHeight / imageHeight);
+            drawnWidth = imageWidth * scale;
+            height = imageHeight * scale;
         }
 
         Rect rect;
         rect.x = block.x;
         rect.y = y;
-        rect.width = width;
+        rect.width = drawnWidth;
         rect.height = height;
 
         BitmapHandle image = images_.Get(url);
@@ -1504,17 +1547,10 @@ void MacRenderer::PaintTable(const LaidOutBlock& block, float scrollOffset) {
         for (size_t c = 0; c < cells.size(); ++c) {
             const float cellX = block.x + static_cast<float>(c) * layout.colW;
 
-            // The cell border, one rectangle per cell.
-            Rect border;
-            border.x = cellX;
-            border.y = y;
-            border.width = layout.colW;
-            border.height = rowH;
-            target_->StrokeRect(border, ToColor(palette_.tableBorder), 1.0f);
-
-            // The lines of the cell, placed at the column alignment of
-            // the delimiter row, inside the cell padding, clipped to
-            // the cell the way the Windows renderer clips them.
+            // The lines of the cell, centered in the row, placed at
+            // the column alignment of the delimiter row, inside the
+            // cell padding, clipped to the cell the way the Windows
+            // renderer clips them.
             Rect inner;
             inner.x = cellX + metrics_.cellPadX;
             inner.y = y + metrics_.cellPadY;
@@ -1523,7 +1559,13 @@ void MacRenderer::PaintTable(const LaidOutBlock& block, float scrollOffset) {
             if (inner.width > 0.0f && inner.height > 0.0f) {
                 target_->PushClip(inner);
             }
-            float lineY = y + metrics_.cellPadY;
+            float cellTextHeight = 0.0f;
+            for (const TextLine& line : cells[c].lines) {
+                cellTextHeight += line.height;
+            }
+            float lineY =
+                y + std::max(metrics_.cellPadY,
+                             (rowH - cellTextHeight) * 0.5f);
             for (const TextLine& line : cells[c].lines) {
                 float lineX = cellX + metrics_.cellPadX;
                 if (cells[c].align == ColumnAlign::Center) {
@@ -1538,6 +1580,14 @@ void MacRenderer::PaintTable(const LaidOutBlock& block, float scrollOffset) {
                 target_->PopClip();
             }
         }
+        // One fine line under the row: the guideline asks for row
+        // separators, not a grid, so no vertical edges are drawn.
+        Rect separator;
+        separator.x = block.x;
+        separator.y = y + rowH - 1.0f;
+        separator.width = block.width;
+        separator.height = 1.0f;
+        target_->FillRect(separator, ToColor(palette_.tableBorder));
         y += rowH;
     }
 }

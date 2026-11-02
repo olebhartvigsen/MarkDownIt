@@ -489,20 +489,28 @@ uint32_t ContentView::LineBoundary(uint32_t offset, bool end) const {
 }
 
 Color ContentView::SelectionColor() const {
-    // The selection is a soft blue, the same one the Windows app uses.
+    // The selection wash follows the user's accent colour and the
+    // appearance: the system's selected-content colour at the weight
+    // the fixed blue carried, its alpha light so the text under it
+    // stays readable.
+    const ThemeColor c = mac::SystemPalette().selectionBg;
     Color color;
-    color.r = 0.27f;
-    color.g = 0.52f;
-    color.b = 0.89f;
+    color.r = c.r;
+    color.g = c.g;
+    color.b = c.b;
     color.a = 0.35f;
     return color;
 }
 
 Color ContentView::CaretColor() const {
+    // The caret follows the label colour, so it stays visible in
+    // both appearances: a fixed near-black bar disappeared over the
+    // dark paper.
+    const ThemeColor c = mac::SystemPalette().textPrimary;
     Color color;
-    color.r = 0.10f;
-    color.g = 0.10f;
-    color.b = 0.12f;
+    color.r = c.r;
+    color.g = c.g;
+    color.b = c.b;
     color.a = 1.0f;
     return color;
 }
