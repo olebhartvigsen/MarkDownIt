@@ -388,7 +388,7 @@ loop that now runs on every build.
   pair row for row.
 - Screenshot: the end state, the code block showing its lines and the
   table row a faint wash.
-- Status: fix lands here.
+- Status: fixed in 1022589 and 29477ac (CI run 41359835190).
 
 ### The width options leave the mac (Nov 2)
 
@@ -400,6 +400,22 @@ loop that now runs on every build.
 - The settings photo now shows the shorter form; the other states are
   untouched. At the capture size the width modes agree below their
   cap, so the comparison reads the same.
+- Status: fixed in 76a24d4 (CI run 41504446368).
+
+### The reading surface follows the guidelines (Nov 2)
+
+- A compliance sweep against the macOS guidelines document measured
+  the reading surface against its numbers: the body's lead floor is
+  1.62 em, the pane caps its column at a reading width instead of
+  stretching to the window, the side padding slides down on a narrow
+  pane, the table dropped its vertical grid for row separators with
+  semibold headers and centered cells, the list bullets change with
+  the depth, a tall image keeps its aspect ratio and reserves the
+  room it draws in, and the caret and the selection wash follow the
+  system colours, so both appearances stay readable.
+- Screenshot: the tail state, the deep nesting, the long tokens, the
+  wide table and the long code lines; the narrow and wide states show
+  the padding and the column at both window sizes.
 - Status: fix lands here.
 
 <!--

@@ -580,10 +580,36 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // diagram.
         if (sourceView_) [self OnToggleSourceView];
         [self qaScrollToHeading:5 drop:96.0f];
+    } else if ([state isEqualToString:@"tail"]) {
+        // The foot the guideline review added: the deep nesting, the
+        // long unbroken tokens, the wide table and the long code
+        // lines, anchored close so the frame holds them all.
+        if (sourceView_) [self OnToggleSourceView];
+        [self qaScrollToHeading:8 drop:24.0f];
+    } else if ([state isEqualToString:@"narrow"]) {
+        // The page at a narrow window: the padding slides down and the
+        // measure keeps its width.
+        if (sourceView_) [self OnToggleSourceView];
+        [window_ setContentSize:NSMakeSize(500.0, 720.0)];
+        [window_ center];
+        [self qaScrollToTop];
+        [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"wide"]) {
+        // The page in the widest window the screen takes: the column
+        // stays a column and centers while the window grows past it.
+        if (sourceView_) [self OnToggleSourceView];
+        [window_ setContentSize:NSMakeSize(1024.0, 720.0)];
+        [window_ center];
+        [self qaScrollToTop];
+        [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"dark"]) {
         if (sourceView_) [self OnToggleSourceView];
         // The top of the page in the dark appearance, so the picture
-        // shows the page's head the way the doc state does.
+        // shows the page's head the way the doc state does. The size
+        // comes back first: the narrow and wide states resize the
+        // window, and the pictures after them want the standard frame.
+        [window_ setContentSize:[self centeredFrame].size];
+        [window_ center];
         [self qaScrollToTop];
         window_.appearance =
             [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];

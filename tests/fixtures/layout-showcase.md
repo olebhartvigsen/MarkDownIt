@@ -59,3 +59,25 @@ graph LR
     A[Document] --> B(Parse)
     B --> C{Render}
 ```
+
+## Deep nesting
+
+- Level one, for the indent
+  - Level two, one step in
+    - Level three, where a wrapped line like this one keeps every word aligned with the bullets above
+
+## Long tokens and a wide table
+
+[A long link](https://example.com/a/deep/path/that/keeps/client-identifiers-intact) and `an_inline_code_span_that_cannot_break_easily` share one line.
+
+| Step | Owner | Input | Output | Notes | Status |
+|------|-------|-------|--------|-------|--------|
+| Parse | The parser | Source | A tree | Styles kept | Done |
+| Lay out | The renderer | The tree | Lines | Cache reused | Done |
+
+## Long code lines
+
+```cpp
+// A comment far longer than the reading column, to show a code block keeping its indentation and never forcing the page wider.
+int result = compute(with_a, very_long_argument_list, that_keeps, going_and, going);
+```

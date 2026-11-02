@@ -26,7 +26,7 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $log = (Resolve-Path $OutDir).Path + "\walk.log"
 
 # The app walks the states the comparison covers on both platforms.
-$states = @("doc", "find", "edit", "outline", "source", "lower", "end")
+$states = @("doc", "find", "edit", "outline", "source", "lower", "end", "tail")
 $env:MARKDOWNIT_QA_STATES = ($states -join ",")
 $env:MARKDOWNIT_QA_LOG = $log
 
