@@ -346,6 +346,16 @@ private:
                           ColumnAlign align = ColumnAlign::Default,
                           float innerWidth = 0.0f) const;
 
+    // The rectangles a range of already-mapped visible text covers. The
+    // inline-code background uses this path: its children are laid out in
+    // visual order, so the span's drawn range is a sum of child lengths,
+    // not a source range that has to be mapped back through the markers.
+    void AppendVisibleRangeRects(const std::vector<TextLine>& lines, float x,
+                                  float top, uint32_t start, uint32_t end,
+                                  std::vector<Rect>* rects,
+                                  ColumnAlign align = ColumnAlign::Default,
+                                  float innerWidth = 0.0f) const;
+
     // Draws the images of a block under its text.
     void PaintImages(const LaidOutBlock& block, float top, float width);
 

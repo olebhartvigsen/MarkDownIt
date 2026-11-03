@@ -1464,12 +1464,19 @@ void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
                                      float scrollOffset) const {
     if (!target_ || !block.node) return;
 
+    uint32_t visible = 0;
     for (const InlineBlock& child : block.node->children) {
-        if (!child.code || child.srcLength == 0) continue;
-        PaintCodeRects(RectsForRangeInBlock(
-                           block, child.srcOffset,
-                           child.srcOffset + child.srcLength),
-                       scrollOffset);
+        if (child.kind == InlineKind::Image) continue;
+        const uint32_t length =
+            static_cast<uint32_t>(Utf32ToUtf8(child.text).size());
+        if (length == 0) continue;
+        if (child.code) {
+            std::vector<Rect> rects;
+            AppendVisibleRangeRects(block.lines, TextX(block), TextTop(block),
+                                    visible, visible + length, &rects);
+            PaintCodeRects(rects, scrollOffset);
+        }
+        visible += length;
     }
 }
 
@@ -2282,6 +2289,20 @@ void MacRenderer::AppendRangeRects(const std::vector<TextLine>& lines,
     if (!VisibleAtSource(visToSrc, start, &visStart)) return;
     if (!VisibleAtSource(visToSrc, end, &visEnd)) return;
     if (visEnd <= visStart) return;
+    AppendVisibleRangeRects(lines, x, top, visStart, visEnd, rects, align,
+                            innerWidth);
+}
+
+void MacRenderer::AppendVisibleRangeRects(
+    const std::vector<TextLine>& lines, float x, float top, uint32_t start,
+    uint32_t end, std::vector<Rect>* rects, ColumnAlign align,
+    float innerWidth) const {
+    if (lines.empty()) return;
+    if (end < start) {
+        const uint32_t swap = start;
+        start = end;
+        end = swap;
+    }
 
     float lineTop = top;
     uint32_t lineStartVis = 0;
@@ -2292,8 +2313,8 @@ void MacRenderer::AppendRangeRects(const std::vector<TextLine>& lines,
         }
         const uint32_t lineEndVis = lineStartVis + length;
 
-        const uint32_t from = visStart > lineStartVis ? visStart : lineStartVis;
-        const uint32_t to = visEnd < lineEndVis ? visEnd : lineEndVis;
+        const uint32_t from = start > lineStartVis ? start : lineStartVis;
+        const uint32_t to = end < lineEndVis ? end : lineEndVis;
         if (from < to) {
             // The line sits at the column alignment when the region is
             // a cell, the same shift the painter applies.
