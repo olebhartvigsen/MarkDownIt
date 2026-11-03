@@ -9,6 +9,10 @@
 // document out the same way. Only the drawing calls differ.
 
 #include "renderer_mac.h"
+
+#if defined(__APPLE__)
+#include "crash_trace_mac.h"
+#endif
 #include "blockspacing.h"
 
 #include <algorithm>
@@ -1474,6 +1478,13 @@ void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
             std::vector<Rect> rects;
             AppendVisibleRangeRects(block.lines, TextX(block), TextTop(block),
                                     visible, visible + length, &rects);
+#if defined(__APPLE__)
+            TraceMac("inline code: block kind=%d children=%zu lines=%zu "
+                     "visible=%u len=%u rects=%zu",
+                     static_cast<int>(block.kind),
+                     block.node->children.size(), block.lines.size(), visible,
+                     length, rects.size());
+#endif
             PaintCodeRects(rects, scrollOffset);
         }
         visible += length;
