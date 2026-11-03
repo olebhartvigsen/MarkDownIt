@@ -42,10 +42,13 @@ name, the folder rides as the subtitle, and the represented file gives
 the title its icon. There is no titlebar accessory and no painted
 surface anywhere in the toolbar.
 
-The window is tabbable and prefers the tab bar, so the bar stays
-visible with a single document instead of appearing only after a
-second window joins the group. The bar is AppKit's own; the app draws
-no tab strip.
+The window is tabbable and prefers the tab bar. Preference alone still
+leaves the bar hidden while the window has no sibling, so the shell
+opens it explicitly after the window is on screen and only when
+`[window tabGroup] isTabBarVisible` is false. The bar then stays
+visible with a single document instead of appearing only after a second
+window joins the group. The bar is AppKit's own; the app draws no tab
+strip.
 
 Every symbol is drawn by AppKit through imageWithSystemSymbolName:, so
 the toolbar follows the system appearance, the user's accent colour,
