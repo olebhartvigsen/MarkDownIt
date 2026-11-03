@@ -524,7 +524,11 @@ TEST(DocxImport, LargeFixtureImportsFastAndComplete) {
     ASSERT_TRUE(!imported.blocks.back().runs.empty());
     EXPECT_EQ(imported.blocks.back().runs[0].text, std::string(kLargeLastText));
 
-    EXPECT_TRUE(seconds_per_megabyte < kSecondsPerMegabyteBudget);
+    // ASan and UBSan slow the import; the sanitizer job checks the
+    // model above, not the clock.
+    if (!MD_TESTS_UNDER_SANITIZERS) {
+        EXPECT_TRUE(seconds_per_megabyte < kSecondsPerMegabyteBudget);
+    }
 }
 
 // ---------------------------------------------------------------------------

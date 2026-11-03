@@ -9,6 +9,21 @@
 #include <vector>
 #include <cstdlib>
 
+// True when the test binary is built with ASan or UBSan. Wall-clock
+// budgets say nothing about the shipped build there, so the performance
+// tests keep their functional checks and skip the clock. The sanitizer
+// job is a memory and UB gate.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_UNDEFINED__)
+#define MD_TESTS_UNDER_SANITIZERS 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(undefined_behavior_sanitizer)
+#define MD_TESTS_UNDER_SANITIZERS 1
+#endif
+#endif
+#ifndef MD_TESTS_UNDER_SANITIZERS
+#define MD_TESTS_UNDER_SANITIZERS 0
+#endif
+
 namespace testlite {
 
 inline int& checks() { static int n = 0; return n; }

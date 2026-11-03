@@ -51,19 +51,6 @@ extern "C" {
 #include "md4c.h"
 }
 
-// The sanitizer builds pay a large slowdown for every allocation and
-// every bounds check, so a wall-clock budget measured there says nothing
-// about the shipped build. The sanitizer job is a memory and UB gate.
-#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_UNDEFINED__)
-#define MD_PERF_UNDER_SANITIZERS 1
-#elif defined(__has_feature)
-#if __has_feature(address_sanitizer) || __has_feature(undefined_behavior_sanitizer)
-#define MD_PERF_UNDER_SANITIZERS 1
-#endif
-#endif
-#ifndef MD_PERF_UNDER_SANITIZERS
-#define MD_PERF_UNDER_SANITIZERS 0
-#endif
 
 namespace {
 
@@ -135,7 +122,7 @@ TEST(Perf, OpenOneMegabyteDocument) {
         ParseMarkdown(doc, d);
     });
     Report("open 1 MB document", ms, 500.0);
-    if (MD_PERF_UNDER_SANITIZERS) return;
+    if (MD_TESTS_UNDER_SANITIZERS) return;
     EXPECT_TRUE(ms < 500.0);
 }
 
@@ -209,7 +196,7 @@ TEST(Perf, SpliceOnLargeDocument) {
         buf.Splice(at, 1, "");
     });
     Report("splice insert+delete", ms, 16.0);
-    if (MD_PERF_UNDER_SANITIZERS) return;
+    if (MD_TESTS_UNDER_SANITIZERS) return;
     EXPECT_TRUE(ms < 16.0);
 }
 
