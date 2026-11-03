@@ -616,7 +616,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [self qaScrollToHeading:10 drop:24.0f];
     } else if ([state isEqualToString:@"narrow"]) {
         // The page at a narrow window: the padding slides down and the
-        // measure keeps its width.
+        // column follows the pane.
         if (sourceView_) [self OnToggleSourceView];
         [window_ setContentSize:NSMakeSize(500.0, 720.0)];
         [window_ center];
@@ -624,7 +624,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"wide"]) {
         // The page in the widest window the screen takes: the column
-        // stays a column and centers while the window grows past it.
+        // follows it with the theme padding as the only margin.
         if (sourceView_) [self OnToggleSourceView];
         [window_ setContentSize:NSMakeSize(1024.0, 720.0)];
         [window_ center];

@@ -47,34 +47,18 @@ public:
             std::min<CGFloat>(radius, std::min(bounds.size.width,
                                                bounds.size.height) * 0.5f);
 
-        // The middle strip runs the full height between the rounded
-        // ends, and the four corner circles round the ends off. An
-        // earlier take filled an ellipse between the corners, which
-        // pinched the middle: a lens with round ends, not a
-        // rectangle.
+        // A single rounded path composites a translucent fill once.
+        // Drawing a middle strip plus four corner ellipses in the same
+        // colour overlaps at the corners and leaves darker dots there.
         CGContextSaveGState(context_);
         CGContextSetRGBFillColor(context_, color.r, color.g, color.b, color.a);
-        CGContextFillRect(context_,
-                          CGRectMake(bounds.origin.x + r, bounds.origin.y,
-                                     bounds.size.width - 2.0f * r,
-                                     bounds.size.height));
-        CGContextFillEllipseInRect(
-            context_, CGRectMake(bounds.origin.x, bounds.origin.y, 2.0f * r,
-                                 2.0f * r));
-        CGContextFillEllipseInRect(
-            context_,
-            CGRectMake(bounds.origin.x + bounds.size.width - 2.0f * r,
-                       bounds.origin.y, 2.0f * r, 2.0f * r));
-        CGContextFillEllipseInRect(
-            context_,
-            CGRectMake(bounds.origin.x,
-                       bounds.origin.y + bounds.size.height - 2.0f * r,
-                       2.0f * r, 2.0f * r));
-        CGContextFillEllipseInRect(
-            context_,
-            CGRectMake(bounds.origin.x + bounds.size.width - 2.0f * r,
-                       bounds.origin.y + bounds.size.height - 2.0f * r,
-                       2.0f * r, 2.0f * r));
+        CGMutablePathRef path = CGPathCreateMutable();
+        if (path) {
+            CGPathAddRoundedRect(path, nullptr, bounds, r, r);
+            CGContextAddPath(context_, path);
+            CGContextFillPath(context_);
+            CGPathRelease(path);
+        }
         CGContextRestoreGState(context_);
     }
 
