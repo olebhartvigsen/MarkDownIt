@@ -436,6 +436,13 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
     [window_ setContentView:container_];
     [window_ makeKeyAndOrderFront:nil];
+    // A preferred window still starts with the tab bar hidden when it
+    // is the only window in its group. The explicit toggle makes the
+    // bar visible for the first document too.
+    NSWindowTabGroup* tabGroup = [window_ tabGroup];
+    if (tabGroup && ![tabGroup isTabBarVisible]) {
+        [window_ toggleTabBar:nil];
+    }
     // The window is up, so the toolbar is built; the commands start
     // in the state the document is in.
     [self toolbarSync];
