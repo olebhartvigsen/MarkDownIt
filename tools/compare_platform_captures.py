@@ -171,7 +171,12 @@ def compare_state(mac_pane, win_pane, name):
     # i on the other as long as the wraps agree, and a local gap is
     # immune to any drift accumulated above it. The source view wraps
     # differently by design, so it is measured by pitch instead.
-    if not wrap_state:
+    # Pair the gaps only when both sides have the same rows. A wrapped
+    # table cell can read as one band on one side and two on the other,
+    # because the two rasterizers leave different ink in the gap. The
+    # count tolerance above allows that difference; pairing by index
+    # across different counts would invent a gap failure.
+    if not wrap_state and d_count == 0:
         pairs = min(len(m_in), len(w_in)) - 1
         worst = 0
         worst_at = -1
