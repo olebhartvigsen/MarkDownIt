@@ -1458,6 +1458,14 @@ void MacRenderer::PaintCodeRects(const std::vector<Rect>& rects,
         drawn.width = rect.width + (first ? padX : 0.0f) +
                       (last ? padX : 0.0f);
         drawn.height = boxH;
+#if defined(__APPLE__)
+        TraceMac("inline code rect x=%.1f y=%.1f w=%.1f h=%.1f "
+                 "color=%.2f,%.2f,%.2f,%.2f first=%d last=%d",
+                 drawn.x, drawn.y, drawn.width, drawn.height,
+                 palette_.inlineCodeBg.r, palette_.inlineCodeBg.g,
+                 palette_.inlineCodeBg.b, palette_.inlineCodeBg.a,
+                 first ? 1 : 0, last ? 1 : 0);
+#endif
         target_->FillRoundedRectSides(drawn, kInlineCodeRadius * zoom_,
                                       ToColor(palette_.inlineCodeBg),
                                       first, last);
