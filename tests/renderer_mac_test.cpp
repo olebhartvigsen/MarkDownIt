@@ -766,6 +766,39 @@ TEST(RendererMac, FillsTheInlineCodeBackground) {
     EXPECT_TRUE(sawBackground);
 }
 
+TEST(RendererMac, PaintsInlineCodeAfterHiddenMarkers) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    RecordingTarget target;
+    renderer.SetRenderTarget(&target);
+
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(
+        "The paragraph carries **bold**, *italic*, `inline code`, and more "
+        "text after it.\n",
+        doc));
+    renderer.Measure(doc, 1400.0f);
+    renderer.Render(doc, 0.0f);
+
+    // The code span follows bold and italic markers. The wash belongs
+    // under its glyphs, not in a zero-width pill at the end of the line.
+    const float pad = 2.0f * 0.4f * kCodeEm;
+    float widest = 0.0f;
+    int backgrounds = 0;
+    int pills = 0;
+    for (const RecordingTarget::Fill& fill : target.fills) {
+        if (!SameColor(fill.color, BasePalette().inlineCodeBg)) continue;
+        ++backgrounds;
+        widest = std::max(widest, fill.rect.width);
+        if (fill.rect.width < pad + 0.1f) ++pills;
+    }
+    EXPECT_EQ(backgrounds, 1);
+    EXPECT_GT(widest, pad + 0.1f);
+    EXPECT_EQ(pills, 0);
+}
+
 TEST(RendererMac, FillsTheInlineCodeBackgroundOnEveryWrappedLine) {
     FakeEngine engine;
     MacRenderer renderer;

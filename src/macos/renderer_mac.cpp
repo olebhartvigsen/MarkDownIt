@@ -9,10 +9,6 @@
 // document out the same way. Only the drawing calls differ.
 
 #include "renderer_mac.h"
-
-#if defined(__APPLE__)
-#include "crash_trace_mac.h"
-#endif
 #include "blockspacing.h"
 
 #include <algorithm>
@@ -1458,14 +1454,6 @@ void MacRenderer::PaintCodeRects(const std::vector<Rect>& rects,
         drawn.width = rect.width + (first ? padX : 0.0f) +
                       (last ? padX : 0.0f);
         drawn.height = boxH;
-#if defined(__APPLE__)
-        TraceMac("inline code rect x=%.1f y=%.1f w=%.1f h=%.1f "
-                 "color=%.2f,%.2f,%.2f,%.2f first=%d last=%d",
-                 drawn.x, drawn.y, drawn.width, drawn.height,
-                 palette_.inlineCodeBg.r, palette_.inlineCodeBg.g,
-                 palette_.inlineCodeBg.b, palette_.inlineCodeBg.a,
-                 first ? 1 : 0, last ? 1 : 0);
-#endif
         target_->FillRoundedRectSides(drawn, kInlineCodeRadius * zoom_,
                                       ToColor(palette_.inlineCodeBg),
                                       first, last);
@@ -1519,18 +1507,8 @@ void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
                 lineTop += line.height;
             }
             if (matched == codeText.size() && !runRects.empty()) {
-#if defined(__APPLE__)
-                TraceMac("inline code: block kind=%d visible=%u len=%u "
-                         "run_rects=%zu", static_cast<int>(block.kind),
-                         visible, length, runRects.size());
-#endif
                 PaintCodeRects(runRects, scrollOffset);
             } else {
-#if defined(__APPLE__)
-                TraceMac("inline code fallback: block kind=%d visible=%u "
-                         "len=%u rects=%zu", static_cast<int>(block.kind),
-                         visible, length, rects.size());
-#endif
                 PaintCodeRects(rects, scrollOffset);
             }
         }
