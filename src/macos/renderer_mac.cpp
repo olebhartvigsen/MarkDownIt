@@ -1486,14 +1486,53 @@ void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
             std::vector<Rect> rects;
             AppendVisibleRangeRects(block.lines, TextX(block), TextTop(block),
                                     visible, visible + length, &rects);
+            // A wrapped code span keeps one run per visual line. If the
+            // source-to-visible map cannot place the span (the marker
+            // mapping can collapse a span to a zero-width edge), use the
+            // monospace runs themselves: their text is the span's text,
+            // split at the line breaks, and their x/width are already the
+            // glyph positions.
+            const std::string codeText = Utf32ToUtf8(child.text);
+            std::vector<Rect> runRects;
+            std::size_t matched = 0;
+            float lineTop = TextTop(block);
+            for (const TextLine& line : block.lines) {
+                for (std::size_t i = 0; i < line.runs.size() && matched < codeText.size();
+                     ++i) {
+                    const GlyphRun& run = line.runs[i];
+                    if (!run.font.monospace) continue;
+                    if (run.text.size() > codeText.size() - matched) continue;
+                    if (codeText.compare(matched, run.text.size(), run.text) != 0)
+                        continue;
+                    const float runRight =
+                        i + 1 < line.runs.size()
+                            ? line.runs[i + 1].x
+                            : line.width;
+                    Rect rect;
+                    rect.x = TextX(block) + run.x;
+                    rect.y = lineTop;
+                    rect.width = runRight - run.x;
+                    rect.height = line.height;
+                    if (rect.width > 0.0f) runRects.push_back(rect);
+                    matched += run.text.size();
+                }
+                lineTop += line.height;
+            }
+            if (matched == codeText.size() && !runRects.empty()) {
 #if defined(__APPLE__)
-            TraceMac("inline code: block kind=%d children=%zu lines=%zu "
-                     "visible=%u len=%u rects=%zu",
-                     static_cast<int>(block.kind),
-                     block.node->children.size(), block.lines.size(), visible,
-                     length, rects.size());
+                TraceMac("inline code: block kind=%d visible=%u len=%u "
+                         "run_rects=%zu", static_cast<int>(block.kind),
+                         visible, length, runRects.size());
 #endif
-            PaintCodeRects(rects, scrollOffset);
+                PaintCodeRects(runRects, scrollOffset);
+            } else {
+#if defined(__APPLE__)
+                TraceMac("inline code fallback: block kind=%d visible=%u "
+                         "len=%u rects=%zu", static_cast<int>(block.kind),
+                         visible, length, rects.size());
+#endif
+                PaintCodeRects(rects, scrollOffset);
+            }
         }
         visible += length;
     }
