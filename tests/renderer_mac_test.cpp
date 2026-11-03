@@ -11,6 +11,7 @@
 #include "gtest_lite.h"
 
 #include "../src/macos/renderer_mac.h"
+#include "../src/parser.h"
 
 #include <cmath>
 #include <string>
@@ -335,7 +336,9 @@ Document Doc(std::vector<Node> nodes) {
 const LayoutMetrics kBase = BaseMetrics();
 const float kPadX = kBase.padX;
 const float kPadTop = kBase.padTop;
-const float kCap = kBase.readingWidth;
+// The content width of a 1400-point window once the padding is taken
+// out. The mac renderer no longer caps the measure at a fixed value.
+const float kWide = 1400.0f - 2.0f * kPadX;
 constexpr float kPtToDip = 96.0f / 72.0f;
 const float kBodyEm = kBase.bodyFontSize * kPtToDip;
 const float kH1Em = kBase.headingSizes[1] * kPtToDip;
@@ -353,19 +356,19 @@ bool SameColor(const mac::Color& a, const ThemeColor& b) {
 
 }  // namespace
 
-TEST(RendererMac, CentersTheTextColumn) {
+TEST(RendererMac, FollowsTheWindowWidth) {
     FakeEngine engine;
     MacRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
-    const Document doc = Doc({Para("hello world")});
+    const Document doc = Doc({Para("body text")});
     renderer.Measure(doc, 1400.0f);
-    EXPECT_NEAR(renderer.contentWidth(), kCap, 0.01f);
+    EXPECT_NEAR(renderer.contentWidth(), kWide, 0.01f);
     ASSERT_EQ(renderer.blocks().size(), 1u);
     const LaidOutBlock& para = renderer.blocks()[0];
-    EXPECT_NEAR(para.x, (1400.0f - kCap) * 0.5f, 0.01f);
-    EXPECT_NEAR(para.width, kCap, 0.01f);
+    EXPECT_NEAR(para.x, kPadX, 0.01f);
+    EXPECT_NEAR(para.width, kWide, 0.01f);
     // The first block has no gap before it.
     EXPECT_NEAR(para.y, kPadTop, 0.01f);
 
@@ -486,10 +489,10 @@ TEST(RendererMac, ScalesEverythingWithTheZoom) {
 
     const Document doc = Doc({Para("body")});
     renderer.Measure(doc, 3000.0f);
-    EXPECT_NEAR(renderer.contentWidth(), kCap * 2.0f, 0.01f);
+    const float zoomColumn = 3000.0f - 4.0f * kPadX;
+    EXPECT_NEAR(renderer.contentWidth(), zoomColumn, 0.01f);
     ASSERT_EQ(renderer.blocks().size(), 1u);
-    EXPECT_NEAR(renderer.blocks()[0].x, (3000.0f - kCap * 2.0f) * 0.5f,
-                0.01f);
+    EXPECT_NEAR(renderer.blocks()[0].x, 2.0f * kPadX, 0.01f);
 
     // The font the engine measured with is the point size converted
     // and zoomed: 12 * 4/3 * 2 = 32, and the line follows at 1.5.
@@ -511,16 +514,16 @@ TEST(RendererMac, MeasuresTablesTheWindowsWay) {
     // cell.
     const Document doc = Doc({Table({
         {"a", "b"},
-        {"c", std::string(60, 'x')},
+        {"c", std::string(120, 'x')},
     })});
     renderer.Measure(doc, 1400.0f);
     ASSERT_EQ(renderer.blocks().size(), 1u);
     const LaidOutBlock& table = renderer.blocks()[0];
     ASSERT_TRUE(table.table != nullptr);
 
-    const float colW = kCap / 2.0f;
+    const float colW = renderer.contentWidth() / 2.0f;
     EXPECT_NEAR(table.tableLayout.colW, colW, 0.01f);
-    EXPECT_NEAR(table.width, kCap, 0.01f);
+    EXPECT_NEAR(table.width, renderer.contentWidth(), 0.01f);
     ASSERT_EQ(table.tableLayout.rowHeights.size(), 2u);
 
     // The cells were measured against the column width less GitHub's
@@ -609,11 +612,11 @@ TEST(RendererMac, GivesListsTheMarkerGutter) {
     // marker box the renderer reserves. Both numbers come from the
     // theme, not from a copy of them.
     const float markerW = kBase.listIndent * 0.6f + kBase.markerGutter;
-    const float originX = (1400.0f - kCap) * 0.5f;
+    const float originX = kPadX;
     EXPECT_NEAR(blocks[0].x, originX + kBase.listIndent, 0.01f);
     ASSERT_TRUE(!engine.calls.empty());
     EXPECT_NEAR(engine.calls[0].maxWidth,
-                kCap - kBase.listIndent - markerW, 0.01f);
+                renderer.contentWidth() - kBase.listIndent - markerW, 0.01f);
 
     renderer.Render(doc, 0.0f);
     bool sawFirst = false, sawSecond = false, sawThird = false;
@@ -750,6 +753,81 @@ TEST(RendererMac, FillsTheInlineCodeBackground) {
     EXPECT_TRUE(sawBackground);
 }
 
+TEST(RendererMac, FillsTheInlineCodeBackgroundOnEveryWrappedLine) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    RecordingTarget target;
+    renderer.SetRenderTarget(&target);
+
+    const std::string codeText =
+        "an_inline_code_span_that_is_long_enough_to_wrap_over_two_lines";
+    Node para;
+    para.block = BlockKind::Paragraph;
+    InlineBlock before;
+    before.kind = InlineKind::Text;
+    before.text = Utf32("before ");
+    before.srcOffset = 0;
+    before.srcLength = 7;
+    InlineBlock span;
+    span.kind = InlineKind::Text;
+    span.text = Utf32(codeText);
+    span.code = true;
+    span.srcOffset = 7;
+    span.srcLength = static_cast<uint32_t>(codeText.size());
+    InlineBlock after;
+    after.kind = InlineKind::Text;
+    after.text = Utf32(" after");
+    after.srcOffset = 7 + static_cast<uint32_t>(codeText.size());
+    after.srcLength = 6;
+    para.children = {before, span, after};
+
+    const Document doc = Doc({para});
+    renderer.Measure(doc, 240.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    renderer.Render(doc, 0.0f);
+
+    std::vector<Rect> backgrounds;
+    for (const RecordingTarget::Fill& fill : target.fills) {
+        if (SameColor(fill.color, BasePalette().inlineCodeBg)) {
+            backgrounds.push_back(fill.rect);
+        }
+    }
+    // The span is wider than the measure, so the fill has to be split
+    // across the lines the engine wrapped it onto.
+    EXPECT_TRUE(backgrounds.size() >= 2u);
+    if (backgrounds.size() >= 2u) {
+        EXPECT_TRUE(backgrounds[1].y > backgrounds[0].y);
+    }
+}
+
+TEST(RendererMac, FillsCodeBackgroundInsideATableCell) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    RecordingTarget target;
+    renderer.SetRenderTarget(&target);
+
+    Document doc;
+    ParseMarkdown(std::string("| head | text |\n"
+                              "| --- | --- |\n"
+                              "| `code span` | plain |\n"), doc);
+    renderer.Measure(doc, 1400.0f);
+    renderer.Render(doc, 0.0f);
+
+    // A code span inside a cell has the same wash as one in a
+    // paragraph; the table painter used to draw only the text runs.
+    bool sawBackground = false;
+    for (const RecordingTarget::Fill& fill : target.fills) {
+        if (SameColor(fill.color, BasePalette().inlineCodeBg)) {
+            sawBackground = true;
+        }
+    }
+    EXPECT_TRUE(sawBackground);
+}
+
 TEST(RendererMac, PaintsTheCodeCardWithoutABorder) {
     FakeEngine engine;
     MacRenderer renderer;
@@ -805,7 +883,7 @@ TEST(RendererMac, UnderlinesLinks) {
     // The underline runs under the link, from its own characters, two
     // points under the baseline.
     const float charW = kBodyEm * 0.5f;
-    const float columnX = (1400.0f - kCap) * 0.5f;
+    const float columnX = kPadX;
     const float underlineY =
         32.0f + (kBodyEm * kBase.bodyLineHeight - kBodyEm) * 0.5f + kBodyEm + 2.0f;
     bool sawUnderline = false;

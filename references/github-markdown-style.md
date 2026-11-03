@@ -162,8 +162,8 @@ Both platforms ask for the same family names in the theme; the mac text engine
 maps Segoe UI to the system UI face and Cascadia Mono to the system fixed-pitch
 face, so the document metrics stay platform-neutral. `mac::SystemPalette`
 fills the same slots from AppKit's semantic colours: `labelColor`, `linkColor`,
-`separatorColor`,
-`quaternaryLabelColor`, and `windowBackgroundColor` for the code card. Dark
+`separatorColor`, and `quaternaryLabelColor` for the code card and the inline
+spans. Dark
 Mode and increased contrast therefore follow the system, which a fixed web
 palette cannot do.
 
@@ -179,10 +179,10 @@ palette cannot do.
   table scroll, and the caret and hit-test model addresses cells by column
   index. Equal columns that fit the reading measure keep every cell addressable
   and avoid a horizontal scrollbar inside a page.
-- A fixed 690 DIP reading column on the mac. At 16px it is wider, in character
-  terms, than the old 18px column. It stays fixed because the capture-parity
-  states record the wrap geometry; changing it would move every band in the
-  comparison for a reason unrelated to the style.
+- The mac reading column follows the window's available width, with the theme
+  padding as its only margin. GitHub caps its prose at 980px; the native pane
+  leaves the width to the window, so a wide display does not turn the document
+  into a narrow strip. The Windows app keeps its own width modes.
 - Semantic colours on the mac. The web palette is fixed light. The mac palette
   maps the same roles to AppKit colours so Dark Mode works.
 - A 36 DIP list text edge instead of GitHub's 32. The marker sits at 1.25em and

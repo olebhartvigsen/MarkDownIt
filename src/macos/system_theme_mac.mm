@@ -56,7 +56,11 @@ Palette SystemPalette() {
     p.textMuted = Faded([NSColor labelColor], 0.62);
     p.heading = FromColor([NSColor labelColor]);
     p.link = FromColor([NSColor linkColor]);
-    p.codeBg = FromColor([NSColor windowBackgroundColor]);
+    // A code card must not be the paper it sits on: in the light
+    // appearance windowBackgroundColor is the same white, so the
+    // fenced block had no visible surface. The quaternary label wash
+    // is the same semantic grey the inline spans already use.
+    p.codeBg = FromColor([NSColor quaternaryLabelColor]);
     p.codeBorder = FromColor([NSColor separatorColor]);
     // p.mermaidNodeFill / mermaidNodeBorder / mermaidText stay the base
     // values: the diagrams keep mermaid's default theme.

@@ -58,10 +58,13 @@ bool HeadingsUnchanged(const std::vector<OutlineItem>& a,
 
 int ItemIndexForOffset(const std::vector<OutlineItem>& items, uint32_t offset) {
     // Section ownership: last item whose offset is <= the given offset.
+    // The text before the first heading is the opening of the first
+    // section, so it belongs to the first item instead of to no row.
     int idx = -1;
     for (int i = 0; i < static_cast<int>(items.size()); ++i) {
         if (items[i].offset <= offset) idx = i;
         else break;
     }
+    if (idx < 0 && !items.empty()) idx = 0;
     return idx;
 }

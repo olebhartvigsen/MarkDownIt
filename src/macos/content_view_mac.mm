@@ -1304,6 +1304,11 @@ static const CGFloat kPinchStepMagnification = 0.1;
     }
 
     [super scrollWheel:event];
+    // The clip view posts a bounds change, but a wheel step can reach
+    // the view before that notification is delivered. Reflect the new
+    // place here so the outline's reading row moves with the document
+    // on every step, not only when the notification finally lands.
+    [self clipChanged:nil];
 }
 
 // A trackpad pinch zooms around the gesture, the way a magnifying

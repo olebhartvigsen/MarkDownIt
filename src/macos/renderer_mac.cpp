@@ -591,20 +591,18 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
         return totalHeight_;
     }
 
-    // The content column: the view width less the theme padding, capped
-    // at the reading width, and centered when it is narrower than the
-    // space. The same arithmetic the Windows renderer uses, so a
-    // document sits the same way on both platforms. With the wrap off
-    // the text gets one very wide line, and the user scrolls to its
-    // end.
+    // The content column: the view width less the theme padding. The
+    // column follows the window instead of taking a fixed reading
+    // measure, so a wide window does not leave a narrow strip in the
+    // middle. With the wrap off the text gets one very wide line, and
+    // the user scrolls to its end.
     const float pad = EffectivePadX(widthDip);
-    const float available = widthDip - pad * 2.0f;
-    contentWidth_ = wrap_ ? std::min(available, metrics_.readingWidth)
+    contentWidth_ = wrap_ ? widthDip - pad * 2.0f
                           : kNoWrapContentWidthDip;
     if (contentWidth_ <= 0.0f) {
         contentWidth_ = 1.0f;
     }
-    originX_ = wrap_ ? (widthDip - contentWidth_) * 0.5f : pad;
+    originX_ = pad;
 
     float y = metrics_.padTop;
     BlockKind prevBlock = BlockKind::Paragraph;
@@ -1433,28 +1431,37 @@ void MacRenderer::PaintLineRuns(const TextLine& line, float x,
     }
 }
 
-void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
-                                     float scrollOffset) const {
-    if (!target_ || !block.node) return;
+void MacRenderer::PaintCodeRects(const std::vector<Rect>& rects,
+                                  float scrollOffset) const {
+    if (!target_) return;
 
     // GitHub's inline code card: a 6px rounded fill with .4em of
     // horizontal and .2em of vertical padding around the code run.
     const float codeEm = metrics_.codeFontSize * kPtToDip * zoom_;
     const float padX = kInlineCodePadXRatio * codeEm;
+    for (const Rect& rect : rects) {
+        if (rect.height <= 0.0f) continue;
+        const float boxH = std::min(rect.height, 1.6f * codeEm);
+        Rect drawn;
+        drawn.x = rect.x - padX;
+        drawn.y = rect.y - scrollOffset + (rect.height - boxH) * 0.5f;
+        drawn.width = rect.width + 2.0f * padX;
+        drawn.height = boxH;
+        target_->FillRoundedRect(drawn, kInlineCodeRadius * zoom_,
+                                 ToColor(palette_.inlineCodeBg));
+    }
+}
+
+void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
+                                     float scrollOffset) const {
+    if (!target_ || !block.node) return;
+
     for (const InlineBlock& child : block.node->children) {
         if (!child.code || child.srcLength == 0) continue;
-        for (const Rect& rect : RectsForRangeInBlock(
-                 block, child.srcOffset, child.srcOffset + child.srcLength)) {
-            if (rect.height <= 0.0f) continue;
-            const float boxH = std::min(rect.height, 1.6f * codeEm);
-            Rect drawn;
-            drawn.x = rect.x - padX;
-            drawn.y = rect.y - scrollOffset + (rect.height - boxH) * 0.5f;
-            drawn.width = rect.width + 2.0f * padX;
-            drawn.height = boxH;
-            target_->FillRoundedRect(drawn, kInlineCodeRadius * zoom_,
-                                     ToColor(palette_.inlineCodeBg));
-        }
+        PaintCodeRects(RectsForRangeInBlock(
+                           block, child.srcOffset,
+                           child.srcOffset + child.srcLength),
+                       scrollOffset);
     }
 }
 
@@ -1546,6 +1553,30 @@ void MacRenderer::PaintTable(const LaidOutBlock& block, float scrollOffset) {
             float lineY =
                 y + std::max(metrics_.cellPadY,
                              (rowH - cellTextHeight) * 0.5f);
+
+            // A cell's code span gets the same wash as a paragraph
+            // span. The geometry comes from the cell's own line box,
+            // because a row centers a short cell against a taller one.
+            const TableCell& sourceCell = node.rows[r].cells[c];
+            for (const CellInlineSpan& span : sourceCell.inlineSpans) {
+                if (!span.code || span.u16End <= span.u16Start) continue;
+                uint32_t start = sourceCell.srcOffset;
+                uint32_t end = sourceCell.srcEnd;
+                if (span.u16Start < sourceCell.u16ToSrc.size()) {
+                    start = sourceCell.u16ToSrc[span.u16Start];
+                }
+                const size_t last = static_cast<size_t>(span.u16End) - 1;
+                if (last < sourceCell.u16ToSrcEnd.size()) {
+                    end = sourceCell.u16ToSrcEnd[last];
+                }
+                if (end <= start) continue;
+                std::vector<Rect> rects;
+                AppendRangeRects(cells[c].lines, cells[c].visToSrc,
+                                 cellX + metrics_.cellPadX,
+                                 lineY + scrollOffset, start, end, &rects,
+                                 cells[c].align, innerW);
+                PaintCodeRects(rects, scrollOffset);
+            }
             for (const TextLine& line : cells[c].lines) {
                 float lineX = cellX + metrics_.cellPadX;
                 if (cells[c].align == ColumnAlign::Center) {

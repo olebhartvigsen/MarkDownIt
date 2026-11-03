@@ -415,6 +415,10 @@ private:
     void PaintInlineCodeBg(const LaidOutBlock& block,
                            float scrollOffset) const;
 
+    // Draws the rounded fills behind a set of inline-code rectangles.
+    void PaintCodeRects(const std::vector<Rect>& rects,
+                        float scrollOffset) const;
+
     // Draws a laid out block. The marker is the ordered list marker for
     // a list block, and empty for every other kind.
     void PaintBlock(const LaidOutBlock& block, float scrollOffset,

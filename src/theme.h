@@ -88,16 +88,6 @@ struct LayoutMetrics {
     // wider than this are centered and capped.
     float maxContentWidth;
 
-    // The reading measure of the document column. Windows stretches
-    // to maxContentWidth, and its width modes change that number.
-    // The mac pane keeps a fixed measure because its pane always fits
-    // the window. Both numbers live here, so the platform difference
-    // is one documented field instead of a private renderer constant.
-    // The mac value stays at the old column width: the body face is
-    // smaller now, so the measure runs wider than before, but the
-    // wrap geometry in the capture-parity states is unchanged.
-    float readingWidth;
-
     // Line height multipliers (relative to font size).
     float bodyLineHeight;
     float headingLineHeight;
@@ -177,7 +167,6 @@ inline LayoutMetrics BaseMetrics() {
     m.padX = 56.0f;
     m.padTop = 32.0f;
     m.maxContentWidth = 800.0f;
-    m.readingWidth = 690.0f;
     // GitHub's markdown scale, in em multiples of the 16px body.
     // The line heights are the CSS line-height values, not a
     // multiplier of the font's natural box: 16px body at 1.5, a
@@ -234,7 +223,6 @@ inline LayoutMetrics ScaleMetrics(const LayoutMetrics& base, float zoom) {
     m.padX *= zoom;
     m.padTop *= zoom;
     m.maxContentWidth *= zoom;
-    m.readingWidth *= zoom;
     m.paraGap *= zoom;
     m.headingGapBefore *= zoom;
     m.headingGapAfter *= zoom;

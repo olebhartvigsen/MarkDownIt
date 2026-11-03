@@ -45,6 +45,13 @@ TEST(Outline, OffsetIsTheHeadingStartInSource) {
     EXPECT_EQ(12u, items[1].offset);
 }
 
+TEST(Outline, ThePreambleBelongsToTheFirstHeading) {
+    Document doc = Parse("intro\n\n# Title\n");
+    std::vector<OutlineItem> items = CollectHeadings(doc);
+    ASSERT_EQ(1u, items.size());
+    EXPECT_EQ(0, ItemIndexForOffset(items, 0));
+}
+
 TEST(Outline, SkipsNonHeadingBlocks) {
     Document doc = Parse(
         "plain\n\n- list\n\n> quote\n\n    indented code\n");

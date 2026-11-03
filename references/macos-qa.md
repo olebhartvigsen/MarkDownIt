@@ -431,8 +431,8 @@ loop that now runs on every build.
   collapse in src/blockspacing.h.
 - Deliberate differences: links keep a static underline, code has no syntax
   colouring, tables use equal columns that fit the measure instead of content
-  widths with horizontal scroll, and the mac column stays at 690 DIP so the
-  capture-parity wrap geometry is unchanged.
+  widths with horizontal scroll, and the mac column follows the available
+  window width instead of a fixed 690 DIP measure.
 - Screenshot: not captured locally. The CI doc, code and table states are the
   ones to review.
 - Status: local renderer tests green apart from the four known stub-engine
