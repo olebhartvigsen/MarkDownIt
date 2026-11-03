@@ -86,12 +86,14 @@ public:
     }
 
     // The scroll place moved. The platform layer calls it from its
-    // own clip-view notification, so a reader watching the viewport
-    // (the outline) can follow (outline spec 19).
-    void SetScrollChangedHandler(std::function<void()> handler) {
+    // own clip-view notification. `programmatic` is true when the app
+    // asked for the scroll (an outline jump, a find result); a reader
+    // scroll leaves it false, so the outline can follow the viewport
+    // even while the caret is still on screen (outline spec 19).
+    void SetScrollChangedHandler(std::function<void(bool)> handler) {
         scrollChanged_ = handler;
     }
-    void NotifyScrollChanged();
+    void NotifyScrollChanged(bool programmatic);
 
     // Scrolls the place of the offset into view, so the outline pane
     // can jump to a heading.
@@ -102,6 +104,8 @@ public:
     // platforms can frame the same content.
     void ScrollToOffsetPlaced(uint32_t offset, float drop);
     float scrollOffset() const { return scrollOffset_; }
+    // Whether the app itself is moving the viewport right now.
+    bool programmaticScroll() const { return programmaticScroll_; }
 
     // Whether the caret is inside the visible band right now. The
     // outline keeps the caret's section highlighted only while the
@@ -254,7 +258,9 @@ private:
     float contentWidth_ = 0.0f;
     float documentHeight_ = 0.0f;
     float scrollOffset_ = 0.0f;
-    std::function<void()> scrollChanged_;
+    // True while the app itself is moving the viewport.
+    bool programmaticScroll_ = false;
+    std::function<void(bool)> scrollChanged_;
     // The platform layer's scroll request.
     std::function<void(float)> scrollTo_;
     // The platform layer's layout request.

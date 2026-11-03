@@ -142,6 +142,9 @@ NSMenu* BuildMainMenu() {
         [fileMenu addItemWithTitle:@"Save As\u2026"
                             action:@selector(saveDocumentAs:)
                      keyEquivalent:@"S"];
+        [fileMenu addItemWithTitle:@"Share\u2026"
+                            action:@selector(shareDocument:)
+                     keyEquivalent:@""];
         [fileMenu addItem:[NSMenuItem separatorItem]];
 
         // The office commands sit in their own menu, the way the other

@@ -182,6 +182,19 @@ public:
     virtual void FillRoundedRect(const Rect& rect, float radius,
                                  const Color& color) = 0;
 
+    // Fills a rectangle with only the named ends rounded. A wrapped
+    // inline code span uses it: the first fragment keeps the left cap,
+    // the last keeps the right, and the fragments between them are
+    // square, so the background reads as one run and not as a row of
+    // pills with a gap at every line break.
+    virtual void FillRoundedRectSides(const Rect& rect, float radius,
+                                      const Color& color, bool roundLeft,
+                                      bool roundRight) {
+        (void)roundLeft;
+        (void)roundRight;
+        FillRoundedRect(rect, radius, color);
+    }
+
     // Strokes a rectangle with a one point line.
     virtual void StrokeRect(const Rect& rect, const Color& color,
                             float lineWidth) = 0;

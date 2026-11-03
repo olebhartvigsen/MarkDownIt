@@ -106,6 +106,11 @@ bool OpenExternalUrl(const std::string& url) {
 }
 - (instancetype)init;
 - (void)OpenPath:(const std::string&)path;
+// The outline's active heading: the caret's section, or the reading
+// line when followViewport is set.
+- (void)outlineActiveRefresh:(BOOL)followViewport;
+// The system share sheet for the current document.
+- (void)shareDocument:(id)sender;
 // The QA walk: the states the launch smoke photographs.
 - (void)runQAStates:(NSString*)list;
 - (void)qaStep:(NSArray<NSString*>*)states at:(NSUInteger)index;
@@ -263,6 +268,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // closed, and the frame save there must not touch a released
     // window. The settings window already opts out of the default.
     [window_ setReleasedWhenClosed:NO];
+    // The window is tabbable and keeps the tab bar visible even with
+    // one document, so the bar is a stable part of the window instead
+    // of appearing only when a second window joins the group.
+    [window_ setTabbingMode:NSWindowTabbingModePreferred];
+    [window_ setTabbingIdentifier:@"MarkDownItDocument"];
     // The window keeps the system's own appearance: the document
     // palette is resolved from the system's semantic colours, so the
     // chrome and the document both belong to Light Mode or Dark Mode
@@ -354,7 +364,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The active heading follows the caret, and the pane scrolls
         // it into view when the caret enters another section (outline
         // spec 6 and 6.1).
-        [self outlineActiveRefresh];
+        [self outlineActiveRefresh:NO];
     });
 
     // A click on a heading puts the caret there and scrolls it into
@@ -371,9 +381,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // Scrolling moves the highlight when the caret is out of view,
     // so reading through a long document keeps the pane in step
     // (outline spec 19).
-    content_->SetScrollChangedHandler([self] {
+    content_->SetScrollChangedHandler([self](bool programmatic) {
         if (!outlineVisible_) return;
-        [self outlineActiveRefresh];
+        // A reader's scroll follows the reading line even while the
+        // caret is still on screen; an app-driven jump keeps the
+        // caret's section.
+        [self outlineActiveRefresh:!programmatic];
     });
 
     // The find bar sits at the bottom of the window, the one strip
@@ -575,11 +588,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [clip scrollToPoint:NSMakePoint(0.0, 0.0)];
         [scrollView_ reflectScrolledClipView:clip];
         [self toolbarSync];
-        [self outlineActiveRefresh];
+        [self outlineActiveRefresh:NO];
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"outline"]) {
         [self applyOutlineVisible:YES];
-        [self outlineActiveRefresh];
+        [self outlineActiveRefresh:NO];
     } else if ([state isEqualToString:@"settings"]) {
         // The Settings window is a surface of its own; it stays up
         // for its picture and the walk quits with it open.
@@ -655,7 +668,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         CollectHeadings(app_->GetDocument());
     if (index < 0 || index >= static_cast<int>(items.size())) return;
     content_->ScrollToOffsetPlaced(items[index].offset, drop);
-    [self outlineActiveRefresh];
+    [self outlineActiveRefresh:NO];
     [view_ setNeedsDisplay:YES];
 }
 
@@ -666,7 +679,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     NSClipView* clip = [scrollView_ contentView];
     [clip scrollToPoint:NSMakePoint(0.0, 0.0)];
     [scrollView_ reflectScrolledClipView:clip];
-    [self outlineActiveRefresh];
+    [self outlineActiveRefresh:NO];
     [view_ setNeedsDisplay:YES];
 }
 
@@ -737,6 +750,23 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     (void)notification;
     [self saveWindowFrame];
     windowFrameSaved_ = YES;
+}
+
+// A live resize always lays out at the new width. The clip view
+// usually posts its own change, but AppKit can coalesce it during a
+// drag; the explicit path keeps the text column following the window.
+- (void)windowDidResize:(NSNotification*)notification {
+    (void)notification;
+    if (!scrollView_ || !content_) return;
+    NSClipView* clip = [scrollView_ contentView];
+    if (!clip) return;
+
+    const NSRect clipBounds = [clip bounds];
+    content_->SetSize(static_cast<float>(clipBounds.size.width),
+                      static_cast<float>(clipBounds.size.height));
+    content_->SetScrollOffset(static_cast<float>(clipBounds.origin.y));
+    [self outlineLayout];
+    [view_ setNeedsDisplay:YES];
 }
 
 - (NSApplicationTerminateReply)applicationShouldTerminate:
@@ -840,6 +870,36 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 }
 - (void)saveDocument:(id)sender { (void)sender; [self OnSave]; }
 - (void)saveDocumentAs:(id)sender { (void)sender; [self OnSaveAs]; }
+- (void)shareDocument:(id)sender {
+    (void)sender;
+    if (!app_ || app_->WelcomeMode()) return;
+
+    // Share the file when there is one, the buffer text when the
+    // document is still untitled.
+    NSMutableArray* items = [NSMutableArray array];
+    if (!app_->filePath().empty()) {
+        NSString* path =
+            [NSString stringWithUTF8String:app_->filePath().c_str()];
+        if (path) [items addObject:[NSURL fileURLWithPath:path]];
+    } else {
+        NSString* text =
+            [NSString stringWithUTF8String:app_->sourceText().c_str()];
+        if (text) [items addObject:text];
+    }
+    if ([items count] == 0) return;
+
+    NSSharingServicePicker* picker =
+        [[NSSharingServicePicker alloc] initWithItems:items];
+    NSView* anchor = container_ ?: view_;
+    const NSRect bounds = [anchor bounds];
+    // The picker hangs from the top trailing corner, where the share
+    // item lands in the toolbar.
+    const NSRect rect = NSMakeRect(NSMaxX(bounds) - 24.0,
+                                   NSMaxY(bounds) - 8.0, 1.0, 1.0);
+    [picker showRelativeToRect:rect
+                        ofView:anchor
+                preferredEdge:NSRectEdgeMinY];
+}
 - (void)closeDocument:(id)sender { (void)sender; [self OnClose]; }
 - (void)importWord:(id)sender { (void)sender; [self OnImportWord]; }
 - (void)importPdf:(id)sender { (void)sender; [self OnImportPdf]; }
@@ -938,6 +998,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                            ? @"Exit Full Screen"
                            : @"Enter Full Screen"];
         return YES;
+    }
+    if ([item action] == @selector(shareDocument:)) {
+        return !app_->WelcomeMode();
     }
     if ([item action] == @selector(editMode:)) {
         // A checked item shows which mode the document is in.
@@ -1642,7 +1705,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                 [button setTitle:(app_->Editing() ? @"Done" : @"Edit")];
             }
         } else if ([identifier isEqualToString:@"MdSave"] ||
-                   [identifier isEqualToString:@"MdFind"]) {
+                   [identifier isEqualToString:@"MdFind"] ||
+                   [identifier isEqualToString:@"MdShare"]) {
             [item setEnabled:!app_->WelcomeMode()];
         } else if ([identifier isEqualToString:@"MdUndo"]) {
             [item setEnabled:(!app_->WelcomeMode() &&
@@ -1668,13 +1732,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // The caret moved: the active heading follows it, and the pane scrolls
 // it into view when another section was entered (outline spec 6.1).
 //
-// The caret's section owns the highlight while the caret is on
-// screen. Once the caret has been scrolled out of view, the reading
-// line takes over, so scrolling updates the highlight the way the
-// outline spec asks (19). It is the rule the Windows window applies.
-- (void)outlineActiveRefresh {
+// The caret's section owns the highlight while the reader works in
+// that section. A reader's scroll takes the reading line instead,
+// even while the caret is still on screen, so the pane shows where
+// the reader is looking; an app-driven jump keeps the caret's section
+// (outline spec 19).
+- (void)outlineActiveRefresh:(BOOL)followViewport {
     uint32_t offset = app_->selection().Start();
-    if (!content_->CaretIsOnScreen()) {
+    if (followViewport || !content_->CaretIsOnScreen()) {
         const uint32_t probe = content_->ViewportProbeOffset();
         if (probe != UINT32_MAX) offset = probe;
     }
@@ -1697,7 +1762,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     if (outlinePane_->TakeListChanged()) {
         [outlineView_ refreshToolTips];
     }
-    [self outlineActiveRefresh];
+    [self outlineActiveRefresh:NO];
 }
 
 - (void)OnToggleOutline {

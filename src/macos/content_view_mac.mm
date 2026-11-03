@@ -227,8 +227,12 @@ void ContentView::Relayout() {
     contentWidth_ = renderer_.contentWidth();
 
     // The platform layer follows: its document view takes the
-    // content's size, so the scrollers span the whole document.
+    // content's size, so the scrollers span the whole document. The
+    // clamp inside that callback is ours, not a reader's scroll, so
+    // the outline keeps the caret's section while the layout settles.
+    programmaticScroll_ = true;
     if (layoutChanged_) layoutChanged_();
+    programmaticScroll_ = false;
 }
 
 void ContentView::SetWelcomeFiles(const std::vector<RecentFile>& files) {
@@ -324,17 +328,21 @@ void ContentView::ScrollToOffsetPlaced(uint32_t offset, float drop) {
     if (!renderer_.YForOffset(offset, y)) return;
 
     // The scrolling itself belongs to the platform layer, so the
-    // scrollers follow along.
+    // scrollers follow along. Mark it as ours: the outline keeps the
+    // caret's section when a heading is jumped to, instead of
+    // treating the jump as a reader scroll.
     const float target = y - drop;
+    programmaticScroll_ = true;
     if (scrollTo_) scrollTo_(target < 0.0f ? 0.0f : target);
+    programmaticScroll_ = false;
 }
 
 float ContentView::zoom() const {
     return renderer_.zoom();
 }
 
-void ContentView::NotifyScrollChanged() {
-    if (scrollChanged_) scrollChanged_();
+void ContentView::NotifyScrollChanged(bool programmatic) {
+    if (scrollChanged_) scrollChanged_(programmatic);
 }
 
 bool ContentView::CaretIsOnScreen() const {
@@ -346,8 +354,38 @@ bool ContentView::CaretIsOnScreen() const {
 
 uint32_t ContentView::ViewportProbeOffset() const {
     // The reading line, a quarter down the viewport, at the middle
-    // of the text column (outline spec 19 and 21).
-    return HitTestPoint(width_ * 0.5f, scrollOffset_ + viewHeight() * 0.25f);
+    // of the text column (outline spec 19 and 21). A table, an image
+    // or a gap can own that exact point, so a few positions across
+    // the viewport are tried before the probe gives up; otherwise a
+    // scroll over a wide table left the outline behind.
+    if (documentHeight_ <= 0.0f) return UINT32_MAX;
+
+    // A document shorter than the window has no scroll range to
+    // sample, so the reading line is a quarter down the document
+    // instead. Without this a short page put the highlight on its
+    // last heading while the reader was still at the top.
+    const bool shortDocument = documentHeight_ < viewHeight();
+    const float base = shortDocument ? 0.0f : scrollOffset_;
+    const float span = shortDocument ? documentHeight_ : viewHeight();
+    const float yFractions[] = {0.25f, 0.5f, 0.75f};
+    const float xFractions[] = {0.5f, 0.35f, 0.65f};
+    for (float yf : yFractions) {
+        const float y = base + span * yf;
+        if (y >= documentHeight_) break;
+        for (float xf : xFractions) {
+            const uint32_t offset = HitTestPoint(width_ * xf, y);
+            if (offset != UINT32_MAX) return offset;
+        }
+    }
+
+    // At the bottom the viewport can sit past the last block; the
+    // last drawn point still names the section the reader is in.
+    const float y = documentHeight_ - 1.0f;
+    for (float xf : xFractions) {
+        const uint32_t offset = HitTestPoint(width_ * xf, y);
+        if (offset != UINT32_MAX) return offset;
+    }
+    return UINT32_MAX;
 }
 
 uint32_t ContentView::HitTestPoint(float x, float y) const {
@@ -731,7 +769,7 @@ static const CGFloat kPinchStepMagnification = 0.1;
     content_->SetSize(static_cast<float>(clipBounds.size.width),
                       static_cast<float>(clipBounds.size.height));
     content_->SetScrollOffset(static_cast<float>(clipBounds.origin.y));
-    content_->NotifyScrollChanged();
+    content_->NotifyScrollChanged(content_->programmaticScroll());
     [self setNeedsDisplay:YES];
 }
 

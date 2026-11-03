@@ -16,6 +16,7 @@
 #import "toolbar_mac.h"
 
 static NSString* const kIdSave = @"MdSave";
+static NSString* const kIdShare = @"MdShare";
 static NSString* const kIdUndo = @"MdUndo";
 static NSString* const kIdRedo = @"MdRedo";
 static NSString* const kIdFind = @"MdFind";
@@ -52,7 +53,7 @@ static NSString* const kIdOutline = @"MdOutline";
 }
 
 + (NSArray<NSString*>*)defaultItemIdentifiers {
-    return @[ kIdSave, kIdUndo, kIdRedo, kIdFind,
+    return @[ kIdSave, kIdShare, kIdUndo, kIdRedo, kIdFind,
               NSToolbarFlexibleSpaceItemIdentifier, kIdEditMode, kIdOutline ];
 }
 
@@ -123,6 +124,13 @@ static NSString* const kIdOutline = @"MdOutline";
                                   label:@"Save"
                                     tip:@"Save the document"
                                  action:@selector(saveDocument:)];
+    }
+    if ([itemIdentifier isEqualToString:kIdShare]) {
+        return [self itemWithIdentifier:kIdShare
+                                 symbol:@"square.and.arrow.up"
+                                  label:@"Share"
+                                    tip:@"Share the document"
+                                 action:@selector(shareDocument:)];
     }
     if ([itemIdentifier isEqualToString:kIdUndo]) {
         return [self itemWithIdentifier:kIdUndo

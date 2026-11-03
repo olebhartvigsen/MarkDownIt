@@ -62,6 +62,70 @@ public:
         CGContextRestoreGState(context_);
     }
 
+    void FillRoundedRectSides(const Rect& rect, float radius,
+                              const Color& color, bool roundLeft,
+                              bool roundRight) override {
+        if (radius <= 0.0f || (!roundLeft && !roundRight)) {
+            FillRect(rect, color);
+            return;
+        }
+        if (roundLeft && roundRight) {
+            FillRoundedRect(rect, radius, color);
+            return;
+        }
+
+        const CGRect bounds = CGRectMake(rect.x, rect.y, rect.width,
+                                         rect.height);
+        const CGFloat r =
+            std::min<CGFloat>(radius, std::min(bounds.size.width,
+                                               bounds.size.height) * 0.5f);
+        const CGFloat left = CGRectGetMinX(bounds);
+        const CGFloat right = CGRectGetMaxX(bounds);
+        const CGFloat top = CGRectGetMinY(bounds);
+        const CGFloat bottom = CGRectGetMaxY(bounds);
+        const CGFloat half = static_cast<CGFloat>(kPi) * 0.5f;
+        const CGFloat full = static_cast<CGFloat>(kPi);
+
+        // One path, filled once: overlapping strips and corner
+        // circles darken a translucent fill at the seams.
+        CGContextSaveGState(context_);
+        CGContextSetRGBFillColor(context_, color.r, color.g, color.b, color.a);
+        CGMutablePathRef path = CGPathCreateMutable();
+        if (path) {
+            CGPathMoveToPoint(path, nullptr, left + (roundLeft ? r : 0.0f),
+                              top);
+            CGPathAddLineToPoint(path, nullptr,
+                                 right - (roundRight ? r : 0.0f), top);
+            if (roundRight) {
+                CGPathAddArc(path, nullptr, right - r, top + r, r, -half,
+                             0.0f, false);
+                CGPathAddLineToPoint(path, nullptr, right, bottom - r);
+                CGPathAddArc(path, nullptr, right - r, bottom - r, r, 0.0f,
+                             half, false);
+            } else {
+                CGPathAddLineToPoint(path, nullptr, right, top);
+                CGPathAddLineToPoint(path, nullptr, right, bottom);
+            }
+            CGPathAddLineToPoint(path, nullptr,
+                                 left + (roundLeft ? r : 0.0f), bottom);
+            if (roundLeft) {
+                CGPathAddArc(path, nullptr, left + r, bottom - r, r, half,
+                             full, false);
+                CGPathAddLineToPoint(path, nullptr, left, top + r);
+                CGPathAddArc(path, nullptr, left + r, top + r, r, full,
+                             full + half, false);
+            } else {
+                CGPathAddLineToPoint(path, nullptr, left, bottom);
+                CGPathAddLineToPoint(path, nullptr, left, top);
+            }
+            CGPathCloseSubpath(path);
+            CGContextAddPath(context_, path);
+            CGContextFillPath(context_);
+            CGPathRelease(path);
+        }
+        CGContextRestoreGState(context_);
+    }
+
     void StrokeRect(const Rect& rect, const Color& color,
                     float lineWidth) override {
         CGContextSaveGState(context_);

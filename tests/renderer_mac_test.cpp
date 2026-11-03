@@ -142,6 +142,8 @@ public:
         Rect rect;
         float radius = 0.0f;
         mac::Color color;
+        bool roundLeft = true;
+        bool roundRight = true;
     };
     struct Stroke {
         float x0 = 0.0f;
@@ -175,6 +177,17 @@ public:
         fill.rect = rect;
         fill.radius = radius;
         fill.color = color;
+        fills.push_back(fill);
+    }
+    void FillRoundedRectSides(const Rect& rect, float radius,
+                              const mac::Color& color, bool roundLeft,
+                              bool roundRight) override {
+        Fill fill;
+        fill.rect = rect;
+        fill.radius = radius;
+        fill.color = color;
+        fill.roundLeft = roundLeft;
+        fill.roundRight = roundRight;
         fills.push_back(fill);
     }
     void StrokeRect(const Rect& rect, const mac::Color& color,
@@ -788,17 +801,24 @@ TEST(RendererMac, FillsTheInlineCodeBackgroundOnEveryWrappedLine) {
     ASSERT_EQ(renderer.blocks().size(), 1u);
     renderer.Render(doc, 0.0f);
 
-    std::vector<Rect> backgrounds;
+    std::vector<const RecordingTarget::Fill*> backgrounds;
     for (const RecordingTarget::Fill& fill : target.fills) {
         if (SameColor(fill.color, BasePalette().inlineCodeBg)) {
-            backgrounds.push_back(fill.rect);
+            backgrounds.push_back(&fill);
         }
     }
     // The span is wider than the measure, so the fill has to be split
     // across the lines the engine wrapped it onto.
     EXPECT_TRUE(backgrounds.size() >= 2u);
     if (backgrounds.size() >= 2u) {
-        EXPECT_TRUE(backgrounds[1].y > backgrounds[0].y);
+        EXPECT_TRUE(backgrounds[1]->rect.y > backgrounds[0]->rect.y);
+        // The run has one outer left cap and one outer right cap; a
+        // cap at every line edge was the artefact at line starts and
+        // ends.
+        EXPECT_TRUE(backgrounds.front()->roundLeft);
+        EXPECT_FALSE(backgrounds.front()->roundRight);
+        EXPECT_FALSE(backgrounds.back()->roundLeft);
+        EXPECT_TRUE(backgrounds.back()->roundRight);
     }
 }
 

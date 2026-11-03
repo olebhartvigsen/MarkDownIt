@@ -1437,18 +1437,26 @@ void MacRenderer::PaintCodeRects(const std::vector<Rect>& rects,
 
     // GitHub's inline code card: a 6px rounded fill with .4em of
     // horizontal and .2em of vertical padding around the code run.
+    // The padding and the rounded cap belong to the real start and
+    // end of the span, not to every visual line: a wrapped span is
+    // one run, so the middle fragments meet the line edges square.
     const float codeEm = metrics_.codeFontSize * kPtToDip * zoom_;
     const float padX = kInlineCodePadXRatio * codeEm;
-    for (const Rect& rect : rects) {
+    for (std::size_t i = 0; i < rects.size(); ++i) {
+        const Rect& rect = rects[i];
         if (rect.height <= 0.0f) continue;
+        const bool first = i == 0;
+        const bool last = i + 1 == rects.size();
         const float boxH = std::min(rect.height, 1.6f * codeEm);
         Rect drawn;
-        drawn.x = rect.x - padX;
+        drawn.x = rect.x - (first ? padX : 0.0f);
         drawn.y = rect.y - scrollOffset + (rect.height - boxH) * 0.5f;
-        drawn.width = rect.width + 2.0f * padX;
+        drawn.width = rect.width + (first ? padX : 0.0f) +
+                      (last ? padX : 0.0f);
         drawn.height = boxH;
-        target_->FillRoundedRect(drawn, kInlineCodeRadius * zoom_,
-                                 ToColor(palette_.inlineCodeBg));
+        target_->FillRoundedRectSides(drawn, kInlineCodeRadius * zoom_,
+                                      ToColor(palette_.inlineCodeBg),
+                                      first, last);
     }
 }
 

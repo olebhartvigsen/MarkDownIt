@@ -32,8 +32,8 @@ CMAKE = os.path.join(REPO, "CMakeLists.txt")
 
 # The toolbar's deliberate set, in order. Everything else lives in the
 # menu bar.
-EXPECTED = ["MdSave", "MdUndo", "MdRedo", "MdFind", "MdEditMode",
-            "MdOutline"]
+EXPECTED = ["MdSave", "MdShare", "MdUndo", "MdRedo", "MdFind",
+            "MdEditMode", "MdOutline"]
 
 
 def fail(message):

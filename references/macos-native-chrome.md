@@ -17,11 +17,12 @@ non-system control surface drawn next to the traffic lights.
 
 ## What the window wears now
 
-A standard toolbar (NSToolbar) in the title bar, six items:
+A standard toolbar (NSToolbar) in the title bar, seven items:
 
 | Item | Symbol | Action | Also reachable |
 | --- | --- | --- | --- |
 | Save | square.and.arrow.down | saveDocument: | File menu, Cmd+S |
+| Share | square.and.arrow.up | shareDocument: | File menu |
 | Undo | arrow.uturn.backward | undo: | Edit menu, Cmd+Z |
 | Redo | arrow.uturn.forward | redo: | Edit menu, Shift+Cmd+Z |
 | Find | magnifyingglass | findDocument: | Edit menu, Cmd+F |
@@ -40,6 +41,11 @@ The window wears the standard title bar. The title is the document
 name, the folder rides as the subtitle, and the represented file gives
 the title its icon. There is no titlebar accessory and no painted
 surface anywhere in the toolbar.
+
+The window is tabbable and prefers the tab bar, so the bar stays
+visible with a single document instead of appearing only after a
+second window joins the group. The bar is AppKit's own; the app draws
+no tab strip.
 
 Every symbol is drawn by AppKit through imageWithSystemSymbolName:, so
 the toolbar follows the system appearance, the user's accent colour,
