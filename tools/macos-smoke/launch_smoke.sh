@@ -88,6 +88,29 @@ fi
 
 echo "launch smoke: launched, drew its window, quit, no crash traced"
 
+# The close path: the window is closed the way a person closes it, and
+# the app quits through the last-window route. This is where the frame
+# is saved while the window is still alive; reading it after the close
+# was the reported CTD.
+rm -f "$LOG"
+MARKDOWNIT_CLOSE_SMOKE=1 "$BIN" >/dev/null 2>&1 &
+PID=$!
+for _ in $(seq 1 80); do
+    kill -0 "$PID" 2>/dev/null || break
+    sleep 0.25
+done
+if kill -0 "$PID" 2>/dev/null; then
+    kill -9 "$PID" 2>/dev/null
+    echo "launch smoke FAILED: the app did not quit after its window closed"
+    exit 1
+fi
+if grep -q '\*\*\* crash' "$LOG" 2>/dev/null; then
+    echo "launch smoke FAILED: a crash was traced while closing the window"
+    tail -60 "$LOG"
+    exit 1
+fi
+echo "launch smoke: closed the window, quit, no crash traced"
+
 # The QA walk: the app opens the showcase document and steps through
 # its states by itself, announcing each one in the trace. The watcher
 # here photographs the window on every announcement, so the CI run

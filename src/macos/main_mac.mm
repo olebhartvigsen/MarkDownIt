@@ -88,6 +88,9 @@ bool OpenExternalUrl(const std::string& url) {
     bool outlineVisible_;
     mac::MacSettings settings_;
     NSWindow* window_;
+    // Set when windowWillClose saved the frame, so the terminate path
+    // does not read a window that AppKit has already taken down.
+    BOOL windowFrameSaved_;
     NSScrollView* scrollView_;
     MdContentView* view_;
     float zoom_;
@@ -200,6 +203,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The pane fits the window with a margin on the mac; the
         // width modes belong to the Windows build.
         contentWidthMode_ = 3;
+        windowFrameSaved_ = NO;
     }
     return self;
 }
@@ -254,6 +258,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // The window wears the standard title bar; the document name
     // goes on it through refreshWindowTitle, with the file icon.
     [window_ setMinSize:NSMakeSize(480, 320)];
+    // The delegate owns the window for the whole run. The last-window
+    // close path calls applicationWillTerminate after the window has
+    // closed, and the frame save there must not touch a released
+    // window. The settings window already opts out of the default.
+    [window_ setReleasedWhenClosed:NO];
     // The window keeps the system's own appearance: the document
     // palette is resolved from the system's semantic colours, so the
     // chrome and the document both belong to Light Mode or Dark Mode
@@ -456,6 +465,19 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         if ([argument hasPrefix:@"-"]) continue;
         [self OpenPath:[argument UTF8String]];
         break;
+    }
+
+    // The close smoke: close the window the way a person does, so the
+    // last-window terminate path is exercised in CI. A signal would
+    // never run windowWillClose or applicationWillTerminate.
+    const char* closeSmoke = getenv("MARKDOWNIT_CLOSE_SMOKE");
+    if (closeSmoke && *closeSmoke) {
+        dispatch_after(
+            dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
+            dispatch_get_main_queue(), ^{
+                [window_ performClose:nil];
+            });
+        return;
     }
 
     // The QA walk: with MARKDOWNIT_QA_STATES set, the app steps
@@ -708,6 +730,15 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     return [self confirmDiscardChanges];
 }
 
+// The window is still alive here, so this is the safe place to read
+// its frame. The terminate path can run after the close, and it skips
+// the save once this one has happened.
+- (void)windowWillClose:(NSNotification*)notification {
+    (void)notification;
+    [self saveWindowFrame];
+    windowFrameSaved_ = YES;
+}
+
 - (NSApplicationTerminateReply)applicationShouldTerminate:
     (NSApplication*)sender {
     (void)sender;
@@ -721,7 +752,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     app_->SetOpenFileHandler(nullptr);
     (void)notification;
     settings_.settings().zoomFactor = zoom_;
-    [self saveWindowFrame];
+    // A closed window saved its frame in windowWillClose. Reading it
+    // here after the close was the crash.
+    if (!windowFrameSaved_) {
+        [self saveWindowFrame];
+    }
     settings_.Save();
 }
 
