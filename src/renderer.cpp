@@ -1,4 +1,5 @@
 #include "renderer.h"
+#include "blockspacing.h"
 
 #include <d2d1.h>
 #include <dwrite.h>
@@ -15,6 +16,13 @@
 #include <cmath>
 
 static const float kPtToDip = 96.0f / 72.0f;
+
+// The room GitHub gives an H1 or H2 under its text: .3em of padding
+// plus a 1px border. Other levels reserve nothing.
+static float HeadingRuleExtra(const LayoutMetrics& m, int level, float zoom) {
+    if (level < 1 || level > 2) return 0.0f;
+    return 0.3f * m.headingSizes[level] * kPtToDip * zoom + 1.0f * zoom;
+}
 
 // Fill the selection highlight for a UTF-16 range of a text layout.
 //
@@ -426,41 +434,6 @@ LayoutMetrics Renderer::ComputeMetrics() const {
     return m;
 }
 
-float Renderer::GapForTransition(BlockKind prev, BlockKind cur,
-                                  BlockKind next, int curDepth,
-                                  int prevDepth, int curHeading,
-                                  const LayoutMetrics& m) {
-    // Heading spacing: large gap before, small gap after.
-    if (cur == BlockKind::Heading) {
-        if (prev == BlockKind::Heading) return m.headingGapAfter;
-        // Gap before a heading (between previous block and this heading).
-        // The smaller headings take the minor gap, the way the
-        // typography plan asks (Task 5, step 1).
-        if (curHeading >= 3) return m.headingGapBeforeMinor;
-        return m.headingGapBefore;
-    }
-    if (prev == BlockKind::Heading) return m.headingGapAfter;
-
-    // List spacing: tight between items, generous around the list.
-    if (cur == BlockKind::List && prev == BlockKind::List) {
-        return m.listItemGap;
-    }
-    if (cur == BlockKind::List && prev != BlockKind::List) {
-        return m.listGap;
-    }
-    if (prev == BlockKind::List && cur != BlockKind::List) {
-        return m.listGap;
-    }
-
-    // Code block spacing.
-    if (cur == BlockKind::CodeBlock || prev == BlockKind::CodeBlock) {
-        return m.codeBlockGap;
-    }
-
-    // Default paragraph gap.
-    return m.paraGap;
-}
-
 bool Renderer::Init(IDWriteFactory* dw) {
     if (!dw) return false;
 
@@ -475,9 +448,18 @@ bool Renderer::Init(IDWriteFactory* dw) {
         base.bodyFontSize * kPtToDip * zoom_,
         L"", &body_fmt_);
     if (FAILED(hr) || !body_fmt_) return false;
-    body_fmt_->SetLineSpacing(
-        DWRITE_LINE_SPACING_METHOD_PROPORTIONAL,
-        base.bodyLineHeight, 1.24f);
+    auto applyLineBox = [this](IDWriteTextFormat* fmt, float lineHeightEm) {
+        float natural = 0.0f;
+        float ascent = 0.0f;
+        if (!fmt || !FontBoxOf(fmt, &natural, &ascent) || natural <= 0.0f) {
+            return;
+        }
+        const float height = lineHeightEm * fmt->GetFontSize();
+        const float baseline = (height - natural) * 0.5f + ascent;
+        fmt->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, height,
+                            baseline);
+    };
+    applyLineBox(body_fmt_, base.bodyLineHeight);
 
     // Flowchart coordinates are kept in canonical DIPs. This format is
     // deliberately unzoomed, so zoom is applied once by the drawing path.
@@ -489,9 +471,10 @@ bool Renderer::Init(IDWriteFactory* dw) {
         base.bodyFontSize * kPtToDip,
         L"", &mermaid_measure_fmt_);
     if (SUCCEEDED(hr) && mermaid_measure_fmt_) {
+        // The diagram labels keep their own 1.3 line box: the document's
+        // 1.5 is a reading measure, not a diagram metric.
         mermaid_measure_fmt_->SetLineSpacing(
-            DWRITE_LINE_SPACING_METHOD_PROPORTIONAL,
-            base.bodyLineHeight, 1.24f);
+            DWRITE_LINE_SPACING_METHOD_PROPORTIONAL, 1.3f, 1.24f);
     }
 
     // Sequence autonumber digits: mermaid renders 12px sans-serif.
@@ -504,7 +487,8 @@ bool Renderer::Init(IDWriteFactory* dw) {
         L"", &num_fmt_);
     if (FAILED(hr)) num_fmt_ = nullptr;
 
-    // Code format: Cascadia Mono, 12.5pt (falls back to Consolas).
+    // Code format: Cascadia Mono at GitHub's 85% size (falls back to
+    // Consolas).
     hr = dw->CreateTextFormat(
         base.codeFont, nullptr,
         DWRITE_FONT_WEIGHT_REGULAR,
@@ -513,9 +497,7 @@ bool Renderer::Init(IDWriteFactory* dw) {
         base.codeFontSize * kPtToDip * zoom_,
         L"", &code_fmt_);
     if (FAILED(hr) || !code_fmt_) return false;
-    code_fmt_->SetLineSpacing(
-        DWRITE_LINE_SPACING_METHOD_PROPORTIONAL,
-        base.codeLineHeight, 1.0f);
+    applyLineBox(code_fmt_, base.codeLineHeight);
 
     // Heading formats: Segoe UI Semibold, scaled by level.
     for (int lvl = 1; lvl <= 6; ++lvl) {
@@ -527,9 +509,7 @@ bool Renderer::Init(IDWriteFactory* dw) {
             base.headingSizes[lvl] * kPtToDip * zoom_,
             L"", &heading_fmt_[lvl]);
         if (FAILED(hr) || !heading_fmt_[lvl]) return false;
-        heading_fmt_[lvl]->SetLineSpacing(
-            DWRITE_LINE_SPACING_METHOD_PROPORTIONAL,
-            base.headingLineHeight, 1.0f);
+        applyLineBox(heading_fmt_[lvl], base.headingLineHeight);
     }
 
     return true;
@@ -558,11 +538,9 @@ void Renderer::Release() {
 // from the rendered line box, which additionally carries the app's
 // line-spacing multiplier. A zero result means the metrics could
 // not be resolved; the caller then falls back to the rendered line.
-float Renderer::LineHeightOf(IDWriteTextFormat* fmt) {
-    if (!fmt) return 0.0f;
-    auto hit = lineHeightCache_.find(fmt);
-    if (hit != lineHeightCache_.end()) return hit->second;
-    float dip = 0.0f;
+bool Renderer::FontBoxOf(IDWriteTextFormat* fmt, float* natural,
+                         float* ascent) {
+    if (!fmt) return false;
     IDWriteFontCollection* coll = nullptr;
     if (SUCCEEDED(fmt->GetFontCollection(&coll)) && coll) {
         IDWriteFontFamily* family = nullptr;
@@ -585,7 +563,15 @@ float Renderer::LineHeightOf(IDWriteTextFormat* fmt) {
                 const float design =
                     static_cast<float>(m.designUnitsPerEm);
                 if (design > 0.0f && units > 0.0f) {
-                    dip = fmt->GetFontSize() * units / design;
+                    const float size = fmt->GetFontSize();
+                    if (natural) *natural = size * units / design;
+                    if (ascent) {
+                        *ascent = size * static_cast<float>(m.ascent) / design;
+                    }
+                    font->Release();
+                    family->Release();
+                    coll->Release();
+                    return true;
                 }
                 font->Release();
             }
@@ -593,8 +579,17 @@ float Renderer::LineHeightOf(IDWriteTextFormat* fmt) {
         }
         coll->Release();
     }
-    lineHeightCache_[fmt] = dip;
-    return dip;
+    return false;
+}
+
+float Renderer::LineHeightOf(IDWriteTextFormat* fmt) {
+    if (!fmt) return 0.0f;
+    auto hit = lineHeightCache_.find(fmt);
+    if (hit != lineHeightCache_.end()) return hit->second;
+    float natural = 0.0f;
+    if (!FontBoxOf(fmt, &natural, nullptr)) natural = 0.0f;
+    lineHeightCache_[fmt] = natural;
+    return natural;
 }
 
 void Renderer::SetZoom(float z) {
@@ -662,8 +657,6 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
     ID2D1SolidColorBrush* bgBrush = nullptr;
     rt->CreateSolidColorBrush(pal.codeBg, &bgBrush);
-    ID2D1SolidColorBrush* borderBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.codeBorder, &borderBrush);
     ID2D1SolidColorBrush* codeBrush = nullptr;
     rt->CreateSolidColorBrush(pal.textPrimary, &codeBrush);
 
@@ -671,7 +664,6 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (codeWidth <= 0) {
         outH = 0.0f;
         if (bgBrush) bgBrush->Release();
-        if (borderBrush) borderBrush->Release();
         if (codeBrush) codeBrush->Release();
         return;
     }
@@ -683,7 +675,6 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         code_fmt_, codeWidth, 1.0e9f, &layout);
     if (FAILED(hr) || !layout) {
         if (bgBrush) bgBrush->Release();
-        if (borderBrush) borderBrush->Release();
         if (codeBrush) codeBrush->Release();
         outH = 0.0f;
         return;
@@ -700,10 +691,8 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         D2D1_ROUNDED_RECT rrect = D2D1::RoundedRect(bgRect,
             m.codeRadius, m.codeRadius);
         rt->FillRoundedRectangle(rrect, bgBrush);
-        rt->DrawRoundedRectangle(rrect, borderBrush, 1.0f);
     } else {
         rt->FillRectangle(bgRect, bgBrush);
-        rt->DrawRectangle(bgRect, borderBrush, 1.0f);
     }
 
     // Search match highlights, under the text and under the selection so a
@@ -849,7 +838,6 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         layout->Release();
     }
     if (bgBrush) bgBrush->Release();
-    if (borderBrush) borderBrush->Release();
     if (codeBrush) codeBrush->Release();
     outH = blockH;
 }
@@ -860,9 +848,7 @@ void Renderer::DrawThematicBreak(ID2D1RenderTarget* rt, float x, float y,
     ID2D1SolidColorBrush* lineBrush = nullptr;
     rt->CreateSolidColorBrush(pal.rule, &lineBrush);
     if (!lineBrush) return;
-    D2D1_POINT_2F p1 = D2D1::Point2F(x, y);
-    D2D1_POINT_2F p2 = D2D1::Point2F(x + width, y);
-    rt->DrawLine(p1, p2, lineBrush, 1.0f);
+    rt->FillRectangle(D2D1::RectF(x, y, x + width, y + 4.0f * zoom_), lineBrush);
     lineBrush->Release();
 }
 
@@ -896,7 +882,8 @@ float Renderer::MeasureTable(IDWriteFactory* dw, const Node& n,
                 if (row.cells[c].isHeader) {
                     DWRITE_TEXT_RANGE r = {0,
                         static_cast<UINT32>(text16.size())};
-                    layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, r);
+                    // GitHub asks for 600, not the full bold trait.
+                    layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, r);
                 }
                 for (const auto& sp : row.cells[c].inlineSpans) {
                     DWRITE_TEXT_RANGE r = {sp.u16Start,
@@ -905,8 +892,11 @@ float Renderer::MeasureTable(IDWriteFactory* dw, const Node& n,
                         layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, r);
                     if (sp.italic)
                         layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, r);
-                    if (sp.code)
-                        layout->SetFontFamilyName(L"Consolas", r);
+                    if (sp.code) {
+                        layout->SetFontFamilyName(m.codeFont, r);
+                        layout->SetFontSize(
+                            m.codeFontSize * kPtToDip * zoom_, r);
+                    }
                     if (sp.strike)
                         layout->SetStrikethrough(true, r);
                 }
@@ -916,7 +906,9 @@ float Renderer::MeasureTable(IDWriteFactory* dw, const Node& n,
                 layout->Release();
             }
         }
-        if (rowH == 0.0f) rowH = 20.0f;
+        if (rowH == 0.0f) {
+            rowH = m.bodyLineHeight * m.bodyFontSize * kPtToDip * zoom_;
+        }
         totalH += rowH + 2.0f * m.cellPadY;
     }
     return totalH;
@@ -933,8 +925,6 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
     ID2D1SolidColorBrush* textBrush = nullptr;
     rt->CreateSolidColorBrush(pal.textPrimary, &textBrush);
-    ID2D1SolidColorBrush* headerBg = nullptr;
-    rt->CreateSolidColorBrush(pal.tableHeaderBg, &headerBg);
     ID2D1SolidColorBrush* altBg = nullptr;
     rt->CreateSolidColorBrush(pal.tableRowAlt, &altBg);
     ID2D1SolidColorBrush* borderBrush = nullptr;
@@ -966,7 +956,6 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (cols == 0) {
         outH = 0.0f;
         if (textBrush) textBrush->Release();
-        if (headerBg) headerBg->Release();
         if (altBg) altBg->Release();
         if (borderBrush) borderBrush->Release();
         if (selBrush) selBrush->Release();
@@ -997,7 +986,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 if (row.cells[c].isHeader) {
                     DWRITE_TEXT_RANGE r = {0,
                         static_cast<UINT32>(text16.size())};
-                    layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, r);
+                    layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, r);
                 }
                 for (const auto& sp : row.cells[c].inlineSpans) {
                     DWRITE_TEXT_RANGE r = {sp.u16Start,
@@ -1006,8 +995,11 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                         layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, r);
                     if (sp.italic)
                         layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, r);
-                    if (sp.code)
-                        layout->SetFontFamilyName(L"Consolas", r);
+                    if (sp.code) {
+                        layout->SetFontFamilyName(m.codeFont, r);
+                        layout->SetFontSize(
+                            m.codeFontSize * kPtToDip * zoom_, r);
+                    }
                     if (sp.strike)
                         layout->SetStrikethrough(true, r);
                 }
@@ -1017,15 +1009,15 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 layout->Release();
             }
         }
-        if (rowH == 0.0f) rowH = 20.0f;
+        if (rowH == 0.0f) {
+            rowH = m.bodyLineHeight * m.bodyFontSize * kPtToDip * zoom_;
+        }
         rowH += 2.0f * m.cellPadY;
 
         bool isHeaderRow = (!row.cells.empty() && row.cells[0].isHeader);
-        if (isHeaderRow && headerBg) {
-            D2D1_RECT_F bg = D2D1::RectF(x, curY, x + width, curY + rowH);
-            rt->FillRectangle(bg, headerBg);
-        } else if (!isHeaderRow && altBg && (ri % 2 == 0)) {
-            // Zebra striping on even body rows.
+        if (!isHeaderRow && altBg && (ri % 2 == 1)) {
+            // GitHub's zebra: the first body row is the first muted
+            // one, because the header is tr 1.
             D2D1_RECT_F bg = D2D1::RectF(x, curY, x + width, curY + rowH);
             rt->FillRectangle(bg, altBg);
         }
@@ -1073,7 +1065,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 if (row.cells[c].isHeader) {
                     DWRITE_TEXT_RANGE r = {0,
                         static_cast<UINT32>(text16.size())};
-                    layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, r);
+                    layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, r);
                 }
                 // Apply inline formatting spans (bold, italic, code, strike).
                 for (const auto& sp : row.cells[c].inlineSpans) {
@@ -1084,8 +1076,10 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     if (sp.italic)
                         layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, r);
                     if (sp.code) {
-                        // Use a monospace font for inline code spans.
-                        layout->SetFontFamilyName(L"Consolas", r);
+                        // GitHub's 85% code size inside a table cell.
+                        layout->SetFontFamilyName(m.codeFont, r);
+                        layout->SetFontSize(
+                            m.codeFontSize * kPtToDip * zoom_, r);
                     }
                     if (sp.strike)
                         layout->SetStrikethrough(true, r);
@@ -1245,7 +1239,6 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     }
 
     if (textBrush) textBrush->Release();
-    if (headerBg) headerBg->Release();
     if (altBg) altBg->Release();
     if (borderBrush) borderBrush->Release();
     if (selBrush) selBrush->Release();
@@ -1324,7 +1317,7 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
             }
             }
         } else if (n.block == BlockKind::ThematicBreak) {
-            blockH = 12.0f;
+            blockH = 4.0f * zoom_;
         } else if (n.block == BlockKind::MermaidFlowchart) {
             blockH = MeasureMermaidBlock(dw, n, drawW);
         } else if (n.block == BlockKind::MermaidPie) {
@@ -1372,9 +1365,7 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
                     imageH += h + m.paraGap;
                 }
                 if (text32.empty() && imageH == 0.0f) {
-                    curY += GapForTransition(prevBlock, n.block,
-                        BlockKind::Paragraph, n.depth, prevDepth,
-                        (n.block == BlockKind::Heading ? n.level : 0), m);
+                    curY += GapForTransition(prevBlock, n.block, m);
                     prevBlock = n.block;
                     prevDepth = n.depth;
                     continue;
@@ -1400,18 +1391,14 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
                         layout->Release();
                     }
                 }
-                // The air the H1 and the H2 keep under their text: the
-                // rule that used to sit in it is gone, the rhythm is not.
+                // GitHub's H1/H2 rule room: .3em of padding plus 1px.
                 if (n.block == BlockKind::Heading && n.level <= 2) {
-                    blockH += m.ruleGapAbove + m.ruleGapBelow;
+                    blockH += HeadingRuleExtra(m, n.level, zoom_);
                 }
             }
         }
 
-        float gap = GapForTransition(prevBlock, n.block,
-                                    BlockKind::Paragraph,
-                                    n.depth, prevDepth,
-                        (n.block == BlockKind::Heading ? n.level : 0), m);
+        float gap = GapForTransition(prevBlock, n.block, m);
         // First block: no gap before it.
         bool isFirst = (prevBlock == BlockKind::Paragraph &&
                         prevDepth == -1 && curY == m.padTop + topOffsetDip);
@@ -1526,10 +1513,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                         prevDepth == -1 &&
                         curY == m.padTop + topOffsetDip);
         if (!isFirst) {
-            gap = GapForTransition(prevBlock, n.block,
-                                   BlockKind::Paragraph,
-                                   n.depth, prevDepth,
-                        (n.block == BlockKind::Heading ? n.level : 0), m);
+            gap = GapForTransition(prevBlock, n.block, m);
         }
         curY += gap;
 
@@ -1564,8 +1548,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
 
         if (n.block == BlockKind::ThematicBreak) {
-            DrawThematicBreak(rt, drawX, curY + 6.0f, drawW);
-            curY += 12.0f;
+            DrawThematicBreak(rt, drawX, curY, drawW);
+            curY += 4.0f * zoom_;
             prevBlock = n.block;
             prevDepth = n.depth;
             continue;
@@ -1894,6 +1878,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         ID2D1SolidColorBrush* codeBg = nullptr;
         rt->CreateSolidColorBrush(pal.inlineCodeBg, &codeBg);
         if (codeBg) {
+            const float codeEm = m.codeFontSize * kPtToDip * zoom_;
+            const float codePadX = 0.4f * codeEm;
             for (const auto& s : spans) {
                 if (s.code) {
                     UINT32 hitCount = 0;
@@ -1902,11 +1888,17 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                         textX, curY, htm, 64, &hitCount);
                     if (SUCCEEDED(hrHT)) {
                         for (UINT32 h = 0; h < hitCount && h < 64; ++h) {
+                            const float boxH =
+                                std::min(htm[h].height, 1.6f * codeEm);
                             D2D1_RECT_F r = D2D1::RectF(
-                                htm[h].left - 2.0f, htm[h].top,
-                                htm[h].left + htm[h].width + 2.0f,
-                                htm[h].top + htm[h].height);
-                            rt->FillRectangle(r, codeBg);
+                                htm[h].left - codePadX,
+                                htm[h].top + (htm[h].height - boxH) * 0.5f,
+                                htm[h].left + htm[h].width + codePadX,
+                                htm[h].top + (htm[h].height - boxH) * 0.5f +
+                                    boxH);
+                            D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(
+                                r, 6.0f * zoom_, 6.0f * zoom_);
+                            rt->FillRoundedRectangle(rr, codeBg);
                         }
                     }
                 }
@@ -1919,9 +1911,9 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             // check when the item is done. The shape carries the state,
             // not the colour. The box is centred on the first line, so
             // it sits where the bullet of a plain item sits.
-            float box = markerW - 6.0f;
-            if (box > 11.0f) box = 11.0f;
-            if (box < 8.0f) box = 8.0f;
+            float box = markerW - 3.0f;
+            if (box > 13.0f) box = 13.0f;
+            if (box < 9.0f) box = 9.0f;
             float lineH = 21.0f;
             DWRITE_LINE_METRICS lineMetrics;
             UINT32 lineCount = 0;
@@ -2032,9 +2024,18 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             rt->DrawLine(p1, p2, quoteBorder, m.quoteBarWidth);
         }
 
-        // The H1 and the H2 wear no rule: hierarchy comes from size,
-        // weight and spacing on both platforms. The air the rule sat in
-        // stays reserved by the layout above.
+        // GitHub's hairline under an H1 or H2, .3em below the text.
+        if (n.block == BlockKind::Heading && n.level >= 1 && n.level <= 2) {
+            const float rulePad =
+                HeadingRuleExtra(m, n.level, zoom_) - 1.0f;
+            const float ruleY = curY + metrics.height + rulePad;
+            if (quoteBorder) {
+                rt->DrawLine(
+                    D2D1::Point2F(textX, ruleY),
+                    D2D1::Point2F(textX + (textW > 0 ? textW : drawW), ruleY),
+                    quoteBorder, 1.0f);
+            }
+        }
 
         if (cache_) {
             BlockLayout bl;
@@ -2057,11 +2058,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             layout->Release();
         }
 
-        // Advance curY past the text AND the H1/H2 underline gap.
-        curY += blankAdvance;
-        if (n.block == BlockKind::Heading && n.level <= 2) {
-            curY += m.ruleGapAbove + m.ruleGapBelow;
-        }
+        // Advance curY past the text and the H1/H2 rule room.
+        curY += blankAdvance + HeadingRuleExtra(m, n.level, zoom_);
         prevBlock = n.block;
         prevDepth = n.depth;
     }

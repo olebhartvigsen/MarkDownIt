@@ -17,12 +17,25 @@
 #include <cstdio>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace mac {
 
 // The entry the cache keeps for one source.
 struct ImageCache::Entry {
+    ~Entry() {
+        if (!image.handle) return;
+        if (image.kind == ImageKind::Raster) {
+            CGImageRelease(static_cast<CGImageRef>(image.handle));
+        } else {
+            // The handle holds a reference the bridge took, so it is
+            // given back here. The bridge hands the object over, and
+            // ARC takes it from there.
+            (void)CFBridgingRelease(image.handle);
+        }
+    }
+
     // The source, as it was asked for.
     std::string source;
     // The decoded image, or null when it is missing or still on its
@@ -160,24 +173,11 @@ bool IsVectorSource(const std::string& source) {
 
 ImageCache::ImageCache() = default;
 
-ImageCache::~ImageCache() {
-    for (Entry* entry : entries_) {
-        if (entry->image.handle) {
-            if (entry->image.kind == ImageKind::Raster) {
-                CGImageRelease(static_cast<CGImageRef>(entry->image.handle));
-            } else {
-                // The handle holds a reference the bridge took, so it is
-                // given back here. The bridge hands the object over, and
-                // ARC takes it from there.
-                (void)CFBridgingRelease(entry->image.handle);
-            }
-        }
-        delete entry;
-    }
-}
+ImageCache::~ImageCache() = default;
 
 ImageCache::Entry* ImageCache::Find(const std::string& source) {
-    for (Entry* entry : entries_) {
+    for (const auto& owner : entries_) {
+        Entry* entry = owner.get();
         if (entry->source == source) {
             return entry;
         }
@@ -211,11 +211,11 @@ BitmapHandle ImageCache::Get(const std::string& source) {
     // A local file is read the first time it is asked for.
     const std::string data = ReadLocalFile(source);
     if (!entry) {
-        entry = new Entry();
-        entry->source = source;
-        entries_.push_back(entry);
+        auto owner = std::make_unique<Entry>();
+        owner->source = source;
+        entry = owner.get();
+        entries_.push_back(std::move(owner));
         if (entries_.size() > kMaxCachedImages) {
-            delete entries_.front();
             entries_.erase(entries_.begin());
         }
     }
@@ -255,11 +255,11 @@ void ImageCache::Prefetch(const std::string& source) {
             return;
         }
         if (!entry) {
-            entry = new Entry();
-            entry->source = source;
-            entries_.push_back(entry);
+            auto owner = std::make_unique<Entry>();
+            owner->source = source;
+            entry = owner.get();
+            entries_.push_back(std::move(owner));
             if (entries_.size() > kMaxCachedImages) {
-                delete entries_.front();
                 entries_.erase(entries_.begin());
             }
         }

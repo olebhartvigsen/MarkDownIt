@@ -418,6 +418,26 @@ loop that now runs on every build.
   the padding and the column at both window sizes.
 - Status: fixed in 1ded61a, 9547e1c and 225ced0 (CI run 41511699355).
 
+### The GitHub document profile (Nov 2)
+
+- The document style now follows GitHub's markdown rendering: 16px body at
+  1.5, 13.6px code at 1.45, the 2 / 1.5 / 1.25 / 1 / .875 / .85 em heading
+  scale, collapsed 1rem and 1.5rem margins, a 4px hr, a 1px rule under H1 and
+  H2, a borderless 6px code card, rounded inline code spans, and a full 1px
+  table grid with a white header and the stripe on the first body row.
+- The mac keeps San Francisco and Menlo and derives its slots from AppKit's
+  semantic colours, so Dark Mode still works. Windows keeps Segoe UI and the
+  fixed palette. Both platforms use the same metrics and the same margin
+  collapse in src/blockspacing.h.
+- Deliberate differences: links keep a static underline, code has no syntax
+  colouring, tables use equal columns that fit the measure instead of content
+  widths with horizontal scroll, and the mac column stays at 690 DIP so the
+  capture-parity wrap geometry is unchanged.
+- Screenshot: not captured locally. The CI doc, code and table states are the
+  ones to review.
+- Status: local renderer tests green apart from the four known stub-engine
+  StepsSkipTheHiddenMarkers failures; CI pending.
+
 <!--
 Entry format:
 

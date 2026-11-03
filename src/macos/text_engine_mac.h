@@ -2,6 +2,7 @@
 
 // The Core Text implementation of the mac TextEngine seam.
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -52,7 +53,7 @@ public:
 
 private:
     struct Impl;
-    Impl* impl_;
+    std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace mac

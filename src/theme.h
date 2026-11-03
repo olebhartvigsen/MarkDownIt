@@ -88,6 +88,16 @@ struct LayoutMetrics {
     // wider than this are centered and capped.
     float maxContentWidth;
 
+    // The reading measure of the document column. Windows stretches
+    // to maxContentWidth, and its width modes change that number.
+    // The mac pane keeps a fixed measure because its pane always fits
+    // the window. Both numbers live here, so the platform difference
+    // is one documented field instead of a private renderer constant.
+    // The mac value stays at the old column width: the body face is
+    // smaller now, so the measure runs wider than before, but the
+    // wrap geometry in the capture-parity states is unchanged.
+    float readingWidth;
+
     // Line height multipliers (relative to font size).
     float bodyLineHeight;
     float headingLineHeight;
@@ -95,8 +105,7 @@ struct LayoutMetrics {
 
     // Block spacing.
     float paraGap;
-    float headingGapBefore;       // above H1, H2
-    float headingGapBeforeMinor;  // above H3-H6
+    float headingGapBefore;       // above any heading
     float headingGapAfter;        // below any heading
     float listItemGap;            // between items in one list
     float listGap;                // around a whole list
@@ -168,37 +177,53 @@ inline LayoutMetrics BaseMetrics() {
     m.padX = 56.0f;
     m.padTop = 32.0f;
     m.maxContentWidth = 800.0f;
-    m.bodyLineHeight = 1.3f;
+    m.readingWidth = 690.0f;
+    // GitHub's markdown scale, in em multiples of the 16px body.
+    // The line heights are the CSS line-height values, not a
+    // multiplier of the font's natural box: 16px body at 1.5, a
+    // heading at 1.25 and a code line at 1.45.
+    m.bodyLineHeight = 1.5f;
     m.headingLineHeight = 1.25f;
     m.codeLineHeight = 1.45f;
+    // GitHub's collapsed vertical margins: a paragraph keeps 1rem,
+    // a heading 1.5rem above and 1rem below, a list, a quote, a
+    // table and a fenced block 1rem below and nothing above, and a
+    // thematic break 1.5rem on each side.
     m.paraGap = 16.0f;
-    m.headingGapBefore = 32.0f;
-    m.headingGapBeforeMinor = 24.0f;
-    m.headingGapAfter = 10.0f;
+    m.headingGapBefore = 24.0f;
+    m.headingGapAfter = 16.0f;
     m.listItemGap = 4.0f;
     m.listGap = 16.0f;
-    m.codeBlockGap = 18.0f;
-    m.ruleGapAbove = 8.0f;
-    m.ruleGapBelow = 20.0f;
-    m.codePad = 14.0f;
+    m.codeBlockGap = 16.0f;
+    m.ruleGapAbove = 24.0f;
+    m.ruleGapBelow = 24.0f;
+    // The fenced block's 1rem padding and 6px corner radius.
+    m.codePad = 16.0f;
     m.codeRadius = 6.0f;
+    // .25em bar plus 1em of padding at the body size.
     m.quoteIndent = 20.0f;
     m.quoteBarWidth = 4.0f;
-    m.listIndent = 28.0f;
+    // GitHub's list padding is 2em to the text. The renderer puts
+    // the marker at 1.25em and reserves a 1em marker box inside the
+    // indent, so the text edge lands at 2.25em, four DIP wider than
+    // GitHub's 2em. The extra gutter is what keeps a wrapped line
+    // clear of the bullet.
+    m.listIndent = 20.0f;
     m.markerGutter = 4.0f;
-    m.cellPadX = 12.0f;
-    // The guideline's lower bound for a cell's room above and below
-    // the text, on both platforms.
-    m.cellPadY = 10.0f;
-    m.bodyFontSize = 13.5f;
-    m.codeFontSize = 11.5f;
+    // GitHub's table cells: 6px above and below, 13px at the sides.
+    m.cellPadX = 13.0f;
+    m.cellPadY = 6.0f;
+    // GitHub's type scale in points: 16px body and 13.6px code at
+    // 96/72, and the 2 / 1.5 / 1.25 / 1 / .875 / .85 em headings.
+    m.bodyFontSize = 12.0f;
+    m.codeFontSize = 10.2f;  // 13.6 px, GitHub's 85% code size
     m.headingSizes[0] = 0.0f;
-    m.headingSizes[1] = 23.0f;
-    m.headingSizes[2] = 19.0f;
-    m.headingSizes[3] = 15.5f;
-    m.headingSizes[4] = 13.5f;
-    m.headingSizes[5] = 12.5f;
-    m.headingSizes[6] = 12.0f;
+    m.headingSizes[1] = 24.0f;
+    m.headingSizes[2] = 18.0f;
+    m.headingSizes[3] = 15.0f;
+    m.headingSizes[4] = 12.0f;
+    m.headingSizes[5] = 10.5f;
+    m.headingSizes[6] = 10.2f;
     m.bodyFont = THEME_BODY_FONT;
     m.codeFont = THEME_CODE_FONT;
     return m;
@@ -209,9 +234,9 @@ inline LayoutMetrics ScaleMetrics(const LayoutMetrics& base, float zoom) {
     m.padX *= zoom;
     m.padTop *= zoom;
     m.maxContentWidth *= zoom;
+    m.readingWidth *= zoom;
     m.paraGap *= zoom;
     m.headingGapBefore *= zoom;
-    m.headingGapBeforeMinor *= zoom;
     m.headingGapAfter *= zoom;
     m.listItemGap *= zoom;
     m.listGap *= zoom;
@@ -234,22 +259,28 @@ inline LayoutMetrics ScaleMetrics(const LayoutMetrics& base, float zoom) {
 
 inline Palette BasePalette() {
     Palette p = {};
-    p.textPrimary = MakeColor(0x24292F);
-    p.textMuted = MakeColor(0x656D76);
+    // GitHub's current markdown palette (light): the default ink, the
+    // muted ink its quote and H6 rules use, the accent link, the muted
+    // code and table surface, and the border colour that draws the
+    // tables, the code cards and the heading rules.
+    p.textPrimary = MakeColor(0x1F2328);
+    p.textMuted = MakeColor(0x59636E);
     p.heading = MakeColor(0x1F2328);
     p.link = MakeColor(0x0969DA);
     p.codeBg = MakeColor(0xF6F8FA);
-    p.codeBorder = MakeColor(0xD0D7DE);
+    p.codeBorder = MakeColor(0xD1D9E0);
     p.mermaidNodeFill = MakeColor(0xECECFF);
     p.mermaidNodeBorder = MakeColor(0x9370DB);
     p.mermaidText = MakeColor(0x333333);
     p.inlineCodeBg = MakeColor(0xEFF1F3);
-    p.quoteBar = MakeColor(0xD0D7DE);
-    p.quoteText = MakeColor(0x656D76);
-    p.rule = MakeColor(0xD8DEE4);
-    p.tableBorder = MakeColor(0xD0D7DE);
-    p.tableHeaderBg = MakeColor(0xF6F8FA);
-    p.tableRowAlt = MakeColor(0xFAFBFC);
+    p.quoteBar = MakeColor(0xD1D9E0);
+    p.quoteText = MakeColor(0x59636E);
+    p.rule = MakeColor(0xD1D9E0);
+    p.tableBorder = MakeColor(0xD1D9E0);
+    // A markdown table's header row is the page's own paper; the
+    // border and the semibold weight carry the header.
+    p.tableHeaderBg = MakeColor(0xFFFFFF);
+    p.tableRowAlt = MakeColor(0xF6F8FA);
     p.selectionBg = MakeColor(0xB4D5FE);
     p.selectionText = MakeColor(0x000000);
     p.findMatchBg = MakeColor(0xFFF6D6);

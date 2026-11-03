@@ -14,6 +14,7 @@
 // until the image shows up.
 
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -72,7 +73,7 @@ private:
     Entry* Find(const std::string& source);
 
     // The cached entries.
-    std::vector<Entry*> entries_;
+    std::vector<std::unique_ptr<Entry>> entries_;
 };
 
 }  // namespace mac

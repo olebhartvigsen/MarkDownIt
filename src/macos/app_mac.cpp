@@ -1608,8 +1608,8 @@ void App::Redo() {
     }
 }
 
-void App::SetContentView(ContentView* view) {
-    contentView_.reset(view);
+void App::SetContentView(std::unique_ptr<ContentView> view) {
+    contentView_ = std::move(view);
 }
 
 }  // namespace mac

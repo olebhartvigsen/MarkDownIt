@@ -171,3 +171,16 @@ Recorded, not changed:
 - The stored reading-width preference no longer exists on the mac by
   explicit instruction: the pane always fits the window, so the
   document's conditional honor-it clause no longer applies.
+
+## GitHub profile (Nov 2)
+
+The document style moved to GitHub's markdown rendering on both platforms.
+Where this prompt or the compliance notes above disagree with
+[github-markdown-style.md](github-markdown-style.md), the GitHub profile wins.
+The body is now 16px at 1.5, code 13.6px at 1.45, headings follow GitHub's em
+scale, H1 and H2 carry a 1px rule, tables use a full 1px grid with a white
+header, and fenced code is a borderless card. The Apple requirements that
+still hold are the system faces, semantic colours, the fixed reading column,
+the padding slide on a narrow pane, selectable text, and the Light Mode, Dark
+Mode and contrast checks. The compliance notes above describe the state before
+this change.

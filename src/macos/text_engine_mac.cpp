@@ -359,13 +359,12 @@ struct CoreTextEngine::Impl {
     std::vector<Entry> entries;
 };
 
-CoreTextEngine::CoreTextEngine() : impl_(new Impl()) {}
+CoreTextEngine::CoreTextEngine() : impl_(std::make_unique<Impl>()) {}
 
 CoreTextEngine::~CoreTextEngine() {
     for (auto& entry : impl_->entries) {
         if (entry.line) CFRelease(entry.line);
     }
-    delete impl_;
 }
 
 void CoreTextEngine::BeginLayout() {

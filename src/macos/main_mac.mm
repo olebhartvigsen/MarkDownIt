@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <memory>
 #include <string>
 
 #import <AppKit/AppKit.h>
@@ -66,7 +67,8 @@ bool OpenExternalUrl(const std::string& url) {
 @interface MdAppDelegate
     : NSObject <NSApplicationDelegate, NSWindowDelegate,
                 NSMenuDelegate, MacSettingsHost> {
-    mac::App* app_;
+    std::unique_ptr<mac::App> app_;
+    // Owned by app_; this is a non-owning observer.
     mac::ContentView* content_;
     // The window content, which holds the command strip, the find bar
     // and the document.
@@ -77,7 +79,7 @@ bool OpenExternalUrl(const std::string& url) {
     MdToolbarController* toolbar_;
 
     // The outline pane and the view that draws it.
-    mac::OutlinePane* outlinePane_;
+    std::unique_ptr<mac::OutlinePane> outlinePane_;
     MdOutlineView* outlineView_;
     NSScrollView* outlineScroll_;
     // The window material the pane sits on.
@@ -189,9 +191,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (instancetype)init {
     self = [super init];
     if (self) {
-        app_ = new mac::App();
-        content_ = new mac::ContentView(app_);
-        app_->SetContentView(content_);
+        app_ = std::make_unique<mac::App>();
+        app_->SetContentView(std::make_unique<mac::ContentView>(app_.get()));
+        content_ = app_->contentView();
         zoom_ = zoom::kDefaultZoom;
         sourceView_ = false;
         wrap_ = true;
@@ -203,8 +205,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 }
 
 - (void)dealloc {
-    // The content view belongs to the app object, so it goes with it.
-    delete app_;
+    // The app object owns the content view, so both go with app_.
 }
 
 // ---------------------------------------------------------------------------
@@ -260,7 +261,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
     // The content view goes in a scroll view, so the document scrolls
     // when it is longer than the window.
-    view_ = [[MdContentView alloc] initWithContent:content_ app:app_];
+    view_ = [[MdContentView alloc] initWithContent:content_ app:app_.get()];
     // The view applies the zoom (the wheel, a pinch and the menu all
     // go through it, so the anchor point stays put), and the window
     // keeps and saves what it landed on.
@@ -278,8 +279,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
     // The outline pane sits to the left of the document, in a split
     // view, so the reader can drag the divider between them.
-    outlinePane_ = new mac::OutlinePane();
-    outlineView_ = [[MdOutlineView alloc] initWithPane:outlinePane_];
+    outlinePane_ = std::make_unique<mac::OutlinePane>();
+    outlineView_ = [[MdOutlineView alloc] initWithPane:outlinePane_.get()];
     outlineVisible_ = settings_.settings().outlineVisible;
 
     // The pane scrolls on its own, so a long table of contents stays
@@ -317,7 +318,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // Locals, so the block does not capture self: the handler lives on
     // the content view, and a self capture would make the two keep
     // each other alive.
-    mac::OutlinePane* themePane = outlinePane_;
+    mac::OutlinePane* themePane = outlinePane_.get();
     NSView* themePaneView = outlineView_;
     __weak MdContentView* themeContentView = view_;
     [view_ setThemeChangedHandler:^{

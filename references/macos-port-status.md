@@ -396,6 +396,11 @@ cannot hover a cell or press an arrow key.
 
 ## The layout, measured with the Windows numbers
 
+The GitHub profile of 2 November changed the type scale and the element
+geometry on both platforms; [github-markdown-style.md](github-markdown-style.md)
+holds the current numbers. The notes below describe the shared arithmetic
+where it still applies.
+
 `.hermes/plans/2026-08-12_105500-markdown-layout-typography.md` was
 written for the Windows renderer, and the mac renderer had answers of
 its own for most of it: one fixed gap after every block instead of the
@@ -413,33 +418,31 @@ renderer now runs the Windows arithmetic, ported from
   around it and the lines broke at other words. It converts the same
   way now, and with Selawik's matching advance widths a paragraph
   breaks at the same word on both systems.
-- **The spacing.** The gaps come from the same transition rule the
-  Windows renderer uses: a heading gets its wide gap before it and
-  its narrow gap after it, a list keeps its items tight and keeps its
-  distance from the blocks around it, and a code block keeps its
-  wider gap on both sides.
-- **The line spacing.** Every block sets its line height and its
-  baseline from the Windows numbers: the body at 1.3 and 1.24 of the
-  em, a heading at 1.25 with its baseline on the top of the line, a
-  code line at 1.45.
+- **The spacing.** The gaps come from the shared margin collapse in
+  `src/blockspacing.h`: a paragraph, a list, a quote, a table and a
+  fenced block keep 1rem below, a heading 1.5rem above and 1rem below,
+  a thematic break 1.5rem on both sides, and list items .25em apart.
+- **The line spacing.** Every block sets a CSS line box: the body at
+  1.5, a heading at 1.25, a code line at 1.45, and the glyphs are
+  centred in the box with half leading.
 - **The column.** The text column is the window width less the theme
-  padding, capped at the reading width and centered in what is left,
-  so a document sits where it sits on Windows. The cap follows the
-  width setting and the zoom.
-- **The headings.** An H1 and an H2 carry their rule again, inside
-  the room the block reserves for it, so the next block keeps the
-  same distance from the rule as it does on Windows.
+  padding, capped at the theme reading width and centered in what is
+  left, so a document sits where it sits on Windows. The mac cap is
+  fixed and follows the zoom.
+- **The headings.** An H1 and an H2 carry GitHub's hairline rule,
+  inside the room the block reserves for it, so the next block keeps
+  the same distance from the rule as it does on Windows.
 - **The quotes, the lists, the tables and the code.** A quote steps
   its bar inward with its nesting depth, a list keeps the marker
   gutter and its markers count (1., 2., 3.) across a run of items, a
-  table splits its width into equal columns and measures every row on
-  its own, a code block draws its border around the same rounded
-  outline as its fill, and an inline code span gets its own face, its
-  own size and its background.
+  table splits its width into equal columns, paints a 1px grid and
+  measures every row on its own, a code block draws a borderless 6px
+  card, and an inline code span gets its own face, 85% size and a 6px
+  background.
 - **The zoom.** The zoom scales the metrics, the fonts and the layout
-  together, and the width setting is applied in the same place. The
-  mermaid painters still get the unzoomed font, because they scale
-  their own text, the way the Windows measure format stays unzoomed.
+  together, and the fixed reading cap scales with it. The mermaid
+  painters still get the unzoomed font, because they scale their own
+  text, the way the Windows measure format stays unzoomed.
 
 Two pieces of plumbing had to move for that. The text engine keeps the
 lines of the current layout alive for the hit tester and drops them

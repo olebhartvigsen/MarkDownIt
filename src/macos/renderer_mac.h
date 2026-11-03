@@ -11,6 +11,8 @@
 // document out the same way. Only the drawing calls differ.
 
 #include <cstdint>
+#include <memory>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -74,6 +76,7 @@ struct LaidOutBlock {
     };
     struct TableLayout {
         float colW = 0.0f;
+        size_t columnCount = 0;
         std::vector<float> rowHeights;
         std::vector<std::vector<TableCellLayout>> rows;
     };
@@ -99,7 +102,9 @@ public:
     // The renderer takes the engine over. The text engine keeps only
     // its last measurement, and the hit tester needs the one the layout
     // pass made, so the diagrams cannot use the document engine.
-    void SetDiagramTextEngine(TextEngine* engine) { diagramEngine_ = engine; }
+    void SetDiagramTextEngine(std::unique_ptr<TextEngine> engine) {
+        diagramEngine_ = std::move(engine);
+    }
 
     // Sets the zoom of the document.
     //
@@ -382,12 +387,10 @@ private:
 
     // Applies the Windows line spacing to measured lines: every line is
     // as tall as heightMult times the em, and its baseline sits
-    // baselineMult times the em below the top of the line. A nonzero
-    // leadEm raises the line box to at least that many ems, the body
-    // text's reading rhythm.
+    // lineHeightEm is the CSS line-height: the line box is that many
+    // ems tall and the glyphs are centred in it with half-leading.
     void ApplyLineSpacing(std::vector<TextLine>* lines, float ptSize,
-                          float heightMult, float baselineMult,
-                          float leadEm = 0.0f) const;
+                          float lineHeightEm) const;
 
     // The side padding for a pane width: the theme's own value, sliding
     // down to a narrow-window minimum as the pane narrows.
@@ -427,7 +430,7 @@ private:
 
     // The engine the mermaid diagrams are measured with. It belongs to
     // the renderer, which deletes it.
-    TextEngine* diagramEngine_ = nullptr;
+    std::unique_ptr<TextEngine> diagramEngine_;
     RenderTarget* target_ = nullptr;
 
     // The theme metrics as given, and the ones the renderer works with

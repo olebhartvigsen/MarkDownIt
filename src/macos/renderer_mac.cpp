@@ -9,6 +9,7 @@
 // document out the same way. Only the drawing calls differ.
 
 #include "renderer_mac.h"
+#include "blockspacing.h"
 
 #include <algorithm>
 #include <cmath>
@@ -106,52 +107,20 @@ constexpr float kReadBlankLineStripDip = 4.0f;
 // same places.
 constexpr float kPtToDip = 96.0f / 72.0f;
 
-// The baseline offset inside a body line, as a multiple of the font
-// size. The Windows body format sets the same value (SetLineSpacing
-// with 1.24).
-constexpr float kBodyBaselineOffset = 1.24f;
+// The rule room under an H1 or H2: GitHub pads the heading by .3em
+// and draws a 1px border under the padding.
+constexpr float kHeadingRulePadRatio = 0.3f;
+constexpr float kHeadingRuleThickness = 1.0f;
 
-// The reading rhythm the guideline asks of the body: a line box of
-// at least 1.62 em with the system face, whose own natural box is a
-// touch tighter than the reference platform's.
-constexpr float kBodyLeadEm = 1.62f;
+// The inline code card: .4em of horizontal padding, .2em of vertical
+// padding and a 6px corner radius, the GitHub values.
+constexpr float kInlineCodePadXRatio = 0.4f;
+constexpr float kInlineCodePadYRatio = 0.2f;
+constexpr float kInlineCodeRadius = 6.0f;
 
-// The mac reading width, in DIP at zoom 1: about 74 characters of
-// body text, the range the guideline keeps a column in.
-constexpr float kMacReadingWidthDip = 690.0f;
-
-// The floor for the air between list items, in DIP at zoom 1: the
-// guideline's lower bound at the reading size.
-constexpr float kListItemGapFloorDip = 6.0f;
-
-// The gap before a block, from the block that came before it: the rules
-// and the numbers of the Windows renderer (Renderer::GapForTransition),
-// so the two platforms leave the same space between the same pair of
-// blocks.
-float GapForTransition(BlockKind prev, BlockKind cur, BlockKind next,
-                       int curDepth, int prevDepth, int curHeading,
-                       const LayoutMetrics& m) {
-    (void)next;
-    (void)curDepth;
-    (void)prevDepth;
-    if (cur == BlockKind::Heading) {
-        if (prev == BlockKind::Heading) return m.headingGapAfter;
-        // The smaller headings take the minor gap, the same rule the
-        // Windows renderer applies (typography plan Task 5, step 1).
-        if (curHeading >= 3) return m.headingGapBeforeMinor;
-        return m.headingGapBefore;
-    }
-    if (prev == BlockKind::Heading) return m.headingGapAfter;
-    if (cur == BlockKind::List && prev == BlockKind::List) {
-        return m.listItemGap;
-    }
-    if (cur == BlockKind::List && prev != BlockKind::List) return m.listGap;
-    if (prev == BlockKind::List && cur != BlockKind::List) return m.listGap;
-    if (cur == BlockKind::CodeBlock || prev == BlockKind::CodeBlock) {
-        return m.codeBlockGap;
-    }
-    return m.paraGap;
-}
+// The spacing rules are shared with the Windows renderer in
+// blockspacing.h, so the two platforms leave the same space
+// between the same pair of blocks.
 
 // A font, in the layout unit. The family override names the face a
 // heading asks for: the theme spells semibold as a family of its own,
@@ -407,7 +376,7 @@ mermaid::MermaidRender MacRenderer::MermaidRenderFor(const Node& node) const {
                     break;
                 }
                 EngineMeasureCtx ctx;
-                ctx.engine = diagramEngine_;
+                ctx.engine = diagramEngine_.get();
                 ctx.font = DiagramFontFor(node, metrics_.bodyFontSize,
                                           false, false, false);
                 auto laid = std::make_shared<mermaid::LaidOutFlowchart>(
@@ -432,11 +401,7 @@ MacRenderer::MacRenderer() {
     baseMetrics_ = BaseMetrics();
     metrics_ = ComputeMetrics();
 }
-MacRenderer::~MacRenderer() {
-    // The engine of the diagrams belongs to the renderer.
-    delete diagramEngine_;
-    diagramEngine_ = nullptr;
-}
+MacRenderer::~MacRenderer() = default;
 
 FontSpec MacRenderer::FontFor(const Node& node, float baseSize, bool bold,
                                bool italic, bool monospace,
@@ -456,24 +421,26 @@ FontSpec MacRenderer::DiagramFontFor(const Node& node, float baseSize,
 }
 
 void MacRenderer::ApplyLineSpacing(std::vector<TextLine>* lines, float ptSize,
-                                    float heightMult,
-                                    float baselineMult,
-                                    float leadEm) const {
+                                    float lineHeightEm) const {
     const float em = ptSize * kPtToDip * zoom_;
-    // The natural line box of the block's font, not the em alone: Core
-    // Text reports the same ascent, descent and leading DirectWrite
-    // does, so both platforms scale the same base and the leading
-    // differs only by what the two fonts themselves ask for. The em
-    // stays as the fallback for a block without runs.
+    // The CSS model: the line box is lineHeightEm times the font size,
+    // and the glyphs are centred in it with half-leading. The font's
+    // natural box and ascent come from Core Text, so a large face and
+    // a small one sit in their line boxes the way a browser places
+    // them rather than being pushed to the top by one fixed ratio.
     float natural = em;
+    float fontAscent = em;
     if (engine_ && !lines->empty() && !lines->front().runs.empty()) {
         const float measured =
             engine_->LineHeight(lines->front().runs.front().font);
         if (measured > 0.0f) natural = measured;
+        if (lines->front().ascent > 0.0f) fontAscent = lines->front().ascent;
     }
+    const float height = lineHeightEm * em;
+    const float ascent = (height - natural) * 0.5f + fontAscent;
     for (TextLine& line : *lines) {
-        line.height = std::max(heightMult * natural, leadEm * em);
-        line.ascent = baselineMult * natural;
+        line.height = height;
+        line.ascent = ascent;
     }
 }
 
@@ -538,11 +505,15 @@ std::vector<GlyphRun> MacRenderer::BuildCellRuns(const TableCell& cell,
 
         GlyphRun glyph;
         glyph.text = std::move(run);
-        // The windows renderer gives a cell code span the code family
-        // at the body size. A header cell and a strong span draw in
-        // the semibold face: the guideline asks a table heading for
-        // the semibold weight, not the full bold trait.
-        glyph.font = FontFor(Node{}, metrics_.bodyFontSize, false, em, code,
+        // A cell code span gets the code family at GitHub's 85% size,
+        // the same switch the Windows table makes. A header cell and a
+        // strong span draw in the semibold face: the guideline asks a
+        // table heading for the semibold weight, not the full bold
+        // trait.
+        const float cellSize =
+            code ? metrics_.codeFontSize : metrics_.bodyFontSize;
+        const bool codeBold = code && strong;
+        glyph.font = FontFor(Node{}, cellSize, codeBold, em, code,
                              strong ? THEME_BODY_FONT_SEMIBOLD : nullptr);
         glyph.r = color.r;
         glyph.g = color.g;
@@ -628,7 +599,7 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
     // end.
     const float pad = EffectivePadX(widthDip);
     const float available = widthDip - pad * 2.0f;
-    contentWidth_ = wrap_ ? std::min(available, metrics_.maxContentWidth)
+    contentWidth_ = wrap_ ? std::min(available, metrics_.readingWidth)
                           : kNoWrapContentWidthDip;
     if (contentWidth_ <= 0.0f) {
         contentWidth_ = 1.0f;
@@ -654,10 +625,7 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
         // The gap belongs to the block that follows it, and the first
         // block gets none, the same model the Windows renderer uses.
         if (!first) {
-            y += GapForTransition(prevBlock, node.block, BlockKind::Paragraph,
-                                  node.depth, prevDepth,
-                                  (node.block == BlockKind::Heading ? node.level : 0),
-                                  metrics_);
+            y += GapForTransition(prevBlock, node.block, metrics_);
         }
         first = false;
         LayoutBlock(node, originX_, contentWidth_, &y);
@@ -679,13 +647,8 @@ void MacRenderer::SetContentWidthMode(int mode) {
 
 LayoutMetrics MacRenderer::ComputeMetrics() const {
     LayoutMetrics m = ScaleMetrics(baseMetrics_, zoom_);
-    // The mac pane keeps a reading measure instead of stretching to
-    // the window: the guideline asks for a column of about 68 to 74
-    // characters, and the width modes belong to the Windows build.
-    m.maxContentWidth = kMacReadingWidthDip * zoom_;
-    // The guideline's floor for the air between list items, a touch
-    // above the theme's own gap at the reading size.
-    m.listItemGap = std::max(m.listItemGap, kListItemGapFloorDip * zoom_);
+    // The mac pane keeps the theme's reading measure instead of
+    // stretching to the window. The width modes belong to Windows.
     return m;
 }
 
@@ -736,8 +699,9 @@ float MacRenderer::ChargeForImages(LaidOutBlock* block) {
         float chargedH = 0.0f;
         if (images_.GetSize(child.url, &chargedW, &chargedH) &&
             chargedW > 0.0f && chargedH > 0.0f) {
-            const float scale =
-                std::min(contentWidth_ / chargedW, kImageMaxHeight / chargedH);
+            const float scale = std::min(
+                1.0f, std::min(contentWidth_ / chargedW,
+                               kImageMaxHeight / chargedH));
             height = chargedH * scale;
         }
         imageHeight += height + metrics_.paraGap;
@@ -780,7 +744,7 @@ void MacRenderer::LayoutSourceBlocks(float x, float width, float* y) {
     block.lines = engine_->MeasureWrapped(
         runs, width - metrics_.codePad * 2.0f, 0.0f);
     ApplyLineSpacing(&block.lines, metrics_.codeFontSize,
-                     metrics_.codeLineHeight, 1.0f);
+                     metrics_.codeLineHeight);
     for (const TextLine& line : block.lines) {
         block.height += line.height;
     }
@@ -834,16 +798,16 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
                 node, size, false, false, ToColor(headingColor), false,
                 THEME_BODY_FONT_SEMIBOLD);
             block.lines = engine_->MeasureWrapped(runs, drawW, 0.0f);
-            ApplyLineSpacing(&block.lines, size, metrics_.headingLineHeight,
-                             1.0f);
+            ApplyLineSpacing(&block.lines, size, metrics_.headingLineHeight);
             for (const TextLine& line : block.lines) {
                 block.height += line.height;
             }
-            // The air the H1 and the H2 keep under their text, the
-            // same reservation the Windows layout makes: the rule that
-            // used to sit in it is gone, the rhythm is not.
+            // GitHub's H1 and H2 carry a hairline rule under their
+            // text: .3em of padding plus a 1px border, inside the
+            // block so the following gap stays the CSS margin.
             if (level <= 2 && !block.lines.empty()) {
-                block.height += metrics_.ruleGapAbove + metrics_.ruleGapBelow;
+                block.height += kHeadingRulePadRatio * size * kPtToDip * zoom_ +
+                                kHeadingRuleThickness * zoom_;
             }
             block.height += ChargeForImages(&block);
             break;
@@ -862,8 +826,7 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
                                  ToColor(palette_.textPrimary), false);
             }
             block.lines = engine_->MeasureWrapped(runs, drawW, 0.0f);
-            ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight,
-                             kBodyBaselineOffset, kBodyLeadEm);
+            ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight);
             if (!editing_ && node.virtualEmptyParagraph) {
                 // While reading, the blank line next to a list is a
                 // thin strip: the blank lines in the source separate
@@ -921,7 +884,7 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
             block.lines = engine_->MeasureWrapped(
                 runs, drawW - metrics_.codePad * 2.0f, 0.0f);
             ApplyLineSpacing(&block.lines, metrics_.codeFontSize,
-                             metrics_.codeLineHeight, 1.0f);
+                             metrics_.codeLineHeight);
             for (const TextLine& line : block.lines) {
                 block.height += line.height;
             }
@@ -934,8 +897,7 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
             const std::vector<GlyphRun> runs = BuildRuns(
                 node, size, false, false, ToColor(palette_.quoteText), false);
             block.lines = engine_->MeasureWrapped(runs, drawW, 0.0f);
-            ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight,
-                             kBodyBaselineOffset, kBodyLeadEm);
+            ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight);
             for (const TextLine& line : block.lines) {
                 block.height += line.height;
             }
@@ -944,9 +906,8 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
         }
 
         case BlockKind::ThematicBreak: {
-            // The band the rule sits in the middle of, the same 12
-            // points the Windows layout reserves.
-            block.height = 12.0f;
+            // GitHub's hr is a .25em bar at the 16px body size.
+            block.height = 4.0f * zoom_;
             break;
         }
 
@@ -973,8 +934,7 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
                 metrics_.listIndent * 0.6f + metrics_.markerGutter;
             block.lines = engine_->MeasureWrapped(runs, drawW - markerW,
                                                   0.0f);
-            ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight,
-                             kBodyBaselineOffset, kBodyLeadEm);
+            ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight);
             for (const TextLine& line : block.lines) {
                 block.height += line.height;
             }
@@ -995,6 +955,7 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
             // The columns are equal, the width the Windows renderer
             // gives them (colW = width / cols).
             block.tableLayout.colW = drawW / static_cast<float>(columnCount);
+            block.tableLayout.columnCount = columnCount;
             const float innerW =
                 block.tableLayout.colW - 2.0f * metrics_.cellPadX;
 
@@ -1023,8 +984,7 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
                     laid.lines = engine_->MeasureWrapped(
                         runs, innerW > 0.0f ? innerW : 1.0f, 0.0f);
                     ApplyLineSpacing(&laid.lines, metrics_.bodyFontSize,
-                                     metrics_.bodyLineHeight,
-                                     kBodyBaselineOffset);
+                                     metrics_.bodyLineHeight);
                     float height = 0.0f;
                     for (const TextLine& line : laid.lines) {
                         height += line.height;
@@ -1032,9 +992,12 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
                     if (height > tallest) tallest = height;
                     cells.push_back(std::move(laid));
                 }
-                // A row with no text at all still has the Windows
-                // minimum, and every row carries the cell padding.
-                if (tallest == 0.0f) tallest = 20.0f;
+                // A row with no text at all still keeps one body
+                // line, and every row carries the cell padding.
+                if (tallest == 0.0f) {
+                    tallest = metrics_.bodyLineHeight *
+                              metrics_.bodyFontSize * kPtToDip * zoom_;
+                }
                 const float rowH = tallest + 2.0f * metrics_.cellPadY;
                 block.tableLayout.rowHeights.push_back(rowH);
                 block.tableLayout.rows.push_back(std::move(cells));
@@ -1239,14 +1202,13 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset,
 
     switch (block.kind) {
         case BlockKind::ThematicBreak: {
-            // The rule sits in the middle of the band the layout
-            // reserves for it, the same place the Windows renderer puts
-            // it.
+            // The rule is the whole block: GitHub's .25em bar, the
+            // same band the Windows renderer fills.
             Rect rect;
             rect.x = block.x;
-            rect.y = top + 6.0f;
+            rect.y = top;
             rect.width = block.width;
-            rect.height = 1.0f;
+            rect.height = 4.0f * zoom_;
             target_->FillRect(rect, ToColor(palette_.rule));
             break;
         }
@@ -1276,8 +1238,6 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset,
             bg.height = block.height;
             target_->FillRoundedRect(bg, metrics_.codeRadius,
                                      ToColor(palette_.codeBg));
-            target_->StrokeRoundedRect(bg, metrics_.codeRadius,
-                                       ToColor(palette_.codeBorder), 1.0f);
 
             PaintLines(block.lines, block.x + metrics_.codePad,
                        top + metrics_.codePad);
@@ -1323,9 +1283,9 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset,
                 // the bullet would sit: an empty box for an open task,
                 // a box with a check for a done one. The shape carries
                 // the state, not the colour.
-                float box = markerW - 6.0f;
-                if (box > 11.0f) box = 11.0f;
-                if (box < 8.0f) box = 8.0f;
+                float box = markerW - 3.0f;
+                if (box > 13.0f) box = 13.0f;
+                if (box < 9.0f) box = 9.0f;
                 const float lineH = block.lines.empty()
                                         ? metrics_.bodyFontSize
                                         : block.lines.front().height;
@@ -1389,7 +1349,7 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset,
             const float pad = mermaid::kMermaidBlockPad;
             const float availWidth =
                 block.width > 2.0f * pad ? block.width - 2.0f * pad : 0.0f;
-            PaintMermaidDiagram(diagramEngine_ ? diagramEngine_ : engine_,
+            PaintMermaidDiagram(diagramEngine_ ? diagramEngine_.get() : engine_,
                                 target_, diagram, zoom_, availWidth,
                                 block.x, top, pad, palette_,
                                 DiagramFontFor(*block.node,
@@ -1405,9 +1365,23 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset,
             PaintInlineCodeBg(block, scrollOffset);
             PaintLines(block.lines, block.x, textTop);
 
-            // The H1 and the H2 wear no rule: hierarchy comes from
-            // size, weight and spacing. The air the rule sat in stays,
-            // reserved by the layout above.
+            // GitHub's hairline under an H1 or H2, .3em below the
+            // text and inside the block the layout measured.
+            if (block.level >= 1 && block.level <= 2) {
+                float textHeight = 0.0f;
+                for (const TextLine& line : block.lines) {
+                    textHeight += line.height;
+                }
+                const float headingDip =
+                    metrics_.headingSizes[block.level] * kPtToDip * zoom_;
+                Rect rule;
+                rule.x = block.x;
+                rule.y = top + block.imagesHeight + textHeight +
+                         kHeadingRulePadRatio * headingDip;
+                rule.width = block.width;
+                rule.height = kHeadingRuleThickness * zoom_;
+                target_->FillRect(rule, ToColor(palette_.rule));
+            }
             break;
         }
     }
@@ -1463,18 +1437,23 @@ void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
                                      float scrollOffset) const {
     if (!target_ || !block.node) return;
 
-    // The background of an inline code span, behind the text and two
-    // points wider than the glyphs, the same fill the Windows renderer
-    // draws.
+    // GitHub's inline code card: a 6px rounded fill with .4em of
+    // horizontal and .2em of vertical padding around the code run.
+    const float codeEm = metrics_.codeFontSize * kPtToDip * zoom_;
+    const float padX = kInlineCodePadXRatio * codeEm;
     for (const InlineBlock& child : block.node->children) {
         if (!child.code || child.srcLength == 0) continue;
         for (const Rect& rect : RectsForRangeInBlock(
                  block, child.srcOffset, child.srcOffset + child.srcLength)) {
-            Rect drawn = rect;
-            drawn.x -= 2.0f;
-            drawn.width += 4.0f;
-            drawn.y -= scrollOffset;
-            target_->FillRect(drawn, ToColor(palette_.inlineCodeBg));
+            if (rect.height <= 0.0f) continue;
+            const float boxH = std::min(rect.height, 1.6f * codeEm);
+            Rect drawn;
+            drawn.x = rect.x - padX;
+            drawn.y = rect.y - scrollOffset + (rect.height - boxH) * 0.5f;
+            drawn.width = rect.width + 2.0f * padX;
+            drawn.height = boxH;
+            target_->FillRoundedRect(drawn, kInlineCodeRadius * zoom_,
+                                     ToColor(palette_.inlineCodeBg));
         }
     }
 }
@@ -1493,11 +1472,12 @@ void MacRenderer::PaintImages(const LaidOutBlock& block, float top,
         float imageHeight = 0.0f;
         if (images_.GetSize(url, &imageWidth, &imageHeight) &&
             imageWidth > 0.0f && imageHeight > 0.0f) {
-            // The image keeps its aspect ratio inside the column: the
-            // smaller of the column's and the height cap's scale, so a
-            // tall picture narrows instead of stretching.
-            const float scale =
-                std::min(width / imageWidth, kImageMaxHeight / imageHeight);
+            // The image keeps its aspect ratio inside the column and
+            // never grows past its own pixels: max-width is 100% in
+            // GitHub's markdown, not width 100%.
+            const float scale = std::min(
+                1.0f, std::min(width / imageWidth,
+                               kImageMaxHeight / imageHeight));
             drawnWidth = imageWidth * scale;
             height = imageHeight * scale;
         }
@@ -1530,16 +1510,16 @@ void MacRenderer::PaintTable(const LaidOutBlock& block, float scrollOffset) {
         const bool isHeaderRow = !row.cells.empty() && row.cells[0].isHeader;
         const float rowH = layout.rowHeights[r];
 
-        // The row background: the header has its own, and the body rows
-        // alternate, the same stripes the Windows renderer paints.
+        // GitHub's stripe: the header row is the page's paper, and
+        // every second body row carries the muted fill. The row index
+        // counts the header, so the first body row (r = 1) is the
+        // first muted one.
         Rect rowBg;
         rowBg.x = block.x;
         rowBg.y = y;
         rowBg.width = block.width;
         rowBg.height = rowH;
-        if (isHeaderRow) {
-            target_->FillRect(rowBg, ToColor(palette_.tableHeaderBg));
-        } else if (r % 2 == 0) {
+        if (!isHeaderRow && r % 2 == 1) {
             target_->FillRect(rowBg, ToColor(palette_.tableRowAlt));
         }
 
@@ -1580,14 +1560,36 @@ void MacRenderer::PaintTable(const LaidOutBlock& block, float scrollOffset) {
                 target_->PopClip();
             }
         }
-        // One fine line under the row: the guideline asks for row
-        // separators, not a grid, so no vertical edges are drawn.
-        Rect separator;
-        separator.x = block.x;
-        separator.y = y + rowH - 1.0f;
-        separator.width = block.width;
-        separator.height = 1.0f;
-        target_->FillRect(separator, ToColor(palette_.tableBorder));
+        // GitHub's table grid: a hairline at every cell boundary and
+        // around the table. The row's bottom edge is the next row's
+        // top edge, so one line per boundary.
+        const Color grid = ToColor(palette_.tableBorder);
+        if (r == 0) {
+            Rect top;
+            top.x = block.x;
+            top.y = y;
+            top.width = block.width;
+            top.height = 1.0f;
+            target_->FillRect(top, grid);
+        }
+        Rect bottom;
+        bottom.x = block.x;
+        bottom.y = y + rowH - 1.0f;
+        bottom.width = block.width;
+        bottom.height = 1.0f;
+        target_->FillRect(bottom, grid);
+        const size_t columns =
+            layout.columnCount > 0 ? layout.columnCount : cells.size();
+        for (size_t c = 0; c <= columns; ++c) {
+            float gx = block.x + static_cast<float>(c) * layout.colW;
+            if (c >= columns) gx = block.x + block.width - 1.0f;
+            Rect edge;
+            edge.x = gx;
+            edge.y = y;
+            edge.width = 1.0f;
+            edge.height = rowH;
+            target_->FillRect(edge, grid);
+        }
         y += rowH;
     }
 }

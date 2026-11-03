@@ -53,6 +53,10 @@ public:
     // caret, distinct from both the em size and the rendered line box
     // (the app's line spacing multiplier is deliberately excluded).
     float LineHeightOf(IDWriteTextFormat* fmt);
+
+    // The font's natural line box and ascent, in DIP, for the CSS
+    // line-height setup. False when the metrics cannot be resolved.
+    bool FontBoxOf(IDWriteTextFormat* fmt, float* natural, float* ascent);
     void SetZoom(float z);
     float GetZoom() const { return zoom_; }
     float Zoom() const { return zoom_; }  // legacy alias for GetZoom
@@ -206,10 +210,6 @@ private:
                           float x, float width);
 
     LayoutMetrics ComputeMetrics() const;
-    static float GapForTransition(BlockKind prev, BlockKind cur,
-                                  BlockKind next, int curDepth,
-                                  int prevDepth, int curHeading,
-                                  const LayoutMetrics& m);
 
     std::u16string ToUtf16(const std::u32string& s32);
 

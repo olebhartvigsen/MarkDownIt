@@ -305,6 +305,10 @@ target_compile_definitions(MarkDownIt PRIVATE
     NOMINMAX
 )
 
+if(MSVC)
+    target_compile_options(MarkDownIt PRIVATE /W4)
+endif()
+
 endif() # NOT APPLE
 
 # The linker auto-generates a manifest from the
@@ -442,6 +446,7 @@ if(BUILD_TESTS AND APPLE)
     )
     # The app layer's text engine, with its test, so the Core Text
     # measure path runs in CI and not only on real hardware.
+    target_compile_options(MarkDownIt.tests PRIVATE -Wall -Wextra -Wpedantic)
     target_sources(MarkDownIt.tests PRIVATE
         tests/text_engine_mac_test.cpp
         tests/renderer_mac_test.cpp
@@ -572,6 +577,9 @@ elseif(BUILD_TESTS)
         NOMINMAX
     )
     set_target_properties(MarkDownIt.tests PROPERTIES WIN32_EXECUTABLE OFF)
+    if(MSVC)
+        target_compile_options(MarkDownIt.tests PRIVATE /W4)
+    endif()
 endif()
 
 # ============================================================================
@@ -639,6 +647,7 @@ if(APPLE)
             ${CMAKE_SOURCE_DIR}/third_party/pdfio
     )
     target_compile_features(markdownit_core PUBLIC cxx_std_17)
+    target_compile_options(markdownit_core PRIVATE -Wall -Wextra -Wpedantic)
 
     add_executable(MarkDownItMac
         src/macos/main_mac.mm
@@ -701,6 +710,7 @@ if(APPLE)
             "-framework Vision"
     )
     target_compile_features(MarkDownItMac PRIVATE cxx_std_17)
+    target_compile_options(MarkDownItMac PRIVATE -Wall -Wextra -Wpedantic)
 
     # The version lives in the Windows resource script, so the two
     # platforms never drift apart.

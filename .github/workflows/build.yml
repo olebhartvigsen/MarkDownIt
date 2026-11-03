@@ -162,6 +162,28 @@ jobs:
       - name: Run
         run: ./build-native/MarkDownIt.tests
 
+      # A second build of the same suite with the sanitizers on. It runs
+      # in this job rather than a job of its own: the macOS runners are
+      # scarce, and a second queue slot doubles the wait. Leak detection
+      # is off because AppKit and Core Text report framework allocations
+      # that the app does not own; address and UB errors are the gate.
+      - name: Configure (sanitizers)
+        run: |
+          cmake -B build-sanitize -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_OBJCXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+
+      - name: Build (sanitizers)
+        run: cmake --build build-sanitize --target MarkDownIt.tests -j2
+
+      - name: Run (sanitizers)
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: ./build-sanitize/MarkDownIt.tests
+
   # The macOS app and the .app bundle. The bundle is uploaded so it can be
   # downloaded and run on a real Mac.
   build-macos:

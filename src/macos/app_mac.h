@@ -421,7 +421,7 @@ public:
     bool Editing() const { return editing_; }
 
     // Takes ownership of the content view, which the window creates.
-    void SetContentView(ContentView* view);
+    void SetContentView(std::unique_ptr<ContentView> view);
 
     // The source text, which is what a source view shows.
     const std::string& sourceText() const { return buffer_.Text(); }

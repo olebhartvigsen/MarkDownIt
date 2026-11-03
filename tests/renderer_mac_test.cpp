@@ -329,15 +329,27 @@ Document Doc(std::vector<Node> nodes) {
     return doc;
 }
 
-// The theme metrics the renderer starts from, and the numbers the
-// tests derive from them.
-constexpr float kPadX = 56.0f;
-constexpr float kPadTop = 32.0f;
-constexpr float kCap = 690.0f;  // the mac reading width, in DIP
+// The theme metrics the renderer starts from. The tests read the
+// numbers from the theme instead of repeating them, so a metric
+// change cannot leave an assertion behind.
+const LayoutMetrics kBase = BaseMetrics();
+const float kPadX = kBase.padX;
+const float kPadTop = kBase.padTop;
+const float kCap = kBase.readingWidth;
 constexpr float kPtToDip = 96.0f / 72.0f;
-const float kBodyEm = 13.5f * kPtToDip;   // 18
-const float kH1Em = 23.0f * kPtToDip;     // 30.667
-const float kCodeEm = 11.5f * kPtToDip;   // 15.333
+const float kBodyEm = kBase.bodyFontSize * kPtToDip;
+const float kH1Em = kBase.headingSizes[1] * kPtToDip;
+const float kCodeEm = kBase.codeFontSize * kPtToDip;
+
+bool SameColor(const mac::Color& a, const mac::Color& b) {
+    return std::fabs(a.r - b.r) < 1e-6f && std::fabs(a.g - b.g) < 1e-6f &&
+           std::fabs(a.b - b.b) < 1e-6f && std::fabs(a.a - b.a) < 1e-6f;
+}
+
+bool SameColor(const mac::Color& a, const ThemeColor& b) {
+    return std::fabs(a.r - b.r) < 1e-6f && std::fabs(a.g - b.g) < 1e-6f &&
+           std::fabs(a.b - b.b) < 1e-6f && std::fabs(a.a - b.a) < 1e-6f;
+}
 
 }  // namespace
 
@@ -372,6 +384,36 @@ TEST(RendererMac, CentersTheTextColumn) {
     EXPECT_NEAR(renderer.blocks()[0].x, kPadX, 0.01f);
 }
 
+TEST(RendererMac, KeepsTheGitHubTypeScale) {
+    // The measured GitHub values, in DIP at the default zoom. The
+    // body is 16px at 1.5, code is 85% of it at 1.45, and the six
+    // headings follow the 2 / 1.5 / 1.25 / 1 / .875 / .85 em scale.
+    const LayoutMetrics m = BaseMetrics();
+    EXPECT_NEAR(m.bodyFontSize * kPtToDip, 16.0f, 0.01f);
+    EXPECT_NEAR(m.codeFontSize * kPtToDip, 13.6f, 0.01f);
+    EXPECT_NEAR(m.headingSizes[1] * kPtToDip, 32.0f, 0.01f);
+    EXPECT_NEAR(m.headingSizes[2] * kPtToDip, 24.0f, 0.01f);
+    EXPECT_NEAR(m.headingSizes[3] * kPtToDip, 20.0f, 0.01f);
+    EXPECT_NEAR(m.headingSizes[4] * kPtToDip, 16.0f, 0.01f);
+    EXPECT_NEAR(m.headingSizes[5] * kPtToDip, 14.0f, 0.01f);
+    EXPECT_NEAR(m.headingSizes[6] * kPtToDip, 13.6f, 0.01f);
+    EXPECT_NEAR(m.bodyLineHeight, 1.5f, 0.001f);
+    EXPECT_NEAR(m.headingLineHeight, 1.25f, 0.001f);
+    EXPECT_NEAR(m.codeLineHeight, 1.45f, 0.001f);
+    EXPECT_NEAR(m.paraGap, 16.0f, 0.01f);
+    EXPECT_NEAR(m.headingGapBefore, 24.0f, 0.01f);
+    EXPECT_NEAR(m.headingGapAfter, 16.0f, 0.01f);
+    EXPECT_NEAR(m.listGap, 16.0f, 0.01f);
+    EXPECT_NEAR(m.listItemGap, 4.0f, 0.01f);
+    EXPECT_NEAR(m.codeBlockGap, 16.0f, 0.01f);
+    EXPECT_NEAR(m.ruleGapAbove, 24.0f, 0.01f);
+    EXPECT_NEAR(m.ruleGapBelow, 24.0f, 0.01f);
+    EXPECT_NEAR(m.codePad, 16.0f, 0.01f);
+    EXPECT_NEAR(m.codeRadius, 6.0f, 0.01f);
+    EXPECT_NEAR(m.cellPadX, 13.0f, 0.01f);
+    EXPECT_NEAR(m.cellPadY, 6.0f, 0.01f);
+}
+
 TEST(RendererMac, AppliesTheLineSpacingAndTheReadingLead) {
     FakeEngine engine;
     MacRenderer renderer;
@@ -383,28 +425,29 @@ TEST(RendererMac, AppliesTheLineSpacingAndTheReadingLead) {
     renderer.Measure(doc, 1400.0f);
     ASSERT_EQ(renderer.blocks().size(), 3u);
 
-    // H1: the em with the heading spacing (1.25), the baseline on the
-    // top of the line. The air the rule used to sit in stays inside the
-    // block: ruleGapAbove + ruleGapBelow.
+    // H1: GitHub's 1.25 line box, with the glyphs centred in it, plus
+    // .3em of padding and the 1px rule the heading carries.
     const LaidOutBlock& heading = renderer.blocks()[0];
     ASSERT_EQ(heading.lines.size(), 1u);
-    EXPECT_NEAR(heading.lines[0].height, kH1Em * 1.25f, 0.02f);
-    EXPECT_NEAR(heading.lines[0].ascent, kH1Em, 0.02f);
-    EXPECT_NEAR(heading.height, kH1Em * 1.25f + 28.0f, 0.02f);
+    EXPECT_NEAR(heading.lines[0].height, kH1Em * kBase.headingLineHeight, 0.02f);
+    EXPECT_NEAR(heading.lines[0].ascent,
+                (kH1Em * kBase.headingLineHeight - kH1Em) * 0.5f + kH1Em, 0.02f);
+    EXPECT_NEAR(heading.height, kH1Em * kBase.headingLineHeight + 0.3f * kH1Em + 1.0f, 0.02f);
 
-    // Body: the reading lead floor at 1.62 times the em (the probe
-    // engine's natural line box is the em itself, so the floor is what
-    // shows), the baseline at 1.24 times the em.
+    // Body: GitHub's 1.5 line box, the glyphs centred in it.
     const LaidOutBlock& body = renderer.blocks()[1];
     ASSERT_EQ(body.lines.size(), 1u);
-    EXPECT_NEAR(body.lines[0].height, kBodyEm * 1.62f, 0.02f);
-    EXPECT_NEAR(body.lines[0].ascent, kBodyEm * 1.24f, 0.02f);
+    EXPECT_NEAR(body.lines[0].height, kBodyEm * kBase.bodyLineHeight, 0.02f);
+    EXPECT_NEAR(body.lines[0].ascent,
+                (kBodyEm * kBase.bodyLineHeight - kBodyEm) * 0.5f + kBodyEm, 0.02f);
 
-    // Code: 1.45 times the em, and the padding above and below.
+    // Code: 1.45 times the 13.6px code em, plus 16px of padding on
+    // each side of the card.
     const LaidOutBlock& code = renderer.blocks()[2];
     ASSERT_EQ(code.lines.size(), 1u);
-    EXPECT_NEAR(code.lines[0].height, kCodeEm * 1.45f, 0.02f);
-    EXPECT_NEAR(code.height, kCodeEm * 1.45f + 28.0f, 0.02f);
+    EXPECT_NEAR(code.lines[0].height, kCodeEm * kBase.codeLineHeight, 0.02f);
+    EXPECT_NEAR(code.height, kCodeEm * kBase.codeLineHeight +
+                            2.0f * kBase.codePad, 0.02f);
 }
 
 TEST(RendererMac, SpacesBlocksLikeWindows) {
@@ -426,12 +469,12 @@ TEST(RendererMac, SpacesBlocksLikeWindows) {
         return blocks[i + 1].y - (blocks[i].y + blocks[i].height);
     };
     EXPECT_NEAR(gap(0), 16.0f, 0.02f);  // paragraph to paragraph
-    EXPECT_NEAR(gap(1), 32.0f, 0.02f);  // the gap before a heading
-    EXPECT_NEAR(gap(2), 10.0f, 0.02f);  // the gap after a heading
+    EXPECT_NEAR(gap(1), 24.0f, 0.02f);  // the gap before a heading
+    EXPECT_NEAR(gap(2), 16.0f, 0.02f);  // the gap after a heading
     EXPECT_NEAR(gap(3), 16.0f, 0.02f);  // the gap before a list
-    EXPECT_NEAR(gap(4), 6.0f, 0.02f);   // between two list items, the floor
+    EXPECT_NEAR(gap(4), 4.0f, 0.02f);   // between two list items
     EXPECT_NEAR(gap(5), 16.0f, 0.02f);  // the gap after a list
-    EXPECT_NEAR(gap(6), 18.0f, 0.02f);  // the gap around a code block
+    EXPECT_NEAR(gap(6), 16.0f, 0.02f);  // the gap around a code block
 }
 
 TEST(RendererMac, ScalesEverythingWithTheZoom) {
@@ -449,11 +492,11 @@ TEST(RendererMac, ScalesEverythingWithTheZoom) {
                 0.01f);
 
     // The font the engine measured with is the point size converted
-    // and zoomed: 13.5 * 4/3 * 2 = 36, and the line follows.
+    // and zoomed: 12 * 4/3 * 2 = 32, and the line follows at 1.5.
     ASSERT_TRUE(!engine.calls.empty());
     EXPECT_NEAR(engine.calls.back().size, kBodyEm * 2.0f, 0.01f);
     ASSERT_EQ(renderer.blocks()[0].lines.size(), 1u);
-    EXPECT_NEAR(renderer.blocks()[0].lines[0].height, kBodyEm * 2.0f * 1.62f,
+    EXPECT_NEAR(renderer.blocks()[0].lines[0].height, kBodyEm * 2.0f * kBase.bodyLineHeight,
                 0.02f);
 }
 
@@ -480,21 +523,69 @@ TEST(RendererMac, MeasuresTablesTheWindowsWay) {
     EXPECT_NEAR(table.width, kCap, 0.01f);
     ASSERT_EQ(table.tableLayout.rowHeights.size(), 2u);
 
-    // The cells were measured against the column width less the
-    // padding.
-    const float innerW = colW - 24.0f;
+    // The cells were measured against the column width less GitHub's
+    // 13px side padding.
+    const float innerW = colW - 2.0f * kBase.cellPadX;
     bool sawInner = false;
     for (const FakeEngine::Call& call : engine.calls) {
         if (std::fabs(call.maxWidth - innerW) < 0.01f) sawInner = true;
     }
     EXPECT_TRUE(sawInner);
 
-    const float lineH = kBodyEm * 1.3f;
-    EXPECT_NEAR(table.tableLayout.rowHeights[0], lineH + 20.0f, 0.02f);
+    const float lineH = kBodyEm * kBase.bodyLineHeight;
+    EXPECT_NEAR(table.tableLayout.rowHeights[0],
+                lineH + 2.0f * kBase.cellPadY, 0.02f);
     EXPECT_GT(table.tableLayout.rowHeights[1], table.tableLayout.rowHeights[0]);
     EXPECT_NEAR(table.height,
                 table.tableLayout.rowHeights[0] + table.tableLayout.rowHeights[1],
                 0.01f);
+}
+
+TEST(RendererMac, PaintsTheGitHubTableGrid) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    RecordingTarget target;
+    renderer.SetRenderTarget(&target);
+
+    const Document doc = Doc({Table({
+        {"h1", "h2"},
+        {"a", "b"},
+    })});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    renderer.Render(doc, 0.0f);
+
+    const LaidOutBlock& table = renderer.blocks()[0];
+    ASSERT_EQ(table.tableLayout.rowHeights.size(), 2u);
+    const Palette pal = BasePalette();
+
+    int headerFills = 0, altFills = 0, borderFills = 0;
+    for (const RecordingTarget::Fill& fill : target.fills) {
+        if (SameColor(fill.color, pal.tableHeaderBg)) ++headerFills;
+        if (SameColor(fill.color, pal.tableRowAlt)) ++altFills;
+        if (SameColor(fill.color, pal.tableBorder)) ++borderFills;
+    }
+    // GitHub's header is the page's paper, and the stripe begins on
+    // the first body row.
+    EXPECT_EQ(headerFills, 0);
+    EXPECT_EQ(altFills, 1);
+    // Two columns: three vertical edges on each of the two rows, plus
+    // the table's top edge and each row's bottom edge.
+    EXPECT_EQ(borderFills, 9);
+
+    bool sawColumnEdge = false;
+    for (const RecordingTarget::Fill& fill : target.fills) {
+        if (!SameColor(fill.color, pal.tableBorder)) continue;
+        if (std::fabs(fill.rect.x -
+                      (table.x + table.tableLayout.colW)) < 0.01f &&
+            std::fabs(fill.rect.height -
+                      table.tableLayout.rowHeights[0]) < 0.01f) {
+            sawColumnEdge = true;
+        }
+    }
+    EXPECT_TRUE(sawColumnEdge);
 }
 
 TEST(RendererMac, GivesListsTheMarkerGutter) {
@@ -514,19 +605,21 @@ TEST(RendererMac, GivesListsTheMarkerGutter) {
     const std::vector<LaidOutBlock>& blocks = renderer.blocks();
     ASSERT_EQ(blocks.size(), 3u);
 
-    // The text sits after the indent and wraps in what is left of the
-    // marker gutter.
+    // The marker sits at 1.25em; the text edge is that plus the 1em
+    // marker box the renderer reserves. Both numbers come from the
+    // theme, not from a copy of them.
+    const float markerW = kBase.listIndent * 0.6f + kBase.markerGutter;
     const float originX = (1400.0f - kCap) * 0.5f;
-    const float markerW = 28.0f * 0.6f + 4.0f;
-    EXPECT_NEAR(blocks[0].x, originX + 28.0f, 0.01f);
+    EXPECT_NEAR(blocks[0].x, originX + kBase.listIndent, 0.01f);
     ASSERT_TRUE(!engine.calls.empty());
-    EXPECT_NEAR(engine.calls[0].maxWidth, kCap - 28.0f - markerW, 0.01f);
+    EXPECT_NEAR(engine.calls[0].maxWidth,
+                kCap - kBase.listIndent - markerW, 0.01f);
 
     renderer.Render(doc, 0.0f);
     bool sawFirst = false, sawSecond = false, sawThird = false;
     for (const RecordingTarget::Text& text : target.texts) {
         if (text.text == "1. " &&
-            std::fabs(text.x - (originX + 28.0f)) < 0.01f) {
+            std::fabs(text.x - (originX + kBase.listIndent)) < 0.01f) {
             sawFirst = true;
         }
         if (text.text == "2. ") sawSecond = true;
@@ -552,7 +645,7 @@ TEST(RendererMac, GivesListsTheMarkerGutter) {
     EXPECT_EQ(ones, 2);
 }
 
-TEST(RendererMac, PaintsTheBarAndTheBreakNoRule) {
+TEST(RendererMac, PaintsTheHeadingRuleTheBarAndTheBreak) {
     FakeEngine engine;
     MacRenderer renderer;
     renderer.SetTextEngine(&engine);
@@ -572,18 +665,18 @@ TEST(RendererMac, PaintsTheBarAndTheBreakNoRule) {
     ASSERT_EQ(blocks.size(), 4u);
     renderer.Render(doc, 0.0f);
 
-    // The H1 wears no rule: no stroke spans the block under its text
-    // where the rule used to sit (ruleGapAbove below the text).
-    const float ruleY = blocks[0].y + kH1Em * 1.25f + 8.0f;
+    // The H1 wears GitHub's hairline, .3em under the text.
+    const float ruleY = blocks[0].y + kH1Em * kBase.headingLineHeight + 0.3f * kH1Em;
     bool sawRule = false;
-    for (const RecordingTarget::Stroke& stroke : target.strokes) {
-        if (std::fabs(stroke.y0 - ruleY) < 0.02f &&
-            std::fabs(stroke.x0 - blocks[0].x) < 0.01f &&
-            std::fabs(stroke.x1 - (blocks[0].x + blocks[0].width)) < 0.01f) {
+    for (const RecordingTarget::Fill& fill : target.fills) {
+        if (std::fabs(fill.rect.y - ruleY) < 0.02f &&
+            std::fabs(fill.rect.x - blocks[0].x) < 0.01f &&
+            std::fabs(fill.rect.width - blocks[0].width) < 0.01f &&
+            std::fabs(fill.rect.height - 1.0f) < 0.01f) {
             sawRule = true;
         }
     }
-    EXPECT_FALSE(sawRule);
+    EXPECT_TRUE(sawRule);
 
     // The quote bar: centered four points left of the indented text,
     // as tall as the text.
@@ -592,18 +685,18 @@ TEST(RendererMac, PaintsTheBarAndTheBreakNoRule) {
     for (const RecordingTarget::Fill& fill : target.fills) {
         if (std::fabs(fill.rect.x - barX) < 0.02f &&
             std::fabs(fill.rect.width - 4.0f) < 0.01f &&
-            std::fabs(fill.rect.height - kBodyEm * 1.62f) < 0.02f) {
+            std::fabs(fill.rect.height - kBodyEm * kBase.bodyLineHeight) < 0.02f) {
             sawBar = true;
         }
     }
     EXPECT_TRUE(sawBar);
 
-    // The thematic break: a 12 point band with the rule in the middle.
-    EXPECT_NEAR(blocks[2].height, 12.0f, 0.01f);
+    // The thematic break: GitHub's 4px bar at the top of its block.
+    EXPECT_NEAR(blocks[2].height, 4.0f, 0.01f);
     bool sawBreak = false;
     for (const RecordingTarget::Fill& fill : target.fills) {
-        if (std::fabs(fill.rect.y - (blocks[2].y + 6.0f)) < 0.02f &&
-            std::fabs(fill.rect.height - 1.0f) < 0.01f) {
+        if (std::fabs(fill.rect.y - blocks[2].y) < 0.02f &&
+            std::fabs(fill.rect.height - 4.0f) < 0.01f) {
             sawBreak = true;
         }
     }
@@ -644,10 +737,10 @@ TEST(RendererMac, FillsTheInlineCodeBackground) {
     renderer.Measure(doc, 1400.0f);
     renderer.Render(doc, 0.0f);
 
-    // The fill behind the span: the four characters of the span, two
-    // points of padding on either side.
+    // The fill behind the span: the four characters of the span plus
+    // GitHub's .4em of code padding on either side.
     const float charW = kBodyEm * 0.5f;
-    const float expectedWidth = 4.0f * charW + 4.0f;
+    const float expectedWidth = 4.0f * charW + 2.0f * 0.4f * kCodeEm;
     bool sawBackground = false;
     for (const RecordingTarget::Fill& fill : target.fills) {
         if (std::fabs(fill.rect.width - expectedWidth) < 0.05f) {
@@ -655,6 +748,32 @@ TEST(RendererMac, FillsTheInlineCodeBackground) {
         }
     }
     EXPECT_TRUE(sawBackground);
+}
+
+TEST(RendererMac, PaintsTheCodeCardWithoutABorder) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    RecordingTarget target;
+    renderer.SetRenderTarget(&target);
+
+    const Document doc = Doc({Code("x = 1")});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    renderer.Render(doc, 0.0f);
+
+    // GitHub's fenced block is a borderless 6px card.
+    EXPECT_TRUE(target.strokes.empty());
+    bool sawCard = false;
+    for (const RecordingTarget::Fill& fill : target.fills) {
+        if (SameColor(fill.color, BasePalette().codeBg) &&
+            std::fabs(fill.radius - 6.0f) < 0.01f &&
+            std::fabs(fill.rect.height - renderer.blocks()[0].height) < 0.01f) {
+            sawCard = true;
+        }
+    }
+    EXPECT_TRUE(sawCard);
 }
 
 TEST(RendererMac, UnderlinesLinks) {
@@ -687,7 +806,8 @@ TEST(RendererMac, UnderlinesLinks) {
     // points under the baseline.
     const float charW = kBodyEm * 0.5f;
     const float columnX = (1400.0f - kCap) * 0.5f;
-    const float underlineY = 32.0f + kBodyEm * 1.24f + 2.0f;
+    const float underlineY =
+        32.0f + (kBodyEm * kBase.bodyLineHeight - kBodyEm) * 0.5f + kBodyEm + 2.0f;
     bool sawUnderline = false;
     for (const RecordingTarget::Stroke& stroke : target.strokes) {
         if (std::fabs(stroke.y0 - underlineY) < 0.02f &&
@@ -764,10 +884,10 @@ TEST(RendererMac, KeepsACaretLineForABlankParagraph) {
     // sit.
     const LaidOutBlock& block = renderer.blocks()[0];
     ASSERT_EQ(block.lines.size(), 1u);
-    EXPECT_NEAR(block.height, kBodyEm * 1.62f, 0.02f);
+    EXPECT_NEAR(block.height, kBodyEm * kBase.bodyLineHeight, 0.02f);
     float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
     EXPECT_TRUE(renderer.OffsetToRect(0, &x, &y, &w, &h));
-    EXPECT_NEAR(h, kBodyEm * 1.62f, 0.02f);
+    EXPECT_NEAR(h, kBodyEm * kBase.bodyLineHeight, 0.02f);
 }
 
 TEST(RendererMac, GivesAnEmptyParagraphNoHeight) {

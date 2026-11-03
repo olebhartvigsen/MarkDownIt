@@ -21,12 +21,12 @@ Use the **system font through the platform’s font APIs**. This lets macOS sele
 
 | Markdown role | Suggested macOS text style | Treatment |
 |---|---|---|
-| H1 — document title | Large Title or Title | Largest heading; semibold or system-defined title weight |
-| H2 — main section | Title 2 | Clearly below H1; semibold |
-| H3 — subsection | Title 3 | Semibold, distinct from body text |
-| H4 — smaller section | Headline | Semibold |
-| H5 — minor heading | Headline or Subheadline | Smaller than H4; retain clear contrast with body |
-| H6 — smallest heading | Subheadline | Compact, but still distinguishable from body |
+| H1 (document title) | Large Title or Title | Largest heading; semibold or system-defined title weight |
+| H2 (main section) | Title 2 | Clearly below H1; semibold |
+| H3 (subsection) | Title 3 | Semibold, distinct from body text |
+| H4 (smaller section) | Headline | Semibold |
+| H5 (minor heading) | Headline or Subheadline | Smaller than H4; retain clear contrast with body |
+| H6 (smallest heading) | Subheadline | Compact, but still distinguishable from body |
 | Body text | Body | Regular weight and comfortable line spacing |
 | Metadata and captions | Footnote or Caption | Secondary in hierarchy, but still legible |
 | Inline and block code | Monospaced system font | Regular weight; code blocks may use a slightly smaller size than body text |
@@ -96,9 +96,30 @@ In **reading view**, hide Markdown syntax markers and show the formatted documen
 
 In **editing view**, show the source Markdown. Syntax markers can be visually quieter than the document text, while remaining readable and selectable. This is a product recommendation for Markdown apps, not a specific rule in Apple’s HIG.
 
-## 8. Final standard
+## 8. GitHub document profile
 
-A macOS-style Markdown display should feel native because it uses system typography, semantic colors, and comfortable spacing—not because it adds visual effects. Keep the document readable as the window changes size, and make hierarchy clear through type and layout.
+The app draws documents with GitHub's markdown structure on top of the Apple
+typography and colour rules above. The measurements, the platform mapping and
+the deliberate deviations live in
+[github-markdown-style.md](github-markdown-style.md).
+
+The short version:
+
+- Body 16px at 1.5, code 13.6px at 1.45, headings 2 / 1.5 / 1.25 / 1 / .875 /
+  .85 em at 1.25.
+- A paragraph keeps 1rem; a heading 1.5rem above and 1rem below; a rule 1.5rem
+  on both sides. The gaps collapse to the larger margin.
+- H1 and H2 carry a 1px rule. H6 is muted.
+- Code blocks are borderless 6px cards with 1rem padding. Inline code is a 6px
+  card with .2em and .4em padding.
+- Tables are full 1px grids with 6px 13px cells, a white header and a stripe on
+  every second body row.
+- Links keep their underline at rest, and the mac keeps AppKit's semantic
+  colours, so the text still follows Dark Mode.
+
+## 9. Final standard
+
+A macOS-style Markdown display should feel native because it uses system typography, semantic colors, and comfortable spacing, not because it adds visual effects. Keep the document readable as the window changes size, and make hierarchy clear through type and layout.
 
 ### Apple references
 

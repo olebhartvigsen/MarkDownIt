@@ -41,12 +41,12 @@ constexpr float kDefaultHeight = 700.0f;
 
 ContentView::ContentView(App* app)
     : app_(app), engine_(nullptr), target_(nullptr) {
-    engine_ = new CoreTextEngine();
+    engine_ = std::make_unique<CoreTextEngine>();
     // The diagrams are measured with an engine of their own, so the
     // measurement of the document text stays where the hit tester
     // expects it.
-    renderer_.SetDiagramTextEngine(new CoreTextEngine());
-    renderer_.SetTextEngine(engine_);
+    renderer_.SetDiagramTextEngine(std::make_unique<CoreTextEngine>());
+    renderer_.SetTextEngine(engine_.get());
     renderer_.SetTheme(BaseMetrics(), mac::SystemPalette());
     renderer_.SetStandaloneSvg(app_ && app_->IsStandaloneSvg());
     // The renderer reads the source when it normalizes a caret past a
@@ -168,10 +168,7 @@ std::vector<ContentView::AxTable> ContentView::AccessibilityTables() const {
     return tables;
 }
 
-ContentView::~ContentView() {
-    delete engine_;
-    engine_ = nullptr;
-}
+ContentView::~ContentView() = default;
 
 void ContentView::OnDocumentChanged() {
     // The document may have changed from a markdown file to a

@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -240,7 +241,7 @@ private:
     void Relayout();
 
     App* app_;
-    TextEngine* engine_;
+    std::unique_ptr<TextEngine> engine_;
     RenderTarget* target_;
     MacRenderer renderer_;
     // The welcome screen, which is shown when no document is open.
