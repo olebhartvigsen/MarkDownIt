@@ -1,10 +1,10 @@
 // The native toolbar at the top of the mac window.
 //
 // See toolbar_mac.h for why the mac build carries a toolbar instead of
-// a ribbon. The items are deliberately few: Save, Undo, Redo and Find
-// at the leading edge, then the edit-mode switch and the outline
-// toggle at the trailing edge, the arrangement document windows use.
-// Everything else lives in the menu bar.
+// a ribbon. The items are deliberately few: Save, Undo, Redo, Find and
+// Highlight at the leading edge, then the edit-mode switch and the
+// outline toggle at the trailing edge, the arrangement document
+// windows use. Everything else lives in the menu bar.
 //
 // Every symbol is a system symbol, drawn by AppKit, so the toolbar
 // follows the system appearance, the user's accent colour and the
@@ -20,6 +20,7 @@ static NSString* const kIdShare = @"MdShare";
 static NSString* const kIdUndo = @"MdUndo";
 static NSString* const kIdRedo = @"MdRedo";
 static NSString* const kIdFind = @"MdFind";
+static NSString* const kIdHighlight = @"MdHighlight";
 static NSString* const kIdEditMode = @"MdEditMode";
 static NSString* const kIdOutline = @"MdOutline";
 
@@ -53,7 +54,7 @@ static NSString* const kIdOutline = @"MdOutline";
 }
 
 + (NSArray<NSString*>*)defaultItemIdentifiers {
-    return @[ kIdSave, kIdShare, kIdUndo, kIdRedo, kIdFind,
+    return @[ kIdSave, kIdShare, kIdUndo, kIdRedo, kIdFind, kIdHighlight,
               NSToolbarFlexibleSpaceItemIdentifier, kIdEditMode, kIdOutline ];
 }
 
@@ -152,6 +153,13 @@ static NSString* const kIdOutline = @"MdOutline";
                                   label:@"Find"
                                     tip:@"Find in the document"
                                  action:@selector(findDocument:)];
+    }
+    if ([itemIdentifier isEqualToString:kIdHighlight]) {
+        return [self itemWithIdentifier:kIdHighlight
+                                 symbol:@"highlighter"
+                                  label:@"Highlight"
+                                    tip:@"Highlight the selection"
+                                 action:@selector(toggleMark:)];
     }
     if ([itemIdentifier isEqualToString:kIdOutline]) {
         return [self itemWithIdentifier:kIdOutline

@@ -17,7 +17,7 @@ non-system control surface drawn next to the traffic lights.
 
 ## What the window wears now
 
-A standard toolbar (NSToolbar) in the title bar, seven items:
+A standard toolbar (NSToolbar) in the title bar, eight items:
 
 | Item | Symbol | Action | Also reachable |
 | --- | --- | --- | --- |
@@ -26,6 +26,7 @@ A standard toolbar (NSToolbar) in the title bar, seven items:
 | Undo | arrow.uturn.backward | undo: | Edit menu, Cmd+Z |
 | Redo | arrow.uturn.forward | redo: | Edit menu, Shift+Cmd+Z |
 | Find | magnifyingglass | findDocument: | Edit menu, Cmd+F |
+| Highlight | highlighter | toggleMark: | Format menu, Shift+Cmd+H |
 | Edit switch | text, Edit or Done | editMode: | View menu, checked item |
 | Outline | sidebar.left | toggleOutline: | View menu |
 

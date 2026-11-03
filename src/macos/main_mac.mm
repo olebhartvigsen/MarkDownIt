@@ -1713,6 +1713,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             }
         } else if ([identifier isEqualToString:@"MdSave"] ||
                    [identifier isEqualToString:@"MdFind"] ||
+                   [identifier isEqualToString:@"MdHighlight"] ||
                    [identifier isEqualToString:@"MdShare"]) {
             [item setEnabled:!app_->WelcomeMode()];
         } else if ([identifier isEqualToString:@"MdUndo"]) {
