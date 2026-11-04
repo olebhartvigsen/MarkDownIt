@@ -114,6 +114,32 @@ static NSString* const kIdOutline = @"MdOutline";
     return item;
 }
 
+// The marker command is a toggle, not a one-shot action: the button
+// wears its pressed state while the selection touches a marker, the way
+// the Windows ribbon's Mark button does (highlighting spec 4 and 42).
+- (NSToolbarItem*)highlightItem {
+    NSToolbarItem* item =
+        [[NSToolbarItem alloc] initWithItemIdentifier:kIdHighlight];
+    NSImage* image = [NSImage imageWithSystemSymbolName:@"highlighter"
+                               accessibilityDescription:@"Highlight"];
+    NSButton* button = [[NSButton alloc] initWithFrame:NSZeroRect];
+    [button setButtonType:NSButtonTypeToggle];
+    [button setBezelStyle:NSBezelStyleTexturedRounded];
+    [button setBordered:YES];
+    [button setImagePosition:NSImageOnly];
+    if (image) [button setImage:image];
+    [button setTarget:_host];
+    [button setAction:@selector(toggleMark:)];
+    [button setToolTip:@"Highlight the selection"];
+    [button setAccessibilityLabel:@"Highlight"];
+    [item setView:button];
+    [item setLabel:@"Highlight"];
+    [item setPaletteLabel:@"Highlight"];
+    [item setToolTip:@"Highlight the selection"];
+    [item setAutovalidates:NO];
+    return item;
+}
+
 - (NSToolbarItem*)toolbar:(NSToolbar*)toolbar
         itemForItemIdentifier:(NSToolbarItemIdentifier)itemIdentifier
     willBeInsertedIntoToolbar:(BOOL)flag {
@@ -155,11 +181,7 @@ static NSString* const kIdOutline = @"MdOutline";
                                  action:@selector(findDocument:)];
     }
     if ([itemIdentifier isEqualToString:kIdHighlight]) {
-        return [self itemWithIdentifier:kIdHighlight
-                                 symbol:@"highlighter"
-                                  label:@"Highlight"
-                                    tip:@"Highlight the selection"
-                                 action:@selector(toggleMark:)];
+        return [self highlightItem];
     }
     if ([itemIdentifier isEqualToString:kIdOutline]) {
         return [self itemWithIdentifier:kIdOutline

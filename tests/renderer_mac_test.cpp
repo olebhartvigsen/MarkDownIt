@@ -799,6 +799,41 @@ TEST(RendererMac, PaintsInlineCodeAfterHiddenMarkers) {
     EXPECT_EQ(pills, 0);
 }
 
+TEST(RendererMac, PaintsAMarkerAboveTheCodeCardAndUnderItsText) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    RecordingTarget target;
+    renderer.SetRenderTarget(&target);
+
+    const std::string markdown = "```\nmarked code\n```\n";
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(markdown, doc));
+    renderer.Measure(doc, 400.0f);
+
+    const std::size_t start = markdown.find("marked");
+    ASSERT_NE(start, std::string::npos);
+    std::vector<TextMatch> markers;
+    markers.push_back({static_cast<uint32_t>(start), 6});
+    renderer.SetMarkers(&markers);
+    renderer.Render(doc, 0.0f);
+
+    // The code card is opaque. Its marker must be painted after the card
+    // and before the glyphs, so the wash is visible and the code stays
+    // readable (highlighting spec 8).
+    int codeCard = -1;
+    int markerFill = -1;
+    for (std::size_t i = 0; i < target.fills.size(); ++i) {
+        const RecordingTarget::Fill& fill = target.fills[i];
+        if (SameColor(fill.color, BasePalette().codeBg)) codeCard = i;
+        if (SameColor(fill.color, BasePalette().markerBg)) markerFill = i;
+    }
+    EXPECT_GE(codeCard, 0);
+    EXPECT_GE(markerFill, 0);
+    EXPECT_GT(markerFill, codeCard);
+}
+
 TEST(RendererMac, FillsTheInlineCodeBackgroundOnEveryWrappedLine) {
     FakeEngine engine;
     MacRenderer renderer;

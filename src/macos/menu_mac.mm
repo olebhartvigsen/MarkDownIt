@@ -207,6 +207,7 @@ NSMenu* BuildMainMenu() {
              {"Source View", @selector(toggleSourceView:)},
              {"Edit Mode", @selector(editMode:)},
              {"Outline", @selector(toggleOutline:)},
+             {"Show Tab Bar", @selector(toggleTabBar:)},
              {"Wrap Text", @selector(toggleWrap:)}},
             {"+", "-", "0", "", "", "O", ""});
         [viewMenu addItem:[NSMenuItem separatorItem]];

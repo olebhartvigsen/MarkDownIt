@@ -233,6 +233,14 @@ public:
     // Paints the marked ranges behind the text.
     void PaintMarkerHighlights(float scrollOffset);
 
+    // Paints the marker and search fills of a block whose own background
+    // is painted after the global layer: a code card and a table row.
+    // The fill goes over that background and under the block's text.
+    void PaintBlockHighlights(const LaidOutBlock& block, float scrollOffset);
+    void PaintTableRowHighlights(const LaidOutBlock& block, std::size_t row,
+                                 float rowTop, float rowHeight,
+                                 float scrollOffset);
+
     // The text markers, the highlights the user marked. They are drawn
     // behind the text, like the search matches.
     void SetMarkers(const std::vector<TextMatch>* markers);

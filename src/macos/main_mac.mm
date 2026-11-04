@@ -438,9 +438,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [window_ makeKeyAndOrderFront:nil];
     // A preferred window still starts with the tab bar hidden when it
     // is the only window in its group. The explicit toggle makes the
-    // bar visible for the first document too.
+    // bar visible for the first document too, unless the user hid it on
+    // a previous run. The View menu carries the same toggle, so a one
+    // document window can hide the bar without losing the document.
     NSWindowTabGroup* tabGroup = [window_ tabGroup];
-    if (tabGroup && ![tabGroup isTabBarVisible]) {
+    const BOOL tabBarHidden =
+        [[NSUserDefaults standardUserDefaults]
+            boolForKey:@"MarkDownItTabBarHidden"];
+    if (!tabBarHidden && tabGroup && ![tabGroup isTabBarVisible]) {
         [window_ toggleTabBar:nil];
     }
     // The window is up, so the toolbar is built; the commands start
@@ -757,6 +762,15 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     (void)notification;
     [self saveWindowFrame];
     windowFrameSaved_ = YES;
+    // Remember the user's tab bar choice while the tab group still
+    // exists. The next launch must not force the bar back into a window
+    // where the user hid it with a single document.
+    NSWindowTabGroup* group = [window_ tabGroup];
+    if (group) {
+        [[NSUserDefaults standardUserDefaults]
+            setBool:![group isTabBarVisible]
+             forKey:@"MarkDownItTabBarHidden"];
+    }
 }
 
 // A live resize always lays out at the new width. The clip view
@@ -945,6 +959,15 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)toggleSourceView:(id)sender { (void)sender; [self OnToggleSourceView]; }
 - (void)toggleOutline:(id)sender { (void)sender; [self OnToggleOutline]; }
 - (void)toggleWrap:(id)sender { (void)sender; [self OnToggleWrap]; }
+// The View menu's tab bar command; the native tab bar keeps its own
+// hide button as well.
+- (void)toggleTabBar:(id)sender {
+    [window_ toggleTabBar:sender];
+    NSWindowTabGroup* group = [window_ tabGroup];
+    [[NSUserDefaults standardUserDefaults]
+        setBool:(group ? ![group isTabBarVisible] : NO)
+         forKey:@"MarkDownItTabBarHidden"];
+}
 - (void)toggleBold:(id)sender { (void)sender; [self OnToggleBold]; }
 - (void)toggleStrike:(id)sender { (void)sender; [self OnToggleStrike]; }
 - (void)setHeading:(int)level { [self OnHeading:level]; }
@@ -1006,7 +1029,22 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                            : @"Enter Full Screen"];
         return YES;
     }
+    if ([item action] == @selector(toggleTabBar:)) {
+        NSWindowTabGroup* group = [window_ tabGroup];
+        [item setTitle:((group && [group isTabBarVisible])
+                            ? @"Hide Tab Bar"
+                            : @"Show Tab Bar")];
+        return YES;
+    }
     if ([item action] == @selector(shareDocument:)) {
+        return !app_->WelcomeMode();
+    }
+    if ([item action] == @selector(toggleMark:)) {
+        // The marker is one toggle, so the menu shows the state the next
+        // press will change: on when the selection touches a marker
+        // (highlighting spec 4, 6 and 42).
+        [item setState:(app_->SelectionHasMarker() ? NSControlStateValueOn
+                                                   : NSControlStateValueOff)];
         return !app_->WelcomeMode();
     }
     if ([item action] == @selector(editMode:)) {
@@ -1711,9 +1749,19 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             if ([button isKindOfClass:[NSButton class]]) {
                 [button setTitle:(app_->Editing() ? @"Done" : @"Edit")];
             }
+        } else if ([identifier isEqualToString:@"MdHighlight"]) {
+            // The marker item is a real toggle button, not a plain
+            // action: its pressed state reports whether the selection
+            // touches a marker, in view mode and in edit mode.
+            NSButton* button = (NSButton*)[item view];
+            if ([button isKindOfClass:[NSButton class]]) {
+                [button setEnabled:!app_->WelcomeMode()];
+                [button setState:(app_->SelectionHasMarker()
+                                       ? NSControlStateValueOn
+                                       : NSControlStateValueOff)];
+            }
         } else if ([identifier isEqualToString:@"MdSave"] ||
                    [identifier isEqualToString:@"MdFind"] ||
-                   [identifier isEqualToString:@"MdHighlight"] ||
                    [identifier isEqualToString:@"MdShare"]) {
             [item setEnabled:!app_->WelcomeMode()];
         } else if ([identifier isEqualToString:@"MdUndo"]) {

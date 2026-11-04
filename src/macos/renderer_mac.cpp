@@ -1158,15 +1158,44 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
 void MacRenderer::PaintMarkerHighlights(float scrollOffset) {
     if (!target_ || markers_.empty()) return;
 
+    // A code card and a table row paint their own background after this
+    // global layer. Their markers go through PaintBlockHighlights or
+    // PaintTableRowHighlights, so the wash lands above that background.
+    for (const LaidOutBlock& block : blocks_) {
+        if (block.kind == BlockKind::CodeBlock ||
+            block.kind == BlockKind::Table) {
+            continue;
+        }
+        for (const TextMatch& marker : markers_) {
+            for (const Rect& rect : RectsForRangeInBlock(
+                     block, marker.start, marker.start + marker.length)) {
+                Rect drawn = rect;
+                drawn.y -= scrollOffset;
+                target_->FillRect(drawn, ToColor(palette_.markerBg));
+
+                // The line along the bottom, so a mark never relies on
+                // colour alone.
+                Rect line;
+                line.x = drawn.x;
+                line.y = drawn.y + drawn.height - 1.0f;
+                line.width = drawn.width;
+                line.height = 1.0f;
+                target_->FillRect(line, ToColor(palette_.markerLine));
+            }
+        }
+    }
+}
+
+void MacRenderer::PaintBlockHighlights(const LaidOutBlock& block,
+                                        float scrollOffset) {
+    if (!target_ || (markers_.empty() && searchMatches_.empty())) return;
+
     for (const TextMatch& marker : markers_) {
-        for (const Rect& rect : RectsForRange(marker.start,
-                                              marker.start + marker.length)) {
+        for (const Rect& rect : RectsForRangeInBlock(
+                 block, marker.start, marker.start + marker.length)) {
             Rect drawn = rect;
             drawn.y -= scrollOffset;
             target_->FillRect(drawn, ToColor(palette_.markerBg));
-
-            // The line along the bottom, so a mark never relies on
-            // colour alone.
             Rect line;
             line.x = drawn.x;
             line.y = drawn.y + drawn.height - 1.0f;
@@ -1175,20 +1204,79 @@ void MacRenderer::PaintMarkerHighlights(float scrollOffset) {
             target_->FillRect(line, ToColor(palette_.markerLine));
         }
     }
+    for (size_t i = 0; i < searchMatches_.size(); ++i) {
+        const TextMatch& match = searchMatches_[i];
+        const bool current = static_cast<int>(i) == searchCurrent_;
+        for (const Rect& rect : RectsForRangeInBlock(
+                 block, match.start, match.start + match.length)) {
+            Rect drawn = rect;
+            drawn.y -= scrollOffset;
+            target_->FillRect(drawn, current
+                                        ? ToColor(palette_.findCurrentMatchBg)
+                                        : ToColor(palette_.findMatchBg));
+        }
+    }
+}
+
+void MacRenderer::PaintTableRowHighlights(const LaidOutBlock& block,
+                                           std::size_t row,
+                                           float rowTop, float rowHeight,
+                                           float scrollOffset) {
+    (void)row;
+    if (!target_ || (markers_.empty() && searchMatches_.empty())) return;
+
+    const auto inRow = [rowTop, rowHeight](const Rect& rect) {
+        return rect.y >= rowTop && rect.y < rowTop + rowHeight;
+    };
+    for (const TextMatch& marker : markers_) {
+        for (const Rect& rect : RectsForRangeInBlock(
+                 block, marker.start, marker.start + marker.length)) {
+            if (!inRow(rect)) continue;
+            Rect drawn = rect;
+            drawn.y -= scrollOffset;
+            target_->FillRect(drawn, ToColor(palette_.markerBg));
+            Rect line;
+            line.x = drawn.x;
+            line.y = drawn.y + drawn.height - 1.0f;
+            line.width = drawn.width;
+            line.height = 1.0f;
+            target_->FillRect(line, ToColor(palette_.markerLine));
+        }
+    }
+    for (size_t i = 0; i < searchMatches_.size(); ++i) {
+        const TextMatch& match = searchMatches_[i];
+        const bool current = static_cast<int>(i) == searchCurrent_;
+        for (const Rect& rect : RectsForRangeInBlock(
+                 block, match.start, match.start + match.length)) {
+            if (!inRow(rect)) continue;
+            Rect drawn = rect;
+            drawn.y -= scrollOffset;
+            target_->FillRect(drawn, current
+                                        ? ToColor(palette_.findCurrentMatchBg)
+                                        : ToColor(palette_.findMatchBg));
+        }
+    }
 }
 
 void MacRenderer::PaintSearchHighlights(float scrollOffset) {
     if (!target_ || searchMatches_.empty()) return;
 
-    for (size_t i = 0; i < searchMatches_.size(); ++i) {
-        const TextMatch& match = searchMatches_[i];
-        const bool current = static_cast<int>(i) == searchCurrent_;
-        for (const Rect& rect : RectsForRange(match.start,
-                                              match.start + match.length)) {
-            Rect drawn = rect;
-            drawn.y -= scrollOffset;
-            target_->FillRect(drawn, current ? ToColor(palette_.findCurrentMatchBg)
-                                              : ToColor(palette_.findMatchBg));
+    for (const LaidOutBlock& block : blocks_) {
+        if (block.kind == BlockKind::CodeBlock ||
+            block.kind == BlockKind::Table) {
+            continue;
+        }
+        for (size_t i = 0; i < searchMatches_.size(); ++i) {
+            const TextMatch& match = searchMatches_[i];
+            const bool current = static_cast<int>(i) == searchCurrent_;
+            for (const Rect& rect : RectsForRangeInBlock(
+                     block, match.start, match.start + match.length)) {
+                Rect drawn = rect;
+                drawn.y -= scrollOffset;
+                target_->FillRect(drawn, current
+                                            ? ToColor(palette_.findCurrentMatchBg)
+                                            : ToColor(palette_.findMatchBg));
+            }
         }
     }
 }
@@ -1237,6 +1325,10 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset,
             target_->FillRoundedRect(bg, metrics_.codeRadius,
                                      ToColor(palette_.codeBg));
 
+            // The code card is opaque. Its marker and search fills go
+            // over that card and under the code glyphs, not in the global
+            // layer that was painted before this block.
+            PaintBlockHighlights(block, scrollOffset);
             PaintLines(block.lines, block.x + metrics_.codePad,
                        top + metrics_.codePad);
             break;
@@ -1580,6 +1672,10 @@ void MacRenderer::PaintTable(const LaidOutBlock& block, float scrollOffset) {
         if (!isHeaderRow && r % 2 == 1) {
             target_->FillRect(rowBg, ToColor(palette_.tableRowAlt));
         }
+        // The row stripe is opaque too. Its marks go over the stripe
+        // and under the cell text, one row at a time.
+        PaintTableRowHighlights(block, r, y + scrollOffset, rowH,
+                                scrollOffset);
 
         const float innerW = layout.colW - 2.0f * metrics_.cellPadX;
         for (size_t c = 0; c < cells.size(); ++c) {
