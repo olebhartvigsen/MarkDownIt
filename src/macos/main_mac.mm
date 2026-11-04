@@ -664,10 +664,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [self qaScrollToTop];
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"wide"]) {
-        // The page in the widest window the screen takes: the column
-        // follows it with the theme padding as the only margin.
+        // Diagnostic width: the screen is 1024 points in CI, so a
+        // 2200-point content size tests the layout path past the old
+        // desktop cap even though the picture is clipped.
         if (sourceView_) [self OnToggleSourceView];
-        [window_ setContentSize:NSMakeSize(1024.0, 720.0)];
+        [window_ setContentSize:NSMakeSize(2200.0, 720.0)];
         [window_ center];
         [self qaScrollToTop];
         [view_ setNeedsDisplay:YES];
@@ -820,6 +821,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [scrollView_ setFrame:scrollFrame];
     }
     [scrollView_ tile];
+    mac::TraceMac("layout: container=%.0f split=%.0f scroll=%.0f document=%.0f",
+                  containerWidth, splitFrame.size.width,
+                  documentWidth, content_->ContentWidth());
 }
 
 - (void)windowDidResize:(NSNotification*)notification {
@@ -1852,10 +1856,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // (outline spec 19).
 - (void)outlineActiveRefresh:(BOOL)followViewport {
     uint32_t offset = app_->selection().Start();
+    uint32_t probe = UINT32_MAX;
     if (followViewport || !content_->CaretIsOnScreen()) {
-        const uint32_t probe = content_->ViewportProbeOffset();
+        probe = content_->ViewportProbeOffset();
         if (probe != UINT32_MAX) offset = probe;
     }
+    mac::TraceMac("outline: follow=%d caret=%u probe=%u active=%u width=%.0f y=%.0f",
+                  followViewport ? 1 : 0, app_->selection().Start(), probe,
+                  offset, content_->viewWidth(), content_->scrollOffset());
     outlinePane_->SetCaretOffset(offset);
     const int row = outlinePane_->ActiveVisibleRow();
     if (row >= 0 && outlineVisible_) {
