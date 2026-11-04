@@ -1254,7 +1254,7 @@ void AppWindow::ScrollCaretIntoView(float caretY, float caretH) {
 // SPI_GETCARETWIDTH; fall back to the two-pixel bar the app used
 // before when the query is unavailable.
 static int SystemCaretWidthPixels() {
-    UINT width = 0;
+    DWORD width = 0;
     if (SystemParametersInfoW(SPI_GETCARETWIDTH, 0, &width, 0) &&
         width > 0) {
         return static_cast<int>(width);
