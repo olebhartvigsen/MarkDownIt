@@ -799,7 +799,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // keeps the document width, the scroll offset and the outline in
     // one update, whether AppKit resized the clip before or after the
     // window notification.
-    [self clipChanged:nil];
+    [view_ clipChanged:nil];
     [self outlineLayout];
 }
 
