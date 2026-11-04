@@ -795,6 +795,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)windowDidResize:(NSNotification*)notification {
     (void)notification;
     if (!scrollView_ || !content_) return;
+    // The stack and split view have their own layout pass. Settle it
+    // before reading the clip width, or a fast live resize can hand the
+    // content the previous frame and leave the text at that old width.
+    [container_ layoutSubtreeIfNeeded];
+    [splitView_ adjustSubviews];
     NSClipView* clip = [scrollView_ contentView];
     if (!clip) return;
     const NSRect clipBounds = [clip bounds];
