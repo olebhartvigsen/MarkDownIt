@@ -21,7 +21,7 @@ A standard toolbar (NSToolbar) in the title bar, eight items:
 
 | Item | Symbol | Action | Also reachable |
 | --- | --- | --- | --- |
-| Save | square.and.arrow.down | saveDocument: | File menu, Cmd+S |
+| Save | template floppy | saveDocument: | File menu, Cmd+S |
 | Share | square.and.arrow.up | shareDocument: | File menu |
 | Undo | arrow.uturn.backward | undo: | Edit menu, Cmd+Z |
 | Redo | arrow.uturn.forward | redo: | Edit menu, Shift+Cmd+Z |
@@ -53,9 +53,11 @@ View menu carries Show Tab Bar or Hide Tab Bar, and the shell remembers
 the user's choice, so a single document can hide the bar without losing
 the document. The bar is AppKit's own; the app draws no tab strip.
 
-Every symbol is drawn by AppKit through imageWithSystemSymbolName:, so
+Most symbols are drawn by AppKit through imageWithSystemSymbolName:, so
 the toolbar follows the system appearance, the user's accent colour,
 increased contrast and localisation without any colour of our own.
+Save is the exception: SF Symbols has no classic diskette, so it is a
+small template outline drawn in the same ink and tinted by the system.
 The toolbar allows customization and saves the user's set.
 
 ## The outline pane follows the Sidebars guidance

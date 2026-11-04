@@ -392,6 +392,17 @@ TEST(RendererMac, FollowsTheWindowWidth) {
     EXPECT_NEAR(renderer.contentWidth(), 500.0f - 2.0f * narrowPad, 0.01f);
     EXPECT_NEAR(renderer.blocks()[0].x, narrowPad, 0.01f);
 
+    // A window well past the old desktop width still gets the whole
+    // column. The shared Windows width modes must not creep back in as a
+    // cap on the mac pane.
+    const float kVeryWide = 2200.0f - 2.0f * kPadX;
+    renderer.Measure(doc, 2200.0f);
+    EXPECT_NEAR(renderer.contentWidth(), kVeryWide, 0.01f);
+    EXPECT_NEAR(renderer.blocks()[0].width, kVeryWide, 0.01f);
+    renderer.SetContentWidthMode(0);
+    renderer.Measure(doc, 2200.0f);
+    EXPECT_NEAR(renderer.contentWidth(), kVeryWide, 0.01f);
+
     // With the wrap off the text gets one wide line, and the column
     // sits at the left padding.
     renderer.SetWrap(false);

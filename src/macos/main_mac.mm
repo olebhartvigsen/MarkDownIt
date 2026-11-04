@@ -289,6 +289,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [weakZoomSelf zoomDidChange:factor];
     }];
     scrollView_ = [[NSScrollView alloc] initWithFrame:frame];
+    // The stack and split view resize their children; keep the scroll
+    // host sizing with them so a wide window cannot leave the text at
+    // its launch width.
+    [scrollView_ setAutoresizingMask:NSViewWidthSizable |
+                                    NSViewHeightSizable];
     [scrollView_ setHasVerticalScroller:YES];
     // The horizontal axis is for the nowrap lines a wide zoomed column
     // produces (zoom guideline 4).
@@ -408,6 +413,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     });
 
     splitView_ = [[NSSplitView alloc] initWithFrame:frame];
+    [splitView_ setAutoresizingMask:NSViewWidthSizable |
+                                    NSViewHeightSizable];
     [splitView_ setVertical:YES];
     [splitView_ setDividerStyle:NSSplitViewDividerStyleThin];
     [backdrop_ setAutoresizingMask:NSViewWidthSizable |

@@ -6,14 +6,59 @@
 // outline toggle at the trailing edge, the arrangement document
 // windows use. Everything else lives in the menu bar.
 //
-// Every symbol is a system symbol, drawn by AppKit, so the toolbar
+// Most items are system symbols, drawn by AppKit, so the toolbar
 // follows the system appearance, the user's accent colour and the
-// accessibility settings without any colour of our own. The one text
-// button, the edit-mode switch, uses the standard toolbar button
-// shape: the guidelines name editing as the kind of action a symbol
-// does not represent well.
+// accessibility settings without any colour of our own. Save is the
+// exception: SF Symbols has no classic diskette, so it is a small
+// template outline drawn in the same ink. The one text button, the
+// edit-mode switch, uses the standard toolbar button shape: the
+// guidelines name editing as the kind of action a symbol does not
+// represent well.
 
 #import "toolbar_mac.h"
+
+// The classic save diskette. Template images take the toolbar's tint,
+// so the outline follows the system appearance like the symbols do.
+static NSImage* FloppySaveImage(void) {
+    NSImage* image = [NSImage
+        imageWithSize:NSMakeSize(18.0, 18.0)
+              flipped:YES
+       drawingHandler:^BOOL(NSRect rect) {
+        const CGFloat s = rect.size.width / 24.0;
+        [NSColor.blackColor setStroke];
+        NSBezierPath* body = [NSBezierPath bezierPath];
+        [body moveToPoint:NSMakePoint(6.0 * s, 4.0 * s)];
+        [body lineToPoint:NSMakePoint(16.0 * s, 4.0 * s)];
+        [body lineToPoint:NSMakePoint(20.0 * s, 8.0 * s)];
+        [body lineToPoint:NSMakePoint(20.0 * s, 18.0 * s)];
+        [body lineToPoint:NSMakePoint(18.0 * s, 20.0 * s)];
+        [body lineToPoint:NSMakePoint(6.0 * s, 20.0 * s)];
+        [body lineToPoint:NSMakePoint(4.0 * s, 18.0 * s)];
+        [body lineToPoint:NSMakePoint(4.0 * s, 6.0 * s)];
+        [body closePath];
+        [body setLineWidth:2.0 * s];
+        [body setLineCapStyle:NSLineCapStyleRound];
+        [body setLineJoinStyle:NSLineJoinStyleRound];
+        [body stroke];
+
+        NSBezierPath* shutter = [NSBezierPath bezierPath];
+        [shutter moveToPoint:NSMakePoint(14.0 * s, 4.0 * s)];
+        [shutter lineToPoint:NSMakePoint(14.0 * s, 8.0 * s)];
+        [shutter lineToPoint:NSMakePoint(8.0 * s, 8.0 * s)];
+        [shutter lineToPoint:NSMakePoint(8.0 * s, 4.0 * s)];
+        [shutter setLineWidth:2.0 * s];
+        [shutter stroke];
+
+        NSBezierPath* hub = [NSBezierPath
+            bezierPathWithOvalInRect:NSMakeRect(10.0 * s, 12.0 * s,
+                                                4.0 * s, 4.0 * s)];
+        [hub setLineWidth:2.0 * s];
+        [hub stroke];
+        return YES;
+    }];
+    [image setTemplate:YES];
+    return image;
+}
 
 static NSString* const kIdSave = @"MdSave";
 static NSString* const kIdShare = @"MdShare";
@@ -96,6 +141,23 @@ static NSString* const kIdOutline = @"MdOutline";
     return item;
 }
 
+// Save gets the classic diskette, not the download-into-a-tray
+// symbol: the two actions read too much alike in this app.
+- (NSToolbarItem*)saveItem {
+    NSToolbarItem* item =
+        [[NSToolbarItem alloc] initWithItemIdentifier:kIdSave];
+    NSImage* image = FloppySaveImage();
+    if (image) [item setImage:image];
+    [item setBordered:YES];
+    [item setLabel:@"Save"];
+    [item setPaletteLabel:@"Save"];
+    [item setToolTip:@"Save the document"];
+    [item setTarget:_host];
+    [item setAction:@selector(saveDocument:)];
+    [item setAutovalidates:NO];
+    return item;
+}
+
 // The edit-mode switch reads Edit while reading and Done while the
 // document is being edited, the pair macOS apps use for the same
 // switch. The window delegate swaps the word in its toolbarSync.
@@ -146,11 +208,7 @@ static NSString* const kIdOutline = @"MdOutline";
     (void)toolbar;
     (void)flag;
     if ([itemIdentifier isEqualToString:kIdSave]) {
-        return [self itemWithIdentifier:kIdSave
-                                 symbol:@"square.and.arrow.down"
-                                  label:@"Save"
-                                    tip:@"Save the document"
-                                 action:@selector(saveDocument:)];
+        return [self saveItem];
     }
     if ([itemIdentifier isEqualToString:kIdShare]) {
         return [self itemWithIdentifier:kIdShare

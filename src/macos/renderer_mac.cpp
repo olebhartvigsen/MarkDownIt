@@ -636,6 +636,8 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
 }
 
 void MacRenderer::SetContentWidthMode(int mode) {
+    // The mac shell pins this to full width. The width modes and their
+    // cap are a Windows feature; this renderer ignores the cap.
     if (mode < 0 || mode > 3) {
         mode = 0;
     }
@@ -645,8 +647,8 @@ void MacRenderer::SetContentWidthMode(int mode) {
 
 LayoutMetrics MacRenderer::ComputeMetrics() const {
     LayoutMetrics m = ScaleMetrics(baseMetrics_, zoom_);
-    // The mac pane keeps the theme's reading measure instead of
-    // stretching to the window. The width modes belong to Windows.
+    // The mac pane stretches to the window and has no width mode. Leave
+    // the shared cap untouched, but never consult it in this renderer.
     return m;
 }
 

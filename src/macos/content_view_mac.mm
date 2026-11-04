@@ -220,9 +220,9 @@ void ContentView::SetScrollOffset(float offset) {
 void ContentView::Relayout() {
     if (!app_) return;
 
-    // The renderer lays the document out at the full view width: it
-    // takes the theme padding off, caps the reading width and centers
-    // the column, the same arithmetic the Windows renderer uses.
+    // The renderer lays the document out at the full view width. The
+    // theme padding is the only horizontal inset; this platform has no
+    // reading-width cap, so the column follows every resize.
     documentHeight_ = renderer_.Measure(app_->GetDocument(), width_);
     contentWidth_ = renderer_.contentWidth();
 

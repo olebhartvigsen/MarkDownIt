@@ -84,8 +84,9 @@ struct LayoutMetrics {
     float padX;
     float padTop;
 
-    // Maximum content width for readable line length. Paragraphs
-    // wider than this are centered and capped.
+    // Windows width cap. The mac renderer deliberately ignores it and
+    // follows the pane; paragraphs wider than this are centered and
+    // capped only on Windows.
     float maxContentWidth;
 
     // Line height multipliers (relative to font size).
