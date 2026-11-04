@@ -799,6 +799,37 @@ TEST(RendererMac, PaintsInlineCodeAfterHiddenMarkers) {
     EXPECT_EQ(pills, 0);
 }
 
+TEST(RendererMac, PaintsMarkersInBothModes) {
+    const std::string markdown =
+        "The system MUST use managed identities for authentication.\n";
+    for (const bool editing : {false, true}) {
+        FakeEngine engine;
+        MacRenderer renderer;
+        renderer.SetTextEngine(&engine);
+        renderer.SetTheme(BaseMetrics(), BasePalette());
+        RecordingTarget target;
+        renderer.SetRenderTarget(&target);
+
+        Document doc;
+        ASSERT_TRUE(ParseMarkdown(markdown, doc));
+        renderer.Measure(doc, 700.0f);
+        renderer.SetEditing(editing);
+
+        const std::size_t start = markdown.find("MUST");
+        ASSERT_TRUE(start != std::string::npos);
+        std::vector<TextMatch> markers;
+        markers.push_back({static_cast<uint32_t>(start), 4});
+        renderer.SetMarkers(&markers);
+        renderer.Render(doc, 0.0f);
+
+        int fills = 0;
+        for (const RecordingTarget::Fill& fill : target.fills) {
+            if (SameColor(fill.color, BasePalette().markerBg)) ++fills;
+        }
+        EXPECT_GT(fills, 0);
+    }
+}
+
 TEST(RendererMac, PaintsAMarkerAboveTheCodeCardAndUnderItsText) {
     FakeEngine engine;
     MacRenderer renderer;
