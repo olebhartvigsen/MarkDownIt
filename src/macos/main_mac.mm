@@ -792,6 +792,36 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // A live resize always lays out at the new width. The clip view
 // usually posts its own change, but AppKit can coalesce it during a
 // drag; the explicit path keeps the text column following the window.
+// The stack view does not promise to stretch an arranged split view
+// across the window. Settle both panes here, using the width the
+// container actually has, so a wide window cannot leave the document at
+// the frame it launched with.
+- (void)fitContentPanesToWindow {
+    if (!container_ || !splitView_ || !scrollView_) return;
+
+    NSRect splitFrame = [splitView_ frame];
+    const CGFloat containerWidth = [container_ bounds].size.width;
+    if (splitFrame.size.width != containerWidth) {
+        splitFrame.size.width = containerWidth;
+        [splitView_ setFrame:splitFrame];
+    }
+    [splitView_ adjustSubviews];
+
+    const CGFloat outlineWidth =
+        outlineVisible_ ? [backdrop_ frame].size.width : 0.0;
+    const CGFloat divider =
+        outlineVisible_ ? [splitView_ dividerThickness] : 0.0;
+    CGFloat documentWidth = splitFrame.size.width - outlineWidth - divider;
+    if (documentWidth < 1.0) documentWidth = splitFrame.size.width;
+
+    NSRect scrollFrame = [scrollView_ frame];
+    if (scrollFrame.size.width != documentWidth) {
+        scrollFrame.size.width = documentWidth;
+        [scrollView_ setFrame:scrollFrame];
+    }
+    [scrollView_ tile];
+}
+
 - (void)windowDidResize:(NSNotification*)notification {
     (void)notification;
     if (!scrollView_ || !content_) return;
@@ -799,7 +829,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // before reading the clip width, or a fast live resize can hand the
     // content the previous frame and leave the text at that old width.
     [container_ layoutSubtreeIfNeeded];
-    [splitView_ adjustSubviews];
+    [self fitContentPanesToWindow];
     NSClipView* clip = [scrollView_ contentView];
     if (!clip) return;
     const NSRect clipBounds = [clip bounds];

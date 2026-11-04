@@ -727,6 +727,17 @@ static const CGFloat kPinchStepMagnification = 0.1;
                selector:@selector(clipChanged:)
                    name:NSViewBoundsDidChangeNotification
                  object:clip];
+    // A scrollbar drag and a trackpad gesture do not always pass through
+    // `scrollWheel:`. The scroll view's live-scroll notification is the
+    // common path; mark it as a reader scroll so the outline's reading
+    // row moves for every kind of scroll, not only for a wheel event.
+    NSScrollView* scroll = [self enclosingScrollView];
+    if (scroll) {
+        [center addObserver:self
+                   selector:@selector(scrollDidLiveScroll:)
+                       name:NSScrollViewDidLiveScrollNotification
+                     object:scroll];
+    }
     [self clipChanged:nil];
 
     // The startup palette resolution lands under the view's own
@@ -754,6 +765,19 @@ static const CGFloat kPinchStepMagnification = 0.1;
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)scrollDidLiveScroll:(NSNotification*)notification {
+    (void)notification;
+    if (!content_ || !app_) return;
+    // Programmatic jumps are reported by the clip notification with
+    // their own flag; live scrolling is always the reader.
+    if (content_->programmaticScroll()) return;
+    NSClipView* clip = [self enclosingScrollView].contentView;
+    if (!clip) return;
+    content_->SetScrollOffset(static_cast<float>([clip bounds].origin.y));
+    content_->NotifyScrollChanged(false);
+    [self setNeedsDisplay:YES];
 }
 
 // The clip view scrolled or changed size. The content lays itself out
