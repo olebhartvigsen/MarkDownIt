@@ -850,8 +850,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     const CGFloat layoutWidth = viewport.width > 0.0
         ? viewport.width
         : clipBounds.size.width;
+    const CGFloat layoutHeight = viewport.height > 0.0
+        ? viewport.height
+        : clipBounds.size.height;
     content_->SetSize(static_cast<float>(layoutWidth),
-                      static_cast<float>(clipBounds.size.height));
+                      static_cast<float>(layoutHeight));
     content_->SetScrollOffset(static_cast<float>(clipBounds.origin.y));
     content_->NotifyScrollChanged(false);
     [self outlineLayout];
