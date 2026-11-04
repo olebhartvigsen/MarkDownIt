@@ -797,6 +797,13 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [view_ setNeedsDisplay:YES];
 }
 
+// A live resize can coalesce the intermediate frame notifications. The
+// end callback lays the column out once more against the settled pane,
+// so a wider window never keeps the launch-width column.
+- (void)windowDidEndLiveResize:(NSNotification*)notification {
+    [self windowDidResize:notification];
+}
+
 - (NSApplicationTerminateReply)applicationShouldTerminate:
     (NSApplication*)sender {
     (void)sender;
