@@ -1345,8 +1345,16 @@ static const CGFloat kPinchStepMagnification = 0.1;
     // The clip view posts a bounds change, but a wheel step can reach
     // the view before that notification is delivered. Reflect the new
     // place here so the outline's reading row moves with the document
-    // on every step, not only when the notification finally lands.
+    // on every step, not only when the notification finally lands. A
+    // wheel is always a reader scroll, even if a layout pass left the
+    // programmatic flag set.
     [self clipChanged:nil];
+    NSClipView* clip = [self enclosingScrollView].contentView;
+    if (clip) {
+        const NSRect clipBounds = [clip bounds];
+        content_->SetScrollOffset(static_cast<float>(clipBounds.origin.y));
+        content_->NotifyScrollChanged(false);
+    }
 }
 
 // A trackpad pinch zooms around the gesture, the way a magnifying

@@ -422,12 +422,21 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [backdrop_ addSubview:outlineScroll_];
     [splitView_ addSubview:backdrop_];
     [splitView_ addSubview:scrollView_];
+    // The document takes every point the outline does not need. Without
+    // this priority the split view can grow the sidebar with a wide
+    // window and leave the document at its old width.
+    [splitView_ setHoldingPriority:NSLayoutPriorityDefaultHigh
+                    forSubviewAtIndex:0];
+    [splitView_ setHoldingPriority:NSLayoutPriorityDefaultLow
+                    forSubviewAtIndex:1];
     // The place of the divider is the width of the pane, because the
     // pane is the first of the two.
     [splitView_ setPosition:settings_.settings().outlineWidthDip
                ofDividerAtIndex:0];
 
     container_ = [[NSStackView alloc] initWithFrame:frame];
+    [container_ setAutoresizingMask:NSViewWidthSizable |
+                                    NSViewHeightSizable];
     [container_ setOrientation:NSUserInterfaceLayoutOrientationVertical];
     [container_ setDistribution:NSStackViewDistributionFill];
 
@@ -786,15 +795,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)windowDidResize:(NSNotification*)notification {
     (void)notification;
     if (!scrollView_ || !content_) return;
-    NSClipView* clip = [scrollView_ contentView];
-    if (!clip) return;
-
-    const NSRect clipBounds = [clip bounds];
-    content_->SetSize(static_cast<float>(clipBounds.size.width),
-                      static_cast<float>(clipBounds.size.height));
-    content_->SetScrollOffset(static_cast<float>(clipBounds.origin.y));
+    // Let the clip view drive the same path as a reader scroll. That
+    // keeps the document width, the scroll offset and the outline in
+    // one update, whether AppKit resized the clip before or after the
+    // window notification.
+    [self clipChanged:nil];
     [self outlineLayout];
-    [view_ setNeedsDisplay:YES];
 }
 
 // A live resize can coalesce the intermediate frame notifications. The
