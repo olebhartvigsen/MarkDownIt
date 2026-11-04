@@ -109,6 +109,8 @@ bool OpenExternalUrl(const std::string& url) {
 // The outline's active heading: the caret's section, or the reading
 // line when followViewport is set.
 - (void)outlineActiveRefresh:(BOOL)followViewport;
+// A live scroll of the document, including a scrollbar drag.
+- (void)documentScrollDidLiveScroll:(NSNotification*)notification;
 // The system share sheet for the current document.
 - (void)shareDocument:(id)sender;
 // The QA walk: the states the launch smoke photographs.
@@ -393,6 +395,15 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // caret's section.
         [self outlineActiveRefresh:!programmatic];
     });
+    // `scrollWheel:` is not the only path: dragging the scroller and a
+    // trackpad glide go straight through the scroll view. Observe it
+    // here as well, so the outline is refreshed for every reader
+    // scroll and not only for the wheel override.
+    [[NSNotificationCenter defaultCenter]
+        addObserver:self
+           selector:@selector(documentScrollDidLiveScroll:)
+               name:NSScrollViewDidLiveScrollNotification
+             object:scrollView_];
 
     // The find bar sits at the bottom of the window, the one strip
     // position the find spec names. It is in the layout from the
@@ -1856,6 +1867,15 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // even while the caret is still on screen, so the pane shows where
 // the reader is looking; an app-driven jump keeps the caret's section
 // (outline spec 19).
+- (void)documentScrollDidLiveScroll:(NSNotification*)notification {
+    (void)notification;
+    if (!content_ || !app_) return;
+    NSClipView* clip = [scrollView_ contentView];
+    if (!clip) return;
+    content_->SetScrollOffset(static_cast<float>([clip bounds].origin.y));
+    content_->NotifyScrollChanged(false);
+}
+
 - (void)outlineActiveRefresh:(BOOL)followViewport {
     uint32_t offset = app_->selection().Start();
     if (followViewport || !content_->CaretIsOnScreen()) {
