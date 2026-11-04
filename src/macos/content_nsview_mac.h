@@ -51,4 +51,8 @@ class ContentView;
 // capture must not depend on the blink phase.
 - (void)qaParkCaret;
 
+// Edit mode changed: start the blink in edit mode, stop and hide it in
+// reading mode. The window's key state decides whether focus is there.
+- (void)editingModeChanged:(BOOL)editing;
+
 @end

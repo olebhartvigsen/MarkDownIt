@@ -191,6 +191,7 @@ void ContentView::SetEditing(bool on) {
     // document is laid out again.
     renderer_.SetEditing(on);
     Relayout();
+    if (editingChanged_) editingChanged_(on);
     Invalidate();
 }
 
@@ -705,8 +706,34 @@ static const CGFloat kPinchStepMagnification = 0.1;
         content_->SetLayoutChangedHandler([weakSelf] {
             [weakSelf syncFrameToContent];
         });
+        content_->SetEditingChangedHandler([weakSelf](bool editing) {
+            [weakSelf editingModeChanged:editing];
+        });
     }
     return self;
+}
+
+// The view has a window now, so it can watch the window's key state.
+// This is a separate callback from `viewDidMoveToSuperview`, because
+// the document view joins the clip view before the scroll view joins
+// the window.
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    NSWindow* window = [self window];
+    if (!window) return;
+
+    // The view can stay first responder while the window loses key
+    // status (the app is deactivated). Hide the caret then, and bring it
+    // back only when this view still owns the keyboard focus.
+    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+    [center addObserver:self
+               selector:@selector(windowDidResignKey:)
+                   name:NSWindowDidResignKeyNotification
+                 object:window];
+    [center addObserver:self
+               selector:@selector(windowDidBecomeKey:)
+                   name:NSWindowDidBecomeKeyNotification
+                 object:window];
 }
 
 // The view joined the scroll view: the clip view reports every scroll
@@ -764,6 +791,10 @@ static const CGFloat kPinchStepMagnification = 0.1;
 }
 
 - (void)dealloc {
+    // NSTimer retains its target, so a live blink or autoscroll timer
+    // would keep the view alive after its window closed.
+    [blinkTimer_ invalidate];
+    [autoscrollTimer_ invalidate];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
@@ -1019,10 +1050,16 @@ static const CGFloat kPinchStepMagnification = 0.1;
     [self setNeedsDisplay:YES];
 }
 
-// The caret blinks while the document has the focus. The timer flips
+// The caret blinks while the document has the keyboard focus, the
+// editor is in edit mode and the selection is collapsed. The timer flips
 // the caret, and the view redraws itself.
 - (void)startBlinking {
     if (blinkTimer_) return;
+    if (!app_ || !app_->Editing() || ![self.window isKeyWindow] ||
+        [self.window firstResponder] != self ||
+        !app_->selection().Empty()) {
+        return;
+    }
     blinkTimer_ = [NSTimer scheduledTimerWithTimeInterval:0.5
                                                   target:self
                                                 selector:@selector(blink:)
@@ -1046,7 +1083,17 @@ static const CGFloat kPinchStepMagnification = 0.1;
 
 - (void)blink:(NSTimer*)timer {
     (void)timer;
-    if (!content_) return;
+    if (!content_ || !app_) return;
+    // A selection is represented by its active end, not by a separate
+    // blinking caret. Stop the timer as soon as the state no longer
+    // permits a caret; a later collapse restarts it through a move.
+    if (!app_->Editing() || !app_->selection().Empty() ||
+        ![self.window isKeyWindow]) {
+        [self stopBlinking];
+        content_->SetCaretVisible(false);
+        [self setNeedsDisplay:YES];
+        return;
+    }
     content_->SetCaretVisible(!content_->caretVisible());
     // The flip only lands on screen through a redraw: the model's
     // Invalidate is a no-op on this platform, because the view owns
@@ -1057,14 +1104,49 @@ static const CGFloat kPinchStepMagnification = 0.1;
 // A fresh edit or a move shows the caret again and restarts the blink,
 // so the caret never stays hidden right after typing.
 - (void)resetCaretBlink {
-    if (content_) content_->SetCaretVisible(true);
-    if (blinkTimer_) {
-        [blinkTimer_ invalidate];
-        blinkTimer_ = nil;
+    if (content_ && app_ && app_->Editing() && app_->selection().Empty()) {
+        content_->SetCaretVisible(true);
     }
+    [self stopBlinking];
     if ([self.window firstResponder] == self) {
         [self startBlinking];
     }
+}
+
+// The window lost key status: the document is no longer focused even
+// though this view can still be its first responder. The blink stops and
+// the caret hides until the window is key again.
+- (void)windowDidResignKey:(NSNotification*)notification {
+    (void)notification;
+    [self stopBlinking];
+    if (content_) content_->SetCaretVisible(false);
+    [self setNeedsDisplay:YES];
+}
+
+// The window is key again. Restore the caret only when this view still
+// owns the keyboard; the find field and the outline keep their own
+// focus otherwise.
+- (void)windowDidBecomeKey:(NSNotification*)notification {
+    (void)notification;
+    [self editingModeChanged:app_ && app_->Editing()];
+}
+
+- (void)editingModeChanged:(BOOL)editing {
+    if (!content_) return;
+    if (!editing) {
+        [self stopBlinking];
+        content_->SetCaretVisible(false);
+        [self setNeedsDisplay:YES];
+        return;
+    }
+    if (!app_ || ![self.window isKeyWindow] ||
+        [self.window firstResponder] != self ||
+        !app_->selection().Empty()) {
+        return;
+    }
+    content_->SetCaretVisible(true);
+    [self startBlinking];
+    [self setNeedsDisplay:YES];
 }
 
 // The caret moved or the document changed: the blink restarts, the
@@ -1123,8 +1205,10 @@ static const CGFloat kPinchStepMagnification = 0.1;
 
 - (BOOL)becomeFirstResponder {
     const BOOL result = [super becomeFirstResponder];
-    if (content_) content_->SetCaretVisible(true);
-    [self startBlinking];
+    if (content_ && app_ && app_->Editing() && app_->selection().Empty()) {
+        content_->SetCaretVisible(true);
+        [self startBlinking];
+    }
     [self setNeedsDisplay:YES];
     return result;
 }
@@ -1147,6 +1231,7 @@ static const CGFloat kPinchStepMagnification = 0.1;
                                     fromView:nil];
     content_->PlaceCaretAt(static_cast<float>(point.x),
                            static_cast<float>(point.y));
+    [self caretMoved];
     [self setNeedsDisplay:YES];
 
     mac::App* app = content_->app();
@@ -1278,6 +1363,7 @@ static const CGFloat kPinchStepMagnification = 0.1;
                                             fromView:nil];
             content_->PlaceCaretAt(static_cast<float>(point.x),
                                    static_cast<float>(point.y));
+            [self caretMoved];
         }
         [self setNeedsDisplay:YES];
         return;

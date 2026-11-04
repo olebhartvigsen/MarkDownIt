@@ -1249,6 +1249,19 @@ void AppWindow::ScrollCaretIntoView(float caretY, float caretH) {
     }
 }
 
+// The caret width the user chose in Windows, in the same physical
+// pixels CreateCaret expects here. The system exposes it through
+// SPI_GETCARETWIDTH; fall back to the two-pixel bar the app used
+// before when the query is unavailable.
+static int SystemCaretWidthPixels() {
+    UINT width = 0;
+    if (SystemParametersInfoW(SPI_GETCARETWIDTH, 0, &width, 0) &&
+        width > 0) {
+        return static_cast<int>(width);
+    }
+    return 2;
+}
+
 void AppWindow::UpdateCaretPosition() {
     if (!has_focus_ || !hwnd_content_) return;
     // Outline active-heading follow (one-way; the pane never pushes
@@ -1300,7 +1313,7 @@ void AppWindow::UpdateCaretPosition() {
         if (!qa_active_ && caret_height_ != newH) {
             DestroyCaret();
             caret_visible_ = false; // caret destroyed; must re-show
-            CreateCaret(hwnd_content_, nullptr, 2, newH);
+            CreateCaret(hwnd_content_, nullptr, SystemCaretWidthPixels(), newH);
             caret_height_ = newH;
         }
         SetCaretPos(cx, cy);
@@ -2077,7 +2090,7 @@ bool AppWindow::EnsureCaretVisible() {
     const float dpix = static_cast<float>(dpi_) / 96.0f;
     int height = static_cast<int>(h * dpix);
     if (height < 1) height = 1;
-    CreateCaret(hwnd_content_, nullptr, 2, height);
+    CreateCaret(hwnd_content_, nullptr, SystemCaretWidthPixels(), height);
     caret_height_ = height;
     if (haveRect) {
         SetCaretPos(static_cast<int>(x * dpix),

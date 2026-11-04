@@ -14,6 +14,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "app_mac.h"
@@ -202,6 +203,13 @@ public:
     // state changed.
     void SetCaretVisible(bool visible);
 
+    // Told when edit mode changes, so the mac view can start and stop
+    // the blink timer with the mode. The timer is presentation only and
+    // never touches the document model.
+    void SetEditingChangedHandler(std::function<void(bool)> handler) {
+        editingChanged_ = std::move(handler);
+    }
+
     // Marks the ranges the find bar matched. A null pointer clears the
     // marks.
     // Hands the marked ranges to the renderer.
@@ -275,6 +283,7 @@ private:
     uint32_t textDragTarget_ = UINT32_MAX;
     // Whether the caret is showing right now.
     bool caretVisible_ = true;
+    std::function<void(bool)> editingChanged_;
 };
 
 }  // namespace mac
