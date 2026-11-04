@@ -795,11 +795,13 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)windowDidResize:(NSNotification*)notification {
     (void)notification;
     if (!scrollView_ || !content_) return;
-    // Let the clip view drive the same path as a reader scroll. That
-    // keeps the document width, the scroll offset and the outline in
-    // one update, whether AppKit resized the clip before or after the
-    // window notification.
-    [view_ clipChanged:nil];
+    NSClipView* clip = [scrollView_ contentView];
+    if (!clip) return;
+    const NSRect clipBounds = [clip bounds];
+    content_->SetSize(static_cast<float>(clipBounds.size.width),
+                      static_cast<float>(clipBounds.size.height));
+    content_->SetScrollOffset(static_cast<float>(clipBounds.origin.y));
+    content_->NotifyScrollChanged(false);
     [self outlineLayout];
 }
 
