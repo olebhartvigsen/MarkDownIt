@@ -837,7 +837,13 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     NSClipView* clip = [scrollView_ contentView];
     if (!clip) return;
     const NSRect clipBounds = [clip bounds];
-    content_->SetSize(static_cast<float>(clipBounds.size.width),
+    // `trim` the scrollbars through contentSize; the clip's frame can
+    // still be one layout pass behind during a live resize.
+    const NSSize viewport = [scrollView_ contentSize];
+    const CGFloat layoutWidth = viewport.width > 0.0
+        ? viewport.width
+        : clipBounds.size.width;
+    content_->SetSize(static_cast<float>(layoutWidth),
                       static_cast<float>(clipBounds.size.height));
     content_->SetScrollOffset(static_cast<float>(clipBounds.origin.y));
     content_->NotifyScrollChanged(false);
