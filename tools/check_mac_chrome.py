@@ -14,8 +14,8 @@ This check keeps the design from drifting back:
 - the ribbon strip is gone, classes and files;
 - the window carries no titlebar accessories;
 - the toolbar builds the deliberate item set, and only that set;
-- the toolbar draws system material alone: system symbols and no
-  colours of its own;
+- the toolbar draws system material: system symbols plus the one
+  template floppy for Save, and no colours of its own;
 - the mac bundle no longer ships the raster icon set.
 
 Usage: python3 tools/check_mac_chrome.py
@@ -62,9 +62,12 @@ def main():
         fail("the toolbar identifiers are %s, want %s"
              % (identifiers, EXPECTED))
 
-    # The toolbar draws system material alone.
+    # The toolbar draws system material: system symbols and the
+    # template floppy, never a raster image.
     if "imageWithSystemSymbolName" not in toolbar:
         fail("the toolbar draws no system symbols")
+    if "FloppySaveImage" not in toolbar:
+        fail("the Save item lost its template floppy")
     for pattern in (r"colorWith", r"0x[0-9A-Fa-f]"):
         if re.search(pattern, toolbar):
             fail("the toolbar mixes in its own colour (%s)" % pattern)
