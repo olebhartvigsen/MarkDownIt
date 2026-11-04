@@ -813,7 +813,7 @@ TEST(RendererMac, PaintsAMarkerAboveTheCodeCardAndUnderItsText) {
     renderer.Measure(doc, 400.0f);
 
     const std::size_t start = markdown.find("marked");
-    ASSERT_NE(start, std::string::npos);
+    ASSERT_TRUE(start != std::string::npos);
     std::vector<TextMatch> markers;
     markers.push_back({static_cast<uint32_t>(start), 6});
     renderer.SetMarkers(&markers);
