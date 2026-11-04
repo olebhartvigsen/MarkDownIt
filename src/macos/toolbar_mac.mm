@@ -25,35 +25,37 @@ static NSImage* FloppySaveImage(void) {
               flipped:YES
        drawingHandler:^BOOL(NSRect rect) {
         const CGFloat s = rect.size.width / 24.0;
-        [NSColor.blackColor setStroke];
-        NSBezierPath* body = [NSBezierPath bezierPath];
-        [body moveToPoint:NSMakePoint(6.0 * s, 4.0 * s)];
-        [body lineToPoint:NSMakePoint(16.0 * s, 4.0 * s)];
-        [body lineToPoint:NSMakePoint(20.0 * s, 8.0 * s)];
-        [body lineToPoint:NSMakePoint(20.0 * s, 18.0 * s)];
-        [body lineToPoint:NSMakePoint(18.0 * s, 20.0 * s)];
-        [body lineToPoint:NSMakePoint(6.0 * s, 20.0 * s)];
-        [body lineToPoint:NSMakePoint(4.0 * s, 18.0 * s)];
-        [body lineToPoint:NSMakePoint(4.0 * s, 6.0 * s)];
-        [body closePath];
-        [body setLineWidth:2.0 * s];
-        [body setLineCapStyle:NSLineCapStyleRound];
-        [body setLineJoinStyle:NSLineJoinStyleRound];
-        [body stroke];
+        [NSColor.blackColor setFill];
 
-        NSBezierPath* shutter = [NSBezierPath bezierPath];
-        [shutter moveToPoint:NSMakePoint(14.0 * s, 4.0 * s)];
-        [shutter lineToPoint:NSMakePoint(14.0 * s, 8.0 * s)];
-        [shutter lineToPoint:NSMakePoint(8.0 * s, 8.0 * s)];
-        [shutter lineToPoint:NSMakePoint(8.0 * s, 4.0 * s)];
-        [shutter setLineWidth:2.0 * s];
-        [shutter stroke];
+        // The solid case, with the top-right corner clipped the way a
+        // 3.5-inch diskette is. The shutter and the hub are holes in
+        // the silhouette, not extra ink, so the shape stays readable
+        // at toolbar size.
+        NSBezierPath* plate = [NSBezierPath bezierPath];
+        [plate moveToPoint:NSMakePoint(4.0 * s, 4.0 * s)];
+        [plate lineToPoint:NSMakePoint(16.0 * s, 4.0 * s)];
+        [plate lineToPoint:NSMakePoint(20.0 * s, 8.0 * s)];
+        [plate lineToPoint:NSMakePoint(20.0 * s, 19.0 * s)];
+        [plate lineToPoint:NSMakePoint(18.0 * s, 21.0 * s)];
+        [plate lineToPoint:NSMakePoint(6.0 * s, 21.0 * s)];
+        [plate lineToPoint:NSMakePoint(4.0 * s, 19.0 * s)];
+        [plate closePath];
+        [plate appendBezierPath:[NSBezierPath
+            bezierPathWithRect:NSMakeRect(8.0 * s, 4.0 * s,
+                                          8.0 * s, 4.0 * s)]];
+        [plate appendBezierPath:[NSBezierPath
+            bezierPathWithOvalInRect:NSMakeRect(9.0 * s, 11.0 * s,
+                                                6.0 * s, 6.0 * s)]];
+        [plate setWindingRule:NSEvenOddWindingRule];
+        [plate fill];
 
-        NSBezierPath* hub = [NSBezierPath
-            bezierPathWithOvalInRect:NSMakeRect(10.0 * s, 12.0 * s,
-                                                4.0 * s, 4.0 * s)];
-        [hub setLineWidth:2.0 * s];
-        [hub stroke];
+        // The slot in the shutter and the spindle in the hub.
+        [[NSBezierPath bezierPathWithRect:NSMakeRect(10.0 * s, 5.0 * s,
+                                                     4.0 * s, 1.5 * s)] fill];
+        [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(11.0 * s,
+                                                          13.0 * s,
+                                                          2.0 * s,
+                                                          2.0 * s)] fill];
         return YES;
     }];
     [image setTemplate:YES];
