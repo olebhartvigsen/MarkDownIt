@@ -1,6 +1,24 @@
 cmake_minimum_required(VERSION 3.20)
 project(MarkDownIt LANGUAGES C CXX)
 
+# The oldest macOS the app supports. It has to be set before the
+# targets are created, because it decides the compiler flags.
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0")
+endif()
+
+# The architectures the macOS build produces. Apple Silicon is the
+# default, because that is what the runner has. A universal binary is
+# one setting away:
+#
+#     cmake -B build-mac -DMARKDOWNIT_MAC_ARCHS="arm64;x86_64"
+#
+set(MARKDOWNIT_MAC_ARCHS "arm64" CACHE STRING
+    "The macOS architectures to build")
+if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
+    set(CMAKE_OSX_ARCHITECTURES "${MARKDOWNIT_MAC_ARCHS}")
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -133,7 +151,11 @@ if(MSVC)
     endif()
 endif()
 
-# Main application
+# Main application.
+#
+# The Win32 sources only build on Windows, and the macOS build has its
+# own target, so the Windows target is not defined there.
+if(NOT APPLE)
 add_executable(MarkDownIt WIN32
     src/main.cpp
     src/app.cpp
@@ -164,15 +186,19 @@ add_executable(MarkDownIt WIN32
     src/ribbon.cpp
     src/textbuffer.cpp
     src/layoutcache.cpp
+    src/textlayout_dwrite.cpp
     src/editcontroller.cpp
     src/navigation.cpp
+    src/tableedit.cpp
     src/undostack.cpp
     src/clipboard.cpp
     src/formatting.cpp
     src/autoformat.cpp
     src/inputfilter.cpp
     src/searchreplace.cpp
+    src/unicode_fold.cpp
     src/findstate.cpp
+    src/findbar_model.cpp
     src/findbar.cpp
     src/markers.cpp
     src/outline.cpp
@@ -186,6 +212,7 @@ add_executable(MarkDownIt WIN32
     src/office/docx_import.cpp
     src/office/docx_export.cpp
     src/office/pdf_export.cpp
+    src/office/pdf_import.cpp
     src/office/markdown_bridge.cpp
 )
 
@@ -278,19 +305,170 @@ target_compile_definitions(MarkDownIt PRIVATE
     NOMINMAX
 )
 
+if(MSVC)
+    target_compile_options(MarkDownIt PRIVATE /W4)
+endif()
+
+endif() # NOT APPLE
+
 # The linker auto-generates a manifest from the
 # #pragma comment(linker, "/manifestdependency:...") in main.cpp,
 # which enables ComCtl32 v6 (visual styles) for the ribbon framework.
 
 # Tests
 option(BUILD_TESTS "Build test binary" OFF)
-if(BUILD_TESTS)
+if(BUILD_TESTS AND APPLE)
+    # The macOS test target. It compiles the same suite the Windows build
+    # compiles, with two differences:
+    #   * findbar_window_test.cpp is a real Win32 window test, so it stays
+    #     on Windows. The navigation it covers is tested through the
+    #     portable FindBarModel instead, in findstate_test.cpp.
+    #   * the layout cache asks the platform-neutral text layout seam,
+    #     which the macOS build answers with Core Text.
     add_executable(MarkDownIt.tests
         tests/parser_smoke.cpp
         tests/textbuffer_test.cpp
         tests/caret_test.cpp
         tests/hittest_test.cpp
         tests/editcontroller_test.cpp
+        tests/composition_test.cpp
+        tests/navigation_test.cpp
+        tests/undo_test.cpp
+        tests/incremental_test.cpp
+        tests/clipboard_test.cpp
+        tests/formatting_test.cpp
+        tests/clear_format_test.cpp
+        tests/autoformat_test.cpp
+        tests/inputfilter_test.cpp
+        tests/editor_features_test.cpp
+        tests/findstate_test.cpp
+        tests/unicode_fold_test.cpp
+        tests/findbar_ids_test.cpp
+        tests/markers_test.cpp
+        tests/outline_test.cpp
+        tests/table_interaction_test.cpp
+        tests/tableedit_test.cpp
+        tests/mermaid_model_test.cpp
+        tests/mermaid_parse_test.cpp
+        tests/mermaid_class_golden_test.cpp
+        tests/mermaid_state_golden_test.cpp
+        tests/mermaid_layout_test.cpp
+        tests/mermaid_golden_test.cpp
+        tests/mermaid_pie_golden_test.cpp
+        tests/mermaid_seq_golden_test.cpp
+        tests/mermaid_swimlanes_test.cpp
+        tests/mermaid_measure_test.cpp
+        tests/dom_mermaid_test.cpp
+        tests/mermaid_cache_test.cpp
+        tests/theme_test.cpp
+        tests/perf_harness.cpp
+        tests/test_main.cpp
+        tests/svgtext_test.cpp
+        tests/zoommodel_test.cpp
+        tests/office_interop_smoke_test.cpp
+        tests/office_docx_import_test.cpp
+        tests/office_docx_export_test.cpp
+        tests/office_pdf_export_test.cpp
+        tests/office_pdf_import_test.cpp
+        tests/office_markdown_bridge_test.cpp
+        tests/table_picker_test.cpp
+        src/parser.cpp
+        src/textbuffer.cpp
+        src/layoutcache.cpp
+        src/textlayout_coretext.cpp
+        src/editcontroller.cpp
+        src/navigation.cpp
+        src/tableedit.cpp
+        src/undostack.cpp
+        src/clipboard.cpp
+        src/formatting.cpp
+        src/autoformat.cpp
+        src/inputfilter.cpp
+        src/searchreplace.cpp
+        src/unicode_fold.cpp
+        src/findstate.cpp
+        src/findbar_model.cpp
+        src/markers.cpp
+        src/outline.cpp
+        src/textdrag.cpp
+        src/svgtext.cpp
+        src/mermaid/class_layout.cpp
+        src/mermaid/class_parse.cpp
+        src/mermaid/layout.cpp
+        src/mermaid/layout_acyclic.cpp
+        src/mermaid/layout_edges.cpp
+        src/mermaid/layout_measure.cpp
+        src/mermaid/layout_normalize.cpp
+        src/mermaid/layout_order.cpp
+        src/mermaid/layout_position.cpp
+        src/mermaid/layout_rank.cpp
+        src/mermaid/parse.cpp
+        src/mermaid/pie_layout.cpp
+        src/mermaid/pie_parse.cpp
+        src/mermaid/seq_layout.cpp
+        src/mermaid/seq_parse.cpp
+        src/mermaid/state_layout.cpp
+        src/mermaid/state_parse.cpp
+        src/mermaid/swimlanes.cpp
+        src/office/docx_import.cpp
+        src/office/docx_export.cpp
+        src/office/pdf_export.cpp
+        src/office/pdf_import.cpp
+        src/office/markdown_bridge.cpp
+    )
+    target_include_directories(MarkDownIt.tests PRIVATE
+        src
+        tests
+        tests/mermaid
+        third_party/md4c
+        third_party/miniz
+        third_party/pugixml
+        third_party/pdfio
+    )
+    target_link_libraries(MarkDownIt.tests PRIVATE
+        md4c
+        miniz
+        pugixml
+        pdfio
+        # The text layout of the shared core is Core Text on macOS, and
+        # the text engine makes its colors and paths with Core Graphics.
+        "-framework CoreGraphics"
+        "-framework CoreText"
+        "-framework CoreFoundation"
+        # The font registration goes through Foundation and AppKit, so
+        # the test binary links them too.
+        "-framework AppKit"
+    )
+    target_compile_features(MarkDownIt.tests PRIVATE cxx_std_17)
+    set_target_properties(MarkDownIt.tests PROPERTIES
+        MACOSX_BUNDLE OFF
+        WIN32_EXECUTABLE OFF
+    )
+    # The app layer's text engine, with its test, so the Core Text
+    # measure path runs in CI and not only on real hardware.
+    target_compile_options(MarkDownIt.tests PRIVATE -Wall -Wextra -Wpedantic)
+    target_sources(MarkDownIt.tests PRIVATE
+        tests/text_engine_mac_test.cpp
+        tests/renderer_mac_test.cpp
+        src/macos/text_engine_mac.cpp
+        src/macos/fonts_mac.mm
+        src/macos/crash_trace_mac.cpp
+        # The renderer's layout arithmetic, driven by its test with a
+        # fixed text engine, so the typography runs in CI and not only
+        # on real hardware. The renderer links the pieces it draws with.
+        src/macos/renderer_mac.cpp
+        src/macos/svg_mac.cpp
+        src/macos/image_mac.mm
+        src/macos/mermaid_painter_mac.cpp
+    )
+elseif(BUILD_TESTS)
+    add_executable(MarkDownIt.tests
+        tests/parser_smoke.cpp
+        tests/textbuffer_test.cpp
+        tests/caret_test.cpp
+        tests/hittest_test.cpp
+        tests/editcontroller_test.cpp
+        tests/composition_test.cpp
         tests/navigation_test.cpp
         tests/undo_test.cpp
         tests/incremental_test.cpp
@@ -300,6 +478,7 @@ if(BUILD_TESTS)
         tests/inputfilter_test.cpp
         tests/editor_features_test.cpp
         tests/findstate_test.cpp
+        tests/unicode_fold_test.cpp
         tests/findbar_ids_test.cpp
         tests/findbar_window_test.cpp
         tests/markers_test.cpp
@@ -326,20 +505,26 @@ if(BUILD_TESTS)
         tests/office_docx_import_test.cpp
         tests/office_docx_export_test.cpp
         tests/office_pdf_export_test.cpp
+        tests/office_pdf_import_test.cpp
         tests/office_markdown_bridge_test.cpp
+        tests/table_picker_test.cpp
         src/parser.cpp
         src/textbuffer.cpp
         src/layoutcache.cpp
+        src/textlayout_dwrite.cpp
         src/editcontroller.cpp
         src/navigation.cpp
+        src/tableedit.cpp
         src/undostack.cpp
         src/clipboard.cpp
         src/formatting.cpp
         src/autoformat.cpp
         src/inputfilter.cpp
         src/searchreplace.cpp
+        src/unicode_fold.cpp
         src/findstate.cpp
         src/findbar.cpp
+        src/findbar_model.cpp
         src/markers.cpp
         src/outline.cpp
         src/textdrag.cpp
@@ -365,6 +550,7 @@ if(BUILD_TESTS)
         src/office/docx_import.cpp
         src/office/docx_export.cpp
         src/office/pdf_export.cpp
+        src/office/pdf_import.cpp
         src/office/markdown_bridge.cpp
     )
     target_link_libraries(MarkDownIt.tests PRIVATE
@@ -391,5 +577,190 @@ if(BUILD_TESTS)
         NOMINMAX
     )
     set_target_properties(MarkDownIt.tests PROPERTIES WIN32_EXECUTABLE OFF)
+    if(MSVC)
+        target_compile_options(MarkDownIt.tests PRIVATE /W4)
+    endif()
 endif()
 
+# ============================================================================
+# macOS
+# ============================================================================
+#
+# The macOS app is a PARALLEL UI LAYER on the shared core, not a fork. The
+# shared sources are compiled as they are; the files under src/macos/ add
+# the platform pieces. The Windows build above is untouched.
+if(APPLE)
+    # The shared core. These sources have no Windows headers, so the same
+    # files feed the Windows build, the macOS build and both test targets.
+    set(MARKDOWNIT_CORE_SOURCES
+        src/parser.cpp
+        src/textbuffer.cpp
+        src/layoutcache.cpp
+        src/editcontroller.cpp
+        src/navigation.cpp
+        src/tableedit.cpp
+        src/undostack.cpp
+        src/clipboard.cpp
+        src/formatting.cpp
+        src/autoformat.cpp
+        src/inputfilter.cpp
+        src/searchreplace.cpp
+        src/unicode_fold.cpp
+        src/findstate.cpp
+        src/findbar_model.cpp
+        src/markers.cpp
+        src/outline.cpp
+        src/textdrag.cpp
+        src/svgtext.cpp
+        src/settings.cpp
+    )
+
+    # The Mermaid engine. The layout is shared and golden tested; the mac
+    # side only adds a painter and a Core Text measurement seam.
+    file(GLOB MARKDOWNIT_MERMAID_SOURCES
+         ${CMAKE_SOURCE_DIR}/src/mermaid/*.cpp)
+    list(REMOVE_ITEM MARKDOWNIT_MERMAID_SOURCES
+         ${CMAKE_SOURCE_DIR}/src/mermaid/measure_dwrite.cpp)
+
+    # The document bridge for the Office formats.
+    set(MARKDOWNIT_OFFICE_SOURCES
+        src/office/docx_import.cpp
+        src/office/docx_export.cpp
+        src/office/pdf_export.cpp
+        src/office/pdf_import.cpp
+        src/office/markdown_bridge.cpp
+    )
+
+    add_library(markdownit_core STATIC
+        ${MARKDOWNIT_CORE_SOURCES}
+        ${MARKDOWNIT_MERMAID_SOURCES}
+        ${MARKDOWNIT_OFFICE_SOURCES}
+        src/textlayout_coretext.cpp
+    )
+    target_include_directories(markdownit_core
+        PUBLIC
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/src/office
+            ${CMAKE_SOURCE_DIR}/third_party/md4c
+            ${CMAKE_SOURCE_DIR}/third_party/miniz
+            ${CMAKE_SOURCE_DIR}/third_party/pugixml
+            ${CMAKE_SOURCE_DIR}/third_party/pdfio
+    )
+    target_compile_features(markdownit_core PUBLIC cxx_std_17)
+    target_compile_options(markdownit_core PRIVATE -Wall -Wextra -Wpedantic)
+
+    add_executable(MarkDownItMac
+        src/macos/main_mac.mm
+        src/macos/app_mac.cpp
+        src/macos/content_view_mac.mm
+        src/macos/renderer_mac.cpp
+        src/macos/mermaid_painter_mac.cpp
+        src/macos/text_engine_mac.cpp
+        src/macos/fonts_mac.mm
+        src/macos/system_theme_mac.mm
+        src/macos/system_theme_mac.h
+        src/macos/settings_window_mac.mm
+        src/macos/settings_window_mac.h
+        src/macos/clipboard_mac.mm
+        src/macos/pdf_ocr_mac.mm
+        src/macos/settings_mac.cpp
+            src/macos/menu_mac.mm
+        src/macos/toolbar_mac.h
+        src/macos/outline_pane_mac.cpp
+        src/macos/outline_pane_mac.h
+        src/macos/outline_nsview_mac.h
+        src/macos/outline_nsview_mac.mm
+        src/macos/crash_trace_mac.cpp
+        src/macos/image_mac.mm
+        src/macos/image_draw_mac.mm
+        src/macos/findbar_mac.mm
+        src/macos/toolbar_mac.mm
+        src/macos/table_picker_mac.mm
+        src/macos/svg_mac.cpp
+        src/macos/welcome_mac.cpp
+    )
+    # The Objective-C++ sources need the Objective-C runtime and the
+    # frameworks, which the C++ sources do not.
+    set_source_files_properties(
+        src/macos/main_mac.mm
+        src/macos/content_view_mac.mm
+        src/macos/clipboard_mac.mm
+        src/macos/menu_mac.mm
+        src/macos/pdf_ocr_mac.mm
+        src/macos/image_mac.mm
+        src/macos/image_draw_mac.mm
+        src/macos/findbar_mac.mm
+        src/macos/fonts_mac.mm
+        src/macos/toolbar_mac.mm
+        src/macos/table_picker_mac.mm
+        PROPERTIES COMPILE_FLAGS "-fobjc-arc"
+    )
+    target_link_libraries(MarkDownItMac
+        PRIVATE
+            markdownit_core
+            md4c
+            miniz
+            pugixml
+            pdfio
+            "-framework Cocoa"
+            "-framework CoreGraphics"
+            "-framework CoreText"
+            "-framework AppKit"
+            "-framework CoreServices"
+            "-framework Vision"
+    )
+    target_compile_features(MarkDownItMac PRIVATE cxx_std_17)
+    target_compile_options(MarkDownItMac PRIVATE -Wall -Wextra -Wpedantic)
+
+    # The version lives in the Windows resource script, so the two
+    # platforms never drift apart.
+    file(READ "${CMAKE_SOURCE_DIR}/src/app.rc" MARKDOWNIT_APP_RC)
+    string(REGEX MATCH "FILEVERSION[ \t]+([0-9,]+)" _version_match
+           "${MARKDOWNIT_APP_RC}")
+    string(REPLACE "," "." _version "${CMAKE_MATCH_1}")
+    if(NOT _version)
+        set(_version "0.0.0")
+    endif()
+
+    # The icon is a resource in the bundle. It comes from the same art
+    # the Windows and the Store icons are rendered from.
+    set(MARKDOWNIT_MAC_ICON "${CMAKE_SOURCE_DIR}/installer/macos/app.icns")
+    set_source_files_properties("${MARKDOWNIT_MAC_ICON}"
+        PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+
+    # The app bundle. CMake lays out Contents/MacOS, Contents/Resources
+    # and the Info.plist.
+    set_target_properties(MarkDownItMac PROPERTIES
+        OUTPUT_NAME MarkDownIt
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST
+            "${CMAKE_SOURCE_DIR}/installer/macos/Info.plist"
+        MACOSX_BUNDLE_ICON_FILE "app"
+        MACOSX_BUNDLE_BUNDLE_NAME "MarkDownIt"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "dk.olebhartvigsen.markdownit"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${_version}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${_version}"
+    )
+    target_sources(MarkDownItMac PRIVATE "${MARKDOWNIT_MAC_ICON}")
+
+    # The bundled fonts. They give the mac build the same faces and the
+    # same metrics as the Windows build, so a document lays out the same
+    # way on both systems (see src/macos/fonts_mac.h). The copy into the
+    # bundle happens at build time, before the signing step runs.
+    set(MARKDOWNIT_MAC_FONTS
+        "${CMAKE_SOURCE_DIR}/third_party/selawik/Selawik-Regular.ttf"
+        "${CMAKE_SOURCE_DIR}/third_party/selawik/Selawik-Bold.ttf"
+        "${CMAKE_SOURCE_DIR}/third_party/selawik/Selawik-Semibold.ttf"
+        "${CMAKE_SOURCE_DIR}/third_party/cascadia-mono/CascadiaMono-Regular.ttf"
+        "${CMAKE_SOURCE_DIR}/third_party/cascadia-mono/CascadiaMono-Bold.ttf"
+        "${CMAKE_SOURCE_DIR}/third_party/cascadia-mono/CascadiaMono-Italic.ttf"
+        "${CMAKE_SOURCE_DIR}/third_party/cascadia-mono/CascadiaMono-BoldItalic.ttf"
+    )
+    set_source_files_properties(${MARKDOWNIT_MAC_FONTS}
+        PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/Fonts")
+    target_sources(MarkDownItMac PRIVATE ${MARKDOWNIT_MAC_FONTS})
+
+    # The native toolbar draws system symbols, so the mac window no
+    # longer carries the raster icon set; the Windows ribbon keeps its
+    # own copy inside its exe.
+endif()  # APPLE

@@ -21,6 +21,12 @@ uint32_t MoveWordLeft(const TextBuffer& buf, uint32_t offset);
 // Move right by one word (Ctrl+Right).
 uint32_t MoveWordRight(const TextBuffer& buf, uint32_t offset);
 
+// Move left/right by one word over a plain UTF-8 string, on the same
+// boundaries the buffer based moves use. The mac renderer's word steps
+// and the double click both need the boundaries of a string.
+uint32_t MoveWordLeftInString(const std::string& s, uint32_t offset);
+uint32_t MoveWordRightInString(const std::string& s, uint32_t offset);
+
 // Return the contiguous Unicode word/space/punctuation span containing offset.
 void WordSpanAt(const TextBuffer& buf, uint32_t offset,
                 uint32_t* outStart, uint32_t* outEnd);
@@ -30,6 +36,14 @@ bool IsOffsetInTable(const Document& doc, uint32_t offset);
 // terminating line break are structural, so selecting its text retains both.
 bool GetBlockSelectionRange(const Document* doc, const LayoutCache& cache,
                             int blockIndex, uint32_t* start, uint32_t* end);
+
+// The source byte where a list item's own text begins: past the
+// indentation, a blockquote marker, the bullet or the ordered
+// delimiter, and the spaces after it. Inline syntax counts as part of
+// the item, so a selection or a mark starts before it. Both the
+// Windows selection and the mac one go through here, so neither can
+// eat the bullet (highlighting spec 5.1).
+uint32_t ListItemContentStart(const Node& node, const std::string& source);
 
 // Move to the adjacent Markdown table cell. Returns false outside a table
 // or at the requested document edge.
@@ -68,6 +82,34 @@ struct TableCellRef {
 // the offset sits in hidden syntax (pipes, dashes, padding). Nearest is
 // searched within the same row first, then the same table. Returns false
 // only when offset belongs to no table.
+// The range a double click takes inside a table cell: the cell's
+// own text, padding and markers excluded (plan 19, tier 1). False
+// when the offset is not inside a cell with text.
+bool CellTextRangeAtOffset(const Document& doc, const std::string& source,
+                           uint32_t offset, uint32_t* outStart,
+                           uint32_t* outEnd);
+
+// The range a triple click takes inside a table cell: the whole
+// row, from the first cell's start to the last cell's end (plan
+// 19). False when the offset is not inside a row.
+bool RowTextRangeAtOffset(const Document& doc, const std::string& source,
+                          uint32_t offset, uint32_t* outStart,
+                          uint32_t* outEnd);
+
+// The progressive Cmd+A tiers in a table (plan 19, spec S8): 0
+// takes the cell, 1 the row, 2 the table and 3 the whole document.
+// The caller holds the tier of the previous press and resets it
+// whenever the caret moves between presses.
+struct TableSelectionTier {
+    uint32_t start = 0;
+    uint32_t end = 0;
+    int tier = 0;
+};
+TableSelectionTier NextTableSelectionTier(const Document& doc,
+                                          const std::string& source,
+                                          uint32_t caret,
+                                          int previousTier);
+
 bool TableCellAtOffset(const Document& doc, const std::string& source,
                        uint32_t offset, TableCellRef* out);
 
@@ -76,6 +118,14 @@ size_t TableColumnCount(const Document& doc, size_t tableIndex);
 
 // Compose the source text of a blank row with columnCount cells.
 std::string TableBlankRow(int columnCount);
+
+// The row a Tab press appends when the caret sits in the last cell of a
+// table: fills the row text, the splice position and where the caret
+// lands in the new first cell. False when the caret is not inside a
+// table.
+bool TableAppendRow(const Document& doc, const std::string& source,
+                    uint32_t caretOffset, std::string* rowText,
+                    uint32_t* insertPos, uint32_t* caretAfter);
 
 // Compose the source text of the table's delimiter row (dashes only,
 // default alignment) for a fresh column count.
@@ -92,6 +142,12 @@ bool TableDelimiterRange(const Document& doc, const std::string& source,
 // single-line Markdown syntax, so pipes are dropped and row breaks fold
 // to single spaces (a nested table cannot be expressed).
 std::string SanitizePasteForTableCell(const std::string& pasted);
+
+// The slug an internal #anchor link matches against a heading's
+// text, the same fold the Windows app applies: punctuation and
+// whitespace become hyphens, ASCII letters lower-case, the rest
+// passes through unchanged.
+std::string SlugifyAnchor(const std::string& value);
 
 // Insert or remove a column across every line of a table's source span.
 //

@@ -32,8 +32,105 @@ static void RecordUndo(UndoStack* undo, uint32_t offset,
     undo->Push(entry);
 }
 
+// The marker runs of one inline format. The toggle scans them first so
+// a selection that only PARTIALLY overlaps a run extends the run
+// instead of nesting a second pair inside it, and a `*` toggle over a
+// `**` run adds emphasis without touching the bold (text guide, fed og
+// kursiv rules 2, 3, 5 and 8).
+namespace {
+
+struct MarkerRun {
+    uint32_t start;
+    uint32_t end;
+};
+
+// A marker character right after a backslash is text, not markup.
+bool MarkerRunIsEscaped(const std::string& text, uint32_t pos) {
+    uint32_t slashes = 0;
+    while (pos > slashes && text[pos - slashes - 1] == '\\') slashes++;
+    return (slashes % 2) == 1;
+}
+
+std::vector<MarkerRun> ScanMarkerRuns(const std::string& text, char mc) {
+    std::vector<MarkerRun> runs;
+    uint32_t i = 0;
+    while (i < text.size()) {
+        if (text[i] != mc) {
+            i++;
+            continue;
+        }
+        uint32_t j = i;
+        while (j < text.size() && text[j] == mc) j++;
+        if (!MarkerRunIsEscaped(text, i)) runs.push_back({i, j});
+        i = j;
+    }
+    return runs;
+}
+
+struct MarkerUnit {
+    uint32_t start;
+    uint32_t end;
+    uint32_t run;    // index of the run the unit belongs to
+};
+
+struct MarkerPair {
+    MarkerUnit open;
+    MarkerUnit close;
+};
+
+// The units a run can hold. A `**` run holds as many two-character
+// markers as fit from its start. A `*` run only holds a single unit
+// when it is odd: `***text***` is bold plus emphasis, and the emphasis
+// piece is the character nearest the text, so a single `*` toggle sees
+// it as an emphasis pair while `**` stays untouched.
+std::vector<MarkerUnit> RunUnits(const MarkerRun& run, uint32_t runIndex,
+                                 uint32_t mlen, const std::string& text,
+                                 char mc) {
+    std::vector<MarkerUnit> units;
+    uint32_t length = run.end - run.start;
+    if (mlen >= 2) {
+        for (uint32_t at = run.start; at + mlen <= run.end; at += mlen)
+            units.push_back({at, at + mlen, runIndex});
+        return units;
+    }
+    if (length % 2 == 1) {
+        // The unit nearest the text: the last character when the text
+        // follows the run, the first when the text leads it.
+        bool textFollows = (run.end >= text.size()) || (text[run.end] != mc);
+        uint32_t at = textFollows ? run.end - 1 : run.start;
+        units.push_back({at, at + 1, runIndex});
+    }
+    return units;
+}
+
+// Pair the units left to right, always across runs: the first unit of
+// the left run pairs with the first of the right run, so `****x****`
+// pairs span the text instead of pairing inside one run.
+std::vector<MarkerPair> PairUnits(const std::vector<MarkerUnit>& units) {
+    std::vector<MarkerPair> pairs;
+    std::vector<bool> used(units.size(), false);
+    for (size_t i = 0; i < units.size(); i++) {
+        if (used[i]) continue;
+        size_t partner = units.size();
+        for (size_t j = i + 1; j < units.size(); j++) {
+            if (!used[j] && units[j].run != units[i].run) {
+                partner = j;
+                break;
+            }
+        }
+        if (partner == units.size()) break;   // an unmatched leftover
+        used[i] = true;
+        used[partner] = true;
+        pairs.push_back({units[i], units[partner]});
+    }
+    return pairs;
+}
+
+}  // namespace
+
 void ToggleInlineMarker(TextBuffer* buf, Selection* sel, const std::string& marker,
                        UndoStack* undo) {
+    if (marker.empty() || buf == nullptr || sel == nullptr) return;
     if (sel->Empty()) {
         // Empty selection: insert marker pair and put caret between them.
         uint32_t at = sel->active.offset;
@@ -50,6 +147,7 @@ void ToggleInlineMarker(TextBuffer* buf, Selection* sel, const std::string& mark
     const std::string& text = buf->Text();
     Selection selBefore = *sel;
     uint32_t mlen = static_cast<uint32_t>(marker.size());
+    char mc = marker[0];
 
     // First try: selection already includes the markers.
     if (IsWrappedIn(text, start, end, marker)) {
@@ -63,33 +161,137 @@ void ToggleInlineMarker(TextBuffer* buf, Selection* sel, const std::string& mark
         return;
     }
 
-    // Second try: the selection is the inner content (markers are just
-    // outside). This happens when the user selects rendered bold text; 
-    // the selection offsets point to the content, not the ** markers.
-    // Expand outward to include ALL consecutive marker characters, then
-    // remove them. This handles ** as well as **** (double-bold) etc.
-    {
-        // Scan left from start for the longest run of the marker.
-        char mc = marker[0];
-        uint32_t leftRun = 0;
-        while (start > leftRun && text[start - leftRun - 1] == mc)
-            leftRun++;
-        // Scan right from end for the longest run.
-        uint32_t rightRun = 0;
-        while (end + rightRun < text.size() && text[end + rightRun] == mc)
-            rightRun++;
-        // Only act if there's at least one full marker pair (mlen chars each side).
-        if (leftRun >= mlen && rightRun >= mlen) {
-            uint32_t fullStart = start - leftRun;
-            uint32_t fullEnd = end + rightRun;
-            std::string removed = text.substr(fullStart, fullEnd - fullStart);
-            std::string kept = text.substr(start, end - start);
-            buf->Splice(fullStart, fullEnd - fullStart, kept);
-            sel->anchor = {fullStart};
-            sel->active = {fullStart + static_cast<uint32_t>(kept.size())};
-            RecordUndo(undo, fullStart, removed, kept, selBefore, *sel);
+    // The marker runs around and inside the selection decide whether
+    // this is a removal (the runs already cover the selection), an
+    // extension (part of the selection is already formatted) or a
+    // plain wrap (no run overlaps).
+    std::vector<MarkerRun> runs = ScanMarkerRuns(text, mc);
+    std::vector<MarkerUnit> units;
+    for (uint32_t i = 0; i < runs.size(); i++) {
+        std::vector<MarkerUnit> runUnits =
+            RunUnits(runs[i], i, mlen, text, mc);
+        units.insert(units.end(), runUnits.begin(), runUnits.end());
+    }
+    std::vector<MarkerPair> pairs = PairUnits(units);
+
+    // Which pairs touch the selection: their markers overlap it, or the
+    // pair encloses it (the selection is the formatted content).
+    std::vector<size_t> touched;
+    bool allEnclose = !pairs.empty();
+    for (size_t i = 0; i < pairs.size(); i++) {
+        const MarkerPair& p = pairs[i];
+        bool markerOverlap =
+            (p.open.start < end && start < p.open.end) ||
+            (p.close.start < end && start < p.close.end);
+        bool encloses = (p.open.end <= start && end <= p.close.start);
+        if (!markerOverlap && !encloses) continue;
+        touched.push_back(i);
+        if (!encloses) allEnclose = false;
+    }
+
+    if (!touched.empty() && allEnclose) {
+        // Every touched pair encloses the selection: this is the
+        // removal direction.
+        const MarkerPair& p = pairs[touched[0]];
+        uint32_t cs = p.open.end;
+        uint32_t ce = p.close.start;
+        if (touched.size() == 1 && (start > cs || end < ce)) {
+            // The selection sits strictly inside the pair, so the text
+            // outside keeps its formatting and the run splits at the
+            // selection (guide rule 5 and 8). Trailing and leading
+            // spaces move out of the split halves so the markers open
+            // on a word. When the selection covers the whole content
+            // the pair is dropped in one piece instead.
+            std::string left = text.substr(cs, start - cs);
+            std::string right = text.substr(end, ce - end);
+            size_t leftLen = left.size();
+            while (leftLen > 0 &&
+                   (left[leftLen - 1] == ' ' || left[leftLen - 1] == '\t'))
+                leftLen--;
+            std::string leftSpill = left.substr(leftLen);
+            left = left.substr(0, leftLen);
+            size_t rightAt = 0;
+            while (rightAt < right.size() &&
+                   (right[rightAt] == ' ' || right[rightAt] == '\t'))
+                rightAt++;
+            std::string rightSpill = right.substr(0, rightAt);
+            right = right.substr(rightAt);
+
+            std::string out;
+            if (!left.empty()) out += marker + left + marker;
+            out += leftSpill;
+            out += text.substr(start, end - start);
+            out += rightSpill;
+            if (!right.empty()) out += marker + right + marker;
+
+            uint32_t fullStart = p.open.start;
+            uint32_t fullEnd = p.close.end;
+            std::string fullRemoved = text.substr(fullStart, fullEnd - fullStart);
+            buf->Splice(fullStart, fullEnd - fullStart, out);
+            uint32_t rightOut = right.empty()
+                ? 0u
+                : static_cast<uint32_t>(mlen + right.size() + mlen);
+            uint32_t afterSel = static_cast<uint32_t>(rightSpill.size()) + rightOut;
+            uint32_t selStart = fullStart + static_cast<uint32_t>(out.size()) -
+                                afterSel - (end - start);
+            sel->anchor = {selStart};
+            sel->active = {selStart + (end - start)};
+            RecordUndo(undo, fullStart, fullRemoved, out, selBefore, *sel);
             return;
         }
+
+        // One pair around the whole selection (or a doubled run): drop
+        // every touched pair's markers and keep the selection.
+        std::vector<std::pair<uint32_t, uint32_t>> spans;
+        for (size_t i : touched) {
+            spans.push_back({pairs[i].open.start, pairs[i].open.end});
+            spans.push_back({pairs[i].close.start, pairs[i].close.end});
+        }
+        std::sort(spans.begin(), spans.end());
+        uint32_t fullStart = spans.front().first;
+        uint32_t fullEnd = spans.back().second;
+        // An enclosing pair's markers sit outside the selection, so the
+        // kept text is exactly the selection.
+        std::string kept = text.substr(start, end - start);
+        std::string fullRemoved = text.substr(fullStart, fullEnd - fullStart);
+        buf->Splice(fullStart, fullEnd - fullStart, kept);
+        sel->anchor = {fullStart};
+        sel->active = {fullStart + static_cast<uint32_t>(kept.size())};
+        RecordUndo(undo, fullStart, fullRemoved, kept, selBefore, *sel);
+        return;
+    }
+
+    if (!touched.empty()) {
+        // Partial overlap: extend. The replacement covers the selection
+        // and every touched pair, the touched pairs' own markers are
+        // dropped, and one fresh pair wraps the result. Formatting
+        // outside the coverage is left alone.
+        uint32_t lo = start;
+        uint32_t hi = end;
+        std::vector<std::pair<uint32_t, uint32_t>> strips;
+        for (size_t i : touched) {
+            const MarkerPair& p = pairs[i];
+            lo = std::min(lo, p.open.start);
+            hi = std::max(hi, p.close.end);
+            strips.push_back({p.open.start, p.open.end});
+            strips.push_back({p.close.start, p.close.end});
+        }
+        std::sort(strips.begin(), strips.end());
+        std::string content;
+        uint32_t at = lo;
+        for (const auto& strip : strips) {
+            if (strip.first >= hi) break;
+            content += text.substr(at, strip.first - at);
+            at = std::max(at, strip.second);
+        }
+        content += text.substr(at, hi - at);
+        std::string removed = text.substr(lo, hi - lo);
+        std::string inserted = marker + content + marker;
+        buf->Splice(lo, hi - lo, inserted);
+        sel->anchor = {lo};
+        sel->active = {lo + static_cast<uint32_t>(inserted.size())};
+        RecordUndo(undo, lo, removed, inserted, selBefore, *sel);
+        return;
     }
 
     // Otherwise: add the markers around the selection, but place them inside
@@ -152,6 +354,25 @@ static bool FindSimpleLinkContaining(const std::string& text,
         open = text.rfind('[', open - 1);
     }
     return false;
+}
+
+bool LinkDestinationAt(const TextBuffer& buf, const Selection& sel,
+                       std::string* outUrl) {
+    if (!outUrl) return false;
+    const std::string& text = buf.Text();
+    SimpleLinkSpan link;
+    if (!FindSimpleLinkContaining(text, sel.Start(), sel.End(), &link)) {
+        return false;
+    }
+    // The destination shows only when the selection covers the whole
+    // link: the construct itself or exactly its label (guide rule 6).
+    const uint32_t start = sel.Start();
+    const uint32_t end = sel.End();
+    const bool wholeLink = start == link.linkStart && end == link.linkEnd;
+    const bool wholeLabel = start == link.labelStart && end == link.labelEnd;
+    if (!wholeLink && !wholeLabel) return false;
+    *outUrl = text.substr(link.urlStart, link.urlEnd - link.urlStart);
+    return true;
 }
 
 static void UpdateLinkDestination(TextBuffer* buf, Selection* sel,
@@ -892,3 +1113,130 @@ void OutdentLine(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     }
 }
 
+std::vector<InlineMarkerRun> CollectInlineMarkerRuns(
+    const Document& doc, const std::string& text, uint32_t start, uint32_t end) {
+    std::vector<InlineMarkerRun> runs;
+
+    for (const Node& node : doc.nodes) {
+        // Only the blocks that overlap the selection.
+        const uint32_t blockStart = node.srcOffset;
+        const uint32_t blockEnd = blockStart + node.srcLength;
+        if (end <= blockStart || start >= blockEnd) continue;
+
+        for (const InlineBlock& child : node.children) {
+            // Only the spans that carry a marker.
+            if (!child.strong && !child.em && !child.code && !child.strike)
+                continue;
+
+            const uint32_t contentStart = child.srcOffset;
+            const uint32_t contentEnd = contentStart + child.srcLength;
+            if (contentEnd <= contentStart) continue;
+            if (contentEnd <= start || contentStart >= end) continue;
+
+            // The marker character of the run. Bold and italic both
+            // use '*', the strike uses '~' and the code uses '`'.
+            char marker = '*';
+            if (child.code) marker = '`';
+            if (child.strike) marker = '~';
+
+            // The run of markers on the left of the content.
+            uint32_t leftRun = 0;
+            while (contentStart > leftRun &&
+                   text[contentStart - leftRun - 1] == marker) {
+                ++leftRun;
+            }
+            // The run of markers on the right of the content.
+            uint32_t rightRun = 0;
+            while (contentEnd + rightRun < text.size() &&
+                   text[contentEnd + rightRun] == marker) {
+                ++rightRun;
+            }
+
+            if (leftRun > 0 && rightRun > 0) {
+                InlineMarkerRun run;
+                run.markerStart = contentStart - leftRun;
+                run.markerEnd = contentEnd + rightRun;
+                run.contentStart = contentStart;
+                run.contentEnd = contentEnd;
+                runs.push_back(run);
+            }
+        }
+    }
+
+    // The runs come back from the right, so a splice does not move the
+    // ones that are still to come.
+    std::sort(runs.begin(), runs.end(),
+              [](const InlineMarkerRun& a, const InlineMarkerRun& b) {
+                  return a.markerStart > b.markerStart;
+              });
+
+    // Two runs can share their markers, a bold and an italic for
+    // example, so the ones that overlap are merged into the wider one.
+    std::vector<InlineMarkerRun> merged;
+    for (const InlineMarkerRun& run : runs) {
+        if (!merged.empty() && run.markerEnd >= merged.back().markerStart) {
+            merged.back().markerStart =
+                std::min(merged.back().markerStart, run.markerStart);
+            merged.back().markerEnd =
+                std::max(merged.back().markerEnd, run.markerEnd);
+            merged.back().contentStart =
+                std::min(merged.back().contentStart, run.contentStart);
+            merged.back().contentEnd =
+                std::max(merged.back().contentEnd, run.contentEnd);
+        } else {
+            merged.push_back(run);
+        }
+    }
+    return merged;
+}
+
+void ClearInlineFormatting(const Document& doc, TextBuffer* buf, Selection* sel,
+                            UndoStack* undo) {
+    if (!buf || !sel) return;
+    if (sel->Empty()) return;  // a selection is needed to clear anything
+
+    const uint32_t start = sel->Start();
+    uint32_t end = start + sel->Length();
+    const std::string& text = buf->Text();
+    if (end > text.size()) end = static_cast<uint32_t>(text.size());
+
+    const std::vector<InlineMarkerRun> runs =
+        CollectInlineMarkerRuns(doc, text, start, end);
+    if (runs.empty()) return;
+
+    // The selection before the change, so the undo step can bring it
+    // back.
+    const Selection selBefore = *sel;
+
+    // The splices shorten the text, so the end of the selection moves
+    // left by the number of bytes that are taken away.
+    int32_t removedTotal = 0;
+    for (const InlineMarkerRun& run : runs) {
+        const std::string content =
+            text.substr(run.contentStart, run.contentEnd - run.contentStart);
+        const std::string removed =
+            text.substr(run.markerStart, run.markerEnd - run.markerStart);
+
+        buf->Splice(run.markerStart, run.markerEnd - run.markerStart, content);
+        if (undo) {
+            UndoEntry entry{};
+            entry.offset = run.markerStart;
+            entry.removed = removed;
+            entry.inserted = content;
+            entry.selBefore = selBefore;
+            entry.selAfter = *sel;
+            entry.type = EditType::Other;
+            undo->Push(entry);
+        }
+        removedTotal += static_cast<int32_t>(removed.size()) -
+                        static_cast<int32_t>(content.size());
+    }
+
+    // The selection covers the same text, now without the markers.
+    const uint32_t newEnd =
+        (end > static_cast<uint32_t>(removedTotal))
+            ? end - static_cast<uint32_t>(removedTotal)
+            : start;
+    sel->anchor = {start};
+    sel->active = {newEnd};
+}

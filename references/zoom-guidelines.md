@@ -469,3 +469,11 @@ when the selection is empty, matching the keyboard.
 escalates cell, then row, then table, then document when the caret sits in a
 table cell. That escalation describes rendered cells, and source mode shows
 Markdown text with no cells on screen, so the tier logic is skipped there.
+
+**No bare `+` and `-` zoom keys.** The guide lists `+` and `-` among the
+common zoom shortcuts, and both this app and Windows Notepad bind them with
+a modifier instead (`Ctrl+Plus` and `Ctrl+Minus` there). This is an editor:
+a bare `+` types a `+`, in every mode, so the keys stay commands with a
+modifier. On the mac that leaves the unshifted equals key, which on most
+layouts never produces a `+`; a hidden menu item maps `Cmd+=` to the same
+zoom-in command, the way Apple's own apps accept both spellings.

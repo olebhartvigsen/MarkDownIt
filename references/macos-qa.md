@@ -1,0 +1,448 @@
+# macOS QA: the checklist and the issue log
+
+The port is verified structurally: it compiles on the runner, starts,
+and passes its tests. None of that sees what a person sees. This file
+is the shared instrument for closing that gap.
+
+## How an issue gets found and closed
+
+1. It comes from a screenshot of the real app: one the person testing
+   takes, or the capture the launch smoke uploads as
+   `MarkDownIt-window-capture` on every CI run.
+2. It is written down here as one entry: what was done, what was
+   expected, what happened.
+3. It gets fixed, the fix lands through a CI run, and the delivery zip
+   is refreshed. The entry then says which commit fixed it.
+
+## The checklist
+
+Walk each screen once and note anything that reads as wrong. One line
+per item is enough ("H1 too small", "Replace button dead in read
+mode"); a screenshot of the screen makes it exact.
+
+### The window and its chrome
+- Title bar: the document name, the proxy icon, the edited dot after a
+  change, "Untitled" for a new document.
+- Resize, zoom, minimize; the layout reflows without clipping.
+- Enter Full Screen and back; the menu item renames itself.
+- The About panel and the Settings window (Command-,): controls act.
+
+### The menu bar
+- Each menu opens and its items act: File, Edit, View, Format, Table,
+  Window, Help.
+- Shortcuts work: Command-N/O/S/F/R/Z, Command-Option-F, Command-/.
+- Items grey out when they should (no document, read mode).
+- Open Recent fills, and an entry opens the file.
+- Services, Hide Others, Show All, the window list, Help.
+
+### The toolbar
+- The six items in order: Save, Undo, Redo, Find, the edit switch,
+  the outline switch.
+- Undo and Redo grey out with nothing to undo or redo, and in the
+  welcome window.
+- The edit switch reads Edit while reading and Done while editing;
+  the outline switch matches the View menu.
+- Tooltips and accessibility names on every item; the shortcuts read
+  Command-F, not Ctrl-F.
+- A narrow window reflows without overlap; the toolbar customizes and
+  the user's set survives a relaunch.
+
+### The document
+- Heading sizes step down clearly; H6 reads muted.
+- Paragraph rhythm: more space before a section than between
+  paragraphs.
+- Code blocks: monospaced, boxed, readable.
+- Tables: header row, alternating rows, borders.
+- Blockquotes: bar plus indented muted text.
+- Task lists: a checkbox with the state; `[ ]` never shown as text.
+- Links blue and underlined; inline code tinted.
+- Images and mermaid diagrams draw inside the column.
+- Read mode hides the markers; edit mode shows the source.
+- Selection highlight and the caret (shape, blink) behave.
+- Both appearances: light and dark.
+
+### The find bar
+- Opens with Command-F, and Command-Option-F for replace; docks at the
+  bottom edge with the document above it, nothing covered.
+- The search field carries the system's magnifier and clear button;
+  the chevron pair walks matches; the counter updates.
+- Enter and Shift-Enter walk matches too.
+- The replace buttons are live only in edit mode.
+- Close (Escape, or the Close button) returns the space.
+
+### The outline pane
+- Lists the headings; clicking one scrolls the document there.
+- The active row follows the document while scrolling.
+- Empty state shows both lines.
+- The divider drags and the pane hides/shows from the menu.
+
+### Files and editing
+- A file opens from Finder, from the terminal, and from Open Recent.
+- Typing needs the Edit toggle; the toggle is reachable from the
+  toolbar and the View menu.
+- Save, Save As, and the edited dot clearing on save.
+- Undo and redo step through edits.
+- Copy and paste text; dragging a selection moves it.
+- Find/replace as above.
+- Zoom in, out, and back to actual size.
+- docx import and export; PDF export; the compatibility report.
+
+## The issue log
+
+Newest first. The first entries came from the window capture the smoke
+took on run 41293719752; the rest from the six state captures of the QA
+walk (artifact `MarkDownIt-window-capture`, run 41294080796), the same
+loop that now runs on every build.
+
+### The two windows looked like different applications (Nov 1)
+- The side-by-side captures showed the same document in two unrelated
+  windows: the mac drew its own system neutrals around the page (a
+  white pane over a blue selection, a white strip, accent underlines)
+  where the Windows build has always painted a warm paper palette, and
+  the strip missed the ribbon's furniture: no File tab, no tab cards,
+  the captions in the wrong tone, the Quick Access Toolbar in the
+  wrong place, and a different caption.
+- Cause: the Windows surfaces came from fixed warm values the app had
+  carried for years, while the mac layer resolved everything from
+  system colours; nothing shared a palette.
+- Screenshot: `pairs/doc_full.png`, `pairs/ribbon_left.png` beside
+  `pairs/ribbon_right.png` from run 41299580745.
+- Status: fixed in the convergence commits. One chrome palette now
+  lives in `theme.h` (`ChromePalette`; the light values come from the
+  Windows paint: pane `0xFAF6F1`, active row `0xE8DCC8`, strip
+  `0xF5F6F7`, File tab `0x1979CA`, pressed pills `0xC9E0F7` with a
+  `0x62A2E4` edge). The Windows pane and strip read it unchanged, and
+  the mac resolves it against its window's appearance, with warm-dark
+  counterparts in Dark Mode. The mac strip gained the File tab (it
+  pops up the same menu the menu bar carries), ribbon-shaped tab
+  cards, the captions in their measured tone, and the Quick Access
+  Toolbar moved into the title bar beside the traffic lights with the
+  caption following it. The find bar wears the Windows controls:
+  Previous and Next, Close, the Find: and Replace with: labels, flat
+  white fields whose hairline turns blue while edited, no history
+  triangle. The pane paints every row in one tone, with the Windows
+  pane's smaller right-pointing mark in the arrow brown.
+
+### The colour gate (Nov 1)
+- The capture comparison samples chrome colours beside the layout now:
+  the strip above the document (`doc`, `find`, `edit`), the pane's
+  ground, and the dominant colour of the active row's first text band
+  (`outline`); each pair must match within 16 per channel.
+- Calibrated against the Windows captures: the strip reads
+  `(245,246,247)`, the pane ground `(250,246,241)`, and the active row
+  `(232,220,200)` on both platforms, exactly.
+
+### The walk keeps each state clean (Nov 1)
+- The Windows outline capture showed no highlighted row at all: the
+  viewport probe refused to run in edit mode, so once the find state
+  had scrolled the view, the pane held no row through the edit and
+  outline states. Both walks re-derive the pane's highlight when they
+  enter those states, so a picture never depends on what the previous
+  state's scroll left behind.
+- The Windows window is clamped to the work area: the 1000x760 window
+  was taller than the runner's screen, so the find bar's replace row
+  sat under the taskbar in every picture.
+- The mac walk waits two seconds before its first state, with the
+  window brought forward: the first picture used to race the window
+  onto the screen and catch the desktop behind it.
+
+### The outline row clipped a long heading (Nov 1)
+- "The smallest heading" drew cut mid-word at the pane edge ("The
+  smallest hea"), with no ellipsis.
+- Screenshot: `qa/doc.png` (light), also visible in `qa/dark.png`.
+- Status: fixed in this commit. The row is trimmed to the width the
+  pane can give it and ends in an ellipsis; the Windows pane puts a
+  trailing ellipsis sign on its row layout for the same result.
+- Checked in the next capture (run 41294774955): the long rows end in
+  an ellipsis and nothing runs off the pane.
+
+### The outline expanders drew as squares (Nov 1)
+- Rows with a subtree showed a small filled square in the arrow zone,
+  the same shape in both states, where the pane's own comment says
+  triangle.
+- Screenshot: `qa/doc.png` and `qa/dark.png`.
+- Status: fixed in this commit. A filled triangle points right while
+  the subtree is folded and down while it is open, the shape Windows
+  and the Finder use.
+- Checked in the same run: every row with a subtree carries a
+  triangle, down while open, and leaf rows carry none.
+
+### Blank lines push blocks apart (Nov 1)
+- The showcase capture shows about 90 px between the "Lists and
+  tasks" heading and its first bullet, and about 65 px between the
+  bullet list and the numbered list. The metrics allow for roughly
+  30 px (10 + 16 and 4 + 16 plus line leading).
+- Cause: every blank line is a virtual empty paragraph in the node
+  stream (parser.cpp marks them), and both renderers give it a full
+  line's height so the caret has a place to sit. In the read view
+  that line is dead space on top of the block gaps.
+- Screenshot: `qa/doc.png`; measured pixel rows in the bullet
+  section (bands 448-465, 559-571, 614-626, 693-705).
+- Status: fixed in this commit. The blank line keeps a full line in
+  edit mode, so the caret's place stays, and renders as a thin strip
+  while reading, so blocks around a list sit at their normal distance.
+  Both renderers follow the mode; a mac renderer test holds the two
+  heights apart.
+
+### The outline hint line clipped at the pane edge (Nov 1)
+- The second empty-state line ran past the 200 DIP pane and was cut
+  mid-phrase ("...your document", with "to create an outline." gone).
+- Screenshot: the welcome capture, `window.png`.
+- Status: fixed in this commit; the mac pane draws it as two lines now.
+
+### The strip dropped a size step and left dead space (Nov 1)
+- The command strip always drew its items icon-only inside oversized
+  group boxes, with a wide dead zone to the right. Each group puts its
+  caption label in the same subview list as its buttons, and both the
+  width calculation and the group framing counted the caption as one
+  more command, so every group was one command too wide and the full
+  (icon and label) layout never fit any window.
+- Screenshot: the welcome capture, `window.png`.
+- Status: fixed in this commit. Only buttons count now, so a 1000 px
+  window draws the full layout with correctly sized groups. The three
+  small icons at the top left are the Quick Access Toolbar, which
+  mirrors the Windows caption strip on purpose, and stay.
+- Checked in the next captures (runs 41294189793 and 41294774955):
+  every button carries its label and the groups are as wide as their
+  buttons.
+
+### The outline pane shows at the welcome screen (Nov 1)
+- With no document open, the pane offers "No headings in this
+  document.", which is text about a document that does not exist.
+- Status: open; the welcome behaviour needs a decision first.
+
+### Dark mode drew the light appearance's ink (Nov 1)
+- The dark capture showed the dark page with the document text still
+  in the light theme's near-black ink, unreadable; the strip and the
+  outline pane had adapted. Root cause: the renderer bakes the palette
+  into the laid-out runs, and ContentView::RefreshTheme re-set the
+  palette without laying the document out again.
+- Fixed: RefreshTheme lays the document out again and invalidates.
+  Pinned by tests/renderer_mac_test.cpp
+  (RecoloursTheRunsWhenTheThemeChanges) and by the capture-parity tool,
+  which now fails any captured state whose document pane shows almost
+  no text, the way a dark-on-dark document does.
+
+### The parity pipeline caught, in order (Nov 1)
+- Windows could not open its startup file: every Windows capture showed
+  a Could not open file dialog. The hand-stripped quote handling did
+  not survive the CI launcher; the canonical Windows parser now hands
+  over the plain path, the argument is traced, and the next captures
+  show the document rendered (trace: startup file arg=[D:\a\...]).
+- The Windows document kept a full empty line next to every list on
+  first open: the renderer keeps the editing heights by default so the
+  export goldens stay put, and the app only pushed its mode when the
+  user toggled edit. The startup now states the mode beside the width
+  push. Evidence: the Windows doc capture went from 9 to 12 text bands,
+  matching the mac's 12.
+- The mac drew 24 px line pitch where Windows draws 31: the Windows
+  renderer scales the font's natural line box (DirectWrite reports it)
+  while the mac scaled the bare em. The LineHeight seam, built with
+  exactly those DirectWrite-equivalent numbers, was never wired into
+  ApplyLineSpacing; it now is, with the em as fallback. What remains is
+  the fonts' own difference (SF asks for less leading than Segoe UI),
+  which is the part that cannot be removed.
+- The blinking caret made the outline capture differ from the edit
+  capture by 15 px at random: both walks now park the caret off, and
+  stop the mac blink timer, right before they announce a state. The
+  comparison tool was recalibrated in the same pass: the text rows are
+  paired by index and the gap after each row is compared, which holds
+  the two fonts' honest 3-5 px difference steady, and the source view
+  is measured by pitch because its monospace wrap points differ by
+  design.
+- Kept as by-design differences: fonts and their wrap points, the
+  window chrome, the outline pane's active-row tint, and the pane
+  width (Windows sizes it to its items, the mac remembers a width).
+
+### Cross-platform capture parity (Nov 1)
+- The Windows build photographs itself in the same named states as the
+  mac build (doc, find, edit, outline, source, lower, end). The lower
+  and end states scroll the page so the elements below the fold (the
+  tasks, the quote, the table, the code block, the small headings and
+  the diagram) are photographed and compared too; the jump anchors to a
+  heading's own offset a fixed drop below the frame's top (the source
+  state's raw view is left behind first), so the picture is the same
+  every run and both platforms frame the same content. With
+  MARKDOWNIT_QA_STATES set, src/app.cpp walks the states on a timer,
+  writes "qa state ready: <name> rect=x,y,w,h" into the log named by
+  MARKDOWNIT_QA_LOG, and closes itself at the end;
+  tools/windows-smoke/capture.ps1 polls that log and takes a screen
+  capture per state. The mac walk (src/macos/main_mac.mm) announces
+  the same rectangle for its pane, and tools/macos-smoke/launch_smoke.sh
+  records both the pictures and the rectangles into build-mac/qa.
+- tools/compare_platform_captures.py crops each pair to its document
+  pane, scales both sides to one width, and compares the text band
+  count, the large gaps between the bands and the ink share. Fonts and
+  window chrome differ by design, so the comparison is structural: a
+  state fails when a block went missing or moved past the tolerances
+  (2 bands, 12 px gaps, 8 px first row). The tool runs the same way
+  locally: point --macos and --windows at two capture directories.
+- The capture-parity job in .github/workflows/build.yml runs the
+  comparison as a fixed step whenever both platform builds passed; the
+  side-by-side and overlay pictures (mac ink red, Windows ink green)
+  land as the MarkDownIt-capture-parity artifact on every run.
+- dark and settings are mac-only states; the report names them and
+  skips them.
+- The lower and end states came out of the document styling review
+  (Nov 1): the captures only showed the top of the page, so the styling
+  of everything below it rested on code reading. The two states put
+  those elements in front of the camera on both platforms, and the same
+  comparison checks them.
+
+### The caret above the first heading (2026-11-01)
+- The Windows pane lost its highlight between the find and edit states:
+  with the caret parked in the document's opening lines, the caret's
+  section resolved to nothing, because the first heading starts after
+  offset zero. The viewport probe and the mac pane both read that
+  position as the first section, and the caret rule now clamps to the
+  first row the same way, so the highlight stays lit through every
+  state.
+- Screenshot: the edit and outline captures in MarkDownIt-capture-parity.
+- Status: fixed in 74c9c06 (CI run 41305014659).
+
+### The edit picture's scroll (2026-11-01)
+- The mac walk entered the edit state wherever the caret reveal had
+  scrolled to, while the Windows walk sat at the top of the document,
+  so the parity gate flagged fifteen pixels in some runs. The walk now
+  sets the core's scroll offset and the scroller together as it enters
+  the state, which is where the Windows side already is.
+- Screenshot: the edit pair in MarkDownIt-capture-parity.
+- Status: fixed in 84a1905 (CI run 41305853691).
+
+### The mac window wears native chrome (2026-11-01)
+- The strip that mirrored the Windows ribbon read as a Windows
+  control drawn into a mac window, which the macOS guidelines warn
+  against ("avoid custom window UI"). The strip is gone; the window
+  now carries a standard toolbar (Save, Undo, Redo, Find, the edit
+  switch, the outline toggle) built from system symbols, with the
+  document name in a standard title bar and no titlebar accessories.
+  The outline pane and the find bar follow in the next steps. The
+  Windows window keeps its ribbon.
+- Screenshot: every mac capture of the walk shows the toolbar.
+- Status: the toolbar lands here; see
+  references/macos-native-chrome.md.
+
+### The sidebar and the find bar wear native chrome (Nov 1)
+- The outline pane sits on the window's sidebar material now, marks
+  the caret's row with the system selection colour in a rounded inset
+  band, texts its rows in the label colours, and opens subtrees with
+  the system's own chevron symbol (2e522b7). The find bar uses the
+  system's search field, magnifier, rounded well, clear button and
+  focus ring, and a segmented control with the system's chevrons for
+  the match steps in place of the text buttons; the Windows field
+  hairlines and a dead history menu are gone.
+- Screenshot: the walk's mac captures show the sidebar and the bar.
+- Status: lands with this entry; see references/macos-native-chrome.md.
+
+### The Windows picture caught a blinking caret (Nov 1)
+- The capture parity failed once on the edit pair: the Windows
+  picture had caught the native caret mid blink, a two by forty pixel
+  bar at the first line, and the compared first text row moved by the
+  bar's height. The mac walk photographs no caret, it parks the caret
+  off; the Windows walk kept the caret's place while the caret stayed
+  visible, so the blink phase rode into the frame. The Windows walk
+  hides the caret for its pictures now, and the two paths that could
+  show it stand down while the walk drives. The rounded rectangle fix
+  the same run carried was not the cause.
+- Screenshot: a Windows QA capture with no caret at the first line.
+- Status: fix lands here.
+
+### The document styling review (Nov 1)
+- The chrome review's eye turned on the markdown text itself, against
+  references/osx-markdown-visual-style-guide.md. The findings were
+  small and one of them wanted a change: the hairline rule under the
+  H1 and the H2 is not hierarchy by size, weight and spacing, which is
+  what the guide asks for, and it reads as a web convention in a mac
+  window. It is gone on both platforms; the air it sat in stays
+  reserved, so the rhythm and the row pairing in the comparison are
+  untouched. Everything else held up: the system faces through the
+  platform APIs (the bundled Selawik and Cascadia copies are stand-ins
+  only), the modest heading scale, semantic colours throughout, the
+  checkbox carried by its shape, the restrained quote, table and code
+  block, and the comfortable paragraph versus section spacing.
+- One doc bug fell out too: theme.h still claimed the mac drew with
+  the bundled copies; it tells the system-face story now.
+- Screenshot: the doc state, the H1 with its air and no rule.
+- Status: fix lands here.
+
+### The fold's first pictures caught two bugs (Nov 1)
+- The first photographs of the page below the fold showed a fenced code
+  block drawn as an empty box on the mac: the renderer read the block's
+  text from the inline children, and the parser keeps a fence's text in
+  raw, the field the Windows draw reads. Every code block on the mac
+  rendered empty, and the test helper built the node with the children
+  shape, which is why the suite never saw it. Both read raw now, the
+  helper matches the parser, and the same read backs the standalone SVG
+  path.
+- The same pictures showed the table's alternating row as a solid grey
+  band on the mac: its wash set a label colour's alpha to 0.55, and the
+  label already carries its own faint alpha, so the wash came out
+  darker than the header instead of fainter. It sits at half the
+  header's weight now.
+- The first comparison of the pictures failed on row pairing the eye
+  could not see: the mac draws its grids and box borders with the
+  system separator colour and Windows with its lighter hairline, so a
+  border crossing the pane banded a row on one side only and shifted
+  every pair below it. A row counts as text from six ink pixels up now,
+  and a band under four rows tall is never a text row; the seven states
+  pair row for row.
+- Screenshot: the end state, the code block showing its lines and the
+  table row a faint wash.
+- Status: fixed in 1022589 and 29477ac (CI run 41359835190).
+
+### The width options leave the mac (Nov 2)
+
+- The Settings window lost its document width row and the View menu
+  its Wider Content command: the pane always fits the window with the
+  margin the padding leaves, so the options had nothing to define. The
+  mode is pinned to the full width at launch, and a width value in an
+  old settings file is not consulted.
+- The settings photo now shows the shorter form; the other states are
+  untouched. At the capture size the width modes agree below their
+  cap, so the comparison reads the same.
+- Status: fixed in 76a24d4 (CI run 41504446368).
+
+### The reading surface follows the guidelines (Nov 2)
+
+- A compliance sweep against the macOS guidelines document measured
+  the reading surface against its numbers: the body's lead floor is
+  1.62 em, the pane caps its column at a reading width instead of
+  stretching to the window, the side padding slides down on a narrow
+  pane, the table dropped its vertical grid for row separators with
+  semibold headers and centered cells, the list bullets change with
+  the depth, a tall image keeps its aspect ratio and reserves the
+  room it draws in, and the caret and the selection wash follow the
+  system colours, so both appearances stay readable.
+- Screenshot: the tail state, the deep nesting, the long tokens, the
+  wide table and the long code lines; the narrow and wide states show
+  the padding and the column at both window sizes.
+- Status: fixed in 1ded61a, 9547e1c and 225ced0 (CI run 41511699355).
+
+### The GitHub document profile (Nov 2)
+
+- The document style now follows GitHub's markdown rendering: 16px body at
+  1.5, 13.6px code at 1.45, the 2 / 1.5 / 1.25 / 1 / .875 / .85 em heading
+  scale, collapsed 1rem and 1.5rem margins, a 4px hr, a 1px rule under H1 and
+  H2, a borderless 6px code card, rounded inline code spans, and a full 1px
+  table grid with a white header and the stripe on the first body row.
+- The mac keeps San Francisco and Menlo and derives its slots from AppKit's
+  semantic colours, so Dark Mode still works. Windows keeps Segoe UI and the
+  fixed palette. Both platforms use the same metrics and the same margin
+  collapse in src/blockspacing.h.
+- Deliberate differences: links keep a static underline, code has no syntax
+  colouring, tables use equal columns that fit the measure instead of content
+  widths with horizontal scroll, and the mac column follows the available
+  window width instead of a fixed 690 DIP measure.
+- Screenshot: not captured locally. The CI doc, code and table states are the
+  ones to review.
+- Status: local renderer tests green apart from the four known stub-engine
+  StepsSkipTheHiddenMarkers failures; CI pending.
+
+<!--
+Entry format:
+
+### Short name (date)
+- What was done / what was expected / what happened.
+- Screenshot: the screen and what it shows.
+- Status: open | fixed in <commit> (CI run <id>)
+-->

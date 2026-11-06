@@ -3636,7 +3636,7 @@ static mz_bool mz_zip_reader_locate_header_sig(mz_zip_archive *pZip, mz_uint32 r
         if ((!cur_file_ofs) || ((pZip->m_archive_size - cur_file_ofs) >= (MZ_UINT16_MAX + record_size)))
             return MZ_FALSE;
 
-        cur_file_ofs = MZ_MAX(cur_file_ofs - (sizeof(buf_u32) - 3), 0);
+        cur_file_ofs = MZ_MAX(cur_file_ofs - (mz_int64)(sizeof(buf_u32) - 3), (mz_int64)0);
     }
 
     *pOfs = cur_file_ofs;
@@ -3976,7 +3976,8 @@ static size_t mz_zip_mem_read_func(void *pOpaque, mz_uint64 file_ofs, void *pBuf
 {
     mz_zip_archive *pZip = (mz_zip_archive *)pOpaque;
     size_t s = (file_ofs >= pZip->m_archive_size) ? 0 : (size_t)MZ_MIN(pZip->m_archive_size - file_ofs, n);
-    memcpy(pBuf, (const mz_uint8 *)pZip->m_pState->m_pMem + file_ofs, s);
+    if (s)
+        memcpy(pBuf, (const mz_uint8 *)pZip->m_pState->m_pMem + file_ofs, s);
     return s;
 }
 

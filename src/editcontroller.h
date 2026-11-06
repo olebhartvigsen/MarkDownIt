@@ -51,10 +51,40 @@ public:
     // Break undo coalescing (call on caret movement).
     void BreakUndoCoalesce() { if (undo_) undo_->BreakCoalesce(); }
 
+    // IME composition (marked text). A temporary composition is text
+    // input, so it creates no undo entry while it is being written; the
+    // confirmation is exactly one entry, and a cancelled composition
+    // puts the text and the selection back the way they were (text
+    // editing spec, "Almindeligt tekstinput": a temporary IME
+    // composition is not an undo step until the text is confirmed).
+    void BeginComposition();
+    void SetCompositionText(const std::string& utf8);
+    void CommitComposition();
+    void CancelComposition();
+    bool HasComposition() const { return comp_.active; }
+
+    // The byte range the marked text covers, so a caller can report it
+    // to the input method that asked for it.
+    void CompositionRange(uint32_t* start, uint32_t* length) const {
+        *start = comp_.start;
+        *length = comp_.length;
+    }
+
 private:
     TextBuffer* buf_;
     Selection*  sel_;
     UndoStack*  undo_;
+
+    // The state of one composition: where it sits, how much of the
+    // buffer it owns right now, the text it replaced, and the selection
+    // to put back when it is cancelled.
+    struct Composition {
+        bool active = false;
+        uint32_t start = 0;
+        uint32_t length = 0;
+        std::string replaced;
+        Selection selBefore{};
+    } comp_;
 
     void RecordAndApply(uint32_t offset, uint32_t length,
                         const std::string& replacement,

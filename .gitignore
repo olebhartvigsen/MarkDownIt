@@ -13,6 +13,10 @@ CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 
+# Core dumps from a crashed test run
+core
+core.*
+
 # Compiler artifacts
 *.exe
 *.pdb
@@ -43,3 +47,5 @@ __pycache__/
 # macOS resource forks
 desktop.ini
 .DS_Store
+tools/macos-icons/out/
+tools/macos-icons/node_modules

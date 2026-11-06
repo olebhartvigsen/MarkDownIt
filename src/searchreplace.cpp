@@ -1,5 +1,6 @@
 #include "searchreplace.h"
 #include "editcontroller.h"
+#include "unicode_fold.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -96,13 +97,119 @@ static std::vector<char> BuildGraphemeBoundaryTable(const std::string& text) {
     return boundary;
 }
 
-static char32_t Fold(char32_t cp) {
-    if (cp >= U'A' && cp <= U'Z') return cp + (U'a' - U'A');
-    if (cp >= 0x00C0 && cp <= 0x00D6) return cp + 0x20;
-    if (cp >= 0x00D8 && cp <= 0x00DE) return cp + 0x20;
-    if (cp >= 0x0391 && cp <= 0x03AB) return cp + 0x20;
-    if (cp >= 0x0410 && cp <= 0x042F) return cp + 0x20;
-    return cp;
+static bool IsWord(char32_t cp);
+
+// A folded unit the matcher runs on: the value after canonical
+// decomposition and, unless the match is case sensitive, case folding.
+// One source character can produce several units (a decomposition or a
+// fold expansion), so every unit carries the byte range of the
+// character it came from; that is how a match maps back to document
+// bytes (find spec: folding and normalisation).
+struct FoldUnit {
+    char32_t value = 0;
+    uint32_t start = 0;
+    uint32_t end = 0;
+};
+
+static std::vector<FoldUnit> FoldUnits(const std::string& text,
+                                       bool caseSensitive) {
+    const std::vector<CodePoint> decoded = Decode(text);
+    std::vector<FoldUnit> units;
+    units.reserve(decoded.size());
+    uint32_t decomposed[8];
+    uint32_t folded[4];
+    for (const CodePoint& cp : decoded) {
+        const uint32_t cpEnd = cp.start + cp.length;
+        const std::size_t count = unicode::DecomposeInto(cp.value, decomposed, 8);
+        for (std::size_t i = 0; i < count; ++i) {
+            if (caseSensitive) {
+                units.push_back({static_cast<char32_t>(decomposed[i]), cp.start, cpEnd});
+                continue;
+            }
+            const std::size_t foldedCount = unicode::FoldInto(decomposed[i], folded, 4);
+            for (std::size_t j = 0; j < foldedCount; ++j)
+                units.push_back({static_cast<char32_t>(folded[j]), cp.start, cpEnd});
+        }
+    }
+    return units;
+}
+
+// The matcher core, shared by both public entry points. A match has to
+// cover whole source characters: text that folded into several units is
+// only matched as a whole, so "a" does not match the single character
+// "A with a ring" while "A with a ring" matches a decomposed "A plus
+// ring".
+static std::vector<TextMatch> MatchCore(const std::string& text,
+                                        const std::string& query,
+                                        SearchOptions options,
+                                        bool rejectLineBreaks,
+                                        SearchRangeFilter filter,
+                                        void* context) {
+    std::vector<TextMatch> result;
+    if (query.empty()) return result;
+    const std::vector<FoldUnit> haystack = FoldUnits(text, options.caseSensitive);
+    const std::vector<FoldUnit> needle = FoldUnits(query, options.caseSensitive);
+    if (needle.empty() || needle.size() > haystack.size()) return result;
+    const std::vector<char> boundaries = BuildGraphemeBoundaryTable(text);
+
+    for (std::size_t i = 0; i + needle.size() <= haystack.size();) {
+        const std::size_t endIndex = i + needle.size();
+        const FoldUnit& first = haystack[i];
+        const FoldUnit& last = haystack[endIndex - 1];
+        // The first and the last matched unit must open and close their
+        // source character, or the candidate matches half a character.
+        const bool startsChar = i == 0 || haystack[i - 1].start != first.start;
+        const bool endsChar = endIndex == haystack.size() ||
+                              haystack[endIndex].start != last.start;
+        if (!startsChar || !endsChar) {
+            ++i;
+            continue;
+        }
+        bool equal = true;
+        for (std::size_t j = 0; j < needle.size(); ++j) {
+            if (haystack[i + j].value != needle[j].value) {
+                equal = false;
+                break;
+            }
+        }
+        if (!equal) {
+            ++i;
+            continue;
+        }
+
+        const uint32_t start = first.start;
+        const uint32_t end = last.end;
+        if (start >= boundaries.size() || !boundaries[start] ||
+            end >= boundaries.size() || !boundaries[end]) {
+            ++i;
+            continue;
+        }
+        // A match never spans a line break, so it can never join the end
+        // of one block with the start of the next (find-replace guide 19).
+        if (rejectLineBreaks) {
+            const std::size_t nl = text.find('\n', start);
+            if (nl != std::string::npos && nl < end) {
+                ++i;
+                continue;
+            }
+        }
+        if (options.wholeWord) {
+            const bool leftOk = i == 0 || !IsWord(haystack[i - 1].value);
+            const bool rightOk = endIndex == haystack.size() ||
+                                 !IsWord(haystack[endIndex].value);
+            if (!leftOk || !rightOk) {
+                ++i;
+                continue;
+            }
+        }
+        if (filter && !filter(start, end - start, context)) {
+            ++i;
+            continue;
+        }
+        result.push_back({start, end - start});
+        i = endIndex;
+    }
+    return result;
 }
 
 static bool IsWord(char32_t cp) {
@@ -118,53 +225,6 @@ static bool IsWord(char32_t cp) {
     return cp >= 0x0300 && cp <= 0x036F;
 }
 
-// Candidate test shared by both matchers. `i` is the index of the first
-// needle code point in the haystack. On success `*outStart`/`*outEnd` receive
-// the match range in document bytes and the function returns true. A rejected
-// candidate is skipped one code point at a time, so a later match that
-// overlaps a rejected one is still found (guide 23).
-static bool CandidateMatches(const std::string& text,
-                             const std::vector<CodePoint>& haystack,
-                             const std::vector<CodePoint>& needle,
-                             std::size_t i, SearchOptions options,
-                             bool rejectLineBreaks,
-                             SearchRangeFilter filter, void* context,
-                             uint32_t* outStart, uint32_t* outEnd) {
-    const std::size_t endIndex = i + needle.size();
-    bool equal = true;
-    for (std::size_t j = 0; j < needle.size(); ++j) {
-        const char32_t a = haystack[i + j].value;
-        const char32_t b = needle[j].value;
-        if ((options.caseSensitive ? a : Fold(a)) !=
-            (options.caseSensitive ? b : Fold(b))) {
-            equal = false;
-            break;
-        }
-    }
-    if (!equal) return false;
-
-    const uint32_t start = haystack[i].start;
-    const uint32_t end = endIndex == haystack.size()
-        ? static_cast<uint32_t>(text.size())
-        : haystack[endIndex].start;
-    // A match never spans a line break, so it can never join the end of one
-    // block with the start of the next.
-    if (rejectLineBreaks) {
-        const size_t nl = text.find('\n', start);
-        if (nl != std::string::npos && nl < end) return false;
-    }
-    if (options.wholeWord) {
-        const bool leftOk = i == 0 || !IsWord(haystack[i - 1].value);
-        const bool rightOk = endIndex == haystack.size() ||
-                             !IsWord(haystack[endIndex].value);
-        if (!leftOk || !rightOk) return false;
-    }
-    if (filter && !filter(start, end - start, context)) return false;
-
-    *outStart = start;
-    *outEnd = end;
-    return true;
-}
 
 }  // namespace
 
@@ -178,37 +238,7 @@ bool IsSearchWordCharacter(unsigned char c) {
 std::vector<TextMatch> FindTextMatches(const std::string& text,
                                        const std::string& query,
                                        SearchOptions options) {
-    std::vector<TextMatch> result;
-    if (query.empty()) return result;
-    const std::vector<CodePoint> haystack = Decode(text);
-    const std::vector<CodePoint> needle = Decode(query);
-    if (needle.empty() || needle.size() > haystack.size()) return result;
-    const std::vector<char> boundaries = BuildGraphemeBoundaryTable(text);
-
-    for (std::size_t i = 0; i + needle.size() <= haystack.size();) {
-        const uint32_t candidateStart = haystack[i].start;
-        const std::size_t endIndex = i + needle.size();
-        const uint32_t candidateEnd = endIndex == haystack.size()
-            ? static_cast<uint32_t>(text.size())
-            : haystack[endIndex].start;
-        if (candidateStart >= boundaries.size() ||
-            !boundaries[candidateStart] ||
-            candidateEnd >= boundaries.size() ||
-            !boundaries[candidateEnd]) {
-            ++i;
-            continue;
-        }
-        uint32_t start = 0;
-        uint32_t end = 0;
-        if (!CandidateMatches(text, haystack, needle, i, options,
-                              false, nullptr, nullptr, &start, &end)) {
-            ++i;
-            continue;
-        }
-        result.push_back({start, end - start});
-        i = endIndex;
-    }
-    return result;
+    return MatchCore(text, query, options, false, nullptr, nullptr);
 }
 
 std::vector<TextMatch> FindTextMatchesScoped(const std::string& text,
@@ -216,37 +246,7 @@ std::vector<TextMatch> FindTextMatchesScoped(const std::string& text,
                                              SearchOptions options,
                                              SearchRangeFilter filter,
                                              void* context) {
-    std::vector<TextMatch> result;
-    if (query.empty()) return result;
-    const std::vector<CodePoint> haystack = Decode(text);
-    const std::vector<CodePoint> needle = Decode(query);
-    if (needle.empty() || needle.size() > haystack.size()) return result;
-    const std::vector<char> boundaries = BuildGraphemeBoundaryTable(text);
-
-    for (std::size_t i = 0; i + needle.size() <= haystack.size();) {
-        const uint32_t candidateStart = haystack[i].start;
-        const std::size_t endIndex = i + needle.size();
-        const uint32_t candidateEnd = endIndex == haystack.size()
-            ? static_cast<uint32_t>(text.size())
-            : haystack[endIndex].start;
-        if (candidateStart >= boundaries.size() ||
-            !boundaries[candidateStart] ||
-            candidateEnd >= boundaries.size() ||
-            !boundaries[candidateEnd]) {
-            ++i;
-            continue;
-        }
-        uint32_t start = 0;
-        uint32_t end = 0;
-        if (!CandidateMatches(text, haystack, needle, i, options,
-                              true, filter, context, &start, &end)) {
-            ++i;
-            continue;
-        }
-        result.push_back({start, end - start});
-        i = endIndex;
-    }
-    return result;
+    return MatchCore(text, query, options, true, filter, context);
 }
 
 std::string ReplaceTextMatches(const std::string& text,

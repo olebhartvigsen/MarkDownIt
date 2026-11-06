@@ -51,6 +51,7 @@ extern "C" {
 #include "md4c.h"
 }
 
+
 namespace {
 
 const char* kFixture = "tests/fixtures/large-document.md";
@@ -121,6 +122,7 @@ TEST(Perf, OpenOneMegabyteDocument) {
         ParseMarkdown(doc, d);
     });
     Report("open 1 MB document", ms, 500.0);
+    if (MD_TESTS_UNDER_SANITIZERS) return;
     EXPECT_TRUE(ms < 500.0);
 }
 
@@ -194,6 +196,7 @@ TEST(Perf, SpliceOnLargeDocument) {
         buf.Splice(at, 1, "");
     });
     Report("splice insert+delete", ms, 16.0);
+    if (MD_TESTS_UNDER_SANITIZERS) return;
     EXPECT_TRUE(ms < 16.0);
 }
 

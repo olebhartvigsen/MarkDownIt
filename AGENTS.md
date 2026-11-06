@@ -49,6 +49,9 @@ visual hacks.
 - All ribbon and menu work must follow references/ribbon-menu-guidelines.md.
   Read it before changing ribbon.xml or adding, moving, or renaming tabs,
   groups, or commands, and use it as the checklist when reviewing the menu.
+  That document covers the Windows window; the mac window wears native
+  chrome (a standard toolbar, no ribbon) and follows
+  references/macos-native-chrome.md instead.
 - All text editing work must follow
   references/windows-standardtekstredigering-specifikation.md. Read it before
   changing the text model, caret, selection, mouse or keyboard input,

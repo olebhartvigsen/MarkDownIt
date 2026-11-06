@@ -325,6 +325,13 @@ _pdfioStreamCreate(
     st->flate.next_out  = (Bytef *)st->cbuffer;
     st->flate.avail_out = (uInt)cbsize;
 
+    // The input pointer needs a value too. A stream that is closed
+    // without any content finalises the compressor with no input, and a
+    // null input pointer makes the pointer arithmetic in the
+    // compressor undefined behaviour.
+    st->flate.next_in   = (Bytef *)st->cbuffer;
+    st->flate.avail_in  = 0;
+
     if ((status = deflateInit(&(st->flate), 9)) != Z_OK)
     {
       _pdfioFileError(st->pdf, "Unable to start Flate filter: %s", zstrerror(status));
@@ -443,6 +450,12 @@ _pdfioStreamOpen(pdfio_obj_t *obj,	// I - Object
 
   st->pdf = obj->pdf;
   st->obj = obj;
+
+  // The buffer is empty until the first read fills it. Without this the
+  // pointers stay null, and the first copy reads from a null pointer,
+  // which is undefined behaviour even with a length of zero.
+  st->bufptr = st->buffer;
+  st->bufend = st->buffer;
 
   if ((st->remaining = pdfioObjGetLength(obj)) == 0 && !_pdfioDictGetValue(pdfioObjGetDict(obj), "Length"))
   {
@@ -795,9 +808,14 @@ pdfioStreamRead(
   // Loop until we have the requested bytes or hit the end of the stream...
   while ((remaining = (size_t)(st->bufend - st->bufptr)) < bytes)
   {
-    memcpy(bufptr, st->bufptr, remaining);
-    bufptr += remaining;
-    bytes -= remaining;
+    // The buffer can be empty on the first pass, and a copy from a null
+    // pointer is undefined behaviour even with a length of zero.
+    if (remaining > 0)
+    {
+      memcpy(bufptr, st->bufptr, remaining);
+      bufptr += remaining;
+      bytes -= remaining;
+    }
 
     if (bytes >= sizeof(st->buffer))
     {

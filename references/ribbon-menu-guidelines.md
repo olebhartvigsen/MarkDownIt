@@ -1,5 +1,9 @@
 # Designing a Ribbon Menu for a Word Processor
 
+This document covers the Windows window, which runs the ribbon.
+The mac window wears a standard toolbar instead; its design and rules
+are in macos-native-chrome.md.
+
 A structural rule set for tabs, groups, and commands, based on Microsoft's official Ribbon UX guidelines (the canonical spec, originally written for Office/Windows 7 and still the reference every other ribbon implementation follows), the tab layout used in modern Word, and W3C's accessibility patterns for toolbars and tabs.
 
 ## Quick reference

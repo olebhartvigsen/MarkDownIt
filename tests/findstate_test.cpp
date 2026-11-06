@@ -4,7 +4,7 @@
 
 #include "gtest_lite.h"
 #include "findstate.h"
-#include "findbar.h"
+#include "findbar_model.h"
 
 #include <string>
 #include <vector>
@@ -642,7 +642,7 @@ TEST(FindState, WholeWordSearchOnDanishLettersUsesWordBoundaries) {
 // dead while Next worked by accident of the same geometry.
 
 TEST(FindBarNavigation, PreviousStepsToADifferentMatchFromTheCaretAtTheMatchEnd) {
-    FindBar bar;
+    FindBarModel bar;
     bar.state().SetSearchText("aa");
     bar.state().Refresh("aa xx aa xx aa", nullptr, nullptr);
     uint32_t reported = UINT32_MAX;
@@ -670,7 +670,7 @@ TEST(FindBarNavigation, PreviousStepsToADifferentMatchFromTheCaretAtTheMatchEnd)
 }
 
 TEST(FindBarNavigation, NextStepsToADifferentMatchFromACaretAtTheMatchStart) {
-    FindBar bar;
+    FindBarModel bar;
     bar.state().SetSearchText("aa");
     bar.state().Refresh("aa xx aa", nullptr, nullptr);
     uint32_t reported = UINT32_MAX;
@@ -687,4 +687,32 @@ TEST(FindBarNavigation, NextStepsToADifferentMatchFromACaretAtTheMatchStart) {
     EXPECT_TRUE(bar.NavigateNext(0));
     EXPECT_EQ(reported, 6u);
     EXPECT_EQ(bar.state().CurrentOrdinal(), 2u);
+}
+
+TEST(FindBarModelHistory, RemembersRecentQueries) {
+    FindBarModel bar;
+    bar.RememberSearchQuery(L"alpha");
+    bar.RememberSearchQuery(L"beta");
+    bar.RememberSearchQuery(L"alpha");   // moves to the front, no duplicate
+
+    const std::vector<std::wstring>& recent = bar.RecentSearchQueries();
+    ASSERT_EQ(recent.size(), 2u);
+    EXPECT_TRUE(recent[0] == std::wstring(L"alpha"));
+    EXPECT_TRUE(recent[1] == std::wstring(L"beta"));
+
+    // Empty queries are never remembered, and the list is capped.
+    bar.RememberSearchQuery(L"");
+    EXPECT_EQ(bar.RecentSearchQueries().size(), 2u);
+    for (int i = 0; i < 15; ++i) {
+        bar.RememberSearchQuery(L"q" + std::to_wstring(i));
+    }
+    EXPECT_EQ(bar.RecentSearchQueries().size(), FindBarModel::kHistoryMax);
+    EXPECT_TRUE(bar.RecentSearchQueries().front() == std::wstring(L"q14"));
+}
+
+TEST(FindBarModelDebounce, LargeDocumentsAskForTheDebouncedRefresh) {
+    EXPECT_FALSE(FindRefreshDebounceNeeded(0));
+    EXPECT_FALSE(FindRefreshDebounceNeeded(kFindDebounceThresholdBytes - 1));
+    EXPECT_TRUE(FindRefreshDebounceNeeded(kFindDebounceThresholdBytes));
+    EXPECT_TRUE(FindRefreshDebounceNeeded(8u * 1024u * 1024u));
 }

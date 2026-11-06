@@ -6,6 +6,7 @@ on:
       - main
       - feat/mermaid-flowchart
       - feat/pdf-word-support
+      - feat/macos-port
   pull_request:
     branches:
       - main
@@ -117,6 +118,218 @@ jobs:
           name: MarkDownIt-x64
           path: build/Release/MarkDownIt.exe
 
+      # The app photographs itself in the named states, the same walk
+      # the mac build runs. The capture-parity job compares the two
+      # picture sets once both platforms are done.
+      - name: Capture the states (QA walk)
+        shell: powershell
+        run: powershell -File tools/windows-smoke/capture.ps1 -Exe build/Release/MarkDownIt.exe -Doc tests/fixtures/layout-showcase.md
+
+      - name: Upload the state captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MarkDownIt-windows-capture
+          path: |
+            build-win/qa/*.png
+            build-win/qa/rects.txt
+            build-win/qa/walk.log
+            build-win/qa/crash_trace.log
+          if-no-files-found: ignore
+
+  # The native macOS gate. The same test suite the Windows build runs,
+  # compiled and executed on Apple Silicon. Every change to the shared
+  # core goes through this job before it reaches the macOS app.
+  #
+  # The runner image is read from the environment, because the macOS
+  # runners are scarce and a queue can sit for a long time. The default
+  # is macos-15-arm64, the label the pipeline reference pins: the
+  # macos-14 images are deprecated and unsupported after November 2,
+  # 2026, and macos-26 is the forward option.
+  test-macos:
+    name: Tests (macOS, Apple Silicon)
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-15-arm64' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build-native -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build-native --target MarkDownIt.tests -j2
+
+      - name: Run
+        run: ./build-native/MarkDownIt.tests
+
+      # A second build of the same suite with the sanitizers on. It runs
+      # in this job rather than a job of its own: the macOS runners are
+      # scarce, and a second queue slot doubles the wait. Leak detection
+      # is off because AppKit and Core Text report framework allocations
+      # that the app does not own; address and UB errors are the gate.
+      - name: Configure (sanitizers)
+        run: |
+          cmake -B build-sanitize -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_OBJCXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+
+      - name: Build (sanitizers)
+        run: cmake --build build-sanitize --target MarkDownIt.tests -j2
+
+      - name: Run (sanitizers)
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: ./build-sanitize/MarkDownIt.tests
+
+  # The macOS app and the .app bundle. The bundle is uploaded so it can be
+  # downloaded and run on a real Mac.
+  build-macos:
+    name: Build (macOS, Apple Silicon)
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-15-arm64' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build-mac -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build-mac --target MarkDownItMac -j2
+
+      # Every command in the menu has to be carried out. A command that
+      # no handler acts on is a silent no-op.
+      - name: Verify the menu commands
+        run: python3 tools/check_mac_menu.py
+
+      # A Windows header in a shared source has to sit inside a
+      # _WIN32 block, or the mac build stops on it.
+      - name: Verify the guards of the shared sources
+        run: python3 tools/check_shared_guards.py
+
+      # A file that is in src/macos/ but in no source list never
+      # gets compiled, so it can rot without anyone noticing.
+      - name: Verify the mac sources
+        run: python3 tools/check_mac_sources.py
+
+      # The mac window wears native chrome: a standard toolbar with
+      # system symbols, no ribbon strip, no custom window UI. The
+      # check keeps the design in place
+      # (references/macos-native-chrome.md).
+      - name: Verify the mac chrome is native
+        run: python3 tools/check_mac_chrome.py
+
+      # The bundle is signed ad hoc, which seals the executable, the
+      # icon and the Info.plist as one unit. An unsigned bundle cannot
+      # pass the download check macOS runs on a first launch. The step
+      # sits here, after the build, because the bundle content is
+      # finished only then: the resource copy runs after the last
+      # compile step.
+      - name: Sign the app bundle
+        run: codesign --force --sign - --timestamp=none build-mac/MarkDownIt.app
+
+      # The bundle is checked before it is published, so a red run never
+      # offers a bundle that cannot start.
+      - name: Verify the bundle
+        run: |
+          file build-mac/MarkDownIt.app/Contents/MacOS/MarkDownIt
+          python3 tools/check_mac_bundle.py
+
+      # The read me next to the app explains the one prompt macOS shows
+      # for a build that is not notarized.
+      - name: Zip the bundle
+        run: |
+          mkdir -p "$RUNNER_TEMP/app-stage"
+          cp -R build-mac/MarkDownIt.app "$RUNNER_TEMP/app-stage/"
+          cp installer/macos/read-me-first-run.txt "$RUNNER_TEMP/app-stage/"
+          cd "$RUNNER_TEMP/app-stage"
+          zip -r "$GITHUB_WORKSPACE/MarkDownIt-macos-arm64.zip" \
+            MarkDownIt.app read-me-first-run.txt
+
+      # The zip that ships is opened again and checked, so the download
+      # path is tested and not only the build tree.
+      - name: Verify the shipped zip
+        run: |
+          mkdir -p "$RUNNER_TEMP/roundtrip"
+          ditto -x -k MarkDownIt-macos-arm64.zip "$RUNNER_TEMP/roundtrip"
+          test -f "$RUNNER_TEMP/roundtrip/read-me-first-run.txt"
+          python3 tools/check_mac_bundle.py "$RUNNER_TEMP/roundtrip/MarkDownIt.app"
+
+      # The app is actually started, not only built. The trace log the
+      # app writes is the oracle, so a bundle that dies in main() fails
+      # here instead of on the Mac of the person who downloads it.
+      - name: Launch smoke
+        run: |
+          bash tools/macos-smoke/launch_smoke.sh build-mac/MarkDownIt.app
+
+      - name: Upload the launch capture
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MarkDownIt-window-capture
+          path: |
+            build-mac/window.png
+            build-mac/qa/*.png
+            build-mac/qa/rects.txt
+            build-mac/qa/crash_trace.log
+          if-no-files-found: ignore
+
+      - name: Upload app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: MarkDownIt-macos-arm64
+          path: MarkDownIt-macos-arm64.zip
+          if-no-files-found: error
+
+  # The two platforms photograph themselves in the same named states
+  # (tools/windows-smoke/capture.ps1 and tools/macos-smoke/launch_smoke.sh),
+  # and this job compares the picture sets: how many text bands each
+  # document pane shows, where its large gaps sit, how much ink there
+  # is. Fonts and window chrome differ by design, so the comparison is
+  # structural; a block that went missing or moved on either platform
+  # fails the run, and the side-by-side and overlay pictures land as an
+  # artifact for the eye.
+  capture-parity:
+    name: Capture parity (Windows vs macOS)
+    needs: [build, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download the mac captures
+        uses: actions/download-artifact@v4
+        with:
+          name: MarkDownIt-window-capture
+          path: captures/macos
+
+      - name: Download the Windows captures
+        uses: actions/download-artifact@v4
+        with:
+          name: MarkDownIt-windows-capture
+          path: captures/windows
+
+      - name: Show what was downloaded
+        run: find captures -type f | sort
+
+      - name: Compare the states
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 tools/compare_platform_captures.py \
+            --macos captures/macos/qa \
+            --windows captures/windows \
+            --out parity-out
+
+      - name: Upload the comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MarkDownIt-capture-parity
+          path: parity-out/
+          if-no-files-found: ignore
+
   oracle:
     name: Mermaid oracle (golden geometry)
     runs-on: ubuntu-latest
@@ -189,6 +402,8 @@ jobs:
         run: python tools/office-oracle/check_docx.py office-output/reference_from_model.docx
       - name: Validate the exported .pdf against the golden pages
         run: python tools/office-oracle/check_pdf.py office-output/reference_from_model.pdf
+      - name: Validate the protected PDF unlocks with its password
+        run: python tools/office-oracle/check_pdf_protected.py office-output/reference_protected.pdf
       - name: Validate the imported model against the golden model
         run: python tools/office-oracle/check_model_json.py office-output/imported_docx_model.json
 

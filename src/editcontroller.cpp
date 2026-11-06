@@ -346,6 +346,10 @@ void EditController::RecordAndApply(uint32_t offset, uint32_t length,
                                       const std::string& replacement,
                                       EditType type,
                                       const Selection* undoSelectionBefore) {
+    // A composition ends before anything else touches the buffer, so a
+    // stray edit can never strand marked text.
+    if (comp_.active) CommitComposition();
+
     // Clamp to the buffer before substr: after an external buffer change
     // (file reload, watcher) a stale selection can exceed the text and
     // std::string::substr would throw std::out_of_range.
@@ -394,6 +398,61 @@ void EditController::DeleteSelection() {
     uint32_t start = sel_->Start();
     uint32_t len = sel_->Length();
     RecordAndApply(start, len, "", EditType::Delete);
+}
+
+void EditController::BeginComposition() {
+    if (comp_.active) return;
+    const uint32_t bufLen = static_cast<uint32_t>(buf_->Text().size());
+    uint32_t start = sel_->Empty() ? sel_->active.offset : sel_->Start();
+    uint32_t length = sel_->Empty() ? 0u : sel_->Length();
+    if (start > bufLen) start = bufLen;
+    if (length > bufLen - start) length = bufLen - start;
+    comp_.active = true;
+    comp_.start = start;
+    comp_.length = length;
+    comp_.replaced = buf_->Text().substr(start, length);
+    comp_.selBefore = *sel_;
+}
+
+void EditController::SetCompositionText(const std::string& utf8) {
+    if (!comp_.active) BeginComposition();
+    // The marked text replaces whatever the composition covered, the
+    // selection on the first call and the previous marked text after
+    // that. Deliberately no undo entry: nothing is confirmed yet.
+    const std::string normalized = NormalizeUtf8(utf8);
+    uint32_t end = buf_->Splice(comp_.start, comp_.length, normalized);
+    comp_.length = static_cast<uint32_t>(normalized.size());
+    sel_->Collapse({end});
+}
+
+void EditController::CommitComposition() {
+    if (!comp_.active) return;
+    comp_.active = false;
+    if (comp_.length == 0) {
+        // Nothing was confirmed: the candidate was abandoned, so the
+        // text it covered goes back and the history stays untouched.
+        buf_->Splice(comp_.start, 0, comp_.replaced);
+        *sel_ = comp_.selBefore;
+        return;
+    }
+    if (undo_) {
+        UndoEntry entry{};
+        entry.offset = comp_.start;
+        entry.removed = comp_.replaced;
+        entry.inserted = buf_->Text().substr(comp_.start, comp_.length);
+        entry.selBefore = comp_.selBefore;
+        entry.selAfter = *sel_;
+        entry.timestamp = NowMs();
+        entry.type = EditType::Other;
+        undo_->Push(entry);
+    }
+}
+
+void EditController::CancelComposition() {
+    if (!comp_.active) return;
+    comp_.active = false;
+    buf_->Splice(comp_.start, comp_.length, comp_.replaced);
+    *sel_ = comp_.selBefore;
 }
 
 namespace {
@@ -489,6 +548,22 @@ bool EditController::DeleteForward(const Document* doc) {
     if (at >= buf_->Length()) return false;
 
     const uint32_t separatorLength = ParagraphSeparatorLengthAt(buf_->Text(), at);
+    // The separator in front of a table is structural too: deleting it
+    // pulls the table up into the paragraph above and destroys it
+    // (spec section 45, "deleteBeforeTable"). Refuse at that boundary,
+    // the same way the backward delete refuses behind it. The whole run
+    // of newlines behind the caret counts, so the blank line directly
+    // above the table is refused as well, not only the double newline
+    // above that.
+    if (doc) {
+        const std::string& text = buf_->Text();
+        uint32_t run = 0;
+        while (at + run < text.size() &&
+               (text[at + run] == '\n' || text[at + run] == '\r')) {
+            ++run;
+        }
+        if (run > 0 && TableStartsAt(*doc, text, at + run)) return false;
+    }
     if (IsParagraphSeparator(doc, at, separatorLength)) {
         RecordAndApply(at, separatorLength, "", EditType::Delete);
         return true;

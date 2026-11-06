@@ -340,3 +340,30 @@ TEST(ListSelection, BlockquotedItemKeepsBulletAndQuoteMarkers) {
     // Quote marker AND bullet survive; only the content was deleted.
     EXPECT_EQ(buf.Text(), "> - ");
 }
+
+// The list item's own text starts past the marker and keeps the inline
+// syntax that follows it. The selection rule of highlighting spec 5.1
+// hangs on this start.
+TEST(ListItemContentStart, SkipsTheMarkerAndKeepsInlineSyntax) {
+    Node node;
+    node.block = BlockKind::List;
+    node.srcOffset = 0;
+
+    const std::string bullet = "- **bold** text";
+    node.contentOffset = 2;      // the '**' is part of the item
+    EXPECT_EQ(ListItemContentStart(node, bullet), 2u);
+
+    const std::string quoted = "> - quoted";
+    node.contentOffset = 4;
+    EXPECT_EQ(ListItemContentStart(node, quoted), 4u);
+
+    const std::string ordered = "10. tenth";
+    node.ordered = true;
+    node.contentOffset = 4;
+    EXPECT_EQ(ListItemContentStart(node, ordered), 4u);
+
+    const std::string nested = "  - nested";
+    node.ordered = false;
+    node.contentOffset = 4;
+    EXPECT_EQ(ListItemContentStart(node, nested), 4u);
+}

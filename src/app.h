@@ -71,6 +71,8 @@ public:
 
     void ToggleOutline();
     bool IsOutlineVisible() const;
+    // True while the QA walk runs: the outline sync logs its picks.
+    bool qa_active_ = false;
     void NavigateToHeading(uint32_t offset);
     void UpdateOutlineActive();
     void UpdateOutlineActiveFromView();
@@ -436,6 +438,18 @@ private:
                                 void* context);
     void WireFindBar();
     void CloseFindBar();
+
+    // The QA walk, the capture pipeline's driver: with
+    // MARKDOWNIT_QA_STATES set, the window steps through the named
+    // states on a timer, writes each state's document rectangle into the
+    // log the capture script polls, and closes itself when the walk is
+    // done. An ordinary launch never enters this path.
+    void StartQAWalk(const std::string& states);
+    void QAAdvance();
+    void QALogLine(const std::string& line) const;
+    std::vector<std::string> qa_states_;
+    size_t qa_index_ = 0;
+    std::string qa_log_path_;
     std::string SelectionForClipboard() const;
     void OnSetFocus(HWND hwnd);
     void OnImeComposition(LPARAM lp);

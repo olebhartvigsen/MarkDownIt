@@ -4,6 +4,8 @@
 
 #include "outlinepane.h"
 
+#include "theme.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -61,15 +63,20 @@ OutlinePane::~OutlinePane() {
 }
 
 void OutlinePane::InitColors() {
-    // Light, warm neutrals that match the app palette.
-    colBg_         = D2D1::ColorF(0xFFFAF6F1);
-    colSep_        = D2D1::ColorF(0xFFE0D6CC);
-    colText_       = D2D1::ColorF(0xFF3A342C);
-    colTextMuted_  = D2D1::ColorF(0xFF8A8072);
-    colActiveBg_   = D2D1::ColorF(0xFFE8DCC8);
-    colActiveText_ = D2D1::ColorF(0xFF2A2118);
-    colHoverBg_    = D2D1::ColorF(0xFFF0E9DF);
-    colArrow_      = D2D1::ColorF(0xFF6B6154);
+    // The warm neutrals of the shared chrome palette, the one the mac
+    // build draws its pane from too, so the two keep the same look.
+    const ChromePalette c = BaseChromePalette();
+    const auto color = [](const ThemeColor& v) {
+        return D2D1::ColorF(v.r, v.g, v.b, v.a);
+    };
+    colBg_         = color(c.paneBg);
+    colSep_        = color(c.paneSep);
+    colText_       = color(c.paneText);
+    colTextMuted_  = color(c.paneTextMuted);
+    colActiveBg_   = color(c.paneActiveBg);
+    colActiveText_ = color(c.paneActiveText);
+    colHoverBg_    = color(c.paneHoverBg);
+    colArrow_      = color(c.paneArrow);
 }
 
 bool OutlinePane::RegisterOutlineClass() {
@@ -439,7 +446,12 @@ void OutlinePane::PaintRows(ID2D1RenderTarget* rt, const D2D1_RECT_F& rc) {
                 DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
             DWRITE_TRIMMING trim = {};
             trim.granularity = DWRITE_TRIMMING_GRANULARITY_CHARACTER;
-            layout->SetTrimming(&trim, nullptr);
+            // A trailing ellipsis where a long heading overruns the
+            // row, so it reads as cut instead of running off the pane.
+            IDWriteInlineObject* ellipsis = nullptr;
+            dw_->CreateEllipsisTrimmingSign(fmtItem_, &ellipsis);
+            layout->SetTrimming(&trim, ellipsis);
+            if (ellipsis) ellipsis->Release();
             rt->DrawTextLayout(
                 D2D1::Point2F(textRc.left, textRc.top), layout, brush_);
             layout->Release();
@@ -450,17 +462,31 @@ void OutlinePane::PaintRows(ID2D1RenderTarget* rt, const D2D1_RECT_F& rc) {
 void OutlinePane::PaintEmptyState(ID2D1RenderTarget* rt,
                                   const D2D1_RECT_F& rc) {
     if (!brush_ || !fmtEmpty_) return;
-    brush_->SetColor(colTextMuted_);
-    const wchar_t* msg = L"No headings in this document.";
-    const float w = rc.right - 2.f * kPadXDip * (dpi_ / 96.f);
-    IDWriteTextLayout* layout = nullptr;
-    if (SUCCEEDED(dw_->CreateTextLayout(
-            msg, static_cast<UINT32>(wcslen(msg)), fmtEmpty_, w,
-            40.f * dpi_ / 96.f, &layout)) && layout) {
-        rt->DrawTextLayout(D2D1::Point2F(kPadXDip * (dpi_ / 96.f),
-                                         10.f * dpi_ / 96.f), layout,
-                           brush_);
-        layout->Release();
+    // The pane says it is empty and says what fills it, the two lines
+    // the mac pane draws (outline spec 17).
+    const float scale = dpi_ / 96.f;
+    const float w = rc.right - 2.f * kPadXDip * scale;
+    struct EmptyLine {
+        const wchar_t* text;
+        D2D1_COLOR_F color;
+        float y;
+    };
+    const EmptyLine lines[] = {
+        {L"No headings in this document.", colText_, 10.f},
+        {L"Add headings to your document to create an outline.",
+         colTextMuted_, 40.f},
+    };
+    for (const EmptyLine& line : lines) {
+        IDWriteTextLayout* layout = nullptr;
+        if (SUCCEEDED(dw_->CreateTextLayout(
+                line.text, static_cast<UINT32>(wcslen(line.text)), fmtEmpty_,
+                w, 40.f * scale, &layout)) && layout) {
+            brush_->SetColor(line.color);
+            rt->DrawTextLayout(
+                D2D1::Point2F(kPadXDip * scale, line.y * scale), layout,
+                brush_);
+            layout->Release();
+        }
     }
 }
 

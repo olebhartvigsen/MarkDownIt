@@ -921,3 +921,15 @@ live edit reparse, file reload, malformed-fence fallback, and palette colours.
 The implementation-status and deferred-work section below describes an earlier
 snapshot. It is retained as history. Its commit hash and unsupported-diagram
 statements are no longer the current status.
+
+
+---
+
+## Audit closure (October 31, 2026)
+
+The defaults table is superseded in one row: live flowcharts lay out
+with a 20 DIP margin (`src/mermaid/layout_internal.h`), not the 8 of
+this plan, and the golden tests pin `margin = 0`, so no gate holds the
+live value. The rest of the plan holds; state, class, sequence and pie
+parse and measure with oracles, and flowchart fences render live, as
+`README.md` and `references/mermaid-dagre-port.md` record.

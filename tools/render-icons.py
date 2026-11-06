@@ -11,7 +11,9 @@ import re
 from svgpathtools import parse_path
 from PIL import Image, ImageDraw
 
-ICON_DIR = "/workspace/MarkDownIt/src/icons"
+ICON_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "src/icons")
 GLYPHS = [
     "find", "replace", "new",
     "table", "table-add-row", "table-add-row-above", "table-remove-row",

@@ -1,6 +1,7 @@
 # Unified Find bar with bottom dock (Find and Find/Replace in one control)
 
-**Status:** Outline for review. No code changes yet.
+**Status:** Implemented on both platforms; the plan below records
+the design as written.
 **Goal:** Ctrl+F and Ctrl+H open the same bar. The chosen function decides what is
 enabled. The bar sits at the bottom of the app window as a docked toolbar strip.
 

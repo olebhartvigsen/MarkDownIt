@@ -41,6 +41,9 @@ public:
     // Column width used when word wrap is off. Render then lays the text
     // out on one very wide line and lets the user scroll to its end.
     static constexpr float kNoWrapContentWidthDip = 10000.0f;
+    // The height of a blank line while reading: the caret paragraph
+    // next to a list keeps its line, but not a full empty row.
+    static constexpr float kReadBlankLineStripDip = 4.0f;
 
     // Set a specific zoom factor. The value is clamped to
     // [kMinZoom, kMaxZoom] before it is stored.
@@ -50,6 +53,10 @@ public:
     // caret, distinct from both the em size and the rendered line box
     // (the app's line spacing multiplier is deliberately excluded).
     float LineHeightOf(IDWriteTextFormat* fmt);
+
+    // The font's natural line box and ascent, in DIP, for the CSS
+    // line-height setup. False when the metrics cannot be resolved.
+    bool FontBoxOf(IDWriteTextFormat* fmt, float* natural, float* ascent);
     void SetZoom(float z);
     float GetZoom() const { return zoom_; }
     float Zoom() const { return zoom_; }  // legacy alias for GetZoom
@@ -94,6 +101,12 @@ public:
     // highlights: the pointer is borrowed and outlives the paint, and the
     // visible flag hides the layer without dropping any data.
     void SetMarkers(const std::vector<TextMatch>* markers, bool visible);
+
+    // While editing, a blank line next to a list keeps a full line so
+    // the caret has a place to sit. While reading it renders as a thin
+    // strip, so the blank lines in the source do not open wide holes
+    // around lists in the text.
+    void SetEditing(bool v) { editing_ = v; }
     const std::vector<TextMatch>* SearchMatches() const {
         return searchMatches_;
     }
@@ -136,6 +149,7 @@ private:
     IDWriteTextFormat* heading_fmt_[7] = {};
     float zoom_ = kDefaultZoom;  // 100%
     bool wrapEnabled_ = true;
+    bool editing_ = true;
     bool standaloneSvg_ = false;
     int  contentWidthMode_ = 0;  // 0=Standard(800), 1=960, 2=1600, 3=Full
     LayoutCache* cache_ = nullptr;
@@ -196,9 +210,6 @@ private:
                           float x, float width);
 
     LayoutMetrics ComputeMetrics() const;
-    static float GapForTransition(BlockKind prev, BlockKind cur,
-                                  BlockKind next, int curDepth,
-                                  int prevDepth, const LayoutMetrics& m);
 
     std::u16string ToUtf16(const std::u32string& s32);
 

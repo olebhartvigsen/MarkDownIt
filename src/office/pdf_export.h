@@ -9,6 +9,18 @@ struct PdfExportOptions {
     bool all_pages = true;
     int first_page = 1;
     int last_page = 0;   // 0 means "through the last page"
+
+    // A protected PDF (office spec, PDF export): the standard
+    // security handler with an owner and a user password, plus the
+    // permission flags for printing, copying and changing. The
+    // protection applies when encrypt is set; an empty owner
+    // password is refused by the writer.
+    bool encrypt = false;
+    bool allow_printing = true;
+    bool allow_copying = true;
+    bool allow_modifying = true;
+    std::string owner_password;
+    std::string user_password;
 };
 
 // Render the shared document model to PDF bytes with pdfio.

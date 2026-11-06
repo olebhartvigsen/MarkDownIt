@@ -1,9 +1,11 @@
 #include "app.h"
+#include "formatting.h"
 #include "resource.h"
 #include "ribbon.h"
 #include "fileassoc.h"
 #include "parser.h"
 #include "navigation.h"
+#include "tableedit.h"
 #include "office/markdown_bridge.h"
 #include "office/docx_import.h"
 #include "office/docx_export.h"
@@ -328,6 +330,16 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow, const std::wstring& cmdLine)
     // callback may fire asynchronously, so this is a safety net.
     SetTimer(hwnd_, 1, 300, nullptr);
 
+    // The capture pipeline drives a state walk through the environment;
+    // an ordinary launch never enters it.
+    {
+        char qaStates[1024] = {};
+        if (GetEnvironmentVariableA("MARKDOWNIT_QA_STATES", qaStates,
+                                    sizeof(qaStates)) > 0) {
+            StartQAWalk(qaStates);
+        }
+    }
+
     // Register .md/.markdown file association based on the saved setting.
     // (settings_ was already loaded in OnCreate, before LoadSampleDoc.)
     {
@@ -338,6 +350,12 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow, const std::wstring& cmdLine)
         }
         // Apply content width setting to the renderer.
         renderer_.SetContentWidthMode(settings_.contentWidthMode);
+        // The window opens reading: push the mode so the very first
+        // paint draws the blank line next to a list as a strip. The
+        // renderer's own default keeps the editing heights for the
+        // export paths, so the app states its mode here, the way the
+        // mac app does before its first document.
+        renderer_.SetEditing(editing_);
 
         // The saved width must also be visible in the File menu. The
         // framework drops a Label invalidation for a command whose
@@ -1231,6 +1249,19 @@ void AppWindow::ScrollCaretIntoView(float caretY, float caretH) {
     }
 }
 
+// The caret width the user chose in Windows, in the same physical
+// pixels CreateCaret expects here. The system exposes it through
+// SPI_GETCARETWIDTH; fall back to the two-pixel bar the app used
+// before when the query is unavailable.
+static int SystemCaretWidthPixels() {
+    DWORD width = 0;
+    if (SystemParametersInfoW(SPI_GETCARETWIDTH, 0, &width, 0) &&
+        width > 0) {
+        return static_cast<int>(width);
+    }
+    return 2;
+}
+
 void AppWindow::UpdateCaretPosition() {
     if (!has_focus_ || !hwnd_content_) return;
     // Outline active-heading follow (one-way; the pane never pushes
@@ -1279,14 +1310,17 @@ void AppWindow::UpdateCaretPosition() {
         // from body text to a heading or vice versa).
         int newH = static_cast<int>(h * dpix);
         if (newH < 1) newH = 1;
-        if (caret_height_ != newH) {
+        if (!qa_active_ && caret_height_ != newH) {
             DestroyCaret();
             caret_visible_ = false; // caret destroyed; must re-show
-            CreateCaret(hwnd_content_, nullptr, 2, newH);
+            CreateCaret(hwnd_content_, nullptr, SystemCaretWidthPixels(), newH);
             caret_height_ = newH;
         }
         SetCaretPos(cx, cy);
-        if (!caret_visible_) { ShowCaret(hwnd_content_); caret_visible_ = true; }
+        if (!qa_active_ && !caret_visible_) {
+            ShowCaret(hwnd_content_);
+            caret_visible_ = true;
+        }
     } else {
         // OffsetToCaretRect failed (offset not in any block or block has
         // no layout). Hide the caret so it doesn't appear at a stale
@@ -1339,46 +1373,6 @@ static void AppendCodePointUtf8(std::string& out, char32_t cp) {
         out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
         out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
     }
-}
-
-static std::string SlugifyAnchor(const std::string& value) {
-    std::string result;
-    bool pendingHyphen = false;
-    for (size_t i = 0; i < value.size();) {
-        const unsigned char b = static_cast<unsigned char>(value[i]);
-        if (b < 0x80) {
-            const char c = static_cast<char>(b);
-            if (std::isspace(b) != 0) {
-                pendingHyphen = !result.empty();
-                ++i;
-                continue;
-            }
-            if (std::ispunct(b) != 0 && c != '_' && c != '-') {
-                ++i;
-                continue;
-            }
-            if (pendingHyphen && !result.empty() && result.back() != '-') {
-                result.push_back('-');
-            }
-            pendingHyphen = false;
-            result.push_back((c >= 'A' && c <= 'Z') ?
-                             static_cast<char>(c - 'A' + 'a') : c);
-            ++i;
-            continue;
-        }
-        uint32_t length = (b & 0xE0) == 0xC0 ? 2 :
-                          (b & 0xF0) == 0xE0 ? 3 :
-                          (b & 0xF8) == 0xF0 ? 4 : 1;
-        if (i + length > value.size()) length = 1;
-        if (pendingHyphen && !result.empty() && result.back() != '-') {
-            result.push_back('-');
-        }
-        pendingHyphen = false;
-        result.append(value, i, length);
-        i += length;
-    }
-    while (!result.empty() && result.back() == '-') result.pop_back();
-    return result;
 }
 
 void AppWindow::OpenLink(const std::string& url) {
@@ -2080,6 +2074,10 @@ void AppWindow::OnLButtonUp(HWND hwnd) {
 // The flags always mirror reality: caret_visible_ true means a shown
 // caret exists, so a focus loss that destroys the caret clears them.
 bool AppWindow::EnsureCaretVisible() {
+    // The QA walk drives its pictures with no caret at all: a still
+    // frame must not depend on the blink phase, the rule the mac walk
+    // follows when it parks the caret off.
+    if (qa_active_) return false;
     if (!has_focus_ || !hwnd_content_) return false;
     // While a selection is shown, the caret is the selection's active
     // end, not a separate blinking line (cursor-blinking guide), so
@@ -2092,7 +2090,7 @@ bool AppWindow::EnsureCaretVisible() {
     const float dpix = static_cast<float>(dpi_) / 96.0f;
     int height = static_cast<int>(h * dpix);
     if (height < 1) height = 1;
-    CreateCaret(hwnd_content_, nullptr, 2, height);
+    CreateCaret(hwnd_content_, nullptr, SystemCaretWidthPixels(), height);
     caret_height_ = height;
     if (haveRect) {
         SetCaretPos(static_cast<int>(x * dpix),
@@ -3311,6 +3309,186 @@ void AppWindow::OnContentPaint(HWND hwnd) {
 }
 
 
+// ---------------------------------------------------------------------
+// The QA walk
+// ---------------------------------------------------------------------
+// The capture pipeline photographs the app in named states. With
+// MARKDOWNIT_QA_STATES set, the window walks that list on a timer: each
+// state is applied, announced in the QA log (MARKDOWNIT_QA_LOG) with
+// the document rectangle the capture script crops to, and the window
+// closes itself at the end. An ordinary launch never enters this path.
+
+static const UINT_PTR kQATimerId = 7;
+
+void AppWindow::QALogLine(const std::string& line) const {
+    if (qa_log_path_.empty()) return;
+    if (FILE* log = fopen(qa_log_path_.c_str(), "a")) {
+        fprintf(log, "%s\n", line.c_str());
+        fclose(log);
+    }
+}
+
+void AppWindow::StartQAWalk(const std::string& states) {
+    qa_states_.clear();
+    size_t start = 0;
+    while (start <= states.size()) {
+        const size_t comma = states.find(',', start);
+        const size_t stop =
+            comma == std::string::npos ? states.size() : comma;
+        if (stop > start)
+            qa_states_.push_back(states.substr(start, stop - start));
+        if (comma == std::string::npos) break;
+        start = comma + 1;
+    }
+    if (qa_states_.empty()) return;
+    qa_active_ = true;
+    // Any caret already up comes down: the pictures carry no caret,
+    // the rule the mac walk follows too.
+    if (caret_visible_) {
+        HideCaret(hwnd_content_);
+        caret_visible_ = false;
+    }
+
+    char logPath[2048] = {};
+    if (GetEnvironmentVariableA("MARKDOWNIT_QA_LOG", logPath,
+                                sizeof(logPath)) > 0) {
+        qa_log_path_ = logPath;
+    } else {
+        qa_log_path_ = "markdownit-qa.log";
+    }
+    remove(qa_log_path_.c_str());
+
+    // The walk pins the window to the size the mac walk uses, so the
+    // two captures line up.
+    RECT want = {0, 0, 1000, 760};
+    if (AdjustWindowRectEx(&want, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+                           FALSE, WS_EX_ACCEPTFILES)) {
+        int w = want.right - want.left;
+        int h = want.bottom - want.top;
+        // The whole window must be on screen for the capture, so it is
+        // clamped to the work area and centered inside it: a window
+        // taller than the screen put the find bar's replace row under
+        // the taskbar in the picture.
+        RECT work = {};
+        if (!SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0)) {
+            work.left = 0;
+            work.top = 0;
+            work.right = GetSystemMetrics(SM_CXSCREEN);
+            work.bottom = GetSystemMetrics(SM_CYSCREEN);
+        }
+        if (w > work.right - work.left) w = work.right - work.left;
+        if (h > work.bottom - work.top) h = work.bottom - work.top;
+        const int x = work.left + ((work.right - work.left) - w) / 2;
+        const int y = work.top + ((work.bottom - work.top) - h) / 2;
+        SetWindowPos(hwnd_, nullptr, x, y, w, h,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        ResizeContentWindow();
+        Repaint();
+    }
+    // The pane is half of the mac window, and the capture wants both.
+    if (!IsOutlineVisible()) ToggleOutline();
+
+    qa_index_ = 0;
+    SetTimer(hwnd_, kQATimerId, 2500, nullptr);
+}
+
+void AppWindow::QAAdvance() {
+    if (qa_index_ >= qa_states_.size()) {
+        QALogLine("qa states done");
+        KillTimer(hwnd_, kQATimerId);
+        PostMessage(hwnd_, WM_CLOSE, 0, 0);
+        return;
+    }
+    const std::string state = qa_states_[qa_index_];
+    if (state == "find") {
+        ShowFindReplace(false);
+        // A live query, so the capture carries the match count and the
+        // highlight, like the mac walk's find state.
+        find_bar_.SetSearchText(L"list");
+        RefreshFindResults(false);
+    } else if (state == "edit") {
+        SetEdit(true);
+        // The picture must not depend on what the find state's scroll
+        // left behind: re-derive the pane's highlight.
+        UpdateOutlineActive();
+        char line[128];
+        snprintf(line, sizeof(line), "qa outline row after edit=%d visible=%d",
+                 outline_.Active(), outline_.IsVisible() ? 1 : 0);
+        QALogLine(line);
+    } else if (state == "outline") {
+        if (!IsOutlineVisible()) ToggleOutline();
+        UpdateOutlineActive();
+        char line[128];
+        snprintf(line, sizeof(line),
+                 "qa outline row after outline=%d visible=%d",
+                 outline_.Active(), outline_.IsVisible() ? 1 : 0);
+        QALogLine(line);
+    } else if (state == "source") {
+        if (!IsSourceView()) ToggleSourceView();
+    } else if (state == "lower" || state == "end" || state == "tail" ||
+               state == "tail2") {
+        // The lower half of the page and its foot, and the foot the
+        // guideline review added: the deep nesting, the long unbroken
+        // tokens, the wide table and the long code block, the parts
+        // the states above cannot photograph. The source state leaves
+        // the raw view on, so the picture goes back to the rendered
+        // page first (the toggle rebuilds the layout in one pass); the
+        // jump anchors to a heading's own offset a fixed drop below
+        // the top, so both platforms frame the same content even
+        // though their bars and metrics differ a little.
+        if (IsSourceView()) ToggleSourceView();
+        int heading = 10;   // tail2: the long code block
+        float drop = 24.0f;
+        if (state == "lower") {
+            heading = 2;
+            drop = 96.0f;
+        } else if (state == "end") {
+            heading = 5;
+            drop = 96.0f;
+        } else if (state == "tail") {
+            heading = 8;
+        }
+        if (heading < static_cast<int>(outline_items_.size())) {
+            int blkIdx = layout_cache_.BlockForOffset(
+                outline_items_[heading].offset);
+            if (blkIdx >= 0) {
+                const auto& blocks = layout_cache_.Blocks();
+                float target = blocks[blkIdx].y - drop;
+                if (target < 0.0f) target = 0.0f;
+                scrollY_ = ClampScroll(target);
+                StopScrollAnimation();
+                UpdateScrollInfo();
+                Repaint();
+            }
+        }
+    }
+
+    // A blinking caret is a coin toss in a still picture; park it so
+    // every capture is in the same phase on both platforms.
+    if (caret_visible_ && hwnd_content_) {
+        HideCaret(hwnd_content_);
+        caret_visible_ = false;
+    }
+
+    // The document rectangle in screen pixels with a top-left origin:
+    // the capture script crops the picture to the part the two
+    // platforms share.
+    RECT rc = {0, 0, 0, 0};
+    POINT origin = {0, 0};
+    if (hwnd_content_) {
+        GetClientRect(hwnd_content_, &rc);
+        ClientToScreen(hwnd_content_, &origin);
+    }
+    char line[256];
+    snprintf(line, sizeof(line), "qa state ready: %s rect=%ld,%ld,%ld,%ld",
+             state.c_str(), origin.x, origin.y,
+             rc.right - rc.left, rc.bottom - rc.top);
+    QALogLine(line);
+
+    ++qa_index_;
+    SetTimer(hwnd_, kQATimerId, 5000, nullptr);
+}
+
 void AppWindow::ProcessPendingFile() {
     if (pending_file_.empty()) return;
     std::wstring path;
@@ -3540,6 +3718,10 @@ void AppWindow::NewDocument() {
 
 void AppWindow::SetEdit(bool on) {
     editing_ = on;
+    // The layout follows the mode: reading draws the blank line next
+    // to a list as a thin strip, editing keeps its full line. The next
+    // paint re-measures and picks the new height up.
+    renderer_.SetEditing(on);
     // Find works in every view, but Replace only makes sense where the
     // document can change. Re-gate whenever edit mode flips, so a bar left
     // open across the toggle greys the two buttons out (guide 4).
@@ -5059,26 +5241,7 @@ void AppWindow::InsertTableFromGrid(int cols, int rows) {
 
     int dataRows = rows;
 
-    std::string table;
-    // Header
-    for (int c = 0; c < cols; ++c) {
-        table += "| Column ";
-        table += std::to_string(c + 1);
-        table += " ";
-    }
-    table += "|\n";
-    // Separator
-    for (int c = 0; c < cols; ++c) {
-        table += "|--------";
-    }
-    table += "|\n";
-    // Data rows
-    for (int r = 0; r < dataRows; ++r) {
-        for (int c = 0; c < cols; ++c) {
-            table += "|        ";
-        }
-        table += "|\n";
-    }
+    const std::string table = tableedit::BuildGrid(cols, dataRows);
 
     // Insert at cursor position. If there is a selection, replace it.
     // One splice, one undo step (§3): the newlines and the table text are
@@ -5169,81 +5332,19 @@ bool AppWindow::CaretInTable() const {
 // Find the table node containing the cursor offset.
 // Returns nullptr if cursor is not inside a table.
 static const Node* FindContainingTable(const Document& doc, uint32_t offset) {
-    for (const auto& n : doc.nodes) {
-        if (n.block != BlockKind::Table) continue;
-        uint32_t start = n.srcOffset;
-        uint32_t end = start + n.srcLength;
-        // Half-open span: `end` is the first byte after the table, so a
-        // caret resting there is not inside this table.
-        if (offset >= start && offset < end)
-            return &n;
-    }
-    return nullptr;
+    return tableedit::ContainingTable(doc, offset);
 }
 
 // Find the source range of a specific row in the table's source text.
 // A row is one line within the table block. Also return the column
 // index that the cursor is in.
-struct TableLocation {
-    uint32_t rowStart;  // source offset of row's first character
-    uint32_t rowEnd;    // source offset past the row's newline (or end of table)
-    int columnIndex;    // 0-based column the cursor is in
-    int rowIndex;       // 0-based row index
-    int numCols;         // number of columns
-    int numRows;         // number of rows
-};
-
-static bool LocateInTable(const std::string& text, const Node* node,
-                          uint32_t offset, TableLocation& loc) {
-    if (!node) return false;
-    uint32_t tblStart = node->srcOffset;
-    uint32_t tblEnd = tblStart + node->srcLength;
-    if (offset < tblStart || offset > tblEnd) return false;
-
-    // Walk lines within the table source.
-    int rowIdx = 0;
-    uint32_t lineStart = tblStart;
-    int numCols = 0;
-    for (const auto& r : node->rows) {
-        if (static_cast<int>(r.cells.size()) > numCols)
-            numCols = static_cast<int>(r.cells.size());
-    }
-
-    for (uint32_t i = tblStart; i <= tblEnd; ++i) {
-        if (i == tblEnd || text[i] == '\n') {
-            uint32_t lineEnd = i; // not including newline
-            if (offset >= lineStart && offset <= (i == tblEnd ? i : i + 1)) {
-                // Found the row. Count pipes to determine column.
-                int col = 0;
-                for (uint32_t j = lineStart; j < offset && j < lineEnd; ++j) {
-                    if (text[j] == '|') ++col;
-                }
-                // Adjust: first | is col 0 start
-                col = col > 0 ? col - 1 : 0;
-                if (col >= numCols) col = numCols - 1;
-
-                loc.rowStart = lineStart;
-                loc.rowEnd = (i == tblEnd) ? i : i + 1;
-                loc.columnIndex = col;
-                loc.rowIndex = rowIdx;
-                loc.numCols = numCols;
-                loc.numRows = static_cast<int>(node->rows.size());
-                return true;
-            }
-            if (i < tblEnd) lineStart = i + 1;
-            ++rowIdx;
-        }
-    }
-    return false;
-}
-
 TableCapabilities AppWindow::CaretTableCapabilities() const {
     // Resolve the caret against the same LocateInTable the commands use, so
     // an enabled ribbon button always corresponds to a command that runs.
     const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
     if (!tbl) return TableCapabilities();
-    TableLocation loc;
-    if (!LocateInTable(buffer_.Text(), tbl, sel_.active.offset, loc))
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(buffer_.Text(), tbl, sel_.active.offset, &loc))
         return TableCapabilities();
     return TableCapabilitiesFor(loc.rowIndex, loc.numCols);
 }
@@ -5253,49 +5354,17 @@ bool AppWindow::AddTableRow(bool below) {
     const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
     if (!tbl) return false;
 
-    const std::string& text = buffer_.Text();
-    TableLocation loc;
-    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(buffer_.Text(), tbl, sel_.active.offset, &loc))
+        return false;
 
-    // The header line and the dash delimiter are what make this a table.
-    // Inserting above the header, or between header and delimiter, would
-    // leave a block md4c no longer parses as a table.
-    const TableCapabilities caps =
-        TableCapabilitiesFor(loc.rowIndex, loc.numCols);
-    if (below ? !caps.addRowBelow : !caps.addRowAbove) return false;
+    const tableedit::TableEdit edit =
+        tableedit::AddRow(buffer_.Text(), loc, below);
+    if (!edit.ok) return false;
 
-    // Build a new row string with the same number of columns.
-    std::string newRow = "|";
-    for (int c = 0; c < loc.numCols; ++c) {
-        newRow += "        |";
-    }
-    newRow += "\n";
-
-    // Below: insert right after the current row's end.
-    // Above: insert at the current row's start.
-    uint32_t insertPos = below ? loc.rowEnd : loc.rowStart;
-    if (below && insertPos < text.size() && text[insertPos] == '\n')
-        insertPos += 1;
-
-    // A table at the end of the document may have no trailing newline, in
-    // which case loc.rowEnd is already the text end and the row would be
-    // appended onto the last row's line. Start the new row on its own line.
-    std::string prefix;
-    if (insertPos > 0 && text[insertPos - 1] != '\n') prefix = "\n";
-
-    SpliceWithUndo(insertPos, 0, prefix + newRow);
+    SpliceWithUndo(edit.start, edit.length, edit.text);
     editor_.BreakUndoCoalesce();
-
-    // Below keeps the shipped caret (start of the row after the new
-    // one). Above places the caret inside the new row's first cell,
-    // one position past its leading pipe.
-    const uint32_t caretBase = insertPos +
-        static_cast<uint32_t>(prefix.size() + newRow.size());
-    if (below) {
-        sel_.Collapse({caretBase});
-    } else {
-        sel_.Collapse({insertPos + static_cast<uint32_t>(prefix.size()) + 1});
-    }
+    sel_.Collapse({edit.caret});
     OnBufferChanged();
     ForceRepaintNow();
     return true;
@@ -5356,24 +5425,17 @@ bool AppWindow::RemoveTableRow() {
     const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
     if (!tbl) return false;
 
-    const std::string& text = buffer_.Text();
-    TableLocation loc;
-    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
-
-    // The caret's physical line sits on the header (line 0) or the
-    // delimiter (line 1): those lines carry the table's structure and
-    // are never removed by this command, whatever the table size.
-    if (!TableCapabilitiesFor(loc.rowIndex, loc.numCols).removeRow) {
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(buffer_.Text(), tbl, sel_.active.offset, &loc))
         return false;
-    }
 
-    // Remove the row's source text (from lineStart to rowEnd).
-    uint32_t start = loc.rowStart;
-    uint32_t end = loc.rowEnd;
-    SpliceWithUndo(start, end - start, "");
+    const tableedit::TableEdit edit =
+        tableedit::RemoveRow(buffer_.Text(), loc);
+    if (!edit.ok) return false;
+
+    SpliceWithUndo(edit.start, edit.length, edit.text);
     editor_.BreakUndoCoalesce();
-
-    sel_.Collapse({start});
+    sel_.Collapse({edit.caret});
     OnBufferChanged();
     ForceRepaintNow();
     return true;
@@ -5385,8 +5447,8 @@ bool AppWindow::AddTableColumn(bool right) {
     if (!tbl) return false;
 
     const std::string& text = buffer_.Text();
-    TableLocation loc;
-    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(text, tbl, sel_.active.offset, &loc)) return false;
 
     const uint32_t tblStart = tbl->srcOffset;
     const uint32_t tblEnd = tblStart + tbl->srcLength;
@@ -5414,8 +5476,8 @@ bool AppWindow::RemoveTableColumn() {
     if (!tbl) return false;
 
     const std::string& text = buffer_.Text();
-    TableLocation loc;
-    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(text, tbl, sel_.active.offset, &loc)) return false;
 
     if (!TableCapabilitiesFor(loc.rowIndex, loc.numCols).removeColumn)
         return false; // don't remove the last column
@@ -5444,8 +5506,8 @@ bool AppWindow::SetTableColumnAlign(TableAlignMark mark) {
     if (!tbl) return false;
 
     const std::string& text = buffer_.Text();
-    TableLocation loc;
-    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(text, tbl, sel_.active.offset, &loc)) return false;
 
     const uint32_t tblStart = tbl->srcOffset;
     const uint32_t tblEnd = tblStart + tbl->srcLength;
@@ -5474,8 +5536,8 @@ bool AppWindow::SplitTableCell() {
     if (!tbl) return false;
 
     const std::string& text = buffer_.Text();
-    TableLocation loc;
-    if (!LocateInTable(text, tbl, sel_.active.offset, loc)) return false;
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(text, tbl, sel_.active.offset, &loc)) return false;
 
     if (!TableCapabilitiesFor(loc.rowIndex, loc.numCols).splitCell)
         return false; // header and delimiter rows carry the table's shape
@@ -5505,106 +5567,9 @@ void AppWindow::ClearFormat() {
     if (!editing_) return;
     if (sel_.Empty()) return; // Need a selection to clear formatting.
 
-    uint32_t origStart = sel_.Start();
-    uint32_t origEnd = origStart + sel_.Length();
-    const std::string& text = buffer_.Text();
-    if (origEnd > text.size()) origEnd = static_cast<uint32_t>(text.size());
-
-    // ── Collect ALL inline formatting spans that overlap the selection ──
-    // For each span, record the marker region to remove. We'll splice
-    // in reverse order so earlier removals don't shift later offsets.
-    struct MarkerRemoval {
-        uint32_t markerStart; // start of left markers
-        uint32_t markerEnd;   // end of right markers
-        uint32_t contentStart; // start of content (after left markers)
-        uint32_t contentEnd;  // end of content (before right markers)
-    };
-    std::vector<MarkerRemoval> removals;
-
-    for (const auto& node : doc_.nodes) {
-        // Only look at blocks overlapping the selection.
-        uint32_t bs = node.srcOffset;
-        uint32_t be = bs + node.srcLength;
-        if (origEnd <= bs || origStart >= be) continue;
-
-        for (const auto& child : node.children) {
-            // Only collect spans with formatting.
-            if (!child.strong && !child.em && !child.code && !child.strike)
-                continue;
-
-            uint32_t cs = child.srcOffset;
-            uint32_t ce = cs + child.srcLength;
-            if (ce <= cs) continue; // skip empty spans
-
-            // Check overlap with the selection.
-            if (ce <= origStart || cs >= origEnd) continue;
-
-            // Determine the marker char and count the run.
-            // Bold and italic both use '*'. Strike uses '~'. Code uses '`'.
-            // For combined bold+italic (***), the marker run includes all *.
-            char mc = '*';
-            if (child.code)   mc = '`';
-            if (child.strike) mc = '~';
-
-            // Scan left for consecutive marker chars.
-            uint32_t leftRun = 0;
-            while (cs > leftRun && text[cs - leftRun - 1] == mc)
-                leftRun++;
-            // Scan right for consecutive marker chars.
-            uint32_t rightRun = 0;
-            while (ce + rightRun < text.size() && text[ce + rightRun] == mc)
-                rightRun++;
-
-            if (leftRun > 0 && rightRun > 0) {
-                removals.push_back({cs - leftRun, ce + rightRun, cs, ce});
-            }
-        }
-    }
-
-    // Sort in REVERSE order (rightmost first) so splices don't shift offsets.
-    std::sort(removals.begin(), removals.end(),
-              [](const MarkerRemoval& a, const MarkerRemoval& b) {
-                  return a.markerStart > b.markerStart;
-              });
-
-    // Remove duplicate/overlapping removals (e.g. bold+italic share ***).
-    // If two removals overlap, keep only the wider one.
-    std::vector<MarkerRemoval> merged;
-    for (const auto& r : removals) {
-        if (!merged.empty() && r.markerEnd >= merged.back().markerStart) {
-            // Overlaps with previous; merge by taking the wider range.
-            merged.back().markerStart = std::min(merged.back().markerStart, r.markerStart);
-            merged.back().markerEnd = std::max(merged.back().markerEnd, r.markerEnd);
-            merged.back().contentStart = std::min(merged.back().contentStart, r.contentStart);
-            merged.back().contentEnd = std::max(merged.back().contentEnd, r.contentEnd);
-        } else {
-            merged.push_back(r);
-        }
-    }
-
-    // Splice: for each removal, replace the marker region with just content.
-    Selection selBefore = sel_;
-    int32_t totalDelta = 0;
-    for (const auto& r : merged) {
-        std::string content = buffer_.Text().substr(r.contentStart, r.contentEnd - r.contentStart);
-        std::string removed = buffer_.Text().substr(r.markerStart, r.markerEnd - r.markerStart);
-        buffer_.Splice(r.markerStart, r.markerEnd - r.markerStart, content);
-        UndoEntry entry{};
-        entry.offset = r.markerStart;
-        entry.removed = removed;
-        entry.inserted = content;
-        entry.selBefore = selBefore;
-        entry.selAfter = sel_;
-        entry.type = EditType::Other;
-        undo_stack_.Push(entry);
-        totalDelta += static_cast<int32_t>(removed.size()) - static_cast<int32_t>(content.size());
-    }
-    // Keep selection covering the same text (now without markers).
-    uint32_t newEnd = (origEnd > static_cast<uint32_t>(totalDelta))
-                      ? origEnd - static_cast<uint32_t>(totalDelta) : origStart;
-    sel_.anchor = {origStart};
-    sel_.active = {newEnd};
-
+    // The inline markers go away first, and the shared module does the
+    // work, so the mac build clears the same markers.
+    ClearInlineFormatting(doc_, &buffer_, &sel_, &undo_stack_);
 
     // Remove BLOCK-level formatting: headings, lists, blockquotes.
     FormatState fs = GetFormatState(); // re-read after inline changes
@@ -6248,10 +6213,22 @@ void AppWindow::UpdateOutlineActive() {
                                             &cx, &cy, &chh)
             && cy >= scrollY_ - 1.f
             && (cy + chh) <= scrollY_ + ViewHeightDip() + 1.f;
+        if (qa_active_) {
+            char line[128];
+            snprintf(line, sizeof(line),
+                     "qa outline sync: caretVisible=%d scroll=%.0f",
+                     caretVisible ? 1 : 0, scrollY_);
+            QALogLine(line);
+        }
         // (ViewHeightDip: the DIP height of the content viewport.)
         if (caretVisible) {
-            const int idx = ItemIndexForOffset(outline_items_,
-                                               sel_.active.offset);
+            int idx = ItemIndexForOffset(outline_items_, sel_.active.offset);
+            // A caret above the first heading belongs to the first
+            // section, the way the viewport probe reads the same
+            // position and the mac pane shows it; without this the
+            // highlight vanished whenever the caret sat in the
+            // document's opening lines.
+            if (idx < 0 && !outline_items_.empty()) idx = 0;
             if (outline_.Active() != idx) outline_.SetActive(idx);
             return;
         }
@@ -6266,9 +6243,11 @@ void AppWindow::UpdateOutlineActiveFromView() {
     // View-mode highlight: the heading whose section owns the reading
     // line, 25% down the viewport, is the one being read. Runs on
     // every scroll change (UpdateScrollInfo funnels all scroll paths)
-    // and on load/toggle; edit mode never reaches it (caret rules).
+    // and on load/toggle; in edit mode it runs once the caret has been
+    // scrolled out of view, when reading takes over (UpdateOutlineActive
+    // sends only that case here).
     if (!outline_.IsCreated() || !outline_.IsVisible()) return;
-    if (editing_ || welcome_mode_) return;
+    if (welcome_mode_) return;
     float viewH = static_cast<float>(clientH_);
     if (rt_) viewH = rt_->GetSize().height;
     const float probeY = scrollY_ + viewH * 0.25f;
@@ -6286,10 +6265,23 @@ void AppWindow::UpdateOutlineActiveFromView() {
     }
     if (!haveOwner) {
         // Above the first heading: no section is being read.
+        if (qa_active_) {
+            char line[128];
+            snprintf(line, sizeof(line),
+                     "qa outline probe: no owner (probeY=%.0f)", probeY);
+            QALogLine(line);
+        }
         if (outline_.Active() != -1) outline_.SetActive(-1);
         return;
     }
     const int idx = ItemIndexForOffset(outline_items_, ownerOffset);
+    if (qa_active_) {
+        char line[128];
+        snprintf(line, sizeof(line),
+                 "qa outline probe: idx=%d ownerOffset=%u probeY=%.0f", idx,
+                 (unsigned)ownerOffset, probeY);
+        QALogLine(line);
+    }
     if (idx >= 0 && outline_.Active() != idx) {
         outline_.SetActive(idx);
         // Keep the highlighted row inside the pane's own viewport.
@@ -6632,7 +6624,9 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         case WM_TIMER:
-            if (wp == 1) {
+            if (wp == kQATimerId) {
+                QAAdvance();
+            } else if (wp == 1) {
                 KillTimer(hwnd_, 1);
                 ResizeContentWindow();
                 Repaint();

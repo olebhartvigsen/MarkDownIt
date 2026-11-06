@@ -1,6 +1,6 @@
 # Implementeringsplan: PDF- og Word-understoettelse (milepæl 1)
 
-Spec: `.hermes/plans/2026-09-22_203000-pdf-word-support.md`.
+Spec: `references/office-import-export-spec.md` (flyttet hertil i `9d3d068`).
 
 ## Arkitektur
 
@@ -55,13 +55,13 @@ producerer facit, og vores implementering måles mod den, ikke mod en skærmkopi
 
 | # | Opgave | Status |
 |---|--------|--------|
-| T1 | Vendoring (miniz, pugixml, pdfio) + CMake + smoke test | i gang |
-| T2 | Oracle-harness: fixtures, goldens, checkers, CI-job | i gang |
-| T3 | DOCX-import: zip, document.xml, styles, numbering, tabeller, links | planlagt |
-| T4 | DOCX-eksport: OPC-pakke, stilarter, nummerering, tabeller | planlagt |
-| T5 | PDF-eksport: layout/paginering, standard-14 fonte, WinAnsi | planlagt |
-| T6 | UI: filmenu/ribbon, gem-dialog, kompatibilitetsrapport | planlagt |
-| T7 | Robusthed: 200 sider, fejlbeskeder, CFB-detektion, krypteret PDF | planlagt |
+| T1 | Vendoring (miniz, pugixml, pdfio) + CMake + smoke test | færdig |
+| T2 | Oracle-harness: fixtures, goldens, checkers, CI-job | færdig |
+| T3 | DOCX-import: zip, document.xml, styles, numbering, tabeller, links | færdig |
+| T4 | DOCX-eksport: OPC-pakke, stilarter, nummerering, tabeller | færdig |
+| T5 | PDF-eksport: layout/paginering, standard-14 fonte, WinAnsi | færdig |
+| T6 | UI: filmenu/ribbon, gem-dialog, kompatibilitetsrapport | færdig |
+| T7 | Robusthed: 200 sider, fejlbeskeder, CFB-detektion, krypteret PDF | færdig |
 
 ## Uden for milepæl 1
 
@@ -80,3 +80,24 @@ datatab. Rækkefølgen for milepæl 2 besluttes når milepæl 1 er grøn.
   en grøn lokal compile er ikke et bevis.
 - PDF- og docx-filerne valideres maskinelt, men "åbner Word den uden
   reparationsdialog" er en manuel kontrol.
+
+
+---
+
+## Lukket (31. oktober 2026)
+
+Alle syv opgaver er bygget og gate't af CI. T1 og T2 står ikke længere
+som "i gang", og T3 til T7 er ikke længere "planlagt": `src/office/`
+rummer import, eksport og broen imellem, og office-oracle-jobbet i
+`.github/workflows/build.yml` genskaber fixtures og goldens og måler
+eksporten med fremmede læsere (python-docx, pypdf).
+
+To præciseringer til teksten ovenfor:
+
+- Drift-gaten fejler på indholdsdrift, men behandler forskelle der
+  alene kommer fra komprimeringsværktøjet som advarsler
+  (`tools/office-oracle/check_drift.py`).
+- De fire åbne punkter (sideopsætning over round-trip, PDF/A, billeder
+  i modellen, advarsler om sektionsskift) er stadig åbne på begge
+  platforme og registreret i `references/macos-port-status.md` og i
+  gap-closure-planen fra 23. oktober.

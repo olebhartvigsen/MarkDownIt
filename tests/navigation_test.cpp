@@ -58,3 +58,18 @@ TEST(Navigation, MoveWordRightPastSpaces) {
     b.SetText("hello   world");
     EXPECT_EQ(MoveWordRight(b, 5), 13u);  // skip spaces + word to end
 }
+
+
+TEST(Navigation, SlugifyAnchorFoldsHeadingsTheWindowsWay) {
+    // Internal #links resolve through this fold, so it must match the
+    // Windows slug byte for byte (link activation 4).
+    EXPECT_EQ(SlugifyAnchor("Hello World"), std::string("hello-world"));
+    EXPECT_EQ(SlugifyAnchor("Installation og brug!"),
+              std::string("installation-og-brug"));
+    EXPECT_EQ(SlugifyAnchor("  API Reference  "),
+              std::string("api-reference"));
+    EXPECT_EQ(SlugifyAnchor("My_Heading"), std::string("my_heading"));
+    EXPECT_EQ(SlugifyAnchor("M\xc3\xa5nedens oversigt"),
+              std::string("m\xc3\xa5nedens-oversigt"));
+    EXPECT_EQ(SlugifyAnchor("..."), std::string(""));
+}

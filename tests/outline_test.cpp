@@ -45,6 +45,13 @@ TEST(Outline, OffsetIsTheHeadingStartInSource) {
     EXPECT_EQ(12u, items[1].offset);
 }
 
+TEST(Outline, ThePreambleBelongsToTheFirstHeading) {
+    Document doc = Parse("intro\n\n# Title\n");
+    std::vector<OutlineItem> items = CollectHeadings(doc);
+    ASSERT_EQ(1u, items.size());
+    EXPECT_EQ(0, ItemIndexForOffset(items, 0));
+}
+
 TEST(Outline, SkipsNonHeadingBlocks) {
     Document doc = Parse(
         "plain\n\n- list\n\n> quote\n\n    indented code\n");
@@ -122,4 +129,32 @@ TEST(Outline, ItemIndexForOffsetOwnership) {
     EXPECT_EQ(3, ItemIndexForOffset(items, 200));
     EXPECT_EQ(-1, ItemIndexForOffset({}, 0));
     EXPECT_EQ(-1, ItemIndexForOffset({}, 500));
+}
+
+TEST(OutlineHeadingsUnchanged, ComparesLevelsAndTextNotOffsets) {
+    std::vector<OutlineItem> a;
+    a.push_back({1, 0, U"One"});
+    a.push_back({2, 10, U"Two"});
+
+    // Body edits above the headings move their offsets, and that alone
+    // keeps the list unchanged (outline spec 23).
+    std::vector<OutlineItem> b = a;
+    b[0].offset = 4;
+    b[1].offset = 20;
+    EXPECT_TRUE(HeadingsUnchanged(a, b));
+
+    b[1].text = U"Two point five";
+    EXPECT_FALSE(HeadingsUnchanged(a, b));
+
+    b = a;
+    b[0].level = 2;
+    EXPECT_FALSE(HeadingsUnchanged(a, b));
+
+    b = a;
+    b.push_back({3, 30, U"Three"});
+    EXPECT_FALSE(HeadingsUnchanged(a, b));
+
+    const std::vector<OutlineItem> emptyA;
+    const std::vector<OutlineItem> emptyB;
+    EXPECT_TRUE(HeadingsUnchanged(emptyA, emptyB));
 }

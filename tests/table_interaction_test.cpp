@@ -1255,3 +1255,185 @@ TEST(TableSplit, SurroundingTextIsNotDuplicated) {
     const Document d = ParseDoc(whole);
     EXPECT_TRUE(d.nodes.size() >= 3u);
 }
+
+// ─── The combined Tab command and the table boundary guards ───────────
+
+// X2: Tab from the last cell is one command: exactly one new row and
+// one undo entry, also at end of file without a trailing newline.
+TEST(TableInteraction, TabFromTheLastCellAppendsOneRowAndOneUndoEntry) {
+    const std::string sources[] = {
+        "| a | b |\n|---|---|\n| c | d |\n",
+        "| a | b |\n|---|---|\n| c | d |",
+    };
+    for (const std::string& source : sources) {
+        TextBuffer b;
+        b.SetText(source);
+        Document doc;
+        ASSERT_TRUE(ParseMarkdown(source, doc));
+        const size_t ti = TableIndexOf(doc);
+        ASSERT_TRUE(ti != SIZE_MAX);
+        const Node& table = doc.nodes[ti];
+        const TableRow& lastRow = table.rows.back();
+        const TableCell& lastCell = lastRow.cells.back();
+
+        Selection s;
+        s.Collapse({lastCell.srcEnd});
+
+        UndoStack undo;
+        EditController ec(&b, &s);
+        ec.SetUndoStack(&undo);
+
+        // The caret is on the last cell, so the move has nowhere to go
+        // and the append is what runs.
+        uint32_t moved = 0;
+        EXPECT_FALSE(MoveTableCell(doc, s.active.offset, false, &moved));
+
+        std::string row;
+        uint32_t insertPos = 0;
+        uint32_t caretAfter = 0;
+        ASSERT_TRUE(TableAppendRow(doc, b.Text(), s.active.offset, &row,
+                                   &insertPos, &caretAfter));
+        ec.ReplaceTextRange(insertPos, 0, row, EditType::Insert);
+        ec.BreakUndoCoalesce();
+
+        Document after;
+        ASSERT_TRUE(ParseMarkdown(b.Text(), after));
+        const size_t ti2 = TableIndexOf(after);
+        ASSERT_TRUE(ti2 != SIZE_MAX);
+        // Exactly one new row, with the same column count, and exactly
+        // one undo entry for the whole command.
+        EXPECT_EQ(after.nodes[ti2].rows.size(), table.rows.size() + 1);
+        EXPECT_EQ(after.nodes[ti2].rows.back().cells.size(),
+                  lastRow.cells.size());
+        UndoEntry entry;
+        EXPECT_TRUE(undo.Undo(entry));
+        UndoEntry extra;
+        EXPECT_FALSE(undo.Undo(extra));
+    }
+}
+
+// Section 45, "deleteBeforeTable": deleting the blank separator in front
+// of a table used to pull it into the paragraph above and the table was
+// gone.
+TEST(TableInteraction, DeleteForwardBeforeATableKeepsTheTable) {
+    const std::string source = "Hello\n\n| a |\n|---|\n";
+    TextBuffer b;
+    b.SetText(source);
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(source, doc));
+    ASSERT_TRUE(TableIndexOf(doc) != SIZE_MAX);
+
+    Selection s;
+    s.Collapse({5});
+    EditController ec(&b, &s);
+    EXPECT_FALSE(ec.DeleteForward(&doc));
+    EXPECT_EQ(b.Text(), source);
+
+    Document after;
+    ASSERT_TRUE(ParseMarkdown(b.Text(), after));
+    EXPECT_TRUE(TableIndexOf(after) != SIZE_MAX);
+}
+
+// The same key one byte later, in the blank line itself, is the same
+// boundary and must stay refused too.
+TEST(TableInteraction, DeleteForwardInTheBlankLineBeforeATableKeepsTheTable) {
+    const std::string source = "Hello\n\n| a |\n|---|\n";
+    TextBuffer b;
+    b.SetText(source);
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(source, doc));
+
+    Selection s;
+    s.Collapse({6});
+    EditController ec(&b, &s);
+    EXPECT_FALSE(ec.DeleteForward(&doc));
+    EXPECT_EQ(b.Text(), source);
+}
+
+
+TEST(TableSelection, TheCellRowAndTierRangesComeFromTheParsedCells) {
+    const std::string source =
+        "| a | b |\n"
+        "| --- | --- |\n"
+        "| c | d |\n";
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(source, doc));
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    ASSERT_EQ(doc.nodes[0].block, BlockKind::Table);
+
+    // Locate the body cell "c" by its parsed text, so the expected
+    // bounds come from the parser, not from string arithmetic.
+    const TableCell* cellC = nullptr;
+    size_t rowC = 0;
+    for (size_t ri = 0; ri < doc.nodes[0].rows.size(); ++ri) {
+        for (const TableCell& cell : doc.nodes[0].rows[ri].cells) {
+            if (cell.text == U"c") {
+                cellC = &cell;
+                rowC = ri;
+            }
+        }
+    }
+    ASSERT_TRUE(cellC != nullptr);
+    const uint32_t cOffset = cellC->srcOffset;
+
+    // A double click inside "c" takes the whole cell text.
+    uint32_t rs = 0;
+    uint32_t re = 0;
+    EXPECT_TRUE(CellTextRangeAtOffset(doc, source, cOffset, &rs, &re));
+    EXPECT_EQ(rs, cellC->srcOffset);
+    EXPECT_EQ(re, cellC->srcEnd);
+
+    // A triple click takes the whole row: the first cell's start to
+    // the last cell's end.
+    const TableRow& row = doc.nodes[0].rows[rowC];
+    uint32_t rowStart = UINT32_MAX;
+    uint32_t rowEnd = 0;
+    for (const TableCell& cell : row.cells) {
+        rowStart = std::min(rowStart, cell.srcOffset);
+        rowEnd = std::max(rowEnd, cell.srcEnd);
+    }
+    EXPECT_TRUE(RowTextRangeAtOffset(doc, source, cOffset, &rs, &re));
+    EXPECT_EQ(rs, rowStart);
+    EXPECT_EQ(re, rowEnd);
+
+    // Cmd+A escalates cell, row, table, document, and the press after
+    // the document starts over (plan 19, S8).
+    TableSelectionTier tier =
+        NextTableSelectionTier(doc, source, cOffset, 0);
+    EXPECT_EQ(tier.start, cellC->srcOffset);
+    EXPECT_EQ(tier.end, cellC->srcEnd);
+    EXPECT_EQ(tier.tier, 1);
+
+    tier = NextTableSelectionTier(doc, source, cOffset, tier.tier);
+    EXPECT_EQ(tier.start, rowStart);
+    EXPECT_EQ(tier.end, rowEnd);
+    EXPECT_EQ(tier.tier, 2);
+
+    const Node& table = doc.nodes[0];
+    tier = NextTableSelectionTier(doc, source, cOffset, tier.tier);
+    EXPECT_EQ(tier.start, table.srcOffset);
+    EXPECT_EQ(tier.end, table.srcOffset + table.srcLength);
+    EXPECT_EQ(tier.tier, 3);
+
+    tier = NextTableSelectionTier(doc, source, cOffset, tier.tier);
+    EXPECT_EQ(tier.start, 0u);
+    EXPECT_EQ(tier.end, static_cast<uint32_t>(source.size()));
+    EXPECT_EQ(tier.tier, 0);
+
+    // The delimiter row carries no text and takes no cell range: a
+    // double click on its dashes selects nothing.
+    const size_t dash = source.find("---");
+    ASSERT_TRUE(dash != std::string::npos);
+    EXPECT_FALSE(CellTextRangeAtOffset(doc, source,
+                                       static_cast<uint32_t>(dash),
+                                       &rs, &re));
+
+    // Outside a table the first press is the whole document already.
+    const std::string prose = "plain text\n";
+    Document proseDoc;
+    ASSERT_TRUE(ParseMarkdown(prose, proseDoc));
+    tier = NextTableSelectionTier(proseDoc, prose, 3, 0);
+    EXPECT_EQ(tier.start, 0u);
+    EXPECT_EQ(tier.end, static_cast<uint32_t>(prose.size()));
+    EXPECT_EQ(tier.tier, 0);
+}

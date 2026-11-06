@@ -1,14 +1,17 @@
 #pragma once
-#include <dwrite.h>
 #include <vector>
 #include <cstdint>
 #include <string>
 #include "dom.h"
+#include "textlayout.h"
 
 // One entry per rendered block: the live layout plus the rect it
 // occupied, in document coordinates (before scroll translation).
 struct BlockLayout {
-    IDWriteTextLayout* layout = nullptr; // owned, may be null
+    // The platform text layout for this block, owned by the cache, may be
+    // null. The handle is opaque: DirectWrite on Windows, Core Text on
+    // macOS. See textlayout.h.
+    TextLayoutHandle layout = nullptr;
     float x = 0.0f;
     float y = 0.0f;
     float width = 0.0f;
@@ -121,7 +124,7 @@ private:
 };
 
 // UTF-8 / UTF-16 offset conversion helpers.
-// The buffer is UTF-8, DirectWrite layouts are UTF-16. These functions
+// The buffer is UTF-8, the text layouts are UTF-16. These functions
 // convert between byte offsets in the UTF-8 string and code-unit offsets
 // in the UTF-16 string.
 uint32_t Utf8OffsetToUtf16(const std::string& s, uint32_t byteOffset);

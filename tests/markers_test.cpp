@@ -44,7 +44,7 @@ void WriteTextFile(const std::string& path, const std::string& text) {
     file.write(text.data(), static_cast<std::streamsize>(text.size()));
 }
 
-void ExpectSameMarker(const Marker& actual, const Marker& expected) {
+void ExpectSameMarker(const TextMarker& actual, const TextMarker& expected) {
     EXPECT_EQ(actual.id, expected.id);
     EXPECT_EQ(actual.start, expected.start);
     EXPECT_EQ(actual.end, expected.end);
@@ -338,7 +338,7 @@ TEST(Markers, LoadForAdoptsTheSidecarOfAMovedDocument) {
     MarkerStore original;
     ASSERT_TRUE(original.Add(document, 8, 11));
     ASSERT_TRUE(original.Save(oldPath, document));
-    const std::vector<Marker> saved = original.Markers();
+    const std::vector<TextMarker> saved = original.Markers();
 
     // The document was moved or renamed: its old path is gone from disk, the
     // same bytes now live under a new path, and the sidecar is still filed

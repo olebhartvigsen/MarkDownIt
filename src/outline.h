@@ -24,6 +24,14 @@ struct OutlineItem {
 // empty vector when no headings exist.
 std::vector<OutlineItem> CollectHeadings(const Document& doc);
 
+// Whether two heading lists describe the same headings: same levels
+// and same text, in the same order. The offsets move with every edit
+// above a heading, so they are not part of the comparison; the pane
+// keeps its rows and re-reads the offsets when this holds (outline
+// spec 23).
+bool HeadingsUnchanged(const std::vector<OutlineItem>& a,
+                       const std::vector<OutlineItem>& b);
+
 // Plain text of one item (helper exposed for tests).
 std::u32string ConcatenateInlineText(const OutlineItem& item);
 

@@ -564,3 +564,82 @@ TEST(OfficePdfExport, BaseFontWidthTablesDriveTheWrapping) {
     EXPECT_TRUE(pdfioFileClose(pdf));
     std::remove(path.c_str());
 }
+
+// The password callbacks: one hands the user password back, the other
+// gives a wrong one, so the test can read the file both ways.
+const char* HandUserPassword(void* data, const char* filename) {
+    (void)filename;
+    return static_cast<const char*>(data);
+}
+
+const char* WrongPassword(void* data, const char* filename) {
+    (void)data;
+    (void)filename;
+    return "";
+}
+
+TEST(OfficePdfExport, AProtectedExportReadsOnlyWithItsPassword) {
+    const DocModel doc = reference::PdfModel();
+    PdfExportOptions options;
+    options.encrypt = true;
+    options.owner_password = "owner-secret";
+    options.user_password = "user-secret";
+    options.allow_printing = true;
+    options.allow_copying = false;
+    options.allow_modifying = false;
+
+    CompatReport report;
+    std::string error;
+    std::string bytes;
+    int page_count = 0;
+    if (!PdfExport(doc, options, bytes, report, error, &page_count))
+        std::cerr << "  pdf export error: " << error << "\n";
+    ASSERT_TRUE(!bytes.empty());
+    EXPECT_TRUE(bytes.compare(0, 5, "%PDF-") == 0);
+    EXPECT_EQ(page_count, 2);
+    // The encryption dictionary is in the file, so the reader knows
+    // the content is locked.
+    EXPECT_TRUE(bytes.find("/Encrypt") != std::string::npos);
+
+    const std::string path = OutputPath("reference_protected.pdf");
+    ASSERT_TRUE(WriteFile(path, bytes));
+
+    // A wrong password opens nothing.
+    std::string messages;
+    pdfio_file_t* refused = pdfioFileOpen(path.c_str(), WrongPassword,
+                                          nullptr, CollectPdfMessage,
+                                          &messages);
+    EXPECT_TRUE(refused == nullptr);
+
+    // The user password opens the file, and the permissions travel
+    // with it: printing yes, copying and changing no.
+    messages.clear();
+    pdfio_file_t* opened = pdfioFileOpen(
+        path.c_str(), HandUserPassword, const_cast<char*>("user-secret"),
+        CollectPdfMessage, &messages);
+    ASSERT_TRUE(opened != nullptr);
+    EXPECT_EQ(pdfioFileGetNumPages(opened), 2u);
+    pdfio_encryption_t encryption = PDFIO_ENCRYPTION_NONE;
+    const pdfio_permission_t permissions =
+        pdfioFileGetPermissions(opened, &encryption);
+    EXPECT_EQ(encryption, PDFIO_ENCRYPTION_AES_128);
+    EXPECT_TRUE((permissions & PDFIO_PERMISSION_PRINT) != 0);
+    EXPECT_TRUE((permissions & PDFIO_PERMISSION_COPY) == 0);
+    EXPECT_TRUE((permissions & PDFIO_PERMISSION_MODIFY) == 0);
+
+    // After unlocking, a reader sees the same page content as the
+    // plain export.
+    const std::string page_one = PageText(PageContent(opened, 0));
+    EXPECT_TRUE(ContainsContent(page_one, "Indledning"));
+    pdfioFileClose(opened);
+
+    // Asking for protection without an owner password is refused, and
+    // nothing is produced.
+    options.owner_password.clear();
+    CompatReport empty_report;
+    std::string empty_error;
+    std::string refused_bytes;
+    EXPECT_FALSE(PdfExport(doc, options, refused_bytes, empty_report,
+                           empty_error, nullptr));
+    EXPECT_TRUE(refused_bytes.empty());
+}

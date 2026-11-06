@@ -1,6 +1,7 @@
 #include "navigation.h"
 #include "editcontroller.h"
 #include <algorithm>
+#include <cctype>
 #include <vector>
 
 namespace {
@@ -143,6 +144,31 @@ uint32_t TableSeparatorNewlinesBefore(const std::string& text,
     return 2 - newlines;
 }
 
+// The start of a list item's own text: see the header for the rule.
+uint32_t ListItemContentStart(const Node& node, const std::string& source) {
+    uint32_t cursor = node.srcOffset;
+    const uint32_t limit = std::min<uint32_t>(
+        node.contentOffset, static_cast<uint32_t>(source.size()));
+    while (cursor < limit &&
+           (source[cursor] == ' ' || source[cursor] == '\t')) ++cursor;
+    // Skip blockquote markers first, mirroring the parser's own scan,
+    // so a quoted item's '>' is never mistaken for the bullet: the
+    // selection must still skip the '-'.
+    while (cursor < limit && source[cursor] == '>') {
+        ++cursor;
+        while (cursor < limit &&
+               (source[cursor] == ' ' || source[cursor] == '\t')) ++cursor;
+    }
+    if (node.ordered) {
+        while (cursor < limit && source[cursor] >= '0' &&
+               source[cursor] <= '9') ++cursor;
+    }
+    if (cursor < limit) ++cursor; // bullet or ordered delimiter
+    while (cursor < limit &&
+           (source[cursor] == ' ' || source[cursor] == '\t')) ++cursor;
+    return cursor; // before any opening inline syntax
+}
+
 bool GetBlockSelectionRange(const Document* doc, const LayoutCache& cache,
                             int blockIndex, uint32_t* start, uint32_t* end) {
     if (!cache.GetRenderedBlockRange(blockIndex, start, end)) return false;
@@ -150,33 +176,15 @@ bool GetBlockSelectionRange(const Document* doc, const LayoutCache& cache,
     if (doc && block.nodeIndex < doc->nodes.size()) {
         const Node& node = doc->nodes[block.nodeIndex];
         if (node.block == BlockKind::List) {
-            // Include closing inline syntax in the selected item, but not its
-            // newline or the next item's marker. Otherwise deletion nests the
-            // next item under the empty prefix left on this source line.
-            *start = node.contentOffset;
+            // Include closing inline syntax in the selected item, but not
+            // its newline or the next item's marker. Otherwise deletion
+            // nests the next item under the empty prefix left on this
+            // source line.
             const std::string* source = cache.SourceText();
             if (source && node.srcOffset < source->size()) {
-                uint32_t cursor = node.srcOffset;
-                const uint32_t limit = std::min<uint32_t>(
-                    node.contentOffset, static_cast<uint32_t>(source->size()));
-                while (cursor < limit &&
-                       ((*source)[cursor] == ' ' || (*source)[cursor] == '\t')) ++cursor;
-                // Skip blockquote markers first, mirroring the parser's
-                // own scan, so a quoted item's '>' is never mistaken for
-                // the bullet: the selection must still skip the '-'.
-                while (cursor < limit && (*source)[cursor] == '>') {
-                    ++cursor;
-                    while (cursor < limit &&
-                           ((*source)[cursor] == ' ' || (*source)[cursor] == '\t')) ++cursor;
-                }
-                if (node.ordered) {
-                    while (cursor < limit && (*source)[cursor] >= '0' &&
-                           (*source)[cursor] <= '9') ++cursor;
-                }
-                if (cursor < limit) ++cursor; // bullet or ordered delimiter
-                while (cursor < limit &&
-                       ((*source)[cursor] == ' ' || (*source)[cursor] == '\t')) ++cursor;
-                *start = cursor; // before any opening inline syntax
+                *start = ListItemContentStart(node, *source);
+            } else {
+                *start = node.contentOffset;
             }
             *end = node.srcOffset + node.srcLength;
         }
@@ -321,9 +329,8 @@ static WordKind Kind(char32_t cp) {
 }
 }
 
-uint32_t MoveWordLeft(const TextBuffer& buf, uint32_t offset) {
-    const std::string& s = buf.Text();
-    if (offset == 0) return 0;
+uint32_t MoveWordLeftInString(const std::string& s, uint32_t offset) {
+    if (offset == 0 || s.empty()) return 0;
     uint32_t i = offset;
     while (i > 0) {
         uint32_t p = PrevGraphemeBoundary(s, i);
@@ -342,8 +349,11 @@ uint32_t MoveWordLeft(const TextBuffer& buf, uint32_t offset) {
     return i;
 }
 
-uint32_t MoveWordRight(const TextBuffer& buf, uint32_t offset) {
-    const std::string& s = buf.Text();
+uint32_t MoveWordLeft(const TextBuffer& buf, uint32_t offset) {
+    return MoveWordLeftInString(buf.Text(), offset);
+}
+
+uint32_t MoveWordRightInString(const std::string& s, uint32_t offset) {
     uint32_t n = static_cast<uint32_t>(s.size());
     uint32_t i = offset > n ? n : offset;
     while (i < n) {
@@ -356,6 +366,10 @@ uint32_t MoveWordRight(const TextBuffer& buf, uint32_t offset) {
     while (i < n && Kind(DecodeNav(s, i).value) == wanted)
         i = NextGraphemeBoundary(s, i);
     return i;
+}
+
+uint32_t MoveWordRight(const TextBuffer& buf, uint32_t offset) {
+    return MoveWordRightInString(buf.Text(), offset);
 }
 void WordSpanAt(const TextBuffer& buf, uint32_t offset,
                 uint32_t* outStart, uint32_t* outEnd) {
@@ -592,6 +606,32 @@ std::string TableBlankRow(int columnCount) {
     for (int c = 0; c < columnCount; ++c) row += "        |";
     row += "\n";
     return row;
+}
+
+bool TableAppendRow(const Document& doc, const std::string& source,
+                    uint32_t caretOffset, std::string* rowText,
+                    uint32_t* insertPos, uint32_t* caretAfter) {
+    for (size_t ti = 0; ti < doc.nodes.size(); ++ti) {
+        const Node& node = doc.nodes[ti];
+        if (node.block != BlockKind::Table) continue;
+        const uint32_t start = node.srcOffset;
+        const uint32_t end = start + node.srcLength;
+        if (caretOffset < start || caretOffset > end) continue;
+
+        const int cols = static_cast<int>(TableColumnCount(doc, ti));
+        if (cols <= 0) return false;
+
+        std::string row = TableBlankRow(cols);
+        // A table that runs into the next block needs its own line.
+        const bool neededBreak =
+            end > 0 && end <= source.size() && source[end - 1] != '\n';
+        if (neededBreak) row.insert(0, "\n");
+        if (rowText) *rowText = std::move(row);
+        if (insertPos) *insertPos = end;
+        if (caretAfter) *caretAfter = end + (neededBreak ? 2u : 1u);
+        return true;
+    }
+    return false;
 }
 
 std::string TableDelimitersFor(int columnCount) {
@@ -1428,4 +1468,129 @@ bool TableVerticalMove(const std::string& source, uint32_t tableStart,
 
     *outOffset = tgtCellStart + clamped;
     return true;
+}
+std::string SlugifyAnchor(const std::string& value) {
+    std::string result;
+    bool pendingHyphen = false;
+    for (size_t i = 0; i < value.size();) {
+        const unsigned char b = static_cast<unsigned char>(value[i]);
+        if (b < 0x80) {
+            const char c = static_cast<char>(b);
+            if (std::isspace(b) != 0) {
+                pendingHyphen = !result.empty();
+                ++i;
+                continue;
+            }
+            if (std::ispunct(b) != 0 && c != '_' && c != '-') {
+                ++i;
+                continue;
+            }
+            if (pendingHyphen && !result.empty() && result.back() != '-') {
+                result.push_back('-');
+            }
+            pendingHyphen = false;
+            result.push_back((c >= 'A' && c <= 'Z') ?
+                             static_cast<char>(c - 'A' + 'a') : c);
+            ++i;
+            continue;
+        }
+        uint32_t length = (b & 0xE0) == 0xC0 ? 2 :
+                          (b & 0xF0) == 0xE0 ? 3 :
+                          (b & 0xF8) == 0xF0 ? 4 : 1;
+        if (i + length > value.size()) length = 1;
+        if (pendingHyphen && !result.empty() && result.back() != '-') {
+            result.push_back('-');
+        }
+        pendingHyphen = false;
+        result.append(value, i, length);
+        i += length;
+    }
+    while (!result.empty() && result.back() == '-') result.pop_back();
+    return result;
+}
+
+bool CellTextRangeAtOffset(const Document& doc, const std::string& source,
+                           uint32_t offset, uint32_t* outStart,
+                           uint32_t* outEnd) {
+    if (!outStart || !outEnd) return false;
+    TableCellRef cell;
+    if (!TableCellAtOffset(doc, source, offset, &cell)) return false;
+    if (cell.separatorRow || cell.srcEnd <= cell.srcOffset) return false;
+    *outStart = cell.srcOffset;
+    *outEnd = std::min<uint32_t>(cell.srcEnd,
+                                 static_cast<uint32_t>(source.size()));
+    return *outEnd > *outStart;
+}
+
+bool RowTextRangeAtOffset(const Document& doc, const std::string& source,
+                          uint32_t offset, uint32_t* outStart,
+                          uint32_t* outEnd) {
+    if (!outStart || !outEnd) return false;
+    TableCellRef cell;
+    if (!TableCellAtOffset(doc, source, offset, &cell)) return false;
+    if (cell.separatorRow || cell.rowIndex == SIZE_MAX) return false;
+    if (cell.tableIndex >= doc.nodes.size()) return false;
+    const Node& node = doc.nodes[cell.tableIndex];
+    if (cell.rowIndex >= node.rows.size()) return false;
+    const TableRow& row = node.rows[cell.rowIndex];
+    uint32_t rowStart = UINT32_MAX;
+    uint32_t rowEnd = 0;
+    for (const TableCell& c : row.cells) {
+        if (c.srcOffset < rowStart) rowStart = c.srcOffset;
+        if (c.srcEnd > rowEnd) rowEnd = c.srcEnd;
+    }
+    if (rowEnd <= rowStart) return false;
+    *outStart = rowStart;
+    *outEnd = std::min<uint32_t>(rowEnd,
+                                 static_cast<uint32_t>(source.size()));
+    return *outEnd > *outStart;
+}
+
+TableSelectionTier NextTableSelectionTier(const Document& doc,
+                                          const std::string& source,
+                                          uint32_t caret, int previousTier) {
+    // The steps mirror the Windows escalation (plan 19): the cell, the
+    // row, the table, then the whole document. A run that has used all
+    // the table tiers lands on the document and starts over.
+    TableSelectionTier out;
+    const uint32_t textLen = static_cast<uint32_t>(source.size());
+    TableCellRef cell;
+    const bool inTable = TableCellAtOffset(doc, source, caret, &cell);
+    const bool activeCell = inTable && !cell.separatorRow &&
+                            cell.srcEnd > cell.srcOffset;
+    if (activeCell && previousTier < 4) {
+        const Node& node = doc.nodes[cell.tableIndex];
+        if (previousTier == 0) {
+            out.start = cell.srcOffset;
+            out.end = std::min<uint32_t>(cell.srcEnd, textLen);
+            out.tier = 1;
+            return out;
+        }
+        if (previousTier == 1 && cell.rowIndex < node.rows.size()) {
+            const TableRow& row = node.rows[cell.rowIndex];
+            uint32_t rowStart = UINT32_MAX;
+            uint32_t rowEnd = 0;
+            for (const TableCell& c : row.cells) {
+                if (c.srcOffset < rowStart) rowStart = c.srcOffset;
+                if (c.srcEnd > rowEnd) rowEnd = c.srcEnd;
+            }
+            if (rowEnd > rowStart) {
+                out.start = rowStart;
+                out.end = std::min<uint32_t>(rowEnd, textLen);
+                out.tier = 2;
+                return out;
+            }
+        }
+        if (previousTier < 3) {
+            out.start = node.srcOffset;
+            out.end = std::min<uint32_t>(node.srcOffset + node.srcLength,
+                                         textLen);
+            out.tier = 3;
+            return out;
+        }
+    }
+    out.start = 0;
+    out.end = textLen;
+    out.tier = 0;
+    return out;
 }

@@ -1062,6 +1062,43 @@ bool PdfExport(const DocModel& doc, const PdfExportOptions& opt, std::string& ou
         return false;
     }
 
+    if (opt.encrypt) {
+        // The standard security handler with its permission bits
+        // (office spec, PDF export): only what the caller allows is
+        // set, and both passwords go to the writer. An empty owner
+        // password would leave the file unprotected, which is never
+        // what the caller asked for, so it is refused.
+        if (opt.owner_password.empty()) {
+            error = "the owner password is empty, so the PDF cannot be protected";
+            // Closing flushes the partial file through the output
+            // callback, which writes straight into out_bytes, so the
+            // handle goes first and the clear comes after.
+            pdfioFileClose(pdf);
+            out_bytes.clear();
+            return false;
+        }
+        pdfio_permission_t permissions = PDFIO_PERMISSION_READING |
+                                         PDFIO_PERMISSION_PRINT_HIGH;
+        if (opt.allow_printing) permissions |= PDFIO_PERMISSION_PRINT;
+        if (opt.allow_copying) permissions |= PDFIO_PERMISSION_COPY;
+        if (opt.allow_modifying) {
+            permissions |= PDFIO_PERMISSION_MODIFY |
+                           PDFIO_PERMISSION_ANNOTATE |
+                           PDFIO_PERMISSION_FORMS |
+                           PDFIO_PERMISSION_ASSEMBLE;
+        }
+        if (!pdfioFileSetPermissions(pdf, permissions,
+                                     PDFIO_ENCRYPTION_AES_128,
+                                     opt.owner_password.c_str(),
+                                     opt.user_password.c_str())) {
+            error = messages.empty() ? std::string("unable to protect the PDF")
+                                     : TrimMessages(messages);
+            pdfioFileClose(pdf);
+            out_bytes.clear();
+            return false;
+        }
+    }
+
     Metrics metrics;
     bool ok = true;
     for (int face = 0; face < kFaceCount; ++face) {
