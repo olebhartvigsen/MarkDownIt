@@ -122,6 +122,8 @@ jobs:
       # the mac build runs. The capture-parity job compares the two
       # picture sets once both platforms are done.
       - name: Capture the states (QA walk)
+        # Windows screen capture is disabled by workspace policy.
+        if: ${{ false }}
         shell: powershell
         run: powershell -File tools/windows-smoke/capture.ps1 -Exe build/Release/MarkDownIt.exe -Doc tests/fixtures/layout-showcase.md
 
@@ -293,6 +295,8 @@ jobs:
   # artifact for the eye.
   capture-parity:
     name: Capture parity (Windows vs macOS)
+    # This gate needs Windows captures, which workspace policy forbids.
+    if: ${{ false }}
     needs: [build, build-macos]
     runs-on: ubuntu-latest
     steps:
