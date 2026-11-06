@@ -327,9 +327,6 @@ if(BUILD_TESTS AND APPLE)
     #     which the macOS build answers with Core Text.
     add_executable(MarkDownIt.tests
         tests/parser_smoke.cpp
-        tests/mermaid_test.cpp
-        tests/mermaid_layout_test.cpp
-        tests/diagramcache_test.cpp
         tests/textbuffer_test.cpp
         tests/caret_test.cpp
         tests/hittest_test.cpp

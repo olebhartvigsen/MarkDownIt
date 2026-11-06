@@ -39,7 +39,7 @@ uint32_t LineCount(TextLayoutHandle handle) {
     if (!handle) return 0;
     UINT32 count = 0;
     HRESULT hr = handle->GetLineMetrics(nullptr, 0, &count);
-    if (FAILED(hr) || count == 0) return 0;
+    if ((FAILED(hr) && hr != E_NOT_SUFFICIENT_BUFFER) || count == 0) return 0;
     return count;
 }
 
@@ -52,7 +52,7 @@ bool FetchLineMetrics(TextLayoutHandle handle,
                       std::vector<DWRITE_LINE_METRICS>* out) {
     UINT32 count = 0;
     HRESULT hr = handle->GetLineMetrics(nullptr, 0, &count);
-    if (FAILED(hr) || count == 0) return false;
+    if ((FAILED(hr) && hr != E_NOT_SUFFICIENT_BUFFER) || count == 0) return false;
     if (count > 4096) count = 4096;  // sanity cap
     out->resize(static_cast<size_t>(count));
     UINT32 got = 0;
@@ -83,7 +83,10 @@ bool LineTextRange(TextLayoutHandle handle, uint32_t lineIndex,
     // is found by hit testing the left and right edges of the line at mid
     // height. The right edge is probed at the layout width so the hit
     // lands on the line's last insertion position.
-    const float lineY = metrics[lineIndex].height * 0.5f;
+    float lineTop = 0.0f;
+    for (uint32_t i = 0; i < lineIndex; ++i)
+        lineTop += metrics[i].height;
+    const float lineY = lineTop + metrics[lineIndex].height * 0.5f;
     DWRITE_HIT_TEST_METRICS htmStart = {};
     DWRITE_HIT_TEST_METRICS htmEnd = {};
     BOOL isTrailing = FALSE;
