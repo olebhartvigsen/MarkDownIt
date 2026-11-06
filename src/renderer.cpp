@@ -5,6 +5,7 @@
 #include <dwrite.h>
 #include <string>
 #include <vector>
+#include <cmath>
 #include "colortext.h"
 #include "crash_trace.h"
 #include "imagehelper.h"
@@ -436,6 +437,7 @@ LayoutMetrics Renderer::ComputeMetrics() const {
 
 bool Renderer::Init(IDWriteFactory* dw) {
     if (!dw) return false;
+    dw_factory_ = dw;
 
     LayoutMetrics base = BaseMetrics();
 
