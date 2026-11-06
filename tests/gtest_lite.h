@@ -105,7 +105,7 @@ struct Registrar {
         size_t before = testlite::failures(); \
         int xb = testlite::xfail_checks(); \
         int up = testlite::xfail_unexpected_passes(); \
-        std::cout << "[ RUN ] " << t.name << "\n"; \
+        std::cout << "[ RUN ] " << t.name << std::endl; \
         t.fn(); \
         if (t.xfail) { \
             if (testlite::failures() > before || testlite::xfail_checks() > xb) { \
