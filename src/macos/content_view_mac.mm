@@ -252,7 +252,7 @@ void ContentView::Draw(RenderTarget* target) {
     // Without a document the welcome screen takes its place.
     if (app_ && app_->WelcomeMode()) {
         welcome_.Layout(width_, height_);
-        welcome_.Render(target, width_, height_, hoverCard_);
+        welcome_.Render(target, engine_.get(), width_, height_, hoverCard_);
         target_ = nullptr;
         return;
     }

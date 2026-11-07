@@ -6,6 +6,7 @@
 // open. The mac build shows the same cards, with the same layout, and
 // the drawing goes through the render target.
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -14,8 +15,19 @@
 
 namespace mac {
 
+// The parsed diagram of a card. The header keeps the SVG reader out of
+// it, and a card holds one only when the file is an SVG.
+class SvgDoc;
+
 // One card of the welcome screen.
 struct WelcomeCard {
+    // A row of the preview, wrapped to the width of the card.
+    struct Row {
+        std::string text;
+        // A heading is drawn heavier, the way the preview read before.
+        bool heading = false;
+    };
+
     // The path of the file.
     std::string filePath;
     // The name of the file.
@@ -24,6 +36,17 @@ struct WelcomeCard {
     std::string folder;
     // The first lines of the file.
     std::string preview;
+    // The diagram the card shows instead of the text preview. The first
+    // bytes of an SVG are its XML header, so a card for one shows the
+    // picture and not the markup.
+    std::shared_ptr<SvgDoc> image;
+    // What the card draws, fitted to the width of the card. The width
+    // and the fonts are fixed, so the fitting runs once and not on every
+    // frame.
+    std::string titleShown;
+    std::string folderShown;
+    std::vector<Row> rows;
+    bool fitted = false;
     // Where the card sits, in points.
     Rect rect;
 };
@@ -36,9 +59,11 @@ public:
     // Places the cards for the size of the window.
     void Layout(float viewW, float viewH);
 
-    // Draws the screen.
-    void Render(RenderTarget* target, float viewW, float viewH,
-                int hoverIndex);
+    // Draws the screen. The engine measures a string so a long line of
+    // the preview wraps inside its card instead of running over the card
+    // next to it.
+    void Render(RenderTarget* target, TextEngine* engine, float viewW,
+                float viewH, int hoverIndex);
 
     // Which card is at the point, or -1 when there is none.
     int HitTest(float x, float y) const;

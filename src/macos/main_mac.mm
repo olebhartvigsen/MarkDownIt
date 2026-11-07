@@ -682,6 +682,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [window_ center];
         [self qaScrollToTop];
         [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"welcome"]) {
+        // The screen without a document. The walk has opened the
+        // fixture, so the recent list has a card to show.
+        [self showWelcomeScreen];
+        [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"dark"]) {
         if (sourceView_) [self OnToggleSourceView];
         // The top of the page in the dark appearance, so the picture
