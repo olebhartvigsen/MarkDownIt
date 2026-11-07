@@ -11,6 +11,7 @@
 #include "gtest_lite.h"
 
 #include "../src/macos/renderer_mac.h"
+#include "../src/macos/svg_mac.h"
 #include "../src/parser.h"
 
 #include <cmath>
@@ -151,18 +152,26 @@ public:
         float x1 = 0.0f;
         float y1 = 0.0f;
         float width = 0.0f;
+        float radius = 0.0f;
         mac::Color color;
+    };
+    struct Polygon {
+        std::vector<mac::Point> points;
+        bool closed = false;
+        bool filled = false;
     };
     struct Text {
         std::string text;
         float x = 0.0f;
         float baseline = 0.0f;
         mac::Color color;
+        FontSpec font;
     };
 
     std::vector<Fill> fills;
     std::vector<Stroke> strokes;
     std::vector<Text> texts;
+    std::vector<Polygon> polygons;
     int clips = 0;
 
     void FillRect(const Rect& rect, const mac::Color& color) override {
@@ -204,8 +213,8 @@ public:
     void StrokeRoundedRect(const Rect& rect, float radius,
                             const mac::Color& color,
                             float lineWidth) override {
-        (void)radius;
         StrokeRect(rect, color, lineWidth);
+        strokes.back().radius = radius;
     }
     void StrokeLine(float x0, float y0, float x1, float y1,
                     const mac::Color& color, float lineWidth) override {
@@ -220,12 +229,12 @@ public:
     }
     void DrawText(const std::string& utf8, const FontSpec& font, float x,
                   float baselineY, const mac::Color& color) override {
-        (void)font;
         Text text;
         text.text = utf8;
         text.x = x;
         text.baseline = baselineY;
         text.color = color;
+        text.font = font;
         texts.push_back(text);
     }
     void DrawBitmap(mac::BitmapHandle image, const Rect& rect) override {
@@ -244,16 +253,22 @@ public:
     }
     void FillPolygon(const std::vector<mac::Point>& points,
                       const mac::Color& color) override {
-        (void)points;
         (void)color;
+        Polygon polygon;
+        polygon.points = points;
+        polygon.filled = true;
+        polygon.closed = true;
+        polygons.push_back(polygon);
     }
     void StrokePolygon(const std::vector<mac::Point>& points,
                         const mac::Color& color, float lineWidth,
                         bool closed) override {
-        (void)points;
         (void)color;
         (void)lineWidth;
-        (void)closed;
+        Polygon polygon;
+        polygon.points = points;
+        polygon.closed = closed;
+        polygons.push_back(polygon);
     }
     void FillPieSlice(const Rect& rect, float startAngle, float endAngle,
                        const mac::Color& color) override {
@@ -1632,4 +1647,160 @@ TEST(RendererMac, CollapsesTheBlankLineWhileReading) {
     // while reading: more than the strip, less than a full line.
     EXPECT_TRUE(editing - reading > 4.0f);
     EXPECT_TRUE(editing - reading < 40.0f);
+}
+
+
+// --- Standalone SVG documents ------------------------------------------------
+//
+// A diagram file is drawn by the SVG reader, so its placement rules are
+// checked here against the same fixed text engine the rest of the suite
+// uses. A browser is the reference for every one of them.
+
+TEST(RendererMac, SvgCentresAMiddleAnchoredLabel) {
+    mac::SvgDoc doc;
+    ASSERT_TRUE(doc.Load(
+        "<svg width='200' height='100'>"
+        "<text x='100' y='40' text-anchor='middle' font-size='10'>abcd</text>"
+        "</svg>"));
+    RecordingTarget target;
+    FakeEngine engine;
+    doc.Draw(&target, &engine, 0.0f, 0.0f, 200.0f, 100.0f);
+
+    ASSERT_EQ(target.texts.size(), 1u);
+    // Four characters at five points each is twenty wide, so the label
+    // starts ten points left of its anchor. Drawing from the anchor
+    // itself would shift every label in a diagram right by half.
+    EXPECT_NEAR(target.texts[0].x, 90.0f, 0.01f);
+}
+
+TEST(RendererMac, SvgKeepsTheStartAnchorAtItsOwnX) {
+    mac::SvgDoc doc;
+    ASSERT_TRUE(doc.Load(
+        "<svg width='200' height='100'>"
+        "<text x='100' y='40' text-anchor='start' font-size='10'>abcd</text>"
+        "</svg>"));
+    RecordingTarget target;
+    FakeEngine engine;
+    doc.Draw(&target, &engine, 0.0f, 0.0f, 200.0f, 100.0f);
+
+    ASSERT_EQ(target.texts.size(), 1u);
+    EXPECT_NEAR(target.texts[0].x, 100.0f, 0.01f);
+}
+
+TEST(RendererMac, SvgAppliesTheGroupTranslate) {
+    mac::SvgDoc doc;
+    ASSERT_TRUE(doc.Load(
+        "<svg width='200' height='200'>"
+        "<g transform='translate(0,44)'>"
+        "<text x='10' y='26' font-size='10'>a</text>"
+        "</g></svg>"));
+    RecordingTarget target;
+    FakeEngine engine;
+    doc.Draw(&target, &engine, 0.0f, 0.0f, 200.0f, 200.0f);
+
+    ASSERT_EQ(target.texts.size(), 1u);
+    EXPECT_NEAR(target.texts[0].baseline, 70.0f, 0.01f);
+}
+
+TEST(RendererMac, SvgDrawsARoundedRectRounded) {
+    mac::SvgDoc doc;
+    ASSERT_TRUE(doc.Load(
+        "<svg width='200' height='100'>"
+        "<rect x='10' y='10' width='80' height='40' rx='10'"
+        " fill='#fff' stroke='#000' stroke-width='2'/>"
+        "</svg>"));
+    RecordingTarget target;
+    FakeEngine engine;
+    doc.Draw(&target, &engine, 0.0f, 0.0f, 200.0f, 100.0f);
+
+    ASSERT_EQ(target.fills.size(), 1u);
+    EXPECT_NEAR(target.fills[0].radius, 10.0f, 0.01f);
+    ASSERT_EQ(target.strokes.size(), 1u);
+    EXPECT_NEAR(target.strokes[0].radius, 10.0f, 0.01f);
+}
+
+TEST(RendererMac, SvgSplitsADashedPathIntoSegments) {
+    mac::SvgDoc doc;
+    ASSERT_TRUE(doc.Load(
+        "<svg width='200' height='100'>"
+        "<path d='M0,0 L100,0' fill='none' stroke='#c00'"
+        " stroke-width='1' stroke-dasharray='6 4'/>"
+        "</svg>"));
+    RecordingTarget target;
+    FakeEngine engine;
+    doc.Draw(&target, &engine, 0.0f, 0.0f, 200.0f, 100.0f);
+
+    // A hundred points of 6-on/4-off is ten dashes, not one solid line.
+    EXPECT_EQ(target.strokes.size(), 10u);
+}
+
+TEST(RendererMac, SvgDoesNotCloseAnOpenPath) {
+    mac::SvgDoc doc;
+    ASSERT_TRUE(doc.Load(
+        "<svg width='200' height='200'>"
+        "<path d='M10,10 L10,100 L100,100' fill='none' stroke='#000'"
+        " stroke-width='1'/>"
+        "</svg>"));
+    RecordingTarget target;
+    FakeEngine engine;
+    doc.Draw(&target, &engine, 0.0f, 0.0f, 200.0f, 200.0f);
+
+    ASSERT_EQ(target.polygons.size(), 1u);
+    // Closing this path would add a diagonal from its end back to its
+    // start, which the browser does not draw.
+    EXPECT_FALSE(target.polygons[0].closed);
+}
+
+TEST(RendererMac, SvgTurnsAMarkerEndIntoAnArrowhead) {
+    mac::SvgDoc doc;
+    ASSERT_TRUE(doc.Load(
+        "<svg width='200' height='200'>"
+        "<defs><marker id='a' markerWidth='10' markerHeight='8' refX='9'"
+        " refY='4' orient='auto-start-reverse'>"
+        "<path d='M0,0 L10,4 L0,8 z' fill='#000'/></marker></defs>"
+        "<path d='M20,20 L20,120' fill='none' stroke='#000'"
+        " stroke-width='1' marker-end='url(#a)'/>"
+        "</svg>"));
+    RecordingTarget target;
+    FakeEngine engine;
+    doc.Draw(&target, &engine, 0.0f, 0.0f, 200.0f, 200.0f);
+
+    // The arrowhead is a filled triangle, the line itself a stroke.
+    int filled = 0;
+    for (const RecordingTarget::Polygon& polygon : target.polygons) {
+        if (polygon.filled && polygon.points.size() == 4) ++filled;
+    }
+    EXPECT_EQ(filled, 1);
+    // The definition inside <defs> is not drawn as a shape of its own.
+    EXPECT_EQ(target.polygons.size(), 2u);
+}
+
+TEST(RendererMac, SvgIgnoresAClosedPathInsideDefs) {
+    mac::SvgDoc doc;
+    ASSERT_TRUE(doc.Load(
+        "<svg width='200' height='200'>"
+        "<defs><path d='M0,0 L10,4 L0,8 z' fill='#000'/></defs>"
+        "<rect x='0' y='0' width='10' height='10' fill='#000'/>"
+        "</svg>"));
+    RecordingTarget target;
+    FakeEngine engine;
+    doc.Draw(&target, &engine, 0.0f, 0.0f, 200.0f, 200.0f);
+
+    EXPECT_TRUE(target.polygons.empty());
+}
+
+TEST(RendererMac, SvgKeepsTheItalicOfALabel) {
+    mac::SvgDoc doc;
+    ASSERT_TRUE(doc.Load(
+        "<svg width='200' height='100' font-family='Arial, Helvetica, sans-serif'>"
+        "<text x='10' y='40' font-size='10' font-style='italic'>a</text>"
+        "</svg>"));
+    RecordingTarget target;
+    FakeEngine engine;
+    doc.Draw(&target, &engine, 0.0f, 0.0f, 200.0f, 100.0f);
+
+    ASSERT_EQ(target.texts.size(), 1u);
+    EXPECT_TRUE(target.texts[0].font.italic);
+    // Core Text takes one family, so the list is reduced to its first name.
+    EXPECT_EQ(target.texts[0].font.family, std::string("Arial"));
 }

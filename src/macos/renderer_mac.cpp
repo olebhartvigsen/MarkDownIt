@@ -89,9 +89,6 @@ Node TextNode(const std::u32string& text) {
 // much room an image takes before it has been measured.
 constexpr float kImageFallbackHeight = 100.0f;
 
-// The largest height the images of one block may take.
-constexpr float kImageMaxHeight = 400.0f;
-
 // The width of the text column when the word wrap is off. The text is
 // laid out on one very wide line and the user scrolls to its end.
 constexpr float kNoWrapContentWidthDip = 10000.0f;
@@ -597,6 +594,7 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
     // middle. With the wrap off the text gets one very wide line, and
     // the user scrolls to its end.
     const float pad = EffectivePadX(widthDip);
+    widestRight_ = 0.0f;
     contentWidth_ = wrap_ ? widthDip - pad * 2.0f
                           : kNoWrapContentWidthDip;
     if (contentWidth_ <= 0.0f) {
@@ -632,6 +630,9 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
     }
 
     totalHeight_ = y + metrics_.padTop * 2.0f;
+    // A picture wider than the column extends the scrollable area. Without
+    // this its right-hand part could not be reached.
+    if (widestRight_ > contentWidth_) contentWidth_ = widestRight_;
     return totalHeight_;
 }
 
@@ -699,9 +700,14 @@ float MacRenderer::ChargeForImages(LaidOutBlock* block) {
         float chargedH = 0.0f;
         if (images_.GetSize(child.url, &chargedW, &chargedH) &&
             chargedW > 0.0f && chargedH > 0.0f) {
-            const float scale = std::min(
-                1.0f, std::min(contentWidth_ / chargedW,
-                               kImageMaxHeight / chargedH));
+            // The browser rule: intrinsic size, shrunk to the column when it
+            // is wider, then scaled by the page zoom. The old 400 DIP cap cut
+            // tall pictures off and left their bottom unreachable, and the
+            // charge has to use the block's own width because that is what
+            // PaintImages draws into.
+            const float column =
+                block->width > 0.0f ? block->width : contentWidth_;
+            const float scale = std::min(1.0f, column / chargedW) * zoom_;
             height = chargedH * scale;
         }
         imageHeight += height + metrics_.paraGap;
@@ -849,9 +855,17 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
             if (node.lang == "svg" && standaloneSvg_) {
                 const SvgDoc* doc = GetSvgDoc(node);
                 if (doc && doc->Width() > 0.0f && doc->Height() > 0.0f) {
-                    const float available = drawW - metrics_.codePad * 2.0f;
-                    const float scale = available / doc->Width();
-                    block.height = doc->Height() * scale;
+                    // A standalone .svg is a page image: a browser shows it
+                    // at its intrinsic size and scrolls the window around it.
+                    // Fitting it to the column made a wide diagram a
+                    // thumbnail whose labels could not be read at any zoom.
+                    // The same inset the Windows renderer charges, so the
+                    // two platforms lay the picture out identically.
+                    block.height =
+                        doc->Height() * zoom_ + metrics_.codePad * 2.0f;
+                    const float right =
+                        drawX + metrics_.codePad + doc->Width() * zoom_;
+                    if (right > widestRight_) widestRight_ = right;
                     break;
                 }
             }
@@ -1307,11 +1321,12 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset,
             if (block.node->lang == "svg" && standaloneSvg_) {
                 const SvgDoc* doc = GetSvgDoc(*block.node);
                 if (doc && doc->Width() > 0.0f && doc->Height() > 0.0f) {
-                    const float available =
-                        block.width - metrics_.codePad * 2.0f;
-                    const float scale = available / doc->Width();
-                    doc->Draw(target_, block.x + metrics_.codePad, top,
-                              available, doc->Height() * scale);
+                    // Natural size times the zoom, the same rule Measure
+                    // charges for.
+                    doc->Draw(target_, engine_,
+                              block.x + metrics_.codePad,
+                              top + metrics_.codePad,
+                              doc->Width() * zoom_, doc->Height() * zoom_);
                     break;
                 }
             }
@@ -1627,9 +1642,7 @@ void MacRenderer::PaintImages(const LaidOutBlock& block, float top,
             // The image keeps its aspect ratio inside the column and
             // never grows past its own pixels: max-width is 100% in
             // GitHub's markdown, not width 100%.
-            const float scale = std::min(
-                1.0f, std::min(width / imageWidth,
-                               kImageMaxHeight / imageHeight));
+            const float scale = std::min(1.0f, width / imageWidth) * zoom_;
             drawnWidth = imageWidth * scale;
             height = imageHeight * scale;
         }

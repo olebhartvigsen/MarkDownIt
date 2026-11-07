@@ -898,3 +898,146 @@ TEST(SvgSelfClosing, SelfClosedGroupsDoNotAmplifyMemory) {
     // The enclosing translate still applies: 1 + 1000.
     EXPECT_NEAR(runs[0].x, 1001.0f, 0.01f);
 }
+
+// --- Marker expansion -------------------------------------------------------
+// Direct2D's SVG renderer supports neither <marker> nor marker-start/end, so
+// every arrowhead in a diagram was silently dropped. ExpandMarkers rewrites
+// each reference into an explicit group placed with the transform the SVG
+// spec prescribes. These tests pin that geometry, the attribute stripping and
+// the "leave it alone when unused" contract.
+
+TEST(SvgMarkers, ExpandsEndMarkerIntoExplicitGroup) {
+    std::string xml =
+        "<svg width='200' height='100'>"
+        "<defs><marker id='a' markerWidth='10' markerHeight='8' refX='9' "
+        "refY='4' orient='auto-start-reverse'>"
+        "<path d='M0,0 L10,4 L0,8 z' fill='#000'/></marker></defs>"
+        "<path d='M10,10 L100,10' stroke='#000' stroke-width='2' "
+        "marker-end='url(#a)'/>"
+        "</svg>";
+    std::string out = svg::ExpandMarkers(xml);
+    // The reference is gone, so Direct2D has nothing left to ignore.
+    EXPECT_TRUE(out.find("marker-end") == std::string::npos);
+    // Placed at the path end, rotated to the segment direction, scaled by the
+    // stroke width, then shifted by refX/refY.
+    EXPECT_TRUE(out.find("translate(100.0000,10.0000) rotate(0.0000)") !=
+                std::string::npos);
+    EXPECT_TRUE(out.find("scale(2.000000)") != std::string::npos);
+    EXPECT_TRUE(out.find("translate(-9.0000,-4.0000)") != std::string::npos);
+    // The marker's own content is copied verbatim, not re-interpreted.
+    EXPECT_TRUE(out.find("M0,0 L10,4 L0,8 z") != std::string::npos);
+    EXPECT_TRUE(out.find("<g transform=") != std::string::npos);
+}
+
+TEST(SvgMarkers, StartMarkerReversesOnAutoStartReverse) {
+    std::string xml =
+        "<svg width='100' height='100'>"
+        "<defs><marker id='m' markerWidth='6' markerHeight='6' refX='3' "
+        "refY='3' orient='auto-start-reverse'>"
+        "<path d='M0,0 L6,3 L0,6 z'/></marker></defs>"
+        "<line x1='0' y1='0' x2='50' y2='50' stroke-width='1' "
+        "marker-start='url(#m)'/>"
+        "</svg>";
+    std::string out = svg::ExpandMarkers(xml);
+    EXPECT_TRUE(out.find("marker-start") == std::string::npos);
+    // The segment runs at 45 degrees; a start marker points back out of it.
+    EXPECT_TRUE(out.find("rotate(225.0000)") != std::string::npos);
+}
+
+TEST(SvgMarkers, UserSpaceOnUseIgnoresStrokeWidth) {
+    std::string xml =
+        "<svg width='100' height='100'>"
+        "<defs><marker id='m' markerUnits='userSpaceOnUse' refX='1' refY='2' "
+        "orient='45'><path d='M0,0 L4,2 z'/></marker></defs>"
+        "<line x1='0' y1='0' x2='50' y2='50' stroke-width='3' "
+        "marker-start='url(#m)'/>"
+        "</svg>";
+    std::string out = svg::ExpandMarkers(xml);
+    // markerUnits="userSpaceOnUse" means the marker is not scaled by the
+    // stroke width, and a numeric orient is used as-is.
+    EXPECT_TRUE(out.find("rotate(45.0000) scale(1.000000)") !=
+                std::string::npos);
+}
+
+TEST(SvgMarkers, UnknownMarkerIdIsDropped) {
+    std::string xml =
+        "<svg width='10' height='10'>"
+        "<path d='M0,0 L5,5' marker-end='url(#nope)'/>"
+        "</svg>";
+    std::string out = svg::ExpandMarkers(xml);
+    // Nothing to draw, but the unsupported attribute must not survive.
+    EXPECT_TRUE(out.find("marker-end") == std::string::npos);
+    EXPECT_TRUE(out.find("<g transform=") == std::string::npos);
+}
+
+TEST(SvgMarkers, NoMarkerReferenceLeavesXmlUntouched) {
+    const std::string xml = "<svg><rect width='1' height='1'/></svg>";
+    EXPECT_EQ(svg::ExpandMarkers(xml), xml);
+}
+
+// --- Root size --------------------------------------------------------------
+// Measure needs the intrinsic size before the draw pass has run, and it has
+// no render target to ask. ReadSize is the portable answer.
+
+TEST(SvgSize, ReadsWidthAndHeight) {
+    float w = 0.0f, h = 0.0f;
+    EXPECT_TRUE(svg::ReadSize("<svg width='2862' height='854'/>", &w, &h));
+    EXPECT_NEAR(w, 2862.0f, 0.01f);
+    EXPECT_NEAR(h, 854.0f, 0.01f);
+}
+
+TEST(SvgSize, FallsBackToViewBox) {
+    float w = 0.0f, h = 0.0f;
+    EXPECT_TRUE(svg::ReadSize("<svg viewBox='0 0 640 480'/>", &w, &h));
+    EXPECT_NEAR(w, 640.0f, 0.01f);
+    EXPECT_NEAR(h, 480.0f, 0.01f);
+}
+
+TEST(SvgSize, LowercaseViewboxIsAccepted) {
+    float w = 0.0f, h = 0.0f;
+    EXPECT_TRUE(svg::ReadSize("<svg viewbox='0 0 30 15'/>", &w, &h));
+    EXPECT_NEAR(w, 30.0f, 0.01f);
+    EXPECT_NEAR(h, 15.0f, 0.01f);
+}
+
+TEST(SvgSize, PercentageFallsBackToViewBox) {
+    float w = 0.0f, h = 0.0f;
+    EXPECT_TRUE(svg::ReadSize(
+        "<svg width='100%' height='100%' viewBox='0 0 40 20'/>", &w, &h));
+    EXPECT_NEAR(w, 40.0f, 0.01f);
+    EXPECT_NEAR(h, 20.0f, 0.01f);
+}
+
+TEST(SvgSize, MissingEverythingFails) {
+    float w = 1.0f, h = 1.0f;
+    EXPECT_FALSE(svg::ReadSize("<svg><rect/></svg>", &w, &h));
+    EXPECT_NEAR(w, 0.0f, 0.01f);
+    EXPECT_NEAR(h, 0.0f, 0.01f);
+}
+
+// --- Inherited text style ---------------------------------------------------
+// A diagram sets font-family on the root <svg> and font-style on individual
+// labels. Losing either draws upright text in the wrong face, which is the
+// most visible difference from a browser.
+
+TEST(SvgText, InheritsFamilyAndItalicFromRoot) {
+    std::string xml =
+        "<svg width='100' height='100' "
+        "font-family='Arial, Helvetica, sans-serif'>"
+        "<text x='1' y='2' font-style='italic'>a</text>"
+        "<text x='1' y='20'>b</text></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 2u);
+    EXPECT_EQ(runs[0].fontFamily, "Arial, Helvetica, sans-serif");
+    EXPECT_TRUE(runs[0].italic);
+    EXPECT_EQ(runs[1].fontFamily, "Arial, Helvetica, sans-serif");
+    EXPECT_FALSE(runs[1].italic);
+}
+
+TEST(SvgText, InlineStyleItalicIsRead) {
+    std::string xml =
+        "<svg><text x='0' y='0' style='font-style: italic'>x</text></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_TRUE(runs[0].italic);
+}

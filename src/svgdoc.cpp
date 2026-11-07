@@ -14,94 +14,6 @@ namespace svg {
 
 
 
-// --- Helper: parse a float from a string, stripping common SVG units ---
-static float ParseDim(const std::string& s, float def = 0.0f) {
-    if (s.empty()) return def;
-    // Strip unit suffixes: px, pt, pc, cm, mm, in, em, ex, %
-    size_t end = s.size();
-    while (end > 0 && (s[end-1] < '0' || s[end-1] > '9') && s[end-1] != '.' && s[end-1] != '-')
-        --end;
-    try {
-        return std::stof(s.substr(0, end));
-    } catch (...) {
-        return def;
-    }
-}
-
-// Read width/height from the root <svg> tag, fall back to viewBox.
-static void ReadViewBox(const std::string& xml, float& w, float& h) {
-    w = 0.0f; h = 0.0f;
-    // Find <svg ...> opening tag
-    size_t p = xml.find("<svg");
-    if (p == std::string::npos) return;
-    size_t gt = xml.find('>', p);
-    if (gt == std::string::npos) return;
-    std::string tag = xml.substr(p, gt - p + 1);
-
-    // Extract attributes
-    auto getAttr = [](const std::string& t, const std::string& name) -> std::string {
-        // Attribute lookup with a word-boundary guard: a plain find
-        // matches suffixes too, e.g. width="1" inside
-        // stroke-width="1" (Batik SVGs), which parsed the diagram
-        // width as 1 px. Require a non-name char (the whitespace
-        // separator, or the tag start) before the attribute name.
-        std::string pat;
-        size_t a = std::string::npos;
-        const char qs[2] = {34, 39};
-        for (int qi = 0; qi < 2; ++qi) {
-            char q = qs[qi];
-            pat = name + "=" + std::string(1, q);
-            size_t p2 = 0;
-            while ((p2 = t.find(pat, p2)) != std::string::npos) {
-                if (p2 == 0 ||
-                    !(std::isalnum(static_cast<unsigned char>(t[p2 - 1])) ||
-                      t[p2 - 1] == '-' || t[p2 - 1] == '_' ||
-                      t[p2 - 1] == ':')) {
-                    a = p2;
-                    break;
-                }
-                p2 += pat.size();
-            }
-            if (a != std::string::npos) break;
-        }
-        if (a == std::string::npos) return {};
-        a += pat.size();
-        char q = t[a - 1];
-        size_t b = t.find(q, a);
-        if (b == std::string::npos) return {};
-        return t.substr(a, b - a);
-    };
-
-    w = ParseDim(getAttr(tag, "width"));
-    h = ParseDim(getAttr(tag, "height"));
-
-    if (w <= 0 || h <= 0) {
-        // viewBox is case-sensitive per spec, but real files vary
-        // (Batik writes lowercase "viewbox"); try both spellings.
-        std::string vb = getAttr(tag, "viewBox");
-        if (vb.empty()) vb = getAttr(tag, "viewbox");
-        if (!vb.empty()) {
-            // viewBox = "minX minY width height"
-            // Extract width (3rd) and height (4th) tokens
-            size_t sp1 = vb.find(' ');
-            if (sp1 != std::string::npos) {
-                size_t sp2 = vb.find(' ', sp1 + 1);
-                if (sp2 != std::string::npos) {
-                    size_t sp3 = vb.find(' ', sp2 + 1);
-                    std::string wstr = (sp3 != std::string::npos)
-                        ? vb.substr(sp2 + 1, sp3 - sp2 - 1)
-                        : vb.substr(sp2 + 1);
-                    std::string hstr = (sp3 != std::string::npos)
-                        ? vb.substr(sp3 + 1)
-                        : std::string();
-                    w = ParseDim(wstr);
-                    h = ParseDim(hstr);
-                }
-            }
-        }
-    }
-}
-
 SvgDoc::~SvgDoc() {
     Release();
 }
@@ -119,10 +31,16 @@ bool SvgDoc::Load(ID2D1DeviceContext5* ctx, const std::string& xml) {
     if (!ctx || xml.empty()) return false;
 
     texts_ = ExtractTextRuns(xml);
-    std::string shapes = StripTextElements(xml);
+    // Direct2D draws neither <text> nor <marker>, so the text is lifted out
+    // and drawn with DirectWrite, and every marker reference is rewritten
+    // into an explicit group it can draw.
+    std::string shapes = ExpandMarkers(StripTextElements(xml));
     diag::TraceFmt("SVGDOC mode=strip runs=%zu", texts_.size());
 
-    ReadViewBox(xml, width_, height_);
+    if (!ReadSize(xml, &width_, &height_)) {
+        width_ = 0.0f;
+        height_ = 0.0f;
+    }
     if (width_ <= 0.0f) width_ = 300.0f;
     if (height_ <= 0.0f) height_ = 150.0f;
 
@@ -253,8 +171,9 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
                        const D2D1_MATRIX_3X2_F& docTransform) {
     if (texts_.empty() || !dw) return;
 
-    // Use default text color
-    D2D1_COLOR_F defaultColor = D2D1::ColorF(0.14f, 0.16f, 0.18f, 1.0f);
+    // SVG's initial fill is black, and a diagram's own background rect is
+    // white, so text without a fill attribute is black in a browser too.
+    D2D1_COLOR_F defaultColor = D2D1::ColorF(0.0f, 0.0f, 0.0f, 1.0f);
 
     // Create a reusable brush
     RelGuard<ID2D1SolidColorBrush> br;
@@ -281,8 +200,10 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
         std::string family;
         float size;
         bool bold;
+        bool italic;
         bool operator==(const FmtKey& o) const {
-            return size == o.size && bold == o.bold && family == o.family;
+            return size == o.size && bold == o.bold && italic == o.italic &&
+                   family == o.family;
         }
     };
     struct FmtEntry {
@@ -300,7 +221,7 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
 
         // Find or create text format
         IDWriteTextFormat* fmt = nullptr;
-        FmtKey key{ run.fontFamily, run.fontSize, run.bold };
+        FmtKey key{ run.fontFamily, run.fontSize, run.bold, run.italic };
         for (const auto& e : fmtCache) {
             if (e.key == key) { fmt = e.fmt; break; }
         }
@@ -333,9 +254,11 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
             DWRITE_FONT_WEIGHT weight = run.bold
                 ? DWRITE_FONT_WEIGHT_BOLD
                 : DWRITE_FONT_WEIGHT_REGULAR;
+            DWRITE_FONT_STYLE style = run.italic
+                ? DWRITE_FONT_STYLE_ITALIC
+                : DWRITE_FONT_STYLE_NORMAL;
             HRESULT hr = dw->CreateTextFormat(
-                fam.c_str(), nullptr, weight,
-                DWRITE_FONT_STYLE_NORMAL,
+                fam.c_str(), nullptr, weight, style,
                 DWRITE_FONT_STRETCH_NORMAL,
                 run.fontSize, L"", &fmt);
             if (FAILED(hr) || !fmt) continue;

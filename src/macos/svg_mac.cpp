@@ -13,9 +13,56 @@
 #include <vector>
 
 #include "pugixml.hpp"
+#include "svgtext.h"
 
 namespace mac {
 namespace {
+
+// The first family of a CSS font-family list, trimmed. Core Text takes one
+// family name, and an SVG root usually carries a list ("Arial, Helvetica,
+// sans-serif"). Passing the list through finds no such family and silently
+// falls back, which is how every label ended up in the wrong face.
+std::string FirstFamily(const std::string& list) {
+    std::string out;
+    for (char c : list) {
+        if (c == ',') break;
+        if (c != '\'' && c != '"') out.push_back(c);
+    }
+    while (!out.empty() && (out.back() == ' ' || out.back() == '\t')) {
+        out.pop_back();
+    }
+    size_t b = 0;
+    while (b < out.size() && (out[b] == ' ' || out[b] == '\t')) ++b;
+    out = out.substr(b);
+    // The generic CSS families have no Core Text family of their own.
+    if (out == "sans-serif") return "Helvetica";
+    if (out == "serif") return "Times New Roman";
+    if (out == "monospace") return "Menlo";
+    return out;
+}
+
+// True when a style attribute asks for an italic face. The attribute form is
+// the common one, but exporters also write style="font-style:italic".
+bool StyleSaysItalic(const char* style) {
+    if (!style) return false;
+    const std::string text(style);
+    const size_t p = text.find("font-style");
+    if (p == std::string::npos) return false;
+    const size_t colon = text.find(':', p);
+    if (colon == std::string::npos) return false;
+    const size_t end = text.find(';', colon);
+    std::string value = text.substr(colon + 1,
+                                    end == std::string::npos
+                                        ? std::string::npos
+                                        : end - colon - 1);
+    while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
+        value.erase(value.begin());
+    }
+    while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
+        value.pop_back();
+    }
+    return value == "italic" || value == "oblique";
+}
 
 // Reads a number out of an attribute, and says whether it was there.
 bool ReadNumber(const pugi::xml_attribute& attribute, float* out) {
@@ -239,6 +286,38 @@ SvgDoc::Style ReadStyle(const pugi::xml_node& node,
                      text == "800" || text == "900";
     }
 
+    const char* anchor = node.attribute("text-anchor").value();
+    if (anchor && *anchor) style.anchor = anchor;
+
+    const char* dash = node.attribute("stroke-dasharray").value();
+    if (dash && *dash) {
+        style.dash.clear();
+        const char* p = dash;
+        while (*p) {
+            char* end = nullptr;
+            const double value = std::strtod(p, &end);
+            if (end == p) {
+                ++p;
+                continue;
+            }
+            if (value > 0.0) style.dash.push_back(static_cast<float>(value));
+            p = end;
+        }
+        // An odd list repeats, the way the SVG spec says.
+        if (style.dash.size() % 2 == 1) {
+            const std::vector<float> once = style.dash;
+            style.dash.insert(style.dash.end(), once.begin(), once.end());
+        }
+    }
+
+    const char* fontStyle = node.attribute("font-style").value();
+    if (fontStyle && *fontStyle) {
+        const std::string text(fontStyle);
+        style.italic = text == "italic" || text == "oblique";
+    } else if (StyleSaysItalic(node.attribute("style").value())) {
+        style.italic = true;
+    }
+
     float opacity = 0.0f;
     if (ReadNumber(node.attribute("opacity"), &opacity)) {
         style.fill.a *= opacity;
@@ -269,7 +348,27 @@ std::vector<float> ReadNumbers(const std::string& text) {
 //
 // The commands are read one by one. The curves are cut into short
 // lines, which is close enough at the size the documents are shown.
-std::vector<Point> ReadPath(const std::string& text) {
+// Reads one number, skipping the separators SVG allows between numbers
+// (whitespace and commas). Returns false at the end of the data or at a
+// command letter.
+bool ReadPathNumber(const std::string& text, size_t* at, float* out) {
+    size_t p = *at;
+    while (p < text.size() &&
+           (text[p] == ',' ||
+            std::isspace(static_cast<unsigned char>(text[p])))) {
+        ++p;
+    }
+    if (p >= text.size()) return false;
+    char* end = nullptr;
+    const double value = std::strtod(text.c_str() + p, &end);
+    if (end == text.c_str() + p) return false;
+    *out = static_cast<float>(value);
+    *at = static_cast<size_t>(end - text.c_str());
+    return true;
+}
+
+std::vector<Point> ReadPath(const std::string& text, bool* closed) {
+    if (closed) *closed = false;
     std::vector<Point> points;
     float currentX = 0.0f;
     float currentY = 0.0f;
@@ -280,41 +379,41 @@ std::vector<Point> ReadPath(const std::string& text) {
     char command = 0;
     while (at < text.size()) {
         const char c = text[at];
-        if (std::isspace(static_cast<unsigned char>(c))) {
+        if (std::isspace(static_cast<unsigned char>(c)) || c == ',') {
             ++at;
             continue;
         }
         if (std::isalpha(static_cast<unsigned char>(c))) {
             command = c;
             ++at;
+            // A close command carries no numbers, so it has to be handled
+            // here: the switch below only runs when a number was read, and a
+            // trailing "z" would otherwise never close the path.
+            if (c == 'Z' || c == 'z') {
+                if (closed) *closed = true;
+                points.push_back(Point{startX, startY});
+                currentX = startX;
+                currentY = startY;
+            }
             continue;
         }
 
-        char* end = nullptr;
-        const double value = std::strtod(text.c_str() + at, &end);
-        if (end == text.c_str() + at) {
+        float value = 0.0f;
+        if (!ReadPathNumber(text, &at, &value)) {
             ++at;
             continue;
         }
-        at = static_cast<size_t>(end - text.c_str());
 
         switch (command) {
             case 'M':
             case 'm': {
-                float x = static_cast<float>(value);
                 float y = 0.0f;
-                if (at < text.size() && text[at] != '-' && text[at] != '+' &&
-                    text[at] != '.' && !std::isspace(static_cast<unsigned char>(text[at]))) {
-                    char* end2 = nullptr;
-                    const double yValue = std::strtod(text.c_str() + at, &end2);
-                    y = static_cast<float>(yValue);
-                    at = static_cast<size_t>(end2 - text.c_str());
-                }
+                if (!ReadPathNumber(text, &at, &y)) y = 0.0f;
                 if (command == 'm') {
-                    currentX += x;
+                    currentX += value;
                     currentY += y;
                 } else {
-                    currentX = x;
+                    currentX = value;
                     currentY = y;
                 }
                 startX = currentX;
@@ -326,20 +425,13 @@ std::vector<Point> ReadPath(const std::string& text) {
             }
             case 'L':
             case 'l': {
-                float x = static_cast<float>(value);
                 float y = 0.0f;
-                if (at < text.size() && text[at] != '-' && text[at] != '+' &&
-                    text[at] != '.' && !std::isspace(static_cast<unsigned char>(text[at]))) {
-                    char* end2 = nullptr;
-                    const double yValue = std::strtod(text.c_str() + at, &end2);
-                    y = static_cast<float>(yValue);
-                    at = static_cast<size_t>(end2 - text.c_str());
-                }
+                if (!ReadPathNumber(text, &at, &y)) y = 0.0f;
                 if (command == 'l') {
-                    currentX += x;
+                    currentX += value;
                     currentY += y;
                 } else {
-                    currentX = x;
+                    currentX = value;
                     currentY = y;
                 }
                 points.push_back(Point{currentX, currentY});
@@ -348,9 +440,9 @@ std::vector<Point> ReadPath(const std::string& text) {
             case 'H':
             case 'h': {
                 if (command == 'h') {
-                    currentX += static_cast<float>(value);
+                    currentX += value;
                 } else {
-                    currentX = static_cast<float>(value);
+                    currentX = value;
                 }
                 points.push_back(Point{currentX, currentY});
                 break;
@@ -358,9 +450,9 @@ std::vector<Point> ReadPath(const std::string& text) {
             case 'V':
             case 'v': {
                 if (command == 'v') {
-                    currentY += static_cast<float>(value);
+                    currentY += value;
                 } else {
-                    currentY = static_cast<float>(value);
+                    currentY = value;
                 }
                 points.push_back(Point{currentX, currentY});
                 break;
@@ -368,14 +460,9 @@ std::vector<Point> ReadPath(const std::string& text) {
             case 'C':
             case 'c': {
                 // The control points and the end point.
-                float values[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-                for (int i = 0; i < 6; ++i) {
-                    if (at >= text.size()) break;
-                    char* end2 = nullptr;
-                    const double piece = std::strtod(text.c_str() + at, &end2);
-                    if (end2 == text.c_str() + at) break;
-                    values[i] = static_cast<float>(piece);
-                    at = static_cast<size_t>(end2 - text.c_str());
+                float values[6] = {value, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+                for (int i = 1; i < 6; ++i) {
+                    if (!ReadPathNumber(text, &at, &values[i])) break;
                 }
                 float x1 = currentX;
                 float y1 = currentY;
@@ -423,14 +510,9 @@ std::vector<Point> ReadPath(const std::string& text) {
             }
             case 'Q':
             case 'q': {
-                float values[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-                for (int i = 0; i < 4; ++i) {
-                    if (at >= text.size()) break;
-                    char* end2 = nullptr;
-                    const double piece = std::strtod(text.c_str() + at, &end2);
-                    if (end2 == text.c_str() + at) break;
-                    values[i] = static_cast<float>(piece);
-                    at = static_cast<size_t>(end2 - text.c_str());
+                float values[4] = {value, 0.0f, 0.0f, 0.0f};
+                for (int i = 1; i < 4; ++i) {
+                    if (!ReadPathNumber(text, &at, &values[i])) break;
                 }
                 float x1 = values[0];
                 float y1 = values[1];
@@ -455,12 +537,8 @@ std::vector<Point> ReadPath(const std::string& text) {
                 break;
             }
             case 'Z':
-            case 'z': {
-                points.push_back(Point{startX, startY});
-                currentX = startX;
-                currentY = startY;
+            case 'z':
                 break;
-            }
             default:
                 break;
         }
@@ -480,6 +558,18 @@ void ReadShapes(const pugi::xml_node& node, const SvgDoc::Style& style,
     const SvgDoc::Placement childPlacement = ReadPlacement(node, placement);
 
     const std::string name = node.name();
+
+    // Containers that define things rather than draw them. Their content is
+    // reached through a reference, so walking into them would draw a copy of
+    // every marker at the origin.
+    if (name == "defs" || name == "marker" || name == "symbol" ||
+        name == "clipPath" || name == "mask" || name == "pattern" ||
+        name == "linearGradient" || name == "radialGradient" ||
+        name == "filter" || name == "style" || name == "title" ||
+        name == "desc" || name == "metadata") {
+        return;
+    }
+
     SvgDoc::Shape shape;
 
     if (name == "rect") {
@@ -491,6 +581,12 @@ void ReadShapes(const pugi::xml_node& node, const SvgDoc::Style& style,
             shape.kind = SvgDoc::Kind::Rect;
             shape.points.push_back(Point{x, y});
             shape.points.push_back(Point{x + w, y + h});
+            // A rounded rectangle: rx and ry default to each other, and a
+            // diagram's boxes carry rx="10".
+            const float rx = ReadLength(node.attribute("rx"), 0.0f);
+            const float ry = ReadLength(node.attribute("ry"), 0.0f);
+            shape.radiusX = rx > 0.0f ? rx : ry;
+            shape.radiusY = ry > 0.0f ? ry : rx;
         }
     } else if (name == "circle") {
         const float cx = ReadLength(node.attribute("cx"), 0.0f);
@@ -531,7 +627,7 @@ void ReadShapes(const pugi::xml_node& node, const SvgDoc::Style& style,
         if (name == "polyline") shape.kind = SvgDoc::Kind::Line;
     } else if (name == "path") {
         shape.kind = SvgDoc::Kind::Polygon;
-        shape.points = ReadPath(node.attribute("d").value());
+        shape.points = ReadPath(node.attribute("d").value(), &shape.closed);
     } else if (name == "text") {
         const float x = ReadLength(node.attribute("x"), 0.0f);
         const float y = ReadLength(node.attribute("y"), 0.0f);
@@ -568,9 +664,15 @@ bool SvgDoc::Load(const std::string& xml) {
     width_ = 0.0f;
     height_ = 0.0f;
 
+    // This renderer has no <marker> support either, so every arrowhead is
+    // rewritten into an explicit group before the XML is parsed. The rewrite
+    // is geometric only and leaves a document without markers untouched.
+    const std::string expanded = svg::ExpandMarkers(xml);
+
     pugi::xml_document document;
     const pugi::xml_parse_result result = document.load_buffer(
-        xml.data(), xml.size(), pugi::parse_default | pugi::parse_escapes);
+        expanded.data(), expanded.size(),
+        pugi::parse_default | pugi::parse_escapes);
     if (!result) return false;
 
     // The root of the document is the element named svg.
@@ -624,8 +726,58 @@ bool SvgDoc::Load(const std::string& xml) {
     return !shapes_.empty();
 }
 
-void SvgDoc::Draw(RenderTarget* target, float x, float y, float w,
-                   float h) const {
+namespace {
+
+// Strokes a polyline with a dash pattern. The pattern is in user units and
+// scales with the shape, the way a browser scales it. Each dash is its own
+// line, which is what the render target can draw.
+void StrokeDashed(RenderTarget* target, const std::vector<Point>& points,
+                  bool closed, const std::vector<float>& dash, float scale,
+                  const Color& color, float lineWidth) {
+    if (!target || dash.empty() || points.size() < 2) return;
+    std::vector<float> pattern;
+    pattern.reserve(dash.size());
+    for (float d : dash) pattern.push_back(d * scale);
+    float total = 0.0f;
+    for (float d : pattern) total += d;
+    if (!(total > 0.0f)) return;
+
+    size_t index = 0;
+    float remaining = pattern[0];
+    bool on = true;
+    const size_t segments = closed ? points.size() : points.size() - 1;
+    for (size_t i = 0; i < segments; ++i) {
+        const Point& a = points[i];
+        const Point& b = points[(i + 1) % points.size()];
+        float dx = b.x - a.x;
+        float dy = b.y - a.y;
+        const float length = std::sqrt(dx * dx + dy * dy);
+        if (!(length > 0.0f)) continue;
+        dx /= length;
+        dy /= length;
+        float pos = 0.0f;
+        while (pos < length) {
+            const float step = std::min(remaining, length - pos);
+            if (on) {
+                target->StrokeLine(a.x + dx * pos, a.y + dy * pos,
+                                   a.x + dx * (pos + step),
+                                   a.y + dy * (pos + step), color, lineWidth);
+            }
+            pos += step;
+            remaining -= step;
+            if (remaining <= 1e-4f) {
+                index = (index + 1) % pattern.size();
+                remaining = pattern[index];
+                on = !on;
+            }
+        }
+    }
+}
+
+}  // namespace
+
+void SvgDoc::Draw(RenderTarget* target, TextEngine* engine, float x, float y,
+                   float w, float h) const {
     if (!target || width_ <= 0.0f || height_ <= 0.0f) return;
 
     // The document is scaled into the rectangle, and the shape of it is
@@ -659,10 +811,24 @@ void SvgDoc::Draw(RenderTarget* target, float x, float y, float w,
                 const Point bottomRight = placeShape(shape.points[1]);
                 Rect rect{topLeft.x, topLeft.y, bottomRight.x - topLeft.x,
                           bottomRight.y - topLeft.y};
-                if (shape.style.hasFill) target->FillRect(rect, shape.style.fill);
-                if (shape.style.hasStroke) {
-                    target->StrokeRect(rect, shape.style.stroke,
-                                       shape.style.strokeWidth * shapeScale);
+                const float radius = shape.radiusX * shapeScale;
+                if (radius > 0.0f) {
+                    if (shape.style.hasFill) {
+                        target->FillRoundedRect(rect, radius, shape.style.fill);
+                    }
+                    if (shape.style.hasStroke) {
+                        target->StrokeRoundedRect(
+                            rect, radius, shape.style.stroke,
+                            shape.style.strokeWidth * shapeScale);
+                    }
+                } else {
+                    if (shape.style.hasFill) {
+                        target->FillRect(rect, shape.style.fill);
+                    }
+                    if (shape.style.hasStroke) {
+                        target->StrokeRect(rect, shape.style.stroke,
+                                           shape.style.strokeWidth * shapeScale);
+                    }
                 }
                 break;
             }
@@ -685,8 +851,15 @@ void SvgDoc::Draw(RenderTarget* target, float x, float y, float w,
                 if (shape.points.size() < 2) break;
                 const Point from = placeShape(shape.points[0]);
                 const Point to = placeShape(shape.points[1]);
-                target->StrokeLine(from.x, from.y, to.x, to.y, shape.style.stroke,
-                                    shape.style.strokeWidth * shapeScale);
+                if (!shape.style.dash.empty()) {
+                    StrokeDashed(target, {from, to}, false, shape.style.dash,
+                                 shapeScale, shape.style.stroke,
+                                 shape.style.strokeWidth * shapeScale);
+                } else {
+                    target->StrokeLine(from.x, from.y, to.x, to.y,
+                                       shape.style.stroke,
+                                       shape.style.strokeWidth * shapeScale);
+                }
                 break;
             }
             case Kind::Polygon: {
@@ -700,9 +873,17 @@ void SvgDoc::Draw(RenderTarget* target, float x, float y, float w,
                     target->FillPolygon(points, shape.style.fill);
                 }
                 if (shape.style.hasStroke) {
-                    target->StrokePolygon(points, shape.style.stroke,
-                                          shape.style.strokeWidth * shapeScale,
-                                          true);
+                    if (!shape.style.dash.empty()) {
+                        StrokeDashed(target, points, shape.closed,
+                                     shape.style.dash, shapeScale,
+                                     shape.style.stroke,
+                                     shape.style.strokeWidth * shapeScale);
+                    } else {
+                        target->StrokePolygon(
+                            points, shape.style.stroke,
+                            shape.style.strokeWidth * shapeScale,
+                            shape.closed);
+                    }
                 }
                 break;
             }
@@ -711,12 +892,33 @@ void SvgDoc::Draw(RenderTarget* target, float x, float y, float w,
                 FontSpec font;
                 font.family = shape.style.fontFamily.empty()
                                   ? std::string("Segoe UI")
-                                  : shape.style.fontFamily;
+                                  : FirstFamily(shape.style.fontFamily);
                 font.size = shape.style.fontSize * shapeScale;
                 font.bold = shape.style.bold;
+                font.italic = shape.style.italic;
                 const Color color = shape.style.hasFill ? shape.style.fill
                                                         : Color{0.0f, 0.0f, 0.0f, 1.0f};
-                target->DrawText(shape.text, font, anchor.x, anchor.y, color);
+                // text-anchor places the label relative to its own width, so
+                // the width has to be measured with the same engine that
+                // draws it. A browser centres almost every diagram label.
+                float tx = anchor.x;
+                if (engine && !shape.text.empty() &&
+                    !shape.style.anchor.empty() &&
+                    shape.style.anchor != "start") {
+                    GlyphRun run;
+                    run.text = shape.text;
+                    run.font = font;
+                    const std::vector<TextLine> lines =
+                        engine->MeasureWrapped({run}, 1.0e9f, 0.0f);
+                    if (!lines.empty()) {
+                        if (shape.style.anchor == "middle") {
+                            tx -= lines.front().width * 0.5f;
+                        } else if (shape.style.anchor == "end") {
+                            tx -= lines.front().width;
+                        }
+                    }
+                }
+                target->DrawText(shape.text, font, tx, anchor.y, color);
                 break;
             }
         }

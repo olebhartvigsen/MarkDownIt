@@ -210,6 +210,54 @@ ID2D1Bitmap* ImageHelper::LoadBitmapFromUrl(ID2D1RenderTarget* rt,
     return bitmap;
 }
 
+bool ImageHelper::LoadImageSize(const std::string& url8, float* w, float* h) {
+    if (w) *w = 0.0f;
+    if (h) *h = 0.0f;
+    if (url8.empty() || url8.size() > 4096) return false;
+
+    std::string lower = url8;
+    for (auto& c : lower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+    // A remote image has not been fetched at measure time; the draw pass
+    // fills the size in once it has the bytes.
+    if (lower.find("http://") == 0 || lower.find("https://") == 0) return false;
+
+    std::wstring path;
+    const int wlen = MultiByteToWideChar(CP_UTF8, 0, url8.c_str(),
+        static_cast<int>(url8.size()), nullptr, 0);
+    if (wlen <= 0) return false;
+    path.resize(wlen);
+    MultiByteToWideChar(CP_UTF8, 0, url8.c_str(),
+        static_cast<int>(url8.size()), &path[0], wlen);
+
+    IWICImagingFactory* wicFactory = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+        CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&wicFactory));
+    if (FAILED(hr) || !wicFactory) return false;
+
+    bool ok = false;
+    IWICBitmapDecoder* decoder = nullptr;
+    hr = wicFactory->CreateDecoderFromFilename(path.c_str(), nullptr,
+        GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder);
+    if (SUCCEEDED(hr) && decoder) {
+        IWICBitmapFrameDecode* frame = nullptr;
+        hr = decoder->GetFrame(0, &frame);
+        if (SUCCEEDED(hr) && frame) {
+            UINT pw = 0, ph = 0;
+            if (SUCCEEDED(frame->GetSize(&pw, &ph)) && pw > 0 && ph > 0) {
+                // WIC reports pixels; a D2D bitmap created from it is sized
+                // in DIP at 96 dpi, which is the same number.
+                if (w) *w = static_cast<float>(pw);
+                if (h) *h = static_cast<float>(ph);
+                ok = true;
+            }
+            frame->Release();
+        }
+        decoder->Release();
+    }
+    wicFactory->Release();
+    return ok;
+}
+
 std::string ImageHelper::LoadSvgText(const std::string& url8) {
     if (url8.empty()) return {};
 

@@ -39,6 +39,18 @@ public:
         float fontSize = 12.0f;
         std::string fontFamily;
         bool bold = false;
+        // font-style="italic"/"oblique". Diagram annotations and the
+        // <<stereotype>> labels are italic, and drawing them upright is a
+        // visible difference from a browser.
+        bool italic = false;
+        // text-anchor="start"/"middle"/"end". Almost every label in a
+        // diagram is centred on its box, so ignoring this shifted every
+        // label right by half its width.
+        std::string anchor;
+        // stroke-dasharray, in user units. A diagram marks a planned or
+        // missing link with a dashed line, and drawing it solid loses that
+        // meaning.
+        std::vector<float> dash;
     };
 
     // The placement of a shape.
@@ -62,6 +74,9 @@ public:
         Style style;
         // Where the shape sits.
         Placement placement;
+        // True when the path ended with Z. An open path must not be stroked
+        // closed, or a two-segment arrow grows a diagonal back to its start.
+        bool closed = false;
     };
 
     // Parses the document. Returns false when it cannot be read.
@@ -71,9 +86,11 @@ public:
     float Width() const { return width_; }
     float Height() const { return height_; }
 
-    // Draws the document into the rectangle, keeping the shape of it.
-    void Draw(RenderTarget* target, float x, float y, float w,
-              float h) const;
+    // Draws the document into the rectangle, keeping the shape of it. The
+    // engine measures a label so text-anchor can place it; without one the
+    // text is drawn from its left edge.
+    void Draw(RenderTarget* target, TextEngine* engine, float x, float y,
+              float w, float h) const;
 
     // The shapes of the document, which the reader fills.
     std::vector<Shape>& shapes() { return shapes_; }

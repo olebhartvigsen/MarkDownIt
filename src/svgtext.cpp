@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <unordered_map>
 
@@ -394,6 +395,7 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
         std::string anchor;
         std::string fill;
         bool bold = false;
+        bool italic = false;
         bool central = false;
     };
     std::vector<Ctx> gStack;
@@ -565,6 +567,31 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
             ComposeOp(temp, out, op);
             for (int mi = 0; mi < 6; mi++) out[mi] = temp[mi];
         }
+    };
+
+    // Presentation properties that inherit down the tree. Reading them in one
+    // place keeps <g>, <svg>, <text> and <tspan> from drifting apart. The root
+    // <svg> carries font-family on most exporters (Batik, Graphviz, hand
+    // written files), and ignoring it there made every label fall back to the
+    // app's UI font instead of the family the drawing asks for.
+    auto ApplyInherited = [&](Ctx& c, const std::string& tag) {
+        std::string v;
+        v = GetAttrOrStyle(tag, "font-size", &styleSheet);
+        if (!v.empty()) {
+            // ToFloat stops at the px/pt suffix; scale by the freshly
+            // composed vertical scale factor.
+            c.fontSize = ToFloat(v, c.fontSize) * c.m[3];
+        }
+        v = GetAttrOrStyle(tag, "font-family", &styleSheet);
+        if (!v.empty()) c.fontFamily = v;
+        v = GetAttrOrStyle(tag, "text-anchor", &styleSheet);
+        if (!v.empty()) c.anchor = v;
+        v = GetAttrOrStyle(tag, "fill", &styleSheet);
+        if (!v.empty() && v != "none") c.fill = v;
+        v = GetAttrOrStyle(tag, "font-weight", &styleSheet);
+        if (!v.empty()) c.bold = (v == "bold" || v == "700" || v == "bolder");
+        v = GetAttrOrStyle(tag, "font-style", &styleSheet);
+        if (!v.empty()) c.italic = (v == "italic" || v == "oblique");
     };
 
     int defsDepth = 0;
@@ -752,21 +779,7 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                 ComposeOp(out2, child.m, composed);
                 for (int mi = 0; mi < 6; mi++) child.m[mi] = out2[mi];
             }
-            std::string v;
-            v = GetAttrOrStyle(tag, "font-size", &styleSheet);
-            if (!v.empty()) {
-                // ToFloat stops at the px/pt suffix; scale by the
-                // freshly composed vertical scale factor.
-                child.fontSize = ToFloat(v, child.fontSize) * child.m[3];
-            }
-            v = GetAttrOrStyle(tag, "font-family", &styleSheet);
-            if (!v.empty()) child.fontFamily = v;
-            v = GetAttrOrStyle(tag, "text-anchor", &styleSheet);
-            if (!v.empty()) child.anchor = v;
-            v = GetAttrOrStyle(tag, "fill", &styleSheet);
-            if (!v.empty() && v != "none") child.fill = v;
-            v = GetAttrOrStyle(tag, "font-weight", &styleSheet);
-            if (!v.empty()) child.bold = (v == "bold" || v == "700" || v == "bolder");
+            ApplyInherited(child, tag);
             gStack.push_back(child);
             // Self-closing <g/>: open and close at once. The slash is the
             // character before the '>', never tag.back(). When this test was
@@ -812,6 +825,9 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                 ComposeOp(out2, child.m, op);
                 for (int mi = 0; mi < 6; mi++) child.m[mi] = out2[mi];
             }
+            // The root <svg> is where most exporters put font-family, and a
+            // nested one may carry its own. Both inherit like a <g>.
+            ApplyInherited(child, tag);
             gStack.push_back(child);
             if (IsSelfClosed(tag)) gStack.pop_back();
             continue;
@@ -871,17 +887,7 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                 }
                 return outv;
             };
-            std::string v;
-            v = GetAttrOrStyle(tag, "font-size", &styleSheet);
-            if (!v.empty()) ctx.fontSize = ToFloat(v, ctx.fontSize) * ctx.m[3];
-            v = GetAttrOrStyle(tag, "font-family", &styleSheet);
-            if (!v.empty()) ctx.fontFamily = v;
-            v = GetAttrOrStyle(tag, "text-anchor", &styleSheet);
-            if (!v.empty()) ctx.anchor = v;
-            v = GetAttrOrStyle(tag, "fill", &styleSheet);
-            if (!v.empty() && v != "none") ctx.fill = v;
-            v = GetAttrOrStyle(tag, "font-weight", &styleSheet);
-            if (!v.empty()) ctx.bold = (v == "bold" || v == "700" || v == "bolder");
+            ApplyInherited(ctx, tag);
             // dominant-baseline / alignment-baseline modes that make
             // y the vertical center of the glyphs.
             std::string db = GetAttrOrStyle(tag, "dominant-baseline", &styleSheet);
@@ -947,6 +953,7 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                         cr.anchor = use.anchor;
                         cr.fill = use.fill;
                         cr.bold = use.bold;
+                        cr.italic = use.italic;
                         cr.central = use.central;
                         cr.chained = chainNext;
                         chainNext = false;
@@ -970,6 +977,7 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                         run.anchor = use.anchor;
                         run.fill = use.fill;
                         run.bold = use.bold;
+                        run.italic = use.italic;
                         run.central = use.central;
                         // A rotate or skew travels with the run so the
                         // renderer turns the glyphs with their shape.
@@ -1033,16 +1041,7 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                     v2 = GetAttrOrStyle(inner, "y", &styleSheet);
                     std::string yv = GetAttrOrStyle(inner, "y", &styleSheet);
                     if (!yv.empty()) yBase = firstNum(yv, yBase);
-                    v2 = GetAttrOrStyle(inner, "font-size", &styleSheet);
-                    if (!v2.empty()) child.fontSize = ToFloat(v2, child.fontSize) * child.m[3];
-                    v2 = GetAttrOrStyle(inner, "font-family", &styleSheet);
-                    if (!v2.empty()) child.fontFamily = v2;
-                    v2 = GetAttrOrStyle(inner, "text-anchor", &styleSheet);
-                    if (!v2.empty()) child.anchor = v2;
-                    v2 = GetAttrOrStyle(inner, "fill", &styleSheet);
-                    if (!v2.empty() && v2 != "none") child.fill = v2;
-                    v2 = GetAttrOrStyle(inner, "font-weight", &styleSheet);
-                    if (!v2.empty()) child.bold = (v2 == "bold" || v2 == "700" || v2 == "bolder");
+                    ApplyInherited(child, inner);
                     gStack.push_back(child);
                     if (IsSelfClosed(inner)) gStack.pop_back();
                     continue;
@@ -1294,6 +1293,516 @@ std::string StripTextElements(const std::string& xml) {
     }
 
     return out;
+}
+
+
+// --- Marker expansion ---------------------------------------------------
+//
+// Direct2D's SVG renderer supports neither <marker> nor the marker-start /
+// marker-end presentation attributes (the documented element and attribute
+// lists stop short of them), so every arrowhead in a diagram was silently
+// dropped. A marker is a pure placement problem: the referenced content is
+// drawn in a coordinate system translated to the path end, rotated to the
+// path direction, scaled by the stroke width and shifted by refX/refY.
+// Rewriting each reference into an explicit <g transform="..."> around the
+// marker's own content gives Direct2D something it can draw, and keeps the
+// geometry in the document where the browser puts it.
+
+namespace {
+
+struct MarkerDef {
+    std::string id;
+    float markerW = 3.0f;
+    float markerH = 3.0f;
+    float refX = 0.0f;
+    float refY = 0.0f;
+    bool strokeUnits = true;   // markerUnits="strokeWidth" is the default
+    std::string orient;        // "auto", "auto-start-reverse", or an angle
+    std::string transform;     // the marker's own transform, if any
+    bool hasViewBox = false;
+    float vbX = 0.0f, vbY = 0.0f, vbW = 0.0f, vbH = 0.0f;
+    std::string content;       // inner XML, copied verbatim
+};
+
+struct PathGeom {
+    bool hasStart = false;
+    bool hasStartDir = false;
+    bool hasEnd = false;
+    float sx = 0.0f, sy = 0.0f;
+    float sdx = 0.0f, sdy = 0.0f;
+    float ex = 0.0f, ey = 0.0f;
+    float edx = 0.0f, edy = 0.0f;
+};
+
+// Reads one SVG number at *i, skipping separators. Returns false at the end
+// of the data or at a command letter, and leaves *i untouched then.
+bool ReadNumber(const std::string& s, size_t* i, float* out) {
+    size_t p = *i;
+    while (p < s.size() && (s[p] == ',' || s[p] == ' ' || s[p] == '\t' ||
+                            s[p] == '\n' || s[p] == '\r')) ++p;
+    const size_t start = p;
+    if (p < s.size() && (s[p] == '-' || s[p] == '+')) ++p;
+    bool digits = false;
+    while (p < s.size() && std::isdigit(static_cast<unsigned char>(s[p]))) {
+        ++p;
+        digits = true;
+    }
+    if (p < s.size() && s[p] == '.') {
+        ++p;
+        while (p < s.size() && std::isdigit(static_cast<unsigned char>(s[p]))) {
+            ++p;
+            digits = true;
+        }
+    }
+    if (!digits) return false;
+    if (p < s.size() && (s[p] == 'e' || s[p] == 'E')) {
+        const size_t save = p;
+        ++p;
+        if (p < s.size() && (s[p] == '-' || s[p] == '+')) ++p;
+        bool expDigits = false;
+        while (p < s.size() && std::isdigit(static_cast<unsigned char>(s[p]))) {
+            ++p;
+            expDigits = true;
+        }
+        if (!expDigits) p = save;
+    }
+    try {
+        *out = std::stof(s.substr(start, p - start));
+    } catch (...) {
+        return false;
+    }
+    *i = p;
+    return true;
+}
+
+// Normalised direction from (x0,y0) to (x1,y1). A zero-length segment
+// reports false so the caller keeps the previous direction: a marker on a
+// degenerate end should keep pointing where the path was going.
+bool UnitDir(float x0, float y0, float x1, float y1, float* dx, float* dy) {
+    const float vx = x1 - x0, vy = y1 - y0;
+    const float len = std::sqrt(vx * vx + vy * vy);
+    if (!(len > 1e-6f)) return false;
+    *dx = vx / len;
+    *dy = vy / len;
+    return true;
+}
+
+// Records one segment. srx/sry is a point that, with (x0,y0), gives the
+// tangent at the start; erx/ery does the same for the end. For a straight
+// line both are simply the other end of the segment.
+void AddSegment(PathGeom* g, float x0, float y0, float x1, float y1,
+                float srx, float sry, float erx, float ery) {
+    if (!g->hasStart) {
+        g->sx = x0;
+        g->sy = y0;
+        g->hasStart = true;
+    }
+    if (!g->hasStartDir) {
+        float ux = 0.0f, uy = 0.0f;
+        if (UnitDir(x0, y0, srx, sry, &ux, &uy)) {
+            g->sdx = ux;
+            g->sdy = uy;
+            g->hasStartDir = true;
+        }
+    }
+    g->ex = x1;
+    g->ey = y1;
+    float ux = 0.0f, uy = 0.0f;
+    if (UnitDir(erx, ery, x1, y1, &ux, &uy)) {
+        g->edx = ux;
+        g->edy = uy;
+    }
+    g->hasEnd = true;
+}
+
+// Walks a path's "d" attribute and records its start point, start tangent,
+// end point and end tangent. Curves use their control points, which is the
+// exact tangent; an arc uses its chord, which is exact for the quarter turns
+// diagram exporters emit and close enough elsewhere.
+void ParsePathGeometry(const std::string& d, PathGeom* g) {
+    size_t i = 0;
+    float cx = 0.0f, cy = 0.0f;      // current point
+    float subX = 0.0f, subY = 0.0f;  // current subpath start
+    char cmd = 0;
+
+    while (i < d.size()) {
+        while (i < d.size() && (d[i] == ',' || d[i] == ' ' || d[i] == '\t' ||
+                                d[i] == '\n' || d[i] == '\r')) ++i;
+        if (i >= d.size()) break;
+        if (std::isalpha(static_cast<unsigned char>(d[i]))) {
+            cmd = d[i];
+            ++i;
+        } else if (!cmd) {
+            ++i;
+            continue;
+        }
+        float a = 0.0f, b = 0.0f, c = 0.0f, e = 0.0f, f = 0.0f, h = 0.0f;
+        switch (cmd) {
+        case 'M': case 'm': {
+            if (!ReadNumber(d, &i, &a) || !ReadNumber(d, &i, &b)) { i = d.size(); break; }
+            if (cmd == 'm') { a += cx; b += cy; }
+            cx = a; cy = b;
+            subX = a; subY = b;
+            if (!g->hasStart) { g->sx = a; g->sy = b; g->hasStart = true; }
+            // Further coordinate pairs after a moveto are implicit linetos.
+            cmd = (cmd == 'M') ? 'L' : 'l';
+            break;
+        }
+        case 'L': case 'l': {
+            if (!ReadNumber(d, &i, &a) || !ReadNumber(d, &i, &b)) { i = d.size(); break; }
+            if (cmd == 'l') { a += cx; b += cy; }
+            AddSegment(g, cx, cy, a, b, a, b, cx, cy);
+            cx = a; cy = b;
+            break;
+        }
+        case 'H': case 'h': {
+            if (!ReadNumber(d, &i, &a)) { i = d.size(); break; }
+            if (cmd == 'h') a += cx;
+            AddSegment(g, cx, cy, a, cy, a, cy, cx, cy);
+            cx = a;
+            break;
+        }
+        case 'V': case 'v': {
+            if (!ReadNumber(d, &i, &a)) { i = d.size(); break; }
+            if (cmd == 'v') a += cy;
+            AddSegment(g, cx, cy, cx, a, cx, a, cx, cy);
+            cy = a;
+            break;
+        }
+        case 'C': case 'c': {
+            if (!ReadNumber(d, &i, &a) || !ReadNumber(d, &i, &b) ||
+                !ReadNumber(d, &i, &c) || !ReadNumber(d, &i, &e) ||
+                !ReadNumber(d, &i, &f) || !ReadNumber(d, &i, &h)) { i = d.size(); break; }
+            if (cmd == 'c') { a += cx; b += cy; c += cx; e += cy; f += cx; h += cy; }
+            AddSegment(g, cx, cy, f, h, a, b, c, e);
+            cx = f; cy = h;
+            break;
+        }
+        case 'S': case 's': {
+            if (!ReadNumber(d, &i, &a) || !ReadNumber(d, &i, &b) ||
+                !ReadNumber(d, &i, &c) || !ReadNumber(d, &i, &e)) { i = d.size(); break; }
+            if (cmd == 's') { a += cx; b += cy; c += cx; e += cy; }
+            AddSegment(g, cx, cy, c, e, a, b, a, b);
+            cx = c; cy = e;
+            break;
+        }
+        case 'Q': case 'q': {
+            if (!ReadNumber(d, &i, &a) || !ReadNumber(d, &i, &b) ||
+                !ReadNumber(d, &i, &c) || !ReadNumber(d, &i, &e)) { i = d.size(); break; }
+            if (cmd == 'q') { a += cx; b += cy; c += cx; e += cy; }
+            AddSegment(g, cx, cy, c, e, a, b, a, b);
+            cx = c; cy = e;
+            break;
+        }
+        case 'T': case 't': {
+            if (!ReadNumber(d, &i, &a) || !ReadNumber(d, &i, &b)) { i = d.size(); break; }
+            if (cmd == 't') { a += cx; b += cy; }
+            AddSegment(g, cx, cy, a, b, a, b, cx, cy);
+            cx = a; cy = b;
+            break;
+        }
+        case 'A': case 'a': {
+            // rx ry rotation large-arc sweep x y
+            float v[7];
+            bool ok = true;
+            for (int k = 0; k < 7; ++k) {
+                if (!ReadNumber(d, &i, &v[k])) { ok = false; break; }
+            }
+            if (!ok) { i = d.size(); break; }
+            float x = v[5], y = v[6];
+            if (cmd == 'a') { x += cx; y += cy; }
+            AddSegment(g, cx, cy, x, y, x, y, cx, cy);
+            cx = x; cy = y;
+            break;
+        }
+        case 'Z': case 'z': {
+            AddSegment(g, cx, cy, subX, subY, subX, subY, cx, cy);
+            cx = subX; cy = subY;
+            break;
+        }
+        default:
+            // Unknown command: advance one character so the loop terminates.
+            ++i;
+            break;
+        }
+    }
+}
+
+// Same for a polyline/polygon "points" list: every consecutive pair is a
+// segment, so the first pair gives the start tangent and the last the end.
+void ParsePointsGeometry(const std::string& pts, PathGeom* g) {
+    std::vector<float> v;
+    size_t i = 0;
+    float n = 0.0f;
+    while (ReadNumber(pts, &i, &n)) v.push_back(n);
+    for (size_t k = 2; k + 1 < v.size(); k += 2) {
+        AddSegment(g, v[k - 2], v[k - 1], v[k], v[k + 1],
+                   v[k], v[k + 1], v[k - 2], v[k - 1]);
+    }
+}
+
+void CollectMarkers(const std::string& xml, std::vector<MarkerDef>* out) {
+    size_t p = 0;
+    while ((p = xml.find("<marker", p)) != std::string::npos) {
+        const size_t gt = xml.find('>', p);
+        if (gt == std::string::npos) break;
+        const std::string tag = xml.substr(p, gt - p + 1);
+        if (IsSelfClosed(tag)) { p = gt + 1; continue; }
+        const size_t close = xml.find("</marker>", gt);
+        if (close == std::string::npos) break;
+        MarkerDef m;
+        m.id = GetAttr(tag, "id");
+        std::string v;
+        v = GetAttr(tag, "markerWidth");
+        if (!v.empty()) m.markerW = ToFloat(v, 3.0f);
+        v = GetAttr(tag, "markerHeight");
+        if (!v.empty()) m.markerH = ToFloat(v, 3.0f);
+        v = GetAttr(tag, "refX");
+        if (!v.empty()) m.refX = ToFloat(v, 0.0f);
+        v = GetAttr(tag, "refY");
+        if (!v.empty()) m.refY = ToFloat(v, 0.0f);
+        v = GetAttr(tag, "markerUnits");
+        if (!v.empty()) m.strokeUnits = (v != "userSpaceOnUse");
+        m.orient = GetAttr(tag, "orient");
+        m.transform = GetAttr(tag, "transform");
+        v = GetAttr(tag, "viewBox");
+        if (v.empty()) v = GetAttr(tag, "viewbox");
+        if (!v.empty()) {
+            float vb[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            size_t k = 0, q = 0;
+            while (k < 4 && ReadNumber(v, &q, &vb[k])) ++k;
+            if (k == 4 && vb[2] > 0.0f && vb[3] > 0.0f) {
+                m.hasViewBox = true;
+                m.vbX = vb[0];
+                m.vbY = vb[1];
+                m.vbW = vb[2];
+                m.vbH = vb[3];
+            }
+        }
+        m.content = xml.substr(gt + 1, close - gt - 1);
+        if (!m.id.empty()) out->push_back(m);
+        p = close + 9;
+    }
+}
+
+// Removes name="..." (or name='...') and the whitespace before it.
+std::string StripAttr(const std::string& tag, const std::string& name) {
+    std::string out = tag;
+    const char quotes[2] = {'"', '\''};
+    for (int qi = 0; qi < 2; ++qi) {
+        const std::string pat = name + "=" + std::string(1, quotes[qi]);
+        size_t p = out.find(pat);
+        while (p != std::string::npos) {
+            if (p > 0 && (std::isalnum(static_cast<unsigned char>(out[p - 1])) ||
+                          out[p - 1] == '-' || out[p - 1] == '_' ||
+                          out[p - 1] == ':')) {
+                p = out.find(pat, p + pat.size());
+                continue;
+            }
+            const size_t end = out.find(quotes[qi], p + pat.size());
+            if (end == std::string::npos) break;
+            size_t b = p;
+            while (b > 0 && (out[b - 1] == ' ' || out[b - 1] == '\t' ||
+                             out[b - 1] == '\n' || out[b - 1] == '\r')) --b;
+            out.erase(b, end + 1 - b);
+            p = out.find(pat, b);
+        }
+    }
+    return out;
+}
+
+// "url(#arrow)" -> "arrow".
+std::string MarkerRefId(const std::string& v) {
+    const size_t p = v.find('#');
+    if (p == std::string::npos) return {};
+    size_t e = v.find(')', p);
+    if (e == std::string::npos) e = v.size();
+    return v.substr(p + 1, e - p - 1);
+}
+
+void EmitMarker(std::string& out, const std::vector<MarkerDef>& defs,
+                const std::string& id, bool have, float x, float y,
+                float dx, float dy, bool isStart, const std::string& elemTf,
+                float strokeWidth) {
+    if (!have || id.empty()) return;
+    const MarkerDef* m = nullptr;
+    for (const auto& d : defs) {
+        if (d.id == id) { m = &d; break; }
+    }
+    if (!m || m->content.empty()) return;
+    if (dx == 0.0f && dy == 0.0f) return;
+
+    // orient: "auto" follows the path, "auto-start-reverse" turns a start
+    // marker around, a bare number is a fixed angle, and the default is 0.
+    float ang = 0.0f;
+    if (m->orient == "auto" || m->orient == "auto-start-reverse") {
+        ang = std::atan2(dy, dx) * 180.0f / 3.14159265358979f;
+        if (isStart && m->orient == "auto-start-reverse") ang += 180.0f;
+    } else if (!m->orient.empty()) {
+        ang = ToFloat(m->orient, 0.0f);
+    }
+
+    const float s = m->strokeUnits ? (strokeWidth > 0.0f ? strokeWidth : 1.0f)
+                                   : 1.0f;
+
+    char buf[512];
+    std::snprintf(buf, sizeof buf,
+                  "<g transform=\"%s translate(%.4f,%.4f) rotate(%.4f) "
+                  "scale(%.6f) translate(%.4f,%.4f)",
+                  elemTf.c_str(), x, y, ang, s, -m->refX, -m->refY);
+    out += buf;
+    if (m->hasViewBox) {
+        // The content is fitted into markerWidth x markerHeight with the
+        // default preserveAspectRatio (xMidYMid meet).
+        const float sx = m->markerW / m->vbW;
+        const float sy = m->markerH / m->vbH;
+        const float vs = (sx < sy) ? sx : sy;
+        const float tx = (m->markerW - m->vbW * vs) * 0.5f;
+        const float ty = (m->markerH - m->vbH * vs) * 0.5f;
+        std::snprintf(buf, sizeof buf,
+                      " translate(%.4f,%.4f) scale(%.6f) translate(%.4f,%.4f)",
+                      tx, ty, vs, -m->vbX, -m->vbY);
+        out += buf;
+    }
+    if (!m->transform.empty()) {
+        out += " ";
+        out += m->transform;
+    }
+    out += "\">";
+    out += m->content;
+    out += "</g>";
+}
+
+}  // namespace
+
+std::string ExpandMarkers(const std::string& xml) {
+    if (xml.find("marker-end") == std::string::npos &&
+        xml.find("marker-start") == std::string::npos) {
+        return xml;
+    }
+    std::vector<MarkerDef> defs;
+    CollectMarkers(xml, &defs);
+    // No early return when defs is empty: a reference to a marker that is not
+    // defined still has to lose its marker-* attribute, because Direct2D does
+    // not understand it. EmitMarker draws nothing for an unknown id.
+
+    std::string out;
+    out.reserve(xml.size() + xml.size() / 8);
+    size_t pos = 0;
+    while (pos < xml.size()) {
+        const size_t lt = xml.find('<', pos);
+        if (lt == std::string::npos) {
+            out += xml.substr(pos);
+            break;
+        }
+        out += xml.substr(pos, lt - pos);
+        // Comments, CDATA and processing instructions are copied whole: a
+        // '>' inside them does not end a tag.
+        if (xml.compare(lt, 4, "<!--") == 0) {
+            const size_t e = xml.find("-->", lt + 4);
+            if (e == std::string::npos) { out += xml.substr(lt); break; }
+            out += xml.substr(lt, e + 3 - lt);
+            pos = e + 3;
+            continue;
+        }
+        if (xml.compare(lt, 9, "<![CDATA[") == 0) {
+            const size_t e = xml.find("]]>", lt + 9);
+            if (e == std::string::npos) { out += xml.substr(lt); break; }
+            out += xml.substr(lt, e + 3 - lt);
+            pos = e + 3;
+            continue;
+        }
+        if (lt + 1 < xml.size() && (xml[lt + 1] == '?' || xml[lt + 1] == '!')) {
+            const size_t e = xml.find('>', lt + 2);
+            if (e == std::string::npos) { out += xml.substr(lt); break; }
+            out += xml.substr(lt, e + 1 - lt);
+            pos = e + 1;
+            continue;
+        }
+        const size_t gt = xml.find('>', lt + 1);
+        if (gt == std::string::npos) { out += xml.substr(lt); break; }
+        const std::string tag = xml.substr(lt, gt - lt + 1);
+        pos = gt + 1;
+
+        const bool isClose = tag.size() > 1 && tag[1] == '/';
+        const std::string me = isClose ? std::string() : GetAttr(tag, "marker-end");
+        const std::string ms = isClose ? std::string() : GetAttr(tag, "marker-start");
+        if (me.empty() && ms.empty()) {
+            out += tag;
+            continue;
+        }
+
+        // The marker is placed in the element's own user space, so the
+        // element's transform has to lead the group's transform list.
+        const std::string elemTf = GetAttr(tag, "transform");
+        float strokeW = 1.0f;
+        {
+            const std::string v = GetAttr(tag, "stroke-width");
+            if (!v.empty()) strokeW = ToFloat(v, 1.0f);
+        }
+        PathGeom g;
+        if (TagIs(tag, "path")) {
+            ParsePathGeometry(GetAttr(tag, "d"), &g);
+        } else if (TagIs(tag, "line")) {
+            const float x1 = ToFloat(GetAttr(tag, "x1"), 0.0f);
+            const float y1 = ToFloat(GetAttr(tag, "y1"), 0.0f);
+            const float x2 = ToFloat(GetAttr(tag, "x2"), 0.0f);
+            const float y2 = ToFloat(GetAttr(tag, "y2"), 0.0f);
+            AddSegment(&g, x1, y1, x2, y2, x2, y2, x1, y1);
+        } else if (TagIs(tag, "polyline") || TagIs(tag, "polygon")) {
+            ParsePointsGeometry(GetAttr(tag, "points"), &g);
+        }
+
+        out += StripAttr(StripAttr(tag, "marker-end"), "marker-start");
+        if (!me.empty()) {
+            EmitMarker(out, defs, MarkerRefId(me), g.hasEnd, g.ex, g.ey,
+                       g.edx, g.edy, false, elemTf, strokeW);
+        }
+        if (!ms.empty()) {
+            EmitMarker(out, defs, MarkerRefId(ms), g.hasStartDir, g.sx, g.sy,
+                       g.sdx, g.sdy, true, elemTf, strokeW);
+        }
+    }
+    return out;
+}
+
+// Reads the root <svg> width/height, falling back to the viewBox extent.
+// A percentage width is not a size (it depends on the viewport), so it is
+// ignored in favour of the viewBox, which is what a browser does.
+bool ReadSize(const std::string& xml, float* w, float* h) {
+    if (w) *w = 0.0f;
+    if (h) *h = 0.0f;
+    const size_t p = xml.find("<svg");
+    if (p == std::string::npos) return false;
+    const size_t gt = xml.find('>', p);
+    if (gt == std::string::npos) return false;
+    const std::string tag = xml.substr(p, gt - p + 1);
+
+    float rw = 0.0f, rh = 0.0f;
+    const std::string ws = GetAttr(tag, "width");
+    const std::string hs = GetAttr(tag, "height");
+    if (ws.find('%') == std::string::npos) rw = ToFloat(ws, 0.0f);
+    if (hs.find('%') == std::string::npos) rh = ToFloat(hs, 0.0f);
+
+    if (!(rw > 0.0f) || !(rh > 0.0f)) {
+        // viewBox is case-sensitive per spec, but real files vary (Batik
+        // writes lowercase "viewbox"); try both spellings.
+        std::string vb = GetAttr(tag, "viewBox");
+        if (vb.empty()) vb = GetAttr(tag, "viewbox");
+        if (!vb.empty()) {
+            float v[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            size_t k = 0, q = 0;
+            while (k < 4 && ReadNumber(vb, &q, &v[k])) ++k;
+            if (k == 4) {
+                rw = v[2];
+                rh = v[3];
+            }
+        }
+    }
+    if (!(rw > 0.0f) || !(rh > 0.0f)) return false;
+    if (w) *w = rw;
+    if (h) *h = rh;
+    return true;
 }
 
 }  // namespace svg

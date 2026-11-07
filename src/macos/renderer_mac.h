@@ -463,6 +463,11 @@ private:
 
     std::vector<LaidOutBlock> blocks_;
     float contentWidth_ = 0.0f;
+    // Right edge of the widest block drawn, in points. A standalone .svg is
+    // drawn at its natural size and an image grows with the zoom, so either
+    // can be wider than the column; the horizontal scroll range has to cover
+    // it or the right-hand part of the picture is unreachable.
+    float widestRight_ = 0.0f;
     // The x of the left edge of the text column, which centers the
     // column when it is narrower than the view.
     float originX_ = 0.0f;

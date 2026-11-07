@@ -9,6 +9,7 @@
 #include "colortext.h"
 #include "crash_trace.h"
 #include "imagehelper.h"
+#include "svgtext.h"
 #include "mermaid/model.h"
 #include "mermaid/layout_internal.h"
 #include "mermaid/layout.h"
@@ -615,6 +616,10 @@ float Renderer::ContentWidthDip(float viewportWidthDip) const {
     float width = viewportWidthDip - 2.0f * m.padX;
     if (width > m.maxContentWidth) width = m.maxContentWidth;
     if (!(width > 0.0f)) width = 1.0f;
+    // A picture wider than the column (a standalone .svg at natural size,
+    // or an image at high zoom) extends the scrollable area. Without this
+    // its right-hand part could not be reached.
+    if (widestBlockRight_ > width) width = widestBlockRight_;
     return width;
 }
 
@@ -1251,10 +1256,28 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     outH = curY - y;
 }
 
+// Browser rule for an inline image: draw it at its intrinsic size, shrink it
+// to the column when it is wider, then scale by the page zoom. The old code
+// stretched every image to the column and capped its height at 400 DIP, which
+// distorted small pictures, cut tall ones off, and (because Measure charged a
+// flat 100 DIP) left the bottom of a picture unreachable by scrolling.
+static void FitInlineImage(float iw, float ih, float columnW, float zoom,
+                           float* outW, float* outH) {
+    *outW = 0.0f;
+    *outH = 0.0f;
+    if (!(iw > 0.0f) || !(ih > 0.0f)) return;
+    float w = iw;
+    if (columnW > 0.0f && w > columnW) w = columnW;
+    w *= (zoom > 0.0f) ? zoom : 1.0f;
+    *outW = w;
+    *outH = w * (ih / iw);
+}
+
 float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
                            float widthDip, float topOffsetDip) {
     if (!dw) return 0.0f;
     LayoutMetrics m = ComputeMetrics();
+    widestBlockRight_ = 0.0f;
     if (widthDip <= 0.0f) return m.padTop + topOffsetDip;
 
     float avail = widthDip - 2.0f * m.padX;
@@ -1273,6 +1296,9 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
 
     for (const auto& n : doc.nodes) {
         float blockH = 0.0f;
+        // Width of the block's drawn content when it can exceed the column
+        // (a picture). Zero for everything that is laid out to the column.
+        float blockW = 0.0f;
         float drawX = originX;
         float drawW = contentWidth;
 
@@ -1293,6 +1319,13 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
             float svgH = 0.0f;
             if (n.lang == "svg" && standaloneSvg_) {
                 svgH = MeasureSvgBlock(dw, n, drawX, drawW);
+                if (svgH > 0.0f) {
+                    // A standalone .svg is drawn at natural size times the
+                    // zoom, so it can be wider than the text column.
+                    if (svg::SvgDoc* d = GetSvgDoc(n, drawW)) {
+                        blockW = d->Width() * zoom_ + 2.0f * m.codePad;
+                    }
+                }
             }
             if (svgH > 0.0f) {
                 blockH = svgH;
@@ -1354,18 +1387,28 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
                 }
                 for (const auto& ib : n.children) text32 += ib.text;
                 if (text32.empty() && n.virtualEmptyParagraph) text32 = U" ";
-                // Images advance the draw path's curY (aspect-scaled height
-                // capped at 400 plus paraGap each); measure must charge the
-                // same or totalH_ underestimates and content below images
-                // cannot be scrolled to.
+                // Images advance the draw path's curY by the height the
+                // browser rule gives them (intrinsic size, shrunk to the
+                // column, times the zoom) plus paraGap each. Measure has to
+                // charge exactly that, or totalH_ underestimates and the
+                // bottom of a picture cannot be scrolled to.
                 float imageH = 0.0f;
+                float imageW = 0.0f;
                 for (const auto& ib : n.children) {
                     if (ib.kind != InlineKind::Image || ib.url.empty()) continue;
-                    float h = 100.0f; // draw-path fallback for unknown size
-                    // Same cap the draw path applies (400 DIP).
-                    if (imageH + h > 400.0f) h = 400.0f;
-                    imageH += h + m.paraGap;
+                    float iw = 0.0f, ih = 0.0f;
+                    if (!InlineImageSize(ib.url, &iw, &ih)) {
+                        // Unknown size (a remote image not fetched yet):
+                        // charge the draw path's placeholder.
+                        imageH += 100.0f + m.paraGap;
+                        continue;
+                    }
+                    float dw = 0.0f, dh = 0.0f;
+                    FitInlineImage(iw, ih, drawW, zoom_, &dw, &dh);
+                    if (dw > imageW) imageW = dw;
+                    imageH += dh + m.paraGap;
                 }
+                if (imageW > blockW) blockW = imageW;
                 if (text32.empty() && imageH == 0.0f) {
                     curY += GapForTransition(prevBlock, n.block, m);
                     prevBlock = n.block;
@@ -1405,6 +1448,11 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
         bool isFirst = (prevBlock == BlockKind::Paragraph &&
                         prevDepth == -1 && curY == m.padTop + topOffsetDip);
         if (isFirst) gap = 0;
+
+        if (blockW > 0.0f) {
+            const float right = drawX + blockW + m.padX;
+            if (right > widestBlockRight_) widestBlockRight_ = right;
+        }
 
         curY += gap;
         curY += blockH;
@@ -1800,20 +1848,17 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     if (!svgText.empty()) {
                         svg::SvgDoc svgDoc;
                         if (svgDoc.Load(d2d_ctx5_, svgText)) {
-                            float drawW2 = drawW;
-                            float drawH2 = (svgDoc.Width() > 0)
-                                ? drawW2 * (svgDoc.Height() / svgDoc.Width())
-                                : 100.0f;
-                            if (drawH2 > 400.0f) {
-                                drawH2 = 400.0f;
-                                drawW2 = (svgDoc.Height() > 0)
-                                    ? drawH2 * (svgDoc.Width() / svgDoc.Height())
-                                    : drawW2;
+                            RememberImageSize(ib.url, svgDoc.Width(),
+                                              svgDoc.Height());
+                            float drawW2 = 0.0f, drawH2 = 0.0f;
+                            FitInlineImage(svgDoc.Width(), svgDoc.Height(),
+                                           drawW, zoom_, &drawW2, &drawH2);
+                            if (drawW2 > 0.0f && drawH2 > 0.0f) {
+                                svgDoc.Draw(d2d_ctx5_, dw, drawX, curY,
+                                            drawW2, drawH2);
+                                curY += drawH2 + m.paraGap;
+                                drewImages = true;
                             }
-                            svgDoc.Draw(d2d_ctx5_, dw, drawX, curY,
-                                        drawW2, drawH2);
-                            curY += drawH2 + m.paraGap;
-                            drewImages = true;
                         }
                     }
                 } else {
@@ -1844,24 +1889,23 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     }
                     if (bmp) {
                         D2D1_SIZE_F bmpSize = bmp->GetSize();
-                        float drawW2 = drawW;
-                        float drawH2 = drawW2 *
-                            (bmpSize.height / bmpSize.width);
-                        if (drawH2 > 400.0f) {
-                            drawH2 = 400.0f;
-                            drawW2 = drawH2 *
-                                (bmpSize.width / bmpSize.height);
+                        RememberImageSize(ib.url, bmpSize.width,
+                                          bmpSize.height);
+                        float drawW2 = 0.0f, drawH2 = 0.0f;
+                        FitInlineImage(bmpSize.width, bmpSize.height,
+                                       drawW, zoom_, &drawW2, &drawH2);
+                        if (drawW2 > 0.0f && drawH2 > 0.0f) {
+                            D2D1_RECT_F dest = D2D1::RectF(
+                                drawX, curY, drawX + drawW2, curY + drawH2);
+                            D2D1_RECT_F src = D2D1::RectF(
+                                0, 0, bmpSize.width, bmpSize.height);
+                            rt->DrawBitmap(bmp, dest, 1.0f,
+                                D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, src);
+                            // Bitmaps in the cache are owned by the cache;
+                            // nothing to release per frame.
+                            curY += drawH2 + m.paraGap;
+                            drewImages = true;
                         }
-                        D2D1_RECT_F dest = D2D1::RectF(
-                            drawX, curY, drawX + drawW2, curY + drawH2);
-                        D2D1_RECT_F src = D2D1::RectF(
-                            0, 0, bmpSize.width, bmpSize.height);
-                        rt->DrawBitmap(bmp, dest, 1.0f,
-                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, src);
-                        // Bitmaps in the cache are owned by the cache;
-                        // nothing to release per frame.
-                        curY += drawH2 + m.paraGap;
-                        drewImages = true;
                     }
                 }
             }
@@ -2129,6 +2173,9 @@ float Renderer::MeasureSourceView(IDWriteFactory* dw, const std::string& src,
                                    float widthDip, float topOffsetDip) {
     if (!dw || !code_fmt_) return 0.0f;
 
+    // The source view has no pictures, so it must not inherit the scroll
+    // range a rendered document left behind.
+    widestBlockRight_ = 0.0f;
     LayoutMetrics m = ComputeMetrics();
     float avail = widthDip - 2.0f * m.padX;
     float contentWidth = wrapEnabled_ ? avail : kNoWrapContentWidthDip;
@@ -2385,6 +2432,69 @@ void Renderer::ClearSvgCache() {
         if (e.bmp) e.bmp->Release();
     }
     img_cache_.clear();
+    // Intrinsic sizes are read from the files on disk, so a document change
+    // (or a file the watcher reloaded) can make them stale. Dropping them
+    // costs one header read per picture on the next measure.
+    img_size_cache_.clear();
+}
+
+// Intrinsic size of an inline image, cached per URL. Measure needs it before
+// the draw pass has run, so a local file is read here; a remote image stays
+// unknown until the draw pass has fetched it, and the placeholder height is
+// corrected on the next paint.
+bool Renderer::InlineImageSize(const std::string& url, float* w, float* h) {
+    for (const auto& e : img_size_cache_) {
+        if (e.url != url) continue;
+        if (!e.known) return false;
+        *w = e.w;
+        *h = e.h;
+        return true;
+    }
+    float iw = 0.0f, ih = 0.0f;
+    bool known = false;
+    std::string lower = url;
+    for (auto& c : lower) {
+        c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+    }
+    // A remote picture is not fetched during measure: that would block the
+    // UI thread on the network on the first paint. The draw pass fetches it
+    // and RememberImageSize corrects the height on the next measure.
+    if (lower.find("http://") == 0 || lower.find("https://") == 0) {
+        return false;
+    }
+    const bool isSvg =
+        (lower.size() > 4 && lower.substr(lower.size() - 4) == ".svg") ||
+        (lower.find("data:image/svg+xml") == 0);
+    if (isSvg) {
+        const std::string text = ImageHelper::LoadSvgText(url);
+        if (!text.empty()) known = svg::ReadSize(text, &iw, &ih);
+    } else {
+        known = ImageHelper::LoadImageSize(url, &iw, &ih);
+    }
+    if (img_size_cache_.size() >= 128) {
+        img_size_cache_.erase(img_size_cache_.begin());
+    }
+    img_size_cache_.push_back({url, iw, ih, known});
+    if (!known) return false;
+    *w = iw;
+    *h = ih;
+    return true;
+}
+
+void Renderer::RememberImageSize(const std::string& url, float w, float h) {
+    if (!(w > 0.0f) || !(h > 0.0f)) return;
+    for (auto& e : img_size_cache_) {
+        if (e.url == url) {
+            e.w = w;
+            e.h = h;
+            e.known = true;
+            return;
+        }
+    }
+    if (img_size_cache_.size() >= 128) {
+        img_size_cache_.erase(img_size_cache_.begin());
+    }
+    img_size_cache_.push_back({url, w, h, true});
 }
 
 svg::SvgDoc* Renderer::GetSvgDoc(const Node& n, float availW) {
@@ -2424,9 +2534,13 @@ float Renderer::MeasureSvgBlock(IDWriteFactory* dw, const Node& n,
     svg::SvgDoc* doc = GetSvgDoc(n, availW);
     if (!doc || doc->Width() <= 0 || doc->Height() <= 0) return 0.0f;
 
-    // Scale to fit available width, preserving aspect ratio.
-    float scale = availW / doc->Width();
-    float renderedH = doc->Height() * scale;
+    // A standalone .svg is a page image, and a browser shows it at its
+    // intrinsic size with the window scrolling around it. Fitting it to the
+    // column made a wide diagram a thumbnail whose labels could not be read
+    // at any zoom, because the column is itself capped by the viewport.
+    // Natural size times the zoom is the browser's 100%, and it scales from
+    // there.
+    const float renderedH = doc->Height() * zoom_;
     return renderedH + 2.0f * m.codePad;
 }
 
@@ -2467,10 +2581,9 @@ void Renderer::DrawSvgBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     diag::TraceFmt("SVGDRAW off=%u painting w=%.1f h=%.1f",
                    n.srcOffset, doc->Width(), doc->Height());
 
-    // Compute scaled dimensions.
-    float scale = availW / doc->Width();
-    float renderedW = doc->Width() * scale;
-    float renderedH = doc->Height() * scale;
+    // Natural size times the zoom, the same rule Measure charges for.
+    const float renderedW = doc->Width() * zoom_;
+    const float renderedH = doc->Height() * zoom_;
     outH = renderedH + 2.0f * m.codePad;
 
     // Draw the SVG document with no card: a standalone .svg file is

@@ -17,6 +17,10 @@ struct TextRun {
     std::string anchor;      // "start", "middle", "end"
     std::string fill;        // color as "#rrggbb" or name
     bool bold = false;
+    // font-style="italic"/"oblique". Stereotype labels (<<it system>>) and
+    // most diagram annotations are italic, and drawing them upright is a
+    // visible difference from the browser.
+    bool italic = false;
     // dominant-baseline="central"/"middle": y is the vertical CENTER
     // of the glyphs, not the baseline (mermaid-exported SVGs).
     bool central = false;

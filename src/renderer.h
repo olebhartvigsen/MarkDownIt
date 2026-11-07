@@ -70,8 +70,10 @@ public:
     // Width of the drawn content column in DIPs at the current zoom. This
     // is the horizontal scroll range, so it has to describe what Render
     // actually paints: the smaller of the capped column width and the
-    // width the viewport leaves after padding. The uncapped width mode
-    // therefore reports the viewport width and never scrolls sideways.
+    // width the viewport leaves after padding, extended to the right edge
+    // of the widest picture when one is wider than the column. The
+    // uncapped width mode therefore reports the viewport width and never
+    // scrolls sideways.
     float ContentWidthDip(float viewportWidthDip) const;
 
     // Column width at 100% zoom for the current width mode, which is the
@@ -204,6 +206,27 @@ private:
         std::string svgText;
     };
     std::vector<InlineImageCacheEntry> img_cache_;
+
+    // Intrinsic size of an inline image, keyed by URL. Measure needs the
+    // height before the draw pass has run, and the draw pass fills in what
+    // it learned (a remote image is only known once it has been fetched).
+    struct ImageSizeEntry {
+        std::string url;
+        float w = 0.0f;
+        float h = 0.0f;
+        bool known = false;
+    };
+    std::vector<ImageSizeEntry> img_size_cache_;
+    bool InlineImageSize(const std::string& url, float* w, float* h);
+    void RememberImageSize(const std::string& url, float w, float h);
+
+    // Right edge of the widest block drawn, in DIPs, including the page
+    // padding. A standalone .svg is drawn at natural size and an image
+    // grows with the zoom, so either can be wider than the text column;
+    // the horizontal scroll range has to cover it or the right-hand part
+    // of the picture is unreachable. Set by Measure, read by
+    // ContentWidthDip.
+    float widestBlockRight_ = 0.0f;
 
     void DrawSvgBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                       const Node& n, float x, float y, float width,
