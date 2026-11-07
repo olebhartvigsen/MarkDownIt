@@ -1804,3 +1804,76 @@ TEST(RendererMac, SvgKeepsTheItalicOfALabel) {
     // Core Text takes one family, so the list is reduced to its first name.
     EXPECT_EQ(target.texts[0].font.family, std::string("Arial"));
 }
+
+
+TEST(RendererMac, SvgRotatesAMarkerWithItsLine) {
+    mac::SvgDoc doc;
+    ASSERT_TRUE(doc.Load(
+        "<svg width='200' height='200'>"
+        "<defs><marker id='a' markerWidth='10' markerHeight='8' refX='9'"
+        " refY='4' orient='auto-start-reverse'>"
+        "<path d='M0,0 L10,4 L0,8 z' fill='#000'/></marker></defs>"
+        "<path d='M20,20 L20,120' fill='none' stroke='#000'"
+        " stroke-width='1' marker-end='url(#a)'/>"
+        "</svg>"));
+    RecordingTarget target;
+    FakeEngine engine;
+    doc.Draw(&target, &engine, 0.0f, 0.0f, 200.0f, 200.0f);
+
+    const std::vector<mac::Point>* head = nullptr;
+    for (const RecordingTarget::Polygon& polygon : target.polygons) {
+        if (polygon.filled && polygon.points.size() == 4) head = &polygon.points;
+    }
+    ASSERT_TRUE(head != nullptr);
+    // The line runs downward, so the triangle tips down: its point sits
+    // below the two back corners. Leaving the rotation out of the marker
+    // transform pointed every arrowhead in a diagram to the right.
+    EXPECT_NEAR((*head)[1].x, 20.0f, 0.01f);
+    EXPECT_NEAR((*head)[1].y, 121.0f, 0.01f);
+    EXPECT_NEAR((*head)[0].x, 24.0f, 0.01f);
+    EXPECT_NEAR((*head)[0].y, 111.0f, 0.01f);
+    EXPECT_NEAR((*head)[2].x, 16.0f, 0.01f);
+    EXPECT_NEAR((*head)[2].y, 111.0f, 0.01f);
+}
+
+TEST(RendererMac, SvgAppliesAScaleBeforeTheTranslate) {
+    mac::SvgDoc doc;
+    ASSERT_TRUE(doc.Load(
+        "<svg width='300' height='100'>"
+        "<g transform='translate(100,0) scale(2)'>"
+        "<rect x='10' y='10' width='5' height='5' fill='#000'/>"
+        "</g></svg>"));
+    RecordingTarget target;
+    FakeEngine engine;
+    doc.Draw(&target, &engine, 0.0f, 0.0f, 300.0f, 100.0f);
+
+    ASSERT_EQ(target.fills.size(), 1u);
+    // A transform list reads right to left: the rect is scaled first and
+    // then moved, so it lands at 100 + 2*10. Composing the other way round
+    // would put it at 220.
+    EXPECT_NEAR(target.fills[0].rect.x, 120.0f, 0.01f);
+    EXPECT_NEAR(target.fills[0].rect.y, 20.0f, 0.01f);
+    EXPECT_NEAR(target.fills[0].rect.width, 10.0f, 0.01f);
+    EXPECT_NEAR(target.fills[0].rect.height, 10.0f, 0.01f);
+}
+
+TEST(RendererMac, SvgDrawsAnEllipticalArc) {
+    mac::SvgDoc doc;
+    ASSERT_TRUE(doc.Load(
+        "<svg width='100' height='100'>"
+        "<path d='M10,10 L40,10 a6,6 0 0 1 0,12 L40,40' fill='none'"
+        " stroke='#000' stroke-width='1'/>"
+        "</svg>"));
+    RecordingTarget target;
+    FakeEngine engine;
+    doc.Draw(&target, &engine, 0.0f, 0.0f, 100.0f, 100.0f);
+
+    ASSERT_EQ(target.polygons.size(), 1u);
+    float furthest = 0.0f;
+    for (const mac::Point& point : target.polygons[0].points) {
+        if (point.x > furthest) furthest = point.x;
+    }
+    // The half circle bulges six points to the right of the elbow at x=40.
+    // Dropping the arc left a sharp corner there instead.
+    EXPECT_NEAR(furthest, 46.0f, 0.05f);
+}

@@ -53,11 +53,20 @@ public:
         std::vector<float> dash;
     };
 
-    // The placement of a shape.
+    // An affine transform: x' = a*x + c*y + e, y' = b*x + d*y + f.
+    //
+    // A transform list can hold translate, scale, rotate, skew and matrix in
+    // any order, so a placement is a matrix and not a translate and a scale.
+    // The rotation used to be dropped, which pointed every arrowhead in a
+    // diagram the same way, because a marker is placed with rotate in the
+    // list.
     struct Placement {
-        float translateX = 0.0f;
-        float translateY = 0.0f;
-        float scale = 1.0f;
+        float a = 1.0f;
+        float b = 0.0f;
+        float c = 0.0f;
+        float d = 1.0f;
+        float e = 0.0f;
+        float f = 0.0f;
     };
 
     // One shape of the document.

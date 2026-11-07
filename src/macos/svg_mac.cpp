@@ -191,27 +191,64 @@ bool ReadColor(const std::string& text, Color* out) {
     return false;
 }
 
+// Multiplies two transforms. The left one is applied after the right one,
+// which is how a transform list reads: "translate(a) rotate(b)" rotates
+// first and then translates.
+SvgDoc::Placement Multiply(const SvgDoc::Placement& left,
+                           const SvgDoc::Placement& right) {
+    SvgDoc::Placement out;
+    out.a = left.a * right.a + left.c * right.b;
+    out.b = left.b * right.a + left.d * right.b;
+    out.c = left.a * right.c + left.c * right.d;
+    out.d = left.b * right.c + left.d * right.d;
+    out.e = left.a * right.e + left.c * right.f + left.e;
+    out.f = left.b * right.e + left.d * right.f + left.f;
+    return out;
+}
+
+// The factor a transform applies to a stroke width. A marker carries a
+// rotation and a uniform scale, where the two column lengths agree; the
+// average keeps a width sane when a caller scales unevenly.
+float MatrixScale(const SvgDoc::Placement& placement) {
+    const float x = std::sqrt(placement.a * placement.a +
+                              placement.b * placement.b);
+    const float y = std::sqrt(placement.c * placement.c +
+                              placement.d * placement.d);
+    const float scale = (x + y) * 0.5f;
+    return scale > 0.0f ? scale : 1.0f;
+}
+
 // Reads the placement of a group or a shape.
 //
-// The transform the documents use is a translate and a scale, and
-// sometimes a rotation, which is left out because the shapes that use
-// it are rare.
+// Every function in the list becomes a matrix, and the list is composed in
+// order. Markers are the reason this has to be complete: a marker is placed
+// with translate, rotate, scale, translate, and leaving the rotation out made
+// every arrowhead in a diagram point the same way.
 SvgDoc::Placement ReadPlacement(const pugi::xml_node& node,
                                 const SvgDoc::Placement& base) {
     SvgDoc::Placement placement = base;
     const char* transform = node.attribute("transform").value();
     if (!transform) return placement;
 
-    std::string text(transform);
+    const float kDegreesToRadians = 3.14159265358979f / 180.0f;
+    const std::string text(transform);
     size_t at = 0;
     while (at < text.size()) {
         const size_t open = text.find('(', at);
         if (open == std::string::npos) break;
         const size_t close = text.find(')', open);
         if (close == std::string::npos) break;
-        const std::string name = text.substr(at, open - at);
-        const std::string inner = text.substr(open + 1, close - open - 1);
 
+        // The functions are separated by spaces or commas, so the name is
+        // trimmed before it is compared.
+        std::string name = text.substr(at, open - at);
+        const char* kPad = " \t\r\n,";
+        const size_t first = name.find_first_not_of(kPad);
+        const size_t last = name.find_last_not_of(kPad);
+        name = (first == std::string::npos) ? std::string()
+                                            : name.substr(first, last - first + 1);
+
+        const std::string inner = text.substr(open + 1, close - open - 1);
         std::vector<float> numbers;
         const char* p = inner.c_str();
         while (*p) {
@@ -225,15 +262,40 @@ SvgDoc::Placement ReadPlacement(const pugi::xml_node& node,
             p = end;
         }
 
-        if (name.find("translate") != std::string::npos && !numbers.empty()) {
-            placement.translateX += numbers[0];
-            placement.translateY += numbers.size() > 1 ? numbers[1] : 0.0f;
-        } else if (name.find("scale") != std::string::npos && !numbers.empty()) {
-            const float factor = numbers[0];
-            placement.translateX *= factor;
-            placement.translateY *= factor;
-            placement.scale *= factor;
+        SvgDoc::Placement step;
+        if (name == "translate" && !numbers.empty()) {
+            step.e = numbers[0];
+            step.f = numbers.size() > 1 ? numbers[1] : 0.0f;
+        } else if (name == "scale" && !numbers.empty()) {
+            step.a = numbers[0];
+            step.d = numbers.size() > 1 ? numbers[1] : numbers[0];
+        } else if (name == "rotate" && !numbers.empty()) {
+            const float radians = numbers[0] * kDegreesToRadians;
+            const float cs = std::cos(radians);
+            const float sn = std::sin(radians);
+            step.a = cs;
+            step.b = sn;
+            step.c = -sn;
+            step.d = cs;
+            if (numbers.size() >= 3) {
+                // rotate(angle, cx, cy) turns around a point, which is a
+                // translate before and after the turn.
+                step.e = numbers[1] * (1.0f - cs) + sn * numbers[2];
+                step.f = numbers[2] * (1.0f - cs) - sn * numbers[1];
+            }
+        } else if (name == "matrix" && numbers.size() >= 6) {
+            step.a = numbers[0];
+            step.b = numbers[1];
+            step.c = numbers[2];
+            step.d = numbers[3];
+            step.e = numbers[4];
+            step.f = numbers[5];
+        } else if (name == "skewX" && !numbers.empty()) {
+            step.c = std::tan(numbers[0] * kDegreesToRadians);
+        } else if (name == "skewY" && !numbers.empty()) {
+            step.b = std::tan(numbers[0] * kDegreesToRadians);
         }
+        placement = Multiply(placement, step);
         at = close + 1;
     }
     return placement;
@@ -365,6 +427,79 @@ bool ReadPathNumber(const std::string& text, size_t* at, float* out) {
     *out = static_cast<float>(value);
     *at = static_cast<size_t>(end - text.c_str());
     return true;
+}
+
+// Appends the ellipse arc of a path, cut into short lines.
+//
+// The centre, the radii and the sweep come from the SVG implementation notes
+// (F.6.5), so a rounded elbow lands where a browser puts it. Without this the
+// arc was dropped and the elbow came out sharp.
+void AppendArc(std::vector<Point>* points, float x1, float y1, float rx,
+               float ry, float rotationDegrees, bool largeArc, bool sweep,
+               float x2, float y2) {
+    if (!points) return;
+    if (rx == 0.0f || ry == 0.0f || (x1 == x2 && y1 == y2)) {
+        points->push_back(Point{x2, y2});
+        return;
+    }
+    const float kPi = 3.14159265358979f;
+    rx = std::fabs(rx);
+    ry = std::fabs(ry);
+    const float phi = rotationDegrees * kPi / 180.0f;
+    const float cs = std::cos(phi);
+    const float sn = std::sin(phi);
+
+    const float dx = (x1 - x2) * 0.5f;
+    const float dy = (y1 - y2) * 0.5f;
+    const float x1p = cs * dx + sn * dy;
+    const float y1p = -sn * dx + cs * dy;
+
+    // The radii are enlarged when they are too small to span the endpoints.
+    const float lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
+    if (lambda > 1.0f) {
+        const float factor = std::sqrt(lambda);
+        rx *= factor;
+        ry *= factor;
+    }
+
+    const float rx2 = rx * rx;
+    const float ry2 = ry * ry;
+    const float den = rx2 * y1p * y1p + ry2 * x1p * x1p;
+    float coefficient = 0.0f;
+    if (den > 0.0f) {
+        const float numerator = rx2 * ry2 - rx2 * y1p * y1p - ry2 * x1p * x1p;
+        const float ratio = numerator / den;
+        coefficient = std::sqrt(ratio > 0.0f ? ratio : 0.0f);
+        if (largeArc == sweep) coefficient = -coefficient;
+    }
+    const float cxp = coefficient * (rx * y1p / ry);
+    const float cyp = coefficient * (-ry * x1p / rx);
+    const float cx = cs * cxp - sn * cyp + (x1 + x2) * 0.5f;
+    const float cy = sn * cxp + cs * cyp + (y1 + y2) * 0.5f;
+
+    auto angleBetween = [](float ux, float uy, float vx, float vy) {
+        return std::atan2(ux * vy - uy * vx, ux * vx + uy * vy);
+    };
+    const float ux = (x1p - cxp) / rx;
+    const float uy = (y1p - cyp) / ry;
+    const float vx = (-x1p - cxp) / rx;
+    const float vy = (-y1p - cyp) / ry;
+    const float startAngle = angleBetween(1.0f, 0.0f, ux, uy);
+    float sweepAngle = angleBetween(ux, uy, vx, vy);
+    if (!sweep && sweepAngle > 0.0f) sweepAngle -= 2.0f * kPi;
+    else if (sweep && sweepAngle < 0.0f) sweepAngle += 2.0f * kPi;
+
+    const int steps = std::max(
+        4, static_cast<int>(std::ceil(std::fabs(sweepAngle) / (kPi / 16.0f))));
+    for (int i = 1; i <= steps; ++i) {
+        const float angle =
+            startAngle + sweepAngle * (static_cast<float>(i) / steps);
+        const float px = cx + rx * std::cos(angle) * cs - ry * std::sin(angle) * sn;
+        const float py = cy + rx * std::cos(angle) * sn + ry * std::sin(angle) * cs;
+        points->push_back(Point{px, py});
+    }
+    // Land exactly on the endpoint, so a cut arc does not drift.
+    points->back() = Point{x2, y2};
 }
 
 std::vector<Point> ReadPath(const std::string& text, bool* closed) {
@@ -534,6 +669,30 @@ std::vector<Point> ReadPath(const std::string& text, bool* closed) {
                 }
                 currentX = x2;
                 currentY = y2;
+                break;
+            }
+            case 'A':
+            case 'a': {
+                // rx ry rotation large-arc sweep x y
+                float values[7] = {value, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+                bool complete = true;
+                for (int i = 1; i < 7; ++i) {
+                    if (!ReadPathNumber(text, &at, &values[i])) {
+                        complete = false;
+                        break;
+                    }
+                }
+                if (!complete) break;
+                float x = values[5];
+                float y = values[6];
+                if (command == 'a') {
+                    x += currentX;
+                    y += currentY;
+                }
+                AppendArc(&points, currentX, currentY, values[0], values[1],
+                          values[2], values[3] != 0.0f, values[4] != 0.0f, x, y);
+                currentX = x;
+                currentY = y;
                 break;
             }
             case 'Z':
@@ -796,13 +955,18 @@ void SvgDoc::Draw(RenderTarget* target, TextEngine* engine, float x, float y,
     for (const Shape& shape : shapes_) {
         if (shape.points.empty()) continue;
 
-        const float shapeScale = scale * viewScale * shape.placement.scale;
-        const float translateX = shape.placement.translateX * shapeScale;
-        const float translateY = shape.placement.translateY * shapeScale;
+        const float shapeScale = scale * viewScale;
+        // The shape's own transform multiplies its stroke widths and its
+        // corner radii as well as its geometry.
+        const float strokeFactor = shapeScale * MatrixScale(shape.placement);
 
         auto placeShape = [&](const Point& point) {
-            return Point{offsetX + (point.x - sourceX) * shapeScale + translateX,
-                         offsetY + (point.y - sourceY) * shapeScale + translateY};
+            const float x = shape.placement.a * point.x +
+                            shape.placement.c * point.y + shape.placement.e;
+            const float y = shape.placement.b * point.x +
+                            shape.placement.d * point.y + shape.placement.f;
+            return Point{offsetX + (x - sourceX) * shapeScale,
+                         offsetY + (y - sourceY) * shapeScale};
         };
 
         switch (shape.kind) {
@@ -811,7 +975,7 @@ void SvgDoc::Draw(RenderTarget* target, TextEngine* engine, float x, float y,
                 const Point bottomRight = placeShape(shape.points[1]);
                 Rect rect{topLeft.x, topLeft.y, bottomRight.x - topLeft.x,
                           bottomRight.y - topLeft.y};
-                const float radius = shape.radiusX * shapeScale;
+                const float radius = shape.radiusX * strokeFactor;
                 if (radius > 0.0f) {
                     if (shape.style.hasFill) {
                         target->FillRoundedRect(rect, radius, shape.style.fill);
@@ -819,7 +983,7 @@ void SvgDoc::Draw(RenderTarget* target, TextEngine* engine, float x, float y,
                     if (shape.style.hasStroke) {
                         target->StrokeRoundedRect(
                             rect, radius, shape.style.stroke,
-                            shape.style.strokeWidth * shapeScale);
+                            shape.style.strokeWidth * strokeFactor);
                     }
                 } else {
                     if (shape.style.hasFill) {
@@ -827,23 +991,23 @@ void SvgDoc::Draw(RenderTarget* target, TextEngine* engine, float x, float y,
                     }
                     if (shape.style.hasStroke) {
                         target->StrokeRect(rect, shape.style.stroke,
-                                           shape.style.strokeWidth * shapeScale);
+                                           shape.style.strokeWidth * strokeFactor);
                     }
                 }
                 break;
             }
             case Kind::Ellipse: {
                 const Point centre = placeShape(shape.points[0]);
-                Rect rect{centre.x - shape.radiusX * shapeScale,
-                          centre.y - shape.radiusY * shapeScale,
-                          shape.radiusX * 2.0f * shapeScale,
-                          shape.radiusY * 2.0f * shapeScale};
+                Rect rect{centre.x - shape.radiusX * strokeFactor,
+                          centre.y - shape.radiusY * strokeFactor,
+                          shape.radiusX * 2.0f * strokeFactor,
+                          shape.radiusY * 2.0f * strokeFactor};
                 if (shape.style.hasFill) {
                     target->FillEllipse(rect, shape.style.fill);
                 }
                 if (shape.style.hasStroke) {
                     target->StrokeEllipse(rect, shape.style.stroke,
-                                          shape.style.strokeWidth * shapeScale);
+                                          shape.style.strokeWidth * strokeFactor);
                 }
                 break;
             }
@@ -853,12 +1017,12 @@ void SvgDoc::Draw(RenderTarget* target, TextEngine* engine, float x, float y,
                 const Point to = placeShape(shape.points[1]);
                 if (!shape.style.dash.empty()) {
                     StrokeDashed(target, {from, to}, false, shape.style.dash,
-                                 shapeScale, shape.style.stroke,
-                                 shape.style.strokeWidth * shapeScale);
+                                 strokeFactor, shape.style.stroke,
+                                 shape.style.strokeWidth * strokeFactor);
                 } else {
                     target->StrokeLine(from.x, from.y, to.x, to.y,
                                        shape.style.stroke,
-                                       shape.style.strokeWidth * shapeScale);
+                                       shape.style.strokeWidth * strokeFactor);
                 }
                 break;
             }
@@ -875,13 +1039,13 @@ void SvgDoc::Draw(RenderTarget* target, TextEngine* engine, float x, float y,
                 if (shape.style.hasStroke) {
                     if (!shape.style.dash.empty()) {
                         StrokeDashed(target, points, shape.closed,
-                                     shape.style.dash, shapeScale,
+                                     shape.style.dash, strokeFactor,
                                      shape.style.stroke,
-                                     shape.style.strokeWidth * shapeScale);
+                                     shape.style.strokeWidth * strokeFactor);
                     } else {
                         target->StrokePolygon(
                             points, shape.style.stroke,
-                            shape.style.strokeWidth * shapeScale,
+                            shape.style.strokeWidth * strokeFactor,
                             shape.closed);
                     }
                 }
@@ -893,7 +1057,7 @@ void SvgDoc::Draw(RenderTarget* target, TextEngine* engine, float x, float y,
                 font.family = shape.style.fontFamily.empty()
                                   ? std::string("Segoe UI")
                                   : FirstFamily(shape.style.fontFamily);
-                font.size = shape.style.fontSize * shapeScale;
+                font.size = shape.style.fontSize * strokeFactor;
                 font.bold = shape.style.bold;
                 font.italic = shape.style.italic;
                 const Color color = shape.style.hasFill ? shape.style.fill
