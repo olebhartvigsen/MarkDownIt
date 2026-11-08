@@ -51,6 +51,11 @@ class ContentView;
 // capture must not depend on the blink phase.
 - (void)qaParkCaret;
 
+// The caret moved: the blink restarts, the caret is scrolled into view
+// and the view redraws. The key handlers call it after every move, and
+// so does the window after a jump it made itself.
+- (void)caretMoved;
+
 // The document view takes the content's size, or the viewport's when
 // there is no document to scroll: the recents page is one viewport.
 - (void)syncFrameToContent;
