@@ -698,9 +698,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                 [[dir stringByAppendingPathComponent:@"wide-code.md"]
                     UTF8String])];
         }
+        // A page is wider than the window at a zoom above 1, which is
+        // how a drawing is read when its labels are small.
+        [view_ zoomTo:2.0f];
         NSClipView* clip = [[view_ enclosingScrollView] contentView];
         [view_ syncFrameToContent];
-        [view_ scrollToDocumentPoint:NSMakePoint(320.0, 0.0)];
+        [view_ scrollToDocumentPoint:NSMakePoint(240.0, 0.0)];
         mac::TraceMac(
             "qa welcome-scrolled: before offset=%.0f frame=%.0f clip=%.0f",
             (double)[clip bounds].origin.x, (double)NSWidth([view_ frame]),
@@ -710,6 +713,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             "qa welcome-scrolled: after offset=%.0f frame=%.0f clip=%.0f",
             (double)[clip bounds].origin.x, (double)NSWidth([view_ frame]),
             (double)NSWidth([clip bounds]));
+        // The walk leaves the zoom where it found it.
+        [view_ zoomTo:1.0f];
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"source"]) {
         // The raw markdown view: the renderer lays the buffer out as
