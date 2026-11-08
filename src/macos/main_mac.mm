@@ -695,6 +695,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // A drawing that overflows the column leaves the document view
         // wider than the clip; 480 extra points is that state, made
         // deterministic, so the walk does not depend on a font metric.
+        // The walk arrives here from the recents page; a document has to
+        // be on screen for the view to be wider than the clip.
+        if (app_->WelcomeMode()) [self hideWelcomeScreen];
         NSClipView* clip = [[view_ enclosingScrollView] contentView];
         NSSize wide = [clip bounds].size;
         wide.width += 480.0;
