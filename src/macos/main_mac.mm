@@ -947,8 +947,15 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     CGFloat documentWidth = splitFrame.size.width - outlineWidth - divider;
     if (documentWidth < 1.0) documentWidth = splitFrame.size.width;
 
+    // The document sits beside the pane, or at the window's edge when
+    // the pane is closed. Placing it here, rather than trusting the
+    // split view's own arrangement, keeps the text full width for the
+    // whole session and not only for the frame that closed the pane.
+    const CGFloat documentX = outlineVisible_ ? outlineWidth + divider : 0.0;
     NSRect scrollFrame = [scrollView_ frame];
-    if (scrollFrame.size.width != documentWidth) {
+    if (scrollFrame.origin.x != documentX ||
+        scrollFrame.size.width != documentWidth) {
+        scrollFrame.origin.x = documentX;
         scrollFrame.size.width = documentWidth;
         [scrollView_ setFrame:scrollFrame];
     }
