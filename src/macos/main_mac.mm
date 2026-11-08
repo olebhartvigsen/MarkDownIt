@@ -448,6 +448,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // pane is the first of the two.
     [splitView_ setPosition:settings_.settings().outlineWidthDip
                ofDividerAtIndex:0];
+    // The pane is on screen from the first frame, so the flag follows
+    // the screen rather than the saved value, which defaults to hidden.
+    // A flag that disagreed made the first click on Hide Outline show a
+    // pane that was already there.
+    outlineVisible_ = true;
+    [backdrop_ setHidden:NO];
 
     container_ = [[NSStackView alloc] initWithFrame:frame];
     [container_ setAutoresizingMask:NSViewWidthSizable |
@@ -779,6 +785,24 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                       outlinePane_->ActiveVisibleRow(),
                       content_->ViewportProbeOffset(),
                       [clip bounds].origin.y);
+        [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"no-outline"]) {
+        // The pane closed at the top of the page: the text should take
+        // the width the pane held.
+        NSClipView* clip = [scrollView_ contentView];
+        if (clip) {
+            [clip scrollToPoint:NSMakePoint(0.0, 0.0)];
+            [scrollView_ reflectScrolledClipView:clip];
+        }
+        [self outlineActiveRefresh:NO];
+        mac::TraceMac("qa no-outline: before pane=%.0f document=%.0f",
+                      (double)NSWidth([backdrop_ frame]),
+                      (double)NSWidth([view_ frame]));
+        [self applyOutlineVisible:NO];
+        mac::TraceMac("qa no-outline: after pane=%.0f document=%.0f clip=%.0f",
+                      (double)NSWidth([backdrop_ frame]),
+                      (double)NSWidth([view_ frame]),
+                      (double)NSWidth([clip bounds]));
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"dark"]) {
         if (sourceView_) [self OnToggleSourceView];
@@ -2011,15 +2035,17 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
 - (void)OnToggleOutline {
     outlineVisible_ = !outlineVisible_;
-    // Hiding the view takes the divider with it, so the document takes
-    // the whole width.
+    // Hiding the view takes the divider with it, and the split pane
+    // collapses to nothing, so every point the pane held goes back to
+    // the text instead of leaving a strip beside it.
     [backdrop_ setHidden:!outlineVisible_];
 
     // The width is remembered, so the pane comes back the way it was
     // left.
     if (outlineVisible_) {
-        [splitView_ setPosition:settings_.settings().outlineWidthDip
-                   ofDividerAtIndex:0];
+        CGFloat width = settings_.settings().outlineWidthDip;
+        if (width < 120.0) width = 120.0;
+        [splitView_ setPosition:width ofDividerAtIndex:0];
         [self outlineLayout];
     } else {
         const NSRect frame = [backdrop_ frame];
@@ -2027,7 +2053,24 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             settings_.settings().outlineWidthDip =
                 static_cast<float>(frame.size.width);
         }
+        [splitView_ setPosition:0.0 ofDividerAtIndex:0];
     }
+    [splitView_ adjustSubviews];
+    [self fitContentPanesToWindow];
+
+    // The viewport changed width, so the document measures itself again
+    // for the new line length. The reflow is ours, not a reader's
+    // scroll, so the outline keeps the caret's section while it lands
+    // (outline spec 16).
+    NSClipView* clip = [scrollView_ contentView];
+    if (clip && content_) {
+        const NSRect clipBounds = [clip bounds];
+        content_->SetSize(static_cast<float>(clipBounds.size.width),
+                          static_cast<float>(clipBounds.size.height));
+        content_->SetScrollOffset(static_cast<float>(clipBounds.origin.y));
+        content_->NotifyScrollChanged(true);
+    }
+
     settings_.settings().outlineVisible = outlineVisible_;
     settings_.Save();
 

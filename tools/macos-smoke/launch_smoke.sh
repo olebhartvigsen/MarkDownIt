@@ -121,7 +121,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,welcome,dark,settings" "$BIN" "$DOC" &
+    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,welcome,dark,settings" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
