@@ -943,11 +943,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             [self OpenPath:std::string(
                 [[dir stringByAppendingPathComponent:@"ai-components.svg"]
                     UTF8String])];
-            // The picture is 1820 points wide and the window is narrower,
-            // so the walk drops the level until the whole drawing fits:
-            // the capture is then comparable with a browser's.
-            const float fit =
-                (content_->ContentWidth() - 64.0f) / 1820.0f;
+            // The picture is 1820x1033 points and the window is smaller in
+            // both directions, so the walk drops the level until the whole
+            // drawing fits: the capture is then comparable with a browser's.
+            const NSRect windowVisible =
+                [[view_ enclosingScrollView] documentVisibleRect];
+            const float fitX = (windowVisible.size.width - 32.0f) / 1820.0f;
+            const float fitY = (windowVisible.size.height - 32.0f) / 1033.0f;
+            const float fit = fitX < fitY ? fitX : fitY;
             [self setZoom:(fit > 0.1f ? fit : 0.1f) quietly:YES];
             [zoomHud_ hideNow];
             const NSRect clip = [[view_ enclosingScrollView] documentVisibleRect];
