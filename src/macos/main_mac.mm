@@ -85,7 +85,14 @@ bool OpenExternalUrl(const std::string& url) {
     // The window material the pane sits on.
     NSVisualEffectView* backdrop_;
     NSSplitView* splitView_;
+    // What the reader chose for the pane, and what the window actually
+    // shows. A page without headings has nothing to list, so the pane
+    // stands down for it while the reader's choice stands (outline
+    // spec 2).
+    bool outlinePreferred_;
     bool outlineVisible_;
+    // Whether the open document has headings at all.
+    bool outlineHasHeadings_;
     mac::MacSettings settings_;
     NSWindow* window_;
     // Set when windowWillClose saved the frame, so the terminate path
@@ -452,6 +459,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // the screen rather than the saved value, which defaults to hidden.
     // A flag that disagreed made the first click on Hide Outline show a
     // pane that was already there.
+    outlinePreferred_ = true;
     outlineVisible_ = true;
     [backdrop_ setHidden:NO];
 
@@ -691,6 +699,31 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [window_ setContentSize:NSMakeSize(1024.0, 720.0)];
         [window_ center];
         [self qaScrollToTop];
+        [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"no-headings"]) {
+        // A page with no headings: the pane has nothing to list, so it
+        // stands down and the diagram takes the width.
+        // The pane is asked for first, so the hide that follows can
+        // only come from the document and not from the walk's order.
+        [self applyOutlineVisible:YES];
+        mac::TraceMac(
+            "qa no-headings: before headings=%d visible=%d document=%.0f",
+            outlineHasHeadings_ ? 1 : 0, outlineVisible_ ? 1 : 0,
+            (double)NSWidth([view_ frame]));
+
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            NSString* path =
+                [dir stringByAppendingPathComponent:@"no-headings.md"];
+            [self OpenPath:std::string([path UTF8String])];
+        }
+        NSClipView* clip = [scrollView_ contentView];
+        mac::TraceMac(
+            "qa no-headings: after headings=%d visible=%d document=%.0f clip=%.0f",
+            outlineHasHeadings_ ? 1 : 0, outlineVisible_ ? 1 : 0,
+            (double)NSWidth([view_ frame]),
+            clip ? (double)NSWidth([clip bounds]) : 0.0);
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"welcome"]) {
         // The screen without a document. The walk has opened the
@@ -1252,6 +1285,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [item setState:(app_->SelectionHasMarker() ? NSControlStateValueOn
                                                    : NSControlStateValueOff)];
         return !app_->WelcomeMode();
+    }
+    if ([item action] == @selector(toggleOutline:)) {
+        // The pane is only on offer while the document has headings.
+        [item setState:(outlineVisible_ ? NSControlStateValueOn
+                                        : NSControlStateValueOff)];
+        return outlineHasHeadings_;
     }
     if ([item action] == @selector(editMode:)) {
         // A checked item shows which mode the document is in.
@@ -1939,7 +1978,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 }
 
 - (void)applyOutlineVisible:(BOOL)visible {
-    if (visible == outlineVisible_) return;
+    if (visible == outlinePreferred_) return;
     [self OnToggleOutline];
 }
 
@@ -1955,6 +1994,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             if ([button isKindOfClass:[NSButton class]]) {
                 [button setTitle:(app_->Editing() ? @"Done" : @"Edit")];
             }
+        } else if ([identifier isEqualToString:@"MdOutline"]) {
+            // A page without headings has nothing to list, so the
+            // command stands down with the pane.
+            [item setEnabled:outlineHasHeadings_];
         } else if ([identifier isEqualToString:@"MdHighlight"]) {
             // The marker item is a real toggle button, not a plain
             // action: its pressed state reports whether the selection
@@ -2032,6 +2075,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // spec 23).
 - (void)outlinePaneRefresh {
     outlinePane_->SetDocument(&app_->GetDocument());
+    outlineHasHeadings_ = !outlinePane_->Items().empty();
+    [self applyOutlineState];
     outlinePane_->SetCaretOffset(app_->selection().Start());
     [self outlineLayout];
     if (outlinePane_->TakeListChanged()) {
@@ -2040,16 +2085,26 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [self outlineActiveRefresh:NO];
 }
 
-- (void)OnToggleOutline {
-    outlineVisible_ = !outlineVisible_;
-    // Hiding the view takes the divider with it, and the split pane
-    // collapses to nothing, so every point the pane held goes back to
-    // the text instead of leaving a strip beside it.
-    [backdrop_ setHidden:!outlineVisible_];
+// The pane the window shows: the reader's choice, and only when the
+// open document has headings to list. A page without headings, a
+// diagram or a picture has an empty outline, and a strip of nothing
+// beside it would only take width from what is on screen.
+- (void)applyOutlineState {
+    const bool show = outlinePreferred_ && outlineHasHeadings_;
+    if (show == outlineVisible_) {
+        // The pane stays as it is, but the command's enabled state
+        // follows the document either way.
+        [self toolbarSync];
+        return;
+    }
+    outlineVisible_ = show;
+    [backdrop_ setHidden:!show];
 
     // The width is remembered, so the pane comes back the way it was
-    // left.
-    if (outlineVisible_) {
+    // left, and hiding it takes the divider with it: the split pane
+    // collapses to nothing, so every point the pane held goes back to
+    // the text instead of leaving a strip beside it.
+    if (show) {
         CGFloat width = settings_.settings().outlineWidthDip;
         if (width < 120.0) width = 120.0;
         [splitView_ setPosition:width ofDividerAtIndex:0];
@@ -2078,11 +2133,18 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         content_->NotifyScrollChanged(true);
     }
 
-    settings_.settings().outlineVisible = outlineVisible_;
-    settings_.Save();
-
     [self toolbarSync];
     [view_ setNeedsDisplay:YES];
+}
+
+// The reader's command: it moves the choice, and the document decides
+// whether the pane can follow it.
+- (void)OnToggleOutline {
+    if (!outlineHasHeadings_) return;
+    outlinePreferred_ = !outlinePreferred_;
+    settings_.settings().outlineVisible = outlinePreferred_;
+    settings_.Save();
+    [self applyOutlineState];
 }
 
 - (void)OnToggleMark {
