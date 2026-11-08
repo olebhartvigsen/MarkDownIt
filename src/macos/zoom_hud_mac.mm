@@ -21,6 +21,7 @@ bool QaWalkRunning() {
 }  // namespace
 
 @implementation MdZoomHud {
+    NSView* scrim_;
     NSVisualEffectView* blur_;
     NSTextField* label_;
     NSTimer* hideTimer_;
@@ -52,6 +53,26 @@ bool QaWalkRunning() {
     [[self layer] setBorderWidth:0.8];
     [[self layer] setBorderColor:
         [[NSColor colorWithWhite:1.0 alpha:0.12] CGColor]];
+
+    // The material alone came out at a mid grey over a white page
+    // (around 148), and white digits on that are a strain to read. A
+    // translucent black scrim under it deepens the pill to the
+    // neighbourhood of 90 without making it solid: the page still shows
+    // through, blurred, at a little over half its brightness.
+    scrim_ = [[NSView alloc] initWithFrame:NSZeroRect];
+    [scrim_ setWantsLayer:YES];
+    [[scrim_ layer] setCornerRadius:10.0];
+    [[scrim_ layer] setMasksToBounds:YES];
+    [[scrim_ layer] setBackgroundColor:
+        [[NSColor colorWithWhite:0.0 alpha:0.42] CGColor]];
+    [scrim_ setTranslatesAutoresizingMaskIntoConstraints:NO];
+    [self addSubview:scrim_];
+    [NSLayoutConstraint activateConstraints:@[
+        [[scrim_ leadingAnchor] constraintEqualToAnchor:[self leadingAnchor]],
+        [[scrim_ trailingAnchor] constraintEqualToAnchor:[self trailingAnchor]],
+        [[scrim_ topAnchor] constraintEqualToAnchor:[self topAnchor]],
+        [[scrim_ bottomAnchor] constraintEqualToAnchor:[self bottomAnchor]],
+    ]];
 
     // Two layers: the system's HUD material, blended inside the window
     // so the page underneath is what shows through, then the level on

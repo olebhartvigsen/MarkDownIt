@@ -126,6 +126,11 @@ from the system's own pieces:
   switches its backdrop filter off and the pill vanishes whole. The soft
   shadow lives on the container instead, with a rounded shadow path, and
   the material clips itself.
+- A translucent black scrim at 42% sits under the material. On its own
+  the material lands at a mid grey over a white page (around 148 of 255)
+  and white digits on that are a strain to read; with the scrim the pill
+  sits near 90, and the page still shows through, blurred, at a little
+  over half its brightness.
 - The label uses the system's monospaced digit font, which keeps the
   number from shifting the pill as it counts up or down.
 - A 0.09 s fade in, a 0.85 s hold, and a 0.25 s fade out. A new level
