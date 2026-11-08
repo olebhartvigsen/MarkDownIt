@@ -9,7 +9,6 @@
 // document out the same way. Only the drawing calls differ.
 
 #include "renderer_mac.h"
-#include "crash_trace_mac.h"
 #include "blockspacing.h"
 #include "hash.h"
 #include "markers.h"
@@ -2542,23 +2541,15 @@ bool MacRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
     // direction until the layout names a position that differs.
     const int lineCount = static_cast<int>(lines.size());
     const int direction = delta > 0 ? 1 : -1;
-    static int traces = 0;
-    const bool traced = traces < 60;
-    if (traced) {
-        ++traces;
-        TraceMac("qa step: offset=%u delta=%d caretLine=%d lines=%d",
-                 offset, delta, caretLine, lineCount);
-    }
     for (int line = caretLine + delta; line >= 0 && line < lineCount;
          line += direction) {
         const LineRef& target = lines[static_cast<size_t>(line)];
         const uint32_t hit =
             HitTestPoint(desiredX, target.top + target.height * 0.5f);
-        if (traced) {
-            TraceMac("qa step line %d: top=%.1f h=%.1f hit=%u",
-                     line, (double)target.top, (double)target.height, hit);
-        }
-        if (hit == UINT32_MAX) return false;
+        // A band that draws no glyphs, a spacer the layout keeps for
+        // spacing alone, has no text position to answer with. Step past
+        // it to the next line that does.
+        if (hit == UINT32_MAX) continue;
         if (hit != offset) {
             *outOffset = hit;
             return true;
