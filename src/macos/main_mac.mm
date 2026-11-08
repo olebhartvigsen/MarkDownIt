@@ -887,6 +887,57 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                       (double)NSWidth([view_ frame]),
                       (double)NSWidth([clip bounds]));
         [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"grow"]) {
+        // The reader's report: the pane is closed, and then the
+        // window grows. The text has to take the new frame, so the
+        // trace records every frame the width could come from.
+        if (sourceView_) [self OnToggleSourceView];
+        [self applyOutlineVisible:NO];
+        [self qaScrollToTop];
+        mac::TraceMac(
+            "qa grow: before win=%.0f container=%.0f split=%.0f "
+            "scroll=%.0f clip=%.0f contentSize=%.0f document=%.0f "
+            "content=%.0f",
+            (double)NSWidth([[window_ contentView] bounds]),
+            (double)NSWidth([container_ bounds]),
+            (double)NSWidth([splitView_ frame]),
+            (double)NSWidth([scrollView_ frame]),
+            (double)NSWidth([[scrollView_ contentView] bounds]),
+            (double)[scrollView_ contentSize].width,
+            (double)NSWidth([view_ frame]),
+            (double)content_->ContentWidth());
+        [window_ setContentSize:NSMakeSize(1024.0, 720.0)];
+        [window_ center];
+        mac::TraceMac(
+            "qa grow: first win=%.0f container=%.0f split=%.0f "
+            "scroll=%.0f clip=%.0f contentSize=%.0f document=%.0f "
+            "content=%.0f",
+            (double)NSWidth([[window_ contentView] bounds]),
+            (double)NSWidth([container_ bounds]),
+            (double)NSWidth([splitView_ frame]),
+            (double)NSWidth([scrollView_ frame]),
+            (double)NSWidth([[scrollView_ contentView] bounds]),
+            (double)[scrollView_ contentSize].width,
+            (double)NSWidth([view_ frame]),
+            (double)content_->ContentWidth());
+        // A second pass on the settled frames: if this one has the
+        // right width, the first pass read a frame AppKit had not
+        // resized yet.
+        [self windowDidResize:nil];
+        mac::TraceMac(
+            "qa grow: second win=%.0f container=%.0f split=%.0f "
+            "scroll=%.0f clip=%.0f contentSize=%.0f document=%.0f "
+            "content=%.0f",
+            (double)NSWidth([[window_ contentView] bounds]),
+            (double)NSWidth([container_ bounds]),
+            (double)NSWidth([splitView_ frame]),
+            (double)NSWidth([scrollView_ frame]),
+            (double)NSWidth([[scrollView_ contentView] bounds]),
+            (double)[scrollView_ contentSize].width,
+            (double)NSWidth([view_ frame]),
+            (double)content_->ContentWidth());
+        [self qaScrollToTop];
+        [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"dark"]) {
         if (sourceView_) [self OnToggleSourceView];
         // The top of the page in the dark appearance, so the picture
