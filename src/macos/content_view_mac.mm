@@ -1041,10 +1041,14 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     }
 
     // The click takes the keyboard, so typing goes to the document
-    // without a detour through the menu bar.
+    // without a detour through the menu bar. The blink restarts here,
+    // but the page is left alone: revealing the old caret first scrolled
+    // the reader back to where the caret used to be, before the click
+    // had even been read, and the caret then landed at the old position.
     [self.window makeFirstResponder:self];
     desiredX_ = -1.0f;
-    [self caretMoved];
+    [self resetCaretBlink];
+    [self setNeedsDisplay:YES];
 
     const NSInteger clicks = [event clickCount];
     const NSEventModifierFlags flags =
@@ -1110,7 +1114,9 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
 
     content_->PlaceCaretAt(static_cast<float>(point.x),
                            static_cast<float>(point.y));
-    [self setNeedsDisplay:YES];
+    // Now that the caret is where the click landed, it is revealed: the
+    // page only moves when the new position is outside the viewport.
+    [self caretMoved];
 }
 
 // The caret blinks while the document has the keyboard focus, the

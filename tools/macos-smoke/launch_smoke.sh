@@ -279,6 +279,31 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     fi
     echo "launch smoke: a second SVG shows its own drawing"
 
+    # A click after the wheel: the caret belongs where the click landed,
+    # and the page must not move, because the reader clicked a point that
+    # was already on screen.
+    CLICK_LINE=$(grep -h "qa click-scroll:" "$QA_DIR"/crash_trace.log | tail -1 || true)
+    if [ -z "$CLICK_LINE" ]; then
+        echo "launch smoke: the click after the wheel was not measured"
+        exit 1
+    fi
+    click_field() {
+        printf '%s' "$CLICK_LINE" | grep -o "$1=[0-9]*" | head -1 | cut -d= -f2
+    }
+    CLICK_SCROLL=$(click_field scroll)
+    CLICK_CARET=$(click_field caret)
+    CLICK_DIRECT=$(click_field direct)
+    CLICK_AFTER=$(click_field scrollAfter)
+    if [ "$CLICK_CARET" != "$CLICK_DIRECT" ]; then
+        echo "launch smoke: the click put the caret at $CLICK_CARET, the page says $CLICK_DIRECT"
+        exit 1
+    fi
+    if [ "$CLICK_AFTER" != "$CLICK_SCROLL" ]; then
+        echo "launch smoke: the click scrolled the page from $CLICK_SCROLL to $CLICK_AFTER"
+        exit 1
+    fi
+    echo "launch smoke: a click after the wheel keeps the page and lands the caret"
+
     # The three everyday actions, in both views, in edit mode: that is
     # where the reader navigates, and where the arrows were dead.
     KEYS_SRC=$(grep "qa keys source:" "$LOG" | tail -1)
