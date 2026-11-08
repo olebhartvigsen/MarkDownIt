@@ -701,19 +701,26 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [self qaScrollToTop];
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"svg"]) {
-        // A standalone SVG opened as a document: the picture is the
-        // page, and there are no headings for the pane to list.
+        // The reader's own sequence: a page with headings first, so the
+        // pane is up, and then a picture, which has to stand it down.
         NSString* dir = [[window_ representedFilename]
             stringByDeletingLastPathComponent];
         if ([dir length] > 0) {
-            NSString* path = [dir stringByAppendingPathComponent:@"diagram.svg"];
-            [self OpenPath:std::string([path UTF8String])];
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"layout-showcase.md"]
+                    UTF8String])];
+            mac::TraceMac(
+                "qa svg: markdown headings=%d visible=%d hidden=%d document=%.0f",
+                outlineHasHeadings_ ? 1 : 0, outlineVisible_ ? 1 : 0,
+                [backdrop_ isHidden] ? 1 : 0, (double)NSWidth([view_ frame]));
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"diagram.svg"]
+                    UTF8String])];
+            mac::TraceMac(
+                "qa svg: picture headings=%d visible=%d hidden=%d document=%.0f",
+                outlineHasHeadings_ ? 1 : 0, outlineVisible_ ? 1 : 0,
+                [backdrop_ isHidden] ? 1 : 0, (double)NSWidth([view_ frame]));
         }
-        mac::TraceMac(
-            "qa svg: title=%s headings=%d visible=%d document=%.0f",
-            [[[window_ title] description] UTF8String],
-            outlineHasHeadings_ ? 1 : 0, outlineVisible_ ? 1 : 0,
-            (double)NSWidth([view_ frame]));
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"no-headings"]) {
         // A page with no headings: the pane has nothing to list, so it
