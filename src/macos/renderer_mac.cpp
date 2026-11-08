@@ -10,7 +10,9 @@
 
 #include "renderer_mac.h"
 #include "blockspacing.h"
+#include "crash_trace_mac.h"
 #include "markers.h"
+#include <cstdlib>
 
 #include <algorithm>
 #include <cmath>
@@ -1175,6 +1177,13 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
 void MacRenderer::PaintMarkerHighlights(float scrollOffset) {
     if (!target_ || markers_.empty()) return;
 
+    // QA only: the marker geometry, so a capture can be compared with the
+    // rectangles the renderer actually asked for.
+    static const bool traceMarks = [] {
+        const char* on = std::getenv("MARKDOWNIT_QA_MARK_TRACE");
+        return on && on[0] == '1';
+    }();
+
     // A code card and a table row paint their own background after this
     // global layer. Their markers go through PaintBlockHighlights or
     // PaintTableRowHighlights, so the wash lands above that background.
@@ -1187,6 +1196,14 @@ void MacRenderer::PaintMarkerHighlights(float scrollOffset) {
             for (const Rect& rect : RectsForRangeInBlock(
                      block, marker.start, marker.start + marker.length,
                      true)) {
+                if (traceMarks) {
+                    mac::TraceMac(
+                        "qa mark paint: start=%u len=%u blockX=%.1f "
+                        "textX=%.1f x=%.1f w=%.1f y=%.1f",
+                        marker.start, marker.length, (double)block.x,
+                        (double)TextX(block), (double)rect.x,
+                        (double)rect.width, (double)rect.y);
+                }
                 Rect drawn = rect;
                 drawn.y -= scrollOffset;
                 target_->FillRect(drawn, ToColor(palette_.markerBg));
