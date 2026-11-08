@@ -397,6 +397,11 @@ uint32_t ContentView::ViewportProbeOffset() const {
     return UINT32_MAX;
 }
 
+bool ContentView::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
+                                   uint32_t* outOffset) const {
+    return renderer_.VerticalNeighbour(offset, desiredX, delta, outOffset);
+}
+
 uint32_t ContentView::HitTestPoint(float x, float y) const {
     // The point arrives in document coordinates, because the scroll
     // view scrolls the whole view.
@@ -2049,28 +2054,37 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
         ? distance
         : (height > 0.0f ? height : 16.0f);
 
-    // One step from the line the caret is on usually lands on the next
-    // one, but not when that line is the last of its block: the step
-    // then falls in the space below the block, the hit test answers with
-    // the same line, and the key did nothing at all. Walk the probe out
-    // in small steps until the page names a different position, and
-    // stop at the first one that moves, so no line is ever skipped.
-    const float direction = up ? -1.0f : 1.0f;
-    const float limit = distance > 0.0f ? step : step * 2.5f;
-    const float stride = distance > 0.0f ? step : 4.0f;
     uint32_t target = UINT32_MAX;
-    for (float travelled = stride; travelled <= limit; travelled += stride) {
-        // The point comes back in document coordinates, the space the
-        // hit tester works in.
-        const uint32_t candidate =
-            content_->HitTestPoint(desiredX_, y + direction * travelled);
-        if (candidate == UINT32_MAX) break;
-        if (candidate != caret) {
-            target = candidate;
-            break;
+    if (distance <= 0.0f) {
+        // One line up or down, asked of the layout itself. The lines are
+        // taken in the order the page draws them, so a block's gap, an
+        // empty line and the end of the document all step the way the
+        // eye reads them. A point probe could not do this: one step from
+        // the last line of a block falls in the space below the block,
+        // and the hit test answers with the same line.
+        if (!content_->VerticalNeighbour(caret, desiredX_, up ? -1 : 1,
+                                         &target)) {
+            return;
         }
+    } else {
+        // A page is a distance, not a line: probe the point, and retry a
+        // little further out when a block gap swallows the first probe.
+        const float stride = step * 0.5f;
+        for (float travelled = stride; travelled <= step * 1.5f;
+             travelled += stride) {
+            // The point comes back in document coordinates, the space
+            // the hit tester works in.
+            const uint32_t candidate =
+                content_->HitTestPoint(desiredX_,
+                                       y + (up ? -travelled : travelled));
+            if (candidate == UINT32_MAX) break;
+            if (candidate != caret) {
+                target = candidate;
+                break;
+            }
+        }
+        if (target == UINT32_MAX) return;
     }
-    if (target == UINT32_MAX) return;
 
     [self setCaret:target extend:extend];
     [self caretMoved];

@@ -2475,6 +2475,61 @@ bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
     return false;
 }
 
+bool MacRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
+                                   uint32_t* outOffset) const {
+    if (delta == 0 || !outOffset) return false;
+
+    // Every drawn line, in the order the page draws them.
+    struct LineRef {
+        float top;
+        float height;
+    };
+    std::vector<LineRef> lines;
+    const std::vector<TextRegion> regions = TextRegions();
+    int caretLine = -1;
+    for (const TextRegion& region : regions) {
+        if (!region.lines || !region.visToSrc || region.lines->empty()) {
+            continue;
+        }
+        uint32_t vis = 0;
+        const bool holdsCaret =
+            offset >= region.visToSrc->front() &&
+            offset <= region.visToSrc->back() &&
+            VisibleAtSource(*region.visToSrc, offset, &vis);
+        float top = region.top;
+        uint32_t lineStartVis = 0;
+        for (const TextLine& line : *region.lines) {
+            uint32_t length = 0;
+            for (const GlyphRun& run : line.runs) {
+                length += static_cast<uint32_t>(run.text.size());
+            }
+            const uint32_t lineEndVis = lineStartVis + length;
+            if (holdsCaret && vis >= lineStartVis && vis <= lineEndVis) {
+                caretLine = static_cast<int>(lines.size());
+            }
+            LineRef ref;
+            ref.top = top;
+            ref.height = line.height;
+            lines.push_back(ref);
+            lineStartVis = lineEndVis;
+            top += line.height;
+        }
+    }
+    if (caretLine < 0) return false;
+
+    const int targetLine = caretLine + delta;
+    if (targetLine < 0 || targetLine >= static_cast<int>(lines.size())) {
+        return false;
+    }
+    // The point sits in the middle of the target line's band, so the hit
+    // test cannot drift into the line above or below it.
+    const LineRef& target = lines[static_cast<size_t>(targetLine)];
+    const uint32_t hit = HitTestPoint(desiredX, target.top + target.height * 0.5f);
+    if (hit == UINT32_MAX) return false;
+    *outOffset = hit;
+    return true;
+}
+
 std::vector<Rect> MacRenderer::SelectionRects(uint32_t start,
                                                uint32_t end) const {
     return RectsForRange(start, end);

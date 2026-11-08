@@ -177,6 +177,14 @@ public:
     // so the caller keeps the Word-like line selection.
     uint32_t HitTestPoint(float x, float y) const;
 
+    // The caret position on the line delta lines above (negative) or
+    // below (positive) the line the offset sits on, at the column
+    // nearest desiredX. The lines are taken in the order they are drawn,
+    // so a block's gap, an empty line and the end of the document all
+    // step the way the eye reads them. False when there is no such line.
+    bool VerticalNeighbour(uint32_t offset, float desiredX, int delta,
+                           uint32_t* outOffset) const;
+
     // Where a point lands, as a source offset, under the caret rules
     // the two platforms share.
     //

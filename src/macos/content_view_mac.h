@@ -161,6 +161,11 @@ public:
     // line selection takes over.
     uint32_t HitTestPoint(float x, float y) const;
 
+    // The position on the line delta lines above (negative) or below
+    // (positive) the caret, at the column nearest desiredX.
+    bool VerticalNeighbour(uint32_t offset, float desiredX, int delta,
+                           uint32_t* outOffset) const;
+
     // The nearest drawn position to a source offset, so a caret from
     // outside the document model never lands inside a marker.
     uint32_t NormalizeToRenderedCaret(uint32_t offset) const;
