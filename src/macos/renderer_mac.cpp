@@ -1575,6 +1575,7 @@ void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
                                      float scrollOffset) const {
     if (!target_ || !block.node) return;
 
+    bool painted = false;
     uint32_t visible = 0;
     for (const InlineBlock& child : block.node->children) {
         if (child.kind == InlineKind::Image) continue;
@@ -1622,8 +1623,17 @@ void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
             } else {
                 PaintCodeRects(rects, scrollOffset);
             }
+            painted = true;
         }
         visible += length;
+    }
+
+    // The chip hides the wash painted in the global layer: it is opaque and
+    // wider than its glyphs, so the box, not the mark, is what the reader
+    // sees. Paint this block's washes again above the chips and below the
+    // text, so a marked code span shows yellow on its own characters.
+    if (painted) {
+        PaintBlockHighlights(block, scrollOffset);
     }
 }
 

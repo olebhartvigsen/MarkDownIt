@@ -192,6 +192,12 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
             grep "qa mark:" "$LOG" | head -5
             exit 1
         fi
+        if ! grep -q 'qa mark: exact="code" start=50 end=54' \
+                "$LOG" 2>/dev/null; then
+            echo "launch smoke FAILED: a mark on inline code kept its syntax"
+            grep "qa mark:" "$LOG" | head -5
+            exit 1
+        fi
         echo "launch smoke: a mark sits on the words, not on the space" \
              "beside them"
     fi

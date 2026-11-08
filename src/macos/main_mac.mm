@@ -800,6 +800,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         app_->ToggleMarkSelection();
         app_->SetSelection(23, 31);
         app_->ToggleMarkSelection();
+        // A code span: its chip is wider than the glyphs and painted over
+        // the global wash layer, so the mark must be painted again above
+        // the chip, or it is invisible and the chip looks like the mark.
+        app_->SetSelection(48, 56);
+        app_->ToggleMarkSelection();
         const std::vector<TextMarker>& marks = app_->markers().Markers();
         for (const TextMarker& mark : marks) {
             mac::TraceMac("qa mark: exact=\"%s\" start=%u end=%u",

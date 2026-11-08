@@ -348,6 +348,16 @@ MacRenderer::AppendVisibleRangeRects walks the line's own bytes and
 stops the wash at the last drawn character. A selection keeps its
 exact range, so selecting a space still shows the space selected.
 
+A code span is the one place where the wash would disappear. The inline
+code chip is opaque and 0.4 em wider than its glyphs on each side, and
+it is painted after the page's wash layer, so a mark on a code span
+would sit invisible underneath it and the chip, padding included, would
+read as the highlight. The macOS renderer therefore paints the block's
+washes a second time above the chips and below the text
+(MacRenderer::PaintInlineCodeBg), so the mark shows yellow on the
+characters themselves while the padding stays part of the chip. The
+Windows renderer already fills its chips before the wash.
+
 ---
 
 # 11. Cross-element selections
