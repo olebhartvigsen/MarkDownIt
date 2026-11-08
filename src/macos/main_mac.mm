@@ -687,6 +687,86 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // fixture, so the recent list has a card to show.
         [self showWelcomeScreen];
         [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"wheel"]) {
+        // Injected events wait in the queue until the app dequeues them,
+        // and this state runs inside a dispatch of its own, so the queue
+        // is drained by hand after every batch.
+        void (^pump)(void) = ^{
+            for (int guard = 0; guard < 200; ++guard) {
+                NSEvent* next = [NSApp
+                    nextEventMatchingMask:NSEventMaskAny
+                                untilDate:[NSDate distantPast]
+                                   inMode:NSDefaultRunLoopMode
+                                  dequeue:YES];
+                if (!next) break;
+                [NSApp sendEvent:next];
+            }
+        };
+
+        // Real wheel events posted to the session, so AppKit routes them
+        // the way it routes a hand on a mouse. The trace carries where
+        // the document lands and whether the command wheel zoomed.
+        [window_ makeKeyAndOrderFront:nil];
+        [NSApp activateIgnoringOtherApps:YES];
+        pump();
+
+        NSClipView* clip = [scrollView_ contentView];
+        NSRect home = [clip bounds];
+        home.origin = NSMakePoint(0.0, 0.0);
+        [clip scrollToPoint:home.origin];
+        [scrollView_ reflectScrolledClipView:clip];
+        const CGFloat startClip = [clip bounds].origin.y;
+
+        NSRect frame = [window_ frame];
+        const CGFloat cx = NSMidX(frame);
+        const CGFloat cy = NSMidY(frame);
+        CGPoint screenPoint = CGPointMake(cx, CGDisplayPixelsHigh(0) - cy);
+        CGWarpMouseCursorPosition(screenPoint);
+
+        // A notched mouse wheel reports lines; a trackpad reports pixels.
+        // Both are posted, because both should pan the document.
+        struct Batch { int32_t unit; int32_t amount; const char* label; };
+        const Batch batches[] = {
+            {kCGScrollEventUnitPixel, -40, "pixels"},
+            {kCGScrollEventUnitLine, -1, "lines"},
+        };
+        for (const Batch& batch : batches) {
+            for (int k = 0; k < 5; ++k) {
+                CGEventRef ev = CGEventCreateScrollWheelEvent(
+                    NULL, static_cast<CGScrollEventUnit>(batch.unit), 1,
+                    batch.amount);
+                CGEventSetLocation(ev, screenPoint);
+                CGEventPost(kCGHIDEventTap, ev);
+                CFRelease(ev);
+                pump();
+            }
+        }
+
+        // A sideways tilt of the wheel, which standard apps pan with.
+        for (int k = 0; k < 5; ++k) {
+            CGEventRef ev = CGEventCreateScrollWheelEvent(
+                NULL, kCGScrollEventUnitPixel, 2, 0, -40);
+            CGEventSetLocation(ev, screenPoint);
+            CGEventPost(kCGHIDEventTap, ev);
+            CFRelease(ev);
+            pump();
+        }
+
+        // The command wheel is ours: it must zoom and must not scroll.
+        const CGFloat docBefore = [view_ frame].size.height;
+        for (int k = 0; k < 5; ++k) {
+            CGEventRef ev = CGEventCreateScrollWheelEvent(
+                NULL, kCGScrollEventUnitPixel, 1, -40);
+            CGEventSetFlags(ev, kCGEventFlagMaskCommand);
+            CGEventSetLocation(ev, screenPoint);
+            CGEventPost(kCGHIDEventTap, ev);
+            CFRelease(ev);
+            pump();
+        }
+        mac::TraceMac("qa wheel: start=%.1f end=%.1f x=%.1f doc=%.1f->%.1f",
+                      startClip, [clip bounds].origin.y, [clip bounds].origin.x,
+                      docBefore, [view_ frame].size.height);
+        [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"dark"]) {
         if (sourceView_) [self OnToggleSourceView];
         // The top of the page in the dark appearance, so the picture

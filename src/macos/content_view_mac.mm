@@ -678,6 +678,8 @@ static const CGFloat kPinchStepMagnification = 0.1;
     NSPoint lastDragPoint_;
     // The wheel deltas the command zoom has not stepped on yet.
     CGFloat wheelZoomAcc_;
+    // The local event monitor that takes the command zoom off the wheel.
+    id wheelMonitor_;
     // The pinch magnification the zoom has not stepped on yet.
     CGFloat pinchAcc_;
     // Told every time the zoom changes, so the window can save it.
@@ -693,6 +695,18 @@ static const CGFloat kPinchStepMagnification = 0.1;
         content_ = content;
         app_ = app;
         desiredX_ = -1.0f;
+
+        // The wheel belongs to AppKit, with one exception: the command
+        // wheel zooms. Taking it in a monitor leaves every other wheel
+        // event on the scroll view's own path.
+        __weak MdContentView* weakWheelView = self;
+        wheelMonitor_ = [NSEvent
+            addLocalMonitorForEventsMatchingMask:NSEventMaskScrollWheel
+                                        handler:^NSEvent*(NSEvent* event) {
+            MdContentView* strongSelf = weakWheelView;
+            if (!strongSelf) return event;
+            return [strongSelf monitoredZoomWheel:event];
+        }];
         dragMode_ = 0;
         lastDragPoint_ = NSMakePoint(0.0, 0.0);
 
@@ -754,10 +768,11 @@ static const CGFloat kPinchStepMagnification = 0.1;
                selector:@selector(clipChanged:)
                    name:NSViewBoundsDidChangeNotification
                  object:clip];
-    // A scrollbar drag and a trackpad gesture do not always pass through
-    // `scrollWheel:`. The scroll view's live-scroll notification is the
+    // A reader scroll arrives from the clip view, whatever produced it:
+    // a scrollbar drag, a trackpad gesture, or a wheel that AppKit
+    // handled itself. The scroll view's live-scroll notification is the
     // common path; mark it as a reader scroll so the outline's reading
-    // row moves for every kind of scroll, not only for a wheel event.
+    // row follows every kind of scroll.
     NSScrollView* scroll = [self enclosingScrollView];
     if (scroll) {
         [center addObserver:self
@@ -796,6 +811,10 @@ static const CGFloat kPinchStepMagnification = 0.1;
     [blinkTimer_ invalidate];
     [autoscrollTimer_ invalidate];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    if (wheelMonitor_) {
+        [NSEvent removeMonitor:wheelMonitor_];
+        wheelMonitor_ = nil;
+    }
 }
 
 - (void)scrollDidLiveScroll:(NSNotification*)notification {
@@ -1424,47 +1443,35 @@ static const CGFloat kPinchStepMagnification = 0.1;
 
 // The wheel with the command key zooms, with deltas that accumulate so
 // a notched mouse and a smooth trackpad step alike (zoom guideline
-// 1.6). Everything else is the scroll view's: the plain wheel scrolls,
-// shift and the wheel scroll sideways, and the scrollers follow.
-- (void)scrollWheel:(NSEvent*)event {
-    if (!content_) {
-        [super scrollWheel:event];
-        return;
-    }
+// 1.6). The monitor is what makes the zoom possible without taking the
+// wheel away from AppKit: a plain wheel event returns untouched and
+// scrolls the document through the scroll view's own path, so the
+// direction, the line step, the shift-to-sideways rule and the inertia
+// are the system's. A view that overrode scrollWheel: and called super
+// did not get that. The event reached the view and stopped there, and
+// the document never panned (measured on a runner, 2026-11-08).
+- (NSEvent*)monitoredZoomWheel:(NSEvent*)event {
+    if (!content_) return event;
+    if (event.window != self.window) return event;
 
     const NSEventModifierFlags flags =
         [event modifierFlags] & NSEventModifierFlagDeviceIndependentFlagsMask;
-    if ((flags & NSEventModifierFlagCommand) != 0) {
-        const CGFloat raw = [event scrollingDeltaY];
-        wheelZoomAcc_ += [event hasPreciseScrollingDeltas] ? raw
-                                                           : raw * 120.0;
-        const NSPoint anchor = [self convertPoint:[event locationInWindow]
-                                         fromView:nil];
-        while (wheelZoomAcc_ >= kZoomWheelUnitsPerStep) {
-            wheelZoomAcc_ -= kZoomWheelUnitsPerStep;
-            [self zoomStepAt:anchor increase:YES];
-        }
-        while (wheelZoomAcc_ <= -kZoomWheelUnitsPerStep) {
-            wheelZoomAcc_ += kZoomWheelUnitsPerStep;
-            [self zoomStepAt:anchor increase:NO];
-        }
-        return;
-    }
+    if ((flags & NSEventModifierFlagCommand) == 0) return event;
 
-    [super scrollWheel:event];
-    // The clip view posts a bounds change, but a wheel step can reach
-    // the view before that notification is delivered. Reflect the new
-    // place here so the outline's reading row moves with the document
-    // on every step, not only when the notification finally lands. A
-    // wheel is always a reader scroll, even if a layout pass left the
-    // programmatic flag set.
-    [self clipChanged:nil];
-    NSClipView* clip = [self enclosingScrollView].contentView;
-    if (clip) {
-        const NSRect clipBounds = [clip bounds];
-        content_->SetScrollOffset(static_cast<float>(clipBounds.origin.y));
-        content_->NotifyScrollChanged(false);
+    const CGFloat raw = [event scrollingDeltaY];
+    wheelZoomAcc_ += [event hasPreciseScrollingDeltas] ? raw : raw * 120.0;
+    const NSPoint anchor = [self convertPoint:[event locationInWindow]
+                                     fromView:nil];
+    while (wheelZoomAcc_ >= kZoomWheelUnitsPerStep) {
+        wheelZoomAcc_ -= kZoomWheelUnitsPerStep;
+        [self zoomStepAt:anchor increase:YES];
     }
+    while (wheelZoomAcc_ <= -kZoomWheelUnitsPerStep) {
+        wheelZoomAcc_ += kZoomWheelUnitsPerStep;
+        [self zoomStepAt:anchor increase:NO];
+    }
+    // Nil, so the event that zoomed does not also scroll the document.
+    return nil;
 }
 
 // A trackpad pinch zooms around the gesture, the way a magnifying
