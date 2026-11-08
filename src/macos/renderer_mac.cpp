@@ -10,9 +10,7 @@
 
 #include "renderer_mac.h"
 #include "blockspacing.h"
-#include "crash_trace_mac.h"
 #include "markers.h"
-#include <cstdlib>
 
 #include <algorithm>
 #include <cmath>
@@ -30,14 +28,6 @@
 
 namespace mac {
 namespace {
-
-bool WashTraceOn() {
-    static const bool on = [] {
-        const char* value = std::getenv("MARKDOWNIT_QA_MARK_TRACE");
-        return value && value[0] == '1';
-    }();
-    return on;
-}
 
 // A colour from the palette.
 Color ToColor(const ThemeColor& c) {
@@ -2528,17 +2518,6 @@ void MacRenderer::AppendVisibleRangeRects(
             // character after it, the rect OffsetToRect gives for that
             // position.
             const Rect after = engine_->OffsetToRect(line, localTo);
-            if (WashTraceOn()) {
-                std::string lineText;
-                for (const GlyphRun& run : line.runs) lineText += run.text;
-                mac::TraceMac("qa wash: lineStartVis=%u from=%u to=%u "
-                              "firstX=%.1f afterX=%.1f lineX=%.1f w=%.1f "
-                              "runs=%zu text=\"%s\"",
-                              lineStartVis, localFrom, localTo,
-                              (double)first.x, (double)after.x, (double)lineX,
-                              (double)line.width, line.runs.size(),
-                              lineText.c_str());
-            }
             Rect rect;
             rect.x = lineX + first.x;
             rect.y = lineTop;

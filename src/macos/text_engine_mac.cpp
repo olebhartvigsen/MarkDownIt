@@ -400,6 +400,11 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
     // The UTF-8 byte offset of every UTF-16 unit of the whole string.
     std::vector<uint32_t> u16ToUtf8;
     CFIndex u16Length = 0;
+    // The global map is line-relative, like the offsets its callers pass
+    // in; the per-run copies below stay relative to their own run. Mixing
+    // the two put a caret and a wash several characters to the right on
+    // any line built from more than one run.
+    uint32_t lineByteBase = 0;
 
     for (const GlyphRun& run : runs) {
         if (run.text.empty()) continue;
@@ -438,17 +443,21 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
             } else if (ch >= 0xC0) {
                 charBytes = 2;
             }
-            u16ToUtf8.push_back(static_cast<uint32_t>(byteIndex));
+            u16ToUtf8.push_back(lineByteBase +
+                               static_cast<uint32_t>(byteIndex));
             laid.u16ToUtf8.push_back(static_cast<uint32_t>(byteIndex));
             if (utf16Units == 2) {
                 // The low surrogate shares the UTF-8 offset of the high
                 // one.
-                u16ToUtf8.push_back(static_cast<uint32_t>(byteIndex));
+                u16ToUtf8.push_back(lineByteBase +
+                                   static_cast<uint32_t>(byteIndex));
                 laid.u16ToUtf8.push_back(static_cast<uint32_t>(byteIndex));
             }
             byteIndex += charBytes;
             if (byteIndex > run.text.size()) byteIndex = run.text.size();
         }
+
+        lineByteBase += static_cast<uint32_t>(run.text.size());
 
         // The text of the run is appended first, so that the attribute
         // calls below always cover text that is already in the string.
