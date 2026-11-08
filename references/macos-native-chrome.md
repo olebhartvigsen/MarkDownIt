@@ -105,6 +105,37 @@ modes are a Windows idea and stay there; on the mac the mode is
 pinned to the full width at launch, and a width value in an old
 settings file is not consulted.
 
+## The zoom level names itself while it changes
+
+Zoom has no permanent readout in the toolbar. While the level changes,
+a small overlay appears at the top centre of the window for a moment
+and says the new level in digits ("110%"), then leaves. It is built
+from the system's own pieces:
+
+- An `NSVisualEffectView` with the HUD material, blended inside the
+  window, so the page underneath is what shows through, with a 10 pt
+  corner radius. It carries the vibrant dark appearance, because a HUD
+  is dark by definition: with the light one the material went white over
+  a white page and the digits disappeared into the pill. A hairline of
+  white at 12% keeps a shape on a dark page too.
+- A label with the system's monospaced digit font, which keeps the
+  number from shifting the pill as it counts up or down.
+- A 0.09 s fade in, a 0.85 s hold, and a 0.25 s fade out. A new level
+  during the hold updates the number and restarts the wait instead of
+  fading in again, so a quick run of presses reads as one overlay.
+- `hitTest:` returns nil and it never accepts the first responder: the
+  overlay cannot be clicked and never takes the keyboard, so it can
+  never get between the reader and the text.
+
+Every zoom path already ends in the app's `zoomDidChange:` hook, so the
+overlay needs no knowledge of which control moved the level (keys, the
+toolbar, the menu or a pinch). A page swap takes it down: the overlay
+belongs to the page that was zoomed, not to the recents page.
+
+The QA walk covers it with `zoom-hud` (the level is up and names a
+higher number) and `zoom-hud-clear` (nothing is left after it has been
+taken down), and tools/macos-smoke/launch_smoke.sh asserts both.
+
 ## Rules for this window
 
 - No custom window chrome: no titlebar accessories, no painted
@@ -114,6 +145,8 @@ settings file is not consulted.
 - The document presentation follows
   osx-markdown-visual-style-guide.md as before; this file covers the
   chrome around it.
+- Transient feedback (the zoom level) is an overlay on the system HUD
+  material, never a permanent readout in the toolbar.
 - tools/check_mac_chrome.py enforces all of it in CI.
 - The Windows window keeps its ribbon and the rules in
   ribbon-menu-guidelines.md; the two files describe different
@@ -126,3 +159,5 @@ settings file is not consulted.
 - [Sidebars](https://developer.apple.com/design/human-interface-guidelines/sidebars), disclosure controls, hide and show, accent colour.
 - [The menu bar](https://developer.apple.com/design/human-interface-guidelines/the-menu-bar), where app commands live.
 - [Designing for macOS](https://developer.apple.com/design/human-interface-guidelines/designing-for-macos/), the general principles the visual style guide already cites.
+- [NSVisualEffectView](https://developer.apple.com/documentation/appkit/nsvisualeffectview), materials, blending modes and the HUD material.
+- [NSAnimationContext](https://developer.apple.com/documentation/appkit/nsanimationcontext), grouped, implicitly animated property changes.

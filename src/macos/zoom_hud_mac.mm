@@ -32,6 +32,11 @@ bool QaWalkRunning() {
     self = [super initWithFrame:frame];
     if (!self) return nil;
 
+    // A HUD is dark by definition, and it has to be: over a white page
+    // the light material gave white digits on a white pill, which is no
+    // overlay at all. The dark appearance also makes labelColor resolve
+    // to white, so the number reads over a white page and a dark one.
+    [self setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameVibrantDark]];
     // The system's HUD material, blended inside the window: the page
     // behind the overlay is what shows through it, not the desktop.
     [self setMaterial:NSVisualEffectMaterialHUDWindow];
@@ -40,6 +45,11 @@ bool QaWalkRunning() {
     [self setWantsLayer:YES];
     [[self layer] setCornerRadius:10.0];
     [[self layer] setMasksToBounds:YES];
+    // A hairline of light along the edge, so a dark HUD also has a shape
+    // on a dark page.
+    [[self layer] setBorderWidth:0.8];
+    [[self layer] setBorderColor:
+        [[NSColor colorWithWhite:1.0 alpha:0.12] CGColor]];
 
     label_ = [NSTextField labelWithString:@""];
     [label_ setFont:[NSFont monospacedDigitSystemFontOfSize:15.0
