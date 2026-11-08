@@ -689,6 +689,17 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The Settings window is a surface of its own; it stays up
         // for its picture and the walk quits with it open.
         [self OnOpenSettings];
+    } else if ([state isEqualToString:@"keys-source"]) {
+        // The three everyday actions, in the raw view. This runs last
+        // in the walk, because it types a character into the buffer.
+        if (app_->WelcomeMode()) [self hideWelcomeScreen];
+        if (!sourceView_) [self OnToggleSourceView];
+        [self qaKeysRun:"source"];
+    } else if ([state isEqualToString:@"keys-doc"]) {
+        // The same three actions in the rendered view, for comparison.
+        // The source state above left a document on screen.
+        if (sourceView_) [self OnToggleSourceView];
+        [self qaKeysRun:"doc"];
     } else if ([state isEqualToString:@"welcome-scrolled"]) {
         // The reader scrolls a page sideways, then asks for the recents
         // page. It has to fit the window and start at its own origin.
@@ -722,14 +733,6 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The raw markdown view: the renderer lays the buffer out as
         // one monospace block, its own drawing path.
         if (!sourceView_) [self OnToggleSourceView];
-    } else if ([state isEqualToString:@"keys-source"]) {
-        // The three everyday actions, in the raw view.
-        if (!sourceView_) [self OnToggleSourceView];
-        [self qaKeysRun:"source"];
-    } else if ([state isEqualToString:@"keys-doc"]) {
-        // The same three actions in the rendered view, for comparison.
-        if (sourceView_) [self OnToggleSourceView];
-        [self qaKeysRun:"doc"];
     } else if ([state isEqualToString:@"lower"]) {
         // The lower half of the page: the tasks, the quote, the table
         // and the code block, which the states above cannot reach. The
@@ -1160,6 +1163,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         lengthBefore, lengthAfter, afterTyping,
         (double)content_->scrollOffset(), (double)content_->DocumentHeight(),
         (double)content_->viewHeight());
+    // One character was typed; take it back so the walk's later
+    // captures see the document they expect.
+    app_->Undo();
+    app_->SetCaret(start);
+    [view_ caretMoved];
 }
 
 - (void)qaScrollToHeading:(int)index drop:(float)drop {
