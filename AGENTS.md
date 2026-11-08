@@ -39,6 +39,13 @@ visual hacks.
 
 ## Mandatory rules
 
+- **Branches are created only on the user's initiative.** Do NOT create a
+  local or remote branch, and do NOT push to one, unless the user has
+  explicitly asked for a branch in that session. Work is committed on the
+  current branch and, once verified, merged into main in the same session;
+  no branch is left behind. Diagnostic captures, probes and throwaway
+  instrumentation are not a reason to branch either: keep them out of the
+  repository, or ask before committing them.
 - Humanizer skill is OBLIGATORY on all generated or reviewed text for use
   outside the chat (docs, README, commits, PR text). Load with
   skill_view(name='humanizer') and follow its 34 patterns.
