@@ -930,16 +930,32 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The overlay a reader sees while zooming: it names the level,
         // and it is up when the picture is taken.
         [self setZoom:zoom::Step(zoom_, true)];
-        mac::TraceMac("qa zoom-hud: percent=%.0f showing=%d",
+        const NSRect inWindow = [zoomHud_ convertRect:[zoomHud_ bounds]
+                                               toView:nil];
+        mac::TraceMac("qa zoom-hud: percent=%.0f showing=%d "
+                      "hidden=%d alpha=%.2f frame=%.0f,%.0f,%.0f,%.0f",
                       (double)(zoom_ * 100.0f),
-                      [zoomHud_ isShowing] ? 1 : 0);
+                      [zoomHud_ isShowing] ? 1 : 0,
+                      [zoomHud_ isHidden] ? 1 : 0,
+                      (double)[zoomHud_ alphaValue],
+                      (double)inWindow.origin.x, (double)inWindow.origin.y,
+                      (double)inWindow.size.width,
+                      (double)inWindow.size.height);
     } else if ([state isEqualToString:@"zoom-hud-dark"]) {
         // The same overlay in a dark window: the material follows the
         // appearance, so the pill goes dark and the digits light.
         [self setZoom:zoom::Step(zoom_, true)];
-        mac::TraceMac("qa zoom-hud: dark percent=%.0f showing=%d",
+        const NSRect inWindow = [zoomHud_ convertRect:[zoomHud_ bounds]
+                                               toView:nil];
+        mac::TraceMac("qa zoom-hud: dark percent=%.0f showing=%d "
+                      "hidden=%d alpha=%.2f frame=%.0f,%.0f,%.0f,%.0f",
                       (double)(zoom_ * 100.0f),
-                      [zoomHud_ isShowing] ? 1 : 0);
+                      [zoomHud_ isShowing] ? 1 : 0,
+                      [zoomHud_ isHidden] ? 1 : 0,
+                      (double)[zoomHud_ alphaValue],
+                      (double)inWindow.origin.x, (double)inWindow.origin.y,
+                      (double)inWindow.size.width,
+                      (double)inWindow.size.height);
     } else if ([state isEqualToString:@"zoom-hud-clear"]) {
         // Back to the level the walk started at, then take the overlay
         // down: the rest of the walk reads the page at its normal size.
