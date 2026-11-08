@@ -236,7 +236,8 @@ public:
     // Paints the marker and search fills of a block whose own background
     // is painted after the global layer: a code card and a table row.
     // The fill goes over that background and under the block's text.
-    void PaintBlockHighlights(const LaidOutBlock& block, float scrollOffset);
+    void PaintBlockHighlights(const LaidOutBlock& block,
+                              float scrollOffset) const;
     void PaintTableRowHighlights(const LaidOutBlock& block, std::size_t row,
                                  float rowTop, float rowHeight,
                                  float scrollOffset);

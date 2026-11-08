@@ -1205,7 +1205,7 @@ void MacRenderer::PaintMarkerHighlights(float scrollOffset) {
 }
 
 void MacRenderer::PaintBlockHighlights(const LaidOutBlock& block,
-                                        float scrollOffset) {
+                                        float scrollOffset) const {
     if (!target_ || (markers_.empty() && searchMatches_.empty())) return;
 
     for (const TextMatch& marker : markers_) {
