@@ -112,13 +112,18 @@ a small overlay appears at the top centre of the window for a moment
 and says the new level in digits ("110%"), then leaves. It is built
 from the system's own pieces:
 
-- An `NSVisualEffectView` with the HUD material, blended inside the
-  window, so the page underneath is what shows through, with a 10 pt
-  corner radius. It carries the vibrant dark appearance, because a HUD
-  is dark by definition: with the light one the material went white over
-  a white page and the digits disappeared into the pill. A hairline of
-  white at 12% keeps a shape on a dark page too.
-- A label with the system's monospaced digit font, which keeps the
+- A rounded pill, 10 pt corners, with a hairline of white at 12% so it
+  also has a shape on a dark page. Inside it sit two things: an
+  `NSVisualEffectView` with the HUD material, blended inside the window
+  so the page underneath is what shows through, and the level on top of
+  it.
+- The material carries the vibrant dark appearance, because a HUD is
+  dark by definition: with the light one it went white over a white page
+  and the digits disappeared into the pill. It is also held back to 72%,
+  since the material alone is all but solid and this overlay is meant to
+  be read the page through. The digits stay plain white above it, so
+  they keep their strength while the pill stays see-through.
+- The label uses the system's monospaced digit font, which keeps the
   number from shifting the pill as it counts up or down.
 - A 0.09 s fade in, a 0.85 s hold, and a 0.25 s fade out. A new level
   during the hold updates the number and restarts the wait instead of

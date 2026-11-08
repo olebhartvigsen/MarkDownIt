@@ -21,6 +21,7 @@ bool QaWalkRunning() {
 }  // namespace
 
 @implementation MdZoomHud {
+    NSVisualEffectView* blur_;
     NSTextField* label_;
     NSTimer* hideTimer_;
     // Bumped on every show, so a fade that finishes late does not hide
@@ -32,16 +33,6 @@ bool QaWalkRunning() {
     self = [super initWithFrame:frame];
     if (!self) return nil;
 
-    // A HUD is dark by definition, and it has to be: over a white page
-    // the light material gave white digits on a white pill, which is no
-    // overlay at all. The dark appearance also makes labelColor resolve
-    // to white, so the number reads over a white page and a dark one.
-    [self setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameVibrantDark]];
-    // The system's HUD material, blended inside the window: the page
-    // behind the overlay is what shows through it, not the desktop.
-    [self setMaterial:NSVisualEffectMaterialHUDWindow];
-    [self setBlendingMode:NSVisualEffectBlendingModeWithinWindow];
-    [self setState:NSVisualEffectStateActive];
     [self setWantsLayer:YES];
     [[self layer] setCornerRadius:10.0];
     [[self layer] setMasksToBounds:YES];
@@ -51,10 +42,35 @@ bool QaWalkRunning() {
     [[self layer] setBorderColor:
         [[NSColor colorWithWhite:1.0 alpha:0.12] CGColor]];
 
+    // Two layers: the system's HUD material, blended inside the window
+    // and held back to just over two thirds, then the level itself on
+    // top. The material alone is all but solid, which is no use for an
+    // overlay the reader is meant to read the page through, and dimming
+    // the whole view would take the digits with it.
+    blur_ = [[NSVisualEffectView alloc] initWithFrame:NSZeroRect];
+    // A HUD is dark by definition, and it has to be: with the light
+    // appearance the material went white over a white page.
+    [blur_ setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameVibrantDark]];
+    [blur_ setMaterial:NSVisualEffectMaterialHUDWindow];
+    [blur_ setBlendingMode:NSVisualEffectBlendingModeWithinWindow];
+    [blur_ setState:NSVisualEffectStateActive];
+    [blur_ setAlphaValue:0.72];
+    [blur_ setTranslatesAutoresizingMaskIntoConstraints:NO];
+    [self addSubview:blur_];
+    [NSLayoutConstraint activateConstraints:@[
+        [[blur_ leadingAnchor] constraintEqualToAnchor:[self leadingAnchor]],
+        [[blur_ trailingAnchor] constraintEqualToAnchor:[self trailingAnchor]],
+        [[blur_ topAnchor] constraintEqualToAnchor:[self topAnchor]],
+        [[blur_ bottomAnchor] constraintEqualToAnchor:[self bottomAnchor]],
+    ]];
+
     label_ = [NSTextField labelWithString:@""];
     [label_ setFont:[NSFont monospacedDigitSystemFontOfSize:15.0
                                                     weight:NSFontWeightSemibold]];
-    [label_ setTextColor:[NSColor labelColor]];
+    // Plain white, not the vibrant label colour: the digits sit above the
+    // material, so they keep their strength while the pill behind them
+    // stays see-through.
+    [label_ setTextColor:[NSColor whiteColor]];
     [label_ setAlignment:NSTextAlignmentCenter];
     [label_ setTranslatesAutoresizingMaskIntoConstraints:NO];
     [self addSubview:label_];
