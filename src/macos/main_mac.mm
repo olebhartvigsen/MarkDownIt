@@ -1368,6 +1368,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)showWelcomeScreen {
     app_->SetWelcomeMode(true);
     content_->SetWelcomeFiles(settings_.recentFilesWithPreview());
+    // The screen is a page of recent files, with no headings of its
+    // own, so the pane stands down here too and the cards take the
+    // width.
+    outlineHasHeadings_ = false;
+    [self applyOutlineState];
     // The strip's document commands have nothing to act on here.
     [self toolbarSync];
 }
