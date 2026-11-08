@@ -700,6 +700,21 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [window_ center];
         [self qaScrollToTop];
         [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"svg"]) {
+        // A standalone SVG opened as a document: the picture is the
+        // page, and there are no headings for the pane to list.
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            NSString* path = [dir stringByAppendingPathComponent:@"diagram.svg"];
+            [self OpenPath:std::string([path UTF8String])];
+        }
+        mac::TraceMac(
+            "qa svg: title=%s headings=%d visible=%d document=%.0f",
+            [[[window_ title] description] UTF8String],
+            outlineHasHeadings_ ? 1 : 0, outlineVisible_ ? 1 : 0,
+            (double)NSWidth([view_ frame]));
+        [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"no-headings"]) {
         // A page with no headings: the pane has nothing to list, so it
         // stands down and the diagram takes the width.
@@ -1391,7 +1406,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     NSOpenPanel* panel = [NSOpenPanel openPanel];
     [panel setAllowsMultipleSelection:NO];
     [panel setCanChooseDirectories:NO];
-    [panel setAllowedFileTypes:@[@"md", @"markdown", @"mdown", @"mkd"]];
+    // A standalone SVG is a page image, and the renderer draws it as
+    // one, so it can be opened like a document.
+    [panel setAllowedFileTypes:@[@"md", @"markdown", @"mdown", @"mkd",
+                                 @"svg"]];
     if ([panel runModal] != NSModalResponseOK) return;
     [self OpenPath:[[panel URL] path].UTF8String];
 }

@@ -149,12 +149,6 @@ std::string UnwrapLangFence(const std::string& lang, const std::string& text) {
 }
 
 // Whether the path ends in the given extension.
-bool EndsWith(const std::string& path, const std::string& extension) {
-    if (path.size() < extension.size()) return false;
-    return path.compare(path.size() - extension.size(), extension.size(),
-                        extension) == 0;
-}
-
 }  // namespace
 
 bool App::OpenFile(const std::string& path) {
@@ -166,7 +160,14 @@ bool App::OpenFile(const std::string& path) {
 
     // A standalone SVG file is a picture, so the content is wrapped in
     // a fence, and the normal pipeline reads it as one.
-    isSvg_ = EndsWith(path, ".svg");
+    // The extension is compared in lower case, so a file saved as
+    // DIAGRAM.SVG is a picture too and not a page of one long line.
+    std::string tail = path.size() >= 4 ? path.substr(path.size() - 4)
+                                        : std::string();
+    for (char& c : tail) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    }
+    isSvg_ = tail == ".svg";
     svgWrapped_ = false;
     if (isSvg_ && !HasLangFence(text, "svg")) {
         text = WrapLangFence("svg", text);

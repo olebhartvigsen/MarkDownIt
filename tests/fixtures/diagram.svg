@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="430" height="150" viewBox="0 0 430 150">
+  <rect x="12" y="45" width="140" height="60" rx="10" fill="#e8f0fe" stroke="#1a73e8" stroke-width="2"/>
+  <text x="82" y="80" text-anchor="middle" font-family="Helvetica" font-size="16" fill="#1a73e8">Ansøgning</text>
+  <path d="M156 75 H 214" stroke="#1a73e8" stroke-width="2" fill="none"/>
+  <path d="M214 75 l-9 -5 v10 z" fill="#1a73e8"/>
+  <rect x="218" y="45" width="150" height="60" rx="10" fill="#e6f4ea" stroke="#137333" stroke-width="2"/>
+  <text x="293" y="80" text-anchor="middle" font-family="Helvetica" font-size="16" fill="#137333">Bedømmelse</text>
+</svg>
