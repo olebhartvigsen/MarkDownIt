@@ -750,9 +750,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [scroll reflectScrolledClipView:clip];
         const float scrollBefore = content_->scrollOffset();
 
+        // The click a reader makes: the middle of the visible page, not
+        // a point in the document that the wheel scrolled past.
+        const CGFloat clipHeight = [clip bounds].size.height;
         const NSPoint inView =
             NSMakePoint(static_cast<CGFloat>(view_.bounds.size.width * 0.5f),
-                        300.0);
+                        static_cast<CGFloat>(scrollBefore + clipHeight * 0.5f));
         const NSPoint inWindow = [view_ convertPoint:inView toView:nil];
         NSEvent* click = [NSEvent mouseEventWithType:NSEventTypeLeftMouseDown
                                             location:inWindow
@@ -771,9 +774,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             static_cast<float>(inView.x),
             static_cast<float>(inView.y + scrollBefore));
         mac::TraceMac(
-            "qa click-scroll: scroll=%.0f windowY=%.0f caret=%u direct=%u "
-            "scrolled=%u scrollAfter=%.0f",
+            "qa click-scroll: scroll=%.0f flipped=%d clickViewY=%.0f "
+            "windowY=%.0f caret=%u direct=%u scrolled=%u scrollAfter=%.0f",
             static_cast<double>(scrollBefore),
+            [view_ isFlipped] ? 1 : 0,
+            static_cast<double>(inView.y),
             static_cast<double>([[window_ contentView] convertPoint:inWindow
                                                            fromView:nil].y),
             caret, direct, scrolled, static_cast<double>(content_->scrollOffset()));
