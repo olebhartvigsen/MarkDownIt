@@ -126,7 +126,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     seen=" "
     waited=0
     while [ "$waited" -lt 240 ]; do
-        for name in doc wheel find edit outline source lower end tail tail2 narrow wide welcome dark settings; do
+        for name in doc wheel find edit outline source lower end tail tail2 narrow wide no-outline welcome dark settings; do
             case "$seen" in *" $name "*) continue ;; esac
             if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
                 sleep 0.6
