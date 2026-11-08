@@ -121,12 +121,12 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,mark,welcome,dark,settings" "$BIN" "$DOC" &
+    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,mark,welcome,dark,settings" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
     while [ "$waited" -lt 240 ]; do
-        for name in doc wheel find edit outline source lower end tail tail2 narrow wide no-outline grow no-headings svg mark welcome dark settings; do
+        for name in doc wheel find edit outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap mark welcome dark settings; do
             case "$seen" in *" $name "*) continue ;; esac
             if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
                 sleep 0.6
@@ -201,6 +201,20 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         echo "launch smoke: a mark sits on the words, not on the space" \
              "beside them"
     fi
+    # The second picture opened after another one must look like the
+    # second picture. The parsed drawing used to be keyed by the block's
+    # offset alone, and a standalone SVG sits at the same offset in every
+    # file, so a swap quietly kept the first drawing.
+    if [ -f "$QA_DIR/svg-fresh.png" ] && [ -f "$QA_DIR/svg-swap.png" ]; then
+        if cmp -s "$QA_DIR/svg-fresh.png" "$QA_DIR/svg-swap.png"; then
+            echo "launch smoke: a second SVG shows its own drawing"
+        else
+            echo "launch smoke FAILED: the swapped SVG kept the first drawing"
+            grep "qa svg:" "$LOG" | tail -4
+            exit 1
+        fi
+    fi
+
     # Keep the app's trace with the captures, so the artifact carries
     # everything the run said.
     if [ -f "$LOG" ]; then

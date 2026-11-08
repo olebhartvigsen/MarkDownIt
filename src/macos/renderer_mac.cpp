@@ -29,6 +29,20 @@
 namespace mac {
 namespace {
 
+// FNV-1a over the code points of a fence's text. Two files that say the
+// same thing may share the parsed drawing; two that differ may not.
+uint64_t HashUtf32(const std::u32string& text) {
+    uint64_t hash = 1469598103934665603ULL;
+    for (char32_t ch : text) {
+        const uint32_t code = static_cast<uint32_t>(ch);
+        for (int shift = 0; shift < 32; shift += 8) {
+            hash ^= static_cast<uint64_t>((code >> shift) & 0xFFu);
+            hash *= 1099511628211ULL;
+        }
+    }
+    return hash;
+}
+
 // A colour from the palette.
 Color ToColor(const ThemeColor& c) {
     Color out;
@@ -665,18 +679,28 @@ float MacRenderer::EffectivePadX(float widthDip) const {
 }
 
 const SvgDoc* MacRenderer::GetSvgDoc(const Node& node) {
-    // The document is read once, and it is kept until the document
-    // changes.
-    for (const auto& entry : svgDocs_) {
-        if (entry.first == node.srcOffset) return &entry.second;
+    // The document is read once per block content, and reused while the
+    // same block says the same thing.
+    const uint64_t rawHash = HashUtf32(node.raw);
+    for (const SvgEntry& entry : svgDocs_) {
+        if (entry.srcOffset == node.srcOffset && entry.rawHash == rawHash) {
+            return &entry.doc;
+        }
     }
 
     SvgDoc doc;
     // A fenced block keeps its text in raw, the way the Windows draw
     // reads it; the inline children are empty for a fence.
     if (!doc.Load(Utf32ToUtf8(node.raw))) return nullptr;
-    svgDocs_.emplace_back(node.srcOffset, std::move(doc));
-    return &svgDocs_.back().second;
+    // A reader who opens a hundred documents should not keep a hundred
+    // drawings alive.
+    if (svgDocs_.size() >= 32) svgDocs_.clear();
+    SvgEntry entry;
+    entry.srcOffset = node.srcOffset;
+    entry.rawHash = rawHash;
+    entry.doc = std::move(doc);
+    svgDocs_.push_back(std::move(entry));
+    return &svgDocs_.back().doc;
 }
 
 float MacRenderer::ChargeForImages(LaidOutBlock* block) {

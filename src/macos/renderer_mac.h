@@ -491,8 +491,17 @@ private:
     std::vector<TextMatch> searchMatches_;
     std::vector<TextMatch> markers_;
 
-    // The parsed SVG documents, one for each block that holds one.
-    std::vector<std::pair<uint32_t, SvgDoc>> svgDocs_;
+    // The parsed SVG documents, one for each block that holds one. The
+    // key is where the block sits *and* what it says: a standalone SVG
+    // file is wrapped in a fence that starts at the same offset every
+    // time, so offset alone let a second file show the first one's
+    // drawing.
+    struct SvgEntry {
+        uint32_t srcOffset = 0;
+        uint64_t rawHash = 0;
+        SvgDoc doc;
+    };
+    std::vector<SvgEntry> svgDocs_;
 
     // The SVG document of a block, which is read the first time the
     // block is drawn.

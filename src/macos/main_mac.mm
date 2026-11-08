@@ -756,6 +756,36 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                 [backdrop_ isHidden] ? 1 : 0, (double)NSWidth([view_ frame]));
         }
         [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"svg-fresh"]) {
+        // A second picture, opened as the very first document: the
+        // reference for the swap state below.
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"two-boxes.svg"]
+                    UTF8String])];
+            mac::TraceMac("qa svg: fresh file=%s",
+                          [[[window_ representedFilename] lastPathComponent]
+                              UTF8String]);
+        }
+        [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"svg-swap"]) {
+        // One picture, then another. Only the second may show.
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"diagram.svg"]
+                    UTF8String])];
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"two-boxes.svg"]
+                    UTF8String])];
+            mac::TraceMac("qa svg: swap file=%s",
+                          [[[window_ representedFilename] lastPathComponent]
+                              UTF8String]);
+        }
+        [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"no-headings"]) {
         // A page with no headings: the pane has nothing to list, so it
         // stands down and the diagram takes the width.

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 180" width="640" height="180">
+  <rect x="8" y="8" width="300" height="164" rx="10" fill="#eef4ff" stroke="#2f5fd0" stroke-width="3"/>
+  <text x="158" y="104" font-family="Helvetica" font-size="34" text-anchor="middle" fill="#1b3f96">Alpha</text>
+  <rect x="332" y="8" width="300" height="164" rx="10" fill="#fff4e6" stroke="#c46a00" stroke-width="3"/>
+  <text x="482" y="104" font-family="Helvetica" font-size="34" text-anchor="middle" fill="#8a4a00">Beta</text>
+</svg>
