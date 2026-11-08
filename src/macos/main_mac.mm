@@ -1115,16 +1115,16 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     app_->SetCaret(norm);
     const uint32_t caretBefore = app_->selection().active.offset;
     {
-        const std::vector<LaidOutBlock>& blocks = content_->renderer().blocks();
+        const std::vector<mac::LaidOutBlock>& blocks = content_->renderer().blocks();
         mac::TraceMac("qa keys start: raw=%u norm=%u blocks=%zu lines=%zu",
                       start, norm, blocks.size(),
                       blocks.empty() ? 0 : blocks.front().lines.size());
         for (size_t i = 0; i < blocks.size() && i < 1; ++i) {
-            const LaidOutBlock& b = blocks[i];
+            const mac::LaidOutBlock& b = blocks[i];
             for (size_t j = 0; j < b.lines.size() && j < 4; ++j) {
-                const TextLine& line = b.lines[j];
+                const mac::TextLine& line = b.lines[j];
                 std::string preview;
-                for (const GlyphRun& run : line.runs) preview += run.text;
+                for (const mac::GlyphRun& run : line.runs) preview += run.text;
                 if (preview.size() > 44) preview = preview.substr(0, 44);
                 mac::TraceMac("qa keys line %zu: h=%.1f vis0=%u runs=%zu \"%s\"",
                               j, (double)line.height,
