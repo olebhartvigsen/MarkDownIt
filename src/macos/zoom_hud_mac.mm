@@ -35,26 +35,36 @@ bool QaWalkRunning() {
 
     [self setWantsLayer:YES];
     [[self layer] setCornerRadius:10.0];
-    [[self layer] setMasksToBounds:YES];
-    // A hairline of light along the edge, so a dark HUD also has a shape
-    // on a dark page.
+    // The shadow has to survive, so the container does not clip: the
+    // material clips itself instead, and the shadow follows a path of
+    // its own. Without it a light HUD has no edge at all on a white page.
+    [[self layer] setMasksToBounds:NO];
+    [[self layer] setShadowColor:[[NSColor blackColor] CGColor]];
+    [[self layer] setShadowOpacity:0.22];
+    [[self layer] setShadowRadius:7.0];
+    [[self layer] setShadowOffset:CGSizeMake(0.0, -2.0)];
     [[self layer] setBorderWidth:0.8];
     [[self layer] setBorderColor:
         [[NSColor colorWithWhite:1.0 alpha:0.12] CGColor]];
 
     // Two layers: the system's HUD material, blended inside the window
-    // and held back to just over two thirds, then the level itself on
-    // top. The material alone is all but solid, which is no use for an
-    // overlay the reader is meant to read the page through, and dimming
-    // the whole view would take the digits with it.
+    // so the page underneath is what shows through, then the level on
+    // top of it. The material follows the system appearance (light pill
+    // in light mode, dark in dark mode, as Apple's own HUDs do), which
+    // is also why the digits sit above it and take the dynamic label
+    // colour: inside the effect view the vibrancy would pick a colour
+    // for the material's ideal surface rather than the one on screen.
+    //
+    // The material must stay fully opaque as a layer: dimming an
+    // NSVisualEffectView's alpha switches the backdrop filter off, and
+    // the whole pill disappears.
     blur_ = [[NSVisualEffectView alloc] initWithFrame:NSZeroRect];
-    // A HUD is dark by definition, and it has to be: with the light
-    // appearance the material went white over a white page.
-    [blur_ setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameVibrantDark]];
     [blur_ setMaterial:NSVisualEffectMaterialHUDWindow];
     [blur_ setBlendingMode:NSVisualEffectBlendingModeWithinWindow];
     [blur_ setState:NSVisualEffectStateActive];
-    [blur_ setAlphaValue:0.72];
+    [blur_ setWantsLayer:YES];
+    [[blur_ layer] setCornerRadius:10.0];
+    [[blur_ layer] setMasksToBounds:YES];
     [blur_ setTranslatesAutoresizingMaskIntoConstraints:NO];
     [self addSubview:blur_];
     [NSLayoutConstraint activateConstraints:@[
@@ -67,10 +77,10 @@ bool QaWalkRunning() {
     label_ = [NSTextField labelWithString:@""];
     [label_ setFont:[NSFont monospacedDigitSystemFontOfSize:15.0
                                                     weight:NSFontWeightSemibold]];
-    // Plain white, not the vibrant label colour: the digits sit above the
-    // material, so they keep their strength while the pill behind them
-    // stays see-through.
-    [label_ setTextColor:[NSColor whiteColor]];
+    // The dynamic label colour, resolved against the window's
+    // appearance, not the material's: dark digits on a light pill and
+    // light ones on a dark pill, without a colour of our own.
+    [label_ setTextColor:[NSColor labelColor]];
     [label_ setAlignment:NSTextAlignmentCenter];
     [label_ setTranslatesAutoresizingMaskIntoConstraints:NO];
     [self addSubview:label_];
@@ -103,6 +113,14 @@ bool QaWalkRunning() {
 
 - (BOOL)acceptsFirstResponder {
     return NO;
+}
+
+- (void)layout {
+    [super layout];
+    // A path, not a computed shadow: the container is small and the
+    // shadow has to follow the rounded shape exactly.
+    [[self layer] setShadowPath:CGPathCreateWithRoundedRect(
+        [self bounds], 10.0, 10.0, nullptr)];
 }
 
 - (BOOL)isShowing {

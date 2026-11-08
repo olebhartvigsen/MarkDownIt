@@ -117,12 +117,16 @@ from the system's own pieces:
   `NSVisualEffectView` with the HUD material, blended inside the window
   so the page underneath is what shows through, and the level on top of
   it.
-- The material carries the vibrant dark appearance, because a HUD is
-  dark by definition: with the light one it went white over a white page
-  and the digits disappeared into the pill. It is also held back to 72%,
-  since the material alone is all but solid and this overlay is meant to
-  be read the page through. The digits stay plain white above it, so
-  they keep their strength while the pill stays see-through.
+- The material follows the system appearance, as Apple's own HUDs do:
+  a light translucent pill with dark digits in light mode, a dark one
+  with light digits in dark mode. The digits sit above the material and
+  take the dynamic label colour, because inside an effect view the
+  vibrancy picks a colour for the material's ideal surface rather than
+  the one on screen.
+- The effect view must keep alpha 1: dimming an `NSVisualEffectView`
+  switches its backdrop filter off and the pill vanishes whole. The soft
+  shadow lives on the container instead, with a rounded shadow path, and
+  the material clips itself.
 - The label uses the system's monospaced digit font, which keeps the
   number from shifting the pill as it counts up or down.
 - A 0.09 s fade in, a 0.85 s hold, and a 0.25 s fade out. A new level
