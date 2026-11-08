@@ -1244,7 +1244,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
 - (void)qaKeysRun:(const char*)label {
     const std::string& text = app_->buffer().Text();
-    uint32_t start = static_cast<uint32_t>(text.find("## Lists and tasks"));
+    // The first paragraph of the showcase: nothing hidden in front of it,
+    // so the raw and the rendered caret start from the same byte and the
+    // two views' moves can be compared.
+    uint32_t start =
+        static_cast<uint32_t>(text.find("One document with every"));
     if (start == std::string::npos) start = 0;
     // The rendered view hides Markdown syntax, so a raw offset may sit
     // inside bytes that are not drawn; the caret goes to the nearest
@@ -1312,6 +1316,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     const uint32_t afterRight = app_->selection().active.offset;
     [self qaKeyPress:125 function:NSDownArrowFunctionKey];
     const uint32_t afterDown = app_->selection().active.offset;
+    [self qaKeyPress:125 function:NSDownArrowFunctionKey];
+    const uint32_t afterDown2 = app_->selection().active.offset;
+    [self qaKeyPress:126 function:NSUpArrowFunctionKey];
+    const uint32_t afterUp = app_->selection().active.offset;
     const uint32_t lengthBefore = static_cast<uint32_t>(text.size());
     // Typing, the way the reader types.
     [view_ insertText:@"Z"];
@@ -1320,11 +1328,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     app_->SetCaret(lengthAfter);
     [view_ caretMoved];
     mac::TraceMac(
-        "qa keys %s: editing=%d caret=%u right=+%d right_to=%u down=%u "
+        "qa keys %s: editing=%d caret=%u right=%u down=%u down2=%u up=%u "
         "typed_len=%u->%u caret_after_type=%u scroll=%.0f height=%.0f "
         "view=%.0f",
-        label, app_->Editing() ? 1 : 0, caretBefore,
-        (int)(afterRight - caretBefore), afterRight, afterDown,
+        label, app_->Editing() ? 1 : 0, caretBefore, afterRight, afterDown,
+        afterDown2, afterUp,
         lengthBefore, lengthAfter, afterTyping,
         (double)content_->scrollOffset(), (double)content_->DocumentHeight(),
         (double)content_->viewHeight());

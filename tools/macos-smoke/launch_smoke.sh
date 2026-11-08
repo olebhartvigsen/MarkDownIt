@@ -279,10 +279,8 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     fi
     echo "launch smoke: a second SVG shows its own drawing"
 
-    # The three everyday actions, in both views. The rendered view may
-    # walk over hidden syntax, so its steps are checked as "at least as
-    # far as the press count"; the source view draws every byte, so its
-    # steps are exact.
+    # The three everyday actions, in both views, in edit mode: that is
+    # where the reader navigates, and where the arrows were dead.
     KEYS_SRC=$(grep "qa keys source:" "$LOG" | tail -1)
     KEYS_DOC=$(grep "qa keys doc:" "$LOG" | tail -1)
     if [ -z "$KEYS_SRC" ] || [ -z "$KEYS_DOC" ]; then
@@ -290,52 +288,79 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         grep "qa keys" "$LOG" | head -6
         exit 1
     fi
-    SRC_NEXT=$(sed -n 's/.*qa keys rect: ok=1 .* next_line=\([0-9]*\).*/\1/p' \
-        "$LOG" | sed -n '1p')
-    SRC_RIGHT=$(echo "$KEYS_SRC" | sed 's/.*right=+\([0-9]*\).*/\1/')
-    SRC_CARET=$(echo "$KEYS_SRC" | sed 's/.*caret=\([0-9]*\).*/\1/')
-    SRC_DOWN=$(echo "$KEYS_SRC" | sed 's/.*down=\([0-9]*\).*/\1/')
-    SRC_LEN=$(echo "$KEYS_SRC" | sed 's/.*typed_len=\([0-9]*\)->\([0-9]*\).*/\1 \2/')
-    SRC_AFTER=$(echo "$KEYS_SRC" | sed 's/.*caret_after_type=\([0-9]*\).*/\1/')
-    SRC_SCROLL=$(echo "$KEYS_SRC" | sed 's/.*scroll=\([0-9]*\).*/\1/')
-    SRC_HEIGHT=$(echo "$KEYS_SRC" | sed 's/.*height=\([0-9]*\).*/\1/')
-    SRC_VIEW=$(echo "$KEYS_SRC" | sed 's/.*view=\([0-9]*\).*/\1/')
-    DOC_RIGHT=$(echo "$KEYS_DOC" | sed 's/.*right=+\([0-9]*\).*/\1/')
-    DOC_CARET=$(echo "$KEYS_DOC" | sed 's/.*caret=\([0-9]*\).*/\1/')
-    DOC_RIGHT_TO=$(echo "$KEYS_DOC" | sed 's/.*right_to=\([0-9]*\).*/\1/')
-    DOC_DOWN=$(echo "$KEYS_DOC" | sed 's/.*down=\([0-9]*\).*/\1/')
-    if [ "$SRC_RIGHT" != "5" ]; then
-        echo "launch smoke FAILED: five rights in the source view moved $SRC_RIGHT"
-        echo "$KEYS_SRC"
-        exit 1
-    fi
-    # Down lands on the line below, in the column the arrows left the
-    # caret in, so the offset sits inside that line and not before it.
-    if [ -z "$SRC_NEXT" ] || [ "$SRC_DOWN" -lt "$SRC_NEXT" ] || \
-            [ "$SRC_DOWN" -gt "$(( SRC_NEXT + 120 ))" ]; then
-        echo "launch smoke FAILED: down in the source view skipped a line"
-        grep "qa keys rect" "$LOG" | tail -2
-        echo "$KEYS_SRC"
-        exit 1
-    fi
-    set -- $SRC_LEN
-    if [ "$2" != "$(( $1 + 1 ))" ] || [ "$SRC_AFTER" != "$(( SRC_DOWN + 1 ))" ]; then
-        echo "launch smoke FAILED: typing in the source view went nowhere"
-        echo "$KEYS_SRC"
-        exit 1
-    fi
+
+    keys_field() {  # $1 = trace line, $2 = field name
+        printf '%s' "$1" | grep -o "$2=[0-9]*" | head -1 | cut -d= -f2
+    }
+
+    for pair in "source:$KEYS_SRC" "doc:$KEYS_DOC"; do
+        NAME=${pair%%:*}
+        LINE=${pair#*:}
+        EDITING=$(keys_field "$LINE" editing)
+        CARET=$(keys_field "$LINE" caret)
+        RIGHT=$(keys_field "$LINE" right)
+        DOWN=$(keys_field "$LINE" down)
+        DOWN2=$(keys_field "$LINE" down2)
+        UP=$(keys_field "$LINE" up)
+        AFTER=$(keys_field "$LINE" caret_after_type)
+        LEN=$(printf '%s' "$LINE" | grep -o "typed_len=[0-9]*->[0-9]*" \
+            | cut -d= -f2)
+        if [ "$EDITING" != "1" ]; then
+            echo "launch smoke FAILED: the $NAME keys were not measured in edit mode"
+            echo "$LINE"
+            exit 1
+        fi
+        # Five presses move five graphemes; the anchored paragraph has
+        # nothing hidden in front of it, so both views move exactly five
+        # bytes.
+        if [ "$RIGHT" != "$(( CARET + 5 ))" ]; then
+            echo "launch smoke FAILED: five rights in the $NAME view went" \
+                 "from $CARET to $RIGHT"
+            echo "$LINE"
+            exit 1
+        fi
+        # Down lands on the next visual line: below the caret and no
+        # further than a long line away.
+        if [ "$DOWN" -le "$CARET" ] || [ "$DOWN" -gt "$(( CARET + 200 ))" ]; then
+            echo "launch smoke FAILED: down in the $NAME view did not reach" \
+                 "the line below ($CARET -> $DOWN)"
+            grep "qa keys rect" "$LOG" | tail -2
+            echo "$LINE"
+            exit 1
+        fi
+        # A second Down keeps going, and Up comes back.
+        if [ "$DOWN2" -le "$DOWN" ]; then
+            echo "launch smoke FAILED: a second down in the $NAME view stopped" \
+                 "($DOWN -> $DOWN2)"
+            echo "$LINE"
+            exit 1
+        fi
+        if [ "$UP" -ge "$DOWN2" ] || [ "$UP" -lt "$DOWN" ]; then
+            echo "launch smoke FAILED: up in the $NAME view did not go back" \
+                 "($DOWN2 -> $UP)"
+            echo "$LINE"
+            exit 1
+        fi
+        # One typed character is one byte, and the caret follows it.
+        FIRST=$(printf '%s' "$LEN" | cut -d- -f1)
+        LAST=$(printf '%s' "$LEN" | sed 's/.*>//')
+        if [ "$LAST" != "$(( FIRST + 1 ))" ] || [ "$AFTER" != "$(( UP + 1 ))" ]; then
+            echo "launch smoke FAILED: typing in the $NAME view went nowhere" \
+                 "($LEN, caret $UP -> $AFTER)"
+            echo "$LINE"
+            exit 1
+        fi
+        echo "launch smoke: $NAME edit: caret $CARET, right $RIGHT, down" \
+             "$DOWN then $DOWN2, up $UP, typed at $AFTER"
+    done
+    SRC_SCROLL=$(keys_field "$KEYS_SRC" scroll)
+    SRC_HEIGHT=$(keys_field "$KEYS_SRC" height)
+    SRC_VIEW=$(keys_field "$KEYS_SRC" view)
     # The caret reveal keeps a margin under the last line, so the place
     # lands near the foot of the page rather than exactly on it.
     if [ "$SRC_SCROLL" -lt "$(( (SRC_HEIGHT - SRC_VIEW) * 9 / 10 ))" ]; then
         echo "launch smoke FAILED: the source view did not scroll to the caret"
         echo "$KEYS_SRC"
-        exit 1
-    fi
-    # In the rendered view the step may land on a position the heading
-    # shares with the blank line under it, so only movement is required.
-    if [ "$DOC_RIGHT" -lt 5 ] || [ "$DOC_DOWN" -le "$DOC_CARET" ]; then
-        echo "launch smoke FAILED: the rendered view's keys did not move"
-        echo "$KEYS_DOC"
         exit 1
     fi
     echo "launch smoke: the arrows, the scroll and typing behave in both views"
