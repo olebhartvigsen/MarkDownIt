@@ -2007,8 +2007,12 @@ bool MacRenderer::PointToOffset(float x, float y, uint32_t* outOffset) const {
                 : (y > lineBottom ? y - lineBottom : 0.0f);
             const bool inBand = distance == 0.0f;
             const int score = (inBand ? 2 : 0) + (inX ? 1 : 0);
+            // Ties go to the line below: a point between two bands is
+            // on its way down the page, so a Down key or a click under a
+            // heading lands on the next line instead of staying on the
+            // one above, where the move would go nowhere.
             if (score > bestScore ||
-                (score == bestScore && distance < bestDistance)) {
+                (score == bestScore && distance <= bestDistance)) {
                 bestScore = score;
                 bestDistance = distance;
                 bestRegion = r;

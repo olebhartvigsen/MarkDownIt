@@ -1184,9 +1184,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     app_->SetCaret(lengthAfter);
     [view_ caretMoved];
     mac::TraceMac(
-        "qa keys %s: caret=%u right=+%d down=%u typed_len=%u->%u "
-        "caret_after_type=%u scroll=%.0f height=%.0f view=%.0f",
-        label, caretBefore, (int)(afterRight - caretBefore), afterDown,
+        "qa keys %s: caret=%u right=+%d right_to=%u down=%u "
+        "typed_len=%u->%u caret_after_type=%u scroll=%.0f height=%.0f "
+        "view=%.0f",
+        label, caretBefore, (int)(afterRight - caretBefore), afterRight,
+        afterDown,
         lengthBefore, lengthAfter, afterTyping,
         (double)content_->scrollOffset(), (double)content_->DocumentHeight(),
         (double)content_->viewHeight());

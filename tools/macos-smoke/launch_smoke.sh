@@ -256,6 +256,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     SRC_VIEW=$(echo "$KEYS_SRC" | sed 's/.*view=\([0-9]*\).*/\1/')
     DOC_RIGHT=$(echo "$KEYS_DOC" | sed 's/.*right=+\([0-9]*\).*/\1/')
     DOC_CARET=$(echo "$KEYS_DOC" | sed 's/.*caret=\([0-9]*\).*/\1/')
+    DOC_RIGHT_TO=$(echo "$KEYS_DOC" | sed 's/.*right_to=\([0-9]*\).*/\1/')
     DOC_DOWN=$(echo "$KEYS_DOC" | sed 's/.*down=\([0-9]*\).*/\1/')
     if [ "$SRC_RIGHT" != "5" ]; then
         echo "launch smoke FAILED: five rights in the source view moved $SRC_RIGHT"
@@ -281,7 +282,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         echo "$KEYS_SRC"
         exit 1
     fi
-    if [ "$DOC_RIGHT" -lt 5 ] || [ "$DOC_DOWN" -le "$DOC_CARET" ]; then
+    if [ "$DOC_RIGHT" -lt 5 ] || [ "$DOC_DOWN" -le "$DOC_RIGHT_TO" ]; then
         echo "launch smoke FAILED: the rendered view's keys did not move"
         echo "$KEYS_DOC"
         exit 1
