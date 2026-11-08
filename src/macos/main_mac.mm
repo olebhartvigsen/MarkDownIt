@@ -688,6 +688,29 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The Settings window is a surface of its own; it stays up
         // for its picture and the walk quits with it open.
         [self OnOpenSettings];
+    } else if ([state isEqualToString:@"welcome-scrolled"]) {
+        // The reader scrolls a page sideways, then asks for the recents
+        // page. It has to fit the window and start at its own origin.
+        NSClipView* clip = [[view_ enclosingScrollView] contentView];
+        [view_ scrollToDocumentPoint:NSMakePoint(320.0, 0.0)];
+        if ([clip bounds].origin.x < 1.0) {
+            // Nothing to scroll where the page fits: widen the document
+            // view the way a wide drawing leaves it, and try again.
+            NSSize wide = [clip bounds].size;
+            wide.width += 480.0;
+            [view_ setFrameSize:wide];
+            [view_ scrollToDocumentPoint:NSMakePoint(320.0, 0.0)];
+        }
+        mac::TraceMac(
+            "qa welcome-scrolled: before offset=%.0f frame=%.0f clip=%.0f",
+            (double)[clip bounds].origin.x, (double)NSWidth([view_ frame]),
+            (double)NSWidth([clip bounds]));
+        [self showRecents:nil];
+        mac::TraceMac(
+            "qa welcome-scrolled: after offset=%.0f frame=%.0f clip=%.0f",
+            (double)[clip bounds].origin.x, (double)NSWidth([view_ frame]),
+            (double)NSWidth([clip bounds]));
+        [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"source"]) {
         // The raw markdown view: the renderer lays the buffer out as
         // one monospace block, its own drawing path.
@@ -1615,6 +1638,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)showWelcomeScreen {
     app_->SetWelcomeMode(true);
     content_->SetWelcomeFiles(settings_.recentFilesWithPreview());
+    // The recents page is one viewport. A document that was scrolled
+    // sideways leaves the document view wider than the clip, and the
+    // page would be drawn shifted left, clipped, with a scroller under
+    // it. Put the frame back to the viewport and the origin back to 0.
+    [view_ syncFrameToContent];
     // The screen is a page of recent files, with no headings of its
     // own, so the pane stands down here too and the cards take the
     // width.
@@ -1627,6 +1655,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // Hides the welcome screen, because a document is open now.
 - (void)hideWelcomeScreen {
     app_->SetWelcomeMode(false);
+    // The document is open again, so its own size takes over.
+    [view_ syncFrameToContent];
     [self toolbarSync];
 }
 

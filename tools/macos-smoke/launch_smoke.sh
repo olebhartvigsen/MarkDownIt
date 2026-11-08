@@ -121,12 +121,12 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,mark,welcome,dark,settings" "$BIN" "$DOC" &
+    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,mark,welcome,welcome-scrolled,dark,settings" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
     while [ "$waited" -lt 240 ]; do
-        for name in doc wheel find edit outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap mark welcome dark settings; do
+        for name in doc wheel find edit outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap mark welcome welcome-scrolled dark settings; do
             case "$seen" in *" $name "*) continue ;; esac
             if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
                 sleep 0.6
@@ -214,6 +214,28 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
             exit 1
         fi
     fi
+
+    # The recents page must fit the window and start at its own origin,
+    # even when the document behind it was scrolled sideways. The page
+    # used to be drawn at the document's scroll position, shifted left
+    # and clipped, with a scroller under it.
+    OX=$(sed -n 's/.*qa welcome-scrolled: after offset=\([0-9-]*\).*/\1/p' \
+        "$LOG" 2>/dev/null | tail -1)
+    FW=$(sed -n 's/.*after offset=[^ ]* frame=\([0-9-]*\).*/\1/p' \
+        "$LOG" 2>/dev/null | tail -1)
+    CW=$(sed -n 's/.*after offset=[^ ]* frame=[^ ]* clip=\([0-9-]*\).*/\1/p' \
+        "$LOG" 2>/dev/null | tail -1)
+    if [ -z "$OX" ] || [ -z "$FW" ] || [ -z "$CW" ]; then
+        echo "launch smoke FAILED: the recents page reported no geometry"
+        grep "qa welcome-scrolled:" "$LOG" | head -4
+        exit 1
+    fi
+    if [ "$OX" != "0" ] || [ "$FW" -gt "$CW" ]; then
+        echo "launch smoke FAILED: the recents page kept the document's scroll"
+        grep "qa welcome-scrolled:" "$LOG"
+        exit 1
+    fi
+    echo "launch smoke: the recents page fits the window, at its own origin"
 
     # Keep the app's trace with the captures, so the artifact carries
     # everything the run said.
