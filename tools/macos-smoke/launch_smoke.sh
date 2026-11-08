@@ -219,12 +219,19 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     # even when the document behind it was scrolled sideways. The page
     # used to be drawn at the document's scroll position, shifted left
     # and clipped, with a scroller under it.
+    BX=$(sed -n 's/.*qa welcome-scrolled: before offset=\([0-9-]*\).*/\1/p' \
+        "$LOG" 2>/dev/null | tail -1)
     OX=$(sed -n 's/.*qa welcome-scrolled: after offset=\([0-9-]*\).*/\1/p' \
         "$LOG" 2>/dev/null | tail -1)
     FW=$(sed -n 's/.*after offset=[^ ]* frame=\([0-9-]*\).*/\1/p' \
         "$LOG" 2>/dev/null | tail -1)
     CW=$(sed -n 's/.*after offset=[^ ]* frame=[^ ]* clip=\([0-9-]*\).*/\1/p' \
         "$LOG" 2>/dev/null | tail -1)
+    if [ -z "$BX" ] || [ "$BX" -le 0 ]; then
+        echo "launch smoke FAILED: the wide page did not scroll sideways"
+        grep "qa welcome-scrolled:" "$LOG" | head -4
+        exit 1
+    fi
     if [ -z "$OX" ] || [ -z "$FW" ] || [ -z "$CW" ]; then
         echo "launch smoke FAILED: the recents page reported no geometry"
         grep "qa welcome-scrolled:" "$LOG" | head -4

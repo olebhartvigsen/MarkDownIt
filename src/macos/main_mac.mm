@@ -691,16 +691,16 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     } else if ([state isEqualToString:@"welcome-scrolled"]) {
         // The reader scrolls a page sideways, then asks for the recents
         // page. It has to fit the window and start at its own origin.
-        NSClipView* clip = [[view_ enclosingScrollView] contentView];
-        [view_ scrollToDocumentPoint:NSMakePoint(320.0, 0.0)];
-        if ([clip bounds].origin.x < 1.0) {
-            // Nothing to scroll where the page fits: widen the document
-            // view the way a wide drawing leaves it, and try again.
-            NSSize wide = [clip bounds].size;
-            wide.width += 480.0;
-            [view_ setFrameSize:wide];
-            [view_ scrollToDocumentPoint:NSMakePoint(320.0, 0.0)];
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"wide-code.md"]
+                    UTF8String])];
         }
+        NSClipView* clip = [[view_ enclosingScrollView] contentView];
+        [view_ syncFrameToContent];
+        [view_ scrollToDocumentPoint:NSMakePoint(320.0, 0.0)];
         mac::TraceMac(
             "qa welcome-scrolled: before offset=%.0f frame=%.0f clip=%.0f",
             (double)[clip bounds].origin.x, (double)NSWidth([view_ frame]),
