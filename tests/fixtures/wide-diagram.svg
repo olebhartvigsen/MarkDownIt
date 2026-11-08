@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="420" viewBox="0 0 1600 420">
+  <rect x="20" y="60" width="360" height="140" rx="14" fill="#e8f0fe" stroke="#1a73e8" stroke-width="3"/>
+  <text x="200" y="145" text-anchor="middle" font-family="Helvetica" font-size="40" fill="#1a73e8">Jobopslag</text>
+  <rect x="620" y="60" width="360" height="140" rx="14" fill="#e6f4ea" stroke="#137333" stroke-width="3"/>
+  <text x="800" y="145" text-anchor="middle" font-family="Helvetica" font-size="40" fill="#137333">Ansogning</text>
+  <rect x="1220" y="60" width="360" height="140" rx="14" fill="#fce8e6" stroke="#c5221f" stroke-width="3"/>
+  <text x="1400" y="145" text-anchor="middle" font-family="Helvetica" font-size="40" fill="#c5221f">Samtale</text>
+  <line x1="380" y1="130" x2="620" y2="130" stroke="#5f6368" stroke-width="4"/>
+  <line x1="980" y1="130" x2="1220" y2="130" stroke="#5f6368" stroke-width="4"/>
+  <text x="800" y="330" text-anchor="middle" font-family="Helvetica" font-size="30" fill="#3c4043">a page wider than the window</text>
+</svg>

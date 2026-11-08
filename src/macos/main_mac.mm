@@ -695,9 +695,18 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The clip is put where a sideways scroll leaves it. The clip's
         // own scrolling does not clamp (its callers do), so this is the
         // state itself, not a guess about a font metric.
+        // A standalone SVG keeps its intrinsic size, so a wide diagram
+        // is a page wider than the window: the reader scrolls right.
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"wide-diagram.svg"]
+                    UTF8String])];
+        }
         NSClipView* clip = [[view_ enclosingScrollView] contentView];
-        [clip setBoundsOrigin:NSMakePoint(240.0, 0.0)];
-        [scrollView_ reflectScrolledClipView:clip];
+        [view_ syncFrameToContent];
+        [view_ scrollToDocumentPoint:NSMakePoint(240.0, 0.0)];
         mac::TraceMac(
             "qa welcome-scrolled: before offset=%.0f frame=%.0f clip=%.0f",
             (double)[clip bounds].origin.x, (double)NSWidth([view_ frame]),
