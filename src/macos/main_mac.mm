@@ -792,6 +792,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                 [[dir stringByAppendingPathComponent:@"mark-space.md"]
                     UTF8String])];
         }
+        // The clip reads the renderer's layout, and the open only marked
+        // the view dirty, so paint once before any range is clipped.
+        [view_ display];
         app_->SetEditing(true);
         app_->markers().Clear();
         // "text with spaces " with its trailing space, at bytes 0 to 17,
