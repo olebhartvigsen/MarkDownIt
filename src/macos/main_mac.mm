@@ -808,6 +808,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // the chip, or it is invisible and the chip looks like the mark.
         app_->SetSelection(48, 56);
         app_->ToggleMarkSelection();
+        // Drop the selection, so the capture shows the marks and not the
+        // blue selection band over them.
+        app_->SetSelection(0, 0);
         const std::vector<TextMarker>& marks = app_->markers().Markers();
         for (const TextMarker& mark : marks) {
             mac::TraceMac("qa mark: exact=\"%s\" start=%u end=%u",
