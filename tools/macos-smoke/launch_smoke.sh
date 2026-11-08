@@ -202,19 +202,37 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         echo "launch smoke: a mark sits on the words, not on the space" \
              "beside them"
     fi
+    # Keep the app's trace with the captures, so the artifact carries
+    # everything the run said.
+    if [ -f "$LOG" ]; then
+        cp "$LOG" "$QA_DIR/crash_trace.log"
+
     # The second picture opened after another one must look like the
     # second picture. The parsed drawing used to be keyed by the block's
     # offset alone, and a standalone SVG sits at the same offset in every
     # file, so a swap quietly kept the first drawing.
-    if [ -f "$QA_DIR/svg-fresh.png" ] && [ -f "$QA_DIR/svg-swap.png" ]; then
-        if cmp -s "$QA_DIR/svg-fresh.png" "$QA_DIR/svg-swap.png"; then
-            echo "launch smoke: a second SVG shows its own drawing"
-        else
-            echo "launch smoke FAILED: the swapped SVG kept the first drawing"
-            grep "qa svg:" "$LOG" | tail -4
-            exit 1
-        fi
+    FRESH_H=$(sed -n 's/.*qa svg: fresh .* height=\([0-9]*\).*/\1/p' \
+        "$LOG" 2>/dev/null | tail -1)
+    SWAP_H=$(sed -n 's/.*qa svg: swap .* height=\([0-9]*\).*/\1/p' \
+        "$LOG" 2>/dev/null | tail -1)
+    DIAGRAM_H=$(sed -n 's/.*qa svg: picture .* height=\([0-9]*\).*/\1/p' \
+        "$LOG" 2>/dev/null | tail -1)
+    if [ -z "$FRESH_H" ] || [ -z "$SWAP_H" ]; then
+        echo "launch smoke FAILED: the SVG states reported no page height"
+        grep "qa svg:" "$LOG" | tail -4
+        exit 1
     fi
+    if [ "$FRESH_H" != "$SWAP_H" ]; then
+        echo "launch smoke FAILED: the swapped SVG kept the first drawing"
+        grep "qa svg:" "$LOG" | tail -4
+        exit 1
+    fi
+    if [ -n "$DIAGRAM_H" ] && [ "$DIAGRAM_H" = "$SWAP_H" ]; then
+        echo "launch smoke FAILED: the two SVG fixtures draw the same page"
+        grep "qa svg:" "$LOG" | tail -4
+        exit 1
+    fi
+    echo "launch smoke: a second SVG shows its own drawing"
 
     # The recents page must fit the window and start at its own origin,
     # even when the document behind it was scrolled sideways. The page
@@ -245,10 +263,6 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     fi
     echo "launch smoke: the recents page fits the window, at its own origin"
 
-    # Keep the app's trace with the captures, so the artifact carries
-    # everything the run said.
-    if [ -f "$LOG" ]; then
-        cp "$LOG" "$QA_DIR/crash_trace.log"
     fi
     if grep -q '\*\*\* crash' "$LOG" 2>/dev/null; then
         echo "launch smoke FAILED: a crash was traced during the QA walk"

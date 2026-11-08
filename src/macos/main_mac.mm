@@ -806,9 +806,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                 [[dir stringByAppendingPathComponent:@"diagram.svg"]
                     UTF8String])];
             mac::TraceMac(
-                "qa svg: picture headings=%d visible=%d hidden=%d document=%.0f",
+                "qa svg: picture headings=%d visible=%d hidden=%d document=%.0f "
+                "height=%.0f",
                 outlineHasHeadings_ ? 1 : 0, outlineVisible_ ? 1 : 0,
-                [backdrop_ isHidden] ? 1 : 0, (double)NSWidth([view_ frame]));
+                [backdrop_ isHidden] ? 1 : 0, (double)NSWidth([view_ frame]),
+                (double)content_->DocumentHeight());
         }
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"svg-fresh"]) {
@@ -820,9 +822,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             [self OpenPath:std::string(
                 [[dir stringByAppendingPathComponent:@"two-boxes.svg"]
                     UTF8String])];
-            mac::TraceMac("qa svg: fresh file=%s",
+            mac::TraceMac("qa svg: fresh file=%s height=%.0f",
                           [[[window_ representedFilename] lastPathComponent]
-                              UTF8String]);
+                              UTF8String],
+                          (double)content_->DocumentHeight());
         }
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"svg-swap"]) {
@@ -836,9 +839,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             [self OpenPath:std::string(
                 [[dir stringByAppendingPathComponent:@"two-boxes.svg"]
                     UTF8String])];
-            mac::TraceMac("qa svg: swap file=%s",
+            mac::TraceMac("qa svg: swap file=%s height=%.0f",
                           [[[window_ representedFilename] lastPathComponent]
-                              UTF8String]);
+                              UTF8String],
+                          (double)content_->DocumentHeight());
         }
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"no-headings"]) {
