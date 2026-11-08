@@ -1229,9 +1229,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // command selector), not just the command behind it.
 - (void)qaKeyPress:(unsigned short)keyCode function:(unichar)functionKey {
     NSString* characters = [NSString stringWithCharacters:&functionKey length:1];
+    // The flags a real arrow carries, and the window's own dispatch, so
+    // the event travels the responder chain the way a key press does.
     NSEvent* event = [NSEvent keyEventWithType:NSEventTypeKeyDown
                                       location:NSZeroPoint
-                                 modifierFlags:0
+                                 modifierFlags:(NSEventModifierFlagNumericPad |
+                                                NSEventModifierFlagFunction)
                                      timestamp:0
                                   windowNumber:[window_ windowNumber]
                                        context:nil
@@ -1239,7 +1242,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                    charactersIgnoringModifiers:characters
                                      isARepeat:NO
                                        keyCode:keyCode];
-    [view_ keyDown:event];
+    [window_ sendEvent:event];
 }
 
 - (void)qaKeysRun:(const char*)label {
@@ -1255,9 +1258,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // drawn position, the same normalisation the click path uses.
     const uint32_t norm = content_->NormalizeToRenderedCaret(start);
     // The reader navigates in edit mode, and entering it relayouts the
-    // page, so the mode comes first and the caret after it.
+    // page, so the mode comes first and the caret after it. The mode is
+    // flipped through the command the toolbar button and the menu use,
+    // not by reaching into the app, so a focus or caret fault in that
+    // path shows up here.
     const bool wasEditing = app_->Editing();
-    app_->SetEditing(true);
+    if (!wasEditing) [self OnToggleEditMode];
     app_->SetCaret(norm);
     const uint32_t caretBefore = app_->selection().active.offset;
     {
@@ -1300,9 +1306,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     const bool hasRect = content_->OffsetToRect(caretBefore, &cx, &cy, &cw, &ch);
     NSString* responderName =
         NSStringFromClass([[window_ firstResponder] class]);
-    mac::TraceMac("qa keys focus: responder=%s editable=%d",
+    mac::TraceMac("qa keys focus: responder=%s editing=%d caret_visible=%d",
                   responderName ? [responderName UTF8String] : "nil",
-                  app_->Editing() ? 1 : 0);
+                  app_->Editing() ? 1 : 0,
+                  content_->caretVisible() ? 1 : 0);
     mac::TraceMac(
         "qa keys rect: ok=%d x=%.1f y=%.1f w=%.1f h=%.1f line_end=%u "
         "next_line=%u",
@@ -1340,7 +1347,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // captures see the document they expect, and leave it clean so the
     // next state may open another file without a prompt.
     app_->Undo();
-    app_->SetEditing(wasEditing);
+    if (app_->Editing() != wasEditing) [self OnToggleEditMode];
     app_->MarkClean();
     [window_ setDocumentEdited:NO];
     app_->SetCaret(start);
