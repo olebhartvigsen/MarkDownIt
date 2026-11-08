@@ -233,6 +233,59 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     fi
     echo "launch smoke: a second SVG shows its own drawing"
 
+    # The three everyday actions, in both views. The rendered view may
+    # walk over hidden syntax, so its steps are checked as "at least as
+    # far as the press count"; the source view draws every byte, so its
+    # steps are exact.
+    KEYS_SRC=$(grep "qa keys source:" "$LOG" | tail -1)
+    KEYS_DOC=$(grep "qa keys doc:" "$LOG" | tail -1)
+    if [ -z "$KEYS_SRC" ] || [ -z "$KEYS_DOC" ]; then
+        echo "launch smoke FAILED: the key runs reported nothing"
+        grep "qa keys" "$LOG" | head -6
+        exit 1
+    fi
+    SRC_NEXT=$(sed -n 's/.*qa keys rect: ok=1 .* next_line=\([0-9]*\).*/\1/p' \
+        "$LOG" | sed -n '1p')
+    SRC_RIGHT=$(echo "$KEYS_SRC" | sed 's/.*right=+\([0-9]*\).*/\1/')
+    SRC_CARET=$(echo "$KEYS_SRC" | sed 's/.*caret=\([0-9]*\).*/\1/')
+    SRC_DOWN=$(echo "$KEYS_SRC" | sed 's/.*down=\([0-9]*\).*/\1/')
+    SRC_LEN=$(echo "$KEYS_SRC" | sed 's/.*typed_len=\([0-9]*\)->\([0-9]*\).*/\1 \2/')
+    SRC_AFTER=$(echo "$KEYS_SRC" | sed 's/.*caret_after_type=\([0-9]*\).*/\1/')
+    SRC_SCROLL=$(echo "$KEYS_SRC" | sed 's/.*scroll=\([0-9]*\).*/\1/')
+    SRC_HEIGHT=$(echo "$KEYS_SRC" | sed 's/.*height=\([0-9]*\).*/\1/')
+    SRC_VIEW=$(echo "$KEYS_SRC" | sed 's/.*view=\([0-9]*\).*/\1/')
+    DOC_RIGHT=$(echo "$KEYS_DOC" | sed 's/.*right=+\([0-9]*\).*/\1/')
+    DOC_CARET=$(echo "$KEYS_DOC" | sed 's/.*caret=\([0-9]*\).*/\1/')
+    DOC_DOWN=$(echo "$KEYS_DOC" | sed 's/.*down=\([0-9]*\).*/\1/')
+    if [ "$SRC_RIGHT" != "5" ]; then
+        echo "launch smoke FAILED: five rights in the source view moved $SRC_RIGHT"
+        echo "$KEYS_SRC"
+        exit 1
+    fi
+    if [ -z "$SRC_NEXT" ] || [ "$SRC_DOWN" != "$SRC_NEXT" ]; then
+        echo "launch smoke FAILED: down in the source view skipped a line"
+        grep "qa keys rect" "$LOG" | tail -2
+        echo "$KEYS_SRC"
+        exit 1
+    fi
+    set -- $SRC_LEN
+    if [ "$2" != "$(( $1 + 1 ))" ] || [ "$SRC_AFTER" != "$(( SRC_DOWN + 1 ))" ]; then
+        echo "launch smoke FAILED: typing in the source view went nowhere"
+        echo "$KEYS_SRC"
+        exit 1
+    fi
+    if [ "$SRC_SCROLL" -lt "$(( SRC_HEIGHT - SRC_VIEW - 40 ))" ]; then
+        echo "launch smoke FAILED: the source view did not scroll to the caret"
+        echo "$KEYS_SRC"
+        exit 1
+    fi
+    if [ "$DOC_RIGHT" -lt 5 ] || [ "$DOC_DOWN" -le "$DOC_CARET" ]; then
+        echo "launch smoke FAILED: the rendered view's keys did not move"
+        echo "$KEYS_DOC"
+        exit 1
+    fi
+    echo "launch smoke: the arrows, the scroll and typing behave in both views"
+
     # The recents page must fit the window and start at its own origin,
     # even when the document behind it was scrolled sideways. The page
     # used to be drawn at the document's scroll position, shifted left

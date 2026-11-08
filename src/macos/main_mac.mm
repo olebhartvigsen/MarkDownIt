@@ -1175,6 +1175,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [view_ doCommandBySelector:@selector(moveDown:)];
     const uint32_t afterDown = app_->selection().active.offset;
     const uint32_t lengthBefore = static_cast<uint32_t>(text.size());
+    // Typing belongs to edit mode, the way the reader types.
+    const bool wasEditing = app_->Editing();
+    app_->SetEditing(true);
     [view_ insertText:@"Z"];
     const uint32_t lengthAfter = static_cast<uint32_t>(app_->buffer().Text().size());
     const uint32_t afterTyping = app_->selection().active.offset;
@@ -1191,6 +1194,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // captures see the document they expect, and leave it clean so the
     // next state may open another file without a prompt.
     app_->Undo();
+    app_->SetEditing(wasEditing);
     app_->MarkClean();
     [window_ setDocumentEdited:NO];
     app_->SetCaret(start);
