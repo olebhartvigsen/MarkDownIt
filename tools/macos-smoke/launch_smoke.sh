@@ -164,7 +164,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     # frame it had. The grow state shrinks to 786 and grows to 1024.
     GROW_BEFORE=$(grep "qa grow: before" "$LOG" 2>/dev/null \
         | sed -n 's/.*document=\([0-9]*\).*/\1/p' | head -1)
-    GROW_AFTER=$(grep "qa grow: second" "$LOG" 2>/dev/null \
+    GROW_AFTER=$(grep "qa grow: settled" "$LOG" 2>/dev/null \
         | sed -n 's/.*document=\([0-9]*\).*/\1/p' | head -1)
     if [ -n "$GROW_BEFORE" ] && [ -n "$GROW_AFTER" ]; then
         if [ $((GROW_AFTER - GROW_BEFORE)) -lt 150 ]; then

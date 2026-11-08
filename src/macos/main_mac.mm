@@ -472,6 +472,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                                     NSViewHeightSizable];
     [container_ setOrientation:NSUserInterfaceLayoutOrientationVertical];
     [container_ setDistribution:NSStackViewDistributionFill];
+    // The rows take the window's width, not their own natural one.
+    [container_ setAlignment:NSLayoutAttributeLeading];
 
     // The native toolbar goes with the window: one standard row of
     // commands in the title bar, with system symbols, the way the
@@ -482,6 +484,18 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // The strip is the last row of the stack, so it docks at the
     // bottom of the window (find spec: one strip at the bottom).
     [container_ addArrangedSubview:findBarView];
+
+    // The stack arranges its rows top to bottom and does not stretch
+    // them across the window: an arranged view without a width
+    // constraint keeps the width it was created with, so a grown window
+    // left the document column at the old frame with a strip beside it.
+    // Both rows are pinned to the window's edges.
+    for (NSView* row in @[ splitView_, findBarView ]) {
+        [row.leadingAnchor
+            constraintEqualToAnchor:container_.leadingAnchor].active = YES;
+        [row.trailingAnchor
+            constraintEqualToAnchor:container_.trailingAnchor].active = YES;
+    }
 
     [window_ setContentView:container_];
     [window_ makeKeyAndOrderFront:nil];
@@ -944,7 +958,22 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             (double)[scrollView_ contentSize].width,
             (double)NSWidth([view_ frame]),
             (double)content_->ContentWidth());
-        [self qaScrollToTop];
+        // AppKit's own layout pass, after ours: the width the text
+        // kept has to survive it, which is exactly what the reader
+        // saw fail when the frame grew.
+        [container_ layoutSubtreeIfNeeded];
+        mac::TraceMac(
+            "qa grow: settled win=%.0f container=%.0f split=%.0f "
+            "scroll=%.0f clip=%.0f contentSize=%.0f document=%.0f "
+            "content=%.0f",
+            (double)NSWidth([[window_ contentView] bounds]),
+            (double)NSWidth([container_ bounds]),
+            (double)NSWidth([splitView_ frame]),
+            (double)NSWidth([scrollView_ frame]),
+            (double)NSWidth([[scrollView_ contentView] bounds]),
+            (double)[scrollView_ contentSize].width,
+            (double)NSWidth([view_ frame]),
+            (double)content_->ContentWidth());
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"dark"]) {
         if (sourceView_) [self OnToggleSourceView];
