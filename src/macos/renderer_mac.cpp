@@ -2388,7 +2388,8 @@ bool MacRenderer::LineRangeAtPoint(float x, float y, uint32_t* outStart,
 
 bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
                                float* outWidth, float* outHeight) const {
-    for (const TextRegion& region : TextRegions()) {
+    const std::vector<TextRegion> regions = TextRegions();
+    for (const TextRegion& region : regions) {
         if (offset < region.visToSrc->front() ||
             offset > region.visToSrc->back()) {
             continue;
@@ -2420,7 +2421,56 @@ bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
             lineStartVis = lineEndVis;
             lineTop += line.height;
         }
-        return false;
+        break;
+    }
+
+    // A position between two drawn lines has no region of its own: the
+    // blank line between two paragraphs, or the end of the document, is
+    // where the caret can sit but where nothing is drawn. Every vertical
+    // move and every scroll asks this question first, so an unanswered
+    // position left the arrows dead the moment the caret reached one.
+    // Answer with the end of the nearest drawn line above, or with the
+    // start of the nearest line below when the position is before all of
+    // them.
+    const TextRegion* above = nullptr;
+    const TextRegion* below = nullptr;
+    for (const TextRegion& region : regions) {
+        if (!region.visToSrc || !region.lines || region.lines->empty()) {
+            continue;
+        }
+        const uint32_t first = region.visToSrc->front();
+        const uint32_t last = region.visToSrc->back();
+        if (last < offset) {
+            if (!above || last > above->visToSrc->back()) above = &region;
+        } else if (first > offset) {
+            if (!below || first < below->visToSrc->front()) below = &region;
+        }
+    }
+    if (above) {
+        const TextLine& line = above->lines->back();
+        uint32_t length = 0;
+        for (const GlyphRun& run : line.runs) {
+            length += static_cast<uint32_t>(run.text.size());
+        }
+        float top = above->top;
+        for (size_t i = 0; i + 1 < above->lines->size(); ++i) {
+            top += (*above->lines)[i].height;
+        }
+        const Rect rect = engine_->OffsetToRect(line, length);
+        if (outX) *outX = above->x + rect.x;
+        if (outY) *outY = top;
+        if (outWidth) *outWidth = rect.width;
+        if (outHeight) *outHeight = line.height;
+        return true;
+    }
+    if (below) {
+        const TextLine& line = below->lines->front();
+        const Rect rect = engine_->OffsetToRect(line, 0);
+        if (outX) *outX = below->x + rect.x;
+        if (outY) *outY = below->top;
+        if (outWidth) *outWidth = rect.width;
+        if (outHeight) *outHeight = line.height;
+        return true;
     }
     return false;
 }

@@ -363,6 +363,33 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         echo "$KEYS_SRC"
         exit 1
     fi
+    # A walk down the page: ten downs in a row must keep moving the
+    # caret. A position between two drawn lines used to have no geometry,
+    # and every vertical move from there did nothing at all.
+    for label in source doc; do
+        WALK=$(grep "qa keys walk $label " "$LOG" 2>/dev/null)
+        if [ -z "$WALK" ]; then
+            echo "launch smoke FAILED: no walk down the page in the $label view"
+            grep "qa keys walk" "$LOG" | head -4
+            exit 1
+        fi
+        PREV=-1
+        STUCK=0
+        while read -r line; do
+            CARET_AT=$(printf '%s' "$line" | grep -o "caret=[0-9]*" | cut -d= -f2)
+            if [ "$CARET_AT" -le "$PREV" ]; then
+                STUCK=$((STUCK + 1))
+                echo "launch smoke FAILED: down stopped in the $label view at $CARET_AT"
+                echo "$line"
+                exit 1
+            fi
+            PREV=$CARET_AT
+        done <<WALK_EOF
+$WALK
+WALK_EOF
+        LAST=$(printf '%s' "$WALK" | tail -1 | grep -o "caret=[0-9]*" | cut -d= -f2)
+        echo "launch smoke: ten downs walk the $label page to $LAST"
+    done
     echo "launch smoke: the arrows, the scroll and typing behave in both views"
 
     # The recents page must fit the window and start at its own origin,
