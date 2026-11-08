@@ -1232,6 +1232,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // inside bytes that are not drawn; the caret goes to the nearest
     // drawn position, the same normalisation the click path uses.
     const uint32_t norm = content_->NormalizeToRenderedCaret(start);
+    // The reader navigates in edit mode, and entering it relayouts the
+    // page, so the mode comes first and the caret after it.
+    const bool wasEditing = app_->Editing();
+    app_->SetEditing(true);
     app_->SetCaret(norm);
     const uint32_t caretBefore = app_->selection().active.offset;
     {
@@ -1270,20 +1274,18 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [view_ doCommandBySelector:@selector(moveDown:)];
     const uint32_t afterDown = app_->selection().active.offset;
     const uint32_t lengthBefore = static_cast<uint32_t>(text.size());
-    // Typing belongs to edit mode, the way the reader types.
-    const bool wasEditing = app_->Editing();
-    app_->SetEditing(true);
+    // Typing, the way the reader types.
     [view_ insertText:@"Z"];
     const uint32_t lengthAfter = static_cast<uint32_t>(app_->buffer().Text().size());
     const uint32_t afterTyping = app_->selection().active.offset;
     app_->SetCaret(lengthAfter);
     [view_ caretMoved];
     mac::TraceMac(
-        "qa keys %s: caret=%u right=+%d right_to=%u down=%u "
+        "qa keys %s: editing=%d caret=%u right=+%d right_to=%u down=%u "
         "typed_len=%u->%u caret_after_type=%u scroll=%.0f height=%.0f "
         "view=%.0f",
-        label, caretBefore, (int)(afterRight - caretBefore), afterRight,
-        afterDown,
+        label, app_->Editing() ? 1 : 0, caretBefore,
+        (int)(afterRight - caretBefore), afterRight, afterDown,
         lengthBefore, lengthAfter, afterTyping,
         (double)content_->scrollOffset(), (double)content_->DocumentHeight(),
         (double)content_->viewHeight());
