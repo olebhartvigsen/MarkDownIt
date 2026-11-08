@@ -1088,6 +1088,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     settings_.Save();
 
     [self refreshWindowTitle:path];
+    // A page without headings stands the pane down, and one with
+    // headings brings it back as the reader left it.
+    [self applyOutlineHeads];
     [view_ setNeedsDisplay:YES];
     mac::TraceMac("open: done");
 }
@@ -1920,6 +1923,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     if (!app_->ReloadFile()) {
         [self reportError:@"The file could not be read."];
     }
+    [self applyOutlineHeads];
     [view_ setNeedsDisplay:YES];
 }
 
@@ -2080,8 +2084,6 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // spec 23).
 - (void)outlinePaneRefresh {
     outlinePane_->SetDocument(&app_->GetDocument());
-    outlineHasHeadings_ = !outlinePane_->Items().empty();
-    [self applyOutlineState];
     outlinePane_->SetCaretOffset(app_->selection().Start());
     [self outlineLayout];
     if (outlinePane_->TakeListChanged()) {
@@ -2140,6 +2142,17 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
     [self toolbarSync];
     [view_ setNeedsDisplay:YES];
+}
+
+// A document given to the window decides whether the pane is shown at
+// all. The rule is read here, when a file is displayed, and not while
+// it is edited: the pane would otherwise come and go under the
+// reader's hands as headings are typed, and take the line length with
+// it.
+- (void)applyOutlineHeads {
+    outlinePane_->SetDocument(&app_->GetDocument());
+    outlineHasHeadings_ = !outlinePane_->Items().empty();
+    [self applyOutlineState];
 }
 
 // The reader's command: it moves the choice, and the document decides
