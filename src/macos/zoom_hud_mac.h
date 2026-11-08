@@ -3,11 +3,11 @@
 // The small overlay that says what the zoom level is while the reader
 // changes it.
 //
-// It is a floating label on the system's HUD material, blended with the
-// window's own content so the page under it is what shows through. It
-// never takes a click or the keyboard, and it goes away by itself a
-// moment after the last change.
-@interface MdZoomHud : NSVisualEffectView
+// It is a rounded pill of translucent black with the level in white on
+// top, so the page under it shows through while the number stays legible
+// in a light window and a dark one alike. It never takes a click or the
+// keyboard, and it goes away by itself a moment after the last change.
+@interface MdZoomHud : NSView
 
 // Shows the level, fading in if the overlay was not already up, and
 // restarts the wait that hides it again.

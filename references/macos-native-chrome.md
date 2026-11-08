@@ -112,19 +112,20 @@ a small overlay appears at the top centre of the window for a moment
 and says the new level in digits ("110%"), then leaves. It is built
 from the system's own pieces:
 
-- One `NSVisualEffectView` with the HUD material, blended inside the
-  window so the page underneath is what shows through, 10 pt corners and
-  a hairline of white at 12% so it also has a shape on a dark page.
-- The pill carries the vibrant dark appearance and the label inside it,
-  so the material and the digits are decided together: a dark HUD with
-  light digits, in a light window as well as a dark one. Splitting the
-  decision over two views did not hold, the material and the label ended
-  up on different appearances, and a light pill with white digits over a
-  white page is invisible.
-- The material must keep alpha 1: dimming an `NSVisualEffectView`
-  switches its backdrop filter off and the pill vanishes whole.
-- The label uses the system's monospaced digit font, which keeps the
-  number from shifting the pill as it counts up or down.
+- A rounded pill, 10 pt corners, filled with translucent black (72%)
+  and a hairline of white at 12% so it also has a shape on a dark page.
+  The page shows through at a little over a quarter: enough to read the
+  level by, little enough to stay out of the way.
+- The fill is a colour of our own rather than the system HUD material.
+  The material's own tint follows the window while a label inside it
+  follows the pill, and over a white page that came out as white digits
+  on a light pill: invisible. Three arrangements were measured in CI
+  (material in a rounded pill, material under a separate label, and a
+  scrim between them) and each failed in a light window in its own way,
+  so the overlay uses a fill whose colour cannot depend on the window.
+- The level is in plain white on that fill, with the system's monospaced
+  digit font, which keeps the number from shifting the pill as it counts
+  up or down.
 - A 0.09 s fade in, a 0.85 s hold, and a 0.25 s fade out.
 - `hitTest:` returns nil and it never accepts the first responder: the
   overlay cannot be clicked and never takes the keyboard, so it can

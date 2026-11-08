@@ -32,21 +32,21 @@ bool QaWalkRunning() {
     self = [super initWithFrame:frame];
     if (!self) return nil;
 
-    // A HUD is dark by definition, and it has to be: over a white page
-    // the light material gave white digits on a white pill, which is no
-    // overlay at all. The dark appearance also makes labelColor resolve
-    // to white, so the number reads over a white page and a dark one.
-    [self setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameVibrantDark]];
-    // The system's HUD material, blended inside the window: the page
-    // behind the overlay is what shows through it, not the desktop.
-    [self setMaterial:NSVisualEffectMaterialHUDWindow];
-    [self setBlendingMode:NSVisualEffectBlendingModeWithinWindow];
-    [self setState:NSVisualEffectStateActive];
+    // A plain translucent fill, not the system HUD material. The
+    // material's own tint follows the window while the label follows the
+    // pill, and over a white page the two came out as white digits on a
+    // light pill: invisible, in three different arrangements, and only
+    // in a light window. A fill of our own is the same in every
+    // appearance: the page shows through at a little over a quarter,
+    // which is enough to read the level by and little enough to stay out
+    // of the way.
     [self setWantsLayer:YES];
     [[self layer] setCornerRadius:10.0];
     [[self layer] setMasksToBounds:YES];
-    // A hairline of light along the edge, so a dark HUD also has a shape
-    // on a dark page.
+    [[self layer] setBackgroundColor:
+        [[NSColor colorWithWhite:0.0 alpha:0.72] CGColor]];
+    // A hairline of light along the edge, so the pill also has a shape on
+    // a dark page.
     [[self layer] setBorderWidth:0.8];
     [[self layer] setBorderColor:
         [[NSColor colorWithWhite:1.0 alpha:0.12] CGColor]];
@@ -54,7 +54,8 @@ bool QaWalkRunning() {
     label_ = [NSTextField labelWithString:@""];
     [label_ setFont:[NSFont monospacedDigitSystemFontOfSize:15.0
                                                     weight:NSFontWeightSemibold]];
-    [label_ setTextColor:[NSColor labelColor]];
+    // White on the fixed fill, whatever the window is wearing.
+    [label_ setTextColor:[NSColor whiteColor]];
     [label_ setAlignment:NSTextAlignmentCenter];
     [label_ setTranslatesAutoresizingMaskIntoConstraints:NO];
     [self addSubview:label_];
@@ -77,12 +78,6 @@ bool QaWalkRunning() {
     [self setAlphaValue:0.0];
     [self setHidden:YES];
     return self;
-}
-
-// A HUD is something the reader looks at, never something they click.
-- (NSView*)hitTest:(NSPoint)point {
-    (void)point;
-    return nil;
 }
 
 - (BOOL)acceptsFirstResponder {
