@@ -893,6 +893,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // trace records every frame the width could come from.
         if (sourceView_) [self OnToggleSourceView];
         [self applyOutlineVisible:NO];
+        // Start from a narrow window, so the growth is a real one and
+        // not the 1024 frame the wide state left behind.
+        [window_ setContentSize:NSMakeSize(640.0, 720.0)];
+        [window_ center];
+        [self windowDidResize:nil];
         [self qaScrollToTop];
         mac::TraceMac(
             "qa grow: before win=%.0f container=%.0f split=%.0f "
