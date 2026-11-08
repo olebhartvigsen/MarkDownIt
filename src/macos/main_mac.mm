@@ -1110,6 +1110,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     if (start == std::string::npos) start = 0;
     app_->SetCaret(start);
     const uint32_t caretBefore = app_->selection().active.offset;
+    float cx = 0.0f, cy = 0.0f, cw = 0.0f, ch = 0.0f;
+    const bool hasRect = content_->OffsetToRect(caretBefore, &cx, &cy, &cw, &ch);
+    mac::TraceMac(
+        "qa keys rect: ok=%d x=%.1f y=%.1f w=%.1f h=%.1f line_end=%u "
+        "next_line=%u",
+        hasRect ? 1 : 0, (double)cx, (double)cy, (double)cw, (double)ch,
+        content_->LineBoundary(caretBefore, true),
+        content_->HitTestPoint(cx, cy + ch + 1.0f));
     for (int i = 0; i < 5; ++i) {
         [view_ doCommandBySelector:@selector(moveRight:)];
     }
