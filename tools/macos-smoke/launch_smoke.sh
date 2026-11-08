@@ -121,6 +121,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
+    MARKDOWNIT_QA_HIT_TRACE=1 \
     MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,mark,welcome,welcome-scrolled,dark,settings,keys-source,keys-doc" "$BIN" "$DOC" &
     PID=$!
     seen=" "
