@@ -735,6 +735,18 @@ if(APPLE)
 
     # The app bundle. CMake lays out Contents/MacOS, Contents/Resources
     # and the Info.plist.
+    set(_buildVersion "${_version}")
+    execute_process(
+        COMMAND git rev-parse --short HEAD
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        OUTPUT_VARIABLE _commit
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+    if (_commit)
+        set(_buildVersion "${_commit}")
+    endif()
+    message(STATUS "MarkDownIt build ${_buildVersion}")
+
     set_target_properties(MarkDownItMac PROPERTIES
         OUTPUT_NAME MarkDownIt
         MACOSX_BUNDLE TRUE
@@ -744,7 +756,9 @@ if(APPLE)
         MACOSX_BUNDLE_BUNDLE_NAME "MarkDownIt"
         MACOSX_BUNDLE_GUI_IDENTIFIER "dk.olebhartvigsen.markdownit"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${_version}"
-        MACOSX_BUNDLE_BUNDLE_VERSION "${_version}"
+        # The build number is the commit the bundle came from, so the
+        # About panel tells a stale copy from the current one.
+        MACOSX_BUNDLE_BUNDLE_VERSION "${_buildVersion}"
     )
     target_sources(MarkDownItMac PRIVATE "${MARKDOWNIT_MAC_ICON}")
 
