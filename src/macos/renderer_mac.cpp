@@ -39,14 +39,6 @@ bool WashTraceOn() {
     return on;
 }
 
-bool MarkTraceOn() {
-    static const bool on = [] {
-        const char* value = std::getenv("MARKDOWNIT_QA_MARK_TRACE");
-        return value && value[0] == '1';
-    }();
-    return on;
-}
-
 // A colour from the palette.
 Color ToColor(const ThemeColor& c) {
     Color out;
@@ -1193,13 +1185,6 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
 void MacRenderer::PaintMarkerHighlights(float scrollOffset) {
     if (!target_ || markers_.empty()) return;
 
-<<<<<<< HEAD
-=======
-    // QA only: the marker geometry, so a capture can be compared with the
-    // rectangles the renderer actually asked for.
-    const bool traceMarks = MarkTraceOn();
-
->>>>>>> f76d21f (TEMP: trace the marker segment mapping too)
     // A code card and a table row paint their own background after this
     // global layer. Their markers go through PaintBlockHighlights or
     // PaintTableRowHighlights, so the wash lands above that background.
@@ -2553,16 +2538,6 @@ void MacRenderer::AppendVisibleRangeRects(
                               (double)first.x, (double)after.x, (double)lineX,
                               (double)line.width, line.runs.size(),
                               lineText.c_str());
-            }
-            if (MarkTraceOn()) {
-                std::string lineText;
-                for (const GlyphRun& run : line.runs) lineText += run.text;
-                mac::TraceMac(
-                    "qa mark seg: lineStartVis=%u from=%u to=%u firstX=%.1f "
-                    "afterX=%.1f lineWidth=%.1f runs=%zu text=\"%s\"",
-                    lineStartVis, localFrom, localTo, (double)first.x,
-                    (double)after.x, (double)line.width, line.runs.size(),
-                    lineText.c_str());
             }
             Rect rect;
             rect.x = lineX + first.x;
