@@ -693,11 +693,25 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The three everyday actions, in the raw view. This runs last
         // in the walk, because it types a character into the buffer.
         if (app_->WelcomeMode()) [self hideWelcomeScreen];
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"layout-showcase.md"]
+                    UTF8String])];
+        }
         if (!sourceView_) [self OnToggleSourceView];
         [self qaKeysRun:"source"];
     } else if ([state isEqualToString:@"keys-doc"]) {
         // The same three actions in the rendered view, for comparison.
-        // The source state above left a document on screen.
+        // The document is opened again, so the two runs start alike.
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"layout-showcase.md"]
+                    UTF8String])];
+        }
         if (sourceView_) [self OnToggleSourceView];
         [self qaKeysRun:"doc"];
     } else if ([state isEqualToString:@"welcome-scrolled"]) {
@@ -1164,8 +1178,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         (double)content_->scrollOffset(), (double)content_->DocumentHeight(),
         (double)content_->viewHeight());
     // One character was typed; take it back so the walk's later
-    // captures see the document they expect.
+    // captures see the document they expect, and leave it clean so the
+    // next state may open another file without a prompt.
     app_->Undo();
+    app_->MarkClean();
+    [window_ setDocumentEdited:NO];
     app_->SetCaret(start);
     [view_ caretMoved];
 }
