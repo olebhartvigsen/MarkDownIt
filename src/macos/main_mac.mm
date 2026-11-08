@@ -462,6 +462,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     outlinePreferred_ = true;
     outlineVisible_ = true;
     [backdrop_ setHidden:NO];
+    // A file that arrived at launch was opened before this window
+    // existed, so the pane learns about its headings here.
+    [self applyOutlineHeads];
 
     container_ = [[NSStackView alloc] initWithFrame:frame];
     [container_ setAutoresizingMask:NSViewWidthSizable |
@@ -2150,6 +2153,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // reader's hands as headings are typed, and take the line length with
 // it.
 - (void)applyOutlineHeads {
+    // The Finder can hand a file over before the window exists, so the
+    // panes come first here and the rule is read again once they are
+    // built.
+    if (!outlinePane_ || !splitView_ || !scrollView_ || !backdrop_) return;
     outlinePane_->SetDocument(&app_->GetDocument());
     outlineHasHeadings_ = !outlinePane_->Items().empty();
     [self applyOutlineState];
