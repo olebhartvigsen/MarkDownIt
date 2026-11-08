@@ -112,30 +112,20 @@ a small overlay appears at the top centre of the window for a moment
 and says the new level in digits ("110%"), then leaves. It is built
 from the system's own pieces:
 
-- A rounded pill, 10 pt corners, with a hairline of white at 12% so it
-  also has a shape on a dark page. Inside it sit two things: an
-  `NSVisualEffectView` with the HUD material, blended inside the window
-  so the page underneath is what shows through, and the level on top of
-  it.
-- The pill carries the dark appearance in a light window as well as a
-  dark one, and the digits sit above the material and take the dynamic
-  label colour. The appearance has to be set on the effect view itself:
-  set on the container it reaches the label but not the material, which
-  then follows the window and goes light under white digits.
-- The effect view must keep alpha 1: dimming an `NSVisualEffectView`
-  switches its backdrop filter off and the pill vanishes whole. The soft
-  shadow lives on the container instead, with a rounded shadow path, and
-  the material clips itself.
-- A translucent black scrim at 42% sits under the material. On its own
-  the material lands at a mid grey over a white page (around 148 of 255)
-  and white digits on that are a strain to read; with the scrim the pill
-  sits near 90, and the page still shows through, blurred, at a little
-  over half its brightness.
+- One `NSVisualEffectView` with the HUD material, blended inside the
+  window so the page underneath is what shows through, 10 pt corners and
+  a hairline of white at 12% so it also has a shape on a dark page.
+- The pill carries the vibrant dark appearance and the label inside it,
+  so the material and the digits are decided together: a dark HUD with
+  light digits, in a light window as well as a dark one. Splitting the
+  decision over two views did not hold, the material and the label ended
+  up on different appearances, and a light pill with white digits over a
+  white page is invisible.
+- The material must keep alpha 1: dimming an `NSVisualEffectView`
+  switches its backdrop filter off and the pill vanishes whole.
 - The label uses the system's monospaced digit font, which keeps the
   number from shifting the pill as it counts up or down.
-- A 0.09 s fade in, a 0.85 s hold, and a 0.25 s fade out. A new level
-  during the hold updates the number and restarts the wait instead of
-  fading in again, so a quick run of presses reads as one overlay.
+- A 0.09 s fade in, a 0.85 s hold, and a 0.25 s fade out.
 - `hitTest:` returns nil and it never accepts the first responder: the
   overlay cannot be clicked and never takes the keyboard, so it can
   never get between the reader and the text.

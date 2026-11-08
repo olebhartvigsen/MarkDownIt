@@ -21,8 +21,6 @@ bool QaWalkRunning() {
 }  // namespace
 
 @implementation MdZoomHud {
-    NSView* scrim_;
-    NSVisualEffectView* blur_;
     NSTextField* label_;
     NSTimer* hideTimer_;
     // Bumped on every show, so a fade that finishes late does not hide
@@ -34,86 +32,28 @@ bool QaWalkRunning() {
     self = [super initWithFrame:frame];
     if (!self) return nil;
 
-    // The whole pill carries the dark appearance, in a light window as
-    // well as a dark one. Deciding it in two places does not work: the
-    // material follows one appearance and the label colour another, and
-    // a light pill with white digits over a white page is invisible. A
-    // HUD is dark by definition, so both halves are told once, here.
-    [self setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]];
+    // A HUD is dark by definition, and it has to be: over a white page
+    // the light material gave white digits on a white pill, which is no
+    // overlay at all. The dark appearance also makes labelColor resolve
+    // to white, so the number reads over a white page and a dark one.
+    [self setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameVibrantDark]];
+    // The system's HUD material, blended inside the window: the page
+    // behind the overlay is what shows through it, not the desktop.
+    [self setMaterial:NSVisualEffectMaterialHUDWindow];
+    [self setBlendingMode:NSVisualEffectBlendingModeWithinWindow];
+    [self setState:NSVisualEffectStateActive];
     [self setWantsLayer:YES];
     [[self layer] setCornerRadius:10.0];
-    // The shadow has to survive, so the container does not clip: the
-    // material clips itself instead, and the shadow follows a path of
-    // its own. Without it a light HUD has no edge at all on a white page.
-    [[self layer] setMasksToBounds:NO];
-    [[self layer] setShadowColor:[[NSColor blackColor] CGColor]];
-    [[self layer] setShadowOpacity:0.22];
-    [[self layer] setShadowRadius:7.0];
-    [[self layer] setShadowOffset:CGSizeMake(0.0, -2.0)];
+    [[self layer] setMasksToBounds:YES];
+    // A hairline of light along the edge, so a dark HUD also has a shape
+    // on a dark page.
     [[self layer] setBorderWidth:0.8];
     [[self layer] setBorderColor:
         [[NSColor colorWithWhite:1.0 alpha:0.12] CGColor]];
 
-    // The material alone came out at a mid grey over a white page
-    // (around 148), and white digits on that are a strain to read. A
-    // translucent black scrim under it deepens the pill to the
-    // neighbourhood of 90 without making it solid: the page still shows
-    // through, blurred, at a little over half its brightness.
-    scrim_ = [[NSView alloc] initWithFrame:NSZeroRect];
-    [scrim_ setWantsLayer:YES];
-    [[scrim_ layer] setCornerRadius:10.0];
-    [[scrim_ layer] setMasksToBounds:YES];
-    [[scrim_ layer] setBackgroundColor:
-        [[NSColor colorWithWhite:0.0 alpha:0.42] CGColor]];
-    [scrim_ setTranslatesAutoresizingMaskIntoConstraints:NO];
-    [self addSubview:scrim_];
-    [NSLayoutConstraint activateConstraints:@[
-        [[scrim_ leadingAnchor] constraintEqualToAnchor:[self leadingAnchor]],
-        [[scrim_ trailingAnchor] constraintEqualToAnchor:[self trailingAnchor]],
-        [[scrim_ topAnchor] constraintEqualToAnchor:[self topAnchor]],
-        [[scrim_ bottomAnchor] constraintEqualToAnchor:[self bottomAnchor]],
-    ]];
-
-    // Two layers: the system's HUD material, blended inside the window
-    // so the page underneath is what shows through, then the level on
-    // top of it. The material follows the system appearance (light pill
-    // in light mode, dark in dark mode, as Apple's own HUDs do), which
-    // is also why the digits sit above it and take the dynamic label
-    // colour: inside the effect view the vibrancy would pick a colour
-    // for the material's ideal surface rather than the one on screen.
-    //
-    // The material must stay fully opaque as a layer: dimming an
-    // NSVisualEffectView's alpha switches the backdrop filter off, and
-    // the whole pill disappears. It is the blur and its tint that make
-    // the pill see-through, not the view's alpha.
-    blur_ = [[NSVisualEffectView alloc] initWithFrame:NSZeroRect];
-    // On the effect view itself, not just on its parent: the material is
-    // resolved against the appearance of the effect view, and an
-    // appearance set on the container reaches the label but not the
-    // material, which then followed the window and went light under
-    // white digits.
-    [blur_ setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]];
-    [blur_ setMaterial:NSVisualEffectMaterialHUDWindow];
-    [blur_ setBlendingMode:NSVisualEffectBlendingModeWithinWindow];
-    [blur_ setState:NSVisualEffectStateActive];
-    [blur_ setWantsLayer:YES];
-    [[blur_ layer] setCornerRadius:10.0];
-    [[blur_ layer] setMasksToBounds:YES];
-    [blur_ setTranslatesAutoresizingMaskIntoConstraints:NO];
-    [self addSubview:blur_];
-    [NSLayoutConstraint activateConstraints:@[
-        [[blur_ leadingAnchor] constraintEqualToAnchor:[self leadingAnchor]],
-        [[blur_ trailingAnchor] constraintEqualToAnchor:[self trailingAnchor]],
-        [[blur_ topAnchor] constraintEqualToAnchor:[self topAnchor]],
-        [[blur_ bottomAnchor] constraintEqualToAnchor:[self bottomAnchor]],
-    ]];
-
     label_ = [NSTextField labelWithString:@""];
     [label_ setFont:[NSFont monospacedDigitSystemFontOfSize:15.0
                                                     weight:NSFontWeightSemibold]];
-    // labelColor resolves white in the pill's own dark appearance, and
-    // the label sits above the material, so the digits keep their
-    // strength while the material stays a blur rather than a fill.
     [label_ setTextColor:[NSColor labelColor]];
     [label_ setAlignment:NSTextAlignmentCenter];
     [label_ setTranslatesAutoresizingMaskIntoConstraints:NO];
@@ -147,16 +87,6 @@ bool QaWalkRunning() {
 
 - (BOOL)acceptsFirstResponder {
     return NO;
-}
-
-- (void)layout {
-    [super layout];
-    // A path, not a computed shadow: the container is small and the
-    // shadow has to follow the rounded shape exactly.
-    CGPathRef path = CGPathCreateWithRoundedRect([self bounds], 10.0, 10.0,
-                                                 nullptr);
-    [[self layer] setShadowPath:path];
-    CGPathRelease(path);
 }
 
 - (BOOL)isShowing {
