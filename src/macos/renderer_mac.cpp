@@ -10,6 +10,7 @@
 
 #include "renderer_mac.h"
 #include "blockspacing.h"
+#include "markers.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1184,7 +1185,8 @@ void MacRenderer::PaintMarkerHighlights(float scrollOffset) {
         }
         for (const TextMatch& marker : markers_) {
             for (const Rect& rect : RectsForRangeInBlock(
-                     block, marker.start, marker.start + marker.length)) {
+                     block, marker.start, marker.start + marker.length,
+                     true)) {
                 Rect drawn = rect;
                 drawn.y -= scrollOffset;
                 target_->FillRect(drawn, ToColor(palette_.markerBg));
@@ -1208,7 +1210,7 @@ void MacRenderer::PaintBlockHighlights(const LaidOutBlock& block,
 
     for (const TextMatch& marker : markers_) {
         for (const Rect& rect : RectsForRangeInBlock(
-                 block, marker.start, marker.start + marker.length)) {
+                 block, marker.start, marker.start + marker.length, true)) {
             Rect drawn = rect;
             drawn.y -= scrollOffset;
             target_->FillRect(drawn, ToColor(palette_.markerBg));
@@ -1246,7 +1248,7 @@ void MacRenderer::PaintTableRowHighlights(const LaidOutBlock& block,
     };
     for (const TextMatch& marker : markers_) {
         for (const Rect& rect : RectsForRangeInBlock(
-                 block, marker.start, marker.start + marker.length)) {
+                 block, marker.start, marker.start + marker.length, true)) {
             if (!inRow(rect)) continue;
             Rect drawn = rect;
             drawn.y -= scrollOffset;
@@ -2420,7 +2422,8 @@ void MacRenderer::AppendRangeRects(const std::vector<TextLine>& lines,
                                     uint32_t end,
                                     std::vector<Rect>* rects,
                                     ColumnAlign align,
-                                    float innerWidth) const {
+                                    float innerWidth,
+                                    bool trimBlanks) const {
     if (lines.empty() || visToSrc.empty()) return;
     if (end < start) {
         const uint32_t swap = start;
@@ -2437,13 +2440,13 @@ void MacRenderer::AppendRangeRects(const std::vector<TextLine>& lines,
     if (!VisibleAtSource(visToSrc, end, &visEnd)) return;
     if (visEnd <= visStart) return;
     AppendVisibleRangeRects(lines, x, top, visStart, visEnd, rects, align,
-                            innerWidth);
+                            innerWidth, trimBlanks);
 }
 
 void MacRenderer::AppendVisibleRangeRects(
     const std::vector<TextLine>& lines, float x, float top, uint32_t start,
     uint32_t end, std::vector<Rect>* rects, ColumnAlign align,
-    float innerWidth) const {
+    float innerWidth, bool trimBlanks) const {
     if (lines.empty()) return;
     if (end < start) {
         const uint32_t swap = start;
@@ -2462,7 +2465,28 @@ void MacRenderer::AppendVisibleRangeRects(
 
         const uint32_t from = start > lineStartVis ? start : lineStartVis;
         const uint32_t to = end < lineEndVis ? end : lineEndVis;
-        if (from < to) {
+        uint32_t localFrom = from - lineStartVis;
+        uint32_t localTo = to - lineStartVis;
+        if (trimBlanks && localFrom < localTo) {
+            // A line's width keeps the blank beside a word, and a range
+            // that ends next to the word can still reach that blank. The
+            // wash covers the drawn words, so the segment is trimmed to
+            // non-blank text here, where the line's own bytes and their
+            // offsets are known.
+            std::string lineText;
+            for (const GlyphRun& run : line.runs) lineText += run.text;
+            if (localTo > lineText.size()) {
+                localTo = static_cast<uint32_t>(lineText.size());
+            }
+            while (localFrom < localTo && IsBlankByte(lineText[localFrom])) {
+                ++localFrom;
+            }
+            while (localTo > localFrom &&
+                   IsBlankByte(lineText[localTo - 1])) {
+                --localTo;
+            }
+        }
+        if (localFrom < localTo) {
             // The line sits at the column alignment when the region is
             // a cell, the same shift the painter applies.
             float lineX = x;
@@ -2471,11 +2495,11 @@ void MacRenderer::AppendVisibleRangeRects(
             } else if (align == ColumnAlign::Right) {
                 lineX += innerWidth - line.width;
             }
-            const Rect first = engine_->OffsetToRect(line, from - lineStartVis);
+            const Rect first = engine_->OffsetToRect(line, localFrom);
             // The right edge of the range is the left edge of the
             // character after it, the rect OffsetToRect gives for that
             // position.
-            const Rect after = engine_->OffsetToRect(line, to - lineStartVis);
+            const Rect after = engine_->OffsetToRect(line, localTo);
             Rect rect;
             rect.x = lineX + first.x;
             rect.y = lineTop;
@@ -2491,12 +2515,14 @@ void MacRenderer::AppendVisibleRangeRects(
 
 std::vector<Rect> MacRenderer::RectsForRangeInBlock(const LaidOutBlock& block,
                                                      uint32_t start,
-                                                     uint32_t end) const {
+                                                     uint32_t end,
+                                                     bool trimBlanks) const {
     std::vector<Rect> rects;
 
     // The block's own text.
     AppendRangeRects(block.lines, block.visToSrc,
-                     TextX(block), TextTop(block), start, end, &rects);
+                     TextX(block), TextTop(block), start, end, &rects,
+                     ColumnAlign::Default, 0.0f, trimBlanks);
 
     // A table draws its text cell by cell, so a range inside a cell
     // gets the cell's own geometry.
@@ -2514,7 +2540,8 @@ std::vector<Rect> MacRenderer::RectsForRangeInBlock(const LaidOutBlock& block,
                         metrics_.cellPadX,
                     rowTop + metrics_.cellPadY, start, end, &rects,
                     cell.align,
-                    block.tableLayout.colW - 2.0f * metrics_.cellPadX);
+                    block.tableLayout.colW - 2.0f * metrics_.cellPadX,
+                    trimBlanks);
             }
             if (r < block.tableLayout.rowHeights.size()) {
                 rowTop += block.tableLayout.rowHeights[r];

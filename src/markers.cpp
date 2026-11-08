@@ -26,13 +26,6 @@ bool IsContinuationByte(unsigned char byte) {
     return (byte & 0xC0) == 0x80;
 }
 
-// The ASCII whitespace a mark never starts or ends on: it draws as
-// nothing, so a mark that covered it would paint a strip beside the
-// words instead of behind them.
-bool IsBlankByte(char c) {
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r' ||
-           c == '\f' || c == '\v';
-}
 
 // The bytes immediately before `start`, at most 32 and never starting in the
 // middle of a code point: a continuation byte at the window edge is skipped,
@@ -664,8 +657,28 @@ void MarkerStore::Resolve(const std::string& documentText) {
             marker.resolved = false;
             continue;
         }
-        marker.start = static_cast<uint32_t>(bestPos);
-        marker.end = static_cast<uint32_t>(bestPos + marker.exact.size());
+        // A mark stored before the trimming rule carries the space beside
+        // the word in its anchor. Normalise it here, where the text that
+        // matched is known, so an old highlight sits on the words as well:
+        // the anchor, the range and the context are rebuilt from the
+        // trimmed bounds, which also makes a later Resolve search the
+        // words rather than the blank.
+        size_t from = bestPos;
+        size_t to = bestPos + marker.exact.size();
+        while (from < to && IsBlankByte(documentText[from])) ++from;
+        while (to > from && IsBlankByte(documentText[to - 1])) --to;
+        if (from >= to) {
+            // Only whitespace left: there is nothing on the page to paint.
+            marker.resolved = false;
+            continue;
+        }
+        if (from != bestPos || to != bestPos + marker.exact.size()) {
+            marker.exact = documentText.substr(from, to - from);
+            marker.prefix = ExtractPrefix(documentText, from);
+            marker.suffix = ExtractSuffix(documentText, to);
+        }
+        marker.start = static_cast<uint32_t>(from);
+        marker.end = static_cast<uint32_t>(to);
         marker.resolved = true;
     }
 }

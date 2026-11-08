@@ -241,6 +241,44 @@ TEST(Markers, ResolveMarksDeletedTextUnresolvedAndKeepsTheAnchor) {
     EXPECT_EQ(store.UnresolvedCount(), 0u);
 }
 
+TEST(Markers, ResolveTrimsWhitespaceFromALegacyAnchor) {
+    const std::string scratch = MakeScratchDir("legacy-trim");
+    MarkerStore::SetSidecarDirectoryForTests(scratch);
+
+    // A mark stored before the trimming rule carries the blank beside the
+    // word in its anchor. A resolve has to put it back on the words: the
+    // anchor, the range and the context are rebuilt from the trimmed
+    // bounds, so the wash cannot cover the space and a later resolve
+    // searches the words and not the blank.
+    const std::string document = "alpha tekst her omega\n";
+    WriteTextFile(MarkerStore::SidecarPathFor("legacy.md"),
+                  "{\"version\":1,\"markers\":["
+                  "{\"id\":\"m-0001\",\"start\":6,\"end\":16,"
+                  "\"exact\":\"tekst her \",\"prefix\":\"alpha\","
+                  "\"suffix\":\"omega\","
+                  "\"created\":\"2026-01-01T00:00:00Z\"}"
+                  "]}");
+
+    MarkerStore store;
+    ASSERT_TRUE(store.LoadFor("legacy.md", document));
+    ASSERT_EQ(store.Count(), 1u);
+
+    store.Resolve(document);
+    const TextMarker& marker = store.Markers()[0];
+    EXPECT_TRUE(marker.resolved);
+    EXPECT_EQ(marker.exact, "tekst her");
+    EXPECT_EQ(marker.start, 6u);
+    EXPECT_EQ(marker.end, 15u);
+
+    // Resolving again keeps the trimmed range.
+    store.Resolve(document);
+    EXPECT_EQ(store.Markers()[0].start, 6u);
+    EXPECT_EQ(store.Markers()[0].end, 15u);
+    EXPECT_EQ(store.Markers()[0].exact, "tekst her");
+
+    MarkerStore::SetSidecarDirectoryForTests("");
+}
+
 // ---- Add: refusals, contexts and ids ----
 
 TEST(Markers, AddRefusesEmptyOutOfBoundsAndDuplicateRanges) {

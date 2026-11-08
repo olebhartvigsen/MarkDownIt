@@ -781,6 +781,32 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             (double)NSWidth([view_ frame]),
             clip ? (double)NSWidth([clip bounds]) : 0.0);
         [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"mark"]) {
+        // A selection sweeps up the blank beside the words. The mark must
+        // land on the words: the stored anchor, and the wash the renderer
+        // paints, both stop at the drawn characters.
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"mark-space.md"]
+                    UTF8String])];
+        }
+        app_->SetEditing(true);
+        app_->markers().Clear();
+        // "text with spaces " with its trailing space, at bytes 0 to 17,
+        // then " leading" with its leading one, at bytes 23 to 31.
+        app_->SetSelection(0, 17);
+        app_->ToggleMarkSelection();
+        app_->SetSelection(23, 31);
+        app_->ToggleMarkSelection();
+        const std::vector<TextMarker>& marks = app_->markers().Markers();
+        for (const TextMarker& mark : marks) {
+            mac::TraceMac("qa mark: exact=\"%s\" start=%u end=%u",
+                          mark.exact.c_str(), mark.start, mark.end);
+        }
+        mac::TraceMac("qa mark: markers=%zu", marks.size());
+        [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"welcome"]) {
         // The screen without a document, reached the way the toolbar
         // reaches it. The walk has opened the fixture, so the recent

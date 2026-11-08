@@ -24,6 +24,14 @@ struct TextMarker {
     bool resolved = true;  // false: anchor not found in this revision
 };
 
+// The ASCII whitespace a mark never starts, ends, or paints on: it draws
+// as nothing, so a mark that covered it would paint a strip beside the
+// words instead of behind them.
+inline bool IsBlankByte(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' ||
+           c == '\f' || c == '\v';
+}
+
 // Hex FNV-1a 64 of the bytes, e.g. "a83f91c2d4e5f607".
 std::string MarkerFingerprint(const std::string& text);
 

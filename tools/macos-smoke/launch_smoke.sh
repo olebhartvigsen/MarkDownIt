@@ -121,12 +121,12 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,welcome,dark,settings" "$BIN" "$DOC" &
+    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,mark,welcome,dark,settings" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
     while [ "$waited" -lt 240 ]; do
-        for name in doc wheel find edit outline source lower end tail tail2 narrow wide no-outline grow no-headings svg welcome dark settings; do
+        for name in doc wheel find edit outline source lower end tail tail2 narrow wide no-outline grow no-headings svg mark welcome dark settings; do
             case "$seen" in *" $name "*) continue ;; esac
             if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
                 sleep 0.6
@@ -175,6 +175,25 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         fi
         echo "launch smoke: the text follows a window that grows with" \
              "the pane closed ($GROW_BEFORE -> $GROW_AFTER)"
+    fi
+    # The reader's report: a mark made with the space beside the word
+    # in the selection must store the words alone. The mark state marks
+    # "text with spaces " at bytes 0 to 17 and " leading" at 23 to 31.
+    if grep -q "qa mark: markers=" "$LOG" 2>/dev/null; then
+        if ! grep -q 'qa mark: exact="text with spaces" start=0 end=16' \
+                "$LOG" 2>/dev/null; then
+            echo "launch smoke FAILED: a mark kept the trailing space"
+            grep "qa mark:" "$LOG" | head -5
+            exit 1
+        fi
+        if ! grep -q 'qa mark: exact="leading" start=24 end=31' \
+                "$LOG" 2>/dev/null; then
+            echo "launch smoke FAILED: a mark kept the leading space"
+            grep "qa mark:" "$LOG" | head -5
+            exit 1
+        fi
+        echo "launch smoke: a mark sits on the words, not on the space" \
+             "beside them"
     fi
     # Keep the app's trace with the captures, so the artifact carries
     # everything the run said.

@@ -347,12 +347,16 @@ private:
     // draws its lines at the column alignment, so the caller passes
     // the alignment and the inner width and the rectangles land on
     // the drawn text (highlighting spec 8).
+    // `trimBlanks` is for the marker washes: a mark covers the drawn
+    // words, never the blank beside them. The selection and the inline
+    // code surface pass false and keep their exact range.
     void AppendRangeRects(const std::vector<TextLine>& lines,
                           const std::vector<uint32_t>& visToSrc, float x,
                           float top, uint32_t start, uint32_t end,
                           std::vector<Rect>* rects,
                           ColumnAlign align = ColumnAlign::Default,
-                          float innerWidth = 0.0f) const;
+                          float innerWidth = 0.0f,
+                          bool trimBlanks = false) const;
 
     // The rectangles a range of already-mapped visible text covers. The
     // inline-code background uses this path: its children are laid out in
@@ -362,7 +366,8 @@ private:
                                   float top, uint32_t start, uint32_t end,
                                   std::vector<Rect>* rects,
                                   ColumnAlign align = ColumnAlign::Default,
-                                  float innerWidth = 0.0f) const;
+                                  float innerWidth = 0.0f,
+                                  bool trimBlanks = false) const;
 
     // Draws the images of a block under its text.
     void PaintImages(const LaidOutBlock& block, float top, float width);
@@ -377,8 +382,8 @@ public:
 private:
     // The rectangles of a range inside one block.
     std::vector<Rect> RectsForRangeInBlock(const LaidOutBlock& block,
-                                            uint32_t start,
-                                            uint32_t end) const;
+                                            uint32_t start, uint32_t end,
+                                            bool trimBlanks = false) const;
 
     // The runs of a block's inline children, with the styles applied.
     // The family override names the face a heading asks for: the theme

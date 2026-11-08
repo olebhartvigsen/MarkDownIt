@@ -335,6 +335,19 @@ trims ASCII whitespace at both ends before it stores anything, so a
 selection that swept up the spaces around a word marks the word, and a
 selection of only whitespace marks nothing.
 
+A mark stored before that rule still carries the blank in its anchor.
+MarkerStore::Resolve normalises it when the document loads or changes:
+the anchor, the range and the surrounding context are rebuilt from the
+trimmed bounds, so an old highlight sits on the words too, and the
+sidecar is corrected on its next save. Idempotent: a second resolve
+finds the same range.
+
+On macOS the painted rectangles are trimmed as well, because Core Text
+keeps the space beside a word inside the line's width:
+MacRenderer::AppendVisibleRangeRects walks the line's own bytes and
+stops the wash at the last drawn character. A selection keeps its
+exact range, so selecting a space still shows the space selected.
+
 ---
 
 # 11. Cross-element selections
