@@ -525,6 +525,24 @@ mellemrummet under en linje skal flytte caret'en videre ned, ikke blive
 stående på linjen ovenover. Ellers ser Down ud som om den er død, og et klik
 under en overskrift lander på den forkerte linje.
 
+Reglen om mellemrummet er nødvendig, men ikke tilstrækkelig. Tre ting skal
+også holde, og de er bindende for begge builds:
+
+- **En vertikal bevægelse spørger layoutet om næste tegnede linje.** Den må
+  ikke probe et punkt en linjehøjde væk. Sidste linje i en blok har luft under
+  sig, og en probe der lander i den luft svarer med samme linje, så Down ser
+  død ud ved hvert afsnitsslut. Spørg linjelisten i den rækkefølge siden tegner
+  den, og hit-test midten af linjen `delta` pladser væk.
+- **En caret-position uden geometri skal stadig svare.** En position mellem to
+  blokke (den nye linje der afslutter en blok), på den tomme linje mellem to
+  afsnit og ved dokumentets slutning hører ikke til nogen tegnet linje. Et
+  geometrispørgsmål må ikke svare "ingen linje" for dem: svar med slutningen af
+  den nærmeste linje ovenover, eller starten af den nærmeste nedenunder. Ellers
+  fryser både pilene og scrollen, fordi begge spørger først.
+- **Et bånd uden tekst springes over.** En spacer tegner ingen glyffer og har
+  ingen tekstposition. Et trin skal gå videre til næste linje der har tekst,
+  ikke give op.
+
 ---
 
 # 13. Test med flere linjer
