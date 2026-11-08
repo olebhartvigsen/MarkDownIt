@@ -17,10 +17,11 @@ non-system control surface drawn next to the traffic lights.
 
 ## What the window wears now
 
-A standard toolbar (NSToolbar) in the title bar, eight items:
+A standard toolbar (NSToolbar) in the title bar, nine items:
 
 | Item | Symbol | Action | Also reachable |
 | --- | --- | --- | --- |
+| Recent | clock.arrow.circlepath | showRecents: | View menu |
 | Save | template floppy | saveDocument: | File menu, Cmd+S |
 | Share | square.and.arrow.up | shareDocument: | File menu |
 | Undo | arrow.uturn.backward | undo: | Edit menu, Cmd+Z |
@@ -32,7 +33,12 @@ A standard toolbar (NSToolbar) in the title bar, eight items:
 
 The symbols lead, the edit switch closes, and everything else lives in
 the menu bar, where macOS expects the commands anyway; the keyboard
-shortcuts live on the menu items. Why a text button for the switch:
+shortcuts live on the menu items.
+
+Recent stands first because it is navigation, not a document command:
+it steps aside to the recent documents and leaves the open file where
+it is, so the way back sits where a back button would. It is disabled
+on that screen itself, where there is nothing to go back to. Why a text button for the switch:
 the Toolbars guidance prefers symbols "except for actions like edit
 that aren't well-represented by symbols". The word pairs with what
 Preview and Pages show for the same switch, Edit while reading, Done

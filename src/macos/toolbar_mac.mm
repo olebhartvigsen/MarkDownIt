@@ -62,6 +62,7 @@ static NSImage* FloppySaveImage(void) {
     return image;
 }
 
+static NSString* const kIdRecent = @"MdRecent";
 static NSString* const kIdSave = @"MdSave";
 static NSString* const kIdShare = @"MdShare";
 static NSString* const kIdUndo = @"MdUndo";
@@ -70,7 +71,6 @@ static NSString* const kIdFind = @"MdFind";
 static NSString* const kIdHighlight = @"MdHighlight";
 static NSString* const kIdEditMode = @"MdEditMode";
 static NSString* const kIdOutline = @"MdOutline";
-static NSString* const kIdRecent = @"MdRecent";
 
 @implementation MdToolbarController {
     id _host;

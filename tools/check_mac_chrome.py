@@ -32,7 +32,7 @@ CMAKE = os.path.join(REPO, "CMakeLists.txt")
 
 # The toolbar's deliberate set, in order. Everything else lives in the
 # menu bar.
-EXPECTED = ["MdSave", "MdShare", "MdUndo", "MdRedo", "MdFind",
+EXPECTED = ["MdRecent", "MdSave", "MdShare", "MdUndo", "MdRedo", "MdFind",
             "MdHighlight", "MdEditMode", "MdOutline"]
 
 
