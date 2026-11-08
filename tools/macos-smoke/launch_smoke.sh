@@ -159,6 +159,23 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     if kill -0 "$PID" 2>/dev/null; then
         kill -9 "$PID" 2>/dev/null
     fi
+    # The reader's report: with the outline pane closed, a window that
+    # grows must give the text the new width instead of keeping the
+    # frame it had. The grow state shrinks to 786 and grows to 1024.
+    GROW_BEFORE=$(grep "qa grow: before" "$LOG" 2>/dev/null \
+        | sed -n 's/.*document=\([0-9]*\).*/\1/p' | head -1)
+    GROW_AFTER=$(grep "qa grow: second" "$LOG" 2>/dev/null \
+        | sed -n 's/.*document=\([0-9]*\).*/\1/p' | head -1)
+    if [ -n "$GROW_BEFORE" ] && [ -n "$GROW_AFTER" ]; then
+        if [ $((GROW_AFTER - GROW_BEFORE)) -lt 150 ]; then
+            echo "launch smoke FAILED: the text kept its width when the" \
+                 "window grew with the pane closed" \
+                 "($GROW_BEFORE -> $GROW_AFTER)"
+            exit 1
+        fi
+        echo "launch smoke: the text follows a window that grows with" \
+             "the pane closed ($GROW_BEFORE -> $GROW_AFTER)"
+    fi
     # Keep the app's trace with the captures, so the artifact carries
     # everything the run said.
     if [ -f "$LOG" ]; then

@@ -14,6 +14,7 @@
 #import <AppKit/AppKit.h>
 #import <CoreServices/CoreServices.h>
 #import <Foundation/Foundation.h>
+#include <dispatch/dispatch.h>
 
 #include "app_mac.h"
 #include "content_nsview_mac.h"
@@ -98,6 +99,8 @@ bool OpenExternalUrl(const std::string& url) {
     // Set when windowWillClose saved the frame, so the terminate path
     // does not read a window that AppKit has already taken down.
     BOOL windowFrameSaved_;
+    // One deferred layout pass per resize is enough.
+    BOOL settlePending_;
     NSScrollView* scrollView_;
     MdContentView* view_;
     float zoom_;
@@ -1103,6 +1106,18 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
 - (void)windowDidResize:(NSNotification*)notification {
     (void)notification;
+    [self layoutDocumentForWindow];
+    // A live resize can hand out frames that are one pass behind: the
+    // clip still reports the width from before the drag, the text is
+    // laid out for it, and nothing else asks for another pass. The
+    // deferred pass runs on the settled frames, so a closed pane can
+    // never leave the column at the width it had before the drag.
+    [self scheduleSettleLayout];
+}
+
+// The layout the resize needs: the panes, then the text at the
+// viewport's width.
+- (void)layoutDocumentForWindow {
     if (!scrollView_ || !content_) return;
     // The stack and split view have their own layout pass. Settle it
     // before reading the clip width, or a fast live resize can hand the
@@ -1126,6 +1141,24 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     content_->SetScrollOffset(static_cast<float>(clipBounds.origin.y));
     content_->NotifyScrollChanged(false);
     [self outlineLayout];
+}
+
+// One pass after AppKit's own layout, on the frames the window ended
+// with. The flag coalesces a drag's many notifications into one pass.
+- (void)scheduleSettleLayout {
+    if (settlePending_) return;
+    settlePending_ = YES;
+    __weak id weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        id strongSelf = weakSelf;
+        if (!strongSelf) return;
+        [strongSelf settleLayout];
+    });
+}
+
+- (void)settleLayout {
+    settlePending_ = NO;
+    [self layoutDocumentForWindow];
 }
 
 // A live resize can coalesce the intermediate frame notifications. The
