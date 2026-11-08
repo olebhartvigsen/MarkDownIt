@@ -943,11 +943,23 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             [self OpenPath:std::string(
                 [[dir stringByAppendingPathComponent:@"ai-components.svg"]
                     UTF8String])];
-            mac::TraceMac("qa svg: drawio file=%s height=%.0f width=%.0f",
+            // The picture is 1820 points wide and the window is narrower,
+            // so the walk drops the level until the whole drawing fits:
+            // the capture is then comparable with a browser's.
+            const float fit =
+                (content_->ContentWidth() - 64.0f) / 1820.0f;
+            [self setZoom:(fit > 0.1f ? fit : 0.1f) quietly:YES];
+            [zoomHud_ hideNow];
+            const NSRect clip = [[view_ enclosingScrollView] documentVisibleRect];
+            mac::TraceMac("qa svg: drawio file=%s height=%.0f width=%.0f "
+                          "zoom=%.3f visible=%.0f,%.0f,%.0f,%.0f",
                           [[[window_ representedFilename] lastPathComponent]
                               UTF8String],
                           (double)content_->DocumentHeight(),
-                          (double)content_->ContentWidth());
+                          (double)content_->ContentWidth(),
+                          (double)zoom_,
+                          (double)clip.origin.x, (double)clip.origin.y,
+                          (double)clip.size.width, (double)clip.size.height);
         }
     } else if ([state isEqualToString:@"svg-swap"]) {
         // One picture, then another. Only the second may show.
