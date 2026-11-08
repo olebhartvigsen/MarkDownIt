@@ -739,6 +739,15 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The three everyday actions, in the raw view. This runs last
         // in the walk, because it types a character into the buffer.
         if (app_->WelcomeMode()) [self hideWelcomeScreen];
+        // The document has to hold the keyboard, as it does when the
+        // reader works in it: the settings state leaves another window
+        // in front, and a caret is only drawn in the key window.
+        if (settingsWindow_) {
+            [settingsWindow_ close];
+            settingsWindow_ = nil;
+        }
+        [window_ makeKeyAndOrderFront:nil];
+        [window_ makeFirstResponder:view_];
         NSString* dir = [[window_ representedFilename]
             stringByDeletingLastPathComponent];
         if ([dir length] > 0) {
@@ -751,6 +760,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     } else if ([state isEqualToString:@"keys-doc"]) {
         // The same three actions in the rendered view, for comparison.
         // The document is opened again, so the two runs start alike.
+        [window_ makeKeyAndOrderFront:nil];
+        [window_ makeFirstResponder:view_];
         NSString* dir = [[window_ representedFilename]
             stringByDeletingLastPathComponent];
         if ([dir length] > 0) {
@@ -1346,6 +1357,17 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // One character was typed; take it back so the walk's later
     // captures see the document they expect, and leave it clean so the
     // next state may open another file without a prompt.
+    // A walk down the page: the caret must keep moving and the view
+    // must follow it, or the keys look dead below the fold.
+    app_->SetCaret(norm);
+    [view_ caretMoved];
+    for (int i = 0; i < 10; ++i) {
+        [self qaKeyPress:125 function:NSDownArrowFunctionKey];
+        mac::TraceMac("qa keys walk %s %d: caret=%u scroll=%.0f",
+                      label, i,
+                      app_->selection().active.offset,
+                      (double)content_->scrollOffset());
+    }
     app_->Undo();
     if (app_->Editing() != wasEditing) [self OnToggleEditMode];
     app_->MarkClean();
