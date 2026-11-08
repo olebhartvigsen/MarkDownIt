@@ -1,18 +1,22 @@
-# Funktionsspecifikation for standardtekstredigering på Windows
+# Funktionsspecifikation for standardtekstredigering
 
-Dokumentet beskriver MarkDownIts tekstredigering på Windows. Det skelner mellem
-Windows-konventioner, projektets egne krav og krav, der endnu mangler testbevis.
+Dokumentet beskriver MarkDownIts tekstredigering. Det er bindende for begge
+native builds, Win32 og macOS. Det skelner mellem platformens konventioner,
+projektets egne krav og krav, der endnu mangler testbevis.
 
 ## Formål
 
-Dokumentet fastlægger krav til synlig tekst i MarkDownIt på Windows.
+Dokumentet fastlægger krav til synlig tekst i MarkDownIt.
 Det beskriver også redigering. Kravene gælder dokumentets tekstområde.
 De gælder både rå Markdown og en model med interne markører.
 Brugeren skal møde samme regler i begge tilfælde.
 
-Editoren skal følge Windows-konventioner for de handlinger, der beskrives her.
-Projektets egne valg er angivet særskilt. Andre funktioner må ikke ændre
-resultatet af de beskrevne klik, taster eller genveje.
+Editoren skal følge platformens konventioner for de handlinger, der beskrives
+her: Win32-konventioner i Windows-buildet og AppKit-konventioner i
+macOS-buildet. Kravene er skrevet med Windows-mekanismer, fordi de er den
+oprindelige kontrakt. Afsnittet "macOS-mapping" angiver den tilsvarende
+mekanisme på macOS. Projektets egne valg er angivet særskilt. Andre funktioner
+må ikke ændre resultatet af de beskrevne klik, taster eller genveje.
 
 ## Omfang og afgrænsning
 
@@ -73,6 +77,128 @@ De særlige regler for tabeller og søgning har forrang for basisreglerne her.
 Implementeringsstatus er ikke et krav og må ikke lempe et krav. Nye konflikter
 skal afklares i referencerne, før kode ændres. Kilderne står til sidst.
 
+## Platforme
+
+Kravene gælder begge builds. Filenavnet er historisk og ændres ikke, fordi kode,
+planer og referencer peger på det.
+
+Hver platform bruger sin egen mekanisme til de samme handlinger:
+
+| Område | Windows | macOS |
+| --- | --- | --- |
+| Kommandoer og genveje | Menu, ribbon og acceleratorer | Hovedmenu, værktøjslinje og responder chain |
+| Tekstlayout | DirectWrite | Core Text |
+| Tegning | Direct2D | Core Graphics |
+| Clipboard | Win32 Clipboard, `CF_UNICODETEXT` | `NSPasteboard`, `NSPasteboardTypeString` |
+| Caret og fokus | Caret tegnet af appen, `GetCaretBlinkTime` | Caret tegnet af appen, AppKits blinkindstilling |
+| Testgate | Windows CI med MSVC og Windows SDK | macOS CI på Apple Silicon med samme portable suite |
+
+Siger et kriterium nedenfor "Windows-testen", gælder den tilsvarende macOS-test på
+macOS. Findes en Windows-mekanisme ikke på macOS, er mekanismen i
+"macOS-mapping" normativ, og kravet til adfærd er uændret.
+
+## macOS-mapping
+
+Afsnittet er normativt for macOS-buildet. Det ændrer ikke kravene ovenfor.
+
+### Genveje
+
+Kommandoer bruger Command på macOS og Control på Windows. De krævede
+standardgenveje får disse ækvivalenter:
+
+| Krav | Windows | macOS |
+| --- | --- | --- |
+| Markér alt | Ctrl+A | Cmd+A |
+| Fed og kursiv | Ctrl+B, Ctrl+I | Cmd+B, Cmd+I |
+| Link | Ctrl+K | Cmd+K |
+| Kopiér, klip, indsæt | Ctrl+C, Ctrl+X, Ctrl+V | Cmd+C, Cmd+X, Cmd+V |
+| Fortryd og gentag | Ctrl+Z, Ctrl+Y | Cmd+Z, Cmd+Shift+Z |
+| Ordgrænse | Ctrl+Venstre, Ctrl+Højre | Option+Venstre, Option+Højre |
+| Slet til ordgrænse | Ctrl+Backspace, Ctrl+Delete | Option+Backspace, Option+Forward Delete |
+| Start og slut af visuel linje | Home, End | Cmd+Venstre, Cmd+Højre |
+| Dokumentets grænser | Ctrl+Home, Ctrl+End | Cmd+Op, Cmd+Ned |
+| Udvid markering | Shift plus navigationstasten | Shift plus samme tast |
+| Søg og erstat | Ctrl+F, Ctrl+H | Cmd+F, Cmd+Option+F |
+| Næste og forrige match | F3, Shift+F3 | Cmd+G, Cmd+Shift+G |
+
+1. Gentag er Cmd+Shift+Z, fordi Cmd+Y ikke er en platformskonvention. Ctrl+Y
+   virker også som alias, så den krævede genvej findes også her.
+2. Erstat bruger Cmd+Option+F, fordi Cmd+H er skjul vindue på macOS.
+3. Insert-tasten findes ikke på alle macOS-tastaturer. Buildet læser alligevel
+   Ctrl+Insert, Shift+Insert og Shift+Delete, når tastaturet kan sende dem, og
+   kører samme kommando som Cmd+C, Cmd+V og Cmd+X.
+4. Home og End går til dokumentets grænser på macOS, som AppKit gør i andre
+   tekstfelter. Linjegrænsen nås med Cmd+Venstre og Cmd+Højre.
+
+### Clipboard
+
+1. Markeringens tekst lægges på pasteboardet som `NSPasteboardTypeString`
+   (`public.utf8-plain-text`) i UTF-8. NUL-terminering og CRLF er egenskaber ved
+   `CF_UNICODETEXT` og gælder ikke her: pasteboardet bærer en `NSString`, og
+   macOS bruger LF som linjeskift.
+2. Pasteboardet læses kun som ren tekst. RTF, HTML, fil-løfter og objekter læses
+   ikke, heller ikke som fallback. Findes der kun rige formater, er paste en
+   no-op.
+3. MarkDownIt skriver også en privat pasteboard-type ved siden af teksten. Den
+   læses aldrig tilbage, så et formatnavn kan ikke gøre indholdet internt, jf.
+   "Ukendt oprindelse skal behandles som ekstern".
+4. No-op-reglerne, én undo-post pr. indsætning og normalisering af CRLF og CR til
+   LF er uændrede.
+
+### Tekst, layout og hit-test
+
+1. Hit-test er `CTLineGetStringIndexForPosition` i
+   `src/macos/text_engine_mac.cpp`. Resultatet er et UTF-16-indeks i den tegnede
+   linje, ligesom DirectWrites hit-test. Indekset oversættes eksplicit til
+   modellens position og normaliseres, før en kommando bruger det. Hit-test
+   vælger ikke afsnit, celle eller Markdown-markør på egen hånd.
+2. Core Text-indeks er UTF-16, så konverteringen til og fra modellens positioner
+   følger samme regel som på Windows. Et indeks kan lande inde i en
+   grafemklynge, men normaliseringen flytter det til nærmeste gyldige grænse,
+   før en kommando bruger det, så en kommando aldrig deler klyngen.
+3. En logisk position kan have flere visuelle placeringer ved ombrydning og ved
+   skift mellem LTR og RTL. Den visuelle side opbevares som layoutdata, og det
+   logiske interval ændres ikke.
+4. Zoom lægger teksten ud igen i den nye størrelse. Der er ingen separat
+   DPI-faktor, fordi AppKit giver viewet i punkter og tegner i capture-pixels via
+   backing scale.
+
+### Caret, fokus og blink
+
+1. Caretet tegnes et punkt bredt i tekstfarven, med højde fra den ramte linjes
+   typografiske mål.
+2. Blinket følger AppKits indstilling. Nøglerne `NSTextInsertionPointBlinkPeriodOn`
+   og `NSTextInsertionPointBlinkPeriodOff` er perioder i millisekunder, og et
+   fuldt blink er gennemsnittet af dem. Mangler de, eller er de nul eller
+   negative, bruges AppKits standard på et halvt sekund hver vej.
+   Indstillingen læses, hver gang blinket starter.
+3. Caretet blinker kun, når vinduet er nøglevindue, viewet er first responder,
+   redigering er slået til, og markeringen er tom. En ikke-tom markering har
+   intet blinkende caret.
+
+### Kommandoflade
+
+1. Edit-kommandoerne ligger i hovedmenuen og går gennem responder chain, så et
+   fokuseret søgefelt håndterer Cmd+A og Cmd+Z selv, før dokumentet gør det
+   (AC-01).
+2. Menuen valideres mod tilstanden, så kommandoer, der ikke kan udføres, er
+   inaktive: klip og indsæt i skrivebeskyttet tilstand, erstatning i
+   Find-tilstand, tabelkommandoer uden for en tabel.
+3. Tab og Shift+Tab i søgebåndet flytter fokus mellem kontrollerne. Dokumentet
+   indrykkes ikke, fordi dokumentviewet ikke har fokus.
+
+### Testgate
+
+Jobbet "Tests (macOS, Apple Silicon)" bygger `MarkDownIt.tests` og kører hele den
+portable suite på Apple Silicon, efterfulgt af samme suite i et sanitizer-build.
+App-jobbet bygger bundlen, kontrollerer chrome-listen og kører QA-turen, der
+fotograferer de aftalte tilstande og lægger trace og captures i artifactet.
+
+Manuel macOS-test dækker det, en modeltest og et stillbillede ikke kan: IME med en
+rigtig inputkilde, emoji-panelet, dead keys og AltGr, caret-blink, faktisk
+musecapture og Core Text ved DPI og zoom. Modeldelen har stadig automatiske
+tests, og Linux eller WSL kan kun bruges som supplerende kontrol.
+
 ## Tilstand og kommandoer
 
 Navigation, markering, kopiering, scroll, søgning og linkaktivering læser
@@ -119,7 +245,8 @@ strukturelle positioner, også når de tegnes tæt på hinanden.
 
 Hit-test må kun levere en kandidat i den ramte blok eller celle. Modellen skal
 normalisere kandidaten, før en kommando bruger den. UTF-8-offsets i kilden og
-UTF-16-offsets i DirectWrite skal oversættes eksplicit til og fra modellen.
+UTF-16-offsets i platformens tekstlayout, DirectWrite på Windows og Core Text
+på macOS, skal oversættes eksplicit til og fra modellen.
 Skjulte markører må ikke blive en genvej til en anden blok.
 
 Ved ombrydning og skift mellem LTR- og RTL-løb kan én logisk position have
@@ -139,7 +266,8 @@ Den må ikke ændre markeringens logiske interval. Se
 4. Indsat tekst skal accepteres som Unicode. Ugyldige sekvenser fra en ekstern
    kilde skal afvises eller erstattes konsekvent med U+FFFD, før de når
    dokumentmodellen.
-5. Windows IME- og emoji-input skal behandles som tekstinput. Midlertidig
+5. Windows IME- og emoji-input, på macOS inputkilder og emoji-panelet, skal
+   behandles som tekstinput. Midlertidig
    IME-komposition må ikke oprettes som en fortrydelseshændelse, før teksten er
    bekræftet.
 
@@ -213,6 +341,13 @@ historik fra før kompositionen.
 7. Ctrl+venstreklik uden for et link følger almindeligt venstreklik. På et link
    gælder afsnittet "Linkaktivering med musen". Tryk i en eksisterende markering
    følger først reglerne for tekstflytning.
+8. Et klik må ikke flytte visningen, når den klikkede position allerede er
+   synlig. Rulles dokumentet først, og klikker man derefter på en synlig
+   tekstposition, skal caretet placeres der, og sidens rulleposition skal være
+   uændret. Et klik må aldrig afsløre det caret, der blev forladt, før den nye
+   position er læst: det ruller læseren tilbage til den gamle position og ser
+   ud som om klikket ramte forkert. Reglen gælder begge visninger og begge
+   builds.
 
 ### Trækmarkering
 
@@ -437,6 +572,10 @@ historik fra før kompositionen.
 | Ctrl+Home og Ctrl+End | Navigér til dokumentets begyndelse eller slutning. |
 | Shift plus enhver påkrævet navigationstast | Udvid eller formindsk markeringen. |
 
+På macOS bruges Command i stedet for Control, og de øvrige taster følger
+ækvivalenterne i "macOS-mapping". Tabellen er den fælles kontrakt; kun
+modifikatortasten og de nævnte undtagelser skifter.
+
 1. Hver aliasgenvej i tabellen skal udføre nøjagtig samme handling som den
    tilsvarende primære genvej.
 2. Ctrl+Shift+Z kan understøttes som et ekstra alias for gentag, men må ikke
@@ -461,6 +600,9 @@ historik fra før kompositionen.
    linjeskift på clipboard, hvor markeringen indeholder afsnitsskift.
 6. Tekst uden visuelle formatmarkører skal kopieres som den tekst, brugeren har
    markeret. Skjulte interne Markdown-markører må ikke medtages.
+
+På macOS findes `CF_UNICODETEXT` ikke. Der gælder `NSPasteboardTypeString` med
+UTF-8 og LF, jf. "macOS-mapping".
 
 ### Klip
 
@@ -493,6 +635,9 @@ historik fra før kompositionen.
    alene ud fra tegnene. I en tabelcelle gælder cellens strukturelle validering.
 8. En vellykket indsætning skal være én fortrydelseshændelse, uanset tekstens
    længde eller antal afsnit.
+
+På macOS er den tilsvarende tekstrepræsentation `NSPasteboardTypeString`, jf.
+"macOS-mapping".
 
 ### Ekstern indsætning er kun tekst
 
@@ -875,6 +1020,55 @@ ved sidste celle. Det beviser ikke den samlede Tab-kommando, som skal oprette en
 række. Den kræver en test af kommandoen og dens undo-handling. De tidligere
 statuspunkter ovenfor er historiske noter, ikke en godkendelse.
 
+### Implementeringsstatus for macOS
+
+Status er gennemgået mod `src/macos/` på `main`. Den lemper ikke kravene.
+
+Den delte kerne:
+
+- Caret- og afsnitsmodellen er den samme kode i de to builds (`src/caret.h`,
+  `src/editcontroller.cpp`, `src/textdrag.cpp`, `src/dom.h`). Afsnit, celler,
+  grafemer og undo-poster opføres der, ikke i AppKit-laget.
+- Den portable suite bygges og køres i macOS-jobbet og i et sanitizer-build. Syv
+  testfiler har en Win32-del, som ikke kører her: `clipboard_test`,
+  `findbar_window_test`, `parser_smoke` og de fire office-testfiler.
+
+Dækning pr. kriterium:
+
+| Kriterium | Bevis i macOS-buildet |
+| --- | --- |
+| AC-01 | Menu, responder chain og validering i `menu_mac.mm` og `main_mac.mm`; genvejene læses i `content_view_mac.mm`. Fokus i søgefeltet er manuel kontrol. |
+| AC-02 | `navigation_test` for bevægelserne, linje-, side- og dokumenthandlere i `content_view_mac.mm`, QA `end`, `tail` og `tail2`. |
+| AC-03 | `caret_test`, `hittest_test`, `editcontroller_test` og `textbuffer_test`; QA `edit` og `end`. |
+| AC-04 | `hittest_test` (UTF-8 og UTF-16, emoji-surrogater) og `text_engine_mac_test` (ombrydning og hit-test af flerbytetekst). RTL og hele Unicode-korpus er ikke automatiseret. |
+| AC-05 | `composition_test` og `inputfilter_test` for modellen. IME med en rigtig inputkilde og emoji-panelet er manuelle. |
+| AC-06 | `editing_`-vagterne i `app_mac.cpp`, bl.a. det fælles `RewriteTable` for tabelkommandoer, menuvalideringen og de inaktive erstatningsknapper i `findbar_mac.mm`. |
+| AC-07 | `undo_test` og gennemgang af clipboard- og mutationsvejene. Clipboard-fejl injiceres kun i Windows-testen. |
+| AC-08 | `formatting_test` og `markers_test`; `clear_format_test` kører kun i Windows-jobbet; linkkontrollen er i `app_mac.cpp`. |
+| AC-09 | `src/textdrag.cpp` og arming, tærskel og drop i `content_view_mac.mm`. Den samlede flytning har ingen automatisk test. |
+| AC-10 | `table_interaction_test` (bl.a. X2 om sidste celle) og `tableedit_test`; Tab-handleren i `app_mac.cpp`. |
+| AC-11 | `findstate_test`, `unicode_fold_test` for dansk case og `findbar_ids_test`; QA `find`. Tastaturbetjening af båndet er manuel. |
+| AC-12 | `findstate_test` og replace-koden i `app_mac.cpp`; `findbar_window_test` er Windows-only. |
+| AC-13 | `EscapeMarkdown`-testen i `clipboard_test`; selve `NSPasteboard`-læsningen er gennemgået i koden, fordi Win32-delen er bag `#ifdef _WIN32`. Manuel kontrol med rige kilder mangler. |
+
+QA-turen fotograferer `doc`, `edit`, `find`, `outline`, `source`, `lower`, `end`,
+`tail`, `tail2`, `narrow`, `wide`, `no-outline`, `no-headings`, `svg`, `welcome`,
+`dark` og `settings`. Trace-linjerne viser dokumentbredde, paneltilstand og
+koldstart.
+
+Ikke dækket automatisk på macOS:
+
+- Tekstflytning mellem programmer og Cmd-drag som kopi. Det ligger uden for denne
+  specifikation.
+- Visuel caret i RTL-løb, IME med en rigtig inputkilde, emoji-panelet, dead keys,
+  caret-blink og Core Text ved DPI og zoom. Det er manuelle tests på begge
+  platforme.
+- Den fulde Unicode-grafemmodel er ikke valideret mod `GraphemeBreakTest.txt` og
+  `WordBreakTest.txt` på nogen af platformene. Det er stadig et åbent krav.
+- Der findes ingen samlet macOS-acceptancejournal svarende til den Windows-test,
+  som "Teststrategi og godkendelse" kræver. Kriterierne er dækket af den
+  portable suite og QA-turen, men journalen mangler.
+
 ## Udvidede krav: dokumentbevidst redigering og søgning
 
 Dette afsnit er normativt. Det beskriver funktioner, som skal følge den samme
@@ -1221,6 +1415,12 @@ De skal bruge en rigtig Win32 message loop, hvor fokus eller beskeder er en del
 af kravet. Clipboard og ekstern linkåbning skal kunne erstattes med
 testinterfaces, så fejl og afvisning kan testes uden eksterne sideeffekter.
 
+På macOS gælder det tilsvarende job "Tests (macOS, Apple Silicon)": det
+bygger `MarkDownIt.tests` og kører pakken på Apple Silicon, efterfulgt af et
+sanitizer-build. App-jobbet bygger bundlen og kører QA-turen, der lægger
+captures og trace i artifactet. Clipboard, filåbning og ekstern linkåbning er
+erstattet med testinterfaces på samme måde som på Windows.
+
 Hvert acceptkriterium ovenfor og i de tidligere lister skal kobles til mindst én
 test. CI skal kontrollere, at ingen kriterier mangler i testoversigten. Det
 gælder også de særlige celleregler, ikke kun de portable hjælpefunktioner. Et
@@ -1228,7 +1428,8 @@ kriterium uden runtime-test eller manuel testjournal er ikke godkendt.
 
 Manuel Windows-test er en udtrykkelig undtagelse for systemets IME, emoji-panel,
 caret-blink, faktisk musecapture og visuel kontrol af DirectWrite ved DPI og
-zoom. Modeldelen skal stadig have automatiske tests. En ny fase skal levere sine
+zoom. Manuel macOS-test er undtagelsen for de samme områder gennem AppKit og
+Core Text. Modeldelen skal stadig have automatiske tests. En ny fase skal levere sine
 tests sammen med koden. WSL-test er kun en supplerende kontrol.
 
 | Kontrol | Grænse | Testspor |
@@ -1265,7 +1466,7 @@ punktet og tilføje testdata, før den berørte del kan godkendes.
 
 ## Referencer
 
-Microsoft-kilderne beskriver genveje og API-kontrakter. De lokale referencer
+Microsoft- og Apple-kilderne beskriver genveje og API-kontrakter. De lokale referencer
 beskriver MarkDownIts model og produktvalg. En kildehenvisning er ikke bevis
 for, at appen allerede opfylder et krav.
 
@@ -1274,6 +1475,8 @@ for, at appen allerede opfylder et krav.
 - [Standard Clipboard Formats, herunder CF_UNICODETEXT][clipboard-formats].
 - [DirectWrite HitTestPoint][hit-test].
 - [Visuel caretplacering i tovejs-tekst][bidi-caret].
+- [NSPasteboard][nspasteboard].
+- [CTLineGetStringIndexForPosition][ct-line-hit-test].
 - [UAX #29, Unicode Text Segmentation][unicode-segmentation].
 - [Caret- og afsnitsmodel](word-processor-guidelines.md).
 - [Tabelmodel og MarkDownIts afgrænsninger](word-processor-table-guidelines.md).
@@ -1285,5 +1488,7 @@ for, at appen allerede opfylder et krav.
 [clipboard-formats]: https://learn.microsoft.com/en-us/windows/win32/dataxchg/standard-clipboard-formats
 [hit-test]: https://learn.microsoft.com/en-us/windows/win32/api/dwrite/nf-dwrite-idwritetextlayout-hittestpoint
 [bidi-caret]: https://learn.microsoft.com/en-us/windows/win32/intl/displaying-the-caret-in-bidirectional-strings
+[nspasteboard]: https://developer.apple.com/documentation/appkit/nspasteboard
+[ct-line-hit-test]: https://developer.apple.com/documentation/coretext/ctlinegetstringindexforposition(_:_:)
 [unicode-segmentation]: https://www.unicode.org/reports/tr29/
 [markdown-style]: https://google.github.io/styleguide/docguide/style.html
