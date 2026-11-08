@@ -1294,10 +1294,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     }
     float cx = 0.0f, cy = 0.0f, cw = 0.0f, ch = 0.0f;
     const bool hasRect = content_->OffsetToRect(caretBefore, &cx, &cy, &cw, &ch);
+    NSString* responderName =
+        NSStringFromClass([[window_ firstResponder] class]);
     mac::TraceMac("qa keys focus: responder=%s editable=%d",
-                  NSStringFromClass([[window_ firstResponder] class])
-                      ? [[[window_ firstResponder] class] description].UTF8String
-                      : "nil",
+                  responderName ? [responderName UTF8String] : "nil",
                   app_->Editing() ? 1 : 0);
     mac::TraceMac(
         "qa keys rect: ok=%d x=%.1f y=%.1f w=%.1f h=%.1f line_end=%u "
