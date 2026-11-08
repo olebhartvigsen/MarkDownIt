@@ -2475,6 +2475,14 @@ void MacRenderer::AppendVisibleRangeRects(
 
         const uint32_t from = start > lineStartVis ? start : lineStartVis;
         const uint32_t to = end < lineEndVis ? end : lineEndVis;
+        // Nothing of the range reaches this line. The subtraction below
+        // would wrap when the range ended before the line starts, and the
+        // wrapped value reads as a range of four billion bytes.
+        if (from >= to) {
+            lineStartVis = lineEndVis;
+            lineTop += line.height;
+            continue;
+        }
         uint32_t localFrom = from - lineStartVis;
         uint32_t localTo = to - lineStartVis;
         if (trimBlanks && localFrom < localTo) {
