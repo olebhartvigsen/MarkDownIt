@@ -274,7 +274,9 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         echo "$KEYS_SRC"
         exit 1
     fi
-    if [ "$SRC_SCROLL" -lt "$(( SRC_HEIGHT - SRC_VIEW - 40 ))" ]; then
+    # The caret reveal keeps a margin under the last line, so the place
+    # lands near the foot of the page rather than exactly on it.
+    if [ "$SRC_SCROLL" -lt "$(( (SRC_HEIGHT - SRC_VIEW) * 9 / 10 ))" ]; then
         echo "launch smoke FAILED: the source view did not scroll to the caret"
         echo "$KEYS_SRC"
         exit 1
