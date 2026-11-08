@@ -1791,8 +1791,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // no file is open.
 - (void)showWelcomeScreen {
     // The overlay belongs to the page that was zoomed, so it goes with
-    // the document rather than hanging over the recents page.
-    [zoomHud_ hideNow];
+    // the document rather than hanging over the recents page. Only on
+    // the way in: this screen is shown again on every relayout while it
+    // is up, and hiding each time would take a fresh overlay with it.
+    if (!app_->WelcomeMode()) {
+        [zoomHud_ hideNow];
+    }
     app_->SetWelcomeMode(true);
     content_->SetWelcomeFiles(settings_.recentFilesWithPreview());
     // The recents page is one viewport. A document that was scrolled
