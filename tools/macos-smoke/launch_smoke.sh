@@ -121,12 +121,12 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,mark,welcome,welcome-scrolled,dark,settings,keys-source,keys-doc" "$BIN" "$DOC" &
+    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,zoom-hud,zoom-hud-clear,mark,welcome,welcome-scrolled,dark,settings,keys-source,keys-doc" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
     while [ "$waited" -lt 240 ]; do
-        for name in doc wheel find edit outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap mark welcome welcome-scrolled dark settings keys-source keys-doc; do
+        for name in doc wheel find edit outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap zoom-hud zoom-hud-clear mark welcome welcome-scrolled dark settings keys-source keys-doc; do
             case "$seen" in *" $name "*) continue ;; esac
             if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
                 sleep 0.6
@@ -176,6 +176,30 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         echo "launch smoke: the text follows a window that grows with" \
              "the pane closed ($GROW_BEFORE -> $GROW_AFTER)"
     fi
+    # The zoom overlay: a level that names itself while it changes, and
+    # nothing left of it once it has gone.
+    ZOOM_PERCENT=$(grep -o "percent=[0-9]*" "$LOG" 2>/dev/null \
+        | head -1 | cut -d= -f2)
+    ZOOM_SHOWING=$(grep -o "showing=[0-9]" "$LOG" 2>/dev/null \
+        | head -1 | cut -d= -f2)
+    if [ -z "$ZOOM_PERCENT" ] || [ -z "$ZOOM_SHOWING" ]; then
+        echo "launch smoke FAILED: no zoom overlay in the trace"
+        exit 1
+    fi
+    if [ "$ZOOM_PERCENT" -le 100 ] || [ "$ZOOM_SHOWING" != "1" ]; then
+        echo "launch smoke FAILED: the zoom overlay did not name the new" \
+             "level (percent=$ZOOM_PERCENT showing=$ZOOM_SHOWING)"
+        exit 1
+    fi
+    echo "launch smoke: the zoom overlay names the level ($ZOOM_PERCENT%)"
+    if ! grep -q "qa zoom-hud: cleared showing=0" "$LOG" 2>/dev/null; then
+        echo "launch smoke FAILED: the zoom overlay was still up when it" \
+             "had been taken down"
+        grep "qa zoom-hud:" "$LOG" | head -3
+        exit 1
+    fi
+    echo "launch smoke: the zoom overlay leaves nothing behind"
+
     # The reader's report: a mark made with the space beside the word
     # in the selection must store the words alone. The mark state marks
     # "text with spaces " at bytes 0 to 17 and " leading" at 23 to 31.

@@ -5,6 +5,7 @@
 // delegate and a window, and the file the user opened comes either from
 // the command line or from the Finder.
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -38,6 +39,7 @@
 #include "findbar_mac.h"
 #include "menu_mac.h"
 #include "toolbar_mac.h"
+#include "zoom_hud_mac.h"
 #include "table_picker_mac.h"
 
 namespace mac {
@@ -104,6 +106,8 @@ bool OpenExternalUrl(const std::string& url) {
     NSScrollView* scrollView_;
     MdContentView* view_;
     float zoom_;
+    // The overlay that says what the zoom level is while it changes.
+    MdZoomHud* zoomHud_;
     bool sourceView_;
     // Whether the text is wrapped.
     bool wrap_;
@@ -497,6 +501,21 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [row.trailingAnchor
             constraintEqualToAnchor:container_.trailingAnchor].active = YES;
     }
+
+    // The zoom overlay floats above the rows: it is a plain subview of
+    // the stack, not one of its arranged rows, so it does not take part
+    // in the layout of the page. It sits centred at the top, clear of
+    // the text a reader is zooming towards.
+    zoomHud_ = [[MdZoomHud alloc] initWithFrame:NSZeroRect];
+    [zoomHud_ setTranslatesAutoresizingMaskIntoConstraints:NO];
+    [container_ addSubview:zoomHud_];
+    [NSLayoutConstraint activateConstraints:@[
+        [[zoomHud_ centerXAnchor]
+            constraintEqualToAnchor:[container_ centerXAnchor]],
+        [[zoomHud_ topAnchor]
+            constraintEqualToAnchor:[container_ topAnchor]
+                           constant:18.0],
+    ]];
 
     [window_ setContentView:container_];
     [window_ makeKeyAndOrderFront:nil];
@@ -907,6 +926,20 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         }
         mac::TraceMac("qa mark: markers=%zu", marks.size());
         [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"zoom-hud"]) {
+        // The overlay a reader sees while zooming: it names the level,
+        // and it is up when the picture is taken.
+        [self setZoom:zoom::Step(zoom_, true)];
+        mac::TraceMac("qa zoom-hud: percent=%.0f showing=%d",
+                      (double)(zoom_ * 100.0f),
+                      [zoomHud_ isShowing] ? 1 : 0);
+    } else if ([state isEqualToString:@"zoom-hud-clear"]) {
+        // Back to the level the walk started at, then take the overlay
+        // down: the rest of the walk reads the page at its normal size.
+        [self setZoom:zoom::kDefaultZoom];
+        [zoomHud_ hideNow];
+        mac::TraceMac("qa zoom-hud: cleared showing=%d",
+                      [zoomHud_ isShowing] ? 1 : 0);
     } else if ([state isEqualToString:@"welcome"]) {
         // The screen without a document, reached the way the toolbar
         // reaches it. The walk has opened the fixture, so the recent
@@ -1750,6 +1783,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // Shows the welcome screen, which takes the place of the document when
 // no file is open.
 - (void)showWelcomeScreen {
+    // The overlay belongs to the page that was zoomed, so it goes with
+    // the document rather than hanging over the recents page.
+    [zoomHud_ hideNow];
     app_->SetWelcomeMode(true);
     content_->SetWelcomeFiles(settings_.recentFilesWithPreview());
     // The recents page is one viewport. A document that was scrolled
@@ -2767,6 +2803,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)zoomDidChange:(float)factor {
     zoom_ = factor;
     settings_.settings().zoomFactor = factor;
+    [zoomHud_ showPercent:(NSInteger)lroundf(factor * 100.0f)];
 }
 
 // Shows an error to the user.

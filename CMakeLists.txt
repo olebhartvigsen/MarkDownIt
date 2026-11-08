@@ -683,6 +683,8 @@ if(APPLE)
         src/macos/table_picker_mac.mm
         src/macos/svg_mac.cpp
         src/macos/welcome_mac.cpp
+        src/macos/zoom_hud_mac.mm
+        src/macos/zoom_hud_mac.h
     )
     # The Objective-C++ sources need the Objective-C runtime and the
     # frameworks, which the C++ sources do not.
@@ -698,6 +700,7 @@ if(APPLE)
         src/macos/fonts_mac.mm
         src/macos/toolbar_mac.mm
         src/macos/table_picker_mac.mm
+        src/macos/zoom_hud_mac.mm
         PROPERTIES COMPILE_FLAGS "-fobjc-arc"
     )
     target_link_libraries(MarkDownItMac
