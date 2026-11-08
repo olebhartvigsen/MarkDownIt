@@ -256,6 +256,8 @@ TEST(Markers, AddRefusesEmptyOutOfBoundsAndDuplicateRanges) {
     EXPECT_TRUE(store.Add(document, 0, 3));
     EXPECT_TRUE(store.Add(document, 8, 11));
     EXPECT_FALSE(store.Add(document, 0, 3));      // exact duplicate range
+    // The range ends on the space after "and", and Add trims it, so the
+    // stored suffix starts at that space instead of at "cat".
     EXPECT_TRUE(store.Add(document, 0, 8));       // overlap is fine, range differs
     EXPECT_EQ(store.Count(), 3u);
 
@@ -264,7 +266,7 @@ TEST(Markers, AddRefusesEmptyOutOfBoundsAndDuplicateRanges) {
     EXPECT_EQ(store.Markers()[2].id, "m-0003");
     EXPECT_EQ(store.Markers()[0].exact, "cat");
     EXPECT_EQ(store.Markers()[0].prefix, "");
-    EXPECT_EQ(store.Markers()[2].suffix, "cat");
+    EXPECT_EQ(store.Markers()[2].suffix, " cat");
     EXPECT_TRUE(store.Markers()[2].resolved);
 }
 
@@ -289,6 +291,34 @@ TEST(Markers, AddBuildsPrefixAndSuffixWithoutSplittingUtf8) {
     EXPECT_EQ(suffixStore.Markers()[0].suffix, std::string(31, 'c'));
     EXPECT_EQ(suffixStore.Markers()[0].suffix.size(), 31u);
     EXPECT_EQ(suffixStore.Markers()[0].prefix, std::string(16, 'x'));
+}
+
+TEST(Markers, AddTrimsWhitespaceAtBothEnds) {
+    const std::string document = "one  tekst her  two";  // 19 bytes
+    MarkerStore store;
+
+    // The reader selected the spaces around the words too.
+    ASSERT_TRUE(store.Add(document, 4, 15));
+    EXPECT_EQ(store.Count(), 1u);
+    EXPECT_EQ(store.Markers()[0].start, 5u);
+    EXPECT_EQ(store.Markers()[0].end, 14u);
+    EXPECT_EQ(store.Markers()[0].exact, "tekst her");
+    EXPECT_EQ(store.Markers()[0].prefix, "one  ");
+    EXPECT_EQ(store.Markers()[0].suffix, "  two");
+
+    // A selection of only whitespace marks nothing, and so does one
+    // that becomes empty once its whitespace is trimmed.
+    EXPECT_FALSE(store.Add(document, 3, 5));
+    EXPECT_FALSE(store.Add(document, 4, 5));
+    EXPECT_EQ(store.Count(), 1u);
+
+    // A selection across lines loses the newline it swept up.
+    const std::string lines = "first\n\nsecond\n";
+    MarkerStore block;
+    ASSERT_TRUE(block.Add(lines, 5, 14));
+    EXPECT_EQ(block.Markers()[0].exact, "second");
+    EXPECT_EQ(block.Markers()[0].start, 7u);
+    EXPECT_EQ(block.Markers()[0].end, 13u);
 }
 
 // ---- RemoveIntersecting ----

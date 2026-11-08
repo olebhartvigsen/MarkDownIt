@@ -26,6 +26,14 @@ bool IsContinuationByte(unsigned char byte) {
     return (byte & 0xC0) == 0x80;
 }
 
+// The ASCII whitespace a mark never starts or ends on: it draws as
+// nothing, so a mark that covered it would paint a strip beside the
+// words instead of behind them.
+bool IsBlankByte(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' ||
+           c == '\f' || c == '\v';
+}
+
 // The bytes immediately before `start`, at most 32 and never starting in the
 // middle of a code point: a continuation byte at the window edge is skipped,
 // so the window begins at a character lead.
@@ -664,8 +672,15 @@ void MarkerStore::Resolve(const std::string& documentText) {
 
 bool MarkerStore::Add(const std::string& documentText, uint32_t start,
                       uint32_t end) {
-    if (start >= end) return false;
     if (static_cast<size_t>(end) > documentText.size()) return false;
+    if (start >= end) return false;
+    // A selection can sweep up the space beside a word. The mark sits
+    // on the words, so whitespace at either end is trimmed here, once,
+    // for both builds (highlighting guide 10). A range of only
+    // whitespace marks nothing.
+    while (start < end && IsBlankByte(documentText[start])) ++start;
+    while (end > start && IsBlankByte(documentText[end - 1])) --end;
+    if (start >= end) return false;
     for (const TextMarker& existing : markers_) {
         if (existing.start == start && existing.end == end) return false;
     }

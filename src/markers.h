@@ -72,9 +72,12 @@ public:
     void Resolve(const std::string& documentText);
 
     // Add a marker for [start, end) of documentText (caller already clipped
-    // it to rendered text). Builds exact/prefix/suffix from the text.
-    // Refuses (returns false) when the range is empty, out of bounds, or an
-    // existing marker has the same start and end. New markers are resolved.
+    // it to rendered text). ASCII whitespace at both ends is trimmed first,
+    // so a mark begins and ends on a drawn character and not on the space
+    // beside it. Builds exact/prefix/suffix from the trimmed text.
+    // Refuses (returns false) when the range is empty, out of bounds, only
+    // whitespace, or an existing marker has the same start and end. New
+    // markers are resolved.
     bool Add(const std::string& documentText, uint32_t start, uint32_t end);
 
     // Remove every marker that intersects [start, end). Returns the count.

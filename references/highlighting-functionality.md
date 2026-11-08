@@ -330,6 +330,11 @@ before storing anything: LayoutCache::ClipToRendered trims hidden
 Markdown syntax from both ends of the range, so a stored marker never
 starts or ends on bytes the renderer does not draw.
 
+The range also ends on text, not on the space beside it. MarkerStore::Add
+trims ASCII whitespace at both ends before it stores anything, so a
+selection that swept up the spaces around a word marks the word, and a
+selection of only whitespace marks nothing.
+
 ---
 
 # 11. Cross-element selections
