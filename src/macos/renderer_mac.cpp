@@ -2487,6 +2487,11 @@ bool MacRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
     std::vector<LineRef> lines;
     const std::vector<TextRegion> regions = TextRegions();
     int caretLine = -1;
+    // The last line of the nearest region that ends before the position,
+    // for a position that sits between two regions: on the newline that
+    // ends a block, nothing holds it, and the step has to start from the
+    // line just above the gap.
+    int lineAbove = -1;
     for (const TextRegion& region : regions) {
         if (!region.lines || !region.visToSrc || region.lines->empty()) {
             continue;
@@ -2514,8 +2519,20 @@ bool MacRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
             lineStartVis = lineEndVis;
             top += line.height;
         }
+        if (region.visToSrc->back() < offset) {
+            lineAbove = static_cast<int>(lines.size()) - 1;
+        }
     }
-    if (caretLine < 0) return false;
+    if (caretLine < 0) {
+        if (lineAbove < 0) {
+            if (delta < 0) return false;
+            // Before the first drawn line: one step down is its first
+            // line, and there is nothing above it.
+            caretLine = -1;
+        } else {
+            caretLine = lineAbove;
+        }
+    }
 
     const int targetLine = caretLine + delta;
     if (targetLine < 0 || targetLine >= static_cast<int>(lines.size())) {
