@@ -1,5 +1,6 @@
 #include "renderer.h"
 #include "blockspacing.h"
+#include "hash.h"
 
 #include <d2d1.h>
 #include <dwrite.h>
@@ -2500,9 +2501,10 @@ void Renderer::RememberImageSize(const std::string& url, float w, float h) {
 svg::SvgDoc* Renderer::GetSvgDoc(const Node& n, float availW) {
     if (!d2d_ctx5_) return nullptr;
 
-    // Check cache by srcOffset
+    // Check the cache by where the fence sits and by what it says
+    const uint64_t rawHash = Fnv1aUtf32(n.raw);
     for (auto& e : svg_cache_) {
-        if (e.srcOffset == n.srcOffset) {
+        if (e.srcOffset == n.srcOffset && e.rawHash == rawHash) {
             return &e.doc;
         }
     }
@@ -2513,6 +2515,7 @@ svg::SvgDoc* Renderer::GetSvgDoc(const Node& n, float availW) {
 
     SvgCacheEntry entry;
     entry.srcOffset = n.srcOffset;
+    entry.rawHash = rawHash;
     bool loaded = entry.doc.Load(d2d_ctx5_, utf8);
     diag::TraceFmt("SVGLOAD off=%u bytes=%zu ok=%d w=%.1f h=%.1f",
                    n.srcOffset, utf8.size(), loaded ? 1 : 0,
@@ -2520,6 +2523,9 @@ svg::SvgDoc* Renderer::GetSvgDoc(const Node& n, float availW) {
     if (!loaded) {
         return nullptr;
     }
+    // A reader who opens a hundred documents should not keep a hundred
+    // drawings alive.
+    if (svg_cache_.size() >= 32) svg_cache_.clear();
     svg_cache_.push_back(std::move(entry));
     return &svg_cache_.back().doc;
 }

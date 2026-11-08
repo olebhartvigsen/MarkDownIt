@@ -184,6 +184,10 @@ private:
     // SVG document cache: keyed by srcOffset.
     struct SvgCacheEntry {
         uint32_t srcOffset = 0;
+        // What the fence says. A standalone SVG file becomes a fence at
+        // the same offset in every document, so the offset alone handed
+        // the next file the last file's drawing.
+        uint64_t rawHash = 0;
         svg::SvgDoc doc;
         float lastWidth = 0;
         float lastHeight = 0;
