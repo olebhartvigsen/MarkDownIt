@@ -692,17 +692,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The reader scrolls a page sideways, then asks for the recents
         // page. It has to fit the window and start at its own origin.
         //
-        // A drawing that overflows the column leaves the document view
-        // wider than the clip; 480 extra points is that state, made
-        // deterministic, so the walk does not depend on a font metric.
-        // The walk arrives here from the recents page; a document has to
-        // be on screen for the view to be wider than the clip.
-        if (app_->WelcomeMode()) [self hideWelcomeScreen];
+        // The clip is put where a sideways scroll leaves it. The clip's
+        // own scrolling does not clamp (its callers do), so this is the
+        // state itself, not a guess about a font metric.
         NSClipView* clip = [[view_ enclosingScrollView] contentView];
-        NSSize wide = [clip bounds].size;
-        wide.width += 480.0;
-        [view_ setFrameSize:wide];
-        [view_ scrollToDocumentPoint:NSMakePoint(240.0, 0.0)];
+        [clip setBoundsOrigin:NSMakePoint(240.0, 0.0)];
+        [scrollView_ reflectScrolledClipView:clip];
         mac::TraceMac(
             "qa welcome-scrolled: before offset=%.0f frame=%.0f clip=%.0f",
             (double)[clip bounds].origin.x, (double)NSWidth([view_ frame]),
