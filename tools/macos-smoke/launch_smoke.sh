@@ -389,6 +389,35 @@ COLD_DOC="$(pwd)/tests/fixtures/diagram.svg"
 if [ -f "$COLD_DOC" ]; then
     mkdir -p build-mac/qa
     APP_ABS="$(cd "$(dirname "$APP")" && pwd)/$(basename "$APP")"
+
+    # The recent list has to survive this launch. The open path adds the
+    # file and saves, and the Finder hands the file over BEFORE
+    # didFinishLaunching: a save on top of settings that had not been
+    # read yet wrote a one entry list over everything the reader had.
+    # Seed three entries and check them again afterwards.
+    SETTINGS="$HOME/Library/Application Support/MarkDownIt/settings.json"
+    SETTINGS_BACKUP="$HOME/MarkDownIt-settings-backup.json"
+    if [ -f "$SETTINGS" ]; then cp "$SETTINGS" "$SETTINGS_BACKUP"; fi
+    mkdir -p "$(dirname "$SETTINGS")"
+    SEED_ONE="$(pwd)/tests/fixtures/mark-space.md"
+    SEED_TWO="$(pwd)/tests/fixtures/two-boxes.svg"
+    SEED_THREE="$(pwd)/tests/fixtures/wide-diagram.svg"
+    {
+        printf '{\n'
+        printf '  "fileAssoc": true,\n'
+        printf '  "contentWidthMode": 3,\n'
+        printf '  "zoomFactor": 2,\n'
+        printf '  "outlineWidthDip": 220,\n'
+        printf '  "windowFrameX": 40,\n'
+        printf '  "windowFrameY": 60,\n'
+        printf '  "windowFrameWidth": 1000,\n'
+        printf '  "windowFrameHeight": 760,\n'
+        printf '  "outlineVisible": true,\n'
+        printf '  "recentFiles": ["%s", "%s", "%s"]\n' \
+            "$SEED_ONE" "$SEED_TWO" "$SEED_THREE"
+        printf '}\n'
+    } > "$SETTINGS"
+
     rm -f "$LOG"
     open -n -a "$APP_ABS" "$COLD_DOC"
     waited=0
@@ -405,7 +434,54 @@ if [ -f "$COLD_DOC" ]; then
     fi
     sleep 1
     screencapture -x "build-mac/qa/cold-open.png" 2>/dev/null || true
+
+    # The settings were read before the document arrived, and the level
+    # a document opens at is 100%, whatever the file said.
+    IF_LOAD=$(grep -n "willFinishLaunching enter" "$LOG" 2>/dev/null \
+        | head -1 | cut -d: -f1)
+    IF_OPEN=$(grep -n "^\[.*\] open: " "$LOG" 2>/dev/null | head -1 | cut -d: -f1)
+    if [ -z "$IF_LOAD" ]; then
+        echo "launch smoke FAILED: the settings were never read at launch"
+        tail -20 "$LOG" 2>/dev/null
+        pkill -x MarkDownIt 2>/dev/null
+        exit 1
+    fi
+    if [ -n "$IF_OPEN" ] && [ "$IF_LOAD" -gt "$IF_OPEN" ]; then
+        echo "launch smoke FAILED: the document opened before the settings were read"
+        pkill -x MarkDownIt 2>/dev/null
+        exit 1
+    fi
+    if ! grep -q "launch: file=.*zoom=100" "$LOG" 2>/dev/null; then
+        echo "launch smoke FAILED: a document opened at launch did not start at 100%"
+        grep "launch: file=" "$LOG" 2>/dev/null
+        pkill -x MarkDownIt 2>/dev/null
+        exit 1
+    fi
+
+    # The three seeded entries are still there, and the file just opened
+    # is at the front.
+    for seed in "$SEED_ONE" "$SEED_TWO" "$SEED_THREE"; do
+        if ! grep -qF "$seed" "$SETTINGS"; then
+            echo "launch smoke FAILED: a cold launch dropped a recent file" \
+                 "from the list ($seed)"
+            cat "$SETTINGS" 2>/dev/null
+            pkill -x MarkDownIt 2>/dev/null
+            exit 1
+        fi
+    done
+    if ! grep -qF "$COLD_DOC" "$SETTINGS"; then
+        echo "launch smoke FAILED: the document opened at launch is not in the recent list"
+        cat "$SETTINGS" 2>/dev/null
+        pkill -x MarkDownIt 2>/dev/null
+        exit 1
+    fi
+    echo "launch smoke: a cold launch keeps the recent list and opens at 100%"
+
     cp "$LOG" "build-mac/qa/cold-open-trace.log" 2>/dev/null || true
     pkill -x MarkDownIt 2>/dev/null
-    echo "launch smoke: the document opened at launch is on screen"
+    sleep 1
+    if [ -f "$SETTINGS_BACKUP" ]; then
+        cp "$SETTINGS_BACKUP" "$SETTINGS"
+        rm -f "$SETTINGS_BACKUP"
+    fi
 fi

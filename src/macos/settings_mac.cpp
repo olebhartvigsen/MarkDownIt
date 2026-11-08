@@ -264,6 +264,7 @@ std::string MacSettings::EnsureDirectory() const {
 }
 
 void MacSettings::Load() {
+    loaded_ = true;
     std::ifstream file(path_, std::ios::binary);
     if (!file) {
         // A missing settings file is not an error. The defaults stand.
@@ -321,6 +322,12 @@ void MacSettings::Load() {
 
 bool MacSettings::Save() const {
     if (path_.empty()) return false;
+    // A save before the file has been read would write the defaults,
+    // and an empty recent list, over the reader's settings. The Finder
+    // hands a document over before didFinishLaunching, so the open path
+    // can run first; the guard makes that harmless even if the load
+    // order ever slips again.
+    if (!loaded_) return false;
 
     // The directory has to exist before the file can be written.
     EnsureDirectory();

@@ -247,6 +247,18 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // The application life cycle
 // ---------------------------------------------------------------------------
 
+- (void)applicationWillFinishLaunching:(NSNotification*)notification {
+    (void)notification;
+    mac::TraceMac("willFinishLaunching enter");
+    // The settings are read before anything else, because a document
+    // handed over by the Finder arrives BEFORE didFinishLaunching: the
+    // open path adds the file to the recent list and saves. Reading the
+    // settings after that point saved the defaults, and an empty recent
+    // list, on top of what the reader already had. One double click in
+    // the Finder emptied the list that way.
+    settings_.Load();
+}
+
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
     (void)notification;
 
@@ -254,8 +266,17 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // The bundled fonts come first: everything laid out after this
     // line, the welcome screen included, measures with them.
     mac::RegisterBundledFonts();
-    settings_.Load();
-    zoom_ = zoom::Clamp(settings_.settings().zoomFactor);
+    // A document handed over by the Finder is already open here, and a
+    // document opens at 100%: the stored level belongs to the window
+    // that comes up on the recents page instead.
+    if (app_->filePath().empty()) {
+        zoom_ = zoom::Clamp(settings_.settings().zoomFactor);
+    } else {
+        zoom_ = zoom::kDefaultZoom;
+    }
+    // The saved value follows the level on screen, so the file never
+    // claims a level the reader is not looking at.
+    settings_.settings().zoomFactor = zoom_;
     // The pane always fits the window with the margin the padding
     // leaves, the way the rest of the window sizes on the mac. The
     // width modes belong to the Windows build, so the stored value
@@ -560,8 +581,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [self applyOutlineHeads];
         [view_ setNeedsDisplay:YES];
     }
-    mac::TraceMac("launch: file=%s welcome=%d",
-                  app_->filePath().c_str(), app_->WelcomeMode() ? 1 : 0);
+    mac::TraceMac("launch: file=%s welcome=%d zoom=%.0f",
+                  app_->filePath().c_str(), app_->WelcomeMode() ? 1 : 0,
+                  static_cast<double>(content_->zoom() * 100.0f));
 
     // F5 in the document asks the window to reload the file, because
     // the window asks the user before the changes are thrown away.

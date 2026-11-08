@@ -55,6 +55,10 @@ private:
     AppSettings settings_;
     std::vector<std::string> recentFiles_;
     std::string path_;
+    // Whether Load() has run. Save() refuses until it has: writing the
+    // defaults over a file that was never read loses what the reader
+    // had, and the recent list is the first casualty.
+    bool loaded_ = false;
 };
 
 }  // namespace mac
