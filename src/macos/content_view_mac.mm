@@ -661,6 +661,30 @@ static const CGFloat kZoomWheelUnitsPerStep = 120.0;
 // How much a pinch has to add up to before the zoom moves a step.
 static const CGFloat kPinchStepMagnification = 0.1;
 
+// The insertion point's blink period, in seconds.
+//
+// AppKit keeps the reader's blink setting in the application
+// defaults, the two keys its own text views read when they restart
+// the blink timer: an on period and an off period, in
+// milliseconds. A caret here blinks on for one and off for the
+// other, so a full cycle is their mean; a single key counts as the
+// pair with zero. No setting, a zero pair or a negative value
+// means AppKit's default of half a second each way.
+//
+// The value is read every time the blink starts, so a reader who
+// changes the setting gets it at the next focus change or caret
+// move (spec: the caret uses the system's blink setting).
+static NSTimeInterval InsertionPointBlinkPeriod() {
+    NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+    const NSInteger onMillis =
+        [defaults integerForKey:@"NSTextInsertionPointBlinkPeriodOn"];
+    const NSInteger offMillis =
+        [defaults integerForKey:@"NSTextInsertionPointBlinkPeriodOff"];
+    if (onMillis < 0 || offMillis < 0) return 0.5;
+    if (onMillis == 0 && offMillis == 0) return 0.5;
+    return static_cast<NSTimeInterval>(onMillis + offMillis) / 2000.0;
+}
+
 // The content view of the window.
 //
 // The view draws the document, shows the caret and the selection, and
@@ -1094,7 +1118,7 @@ static const CGFloat kPinchStepMagnification = 0.1;
         !app_->selection().Empty()) {
         return;
     }
-    blinkTimer_ = [NSTimer scheduledTimerWithTimeInterval:0.5
+    blinkTimer_ = [NSTimer scheduledTimerWithTimeInterval:InsertionPointBlinkPeriod()
                                                   target:self
                                                 selector:@selector(blink:)
                                                 userInfo:nil
@@ -2024,12 +2048,28 @@ static const CGFloat kPinchStepMagnification = 0.1;
     const float step = distance > 0.0f
         ? distance
         : (height > 0.0f ? height : 16.0f);
-    // The point comes back in document coordinates, the space the hit
-    // tester works in.
-    float docY = y;
-    docY += up ? -step : step;
 
-    const uint32_t target = content_->HitTestPoint(desiredX_, docY);
+    // One step from the line the caret is on usually lands on the next
+    // one, but not when that line is the last of its block: the step
+    // then falls in the space below the block, the hit test answers with
+    // the same line, and the key did nothing at all. Walk the probe out
+    // in small steps until the page names a different position, and
+    // stop at the first one that moves, so no line is ever skipped.
+    const float direction = up ? -1.0f : 1.0f;
+    const float limit = distance > 0.0f ? step : step * 2.5f;
+    const float stride = distance > 0.0f ? step : 4.0f;
+    uint32_t target = UINT32_MAX;
+    for (float travelled = stride; travelled <= limit; travelled += stride) {
+        // The point comes back in document coordinates, the space the
+        // hit tester works in.
+        const uint32_t candidate =
+            content_->HitTestPoint(desiredX_, y + direction * travelled);
+        if (candidate == UINT32_MAX) break;
+        if (candidate != caret) {
+            target = candidate;
+            break;
+        }
+    }
     if (target == UINT32_MAX) return;
 
     [self setCaret:target extend:extend];
