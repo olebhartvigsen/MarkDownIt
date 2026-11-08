@@ -1224,6 +1224,24 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // a vertical step and one typed character, plus where the view scrolled
 // to when the caret went to the end. The QA walk runs it in both modes
 // so the two can be compared line by line.
+// Sends one key press through the view, so the QA walk exercises the
+// routing the keyboard uses (keyDown: -> interpretKeyEvents: -> the
+// command selector), not just the command behind it.
+- (void)qaKeyPress:(unsigned short)keyCode function:(unichar)functionKey {
+    NSString* characters = [NSString stringWithCharacters:&functionKey length:1];
+    NSEvent* event = [NSEvent keyEventWithType:NSEventTypeKeyDown
+                                      location:NSZeroPoint
+                                 modifierFlags:0
+                                     timestamp:0
+                                  windowNumber:[window_ windowNumber]
+                                       context:nil
+                                    characters:characters
+                   charactersIgnoringModifiers:characters
+                                     isARepeat:NO
+                                       keyCode:keyCode];
+    [view_ keyDown:event];
+}
+
 - (void)qaKeysRun:(const char*)label {
     const std::string& text = app_->buffer().Text();
     uint32_t start = static_cast<uint32_t>(text.find("## Lists and tasks"));
@@ -1243,12 +1261,27 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         mac::TraceMac("qa keys start: raw=%u norm=%u blocks=%zu lines=%zu",
                       start, norm, blocks.size(),
                       blocks.empty() ? 0 : blocks.front().lines.size());
-        for (size_t i = 0; i < blocks.size() && i < 1; ++i) {
+        // The block the caret is in: in the rendered view the first
+        // block on the page is not the one the keys are measured on.
+        size_t caretBlock = 0;
+        for (size_t i = 0; i < blocks.size(); ++i) {
+            if (blocks[i].visToSrc.empty()) continue;
+            const uint32_t first = blocks[i].visToSrc.front();
+            const uint32_t last = blocks[i].visToSrc.back();
+            if (norm >= first && norm <= last + 1) {
+                caretBlock = i;
+                break;
+            }
+        }
+        for (size_t i = caretBlock; i < blocks.size() && i < caretBlock + 1; ++i) {
             const mac::LaidOutBlock& b = blocks[i];
-            mac::TraceMac("qa keys block: x=%.1f y=%.1f w=%.1f h=%.1f "
-                          "map=%zu lines=%zu",
-                          (double)b.x, (double)b.y, (double)b.width,
-                          (double)b.height, b.visToSrc.size(), b.lines.size());
+            mac::TraceMac("qa keys block: index=%zu x=%.1f y=%.1f w=%.1f "
+                          "h=%.1f map=%zu lines=%zu src=%u..%u",
+                          caretBlock, (double)b.x, (double)b.y,
+                          (double)b.width, (double)b.height,
+                          b.visToSrc.size(), b.lines.size(),
+                          b.visToSrc.empty() ? 0 : b.visToSrc.front(),
+                          b.visToSrc.empty() ? 0 : b.visToSrc.back());
             for (size_t j = 0; j < b.lines.size() && j < 4; ++j) {
                 const mac::TextLine& line = b.lines[j];
                 size_t bytes = 0;
@@ -1261,17 +1294,23 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     }
     float cx = 0.0f, cy = 0.0f, cw = 0.0f, ch = 0.0f;
     const bool hasRect = content_->OffsetToRect(caretBefore, &cx, &cy, &cw, &ch);
+    mac::TraceMac("qa keys focus: responder=%s editable=%d",
+                  NSStringFromClass([[window_ firstResponder] class])
+                      ? [[[window_ firstResponder] class] description].UTF8String
+                      : "nil",
+                  app_->Editing() ? 1 : 0);
     mac::TraceMac(
         "qa keys rect: ok=%d x=%.1f y=%.1f w=%.1f h=%.1f line_end=%u "
         "next_line=%u",
         hasRect ? 1 : 0, (double)cx, (double)cy, (double)cw, (double)ch,
         content_->LineBoundary(caretBefore, true),
         content_->HitTestPoint(cx, cy + ch + 1.0f));
+    // Five right presses and one down, as key events.
     for (int i = 0; i < 5; ++i) {
-        [view_ doCommandBySelector:@selector(moveRight:)];
+        [self qaKeyPress:124 function:NSRightArrowFunctionKey];
     }
     const uint32_t afterRight = app_->selection().active.offset;
-    [view_ doCommandBySelector:@selector(moveDown:)];
+    [self qaKeyPress:125 function:NSDownArrowFunctionKey];
     const uint32_t afterDown = app_->selection().active.offset;
     const uint32_t lengthBefore = static_cast<uint32_t>(text.size());
     // Typing, the way the reader types.
