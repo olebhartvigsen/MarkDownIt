@@ -1138,15 +1138,21 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                       blocks.empty() ? 0 : blocks.front().lines.size());
         for (size_t i = 0; i < blocks.size() && i < 1; ++i) {
             const mac::LaidOutBlock& b = blocks[i];
+            mac::TraceMac("qa keys block: x=%.1f y=%.1f w=%.1f h=%.1f "
+                          "map=%zu lines=%zu",
+                          (double)b.x, (double)b.y, (double)b.width,
+                          (double)b.height, b.visToSrc.size(), b.lines.size());
             for (size_t j = 0; j < b.lines.size() && j < 4; ++j) {
                 const mac::TextLine& line = b.lines[j];
-                std::string preview;
-                for (const mac::GlyphRun& run : line.runs) preview += run.text;
-                if (preview.size() > 44) preview = preview.substr(0, 44);
-                mac::TraceMac("qa keys line %zu: h=%.1f vis0=%u runs=%zu \"%s\"",
-                              j, (double)line.height,
-                              b.visToSrc.empty() ? 0 : b.visToSrc.front(),
-                              line.runs.size(), preview.c_str());
+                size_t bytes = 0;
+                for (const mac::GlyphRun& run : line.runs) bytes += run.text.size();
+                mac::TraceMac("qa keys line %zu: w=%.1f h=%.1f bytes=%zu runs=%zu",
+                              j, (double)line.width, (double)line.height, bytes,
+                              line.runs.size());
+            }
+            for (float py = 60.0f; py < 340.0f; py += 40.0f) {
+                mac::TraceMac("qa keys probe: y=%.0f -> %u", (double)py,
+                              content_->HitTestPoint(56.0f, py));
             }
         }
     }
