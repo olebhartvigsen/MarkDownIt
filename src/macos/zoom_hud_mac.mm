@@ -104,7 +104,11 @@ bool QaWalkRunning() {
         } completionHandler:nil];
     }
 
-    hideTimer_ = [NSTimer scheduledTimerWithTimeInterval:kHold
+    // The QA walk takes pictures a second or so after the state runs, so
+    // the overlay is held longer there; the walk takes it down itself
+    // with zoom-hud-clear. In the product the hold is the short one.
+    const NSTimeInterval hold = QaWalkRunning() ? 3.0 : kHold;
+    hideTimer_ = [NSTimer scheduledTimerWithTimeInterval:hold
                                                   target:self
                                                 selector:@selector(holdRanOut:)
                                                 userInfo:nil
