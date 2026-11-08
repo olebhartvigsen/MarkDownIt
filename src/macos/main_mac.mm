@@ -735,6 +735,49 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The Settings window is a surface of its own; it stays up
         // for its picture and the walk quits with it open.
         [self OnOpenSettings];
+    } else if ([state isEqualToString:@"click-scroll"]) {
+        // The reader's sequence: wheel the page down, then click where
+        // the text is. The caret belongs where the click landed.
+        if (app_->WelcomeMode()) [self hideWelcomeScreen];
+        [window_ makeKeyAndOrderFront:nil];
+        [window_ makeFirstResponder:view_];
+        app_->SetEditing(true);
+        app_->SetCaret(0);
+
+        NSScrollView* scroll = [view_ enclosingScrollView];
+        NSClipView* clip = [scroll contentView];
+        [clip scrollToPoint:NSMakePoint(0.0, 420.0)];
+        [scroll reflectScrolledClipView:clip];
+        const float scrollBefore = content_->scrollOffset();
+
+        const NSPoint inView =
+            NSMakePoint(static_cast<CGFloat>(view_.bounds.size.width * 0.5f),
+                        300.0);
+        const NSPoint inWindow = [view_ convertPoint:inView toView:nil];
+        NSEvent* click = [NSEvent mouseEventWithType:NSEventTypeLeftMouseDown
+                                            location:inWindow
+                                       modifierFlags:0
+                                           timestamp:0
+                                        windowNumber:[window_ windowNumber]
+                                             context:nil
+                                         eventNumber:0
+                                          clickCount:1
+                                            pressure:1.0];
+        [view_ mouseDown:click];
+        const uint32_t caret = app_->selection().active.offset;
+        const uint32_t direct = content_->HitTestPoint(
+            static_cast<float>(inView.x), static_cast<float>(inView.y));
+        const uint32_t scrolled = content_->HitTestPoint(
+            static_cast<float>(inView.x),
+            static_cast<float>(inView.y + scrollBefore));
+        mac::TraceMac(
+            "qa click-scroll: scroll=%.0f windowY=%.0f caret=%u direct=%u "
+            "scrolled=%u scrollAfter=%.0f",
+            static_cast<double>(scrollBefore),
+            static_cast<double>([[window_ contentView] convertPoint:inWindow
+                                                           fromView:nil].y),
+            caret, direct, scrolled, static_cast<double>(content_->scrollOffset()));
+        app_->SetEditing(false);
     } else if ([state isEqualToString:@"keys-source"]) {
         // The three everyday actions, in the raw view. This runs last
         // in the walk, because it types a character into the buffer.
