@@ -1,7 +1,15 @@
+# Caret- og afsnitsmodel
+
+Referencen er bindende for begge MarkDownIts native builds, Win32 og macOS.
+Positioner, paragraph-grænser og reglerne for Return, Backspace og Delete
+gælder den delte model (`src/caret.h`, `src/editcontroller.cpp`), som de to
+builds bruger sammen. Platformens tekstlayout leverer kun en kandidat:
+DirectWrite på Windows, Core Text på macOS. Acceptkriterierne A-H er testlisten
+på begge platforme.
 
 ## Implementeringsstatus
 
-Planen er gennemgået mod den native Win32-implementering. Afsnit 19 om browser-API'er gælder ikke for MarkDownIt.
+Planen er gennemgået mod begge native implementeringer, den Win32 og den macOS. Afsnit 19 om browser-API'er gælder ikke for MarkDownIt.
 
 Der var en konflikt mellem afsnit 5 og acceptkriterium D. Afsnit 5 flytter caret'en til det eksisterende næste afsnit, mens D kræver et nyt tomt afsnit. Implementeringen følger acceptkriterium D: Return ved paragraph-end opretter et tomt, addressérbart afsnit efter det aktuelle afsnit.
 
@@ -22,6 +30,24 @@ Følgende er stadig uden for denne afgrænsede rettelse og må ikke betragtes so
 - Kompleks Selection + Return på tværs af flere indlejrede formatterings- og link-runs.
 - En selvstændig caret-position omkring et image uden tekst.
 - Manuel Windows-verifikation af DirectWrite-hit-test, caret-tegning og zoom.
+
+På macOS:
+
+- Samme canoniske model og samme `EditController` som Win32. Klik, piletaster,
+  Return, Backspace og Delete går gennem den, så kriterium G er den samme kode
+  i de to builds.
+- Core Text leverer kandidaten (`CTLineGetStringIndexForPosition` i
+  `src/macos/text_engine_mac.cpp`). `ContentView::PlaceCaretAt` normaliserer
+  den til den canoniske position, så hit-test ikke selv vælger afsnit eller
+  celle (afsnit 20).
+- Kriterierne A-H køres af den portable suite i macOS-jobbet sammen med resten
+  af pakken og et sanitizer-build: `caret_test`, `hittest_test`,
+  `navigation_test`, `table_interaction_test`, `editcontroller_test` og
+  `textbuffer_test` med flere.
+- QA-turen fotograferer caret-tilstandene `edit`, `end`, `tail`, `tail2`,
+  `narrow` og `wide`, så caret og sideombrydning ses i begge builds.
+- Uden automatisk dækning på macOS: visuel caret i RTL-løb, IME-komposition med
+  en rigtig inputkilde og caret-placering omkring et billede uden tekst.
 
 ## 1. Definér den grundlæggende dokumentmodel
 
@@ -491,6 +517,13 @@ Lav en testmatrix:
 | På inline-element       | position omkring element       |
 | På whitespace           | nærmeste gyldige caret         |
 | På empty paragraph      | paragraph start/end            |
+| I mellemrummet mellem to linjer | linjen nedenunder      |
+
+Mellemrummet mellem to linjebånd hører til linjen **nedenunder**. Reglen er
+bindende for begge builds: en vertikal pilebevægelse eller et klik i
+mellemrummet under en linje skal flytte caret'en videre ned, ikke blive
+stående på linjen ovenover. Ellers ser Down ud som om den er død, og et klik
+under en overskrift lander på den forkerte linje.
 
 ---
 
