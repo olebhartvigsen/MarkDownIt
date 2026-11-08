@@ -228,6 +228,15 @@ public:
     }
 
     // Asks for a file to be opened.
+    // The open panel belongs to the window, so the screen asks for it
+    // instead of running a dialog of its own.
+    void SetOpenPanelHandler(std::function<void()> handler) {
+        openPanelHandler_ = std::move(handler);
+    }
+    void RequestOpenPanel() {
+        if (openPanelHandler_) openPanelHandler_();
+    }
+
     void RequestOpenFile(const std::string& path) {
         if (openFileHandler_) openFileHandler_(path);
     }
@@ -464,6 +473,7 @@ private:
     bool welcomeMode_ = false;
     // The handler that opens a file.
     std::function<void(const std::string&)> openFileHandler_;
+    std::function<void()> openPanelHandler_;
     // Whether the document is a standalone SVG file.
     bool isSvg_ = false;
     // Whether the fence around the SVG was put there by the app.

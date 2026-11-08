@@ -48,6 +48,11 @@ public:
     int HoveredWelcomeCard() const { return hoverCard_; }
     void SetHoveredWelcomeCard(int index) { hoverCard_ = index; }
 
+    // The button on the welcome screen that opens a document.
+    bool WelcomeOpenAt(float x, float y) const;
+    bool OpenButtonHovered() const { return openHover_; }
+    void SetOpenButtonHovered(bool hovered) { openHover_ = hovered; }
+
     // Redraws the content area.
     void Invalidate();
 
@@ -260,6 +265,8 @@ private:
     WelcomeScreen welcome_;
     // The card of the welcome screen under the mouse.
     int hoverCard_ = -1;
+    // Whether the pointer is on the Open button of the welcome screen.
+    bool openHover_ = false;
 
     float width_ = 0.0f;
     float height_ = 0.0f;

@@ -241,7 +241,14 @@ void ContentView::SetWelcomeFiles(const std::vector<RecentFile>& files) {
 }
 
 int ContentView::WelcomeCardAt(float x, float y) const {
+    // The button comes first: it sits above the cards, and a click on
+    // it must open the panel rather than the card underneath.
+    if (welcome_.HitsOpenButton(x, y)) return -1;
     return welcome_.HitTest(x, y);
+}
+
+bool ContentView::WelcomeOpenAt(float x, float y) const {
+    return welcome_.HitsOpenButton(x, y);
 }
 
 std::string ContentView::WelcomePathForCard(int index) const {
@@ -252,7 +259,8 @@ void ContentView::Draw(RenderTarget* target) {
     // Without a document the welcome screen takes its place.
     if (app_ && app_->WelcomeMode()) {
         welcome_.Layout(width_, height_);
-        welcome_.Render(target, engine_.get(), width_, height_, hoverCard_);
+        welcome_.Render(target, engine_.get(), width_, height_, hoverCard_,
+                        openHover_);
         target_ = nullptr;
         return;
     }
@@ -986,7 +994,14 @@ static const CGFloat kPinchStepMagnification = 0.1;
     const NSPoint point = [self convertPoint:[event locationInWindow]
                                     fromView:nil];
 
-    // A click on a card of the welcome screen opens that file.
+    // On the welcome screen the button opens the panel and a card
+    // opens its file.
+    if (app_ && app_->WelcomeMode() &&
+        content_->WelcomeOpenAt(static_cast<float>(point.x),
+                                static_cast<float>(point.y))) {
+        app_->RequestOpenPanel();
+        return;
+    }
     if (app_ && app_->WelcomeMode()) {
         const int card = content_->WelcomeCardAt(static_cast<float>(point.x),
                                                  static_cast<float>(point.y));
@@ -1335,10 +1350,16 @@ static const CGFloat kPinchStepMagnification = 0.1;
     if (!content_ || !app_ || !app_->WelcomeMode()) return;
     const NSPoint point = [self convertPoint:[event locationInWindow]
                                     fromView:nil];
+    const bool openHovered = content_->WelcomeOpenAt(
+        static_cast<float>(point.x), static_cast<float>(point.y));
     const int card = content_->WelcomeCardAt(static_cast<float>(point.x),
                                              static_cast<float>(point.y));
-    if (card == content_->HoveredWelcomeCard()) return;
+    if (card == content_->HoveredWelcomeCard() &&
+        openHovered == content_->OpenButtonHovered()) {
+        return;
+    }
     content_->SetHoveredWelcomeCard(card);
+    content_->SetOpenButtonHovered(openHovered);
     [self setNeedsDisplay:YES];
 }
 

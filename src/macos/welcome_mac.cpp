@@ -25,7 +25,11 @@ namespace {
 const float kCardW = 280.0f;
 const float kCardH = 180.0f;
 const float kCardGap = 24.0f;
-const float kTopMargin = 80.0f;
+// The heading, the button under it, and the top of the grid of cards.
+const float kHeadingBaseline = 52.0f;
+const float kButtonW = 176.0f;
+const float kButtonH = 32.0f;
+const float kButtonTop = 92.0f;
 const float kSideMargin = 60.0f;
 
 // The distance between two rows of the preview, and the width of the
@@ -338,6 +342,14 @@ void WelcomeScreen::SetRecentFiles(const std::vector<RecentFile>& files) {
 }
 
 void WelcomeScreen::Layout(float viewW, float viewH) {
+    // The button belongs to the screen, so it is placed even when there
+    // is nothing to show beside it yet.
+    openButton_.x = (viewW - kButtonW) * 0.5f;
+    if (openButton_.x < kSideMargin) openButton_.x = kSideMargin;
+    openButton_.y = kButtonTop;
+    openButton_.width = kButtonW;
+    openButton_.height = kButtonH;
+
     if (cards_.empty()) return;
 
     // The number of columns comes from the width of the window.
@@ -356,7 +368,8 @@ void WelcomeScreen::Layout(float viewW, float viewH) {
         const int column = static_cast<int>(i) % columns;
         const int row = static_cast<int>(i) / columns;
         cards_[i].rect.x = startX + static_cast<float>(column) * (kCardW + kCardGap);
-        cards_[i].rect.y = kTopMargin + static_cast<float>(row) * (kCardH + kCardGap);
+        cards_[i].rect.y = WelcomeScreen::kGridTop +
+                           static_cast<float>(row) * (kCardH + kCardGap);
         cards_[i].rect.width = kCardW;
         cards_[i].rect.height = kCardH;
     }
@@ -364,7 +377,8 @@ void WelcomeScreen::Layout(float viewW, float viewH) {
 }
 
 void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
-                           float viewW, float viewH, int hoverIndex) {
+                           float viewW, float viewH, int hoverIndex,
+                           bool openHovered) {
     if (!target) return;
 
     // The background of the screen.
@@ -381,7 +395,27 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         font.bold = true;
         const std::string heading = "Recent Documents";
         const float width = TextWidth(engine, heading, font);
-        target->DrawText(heading, font, (viewW - width) * 0.5f, 52.0f, kTitle);
+        target->DrawText(heading, font, (viewW - width) * 0.5f,
+                         kHeadingBaseline, kTitle);
+    }
+
+    // The button that opens a document, right under the heading. A
+    // reader who lands here with nothing in the list still has a way
+    // in, so it is drawn before the empty case returns.
+    {
+        const Color fill = openHovered ? kHoverBackground : kCardBackground;
+        const Color border = openHovered ? kHoverBorder : kCardBorder;
+        target->FillRoundedRect(openButton_, 7.0f, fill);
+        target->StrokeRect(openButton_, border, 1.0f);
+
+        FontSpec font;
+        font.family = "Segoe UI";
+        font.size = 14.0f;
+        const std::string label = "Open Document\xE2\x80\xA6";
+        const float width = TextWidth(engine, label, font);
+        target->DrawText(label, font,
+                         openButton_.x + (openButton_.width - width) * 0.5f,
+                         openButton_.y + 21.0f, kTitle);
     }
 
     // Without any files there is a hint instead of the cards.
@@ -460,6 +494,12 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
             y += kRowHeight;
         }
     }
+}
+
+bool WelcomeScreen::HitsOpenButton(float x, float y) const {
+    if (openButton_.width <= 0.0f) return false;
+    return x >= openButton_.x && x <= openButton_.x + openButton_.width &&
+           y >= openButton_.y && y <= openButton_.y + openButton_.height;
 }
 
 int WelcomeScreen::HitTest(float x, float y) const {

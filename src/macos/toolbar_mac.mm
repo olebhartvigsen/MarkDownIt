@@ -70,6 +70,7 @@ static NSString* const kIdFind = @"MdFind";
 static NSString* const kIdHighlight = @"MdHighlight";
 static NSString* const kIdEditMode = @"MdEditMode";
 static NSString* const kIdOutline = @"MdOutline";
+static NSString* const kIdRecent = @"MdRecent";
 
 @implementation MdToolbarController {
     id _host;
@@ -85,7 +86,11 @@ static NSString* const kIdOutline = @"MdOutline";
 - (instancetype)init {
     self = [super init];
     if (!self) return nil;
-    _toolbar = [[NSToolbar alloc] initWithIdentifier:@"MarkDownItMainToolbar"];
+        // The identifier moves with the set of default items: AppKit
+    // restores a saved configuration by identifier, and an older save
+    // would keep the window without the new button for good.
+    _toolbar =
+        [[NSToolbar alloc] initWithIdentifier:@"MarkDownItMainToolbar2"];
     [_toolbar setDelegate:self];
     // Symbols alone, the way the system's own windows keep the
     // toolbar quiet; the labels stay for the overflow menu, the
@@ -101,8 +106,9 @@ static NSString* const kIdOutline = @"MdOutline";
 }
 
 + (NSArray<NSString*>*)defaultItemIdentifiers {
-    return @[ kIdSave, kIdShare, kIdUndo, kIdRedo, kIdFind, kIdHighlight,
-              NSToolbarFlexibleSpaceItemIdentifier, kIdEditMode, kIdOutline ];
+    return @[ kIdRecent, kIdSave, kIdShare, kIdUndo, kIdRedo, kIdFind,
+              kIdHighlight, NSToolbarFlexibleSpaceItemIdentifier, kIdEditMode,
+              kIdOutline ];
 }
 
 - (NSArray<NSToolbarItemIdentifier>*)toolbarDefaultItemIdentifiers:
@@ -209,6 +215,13 @@ static NSString* const kIdOutline = @"MdOutline";
     willBeInsertedIntoToolbar:(BOOL)flag {
     (void)toolbar;
     (void)flag;
+    if ([itemIdentifier isEqualToString:kIdRecent]) {
+        return [self itemWithIdentifier:kIdRecent
+                                 symbol:@"clock.arrow.circlepath"
+                                  label:@"Recent"
+                                    tip:@"Show recent documents"
+                                 action:@selector(showRecents:)];
+    }
     if ([itemIdentifier isEqualToString:kIdSave]) {
         return [self saveItem];
     }

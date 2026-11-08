@@ -207,9 +207,10 @@ NSMenu* BuildMainMenu() {
              {"Source View", @selector(toggleSourceView:)},
              {"Edit Mode", @selector(editMode:)},
              {"Outline", @selector(toggleOutline:)},
+             {"Recent Documents", @selector(showRecents:)},
              {"Show Tab Bar", @selector(toggleTabBar:)},
              {"Wrap Text", @selector(toggleWrap:)}},
-            {"+", "-", "0", "", "", "O", ""});
+            {"+", "-", "0", "", "", "O", "", "", ""});
         [viewMenu addItem:[NSMenuItem separatorItem]];
         // Full screen is a View command on the mac, with the system's
         // own key: Control, Command, F.

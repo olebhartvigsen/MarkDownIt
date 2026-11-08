@@ -179,7 +179,7 @@ public:
 // The width of the column of text inside a card, and the top of the
 // first one.
 const float kCardTextWidth = 280.0f - 4.0f - 24.0f;
-const float kCardTop = 80.0f;
+const float kCardTop = WelcomeScreen::kGridTop;
 
 std::wstring Widen(const std::string& text) {
     return std::wstring(text.begin(), text.end());
@@ -207,7 +207,7 @@ TEST(WelcomeMac, WrapsALongLineOfThePreview) {
 
     GridEngine engine;
     RecordingTarget target;
-    screen.Render(&target, &engine, 900.0f, 700.0f, -1);
+    screen.Render(&target, &engine, 900.0f, 700.0f, -1, false);
 
     const std::vector<RecordingTarget::TextCall> rows =
         target.PreviewRows(kCardTop);
@@ -234,7 +234,7 @@ TEST(WelcomeMac, SplitsAWordWiderThanTheCard) {
 
     GridEngine engine;
     RecordingTarget target;
-    screen.Render(&target, &engine, 900.0f, 700.0f, -1);
+    screen.Render(&target, &engine, 900.0f, 700.0f, -1, false);
 
     const std::vector<RecordingTarget::TextCall> rows =
         target.PreviewRows(kCardTop);
@@ -257,7 +257,7 @@ TEST(WelcomeMac, CutsALongNameAndFolderInsideTheCard) {
 
     GridEngine engine;
     RecordingTarget target;
-    screen.Render(&target, &engine, 900.0f, 700.0f, -1);
+    screen.Render(&target, &engine, 900.0f, 700.0f, -1, false);
 
     // The heading of the screen is drawn first, so the card's own texts
     // are picked by where they sit.
@@ -295,7 +295,7 @@ TEST(WelcomeMac, ShowsADiagramAsAPicture) {
 
     GridEngine engine;
     RecordingTarget target;
-    screen.Render(&target, &engine, 900.0f, 700.0f, -1);
+    screen.Render(&target, &engine, 900.0f, 700.0f, -1, false);
 
     // No markup as text under the name.
     EXPECT_EQ(target.PreviewRows(kCardTop).size(), static_cast<size_t>(0));
@@ -312,4 +312,41 @@ TEST(WelcomeMac, ShowsADiagramAsAPicture) {
     EXPECT_TRUE(sawRed);
 
     std::filesystem::remove(path);
+}
+
+TEST(WelcomeMac, TheScreenOffersTheOpenButton) {
+    // The button sits under the heading, inside the window and above
+    // the grid, and it is found on its own: a click on it opens the
+    // panel instead of whatever card is underneath.
+    WelcomeScreen screen;
+    std::vector<RecentFile> files(2);
+    files[0].path = Widen("/documents/one.md");
+    files[1].path = Widen("/documents/two.md");
+    screen.SetRecentFiles(files);
+    screen.Layout(900.0f, 700.0f);
+
+    const Rect button = screen.OpenButtonRect();
+    EXPECT_GT(button.width, 0.0f);
+    EXPECT_GT(button.height, 0.0f);
+    EXPECT_GT(button.y, 60.0f);
+    EXPECT_LT(button.y + button.height, 700.0f);
+    EXPECT_TRUE(screen.HitsOpenButton(button.x + button.width * 0.5f,
+                                      button.y + button.height * 0.5f));
+    EXPECT_FALSE(screen.HitsOpenButton(button.x - 6.0f, button.y - 6.0f));
+    EXPECT_FALSE(screen.HitsOpenButton(button.x + button.width + 6.0f,
+                                       button.y + 4.0f));
+    // No card lies under the button.
+    EXPECT_EQ(screen.HitTest(button.x + 4.0f, button.y + 4.0f), -1);
+}
+
+TEST(WelcomeMac, TheEmptyScreenStillOffersTheOpenButton) {
+    // With nothing in the list the screen is a hint, and the way in
+    // has to stay on it.
+    WelcomeScreen screen;
+    EXPECT_EQ(screen.CardCount(), 0);
+    screen.Layout(900.0f, 700.0f);
+
+    const Rect button = screen.OpenButtonRect();
+    EXPECT_GT(button.width, 0.0f);
+    EXPECT_TRUE(screen.HitsOpenButton(button.x + 2.0f, button.y + 2.0f));
 }

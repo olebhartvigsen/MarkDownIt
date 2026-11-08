@@ -63,13 +63,23 @@ public:
     // the preview wraps inside its card instead of running over the card
     // next to it.
     void Render(RenderTarget* target, TextEngine* engine, float viewW,
-                float viewH, int hoverIndex);
+                float viewH, int hoverIndex, bool openHovered);
 
     // Which card is at the point, or -1 when there is none.
     int HitTest(float x, float y) const;
 
+    // The button that opens a document sits under the heading, on the
+    // screen itself and not on a card, so it is asked for on its own.
+    // It is placed even when no file has been opened yet.
+    bool HitsOpenButton(float x, float y) const;
+    Rect OpenButtonRect() const { return openButton_; }
+
     // The path of a card.
     const std::string& GetPath(int index) const;
+
+    // Where the grid of cards starts: below the heading and the button
+    // that opens a document. The tests probe the screen at this line.
+    static constexpr float kGridTop = 148.0f;
 
     // Whether there are any cards.
     bool HasFiles() const { return !cards_.empty(); }
@@ -80,6 +90,8 @@ public:
 private:
     // The cards.
     std::vector<WelcomeCard> cards_;
+    // Where the Open button sits, in points.
+    Rect openButton_;
 };
 
 }  // namespace mac

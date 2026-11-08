@@ -113,6 +113,7 @@ bool OpenExternalUrl(const std::string& url) {
 }
 - (instancetype)init;
 - (void)OpenPath:(const std::string&)path;
+- (void)showRecents:(id)sender;
 // The outline's active heading: the caret's section, or the reading
 // line when followViewport is set.
 - (void)outlineActiveRefresh:(BOOL)followViewport;
@@ -521,6 +522,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     app_->SetOpenFileHandler([delegate](const std::string& path) {
         [delegate OpenPath:path];
     });
+    // The button on the welcome screen opens the panel, which the
+    // window owns.
+    app_->SetOpenPanelHandler([delegate] {
+        [delegate OnOpen];
+    });
 
     // The menu bar. The items find their command through the responder
     // chain, which ends at this delegate.
@@ -748,9 +754,20 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             clip ? (double)NSWidth([clip bounds]) : 0.0);
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"welcome"]) {
-        // The screen without a document. The walk has opened the
-        // fixture, so the recent list has a card to show.
-        [self showWelcomeScreen];
+        // The screen without a document, reached the way the toolbar
+        // reaches it. The walk has opened the fixture, so the recent
+        // list has a card to show.
+        [self showRecents:nil];
+        NSMutableString* items = [NSMutableString string];
+        for (NSToolbarItem* item in [[window_ toolbar] items]) {
+            if ([items length] > 0) [items appendString:@","];
+            [items appendString:[item itemIdentifier]];
+            if ([[item itemIdentifier] isEqualToString:@"MdRecent"]) {
+                [items appendFormat:@"(on=%d)", [item isEnabled] ? 1 : 0];
+            }
+        }
+        mac::TraceMac("qa welcome: mode=%d toolbar=%s",
+                      app_->WelcomeMode() ? 1 : 0, [items UTF8String]);
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"wheel"]) {
         // Injected events wait in the queue until the app dequeues them,
@@ -1123,6 +1140,15 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
 - (void)newDocument:(id)sender { (void)sender; [self OnNewDocument]; }
 - (void)openDocument:(id)sender { (void)sender; [self OnOpen]; }
+// The way back to the recent documents, from the toolbar and from the
+// View menu. The open document stays where it is, so the list is a
+// step aside and not a close.
+- (void)showRecents:(id)sender {
+    (void)sender;
+    [self showWelcomeScreen];
+    // The screen takes the keyboard, so a card is a click away.
+    [window_ makeFirstResponder:view_];
+}
 - (void)reloadDocument:(id)sender { (void)sender; [self OnReload]; }
 - (void)openSettings:(id)sender { (void)sender; [self OnOpenSettings]; }
 - (void)findNext:(id)sender { (void)sender; [self OnFindNext]; }
@@ -2028,6 +2054,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             if ([button isKindOfClass:[NSButton class]]) {
                 [button setTitle:(app_->Editing() ? @"Done" : @"Edit")];
             }
+        } else if ([identifier isEqualToString:@"MdRecent"]) {
+            // On the screen itself there is nothing to go back to.
+            [item setEnabled:!app_->WelcomeMode()];
         } else if ([identifier isEqualToString:@"MdOutline"]) {
             // A page without headings has nothing to list, so the
             // command stands down with the pane.
