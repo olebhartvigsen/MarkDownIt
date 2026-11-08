@@ -462,9 +462,6 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     outlinePreferred_ = true;
     outlineVisible_ = true;
     [backdrop_ setHidden:NO];
-    // A file that arrived at launch was opened before this window
-    // existed, so the pane learns about its headings here.
-    [self applyOutlineHeads];
 
     container_ = [[NSStackView alloc] initWithFrame:frame];
     [container_ setAutoresizingMask:NSViewWidthSizable |
