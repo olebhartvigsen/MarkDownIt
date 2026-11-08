@@ -400,10 +400,9 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
     // The UTF-8 byte offset of every UTF-16 unit of the whole string.
     std::vector<uint32_t> u16ToUtf8;
     CFIndex u16Length = 0;
-    // The global map is line-relative, like the offsets its callers pass
-    // in; the per-run copies below stay relative to their own run. Mixing
-    // the two put a caret and a wash several characters to the right on
-    // any line built from more than one run.
+    // The map runs over the whole paragraph, so every run adds its own
+    // bytes to the base. A line's entry takes its slice of this map and
+    // rebases it to the line, which is the offset its readers use.
     uint32_t lineByteBase = 0;
 
     for (const GlyphRun& run : runs) {
@@ -572,7 +571,24 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
         entry.line = line;
         entry.width = out.width;
         entry.text = CoreTextEngine::LineTextUtf8(out);
-        entry.u16ToUtf8 = u16ToUtf8;
+        // The entry's map is relative to the line's own first byte: its
+        // readers ask for a position inside the line and get a byte
+        // offset inside the line back. The measurement's map runs over
+        // the whole paragraph, so the line's slice is rebased here.
+        // Handing out the paragraph offsets put a caret, a wash and a
+        // hit test on the wrong character wherever a block had more
+        // than one line.
+        const uint32_t lineBase =
+            static_cast<size_t>(start) < u16ToUtf8.size()
+                ? u16ToUtf8[static_cast<size_t>(start)]
+                : 0;
+        entry.u16ToUtf8.reserve(static_cast<size_t>(count));
+        for (CFIndex i = 0; i < count; ++i) {
+            const size_t at = static_cast<size_t>(start + i);
+            const uint32_t value =
+                at < u16ToUtf8.size() ? u16ToUtf8[at] : lineBase;
+            entry.u16ToUtf8.push_back(value - lineBase);
+        }
         impl_->entries.push_back(entry);
         lines.push_back(out);
         start += count;

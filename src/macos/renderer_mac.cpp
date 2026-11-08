@@ -11,8 +11,6 @@
 #include "renderer_mac.h"
 #include "blockspacing.h"
 #include "hash.h"
-#include "crash_trace_mac.h"
-#include <cstdlib>
 #include "markers.h"
 
 #include <algorithm>
@@ -2057,19 +2055,6 @@ bool MacRenderer::PointToOffset(float x, float y, uint32_t* outOffset) const {
         }
     }
     uint32_t vis = lineStartVis + inLine;
-    {
-        static const bool hitTrace = [] {
-            const char* v = std::getenv("MARKDOWNIT_QA_HIT_TRACE");
-            return v && v[0] == '1';
-        }();
-        if (hitTrace) {
-            mac::TraceMac("qa hit: regions=%zu best=%zu line=%zu/%zu "
-                          "localX=%.1f inLine=%u startVis=%u vis=%u y=%.1f",
-                          regions.size(), bestRegion, bestLine,
-                          region.lines->size(), (double)localX, inLine,
-                          lineStartVis, vis, (double)y);
-        }
-    }
     const uint32_t lastIndex = static_cast<uint32_t>(region.visToSrc->size() - 1);
     if (vis > lastIndex) vis = lastIndex;
 
