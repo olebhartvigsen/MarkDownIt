@@ -119,8 +119,10 @@ bool QaWalkRunning() {
     [super layout];
     // A path, not a computed shadow: the container is small and the
     // shadow has to follow the rounded shape exactly.
-    [[self layer] setShadowPath:CGPathCreateWithRoundedRect(
-        [self bounds], 10.0, 10.0, nullptr)];
+    CGPathRef path = CGPathCreateWithRoundedRect([self bounds], 10.0, 10.0,
+                                                 nullptr);
+    [[self layer] setShadowPath:path];
+    CGPathRelease(path);
 }
 
 - (BOOL)isShowing {
