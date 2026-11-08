@@ -933,6 +933,13 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         mac::TraceMac("qa zoom-hud: percent=%.0f showing=%d",
                       (double)(zoom_ * 100.0f),
                       [zoomHud_ isShowing] ? 1 : 0);
+    } else if ([state isEqualToString:@"zoom-hud-dark"]) {
+        // The same overlay in a dark window: the material follows the
+        // appearance, so the pill goes dark and the digits light.
+        [self setZoom:zoom::Step(zoom_, true)];
+        mac::TraceMac("qa zoom-hud: dark percent=%.0f showing=%d",
+                      (double)(zoom_ * 100.0f),
+                      [zoomHud_ isShowing] ? 1 : 0);
     } else if ([state isEqualToString:@"zoom-hud-clear"]) {
         // Back to the level the walk started at, then take the overlay
         // down: the rest of the walk reads the page at its normal size.

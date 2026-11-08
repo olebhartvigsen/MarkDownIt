@@ -121,12 +121,12 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,zoom-hud,zoom-hud-clear,mark,welcome,welcome-scrolled,dark,settings,keys-source,keys-doc" "$BIN" "$DOC" &
+    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,zoom-hud,zoom-hud-clear,mark,welcome,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,keys-doc" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
     while [ "$waited" -lt 240 ]; do
-        for name in doc wheel find edit outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap zoom-hud zoom-hud-clear mark welcome welcome-scrolled dark settings keys-source keys-doc; do
+        for name in doc wheel find edit outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap zoom-hud zoom-hud-clear mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc; do
             case "$seen" in *" $name "*) continue ;; esac
             if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
                 sleep 0.6
