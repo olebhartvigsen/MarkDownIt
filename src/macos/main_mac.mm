@@ -129,6 +129,7 @@ bool OpenExternalUrl(const std::string& url) {
 - (void)qaStep:(NSArray<NSString*>*)states at:(NSUInteger)index;
 - (void)applyQAState:(NSString*)state;
 - (void)qaScrollToHeading:(int)index drop:(float)drop;
+- (void)qaKeysRun:(const char*)label;
 - (void)qaScrollToTop;
 
 // The menu commands, as AppKit selectors.
@@ -721,6 +722,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The raw markdown view: the renderer lays the buffer out as
         // one monospace block, its own drawing path.
         if (!sourceView_) [self OnToggleSourceView];
+    } else if ([state isEqualToString:@"keys-source"]) {
+        // The three everyday actions, in the raw view.
+        if (!sourceView_) [self OnToggleSourceView];
+        [self qaKeysRun:"source"];
+    } else if ([state isEqualToString:@"keys-doc"]) {
+        // The same three actions in the rendered view, for comparison.
+        if (sourceView_) [self OnToggleSourceView];
+        [self qaKeysRun:"doc"];
     } else if ([state isEqualToString:@"lower"]) {
         // The lower half of the page: the tasks, the quote, the table
         // and the code block, which the states above cannot reach. The
@@ -1091,6 +1100,37 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // the same outline data the pane shows, and the fixed drop puts the
 // heading just below the top of the frame, so the two platforms frame
 // the same content even when their bars and metrics differ a little.
+// Reports what the three everyday actions do right now: an arrow run,
+// a vertical step and one typed character, plus where the view scrolled
+// to when the caret went to the end. The QA walk runs it in both modes
+// so the two can be compared line by line.
+- (void)qaKeysRun:(const char*)label {
+    const std::string& text = app_->buffer().Text();
+    uint32_t start = static_cast<uint32_t>(text.find("## Lists and tasks"));
+    if (start == std::string::npos) start = 0;
+    app_->SetCaret(start);
+    const uint32_t caretBefore = app_->selection().active.offset;
+    for (int i = 0; i < 5; ++i) {
+        [self doCommandBySelector:@selector(moveRight:)];
+    }
+    const uint32_t afterRight = app_->selection().active.offset;
+    [self doCommandBySelector:@selector(moveDown:)];
+    const uint32_t afterDown = app_->selection().active.offset;
+    const uint32_t lengthBefore = static_cast<uint32_t>(text.size());
+    [self insertText:@"Z"];
+    const uint32_t lengthAfter = static_cast<uint32_t>(app_->buffer().Text().size());
+    const uint32_t afterTyping = app_->selection().active.offset;
+    app_->SetCaret(lengthAfter);
+    [self caretMoved];
+    mac::TraceMac(
+        "qa keys %s: caret=%u right=+%d down=%u typed_len=%u->%u "
+        "caret_after_type=%u scroll=%.0f height=%.0f view=%.0f",
+        label, caretBefore, (int)(afterRight - caretBefore), afterDown,
+        lengthBefore, lengthAfter, afterTyping,
+        (double)content_->scrollOffset(), (double)content_->DocumentHeight(),
+        (double)content_->viewHeight());
+}
+
 - (void)qaScrollToHeading:(int)index drop:(float)drop {
     const std::vector<OutlineItem> items =
         CollectHeadings(app_->GetDocument());
