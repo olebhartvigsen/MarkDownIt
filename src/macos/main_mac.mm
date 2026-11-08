@@ -196,6 +196,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     return mac::RecognizePdfPage(path, page_index);
 }
 
+// Counts the refreshes the scroll path asks for, so a dead wiring and a
+// stale probe cannot look the same in the trace (diag only).
+
 @implementation MdAppDelegate
 
 - (instancetype)init {
@@ -389,10 +392,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // so reading through a long document keeps the pane in step
     // (outline spec 19).
     content_->SetScrollChangedHandler([self](bool programmatic) {
-        if (!outlineVisible_) return;
         // A reader's scroll follows the reading line even while the
         // caret is still on screen; an app-driven jump keeps the
-        // caret's section.
+        // caret's section. The refresh runs whether or not the pane is
+        // on screen: the visibility flag can lag the pane, and the row
+        // it holds is what the reader sees the moment the pane returns.
         [self outlineActiveRefresh:!programmatic];
     });
     // `scrollWheel:` is not the only path: dragging the scroller and a
@@ -716,6 +720,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [clip scrollToPoint:home.origin];
         [scrollView_ reflectScrolledClipView:clip];
         const CGFloat startClip = [clip bounds].origin.y;
+        [self outlineActiveRefresh:YES];
+        pump();
+        mac::TraceMac("qa wheel: outline before row=%d probe=%u clip=%.1f",
+                      outlinePane_->ActiveVisibleRow(),
+                      content_->ViewportProbeOffset(), startClip);
 
         NSRect frame = [window_ frame];
         const CGFloat cx = NSMidX(frame);
@@ -727,8 +736,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // Both are posted, because both should pan the document.
         struct Batch { int32_t unit; int32_t amount; const char* label; };
         const Batch batches[] = {
-            {kCGScrollEventUnitPixel, -40, "pixels"},
-            {kCGScrollEventUnitLine, -1, "lines"},
+            {kCGScrollEventUnitPixel, -600, "pixels"},
+            {kCGScrollEventUnitPixel, -600, "pixels again"},
         };
         for (const Batch& batch : batches) {
             for (int k = 0; k < 5; ++k) {
@@ -766,6 +775,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         mac::TraceMac("qa wheel: start=%.1f end=%.1f x=%.1f doc=%.1f->%.1f",
                       startClip, [clip bounds].origin.y, [clip bounds].origin.x,
                       docBefore, [view_ frame].size.height);
+        mac::TraceMac("qa wheel: outline after row=%d probe=%u clip=%.1f",
+                      outlinePane_->ActiveVisibleRow(),
+                      content_->ViewportProbeOffset(),
+                      [clip bounds].origin.y);
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"dark"]) {
         if (sourceView_) [self OnToggleSourceView];
@@ -1971,8 +1984,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         if (probe != UINT32_MAX) offset = probe;
     }
     outlinePane_->SetCaretOffset(offset);
+    // The row follows the reading line whether or not the pane is on
+    // screen. The visibility flag can say hidden while the split view
+    // still draws the pane, so a guard on it left the band on whatever
+    // section it had when the pane was last touched by hand.
     const int row = outlinePane_->ActiveVisibleRow();
-    if (row >= 0 && outlineVisible_) {
+    if (row >= 0) {
         [outlineView_ scrollRowIntoView:row];
     }
     [outlineView_ setNeedsDisplay:YES];
