@@ -691,18 +691,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     } else if ([state isEqualToString:@"welcome-scrolled"]) {
         // The reader scrolls a page sideways, then asks for the recents
         // page. It has to fit the window and start at its own origin.
-        NSString* dir = [[window_ representedFilename]
-            stringByDeletingLastPathComponent];
-        if ([dir length] > 0) {
-            [self OpenPath:std::string(
-                [[dir stringByAppendingPathComponent:@"wide-code.md"]
-                    UTF8String])];
-        }
-        // A page is wider than the window at a zoom above 1, which is
-        // how a drawing is read when its labels are small.
-        [view_ zoomTo:2.0f];
+        //
+        // A drawing that overflows the column leaves the document view
+        // wider than the clip; 480 extra points is that state, made
+        // deterministic, so the walk does not depend on a font metric.
         NSClipView* clip = [[view_ enclosingScrollView] contentView];
-        [view_ syncFrameToContent];
+        NSSize wide = [clip bounds].size;
+        wide.width += 480.0;
+        [view_ setFrameSize:wide];
         [view_ scrollToDocumentPoint:NSMakePoint(240.0, 0.0)];
         mac::TraceMac(
             "qa welcome-scrolled: before offset=%.0f frame=%.0f clip=%.0f",
@@ -713,8 +709,6 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             "qa welcome-scrolled: after offset=%.0f frame=%.0f clip=%.0f",
             (double)[clip bounds].origin.x, (double)NSWidth([view_ frame]),
             (double)NSWidth([clip bounds]));
-        // The walk leaves the zoom where it found it.
-        [view_ zoomTo:1.0f];
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"source"]) {
         // The raw markdown view: the renderer lays the buffer out as
