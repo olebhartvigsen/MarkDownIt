@@ -121,12 +121,12 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,zoom-hud,zoom-hud-clear,mark,welcome,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,keys-doc" "$BIN" "$DOC" &
+    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,keys-doc" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
     while [ "$waited" -lt 240 ]; do
-        for name in doc wheel find edit outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap zoom-hud zoom-hud-clear mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc; do
+        for name in doc wheel find edit outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc; do
             case "$seen" in *" $name "*) continue ;; esac
             if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
                 sleep 0.6
@@ -199,6 +199,28 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         exit 1
     fi
     echo "launch smoke: the zoom overlay leaves nothing behind"
+
+    # A document opens at 100%: the level belongs to the page the reader
+    # is on, not to the app or to the last file.
+    ZOOM_REOPEN=$(grep "qa zoom-reopen:" "$LOG" 2>/dev/null | head -1)
+    if [ -z "$ZOOM_REOPEN" ]; then
+        echo "launch smoke FAILED: no zoom-reopen in the trace"
+        exit 1
+    fi
+    REOPEN_BEFORE=$(printf '%s' "$ZOOM_REOPEN" | grep -o "before=[0-9]*" | cut -d= -f2)
+    REOPEN_AFTER=$(printf '%s' "$ZOOM_REOPEN" | grep -o "after=[0-9]*" | cut -d= -f2)
+    REOPEN_SHOWING=$(printf '%s' "$ZOOM_REOPEN" | grep -o "showing=[0-9]" | cut -d= -f2)
+    if [ "$REOPEN_BEFORE" -le 100 ] || [ "$REOPEN_AFTER" != "100" ]; then
+        echo "launch smoke FAILED: a document did not open at 100%" \
+             "(before=$REOPEN_BEFORE after=$REOPEN_AFTER)"
+        exit 1
+    fi
+    if [ "$REOPEN_SHOWING" != "0" ]; then
+        echo "launch smoke FAILED: the 100% reset flashed the zoom overlay"
+        exit 1
+    fi
+    echo "launch smoke: a document opens at 100%, quietly" \
+         "($REOPEN_BEFORE% -> $REOPEN_AFTER%)"
 
     # The reader's report: a mark made with the space beside the word
     # in the selection must store the words alone. The mark state marks

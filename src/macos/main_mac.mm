@@ -108,6 +108,9 @@ bool OpenExternalUrl(const std::string& url) {
     float zoom_;
     // The overlay that says what the zoom level is while it changes.
     MdZoomHud* zoomHud_;
+    // Set while the app resets the level itself, so the overlay stays
+    // quiet: it is there for the reader's own changes, not for ours.
+    BOOL quietZoom_;
     bool sourceView_;
     // Whether the text is wrapped.
     bool wrap_;
@@ -170,6 +173,8 @@ bool OpenExternalUrl(const std::string& url) {
 - (void)syncFindBarLayout:(BOOL)visible;
 // The zoom landed somewhere, so the saved value follows.
 - (void)zoomDidChange:(float)factor;
+// The same, without the overlay: for a reset the app makes itself.
+- (void)setZoom:(float)factor quietly:(BOOL)quiet;
 - (void)toggleSourceView:(id)sender;
 - (void)toggleOutline:(id)sender;
 - (void)toggleWrap:(id)sender;
@@ -963,6 +968,22 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [zoomHud_ hideNow];
         mac::TraceMac("qa zoom-hud: cleared showing=%d",
                       [zoomHud_ isShowing] ? 1 : 0);
+    } else if ([state isEqualToString:@"zoom-reopen"]) {
+        // A document opens at 100%, whatever the page in front of it was
+        // being read at, and the reset does not flash the overlay.
+        [self setZoom:zoom::Step(zoom::Step(zoom::kDefaultZoom, true), true)];
+        const int before = zoom::Percent(zoom_);
+        [zoomHud_ hideNow];
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"layout-showcase.md"]
+                    UTF8String])];
+        }
+        mac::TraceMac("qa zoom-reopen: before=%d after=%d showing=%d",
+                      before, zoom::Percent(zoom_),
+                      [zoomHud_ isShowing] ? 1 : 0);
     } else if ([state isEqualToString:@"welcome"]) {
         // The screen without a document, reached the way the toolbar
         // reaches it. The walk has opened the fixture, so the recent
@@ -1512,6 +1533,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         return;
     }
 
+    // A document always opens at 100%. The level is a reading tool for
+    // the page in front of the reader, not a property of the app: a file
+    // opened at 300% from the last session would greet them with a page
+    // three times its size, and a second document would inherit
+    // whatever the first one happened to be read at. Quietly, because
+    // the level did not change by hand.
+    [self setZoom:zoom::kDefaultZoom quietly:YES];
+
     settings_.AddRecentFile(path);
     settings_.Save();
 
@@ -1798,6 +1827,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)OnNewDocument {
     if (![self confirmDiscardChanges]) return;
     app_->NewDocument();
+    [self setZoom:zoom::kDefaultZoom quietly:YES];
     [self refreshWindowTitle:std::string()];
     [self showWelcomeScreen];
     [view_ setNeedsDisplay:YES];
@@ -2825,11 +2855,18 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [view_ zoomTo:factor];
 }
 
+- (void)setZoom:(float)factor quietly:(BOOL)quiet {
+    quietZoom_ = quiet;
+    [view_ zoomTo:factor];
+    quietZoom_ = NO;
+}
+
 // The zoom landed somewhere: the window keeps the value, so the next
 // settings write saves it.
 - (void)zoomDidChange:(float)factor {
     zoom_ = factor;
     settings_.settings().zoomFactor = factor;
+    if (quietZoom_) return;
     [zoomHud_ showPercent:(NSInteger)lroundf(factor * 100.0f)];
 }
 

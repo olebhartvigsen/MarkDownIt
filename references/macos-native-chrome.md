@@ -136,6 +136,16 @@ overlay needs no knowledge of which control moved the level (keys, the
 toolbar, the menu or a pinch). A page swap takes it down: the overlay
 belongs to the page that was zoomed, not to the recents page.
 
+A document always opens at 100%, and a new document starts there too. The
+level is a reading tool for the page in front of the reader, not a
+property of the app: a file opened at 300% from the last session would
+greet them with a page three times its size, and a second document would
+inherit whatever the first was being read at. The reset is silent, since
+the level did not change by hand and the overlay is for the reader's own
+changes. The saved factor stays written, but every open starts the value
+again from 100%. The Windows build keeps restoring the last factor; this
+is a deliberate difference of this window.
+
 The QA walk covers it with `zoom-hud` (the level is up and names a
 higher number) and `zoom-hud-clear` (nothing is left after it has been
 taken down), and tools/macos-smoke/launch_smoke.sh asserts both.
