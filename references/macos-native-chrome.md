@@ -119,9 +119,9 @@ from the system's own pieces:
   it.
 - The pill carries the dark appearance in a light window as well as a
   dark one, and the digits sit above the material and take the dynamic
-  label colour. One appearance, one place: splitting the decision made
-  the material follow the system while the label followed the window,
-  and a light pill with white digits over a white page is invisible.
+  label colour. The appearance has to be set on the effect view itself:
+  set on the container it reaches the label but not the material, which
+  then follows the window and goes light under white digits.
 - The effect view must keep alpha 1: dimming an `NSVisualEffectView`
   switches its backdrop filter off and the pill vanishes whole. The soft
   shadow lives on the container instead, with a rounded shadow path, and

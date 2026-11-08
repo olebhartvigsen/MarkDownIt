@@ -66,6 +66,12 @@ bool QaWalkRunning() {
     // the whole pill disappears. It is the blur and its tint that make
     // the pill see-through, not the view's alpha.
     blur_ = [[NSVisualEffectView alloc] initWithFrame:NSZeroRect];
+    // On the effect view itself, not just on its parent: the material is
+    // resolved against the appearance of the effect view, and an
+    // appearance set on the container reaches the label but not the
+    // material, which then followed the window and went light under
+    // white digits.
+    [blur_ setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]];
     [blur_ setMaterial:NSVisualEffectMaterialHUDWindow];
     [blur_ setBlendingMode:NSVisualEffectBlendingModeWithinWindow];
     [blur_ setState:NSVisualEffectStateActive];
