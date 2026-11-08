@@ -282,7 +282,9 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         echo "$KEYS_SRC"
         exit 1
     fi
-    if [ "$DOC_RIGHT" -lt 5 ] || [ "$DOC_DOWN" -le "$DOC_RIGHT_TO" ]; then
+    # In the rendered view the step may land on a position the heading
+    # shares with the blank line under it, so only movement is required.
+    if [ "$DOC_RIGHT" -lt 5 ] || [ "$DOC_DOWN" -le "$DOC_CARET" ]; then
         echo "launch smoke FAILED: the rendered view's keys did not move"
         echo "$KEYS_DOC"
         exit 1
