@@ -2534,17 +2534,25 @@ bool MacRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
         }
     }
 
-    const int targetLine = caretLine + delta;
-    if (targetLine < 0 || targetLine >= static_cast<int>(lines.size())) {
-        return false;
+    // The point sits in the middle of a line's band, so the hit test
+    // cannot drift into the line above or below it. A block's last line
+    // can be one that draws nothing, and its middle answers with the
+    // caret's own position again; the step then keeps going in the same
+    // direction until the layout names a position that differs.
+    const int lineCount = static_cast<int>(lines.size());
+    const int direction = delta > 0 ? 1 : -1;
+    for (int line = caretLine + delta; line >= 0 && line < lineCount;
+         line += direction) {
+        const LineRef& target = lines[static_cast<size_t>(line)];
+        const uint32_t hit =
+            HitTestPoint(desiredX, target.top + target.height * 0.5f);
+        if (hit == UINT32_MAX) return false;
+        if (hit != offset) {
+            *outOffset = hit;
+            return true;
+        }
     }
-    // The point sits in the middle of the target line's band, so the hit
-    // test cannot drift into the line above or below it.
-    const LineRef& target = lines[static_cast<size_t>(targetLine)];
-    const uint32_t hit = HitTestPoint(desiredX, target.top + target.height * 0.5f);
-    if (hit == UINT32_MAX) return false;
-    *outOffset = hit;
-    return true;
+    return false;
 }
 
 std::vector<Rect> MacRenderer::SelectionRects(uint32_t start,
