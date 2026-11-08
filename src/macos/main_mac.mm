@@ -1108,8 +1108,31 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     const std::string& text = app_->buffer().Text();
     uint32_t start = static_cast<uint32_t>(text.find("## Lists and tasks"));
     if (start == std::string::npos) start = 0;
-    app_->SetCaret(start);
+    // The rendered view hides Markdown syntax, so a raw offset may sit
+    // inside bytes that are not drawn; the caret goes to the nearest
+    // drawn position, the same normalisation the click path uses.
+    const uint32_t norm = content_->NormalizeToRenderedCaret(start);
+    app_->SetCaret(norm);
     const uint32_t caretBefore = app_->selection().active.offset;
+    {
+        const std::vector<LaidOutBlock>& blocks = content_->renderer().blocks();
+        mac::TraceMac("qa keys start: raw=%u norm=%u blocks=%zu lines=%zu",
+                      start, norm, blocks.size(),
+                      blocks.empty() ? 0 : blocks.front().lines.size());
+        for (size_t i = 0; i < blocks.size() && i < 1; ++i) {
+            const LaidOutBlock& b = blocks[i];
+            for (size_t j = 0; j < b.lines.size() && j < 4; ++j) {
+                const TextLine& line = b.lines[j];
+                std::string preview;
+                for (const GlyphRun& run : line.runs) preview += run.text;
+                if (preview.size() > 44) preview = preview.substr(0, 44);
+                mac::TraceMac("qa keys line %zu: h=%.1f vis0=%u runs=%zu \"%s\"",
+                              j, (double)line.height,
+                              b.visToSrc.empty() ? 0 : b.visToSrc.front(),
+                              line.runs.size(), preview.c_str());
+            }
+        }
+    }
     float cx = 0.0f, cy = 0.0f, cw = 0.0f, ch = 0.0f;
     const bool hasRect = content_->OffsetToRect(caretBefore, &cx, &cy, &cw, &ch);
     mac::TraceMac(
