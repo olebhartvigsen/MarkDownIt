@@ -1065,11 +1065,22 @@ void App::ToggleMarkSelection() {
         // trimmed off both ends before anything is stored, so a stored
         // marker never starts or ends on bytes the renderer does not
         // draw (highlighting guide 10).
+        // The blanks come off before the clip. The clip widens a range to
+        // the drawn spans it touches, so a leading or trailing space would
+        // pull it out to a hidden delimiter: that is how a code span's
+        // backticks ended up inside a mark, with the wash spilling into the
+        // chip's padding.
+        uint32_t from = start;
+        uint32_t to = end;
+        while (from < to && IsBlankByte(buffer_.Text()[from])) ++from;
+        while (to > from && IsBlankByte(buffer_.Text()[to - 1])) --to;
+        if (from >= to) return;
+
         uint32_t lo = 0;
         uint32_t hi = 0;
         if (!contentView_ ||
             !contentView_->renderer().ClipToRendered(
-                start, static_cast<uint32_t>(sel_.Length()), &lo, &hi)) {
+                from, to - from, &lo, &hi)) {
             return;  // the selection covers no drawn text
         }
         if (!markerStore_.Add(buffer_.Text(), lo, hi)) return;

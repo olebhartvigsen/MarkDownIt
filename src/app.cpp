@@ -4726,9 +4726,23 @@ void AppWindow::MarkSelection() {
         diag::Trace("MARKSEL empty");
         return;
     }
+    // The blanks come off before the clip: the clip widens a range to the
+    // drawn spans it touches, so a space beside the words would pull it out
+    // to a hidden delimiter, and a code span's backticks would land in the
+    // mark.
+    const std::string& document = buffer_.Text();
+    uint32_t from = sel_.Start();
+    uint32_t to = from + sel_.Length();
+    while (from < to && IsBlankByte(document[from])) ++from;
+    while (to > from && IsBlankByte(document[to - 1])) --to;
+    if (from >= to) {
+        diag::Trace("MARKSEL only blanks");
+        return;
+    }
+
     uint32_t lo = 0;
     uint32_t hi = 0;
-    if (!layout_cache_.ClipToRendered(sel_.Start(), sel_.Length(), &lo, &hi)) {
+    if (!layout_cache_.ClipToRendered(from, to - from, &lo, &hi)) {
         diag::Trace("MARKSEL clip failed");
         return;  // the selection covers no rendered text
     }
