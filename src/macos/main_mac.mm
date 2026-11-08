@@ -933,6 +933,22 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                           (double)content_->DocumentHeight());
         }
         [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"svg-drawio"]) {
+        // A draw.io export: every label sits in a <switch> as an HTML
+        // foreignObject plus a <text> fallback, and the file ends with a
+        // switch whose empty branch says "Text is not SVG".
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"ai-components.svg"]
+                    UTF8String])];
+            mac::TraceMac("qa svg: drawio file=%s height=%.0f width=%.0f",
+                          [[[window_ representedFilename] lastPathComponent]
+                              UTF8String],
+                          (double)content_->DocumentHeight(),
+                          (double)content_->ContentWidth());
+        }
     } else if ([state isEqualToString:@"svg-swap"]) {
         // One picture, then another. Only the second may show.
         NSString* dir = [[window_ representedFilename]
