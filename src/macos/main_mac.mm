@@ -506,9 +506,20 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [window_ registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
 
     // Without a file the welcome screen takes the place of the
-    // document.
-    [self showWelcomeScreen];
-    mac::TraceMac("the welcome screen is up");
+    // document. A file handed over by the Finder arrives before this
+    // window exists, so it is already open here: the screen would bury
+    // the document behind a list of recent ones.
+    if (app_->filePath().empty()) {
+        [self showWelcomeScreen];
+        mac::TraceMac("the welcome screen is up");
+    } else {
+        [self hideWelcomeScreen];
+        [self refreshWindowTitle:app_->filePath()];
+        [self applyOutlineHeads];
+        [view_ setNeedsDisplay:YES];
+    }
+    mac::TraceMac("launch: file=%s welcome=%d",
+                  app_->filePath().c_str(), app_->WelcomeMode() ? 1 : 0);
 
     // F5 in the document asks the window to reload the file, because
     // the window asks the user before the changes are thrown away.

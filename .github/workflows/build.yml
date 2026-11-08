@@ -275,7 +275,7 @@ jobs:
             build-mac/window.png
             build-mac/qa/*.png
             build-mac/qa/rects.txt
-            build-mac/qa/crash_trace.log
+            build-mac/qa/*.log
           if-no-files-found: ignore
 
       - name: Upload app bundle

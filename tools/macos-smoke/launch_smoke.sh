@@ -174,3 +174,32 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
 else
     echo "launch smoke: no showcase fixture (or SMOKE_QA=0), the QA walk was skipped"
 fi
+
+# The Finder's route: a cold launch where the file arrives with the
+# double click. The Apple event lands before the window exists, so the
+# document is open before the screen is built, and the window has to
+# show it rather than the recent documents.
+COLD_DOC="$(pwd)/tests/fixtures/diagram.svg"
+if [ -f "$COLD_DOC" ]; then
+    mkdir -p build-mac/qa
+    APP_ABS="$(cd "$(dirname "$APP")" && pwd)/$(basename "$APP")"
+    rm -f "$LOG"
+    open -n -a "$APP_ABS" "$COLD_DOC"
+    waited=0
+    while [ "$waited" -lt 120 ]; do
+        if [ -f "$LOG" ] && grep -q "launch: file=" "$LOG"; then break; fi
+        sleep 0.5
+        waited=$((waited + 1))
+    done
+    if ! grep -q "launch: file=.*welcome=0" "$LOG" 2>/dev/null; then
+        echo "launch smoke FAILED: a document opened at launch was buried under the recent documents"
+        tail -40 "$LOG" 2>/dev/null
+        pkill -x MarkDownIt 2>/dev/null
+        exit 1
+    fi
+    sleep 1
+    screencapture -x "build-mac/qa/cold-open.png" 2>/dev/null || true
+    cp "$LOG" "build-mac/qa/cold-open-trace.log" 2>/dev/null || true
+    pkill -x MarkDownIt 2>/dev/null
+    echo "launch smoke: the document opened at launch is on screen"
+fi
