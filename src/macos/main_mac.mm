@@ -1154,10 +1154,6 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                               j, (double)line.width, (double)line.height, bytes,
                               line.runs.size());
             }
-            for (float py = 60.0f; py < 340.0f; py += 40.0f) {
-                mac::TraceMac("qa keys probe: y=%.0f -> %u", (double)py,
-                              content_->HitTestPoint(56.0f, py));
-            }
         }
     }
     float cx = 0.0f, cy = 0.0f, cw = 0.0f, ch = 0.0f;

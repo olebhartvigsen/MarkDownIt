@@ -263,7 +263,10 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         echo "$KEYS_SRC"
         exit 1
     fi
-    if [ -z "$SRC_NEXT" ] || [ "$SRC_DOWN" != "$SRC_NEXT" ]; then
+    # Down lands on the line below, in the column the arrows left the
+    # caret in, so the offset sits inside that line and not before it.
+    if [ -z "$SRC_NEXT" ] || [ "$SRC_DOWN" -lt "$SRC_NEXT" ] || \
+            [ "$SRC_DOWN" -gt "$(( SRC_NEXT + 120 ))" ]; then
         echo "launch smoke FAILED: down in the source view skipped a line"
         grep "qa keys rect" "$LOG" | tail -2
         echo "$KEYS_SRC"
