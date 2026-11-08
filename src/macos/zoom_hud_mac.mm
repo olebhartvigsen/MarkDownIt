@@ -33,6 +33,12 @@ bool QaWalkRunning() {
     self = [super initWithFrame:frame];
     if (!self) return nil;
 
+    // The whole pill carries the dark appearance, in a light window as
+    // well as a dark one. Deciding it in two places does not work: the
+    // material follows one appearance and the label colour another, and
+    // a light pill with white digits over a white page is invisible. A
+    // HUD is dark by definition, so both halves are told once, here.
+    [self setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]];
     [self setWantsLayer:YES];
     [[self layer] setCornerRadius:10.0];
     // The shadow has to survive, so the container does not clip: the
@@ -57,7 +63,8 @@ bool QaWalkRunning() {
     //
     // The material must stay fully opaque as a layer: dimming an
     // NSVisualEffectView's alpha switches the backdrop filter off, and
-    // the whole pill disappears.
+    // the whole pill disappears. It is the blur and its tint that make
+    // the pill see-through, not the view's alpha.
     blur_ = [[NSVisualEffectView alloc] initWithFrame:NSZeroRect];
     [blur_ setMaterial:NSVisualEffectMaterialHUDWindow];
     [blur_ setBlendingMode:NSVisualEffectBlendingModeWithinWindow];
@@ -77,9 +84,9 @@ bool QaWalkRunning() {
     label_ = [NSTextField labelWithString:@""];
     [label_ setFont:[NSFont monospacedDigitSystemFontOfSize:15.0
                                                     weight:NSFontWeightSemibold]];
-    // The dynamic label colour, resolved against the window's
-    // appearance, not the material's: dark digits on a light pill and
-    // light ones on a dark pill, without a colour of our own.
+    // labelColor resolves white in the pill's own dark appearance, and
+    // the label sits above the material, so the digits keep their
+    // strength while the material stays a blur rather than a fill.
     [label_ setTextColor:[NSColor labelColor]];
     [label_ setAlignment:NSTextAlignmentCenter];
     [label_ setTranslatesAutoresizingMaskIntoConstraints:NO];
