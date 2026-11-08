@@ -51,6 +51,14 @@ class ContentView;
 // capture must not depend on the blink phase.
 - (void)qaParkCaret;
 
+// The document view takes the content's size, or the viewport's when
+// there is no document to scroll: the recents page is one viewport.
+- (void)syncFrameToContent;
+
+// Scrolls the clip view to a point in the document, clamped to the
+// content, in DIPs from the page's own origin.
+- (void)scrollToDocumentPoint:(NSPoint)point;
+
 // Edit mode changed: start the blink in edit mode, stop and hide it in
 // reading mode. The window's key state decides whether focus is there.
 - (void)editingModeChanged:(BOOL)editing;
