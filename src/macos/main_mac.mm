@@ -1111,17 +1111,17 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     app_->SetCaret(start);
     const uint32_t caretBefore = app_->selection().active.offset;
     for (int i = 0; i < 5; ++i) {
-        [self doCommandBySelector:@selector(moveRight:)];
+        [view_ doCommandBySelector:@selector(moveRight:)];
     }
     const uint32_t afterRight = app_->selection().active.offset;
-    [self doCommandBySelector:@selector(moveDown:)];
+    [view_ doCommandBySelector:@selector(moveDown:)];
     const uint32_t afterDown = app_->selection().active.offset;
     const uint32_t lengthBefore = static_cast<uint32_t>(text.size());
-    [self insertText:@"Z"];
+    [view_ insertText:@"Z"];
     const uint32_t lengthAfter = static_cast<uint32_t>(app_->buffer().Text().size());
     const uint32_t afterTyping = app_->selection().active.offset;
     app_->SetCaret(lengthAfter);
-    [self caretMoved];
+    [view_ caretMoved];
     mac::TraceMac(
         "qa keys %s: caret=%u right=+%d down=%u typed_len=%u->%u "
         "caret_after_type=%u scroll=%.0f height=%.0f view=%.0f",
