@@ -98,6 +98,17 @@ public:
 
     void SetLayoutCache(LayoutCache* cache) { cache_ = cache; }
 
+    // Batch 5.3 test seam: replaces the DirectWrite engine the shared
+    // walk and the selection rect twin measure through, the injection
+    // the mac renderer's SetTextEngine gives its tests. The replacement
+    // carries the same two duties the real engine carries here (the
+    // zoom rides the WalkTextEngine adapter either way). Null restores
+    // the renderer's own DirectWrite engine; production never calls
+    // this, so the default build is untouched.
+    void SetWalkEngineForTesting(platform::TextEngine* engine) {
+        walkEngineForTesting_ = engine;
+    }
+
     // Search-result highlighting. The matches are DOCUMENT ranges, given as
     // source byte offsets exactly like Selection::Start()/Length(), never as
     // screen coordinates: zoom, scroll and re-layout therefore cannot change
@@ -141,6 +152,22 @@ public:
     float Measure(IDWriteFactory* dw, const Document& doc, float widthDip,
                      float topOffsetDip);
 
+    // The selection rectangles of a source byte range, the Batch 3.3
+    // twin of the mac renderer's RectsForRange: one rect per wrapped
+    // line the range crosses, tight on the drawn text, inside the
+    // bands the shared walk laid the glyphs in. The rule itself lives
+    // in layout/selection_rects.h, the one header both renderers
+    // answer from, so the selection wash holds one shape on both
+    // ports. The rects are in frame coordinates, the space Render
+    // paints its washes in, so a caller adds its own scroll origin
+    // exactly like the paint pass. The walk record is re-derived from
+    // the same SharedLayoutPass the frame runs, so the answer is the
+    // geometry the last frame painted.
+    std::vector<platform::Rect> RectsForRange(
+        IDWriteFactory* dw, const Document& doc, float widthDip,
+        float topOffsetDip, uint32_t start, uint32_t end,
+        const Selection* sel = nullptr);
+
     // Draw the raw markdown source with monospace font and word wrap.
     // Returns the total rendered height in DIPs.
     float RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
@@ -181,6 +208,9 @@ private:
     // format pointer: formats are re-created on zoom change, so the
     // pointer acts as the cache key and a miss refills it.
     std::map<const void*, float> lineHeightCache_;
+    // The test replacement of the walk's engine, SetWalkEngineForTesting
+    // above. Null in every production build.
+    platform::TextEngine* walkEngineForTesting_ = nullptr;
     ID2D1DeviceContext5* d2d_ctx5_ = nullptr;  // may be null
     mutable mermaid::MermaidLayoutCache mermaid_layout_cache_;
     // The DirectWrite engine behind the shared block layout, Batch 3
@@ -246,6 +276,27 @@ private:
     float widestBlockRight_ = 0.0f;
 
     LayoutMetrics ComputeMetrics() const;
+
+private:
+    // Batch 3.3, the rect twin's private half. The source map of one
+    // block's drawn text (the builders layout/selection_rects.h owns,
+    // the same ones the mac record adopts), the frame placement of a
+    // record's own text (the mirror of the mac TextX/TextTop pair),
+    // the rect rule over one whole record, the map builder the kinds
+    // share, and the engine picker the walk and the twin share.
+    platform::TextEngine* TextEngineForWalk();
+    void BuildBlockMapping(const Node& n,
+                           std::vector<uint32_t>* visToSrc,
+                           std::vector<uint32_t>* visToSrcEnd) const;
+    static void TextOriginOf(const layout::LaidBlock& b,
+                             const LayoutMetrics& m, float originX,
+                             float frameTop, float* x, float* top);
+    void AppendBlockRangeRects(const layout::LaidBlock& b, const Node& n,
+                               const LayoutMetrics& m,
+                               const platform::TextEngine& engine,
+                               float originX, float frameTop,
+                               uint32_t start, uint32_t end,
+                               std::vector<platform::Rect>* rects) const;
 
     // One shared layout pass, Batch 3: the whole document through
     // layout::LayoutDocument. Every owned kind is consumed from it:
@@ -344,10 +395,12 @@ private:
 
     void DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                        const Node& n, float x, float y, float width, float& outH,
-                       const Selection* sel = nullptr, float scrollY = 0.0f);
+                       const Selection* sel = nullptr, float scrollY = 0.0f,
+                       const std::vector<platform::Rect>& washRects = {});
     void DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                    const Node& n, float x, float y, float width, float& outH,
-                   const Selection* sel = nullptr, float scrollY = 0.0f);
+                   const Selection* sel = nullptr, float scrollY = 0.0f,
+                   const std::vector<platform::Rect>& washRects = {});
     void DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                           const Node& n, float x, float y, float width);
     std::shared_ptr<mermaid::LaidOutFlowchart> GetMermaidLayout(

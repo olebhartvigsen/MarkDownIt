@@ -130,6 +130,7 @@ row whose pattern matches nothing on its platform is stale and fails.
 | MermaidLegacy.* | windows | Kept while the legacy entry points migrate, see the legacy row above. |
 | ClipboardPaste.* | windows | The paste priority rules of the Win32 clipboard, driven through a real window with forged custom formats. The shared markdown escaping and line endings have their own portable tests on both runners. |
 | EmptyListMapping.DirectWritePlaceholderHasOneClickableCaret | windows | The DirectWrite caret landing rule of the Windows engine. The Core Text engine has its own TextEngineMac suite. |
+| RendererWin.* | windows | The Windows renderer's selection wash twin driven through the walk engine seam with fake D2D and DWrite shims, so the real SDK surface stays in the test. The shared rect rule itself is portable and cross-checked from the mac side by RendererMac reading the same walk records, plus the shared suites below. |
 | ClearInlineFormatting.* | macos | The clear formatting tests run on macOS only today, although the Windows side carries the command. Move the file into the shared suite in plan Batch 4. |
 | InlineMarkerRuns.* | macos | Same as ClearInlineFormatting. |
 | TextEngineMac.* | macos | The Core Text engine behind the seam. |

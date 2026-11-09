@@ -11,6 +11,7 @@
 #include "renderer_mac.h"
 #include "hash.h"
 #include "layout/display_player.h"
+#include "layout/selection_rects.h"
 #include "markers.h"
 
 #include <algorithm>
@@ -161,16 +162,6 @@ bool HasMermaidLayout(const mermaid::MermaidRender& diagram) {
     }
 }
 
-// The UTF-8 byte length of the character that starts at the byte.
-size_t Utf8CharLen(const std::string& s, size_t at) {
-    const unsigned char b = static_cast<unsigned char>(s[at]);
-    if (b < 0x80) return 1;
-    if ((b & 0xE0) == 0xC0) return 2;
-    if ((b & 0xF0) == 0xE0) return 3;
-    if ((b & 0xF8) == 0xF0) return 4;
-    return 1;
-}
-
 // The visible text of a run of lines, as the runs hold it.
 std::string VisibleTextOfLines(const std::vector<TextLine>& lines) {
     std::string text;
@@ -212,98 +203,12 @@ bool VisibleAtSource(const std::vector<uint32_t>& visToSrc, uint32_t src,
     return true;
 }
 
-// Fully append the visible-to-source map of an inline block list. One
-// entry per rendered byte, plus the end of the last character as the
-// final entry. The mirror of the mapping the Windows renderer builds
-// while it lays a block out.
-void AppendInlineMapping(const std::vector<InlineBlock>& children,
-                          std::vector<uint32_t>* visToSrc,
-                          std::vector<uint32_t>* visToSrcEnd) {
-    for (const InlineBlock& child : children) {
-        if (child.kind == InlineKind::Image) continue;
-        if (child.text.empty()) continue;
-        uint32_t srcByte = child.srcOffset;
-        for (char32_t cp : child.text) {
-            const uint32_t utf8Len = cp <= 0x7F ? 1u
-                                    : cp <= 0x7FF ? 2u
-                                    : cp <= 0xFFFF ? 3u : 4u;
-            uint32_t srcEnd = srcByte + utf8Len;
-            // A span the parser gave a longer source than its text (an
-            // escape or an entity) ends where the source ends.
-            if (child.text.size() == 1 && child.srcLength > utf8Len) {
-                srcEnd = child.srcOffset + child.srcLength;
-            }
-            for (uint32_t k = 0; k < utf8Len; ++k) {
-                visToSrc->push_back(srcByte);
-                visToSrcEnd->push_back(srcEnd);
-            }
-            srcByte += utf8Len;
-        }
-    }
-    if (!visToSrcEnd->empty()) {
-        visToSrc->push_back(visToSrcEnd->back());
-        visToSrcEnd->push_back(visToSrcEnd->back());
-    }
-}
-
-// Close a map with the sentinel entry, or leave it holding the one
-// addressable position an empty region keeps.
-void FinishMapping(uint32_t emptyPosition, std::vector<uint32_t>* visToSrc,
-                    std::vector<uint32_t>* visToSrcEnd) {
-    if (!visToSrcEnd->empty()) {
-        visToSrc->push_back(visToSrcEnd->back());
-        visToSrcEnd->push_back(visToSrcEnd->back());
-    } else {
-        visToSrc->push_back(emptyPosition);
-        visToSrcEnd->push_back(emptyPosition);
-    }
-}
-
-// The visible-to-source map of a table cell, from the parser's own
-// UTF-16-to-source mapping.
-void AppendCellMapping(const TableCell& cell,
-                        std::vector<uint32_t>* visToSrc,
-                        std::vector<uint32_t>* visToSrcEnd) {
-    uint32_t u16 = 0;
-    uint32_t srcByte = cell.srcOffset;
-    for (char32_t cp : cell.text) {
-        const uint32_t utf8Len = cp <= 0x7F ? 1u
-                                : cp <= 0x7FF ? 2u
-                                : cp <= 0xFFFF ? 3u : 4u;
-        uint32_t start = srcByte;
-        uint32_t end = srcByte + utf8Len;
-        if (u16 < cell.u16ToSrc.size()) {
-            start = cell.u16ToSrc[u16];
-            end = u16 < cell.u16ToSrcEnd.size() ? cell.u16ToSrcEnd[u16]
-                                                : start + utf8Len;
-        }
-        for (uint32_t k = 0; k < utf8Len; ++k) {
-            visToSrc->push_back(start);
-            visToSrcEnd->push_back(end);
-        }
-        u16 += cp > 0xFFFF ? 2u : 1u;
-        srcByte = end;
-    }
-    FinishMapping(cell.srcOffset, visToSrc, visToSrcEnd);
-}
-
-// The visible-to-source map of a code block: the raw text is drawn as
-// it stands, so the map walks the source from the content start.
-void AppendCodeMapping(const std::string& code, uint32_t contentOffset,
-                        std::vector<uint32_t>* visToSrc,
-                        std::vector<uint32_t>* visToSrcEnd) {
-    uint32_t srcByte = contentOffset;
-    for (size_t i = 0; i < code.size();) {
-        const size_t len = Utf8CharLen(code, i);
-        for (size_t k = 0; k < len; ++k) {
-            visToSrc->push_back(srcByte);
-            visToSrcEnd->push_back(srcByte + static_cast<uint32_t>(len));
-        }
-        srcByte += static_cast<uint32_t>(len);
-        i += len;
-    }
-    FinishMapping(contentOffset, visToSrc, visToSrcEnd);
-}
+// The maps the drawn text keeps back to the source, and the range
+// rectangle rule over them, live in the shared header now, Batch 3.3:
+// the Windows renderer's twin answers from the same functions, so the
+// selection wash holds one shape on both ports. What stays here is the
+// mac renderer's own reading of the records (the caret and the hits),
+// plus VisibleAtSource above, which the caret keeps all for itself.
 
 // The width a mermaid block is measured against.
 //
@@ -834,7 +739,7 @@ void MacRenderer::LayoutSourceBlocks(float x, float width, float* y) {
 
     // Every byte is drawn in this mode, so the map to the source is
     // the identity over the whole buffer.
-    AppendCodeMapping(text, 0, &block.visToSrc, &block.visToSrcEnd);
+    layout::AppendCodeMapping(text, 0, &block.visToSrc, &block.visToSrcEnd);
 
     block.y = *y;
     *y += block.height;
@@ -897,8 +802,8 @@ void MacRenderer::AppendBlockFromLaid(const Document& doc,
                 if (c < node.aligns.size()) {
                     laid.align = node.aligns[c];
                 }
-                AppendCellMapping(cell, &laid.visToSrc,
-                                  &laid.visToSrcEnd);
+                layout::AppendCellMapping(cell, &laid.visToSrc,
+                                           &laid.visToSrcEnd);
             }
         }
     }
@@ -910,29 +815,29 @@ void MacRenderer::AppendBlockFromLaid(const Document& doc,
     switch (node.block) {
         case BlockKind::Heading:
         case BlockKind::Paragraph:
-            AppendInlineMapping(node.children, &block.visToSrc,
-                                 &block.visToSrcEnd);
+            layout::AppendInlineMapping(node.children, &block.visToSrc,
+                                        &block.visToSrcEnd);
             if (block.visToSrc.empty() && node.virtualEmptyParagraph) {
                 // The placeholder line maps to the position the empty
                 // paragraph keeps for its caret.
-                FinishMapping(node.contentOffset, &block.visToSrc,
-                               &block.visToSrcEnd);
+                layout::FinishMapping(node.contentOffset, &block.visToSrc,
+                                      &block.visToSrcEnd);
             }
             break;
 
         case BlockKind::List:
-            AppendInlineMapping(node.children, &block.visToSrc,
-                                 &block.visToSrcEnd);
+            layout::AppendInlineMapping(node.children, &block.visToSrc,
+                                        &block.visToSrcEnd);
             if (block.visToSrc.empty()) {
                 // The marker keeps the item addressable.
-                FinishMapping(node.contentOffset, &block.visToSrc,
-                               &block.visToSrcEnd);
+                layout::FinishMapping(node.contentOffset, &block.visToSrc,
+                                      &block.visToSrcEnd);
             }
             break;
 
         case BlockKind::BlockQuote:
-            AppendInlineMapping(node.children, &block.visToSrc,
-                                 &block.visToSrcEnd);
+            layout::AppendInlineMapping(node.children, &block.visToSrc,
+                                        &block.visToSrcEnd);
             break;
 
         case BlockKind::CodeBlock: {
@@ -943,8 +848,8 @@ void MacRenderer::AppendBlockFromLaid(const Document& doc,
                    (code.back() == '\n' || code.back() == '\r')) {
                 code.pop_back();
             }
-            AppendCodeMapping(code, node.contentOffset, &block.visToSrc,
-                               &block.visToSrcEnd);
+            layout::AppendCodeMapping(code, node.contentOffset,
+                                      &block.visToSrc, &block.visToSrcEnd);
             break;
         }
 
@@ -2284,101 +2189,22 @@ void MacRenderer::AppendRangeRects(const std::vector<TextLine>& lines,
                                     ColumnAlign align,
                                     float innerWidth,
                                     bool trimBlanks) const {
-    if (lines.empty() || visToSrc.empty()) return;
-    if (end < start) {
-        const uint32_t swap = start;
-        start = end;
-        end = swap;
-    }
-    if (start > visToSrc.back() || end < visToSrc.front()) return;
-
-    // The range is walked in visible space, so the rectangles land on
-    // the drawn text and the markers inside the range never widen it.
-    uint32_t visStart = 0;
-    uint32_t visEnd = 0;
-    if (!VisibleAtSource(visToSrc, start, &visStart)) return;
-    if (!VisibleAtSource(visToSrc, end, &visEnd)) return;
-    if (visEnd <= visStart) return;
-    AppendVisibleRangeRects(lines, x, top, visStart, visEnd, rects, align,
-                            innerWidth, trimBlanks);
+    // Batch 3.3: the range rule is the shared helper's, so the mac and
+    // the Windows renderer answer with the same rectangles. The helper
+    // clamps a boundary outside the region's drawn span to the nearest
+    // drawn edge, where this body used to drop the region outright, so
+    // a selection crossing block boundaries washes every block it
+    // covers, the word processor guide's selection criterion.
+    layout::AppendRangeRects(lines, visToSrc, *engine_, x, top, start, end,
+                             rects, align, innerWidth, trimBlanks);
 }
 
 void MacRenderer::AppendVisibleRangeRects(
     const std::vector<TextLine>& lines, float x, float top, uint32_t start,
     uint32_t end, std::vector<Rect>* rects, ColumnAlign align,
     float innerWidth, bool trimBlanks) const {
-    if (lines.empty()) return;
-    if (end < start) {
-        const uint32_t swap = start;
-        start = end;
-        end = swap;
-    }
-
-    float lineTop = top;
-    uint32_t lineStartVis = 0;
-    for (const TextLine& line : lines) {
-        uint32_t length = 0;
-        for (const GlyphRun& run : line.runs) {
-            length += static_cast<uint32_t>(run.text.size());
-        }
-        const uint32_t lineEndVis = lineStartVis + length;
-
-        const uint32_t from = start > lineStartVis ? start : lineStartVis;
-        const uint32_t to = end < lineEndVis ? end : lineEndVis;
-        // Nothing of the range reaches this line. The subtraction below
-        // would wrap when the range ended before the line starts, and the
-        // wrapped value reads as a range of four billion bytes.
-        if (from >= to) {
-            lineStartVis = lineEndVis;
-            lineTop += line.height;
-            continue;
-        }
-        uint32_t localFrom = from - lineStartVis;
-        uint32_t localTo = to - lineStartVis;
-        if (trimBlanks && localFrom < localTo) {
-            // A line's width keeps the blank beside a word, and a range
-            // that ends next to the word can still reach that blank. The
-            // wash covers the drawn words, so the segment is trimmed to
-            // non-blank text here, where the line's own bytes and their
-            // offsets are known.
-            std::string lineText;
-            for (const GlyphRun& run : line.runs) lineText += run.text;
-            if (localTo > lineText.size()) {
-                localTo = static_cast<uint32_t>(lineText.size());
-            }
-            while (localFrom < localTo && IsBlankByte(lineText[localFrom])) {
-                ++localFrom;
-            }
-            while (localTo > localFrom &&
-                   IsBlankByte(lineText[localTo - 1])) {
-                --localTo;
-            }
-        }
-        if (localFrom < localTo) {
-            // The line sits at the column alignment when the region is
-            // a cell, the same shift the painter applies.
-            float lineX = x;
-            if (align == ColumnAlign::Center) {
-                lineX += (innerWidth - line.width) * 0.5f;
-            } else if (align == ColumnAlign::Right) {
-                lineX += innerWidth - line.width;
-            }
-            const Rect first = engine_->OffsetToRect(line, localFrom);
-            // The right edge of the range is the left edge of the
-            // character after it, the rect OffsetToRect gives for that
-            // position.
-            const Rect after = engine_->OffsetToRect(line, localTo);
-            Rect rect;
-            rect.x = lineX + first.x;
-            rect.y = lineTop;
-            rect.width = after.x - first.x;
-            rect.height = line.height;
-            if (rect.width < 0.0f) rect.width = 0.0f;
-            rects->push_back(rect);
-        }
-        lineStartVis = lineEndVis;
-        lineTop += line.height;
-    }
+    layout::AppendVisibleRangeRects(lines, *engine_, x, top, start, end,
+                                    rects, align, innerWidth, trimBlanks);
 }
 
 std::vector<Rect> MacRenderer::RectsForRangeInBlock(const LaidOutBlock& block,
@@ -2393,27 +2219,38 @@ std::vector<Rect> MacRenderer::RectsForRangeInBlock(const LaidOutBlock& block,
                      ColumnAlign::Default, 0.0f, trimBlanks);
 
     // A table draws its text cell by cell, so a range inside a cell
-    // gets the cell's own geometry.
+    // gets the cell's own geometry. A row centers a short cell against
+    // a taller one, the shift the painter applies to the glyphs, so the
+    // rectangle band follows it: the top below is the painter's lineY,
+    // where this body used to read the cell's top padding and answered
+    // a band above the glyphs of every short cell in a wrapped row.
     if (block.kind == BlockKind::Table) {
         float rowTop = block.y;
         for (size_t r = 0; r < block.tableLayout.rows.size(); ++r) {
             const std::vector<LaidOutBlock::TableCellLayout>& cells =
                 block.tableLayout.rows[r];
+            const float rowH = r < block.tableLayout.rowHeights.size()
+                ? block.tableLayout.rowHeights[r] : 0.0f;
             for (size_t c = 0; c < cells.size(); ++c) {
                 const LaidOutBlock::TableCellLayout& cell = cells[c];
+                float textH = 0.0f;
+                for (const TextLine& line : cell.lines) {
+                    textH += line.height;
+                }
+                const float lineY = rowTop +
+                    (std::max)(metrics_.cellPadY,
+                               (rowH - textH) * 0.5f);
                 AppendRangeRects(
                     cell.lines, cell.visToSrc,
                     block.x +
                         static_cast<float>(c) * block.tableLayout.colW +
                         metrics_.cellPadX,
-                    rowTop + metrics_.cellPadY, start, end, &rects,
+                    lineY, start, end, &rects,
                     cell.align,
                     block.tableLayout.colW - 2.0f * metrics_.cellPadX,
                     trimBlanks);
             }
-            if (r < block.tableLayout.rowHeights.size()) {
-                rowTop += block.tableLayout.rowHeights[r];
-            }
+            rowTop += rowH;
         }
     }
     return rects;

@@ -12,6 +12,7 @@
 #include "imagehelper.h"
 #include "svgtext.h"
 #include "layout/text_runs.h"
+#include "layout/selection_rects.h"
 #include "mermaid/model.h"
 #include "mermaid/layout_internal.h"
 #include "mermaid/layout.h"
@@ -640,11 +641,12 @@ layout::DocumentLayout Renderer::SharedLayoutPass(
     const Palette* palette, float contentWidth,
     std::vector<const layout::LaidBlock*>* byNode,
     const Selection* sel) {
-    // The walk measures through the adapter, never the raw DWriteEngine:
+    // The walk measures through the adapter, never the raw engine:
     // the adapter owns the zoom and the word splitting (the same two
     // duties the mac renderer hands its ZoomEngine; see WalkTextEngine
-    // at the top of this file).
-    WalkTextEngine engine(&layoutEngine_, zoom_);
+    // at the top of this file). The engine itself is the renderer's
+    // own, or the test replacement SetWalkEngineForTesting installed.
+    WalkTextEngine engine(TextEngineForWalk(), zoom_);
     layout::LayoutInput in;
     in.doc = &doc;
     in.metrics = &metrics;
@@ -797,6 +799,11 @@ void Renderer::PaintSharedOverlays(
     // Every band at the record's own y, the frame the walk measured:
     // padTop and the caller's top offset stack on it, so paint and
     // advance are the same number in both passes.
+    // The walk's adapter, the same engine the records were measured
+    // with: the wash rectangles below ask their geometry questions
+    // through it, so the shapes answer the frame they will paint in.
+    WalkTextEngine walkEngine(TextEngineForWalk(), zoom_);
+
     for (size_t nodeIdx = 0; nodeIdx < doc.nodes.size(); ++nodeIdx) {
         const Node& n = doc.nodes[nodeIdx];
         if (nodeIdx >= byNode.size()) continue;
@@ -828,17 +835,40 @@ void Renderer::PaintSharedOverlays(
                 // is exactly the card the per node painter always
                 // drew, now at the walk's band.
                 float outH = 0.0f;
+                // The selection wash comes from the shared rect rule
+                // now, the same shape the RectsForRange twin reports:
+                // one rectangle per wrapped line of the walk's record,
+                // placed by the frame the record was measured in.
+                std::vector<platform::Rect> washRects;
+                if (sel && !sel->Empty()) {
+                    AppendBlockRangeRects(*b, n, m, walkEngine, originX,
+                                          m.padTop + topOffsetDip,
+                                          sel->Start(),
+                                          sel->Start() + sel->Length(),
+                                          &washRects);
+                }
                 DrawCodeBlock(rt, dw, n, bandX, bandY, bandW, outH, sel,
-                              scrollY);
+                              scrollY, washRects);
                 break;
             }
             case BlockKind::Table: {
                 // The rows are the same opaque surface story as the
                 // code card: the grid, the washes per cell and the
                 // per cell caret records all come from one painter.
+                // The washes are the shared rule's rectangles, split
+                // per cell below so the fill keeps its slot between
+                // the match fills and the glyphs.
                 float outH = 0.0f;
+                std::vector<platform::Rect> washRects;
+                if (sel && !sel->Empty()) {
+                    AppendBlockRangeRects(*b, n, m, walkEngine, originX,
+                                          m.padTop + topOffsetDip,
+                                          sel->Start(),
+                                          sel->Start() + sel->Length(),
+                                          &washRects);
+                }
                 DrawTable(rt, dw, n, bandX, bandY, bandW, outH, sel,
-                          scrollY);
+                          scrollY, washRects);
                 break;
             }
             case BlockKind::MermaidFlowchart: {
@@ -1153,7 +1183,8 @@ std::u16string Renderer::ToUtf16(const std::u32string& s32) {
 void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                               const Node& n, float x, float y,
                               float width, float& outH,
-                              const Selection* sel, float scrollY) {
+                              const Selection* sel, float scrollY,
+                              const std::vector<platform::Rect>& washRects) {
     if (!rt || !dw || !code_fmt_) { outH = 0.0f; return; }
 
     LayoutMetrics m = ComputeMetrics();
@@ -1258,51 +1289,19 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (currentBrush) currentBrush->Release();
     }
 
-    // Draw selection highlight behind the text.
-    if (sel && !sel->Empty() && !raw.empty() && !text16.empty()) {
+    // The selection wash, from the shared rect rule: one rectangle
+    // per wrapped line, the same shape the RectsForRange twin answers
+    // outside the frame and the mac renderer paints from the same
+    // records. The old per code point translation is gone; the wash
+    // keeps its slot between the match fills and the glyphs.
+    if (sel && !sel->Empty() && !washRects.empty()) {
         ID2D1SolidColorBrush* selBrush = nullptr;
         rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
         if (selBrush) {
-            uint32_t selStart = sel->Start();
-            uint32_t selEnd = selStart + sel->Length();
-            uint32_t blockStart = n.srcOffset;
-            uint32_t blockEnd = blockStart + n.srcLength;
-            if (selStart < blockEnd && selEnd > blockStart) {
-                // Map selection offsets to the raw text (contentOffset based).
-                uint32_t textStart = n.contentOffset;
-                uint32_t textEnd = textStart + n.contentLength;
-                uint32_t localStart = (selStart > textStart) ?
-                    (selStart - textStart) : 0;
-                uint32_t localEnd = (selEnd < textEnd) ?
-                    (selEnd - textStart) :
-                    (textEnd > textStart ? textEnd - textStart : 0);
-                // Convert UTF-8 local offsets to UTF-16 indices.
-                // Walk the raw text to build the mapping inline.
-                std::u32string::const_iterator it = raw.begin();
-                UINT32 u16Start = 0, u16End = 0;
-                uint32_t byteIdx = 0;
-                bool pastStart = false, pastEnd = false;
-                for (char32_t cp : raw) {
-                    int utf8Len = (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
-                                  (cp <= 0xFFFF) ? 3 : 4;
-                    int utf16Len = (cp <= 0xFFFF) ? 1 : 2;
-                    if (!pastStart && byteIdx >= localStart) {
-                        u16Start = u16End;
-                        pastStart = true;
-                    }
-                    if (!pastEnd && byteIdx >= localEnd) {
-                        pastEnd = true;
-                        break;
-                    }
-                    u16End += utf16Len;
-                    byteIdx += utf8Len;
-                }
-                if (!pastStart) u16Start = u16End; // past end
-                if (!pastEnd) u16End = static_cast<UINT32>(text16.size());
-                FillSelectionHighlight(rt, layout, selBrush,
-                                       u16Start, u16End,
-                                       x + m.codePad, y + m.codePad,
-                                       scrollY, rt->GetSize().height);
+            for (const platform::Rect& r : washRects) {
+                const D2D1_RECT_F rect = D2D1::RectF(
+                    r.x, r.y, r.x + r.width, r.y + r.height);
+                rt->FillRectangle(rect, selBrush);
             }
             selBrush->Release();
         }
@@ -1355,7 +1354,8 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                           const Node& n, float x, float y,
                           float width, float& outH,
-                          const Selection* sel, float scrollY) {
+                          const Selection* sel, float scrollY,
+                          const std::vector<platform::Rect>& washRects) {
     if (!rt || !dw || !body_fmt_ || n.rows.empty()) { outH = 0.0f; return; }
 
     LayoutMetrics m = ComputeMetrics();
@@ -1576,35 +1576,19 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                         cellOrigin.x, cellOrigin.y,
                                         scrollY, rt->GetSize().height);
                 }
-                // Draw selection highlight for this cell.
+                // The selection wash for this cell, from the shared
+                // rect rule: the whole table's rectangles were computed
+                // once above, so the ones inside this cell's band are
+                // the cell's share. The fill keeps the old slot between
+                // the match fills and the glyphs.
                 if (selBrush && sel && !sel->Empty() &&
-                    !row.cells[c].text.empty() && !text16.empty()) {
-                    const auto& cell = row.cells[c];
-                    uint32_t selStart = sel->Start();
-                    uint32_t selEnd = selStart + sel->Length();
-                    // Use cell.srcOffset and cell text length.
-                    uint32_t cellStart = cell.srcOffset;
-                    uint32_t cellEnd = cell.srcEnd > cellStart
-                        ? cell.srcEnd : cellStart;
-                    if (selStart < cellEnd && selEnd > cellStart &&
-                        !cell.u16ToSrc.empty()) {
-                        UINT32 u16Start = static_cast<UINT32>(text16.size());
-                        UINT32 u16End = 0;
-                        for (size_t ui = 0; ui < cell.u16ToSrc.size(); ++ui) {
-                            const uint32_t spanStart = cell.u16ToSrc[ui];
-                            const uint32_t spanEnd = ui < cell.u16ToSrcEnd.size()
-                                ? cell.u16ToSrcEnd[ui] : spanStart + 1;
-                            if (spanEnd <= selStart || spanStart >= selEnd)
-                                continue;
-                            u16Start = std::min<UINT32>(u16Start,
-                                static_cast<UINT32>(ui));
-                            u16End = std::max<UINT32>(u16End,
-                                static_cast<UINT32>(ui + 1));
-                        }
-                        FillSelectionHighlight(rt, layout, selBrush,
-                                               u16Start, u16End,
-                                               cellOrigin.x, cellOrigin.y,
-                                               scrollY, rt->GetSize().height);
+                    !washRects.empty()) {
+                    for (const platform::Rect& r : washRects) {
+                        if (r.x < cellX || r.x >= cellX + colW) continue;
+                        if (r.y < curY || r.y >= curY + rowH) continue;
+                        const D2D1_RECT_F rect = D2D1::RectF(
+                            r.x, r.y, r.x + r.width, r.y + r.height);
+                        rt->FillRectangle(rect, selBrush);
                     }
                 }
                 rt->DrawTextLayout(cellOrigin, layout, textBrush,
@@ -1685,6 +1669,200 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (matchBrush) matchBrush->Release();
     if (currentBrush) currentBrush->Release();
     outH = curY - y;
+}
+
+// ---------------------------------------------------------------------------
+// Batch 3.3: the selection rect twin over the shared walk records
+// ---------------------------------------------------------------------------
+
+// The engine the walk and the twin measure through: the test
+// replacement when one is installed, the renderer's own DirectWrite
+// engine otherwise. The zoom rides the WalkTextEngine adapter around
+// the answer either way, so the caller wraps this in one.
+platform::TextEngine* Renderer::TextEngineForWalk() {
+    return walkEngineForTesting_ ? walkEngineForTesting_
+                                 : static_cast<platform::TextEngine*>(
+                                       &layoutEngine_);
+}
+
+// The source map of one block's drawn text. The builders live in the
+// shared header (layout/selection_rects.h), spelled exactly the way
+// the mac record adopts them in its AppendBlockFromLaid, so both
+// ports map the same bytes: the inline children per drawn byte, the
+// blank placeholder positions the caret keeps for empty paragraphs
+// and bare list items, the raw text of a code card.
+void Renderer::BuildBlockMapping(const Node& n,
+                                 std::vector<uint32_t>* visToSrc,
+                                 std::vector<uint32_t>* visToSrcEnd) const {
+    switch (n.block) {
+        case BlockKind::Heading:
+        case BlockKind::Paragraph:
+            layout::AppendInlineMapping(n.children, visToSrc, visToSrcEnd);
+            if (visToSrc->empty() && n.virtualEmptyParagraph) {
+                // The placeholder line maps to the position the empty
+                // paragraph keeps for its caret.
+                layout::FinishMapping(n.contentOffset, visToSrc,
+                                      visToSrcEnd);
+            }
+            break;
+
+        case BlockKind::List:
+            layout::AppendInlineMapping(n.children, visToSrc, visToSrcEnd);
+            if (visToSrc->empty()) {
+                // The marker keeps the item addressable.
+                layout::FinishMapping(n.contentOffset, visToSrc,
+                                      visToSrcEnd);
+            }
+            break;
+
+        case BlockKind::BlockQuote:
+            layout::AppendInlineMapping(n.children, visToSrc, visToSrcEnd);
+            break;
+
+        case BlockKind::CodeBlock: {
+            // The fence's text lives in raw; the inline children are
+            // empty for a code block.
+            std::u32string raw32 = n.raw;
+            while (!raw32.empty() &&
+                   (raw32.back() == U'\n' || raw32.back() == U'\r')) {
+                raw32.pop_back();
+            }
+            const std::string code = layout::Utf32ToUtf8(raw32);
+            layout::AppendCodeMapping(code, n.contentOffset, visToSrc,
+                                      visToSrcEnd);
+            break;
+        }
+
+        default:
+            break;
+    }
+}
+
+// The frame placement of a record's own text, the mirror of the mac
+// TextX/TextTop pair: an indented list opens its text after the
+// marker gutter, a code card one pad inside its surface, and the
+// images a text block stacked above its text push the top down. The
+// numbers are the walk's own placement, the same placement the replay
+// paints the glyphs at, so the washes the rule answers sit under the
+// drawn text by construction.
+void Renderer::TextOriginOf(const layout::LaidBlock& b,
+                            const LayoutMetrics& m, float originX,
+                            float frameTop, float* x, float* top) {
+    *x = originX + b.x;
+    if (b.kind == BlockKind::List) {
+        *x += m.listIndent * m.markerRatio + m.markerGutter;
+    } else if (b.kind == BlockKind::CodeBlock) {
+        *x += m.codePad;
+    }
+    *top = frameTop + b.y + b.imagesHeight;
+    if (b.kind == BlockKind::CodeBlock) {
+        *top = frameTop + b.y + m.codePad;
+    }
+}
+
+// The rect rule over one whole record: the block's own text at the
+// record's placement, a table's cells at the record's cell geometry
+// (the centered lineY of a short cell in a wrapped row, the walk's
+// own placement again), both through the shared AppendRangeRects the
+// mac twin answers from.
+void Renderer::AppendBlockRangeRects(
+    const layout::LaidBlock& b, const Node& n, const LayoutMetrics& m,
+    const platform::TextEngine& engine, float originX, float frameTop,
+    uint32_t start, uint32_t end,
+    std::vector<platform::Rect>* rects) const {
+    if (!b.lines.empty()) {
+        std::vector<uint32_t> visToSrc;
+        std::vector<uint32_t> visToSrcEnd;
+        BuildBlockMapping(n, &visToSrc, &visToSrcEnd);
+        if (!visToSrc.empty()) {
+            float x = 0.0f;
+            float top = 0.0f;
+            TextOriginOf(b, m, originX, frameTop, &x, &top);
+            layout::AppendRangeRects(b.lines, visToSrc, engine, x, top,
+                                     start, end, rects,
+                                     ColumnAlign::Default, 0.0f, false);
+        }
+    }
+    if (b.kind == BlockKind::Table && b.table) {
+        // The cells: the walk's record owns the measured lines, the
+        // parser's node owns the byte map. A row centers a short cell
+        // against a taller one, the lineY the walk places the glyphs
+        // at, so the rectangle band follows the glyphs rather than the
+        // cell's top padding: this body used to read the paddings and
+        // answered a band above the text of every short cell in a
+        // wrapped row.
+        for (size_t r = 0;
+             r < b.table->cells.size() && r < n.rows.size(); ++r) {
+            const layout::LaidTable& t = *b.table;
+            const float rowH = r < t.rowHeights.size()
+                ? t.rowHeights[r] : 0.0f;
+            const size_t columns =
+                (std::min)(t.cells[r].size(), n.rows[r].cells.size());
+            for (size_t c = 0; c < columns; ++c) {
+                const layout::LaidTableCell& cell = t.cells[r][c];
+                if (cell.lines.empty()) continue;
+                std::vector<uint32_t> cellVis;
+                std::vector<uint32_t> cellVisEnd;
+                layout::AppendCellMapping(n.rows[r].cells[c], &cellVis,
+                                          &cellVisEnd);
+                const ColumnAlign align = c < n.aligns.size()
+                    ? n.aligns[c] : ColumnAlign::Default;
+                const float innerW = t.colW - 2.0f * m.cellPadX;
+                float textH = 0.0f;
+                for (const platform::TextLine& line : cell.lines) {
+                    textH += line.height;
+                }
+                const float lineY = t.cells[r][c].y +
+                    (std::max)(m.cellPadY, (rowH - textH) * 0.5f);
+                layout::AppendRangeRects(
+                    cell.lines, cellVis, engine,
+                    originX + b.x + static_cast<float>(c) * t.colW +
+                        m.cellPadX,
+                    frameTop + b.y + lineY, start, end, rects,
+                    align, innerW, false);
+            }
+        }
+    }
+}
+
+std::vector<platform::Rect> Renderer::RectsForRange(
+    IDWriteFactory* dw, const Document& doc, float widthDip,
+    float topOffsetDip, uint32_t start, uint32_t end, const Selection* sel) {
+    std::vector<platform::Rect> rects;
+    if (!dw || widthDip <= 0.0f) return rects;
+
+    // The same frame the paint pass builds: the same metrics, the
+    // same content column, so the records answer with the geometry
+    // the last frame painted.
+    LayoutMetrics m = ComputeMetrics();
+    Palette pal = BasePalette();
+    float avail = widthDip - 2.0f * m.padX;
+    float contentWidth = wrapEnabled_ ? avail : kNoWrapContentWidthDip;
+    if (wrapEnabled_ && contentWidth > m.maxContentWidth) {
+        contentWidth = m.maxContentWidth;
+    }
+    if (contentWidth <= 0.0f) contentWidth = 1.0f;
+    const float originX = wrapEnabled_
+        ? (widthDip - contentWidth) * 0.5f
+        : m.padX;
+
+    std::vector<const layout::LaidBlock*> byNode;
+    layout::DocumentLayout shared =
+        SharedLayoutPass(doc, dw, m, &pal, contentWidth, &byNode, sel);
+
+    // The engine the records were measured through: the walk measures
+    // through the zooming adapter, so the rule's geometry questions
+    // go to the same adapter, the same pairing the mac rule keeps
+    // with its own engine.
+    WalkTextEngine engine(TextEngineForWalk(), zoom_);
+    const float frameTop = m.padTop + topOffsetDip;
+    for (const layout::LaidBlock& b : shared.blocks) {
+        if (b.nodeIndex >= doc.nodes.size()) continue;
+        const Node& n = doc.nodes[b.nodeIndex];
+        AppendBlockRangeRects(b, n, m, engine, originX, frameTop,
+                              start, end, &rects);
+    }
+    return rects;
 }
 
 float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
@@ -1831,6 +2009,11 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     std::vector<const layout::LaidBlock*> sharedByNode;
     layout::DocumentLayout shared =
         SharedLayoutPass(doc, dw, m, &pal, contentWidth, &sharedByNode, sel);
+
+    // The engine the walk and the rect twin ask their geometry
+    // questions through, the same adapter those records were measured
+    // with: the renderer's own engine, or the test replacement.
+    WalkTextEngine twinEngine(TextEngineForWalk(), zoom_);
 
     // Phase zero, before the walk's image questions are answered: the
     // inline images of the text nodes are fetched here, where the per
@@ -2173,36 +2356,34 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                 textX, curY, scrollY, viewH);
         }
 
-        // Draw selection highlight behind the text.
-        if (selBrush && sel && !sel->Empty() && !u16ToSrc.empty()) {
-            uint32_t selStart = sel->Start();
-            uint32_t selEnd = selStart + sel->Length();
-            uint32_t blockStart = n.srcOffset;
-            uint32_t blockEnd = blockStart + n.srcLength;
-            if (selStart < blockEnd && selEnd > blockStart) {
-                // Find UTF-16 positions for the selection boundaries
-                // by binary search on u16ToSrc.
-                auto findU16 = [&](uint32_t srcOff) -> UINT32 {
-                    // Find first u16 index where u16ToSrc[idx] >= srcOff.
-                    // If not found, return text16.size().
-                    if (srcOff <= u16ToSrc[0]) return 0;
-                    size_t lo = 0, hi = u16ToSrc.size();
-                    while (lo < hi) {
-                        size_t mid = (lo + hi) / 2;
-                        if (u16ToSrc[mid] < srcOff) lo = mid + 1;
-                        else hi = mid;
-                    }
-                    return (lo < u16ToSrc.size()) ?
-                        static_cast<UINT32>(lo) :
-                        static_cast<UINT32>(text16.size());
-                };
-                UINT32 u16Start = findU16(selStart);
-                UINT32 u16End = (selEnd >= blockEnd) ?
-                    static_cast<UINT32>(text16.size()) :
-                    findU16(selEnd);
-                FillSelectionHighlight(rt, layout, selBrush,
-                                       u16Start, u16End,
-                                       textX, curY, scrollY, viewH);
+        // Draw the selection wash, Batch 3.3: the same shared rect rule
+        // the mac twin paints from (layout/selection_rects.h), answered
+        // over this frame's own walk record, so both ports hold one
+        // selection shape over the same records. The wash sits under
+        // the replayed glyphs exactly where the old per layout fill
+        // did: the placement below is the walk's own text placement,
+        // the one the replay paints the lines at, and the band top
+        // counts the images the record stacked above the text.
+        if (selBrush && sel && !sel->Empty() && !b->lines.empty()) {
+            std::vector<uint32_t> visToSrc;
+            std::vector<uint32_t> visToSrcEnd;
+            BuildBlockMapping(n, &visToSrc, &visToSrcEnd);
+            if (!visToSrc.empty()) {
+                float washX = 0.0f;
+                float washTop = 0.0f;
+                TextOriginOf(*b, m, originX,
+                             m.padTop + topOffsetDip, &washX, &washTop);
+                std::vector<platform::Rect> washRects;
+                layout::AppendRangeRects(
+                    b->lines, visToSrc, twinEngine, washX, washTop,
+                    sel->Start(), sel->Start() + sel->Length(),
+                    &washRects, ColumnAlign::Default, 0.0f, false);
+                for (const platform::Rect& r : washRects) {
+                    rt->FillRectangle(
+                        D2D1::RectF(r.x, r.y, r.x + r.width,
+                                    r.y + r.height),
+                        selBrush);
+                }
             }
         }
 

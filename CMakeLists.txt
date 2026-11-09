@@ -444,6 +444,10 @@ elseif(BUILD_TESTS)
         tests/code_table_layout_test.cpp
         tests/svg_mermaid_layout_test.cpp
         tests/display_player_test.cpp
+        # The Windows renderer test (batch 5.3): the selection wash
+        # twin through the walk engine seam, with COM shims that
+        # compile against the real SDK on the Windows runner.
+        tests/renderer_win_test.cpp
         tests/mermaid_legacy_test.cpp
         tests/mermaid_model_test.cpp
         tests/mermaid_parse_test.cpp
