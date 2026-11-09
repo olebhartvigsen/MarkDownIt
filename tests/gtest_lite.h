@@ -98,7 +98,14 @@ struct Registrar {
 
 #define EXPECT_NEAR(a, b, tol) do { testlite::checks()++; double _va = static_cast<double>(a); double _vb = static_cast<double>(b); double _vt = static_cast<double>(tol); double _diff = _va - _vb; if (_diff < 0) _diff = -_diff; if (!(_diff <= _vt)) { testlite::NoteXfailFailure(); std::cerr << "  FAIL " << __FILE__ << ":" << __LINE__ << " EXPECT_NEAR(" #a ", " #b ", " #tol ") diff=" << _diff << "\n"; } } while(0)
 
-#define RUN_ALL_TESTS() int main() { \
+// The parity pipeline needs the names without running anything, so the
+// runner answers a --list flag: one suite.case per line, nothing else.
+#define RUN_ALL_TESTS() int main(int argc, char** argv) { \
+    if (argc > 1 && std::string(argv[1]) == "--list") { \
+        for (auto& t : testlite::registry()) \
+            std::cout << t.name << "\n"; \
+        return 0; \
+    } \
     int passed = 0; int xfailed = 0; \
     std::vector<std::string> unexpected; \
     for (auto& t : testlite::registry()) { \

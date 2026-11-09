@@ -28,17 +28,29 @@ INCLUDE = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]')
 
 
 def shared_sources():
-    """The sources the mac build and the portable suite both use."""
-    path = os.path.join(REPO, "CMakeLists.txt")
-    with open(path, encoding="utf-8") as f:
-        cmake = f.read()
+    """The sources the mac build and the portable suite both use.
 
-    match = re.search(r"set\(MARKDOWNIT_CORE_SOURCES(.*?)\)", cmake, re.S)
-    if not match:
-        print("FAIL: the shared sources are not in the build file")
+    The groups and their surfaces live in cmake/sources.cmake. Every
+    group the mac side builds counts as shared: core, Mermaid (with
+    the state diagrams), Office, and the SVG reader.
+    """
+    path = os.path.join(REPO, "cmake", "sources.cmake")
+    with open(path, encoding="utf-8") as f:
+        manifest = f.read()
+
+    files = []
+    for usage, body in re.findall(
+            r"#\s*usage:([^\n]*)\nset\(MARKDOWNIT_\w+\s*(.*?)\)",
+            manifest, re.S):
+        if "macos-core" not in usage and "macos-app" not in usage:
+            continue
+        files += re.findall(r"(src/[A-Za-z0-9_/]+\.(?:cpp|h))", body)
+
+    if not files:
+        print("FAIL: no shared sources found in cmake/sources.cmake")
         sys.exit(1)
 
-    return re.findall(r"(src/[A-Za-z0-9_/]+\.(?:cpp|h))", match.group(1))
+    return sorted(set(files))
 
 
 def main() -> int:
