@@ -383,6 +383,166 @@ struct XmlPos {
 
 // --- ExtractTextRuns ---
 
+// --- HTML labels -----------------------------------------------------------
+//
+// draw.io and its kin write every label twice: as HTML inside a
+// <foreignObject>, and again as a <text> fallback for viewers that cannot
+// lay out HTML. A browser draws the HTML, so its typography and its line
+// breaks are the ones to reproduce: the fallback names an embedded family
+// the system does not have, and its tspan wrap does not always agree with
+// the HTML, which drew an extra line on short labels.
+struct HtmlLabelText {
+    bool valid = false;
+    std::string fontFamily;
+    float fontSize = 0.0f;
+    std::string fill;
+    bool bold = false;
+    bool italic = false;
+    bool centred = false;
+    float lineHeight = 0.0f;
+    std::vector<std::string> lines;
+};
+
+// The number at the front of a CSS length or multiplier.
+static float CssNumber(const std::string& value, float fallback) {
+    size_t k = 0;
+    while (k < value.size() && !(value[k] >= '0' && value[k] <= '9') &&
+           value[k] != '.' && value[k] != '-' && value[k] != '+') {
+        ++k;
+    }
+    if (k >= value.size()) return fallback;
+    try {
+        return std::stof(value.substr(k));
+    } catch (...) {
+        return fallback;
+    }
+}
+
+// The value of one declaration in an inline style, trimmed.
+static std::string CssDecl(const std::string& style, const std::string& name) {
+    const std::string key = name + ":";
+    size_t at = style.find(key);
+    while (at != std::string::npos) {
+        if (at == 0 || style[at - 1] == ';' || style[at - 1] == ' ') {
+            const size_t end = style.find(';', at);
+            std::string v = style.substr(
+                at + key.size(),
+                (end == std::string::npos ? style.size() : end) - at - key.size());
+            const size_t a = v.find_first_not_of(" \t\r\n");
+            const size_t z = v.find_last_not_of(" \t\r\n");
+            if (a == std::string::npos) return std::string();
+            return v.substr(a, z - a + 1);
+        }
+        at = style.find(key, at + 1);
+    }
+    return std::string();
+}
+
+// A CSS colour, with light-dark() resolved to its light value, which is
+// what a light page shows.
+static std::string CssColor(const std::string& value) {
+    const size_t at = value.find("light-dark");
+    if (at == std::string::npos) return value;
+    const size_t open = value.find('(', at);
+    if (open == std::string::npos) return value;
+    size_t depth = 0;
+    size_t end = open + 1;
+    for (; end < value.size(); ++end) {
+        if (value[end] == '(') ++depth;
+        else if (value[end] == ')') {
+            if (depth == 0) break;
+            --depth;
+        } else if (value[end] == ',' && depth == 0) {
+            break;
+        }
+    }
+    return value.substr(open + 1, end - open - 1);
+}
+
+// Reads a label's typography and line breaks out of its HTML. A block
+// element and a <br> start a new line; inline text joins the line it is
+// on.
+static void ReadHtmlLabelText(const std::string& html, HtmlLabelText* out) {
+    bool fresh = true;
+    size_t i = 0;
+    while (i < html.size()) {
+        const size_t lt = html.find('<', i);
+        if (lt == std::string::npos) break;
+        std::string text = html.substr(i, lt - i);
+        const size_t a = text.find_first_not_of(" \t\r\n");
+        const size_t z = text.find_last_not_of(" \t\r\n");
+        if (a != std::string::npos) {
+            text = DecodeEntities(text.substr(a, z - a + 1));
+            if (fresh || out->lines.empty()) {
+                out->lines.push_back(text);
+                fresh = false;
+            } else {
+                out->lines.back() += text;
+            }
+        }
+        const size_t gt = html.find('>', lt);
+        if (gt == std::string::npos) break;
+        std::string tag = html.substr(lt + 1, gt - lt - 1);
+        std::string name = tag;
+        if (!name.empty() && name[0] == '/') name = name.substr(1);
+        const size_t sp = name.find_first_of(" \t\r\n/>");
+        if (sp != std::string::npos) name = name.substr(0, sp);
+        for (char& c : name) {
+            if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
+        }
+        if (name == "br") {
+            fresh = true;
+        } else if (name == "div" || name == "p") {
+            const bool closing = !tag.empty() && tag[0] == '/';
+            if (!closing && !out->lines.empty()) fresh = true;
+            if (closing) fresh = true;
+        }
+        // The style attribute is entity-encoded in the file (&quot; for the
+        // quotes around a family name), so it is decoded before it is read.
+        const std::string style = DecodeEntities(GetAttr(tag, "style"));
+        if (!style.empty()) {
+            const std::string family = CssDecl(style, "font-family");
+            if (!family.empty()) {
+                out->fontFamily = family;
+                out->valid = true;
+            }
+            const std::string size = CssDecl(style, "font-size");
+            if (!size.empty()) {
+                const float v = CssNumber(size, 0.0f);
+                if (v > 0.0f) {
+                    out->fontSize = v;
+                    out->valid = true;
+                }
+            }
+            const std::string colour = CssDecl(style, "color");
+            if (!colour.empty() && colour != "transparent") {
+                out->fill = CssColor(colour);
+                out->valid = true;
+            }
+            const std::string weight = CssDecl(style, "font-weight");
+            if (!weight.empty()) {
+                out->bold = weight == "bold" || weight == "600" ||
+                            weight == "700" || weight == "800" ||
+                            weight == "900";
+            }
+            const std::string slant = CssDecl(style, "font-style");
+            if (!slant.empty()) {
+                out->italic = slant == "italic" || slant == "oblique";
+            }
+            const std::string align = CssDecl(style, "align-items");
+            if (!align.empty()) {
+                out->centred = align.find("center") != std::string::npos;
+            }
+            const std::string leading = CssDecl(style, "line-height");
+            if (!leading.empty()) {
+                const float v = CssNumber(leading, 0.0f);
+                if (v > 0.0f) out->lineHeight = v;
+            }
+        }
+        i = gt + 1;
+    }
+}
+
 std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
     std::vector<TextRun> runs;
     XmlPos p(xml);
@@ -614,6 +774,10 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
     int switchSkipRestore = 0;    // branch state to resume after a nested switch
     bool chainNext = false; // set by a tspan carrying its own x
     bool tspanHadX = false;  // the tspan currently open set its own x
+    // The HTML label the switch passed over, and the depth of a
+    // <foreignObject> subtree being skipped.
+    HtmlLabelText htmlBranch;
+    int htmlSkip = 0;
 
     while (true) {
         std::string tag = p.NextTag();
@@ -676,6 +840,14 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
         // (a <text>, a <rect>) still has to be drawn. So this only updates
         // state and marks whether the tag itself is discarded.
         bool skipThisTag = false;
+        if (htmlSkip > 0) {
+            // Inside the HTML label that the switch passed over. Nothing in
+            // it is SVG content, and its <div> and <span> tags are not either.
+            const bool isClose = tag.size() > 1 && tag[1] == 47;
+            if (!isClose && !IsSelfClosed(tag)) ++htmlSkip;
+            else if (isClose) --htmlSkip;
+            continue;
+        }
         if (switchSkip != 0) {
             const bool isClose = tag.size() > 1 && tag[1] == 47;
             const bool selfClosed = IsSelfClosed(tag);
@@ -692,7 +864,34 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                 continue;
             }
             if (switchSkip == kSwWantChild) {
-                if (isClose || selfClosed) {
+                if (isClose) {
+                    skipThisTag = true;
+                } else if (selfClosed) {
+                    // An empty branch that carries a feature test is a branch
+                    // a browser takes: <g requiredFeatures=".."/> draws
+                    // nothing and the fallback behind it is never reached,
+                    // which is where the draw.io "Text is not SVG" notice
+                    // sits. A bare <g/> without a test is treated as "no
+                    // content yet" and the next branch is taken, which is
+                    // what the older exports assume.
+                    const bool tested =
+                        !GetAttrOrStyle(tag, "requiredFeatures").empty() ||
+                        !GetAttrOrStyle(tag, "requiredExtensions").empty() ||
+                        !GetAttrOrStyle(tag, "systemLanguage").empty();
+                    if (tested) switchSkip = kSwAfterBranch;
+                    skipThisTag = true;
+                } else if (TagIs(tag, "foreignObject")) {
+                    // The label's HTML, which this renderer cannot lay out.
+                    // Remember its typography and its lines, skip the
+                    // subtree, and let the next branch, the <text> fallback,
+                    // draw them.
+                    const size_t stop = p.xml.find("</foreignObject>", p.pos);
+                    ReadHtmlLabelText(
+                        p.xml.substr(p.pos, (stop == std::string::npos
+                                                 ? p.xml.size()
+                                                 : stop) - p.pos),
+                        &htmlBranch);
+                    htmlSkip = 1;
                     skipThisTag = true;
                 } else if (TagIs(tag, "switch")) {
                     // A nested switch decides for itself; resume this branch
@@ -936,6 +1135,7 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
 
             // The text element itself is a level on the stack so the
             // inner tspan loop and the run builder read one context.
+            const size_t textStart = runs.size();
             gStack.push_back(ctx);
 
             while (true) {
@@ -1054,6 +1254,47 @@ std::vector<TextRun> ExtractTextRuns(const std::string& xml) {
                     tspanHadX = false;
                     continue;
                 }
+            }
+
+            // A label whose HTML the switch passed over is drawn the way a
+            // browser draws it: the HTML's typography, and one line per HTML
+            // line rather than per tspan.
+            if (htmlBranch.valid && runs.size() > textStart) {
+                for (size_t k = textStart; k < runs.size(); ++k) {
+                    if (!htmlBranch.fontFamily.empty()) {
+                        runs[k].fontFamily = htmlBranch.fontFamily;
+                    }
+                    if (htmlBranch.fontSize > 0.0f) {
+                        runs[k].fontSize = htmlBranch.fontSize;
+                    }
+                    if (!htmlBranch.fill.empty()) runs[k].fill = htmlBranch.fill;
+                    runs[k].bold = htmlBranch.bold;
+                    runs[k].italic = htmlBranch.italic;
+                }
+                if (!htmlBranch.lines.empty()) {
+                    TextRun base = runs[textStart];
+                    float leading = htmlBranch.lineHeight;
+                    if (leading > 0.0f && leading < 4.0f) {
+                        leading *= base.fontSize;
+                    }
+                    if (leading <= 0.0f) leading = base.fontSize * 1.2f;
+                    float first = base.y;
+                    if (htmlBranch.centred && runs.size() > textStart + 1) {
+                        const float last = runs.back().y;
+                        first = (first + last) * 0.5f -
+                                (static_cast<float>(htmlBranch.lines.size()) -
+                                 1.0f) * leading * 0.5f;
+                    }
+                    runs.resize(textStart);
+                    for (size_t k = 0; k < htmlBranch.lines.size(); ++k) {
+                        TextRun line = base;
+                        line.text = htmlBranch.lines[k];
+                        line.y = first + static_cast<float>(k) * leading;
+                        line.chained = false;
+                        runs.push_back(line);
+                    }
+                }
+                htmlBranch = HtmlLabelText();
             }
             continue;
         }

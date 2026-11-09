@@ -1041,3 +1041,77 @@ TEST(SvgText, InlineStyleItalicIsRead) {
     ASSERT_EQ(runs.size(), 1u);
     EXPECT_TRUE(runs[0].italic);
 }
+
+// --- A draw.io label --------------------------------------------------------
+// Diagram exports write every label twice: as HTML inside a <foreignObject>,
+// and again as a <text> fallback for viewers that cannot lay out HTML. The
+// browser draws the HTML, so its family and its line breaks are the ones to
+// reproduce. The fallback names an embedded family the system does not have,
+// and its tspan wrap does not always agree with the HTML's.
+
+TEST(SvgText, DrawioLabelTakesTheHtmlFamily) {
+    const std::string xml =
+        "<svg width='200' height='100'><switch>"
+        "<foreignObject width='100%' height='100%'>"
+        "<div style=\"display: flex; align-items: unsafe flex-start; "
+        "width: 73px; padding-top: 677px; margin-left: 425px;\">"
+        "<div style=\"box-sizing: border-box; font-size: 0; text-align: left;\">"
+        "<div style=\"display: inline-block; font-size: 12px; "
+        "font-family: 'Architects Daughter'; line-height: 1.2;\">"
+        "<div style=\"text-align: center;\">"
+        "<span style=\"font-family: &quot;Times New Roman&quot;;\">"
+        "DB: Langfuse</span></div></div></div></div>"
+        "</foreignObject>"
+        "<text x='425' y='689' font-family=\"'Architects Daughter'\" "
+        "font-size='12px'><tspan x='425' y='689'>DB:</tspan>"
+        "<tspan x='425' y='703'>Langfuse</tspan></text>"
+        "</switch></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    // The HTML keeps the label on one line; the fallback wrapped it in two.
+    ASSERT_EQ(runs.size(), 1u);
+    EXPECT_EQ(runs[0].text, "DB: Langfuse");
+    EXPECT_EQ(runs[0].fontFamily, "\"Times New Roman\"");
+    EXPECT_TRUE(runs[0].y > 688.9f && runs[0].y < 689.1f);
+}
+
+TEST(SvgText, DrawioLabelKeepsItsHtmlLines) {
+    // One <div> per line in the HTML and one tspan per line in the fallback,
+    // centred on the box: the runs sit one line height apart, on the
+    // baselines the fallback already carries.
+    const std::string xml =
+        "<svg width='200' height='100'><switch>"
+        "<foreignObject width='100%' height='100%'>"
+        "<div style=\"display: flex; align-items: unsafe center; "
+        "width: 93px; padding-top: 600px; margin-left: 489px;\">"
+        "<div style=\"box-sizing: border-box; font-size: 0; text-align: center;\">"
+        "<div style=\"display: inline-block; font-size: 12px; "
+        "line-height: 1.2;\">"
+        "<span style=\"font-family: &quot;Times New Roman&quot;;\">MongoDB"
+        "</span><div style=\"text-align: center;\">"
+        "<span style=\"font-family: &quot;Times New Roman&quot;;\">"
+        "Cluster node</span></div></div></div></div>"
+        "</foreignObject>"
+        "<text x='536' y='590' text-anchor='middle' font-size='12px'>"
+        "<tspan x='536' y='590'>MongoDB</tspan>"
+        "<tspan x='536' y='604'>Cluster node</tspan></text>"
+        "</switch></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    ASSERT_EQ(runs.size(), 2u);
+    EXPECT_EQ(runs[0].text, "MongoDB");
+    EXPECT_EQ(runs[1].text, "Cluster node");
+    const float gap = runs[1].y - runs[0].y;
+    EXPECT_TRUE(gap > 13.0f && gap < 15.0f);
+}
+
+TEST(SvgText, EmptySwitchBranchHidesTheFallback) {
+    // A browser draws the first branch whose feature tests pass, and an
+    // empty <g requiredFeatures=".."/> passes: the "Text is not SVG" notice
+    // behind it is a fallback no browser ever reaches.
+    const std::string xml =
+        "<svg><switch>"
+        "<g requiredFeatures='http://www.w3.org/TR/SVG11/feature#Extensibility'/>"
+        "<a><text x='50' y='100'>Text is not SVG - cannot display</text></a>"
+        "</switch></svg>";
+    auto runs = svg::ExtractTextRuns(xml);
+    EXPECT_EQ(runs.size(), 0u);
+}

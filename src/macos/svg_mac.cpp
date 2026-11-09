@@ -922,6 +922,16 @@ void ReadShapes(const pugi::xml_node& node, const SvgDoc::Style& style,
                 ReadHtmlLabel(child, &label);
                 continue;
             }
+            // An empty group with no feature test is "no content yet" in the
+            // older exports, which put one before the real branch: taking it
+            // would drop the label. With a test it is a branch a browser
+            // takes, and the rest of the switch is never reached.
+            if (branch == "g" && child.first_child().empty() &&
+                child.attribute("requiredFeatures").empty() &&
+                child.attribute("requiredExtensions").empty() &&
+                child.attribute("systemLanguage").empty()) {
+                continue;
+            }
             ReadShapes(child, childStyle, childPlacement,
                        label.valid ? &label : nullptr, out);
             break;
