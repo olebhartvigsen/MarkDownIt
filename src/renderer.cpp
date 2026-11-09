@@ -11,6 +11,7 @@
 #include "crash_trace.h"
 #include "imagehelper.h"
 #include "svgtext.h"
+#include "layout/text_runs.h"
 #include "mermaid/model.h"
 #include "mermaid/layout_internal.h"
 #include "mermaid/layout.h"
@@ -37,22 +38,190 @@ static const float kPtToDip = 96.0f / 72.0f;
 // Render on the same advance, and it matches the mac walk the shared
 // layout is ported from.
 
-// The vertical extent of a display item, when it is one of the two
-// shapes the hr and the heading emit. Other shapes belong to a kind
-// this slice does not consume.
-static bool ItemExtent(const display::Item& item, float* top,
-                       float* bottom) {
-    if (const auto* fill = std::get_if<display::FillRect>(&item)) {
-        *top = fill->rect.y;
-        *bottom = fill->rect.y + fill->rect.height;
-        return true;
+// The engine the shared walk measures through, Batch 3. The renderer
+// wraps its DWriteEngine in this adapter, the same role the mac
+// renderer's ZoomEngine plays, plus one Windows specific duty the mac
+// engine does not need:
+//
+// 1. Zoom: the shared modules speak point sized runs into the seam
+//    and bake the zoom into neither the font sizes nor the wrap
+//    width. The raw DWriteEngine measures exactly what it is given,
+//    so the zoom goes on here, on the way in.
+//
+// 2. Words: the modules hand each span as ONE run, and the seam's
+//    wrap rule is "a run never breaks inside itself" (the rule the
+//    golden engine spells, and the DWrite twin follows; the CoreText
+//    twin breaks inside runs, which is the mac engine's own affair).
+//    A plain paragraph is a single unbroken run of a whole sentence,
+//    so against the raw engine it would be one long line that runs
+//    past the column. The adapter splits each run at its newline
+//    boundaries (the hard break a code card carries inside itself)
+//    and at its spaces, so every break the old DirectWrite layout
+//    ever took at a word edge is taken here too. A piece with no
+//    space and no break in it (a URL, a run of ideographs) stays one
+//    unbreakable piece, the documented consensus of the seam.
+class WalkTextEngine final : public platform::TextEngine {
+public:
+    WalkTextEngine(platform::TextEngine* inner, float zoom)
+        : inner_(inner), zoom_(zoom) {}
+
+    void BeginLayout() override { inner_->BeginLayout(); }
+
+    std::vector<platform::TextLine> MeasureWrapped(
+        const std::vector<platform::GlyphRun>& runs,
+        float maxWidth, float lineSpacing) override {
+        std::vector<platform::TextLine> lines;
+        std::vector<platform::GlyphRun> words;
+        auto flush = [&]() {
+            std::vector<platform::GlyphRun> scaled;
+            scaled.reserve(words.size());
+            for (const platform::GlyphRun& word : words) {
+                platform::GlyphRun piece = word;
+                if (zoom_ != 1.0f) piece.font.size *= zoom_;
+                scaled.push_back(std::move(piece));
+            }
+            std::vector<platform::TextLine> part =
+                inner_->MeasureWrapped(scaled, maxWidth, lineSpacing);
+            lines.insert(lines.end(), part.begin(), part.end());
+            words.clear();
+        };
+        for (const platform::GlyphRun& run : runs) {
+            size_t at = 0;
+            while (at < run.text.size()) {
+                size_t end = at;
+                while (end < run.text.size() &&
+                       run.text[end] != '\n' && run.text[end] != ' ') {
+                    ++end;
+                }
+                platform::GlyphRun piece = run;
+                if (end >= run.text.size()) {
+                    piece.text = run.text.substr(at, end - at);
+                    at = end;
+                } else if (run.text[end] == ' ') {
+                    // The space closes its word: a trailing space rides
+                    // the line as an invisible overhang, never as the
+                    // first thing on the next one.
+                    piece.text = run.text.substr(at, end - at + 1);
+                    at = end + 1;
+                } else {
+                    piece.text = run.text.substr(at, end - at);
+                    if (!piece.text.empty() && piece.text.back() == '\r') {
+                        piece.text.pop_back();
+                    }
+                    at = end + 1;
+                }
+                if (!piece.text.empty()) words.push_back(std::move(piece));
+                if (end < run.text.size() && run.text[end] == '\n') {
+                    // A newline ends its line: an empty source line
+                    // flushes an empty word set and the engine answers
+                    // the one empty line a code row needs.
+                    flush();
+                }
+            }
+        }
+        flush();
+        if (lines.empty()) {
+            platform::TextLine line;
+            line.height = 12.0f;
+            lines.push_back(line);
+        }
+        return lines;
     }
-    if (const auto* text = std::get_if<display::Text>(&item)) {
-        *top = text->top;
-        *bottom = text->top + text->line.height;
-        return true;
+
+    uint32_t HitTestOffset(const platform::TextLine& line, float x,
+                           bool* outTrailing) const override {
+        return inner_->HitTestOffset(line, x, outTrailing);
     }
-    return false;
+
+    platform::Rect OffsetToRect(const platform::TextLine& line,
+                                uint32_t offset) const override {
+        return inner_->OffsetToRect(line, offset);
+    }
+
+    // The spacing question arrives about a font of a measured line, so
+    // its size already carries the zoom.
+    float LineHeight(const platform::FontSpec& font) const override {
+        return inner_->LineHeight(font);
+    }
+
+private:
+    platform::TextEngine* inner_;
+    float zoom_;
+};
+
+// The item spans of the shared records, merged the way the mac
+// renderer merges its blocks and items: blocks and items both arrive
+// in document order, so one forward cursor names the range of items
+// whose reference y falls inside a block's band. A block with no
+// items keeps an empty range. Measure reads the ranges for the scroll
+// width of the pictures, the overlay passes of Render for an image
+// item's own rect.
+static void MergeNodeItemSpans(
+    const std::vector<layout::LaidBlock>& blocks,
+    const display::DisplayList& list, size_t nodeCount,
+    std::vector<std::pair<uint32_t, uint32_t>>* byNode) {
+    const uint32_t none = static_cast<uint32_t>(list.items.size());
+    byNode->assign(nodeCount, {none, none});
+    std::vector<std::pair<uint32_t, uint32_t>> byBlock(
+        blocks.size(), {none, none});
+    size_t block = 0;
+    for (uint32_t i = 0; i < list.items.size(); ++i) {
+        const display::Item& di = list.items[i];
+        float refY = 0.0f;
+        bool hasY = false;
+        if (const auto* fill = std::get_if<display::FillRect>(&di)) {
+            refY = fill->rect.y; hasY = true;
+        } else if (const auto* fill =
+                       std::get_if<display::FillRoundedRect>(&di)) {
+            refY = fill->rect.y; hasY = true;
+        } else if (const auto* fill =
+                       std::get_if<display::FillRoundedRectSides>(&di)) {
+            refY = fill->rect.y; hasY = true;
+        } else if (const auto* s = std::get_if<display::StrokeRect>(&di)) {
+            refY = s->rect.y; hasY = true;
+        } else if (const auto* s =
+                       std::get_if<display::StrokeRoundedRect>(&di)) {
+            refY = s->rect.y; hasY = true;
+        } else if (const auto* s = std::get_if<display::StrokeLine>(&di)) {
+            refY = s->y0; hasY = true;
+        } else if (const auto* s =
+                       std::get_if<display::StrokePolygon>(&di)) {
+            if (!s->points.empty()) { refY = s->points[0].y; hasY = true; }
+        } else if (const auto* f = std::get_if<display::FillPolygon>(&di)) {
+            if (!f->points.empty()) { refY = f->points[0].y; hasY = true; }
+        } else if (const auto* e = std::get_if<display::FillEllipse>(&di)) {
+            refY = e->rect.y; hasY = true;
+        } else if (const auto* e = std::get_if<display::StrokeEllipse>(&di)) {
+            refY = e->rect.y; hasY = true;
+        } else if (const auto* pie = std::get_if<display::PieSlice>(&di)) {
+            refY = pie->bounds.y; hasY = true;
+        } else if (const auto* t = std::get_if<display::Text>(&di)) {
+            refY = t->top; hasY = true;
+        } else if (const auto* img = std::get_if<display::Image>(&di)) {
+            refY = img->rect.y; hasY = true;
+        } else if (const auto* clip = std::get_if<display::PushClip>(&di)) {
+            refY = clip->rect.y; hasY = true;
+        }
+        // PopClip carries no place of its own; it closes the clip of
+        // the block the cursor is already in.
+        if (!hasY) continue;
+        while (block + 1 < blocks.size() &&
+               blocks[block + 1].y <= refY) {
+            ++block;
+        }
+        // The record's band owns every item whose extent sits in it.
+        if (refY >= blocks[block].y) {
+            if (byBlock[block].first > i) byBlock[block].first = i;
+            byBlock[block].second = i + 1;
+        }
+    }
+    for (size_t b = 0; b < blocks.size(); ++b) {
+        const uint32_t node = blocks[b].nodeIndex;
+        if (node >= nodeCount) continue;
+        // One node owns one record, so the node's span is the span of
+        // its record, empty ranges included.
+        (*byNode)[node] = byBlock[b];
+    }
 }
 
 // Fill the selection highlight for a UTF-16 range of a text layout.
@@ -468,9 +637,13 @@ LayoutMetrics Renderer::ComputeMetrics() const {
 layout::DocumentLayout Renderer::SharedLayoutPass(
     const Document& doc, const LayoutMetrics& metrics,
     const Palette* palette, float contentWidth,
-    std::vector<const layout::LaidBlock*>* byNode) {
-    // Batch 3 first slice: fill the input, run the walk, hand back
-    // the hr and heading records by node.
+    std::vector<const layout::LaidBlock*>* byNode,
+    const Selection* sel) {
+    // The walk measures through the adapter, never the raw DWriteEngine:
+    // the adapter owns the zoom and the word splitting (the same two
+    // duties the mac renderer hands its ZoomEngine; see WalkTextEngine
+    // at the top of this file).
+    WalkTextEngine engine(&layoutEngine_, zoom_);
     layout::LayoutInput in;
     in.doc = &doc;
     in.metrics = &metrics;
@@ -478,21 +651,274 @@ layout::DocumentLayout Renderer::SharedLayoutPass(
     in.contentWidth = contentWidth;
     in.zoom = zoom_;
     in.editing = editing_;
-    in.engine = &layoutEngine_;
-    // imageSize stays empty for this slice: neither the hr nor the
-    // heading carries images.
+    in.engine = &engine;
+    // The image size answers, the same seam the mac renderer fills:
+    // a "svg:" url questions a fence picture, a raster url questions
+    // the intrinsic size the inline cache knows.
+    in.imageSize = [this, &doc, sel, contentWidth](const std::string& url) {
+        return ImageSizeForUrl(doc, url, sel, contentWidth);
+    };
     layout::DocumentLayout out = layout::LayoutDocument(in);
+
+    // The one Text item the modules build by hand is the list marker:
+    // its line box borrows the measured first line, but the run in it
+    // never passed the engine, so unlike every other run it is still
+    // in point space when the zoom is not one. The marker is the only
+    // Text item of the list with no source length of its own, no
+    // measured width on its line, and the clip of the gutter around
+    // it, so it is found here once and scaled to the zoomed space the
+    // replay draws the rest of the document at, the mac pass's own
+    // fixup applied to both callers so the list it hands out stays
+    // coherent.
+    if (zoom_ != 1.0f) {
+        bool insideMarkerClip = false;
+        for (display::Item& item : out.list.items) {
+            if (std::holds_alternative<display::PushClip>(item)) {
+                insideMarkerClip = true;
+            } else if (std::holds_alternative<display::PopClip>(item)) {
+                insideMarkerClip = false;
+            } else if (auto* text =
+                           std::get_if<display::Text>(&item)) {
+                if (insideMarkerClip && text->srcLength == 0 &&
+                    text->line.width == 0.0f) {
+                    for (platform::GlyphRun& run : text->line.runs) {
+                        run.font.size *= zoom_;
+                    }
+                }
+            }
+        }
+    }
+
     if (byNode) {
         byNode->assign(doc.nodes.size(), nullptr);
         for (const layout::LaidBlock& b : out.blocks) {
-            if (b.nodeIndex < byNode->size() &&
-                (b.kind == BlockKind::ThematicBreak ||
-                 b.kind == BlockKind::Heading)) {
+            if (b.nodeIndex < byNode->size()) {
                 (*byNode)[b.nodeIndex] = &b;
             }
         }
     }
     return out;
+}
+
+layout::ImageSize Renderer::ImageSizeForUrl(const Document& doc,
+                                            const std::string& url,
+                                            const Selection* sel,
+                                            float drawW) {
+    layout::ImageSize size;
+    if (url.rfind("svg:", 0) == 0) {
+        // The picture question of a ```svg fence arrives under the
+        // "svg:" convention, the fence text itself. It answers only
+        // when the picture form is a fact here: a standalone viewer,
+        // the caret outside the fence and a parse with a positive
+        // size. Anything else answers nothing and the walk lays the
+        // fence out as the code specimen it is.
+        for (const Node& n : doc.nodes) {
+            if (n.block != BlockKind::CodeBlock || n.lang != "svg") {
+                continue;
+            }
+            if (url != "svg:" + layout::Utf32ToUtf8(n.raw)) continue;
+            svg::SvgDoc* docPicture = SvgPictureDocFor(n, sel, drawW);
+            if (docPicture && docPicture->Width() > 0.0f &&
+                docPicture->Height() > 0.0f) {
+                size.width = docPicture->Width();
+                size.height = docPicture->Height();
+                size.known = true;
+            }
+            break;
+        }
+        return size;
+    }
+    // A raster image: the intrinsic size the inline cache knows. A
+    // local file is read here, the way Measure always did; a remote
+    // one stays unknown until the draw pass has fetched it, and the
+    // walk charges the placeholder band until RememberImageSize
+    // corrects the height on a later pass.
+    float w = 0.0f;
+    float h = 0.0f;
+    if (InlineImageSize(url, &w, &h) && w > 0.0f && h > 0.0f) {
+        size.width = w;
+        size.height = h;
+        size.known = true;
+    }
+    return size;
+}
+
+svg::SvgDoc* Renderer::SvgPictureDocFor(const Node& n, const Selection* sel,
+                                        float drawW) {
+    // The picture form of a ```svg fence: the standalone setting, the
+    // svg language and a parse that produced a positive size. The caret
+    // inside the fence keeps the code specimen, the edit view of the
+    // raw text, exactly as the inline pass always read it.
+    if (!standaloneSvg_ || n.block != BlockKind::CodeBlock ||
+        n.lang != "svg" || !d2d_ctx5_) {
+        return nullptr;
+    }
+    if (sel) {
+        const uint32_t off = sel->active.offset;
+        if (off >= n.srcOffset && off < n.srcOffset + n.srcLength) {
+            return nullptr;
+        }
+    }
+    const float availW = drawW - 2.0f * ComputeMetrics().codePad;
+    svg::SvgDoc* doc = GetSvgDoc(n, availW);
+    if (!doc || doc->Width() <= 0.0f || doc->Height() <= 0.0f) {
+        return nullptr;
+    }
+    return doc;
+}
+
+platform::BitmapHandle Renderer::ImageHandleFor(
+    const display::Image& item) {
+    // The replay draws a raster image through this handle; the vector
+    // pictures answer nothing here, their pixels are the renderer's
+    // own SvgDoc paint in the overlay pass. The cache lookup is the
+    // bitmap phase zero fetched this frame.
+    if (item.url.rfind("svg:", 0) == 0) return nullptr;
+    for (const auto& e : img_cache_) {
+        if (e.url == item.url) return e.bmp;
+    }
+    return nullptr;
+}
+
+void Renderer::PaintSharedOverlays(
+    ID2D1RenderTarget* rt, IDWriteFactory* dw, const Document& doc,
+    const std::vector<const layout::LaidBlock*>& byNode,
+    const layout::DocumentLayout& shared, const LayoutMetrics& m,
+    float contentWidth, float originX, float topOffsetDip,
+    const Selection* sel, float scrollY) {
+    // Every band at the record's own y, the frame the walk measured:
+    // padTop and the caller's top offset stack on it, so paint and
+    // advance are the same number in both passes.
+    for (size_t nodeIdx = 0; nodeIdx < doc.nodes.size(); ++nodeIdx) {
+        const Node& n = doc.nodes[nodeIdx];
+        if (nodeIdx >= byNode.size()) continue;
+        const layout::LaidBlock* b = byNode[nodeIdx];
+        if (!b) continue;
+        const float bandY = m.padTop + topOffsetDip + b->y;
+        const float bandX = originX + b->x;
+        const float bandW = b->width > 0.0f ? b->width : contentWidth;
+        switch (n.block) {
+            case BlockKind::CodeBlock: {
+                // A standalone .svg fence in picture form: the page
+                // image at natural size times the zoom, no card, the
+                // walk's record geometry and the old DrawSvgBlock's
+                // own numbers.
+                if (n.lang == "svg" && standaloneSvg_) {
+                    svg::SvgDoc* picture = SvgPictureDocFor(n, sel, bandW);
+                    if (picture) {
+                        picture->Draw(d2d_ctx5_, dw, bandX + m.codePad,
+                                      bandY + m.codePad,
+                                      picture->Width() * zoom_,
+                                      picture->Height() * zoom_);
+                        break;
+                    }
+                }
+                // The code card is an opaque surface the replay also
+                // fills: the card printer runs again above the list,
+                // with its washes and glyphs and the caret record the
+                // cache keeps for the block, so what ends up on screen
+                // is exactly the card the per node painter always
+                // drew, now at the walk's band.
+                float outH = 0.0f;
+                DrawCodeBlock(rt, dw, n, bandX, bandY, bandW, outH, sel,
+                              scrollY);
+                break;
+            }
+            case BlockKind::Table: {
+                // The rows are the same opaque surface story as the
+                // code card: the grid, the washes per cell and the
+                // per cell caret records all come from one painter.
+                float outH = 0.0f;
+                DrawTable(rt, dw, n, bandX, bandY, bandW, outH, sel,
+                          scrollY);
+                break;
+            }
+            case BlockKind::MermaidFlowchart: {
+                // The three painters follow the zoom themselves and
+                // measure against the column, the width the walk
+                // measured them at, so they get the band's origin and
+                // the content column, never the record's picture
+                // width.
+                DrawMermaidBlock(rt, dw, n, bandX, bandY, contentWidth);
+                break;
+            }
+            case BlockKind::MermaidPie: {
+                DrawMermaidPieBlock(rt, dw, n, bandX, bandY, contentWidth);
+                break;
+            }
+            case BlockKind::MermaidSequence: {
+                DrawMermaidSequenceBlock(rt, dw, n, bandX, bandY,
+                                         contentWidth);
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    // The vector pictures of the text runs: an inline svg answers the
+    // resolver with no bitmap (its cache entry holds the text, not
+    // pixels), so the replay leaves the band it reserved, and the
+    // renderer paints the picture itself at the walk's rect, the twin
+    // of the fence picture above. A picture whose natural size the
+    // walk never learned keeps its placeholder band unwritten this
+    // frame; the fetch in the decode phase remembers the size, so the
+    // layout that follows draws the real geometry.
+    for (const display::Item& item : shared.list.items) {
+        const auto* img = std::get_if<display::Image>(&item);
+        if (!img || img->url.empty()) continue;
+        // The fence pictures answered above; every other vector url
+        // keeps the leading "svg:" namespace to itself.
+        if (img->url.rfind("svg:", 0) == 0) continue;
+        // A raster the decode phase never turned into a bitmap has
+        // nothing to show either way; its band is the size the walk
+        // charged, and its draw waits for the load.
+        if (ImageHandleFor(*img)) continue;
+        if (img->rect.width <= 0.0f || img->rect.height <= 0.0f) continue;
+        if (img->naturalWidth <= 0.0f) continue;
+
+        std::string urlLower = img->url;
+        for (auto& ch : urlLower) {
+            ch = static_cast<char>(
+                tolower(static_cast<unsigned char>(ch)));
+        }
+        const bool isSvg =
+            (urlLower.size() > 4 &&
+             urlLower.substr(urlLower.size() - 4) == ".svg") ||
+            (urlLower.find("data:image/svg+xml") == 0);
+        if (!isSvg) continue;
+
+        std::string svgText;
+        bool svgTried = false;
+        for (const auto& e : img_cache_) {
+            if (e.url == img->url) {
+                svgTried = true;
+                if (!e.failed) svgText = e.svgText;
+                break;
+            }
+        }
+        if (!svgTried) {
+            svgText = ImageHelper::LoadSvgText(img->url);
+            if (img_cache_.size() >= 128) {
+                if (img_cache_.front().bmp)
+                    img_cache_.front().bmp->Release();
+                img_cache_.erase(img_cache_.begin());
+            }
+            img_cache_.push_back(
+                {img->url, nullptr, svgText.empty(), svgText});
+        }
+        if (svgText.empty()) continue;
+        svg::SvgDoc picture;
+        if (!picture.Load(d2d_ctx5_, svgText)) continue;
+        if (picture.Width() <= 0.0f || picture.Height() <= 0.0f) continue;
+        // List space is the column the walk owns, so the frame adds
+        // the same origin the replay translated by, and the standing
+        // scroll transform carries it to the view.
+        picture.Draw(d2d_ctx5_, dw,
+                     originX + img->rect.x,
+                     m.padTop + topOffsetDip + img->rect.y,
+                     img->rect.width, img->rect.height);
+    }
 }
 
 bool Renderer::Init(IDWriteFactory* dw) {
@@ -560,6 +986,16 @@ bool Renderer::Init(IDWriteFactory* dw) {
         L"", &code_fmt_);
     if (FAILED(hr) || !code_fmt_) return false;
     applyLineBox(code_fmt_, base.codeLineHeight);
+    // Whole words only: the shared walk's canon (the same rule the
+    // golden engine spells, a run never breaks inside itself) lets an
+    // unbreakable token overflow the line instead of splitting it
+    // mid word. The emergency break D2D takes by default would wrap a
+    // long hash or minified line into a taller card than the walk
+    // charged, so the band and the card drift apart; wrapping whole
+    // words keeps the card's own DirectWrite measure equal to the
+    // record the walk hands the frame. The source view sets its own
+    // wrap explicitly on the layout and keeps the flat rule.
+    code_fmt_->SetWordWrapping(DWRITE_WORD_WRAPPING_WHOLE_WORD);
 
     // Heading formats: Segoe UI Semibold, scaled by level.
     for (int lvl = 1; lvl <= 6; ++lvl) {
@@ -908,68 +1344,6 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     outH = blockH;
 }
 
-float Renderer::MeasureTable(IDWriteFactory* dw, const Node& n,
-                               float x, float width) {
-    if (!dw || !body_fmt_ || n.rows.empty()) return 0.0f;
-
-    LayoutMetrics m = ComputeMetrics();
-
-    size_t cols = 0;
-    for (const auto& row : n.rows) {
-        cols = (row.cells.size() > cols) ? row.cells.size() : cols;
-    }
-    if (cols == 0) return 0.0f;
-
-    float colW = width / static_cast<float>(cols);
-    float totalH = 0.0f;
-
-    for (const auto& row : n.rows) {
-        float rowH = 0.0f;
-        for (size_t c = 0; c < row.cells.size() && c < cols; ++c) {
-            std::u16string text16 = ToUtf16(row.cells[c].text);
-            IDWriteTextLayout* layout = nullptr;
-            HRESULT hr = dw->CreateTextLayout(
-                reinterpret_cast<const WCHAR*>(text16.data()),
-                static_cast<UINT32>(text16.size()),
-                body_fmt_, colW - 2.0f * m.cellPadX, 1.0e9f, &layout);
-            if (SUCCEEDED(hr) && layout) {
-                // Apply inline formatting for accurate height (code
-                // spans use a wider monospace font that wraps more).
-                if (row.cells[c].isHeader) {
-                    DWRITE_TEXT_RANGE r = {0,
-                        static_cast<UINT32>(text16.size())};
-                    // GitHub asks for 600, not the full bold trait.
-                    layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, r);
-                }
-                for (const auto& sp : row.cells[c].inlineSpans) {
-                    DWRITE_TEXT_RANGE r = {sp.u16Start,
-                        sp.u16End - sp.u16Start};
-                    if (sp.bold)
-                        layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, r);
-                    if (sp.italic)
-                        layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, r);
-                    if (sp.code) {
-                        layout->SetFontFamilyName(m.codeFont, r);
-                        layout->SetFontSize(
-                            m.codeFontSize * kPtToDip * zoom_, r);
-                    }
-                    if (sp.strike)
-                        layout->SetStrikethrough(true, r);
-                }
-                DWRITE_TEXT_METRICS tm = {};
-                layout->GetMetrics(&tm);
-                if (tm.height > rowH) rowH = tm.height;
-                layout->Release();
-            }
-        }
-        if (rowH == 0.0f) {
-            rowH = m.bodyLineHeight * m.bodyFontSize * kPtToDip * zoom_;
-        }
-        totalH += rowH + 2.0f * m.cellPadY;
-    }
-    return totalH;
-}
-
 void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                           const Node& n, float x, float y,
                           float width, float& outH,
@@ -1305,23 +1679,6 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     outH = curY - y;
 }
 
-// Browser rule for an inline image: draw it at its intrinsic size, shrink it
-// to the column when it is wider, then scale by the page zoom. The old code
-// stretched every image to the column and capped its height at 400 DIP, which
-// distorted small pictures, cut tall ones off, and (because Measure charged a
-// flat 100 DIP) left the bottom of a picture unreachable by scrolling.
-static void FitInlineImage(float iw, float ih, float columnW, float zoom,
-                           float* outW, float* outH) {
-    *outW = 0.0f;
-    *outH = 0.0f;
-    if (!(iw > 0.0f) || !(ih > 0.0f)) return;
-    float w = iw;
-    if (columnW > 0.0f && w > columnW) w = columnW;
-    w *= (zoom > 0.0f) ? zoom : 1.0f;
-    *outW = w;
-    *outH = w * (ih / iw);
-}
-
 float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
                            float widthDip, float topOffsetDip) {
     if (!dw) return 0.0f;
@@ -1339,190 +1696,60 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
         ? (widthDip - contentWidth) * 0.5f
         : m.padX;
 
-    // Batch 3, first slice: the hr and heading heights come from one
-    // shared pass; its display list is ignored, Measure is height only.
+    // Batch 3: every owned kind measures through the one shared pass.
+    // The walk runs the same gaps and band heights Render paints from,
+    // so the scroll range and the frame cannot drift apart anymore;
+    // its display items are built but not consumed, Measure is height
+    // only.
     const Palette measurePal = BasePalette();
-    std::vector<const layout::LaidBlock*> sharedByNode;
-    SharedLayoutPass(doc, m, &measurePal, contentWidth, &sharedByNode);
+    layout::DocumentLayout shared =
+        SharedLayoutPass(doc, m, &measurePal, contentWidth, nullptr,
+                         nullptr);
+    std::vector<std::pair<uint32_t, uint32_t>> spans;
+    MergeNodeItemSpans(shared.blocks, shared.list, doc.nodes.size(),
+                       &spans);
 
-    float curY = m.padTop + topOffsetDip;
-    BlockKind prevBlock = BlockKind::Paragraph;
-    int prevDepth = -1;
-
-    for (size_t nodeIdx = 0; nodeIdx < doc.nodes.size(); ++nodeIdx) {
-        const auto& n = doc.nodes[nodeIdx];
-        float blockH = 0.0f;
-        // Width of the block's drawn content when it can exceed the column
-        // (a picture). Zero for everything that is laid out to the column.
-        float blockW = 0.0f;
-        float drawX = originX;
-        float drawW = contentWidth;
-
-        if (n.block == BlockKind::BlockQuote) {
-            float quoteIndent = m.quoteIndent * (n.depth + 1);
-            drawX += quoteIndent;
-            drawW -= quoteIndent;
-        } else if (n.block == BlockKind::List) {
-            float listIndent = m.listIndent * (n.depth + 1);
-            drawX += listIndent;
-            drawW -= listIndent;
-        }
-
-        if (n.block == BlockKind::CodeBlock) {
-            // SVG blocks (and only those) measure via the SVG document, and
-            // only in a standalone .svg file. Measure and draw must agree,
-            // or the page height and the painted content drift apart.
-            float svgH = 0.0f;
+    // The scrollable width: a picture can be wider than the column. A
+    // standalone .svg fence counts natural size times the zoom and the
+    // two code pads, the numbers its picture is drawn at; an inline
+    // image counts its fitted width, both plus the trailing pad the
+    // reader scrolls to. The reserved fallback rect of an image whose
+    // size is still unknown charges room but never widens the range.
+    for (size_t bi = 0; bi < shared.blocks.size(); ++bi) {
+        const layout::LaidBlock& b = shared.blocks[bi];
+        float right = 0.0f;
+        if (b.kind == BlockKind::CodeBlock &&
+            b.nodeIndex < doc.nodes.size()) {
+            const Node& n = doc.nodes[b.nodeIndex];
             if (n.lang == "svg" && standaloneSvg_) {
-                svgH = MeasureSvgBlock(dw, n, drawX, drawW);
-                if (svgH > 0.0f) {
-                    // A standalone .svg is drawn at natural size times the
-                    // zoom, so it can be wider than the text column.
-                    if (svg::SvgDoc* d = GetSvgDoc(n, drawW)) {
-                        blockW = d->Width() * zoom_ + 2.0f * m.codePad;
-                    }
-                }
-            }
-            if (svgH > 0.0f) {
-                blockH = svgH;
-            } else {
-                // All other code blocks (including mermaid source shown as
-                // code) are measured as text. Without this, blockH stays 0
-                // and totalH_ underestimates the document, breaking scroll.
-                std::u32string raw = n.raw;
-            while (!raw.empty() &&
-                   (raw.back() == 0x0A || raw.back() == 0x0D)) {
-                raw.pop_back();
-            }
-            std::u16string text16 = ToUtf16(raw);
-            IDWriteTextLayout* layout = nullptr;
-            HRESULT hr = dw->CreateTextLayout(
-                reinterpret_cast<const WCHAR*>(text16.data()),
-                static_cast<UINT32>(text16.size()),
-                code_fmt_, drawW - 2.0f * m.codePad, 1.0e9f, &layout);
-            if (SUCCEEDED(hr) && layout) {
-                DWRITE_TEXT_METRICS tm = {};
-                layout->GetMetrics(&tm);
-                blockH = tm.height + 2.0f * m.codePad;
-                layout->Release();
-            }
-            }
-        } else if (n.block == BlockKind::ThematicBreak) {
-            // The shared walk owns the height; the fallback keeps the
-            // old value for a pass that answered nothing.
-            blockH = sharedByNode[nodeIdx]
-                         ? sharedByNode[nodeIdx]->height
-                         : 4.0f * zoom_;
-        } else if (n.block == BlockKind::MermaidFlowchart) {
-            blockH = MeasureMermaidBlock(dw, n, drawW);
-        } else if (n.block == BlockKind::MermaidPie) {
-            blockH = mermaid::MeasurePieHeight(*n.mermaid_pie, zoom_, drawW);
-        } else if (n.block == BlockKind::MermaidSequence) {
-            blockH = mermaid::MeasureSequenceHeight(*n.mermaid_seq, zoom_, drawW);
-        } else if (n.block == BlockKind::Table) {
-            blockH = MeasureTable(dw, n, drawX, drawW);
-        } else if (n.block == BlockKind::Heading) {
-            // Lines plus the H1/H2 rule room, one charge for both
-            // passes, phantom line included; no record keeps the old
-            // zero charge.
-            blockH = sharedByNode[nodeIdx]
-                         ? sharedByNode[nodeIdx]->height
-                         : 0.0f;
-        } else {
-            IDWriteTextFormat* fmt = nullptr;
-            if (n.block == BlockKind::Paragraph ||
-                n.block == BlockKind::BlockQuote ||
-                n.block == BlockKind::List) {
-                fmt = body_fmt_;
-            }
-            if (fmt) {
-                std::u32string text32;
-                float markerW = 0.0f;
-                if (n.block == BlockKind::List) {
-                    markerW = m.listIndent * m.markerRatio + m.markerGutter;
-                    // A task item keeps the gutter width but not the
-                    // glyph: the checkbox is drawn in the paint pass,
-                    // where a bullet would sit.
-                    text32 += n.taskMark >= 0
-                                  ? U"   "
-                                  : (n.ordered
-                                         ? U"1. "
-                                         : ListMarker32(n.depth));
-                }
-                for (const auto& ib : n.children) text32 += ib.text;
-                if (text32.empty() && n.virtualEmptyParagraph) text32 = U" ";
-                // Images advance the draw path's curY by the height the
-                // browser rule gives them (intrinsic size, shrunk to the
-                // column, times the zoom) plus paraGap each. Measure has to
-                // charge exactly that, or totalH_ underestimates and the
-                // bottom of a picture cannot be scrolled to.
-                float imageH = 0.0f;
-                float imageW = 0.0f;
-                for (const auto& ib : n.children) {
-                    if (ib.kind != InlineKind::Image || ib.url.empty()) continue;
-                    float iw = 0.0f, ih = 0.0f;
-                    if (!InlineImageSize(ib.url, &iw, &ih)) {
-                        // Unknown size (a remote image not fetched yet):
-                        // charge the draw path's placeholder.
-                        imageH += 100.0f + m.paraGap;
-                        continue;
-                    }
-                    float dw = 0.0f, dh = 0.0f;
-                    FitInlineImage(iw, ih, drawW, zoom_, &dw, &dh);
-                    if (dw > imageW) imageW = dw;
-                    imageH += dh + m.paraGap;
-                }
-                if (imageW > blockW) blockW = imageW;
-                if (text32.empty() && imageH == 0.0f) {
-                    curY += GapForTransition(prevBlock, n.block, m);
-                    prevBlock = n.block;
-                    prevDepth = n.depth;
-                    continue;
-                }
-                blockH = imageH;
-                if (!text32.empty()) {
-                    std::u16string text16 = ToUtf16(text32);
-                    IDWriteTextLayout* layout = nullptr;
-                    float layoutW = drawW - markerW;
-                    HRESULT hr = dw->CreateTextLayout(
-                        reinterpret_cast<const WCHAR*>(text16.data()),
-                        static_cast<UINT32>(text16.size()),
-                        fmt, layoutW > 0 ? layoutW : drawW, 1.0e9f, &layout);
-                    if (SUCCEEDED(hr) && layout) {
-                        DWRITE_TEXT_METRICS tm = {};
-                        layout->GetMetrics(&tm);
-                        // While reading, the blank line next to a list
-                        // charges only its thin strip, the height the
-                        // draw pass advances by.
-                        blockH += (!editing_ && n.virtualEmptyParagraph)
-                            ? kReadBlankLineStripDip
-                            : tm.height;
-                        layout->Release();
+                if (svg::SvgDoc* d = GetSvgDoc(n, contentWidth)) {
+                    if (d->Width() > 0.0f && d->Height() > 0.0f) {
+                        right = originX + d->Width() * zoom_ +
+                                2.0f * m.codePad + m.padX;
                     }
                 }
             }
         }
-
-        float gap = GapForTransition(prevBlock, n.block, m);
-        // First block: no gap before it.
-        bool isFirst = (prevBlock == BlockKind::Paragraph &&
-                        prevDepth == -1 && curY == m.padTop + topOffsetDip);
-        if (isFirst) gap = 0;
-
-        if (blockW > 0.0f) {
-            const float right = drawX + blockW + m.padX;
-            if (right > widestBlockRight_) widestBlockRight_ = right;
+        if (right <= 0.0f && b.nodeIndex < doc.nodes.size()) {
+            for (uint32_t i = spans[b.nodeIndex].first;
+                 i < spans[b.nodeIndex].second; ++i) {
+                const auto* img = std::get_if<display::Image>(
+                    &shared.list.items[i]);
+                if (!img || img->naturalWidth <= 0.0f) continue;
+                const float r = originX + img->rect.x + img->rect.width +
+                                 m.padX;
+                if (r > right) right = r;
+            }
         }
-
-        curY += gap;
-        curY += blockH;
-        prevBlock = n.block;
-        prevDepth = n.depth;
+        if (right > widestBlockRight_) widestBlockRight_ = right;
     }
-    // Bottom padding so the last block is not glued to the viewport
-    // edge at maximum scroll. Double the top margin reads better at
-    // the end of a document.
-    return curY + m.padTop * 2.0f;
+
+    // The column starts one padTop under the top of the view and the
+    // shared walk measures from the column's own top, so the height is
+    // the pad, the walked height, and the doubled pad the bottom
+    // margin keeps.
+    return m.padTop + topOffsetDip + shared.list.height +
+           m.padTop * 2.0f;
 }
 
 float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
@@ -1547,19 +1774,11 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         ? (widthDip - contentWidth) * 0.5f
         : m.padX;
 
-    ID2D1SolidColorBrush* textBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.textPrimary, &textBrush);
-    if (!textBrush) return m.padTop;
-
-    ID2D1SolidColorBrush* mutedBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.textMuted, &mutedBrush);
-
-    ID2D1SolidColorBrush* linkBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.link, &linkBrush);
-
-    ID2D1SolidColorBrush* quoteBorder = nullptr;
-    rt->CreateSolidColorBrush(pal.quoteBar, &quoteBorder);
-
+    // The brushes shared by the passes below. The glyphs themselves
+    // are the replay's now, so the body, link and quote brushes the
+    // per node text painter kept are gone; what stays are the washes
+    // and the fills the caret side still paints from (the code card
+    // and the table build and release their own).
     ID2D1SolidColorBrush* selBrush = nullptr;
     if (sel && !sel->Empty()) {
         rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
@@ -1595,166 +1814,137 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // Clear the layout cache before rebuilding.
     if (cache_) cache_->Clear();
 
-    // Batch 3, first slice: one shared pass for the frame; the hr and
-    // heading are painted from its display items and advance by its
-    // heights, every other kind keeps the inline path.
+    // One shared pass for the frame: every owned kind's band, gap and
+    // display item comes from it. The per node loop below keeps only
+    // the caret's DirectWrite side of the text blocks and the washes
+    // that sit under the replayed glyphs; the code cards, the tables
+    // and the diagram painters re-run after the replay, and the images
+    // are decoded before the walk reads their sizes.
     std::vector<const layout::LaidBlock*> sharedByNode;
     layout::DocumentLayout shared =
-        SharedLayoutPass(doc, m, &pal, contentWidth, &sharedByNode);
-    // The consumed blocks' items, sliced in one pass: blocks and
-    // items both come in document order, so the cursor walks them
-    // forward together. A block owns exactly the items whose extent
-    // falls inside its band: the walk advances y monotonically and no
-    // block's ink crosses another's.
-    std::vector<std::pair<uint32_t, uint32_t>> itemRangeByNode(
-        doc.nodes.size(), std::make_pair(0u, 0u));
-    {
-        const std::vector<display::Item>& items = shared.list.items;
-        uint32_t sentinel = static_cast<uint32_t>(doc.nodes.size()) + 1;
-        size_t cursorBlock = 0;
-        uint32_t openNode = sentinel;
-        uint32_t openStart = 0;
-        for (uint32_t i = 0; i < items.size(); ++i) {
-            float top = 0.0f;
-            float bottom = 0.0f;
-            if (!ItemExtent(items[i], &top, &bottom)) continue;
-            while (cursorBlock < shared.blocks.size() &&
-                   shared.blocks[cursorBlock].y +
-                           shared.blocks[cursorBlock].height <= top) {
-                ++cursorBlock;
+        SharedLayoutPass(doc, m, &pal, contentWidth, &sharedByNode, sel);
+
+    // Phase zero, before the walk's image questions are answered: the
+    // inline images of the text nodes are fetched here, where the per
+    // node painter always fetched them, so the size the seam answers
+    // is the size on screen this frame and the placeholder never
+    // waits for a repaint that may not come. drewImage remembers which
+    // nodes have a drawn image, the old test that kept the caret
+    // record, the chips and the washes off an image bearing block.
+    std::vector<char> nodeDrewImage(doc.nodes.size(), 0);
+    for (size_t nodeIdx = 0; nodeIdx < doc.nodes.size(); ++nodeIdx) {
+        const Node& n = doc.nodes[nodeIdx];
+        if (n.block != BlockKind::Paragraph &&
+            n.block != BlockKind::BlockQuote &&
+            n.block != BlockKind::List && n.block != BlockKind::Heading) {
+            continue;
+        }
+        float columnDrawW = contentWidth;
+        if (n.block == BlockKind::BlockQuote) {
+            columnDrawW -= m.quoteIndent * (n.depth + 1);
+        } else if (n.block == BlockKind::List) {
+            columnDrawW -= m.listIndent * (n.depth + 1);
+        }
+        for (const auto& ib : n.children) {
+            if (ib.kind != InlineKind::Image || ib.url.empty()) continue;
+            // Check if this is an SVG image, by extension or data url.
+            std::string urlLower = ib.url;
+            for (auto& ch : urlLower)
+                ch = static_cast<char>(tolower(static_cast<unsigned char>(ch)));
+            bool isSvg = (urlLower.size() > 4 &&
+                urlLower.substr(urlLower.size() - 4) == ".svg") ||
+                (urlLower.find("data:image/svg+xml") == 0);
+            if (isSvg) {
+                // SVG source is fetched once per view and parsed at
+                // every paint, the rule the old inline pass followed:
+                // no bitmap, the text itself is the cache.
+                if (!d2d_ctx5_) continue;
+                std::string svgText;
+                bool svgTried = false;
+                for (const auto& e : img_cache_) {
+                    if (e.url == ib.url) {
+                        svgTried = true;
+                        if (!e.failed) {
+                            svgText = e.svgText;
+                        }
+                        break;
+                    }
+                }
+                if (!svgTried) {
+                    svgText = ImageHelper::LoadSvgText(ib.url);
+                    if (img_cache_.size() >= 128) {
+                        if (img_cache_.front().bmp)
+                            img_cache_.front().bmp->Release();
+                        img_cache_.erase(img_cache_.begin());
+                    }
+                    img_cache_.push_back(
+                        {ib.url, nullptr, svgText.empty(), svgText});
+                }
+                if (!svgText.empty()) {
+                    svg::SvgDoc svgDoc;
+                    if (svgDoc.Load(d2d_ctx5_, svgText) &&
+                        svgDoc.Width() > 0.0f && svgDoc.Height() > 0.0f) {
+                        RememberImageSize(ib.url, svgDoc.Width(),
+                                          svgDoc.Height());
+                        nodeDrewImage[nodeIdx] = 1;
+                    }
+                }
+            } else {
+                // Inline raster image: fetch once per URL, reuse across
+                // repaints (the scroll ticks used to re-fetch it). The
+                // outcome is cached either way: the failure entry is
+                // what stops a dead URL being fetched again.
+                ID2D1Bitmap* bmp = nullptr;
+                bool alreadyTried = false;
+                for (const auto& e : img_cache_) {
+                    if (e.url == ib.url) {
+                        bmp = e.bmp;
+                        alreadyTried = true;
+                        break;
+                    }
+                }
+                if (!bmp && !alreadyTried) {
+                    bmp = ImageHelper::LoadBitmapFromUrl(
+                        rt, ib.url, columnDrawW);
+                    if (img_cache_.size() >= 128) {
+                        if (img_cache_.front().bmp)
+                            img_cache_.front().bmp->Release();
+                        img_cache_.erase(img_cache_.begin());
+                    }
+                    img_cache_.push_back(
+                        {ib.url, bmp, bmp == nullptr, std::string()});
+                }
+                if (bmp) {
+                    D2D1_SIZE_F bmpSize = bmp->GetSize();
+                    RememberImageSize(ib.url, bmpSize.width,
+                                      bmpSize.height);
+                    nodeDrewImage[nodeIdx] = 1;
+                }
             }
-            if (cursorBlock >= shared.blocks.size()) break;
-            const layout::LaidBlock& b = shared.blocks[cursorBlock];
-            if (!(top >= b.y && bottom <= b.y + b.height)) continue;
-            if (b.kind != BlockKind::ThematicBreak &&
-                b.kind != BlockKind::Heading) {
-                openNode = sentinel;
-                continue;
-            }
-            if (b.nodeIndex != openNode) {
-                openNode = b.nodeIndex;
-                openStart = i;
-            }
-            itemRangeByNode[openNode] = std::make_pair(openStart, i + 1);
         }
     }
-    float curY = m.padTop + topOffsetDip;
 
-    // Wraps rt for display::Play, borrowed, built at most once per
-    // frame; replays one block at the y the walk stands, so paint
-    // and advance cannot drift apart.
-    std::unique_ptr<platform::D2DTarget> d2dTarget;
-    auto playShared = [&](const layout::LaidBlock& b, float x,
-                          size_t nodeIdx) {
-        if (!d2dTarget)
-            d2dTarget.reset(new platform::D2DTarget(rt));
-        const auto range = itemRangeByNode[nodeIdx];
-        display::DisplayList blockList;
-        blockList.items.assign(
-            shared.list.items.begin() + range.first,
-            shared.list.items.begin() + range.second);
-        rt->SetTransform(D2D1::Matrix3x2F::Translation(
-            x - b.x - scrollX, curY - b.y - scrollY));
-        display::Play(blockList, d2dTarget.get());
-        rt->SetTransform(D2D1::Matrix3x2F::Translation(
-            -scrollX, -scrollY));
-    };
-
-    int listCounter = 0;
-    BlockKind prevBlock = BlockKind::Paragraph;
-    int prevDepth = -1;
-
+    // Phase one, the caret's DirectWrite side: the per node text block
+    // runs exactly as it always did, the same DirectWrite layout, the
+    // same source mapping and the same highlight rectangles, minus
+    // every glyph, marker, bar, checkbox and image the replay paints
+    // at the walk's own positions, and minus the band advance, which
+    // the records own. The band top is the record's: the walk's gaps
+    // are the gaps today's curY walk made.
     for (size_t nodeIdx = 0; nodeIdx < doc.nodes.size(); ++nodeIdx) {
-        const auto& n = doc.nodes[nodeIdx];
-        float drawX = originX;
-        float drawW = contentWidth;
-
-        if (n.block == BlockKind::BlockQuote) {
-            float quoteIndent = m.quoteIndent * (n.depth + 1);
-            drawX += quoteIndent;
-            drawW -= quoteIndent;
-        } else if (n.block == BlockKind::List) {
-            float listIndent = m.listIndent * (n.depth + 1);
-            drawX += listIndent;
-            drawW -= listIndent;
-        }
-
-        float gap = 0.0f;
-        bool isFirst = (prevBlock == BlockKind::Paragraph &&
-                        prevDepth == -1 &&
-                        curY == m.padTop + topOffsetDip);
-        if (!isFirst) {
-            gap = GapForTransition(prevBlock, n.block, m);
-        }
-        curY += gap;
-
-        if (n.block == BlockKind::CodeBlock &&
-            n.lang == "svg" && standaloneSvg_) {
-            float blockH = 0.0f;
-            DrawSvgBlock(rt, dw, n, drawX, curY, drawW, blockH, sel);
-            curY += blockH;
-            prevBlock = n.block;
-            prevDepth = n.depth;
+        const Node& n = doc.nodes[nodeIdx];
+        if (n.block != BlockKind::Paragraph &&
+            n.block != BlockKind::BlockQuote &&
+            n.block != BlockKind::List && n.block != BlockKind::Heading) {
             continue;
         }
-
-        if (n.block == BlockKind::CodeBlock) {
-            float blockH = 0.0f;
-            DrawCodeBlock(rt, dw, n, drawX, curY, drawW, blockH, sel,
-                           scrollY);
-            curY += blockH + 0;
-            prevBlock = n.block;
-            prevDepth = n.depth;
-            continue;
-        }
-
-        if (n.block == BlockKind::Table) {
-            float blockH = 0.0f;
-            DrawTable(rt, dw, n, drawX, curY, drawW, blockH, sel,
-                       scrollY);
-            curY += blockH;
-            prevBlock = n.block;
-            prevDepth = n.depth;
-            continue;
-        }
-
-        if (n.block == BlockKind::ThematicBreak) {
-            const layout::LaidBlock* b = sharedByNode[nodeIdx];
-            // The bar is one FillRect in the shared list, the old
-            // DrawThematicBreak's numbers on the theme palette.
-            if (b) playShared(*b, drawX, nodeIdx);
-            curY += b ? b->height : 4.0f * zoom_;
-            prevBlock = n.block;
-            prevDepth = n.depth;
-            continue;
-        }
-
-        if (n.block == BlockKind::MermaidFlowchart) {
-            DrawMermaidBlock(rt, dw, n, drawX, curY, drawW);
-            curY += MeasureMermaidBlock(dw, n, drawW);
-            prevBlock = n.block;
-            prevDepth = n.depth;
-            continue;
-        }
-
-        if (n.block == BlockKind::MermaidPie) {
-            DrawMermaidPieBlock(rt, dw, n, drawX, curY, drawW);
-            curY += mermaid::MeasurePieHeight(*n.mermaid_pie, zoom_, drawW);
-            prevBlock = n.block;
-            prevDepth = n.depth;
-            continue;
-        }
-
-        if (n.block == BlockKind::MermaidSequence) {
-            DrawMermaidSequenceBlock(rt, dw, n, drawX, curY, drawW);
-            curY += mermaid::MeasureSequenceHeight(*n.mermaid_seq, zoom_, drawW);
-            prevBlock = n.block;
-            prevDepth = n.depth;
-            continue;
-        }
+        const layout::LaidBlock* b = sharedByNode[nodeIdx];
+        if (!b) continue;
+        const float curY = m.padTop + topOffsetDip + b->y;
+        float drawX = originX + b->x;
+        float drawW = b->width > 0.0f ? b->width : contentWidth;
 
         IDWriteTextFormat* fmt = nullptr;
-        ID2D1SolidColorBrush* blockBrush = textBrush;
         if (n.block == BlockKind::Heading) {
             // Only the caret's DirectWrite side: fmt feeds the cache
             // and washes; the glyphs and rule come from the list.
@@ -1762,43 +1952,23 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             if (lvl < 1) lvl = 1;
             if (lvl > 6) lvl = 6;
             fmt = heading_fmt_[lvl];
-        } else if (n.block == BlockKind::Paragraph ||
-                   n.block == BlockKind::BlockQuote ||
-                   n.block == BlockKind::List) {
+        } else {
             fmt = body_fmt_;
-            if (n.block == BlockKind::BlockQuote && mutedBrush)
-                blockBrush = mutedBrush;
         }
-
         if (!fmt) {
-            prevBlock = n.block;
-            prevDepth = n.depth;
             continue;
         }
 
         std::u32string text32;
         float markerW = 0.0f;
-        std::u16string marker16;
+        // The marker text and the ordered counter are the walk's now:
+        // it resolves them into display items (the clipped gutter run,
+        // the task checkbox stroke), so this pass only keeps the
+        // gutter width the caret layout reserves.
+        bool hasMarker = false;
         if (n.block == BlockKind::List) {
             markerW = m.listIndent * m.markerRatio + m.markerGutter;
-            if (prevBlock != BlockKind::List || n.depth != prevDepth) {
-                listCounter = 0;
-            }
-            if (n.ordered) {
-                ++listCounter;
-                if (n.taskMark < 0) {
-                    char buf[16];
-                    snprintf(buf, sizeof(buf), "%d. ", listCounter);
-                    for (const char* p = buf; *p; ++p)
-                        marker16.push_back(static_cast<char16_t>(*p));
-                }
-            } else if (n.taskMark < 0) {
-                // The marker cycles with the depth, the shared table in
-                // theme.h, so a nested list reads apart.
-                marker16 += ListMarker16(n.depth);
-            }
-        } else {
-            listCounter = 0;
+            hasMarker = (n.taskMark < 0);
         }
 
         struct SpanRange {
@@ -1861,10 +2031,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 break;
             }
         }
-        if (text16.empty() && marker16.empty() && !hasImage &&
+        if (text16.empty() && !hasMarker && !hasImage &&
             !n.virtualEmptyParagraph) {
-            prevBlock = n.block;
-            prevDepth = n.depth;
             continue;
         }
 
@@ -1888,8 +2056,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             static_cast<UINT32>(layoutText16.size()),
             fmt, textW > 0 ? textW : drawW, 1.0e9f, &layout);
         if (FAILED(hr) || !layout) {
-            prevBlock = n.block;
-            prevDepth = n.depth;
             continue;
         }
 
@@ -1908,10 +2074,10 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     base.codeFontSize * kPtToDip * zoom_, range);
             }
             if (s.link) {
+                // Underline is span metadata the hit tests never read;
+                // the colour itself is the replay's run property, so no
+                // drawing effect is attached anymore.
                 layout->SetUnderline(TRUE, range);
-                if (linkBrush) {
-                    layout->SetDrawingEffect(linkBrush, range);
-                }
             }
             if (s.strike) {
                 layout->SetStrikethrough(TRUE, range);
@@ -1922,123 +2088,19 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         layout->GetMetrics(&metrics);
 
         // While reading, the blank line next to a list takes the thin
-        // strip Measure charges for it, so both passes agree.
+        // strip Measure charges for it, the height the cache keeps for
+        // this record.
         const float blankAdvance =
             (!editing_ && n.virtualEmptyParagraph) ? kReadBlankLineStripDip
                                                    : metrics.height;
 
-        bool drewImages = false;
-        for (const auto& ib : n.children) {
-            if (ib.kind == InlineKind::Image && !ib.url.empty()) {
-                // Check if this is an SVG image.
-                std::string urlLower = ib.url;
-                for (auto& ch : urlLower)
-                    ch = static_cast<char>(tolower(static_cast<unsigned char>(ch)));
-                bool isSvg = (urlLower.size() > 4 &&
-                    urlLower.substr(urlLower.size() - 4) == ".svg") ||
-                    (urlLower.find("data:image/svg+xml") == 0);
-
-                if (isSvg && d2d_ctx5_) {
-                    // Load SVG text and render via SvgDoc.
-                    //
-                    // This had no cache at all while the raster branch
-                    // below had one, so a remote or large inline SVG was
-                    // re-read, re-downloaded and re-parsed on every single
-                    // repaint. Cache the text and parse from that.
-                    std::string svgText;
-                    bool svgTried = false;
-                    for (const auto& e : img_cache_) {
-                        if (e.url == ib.url) {
-                            svgTried = true;
-                            if (!e.failed) {
-                                svgText = e.svgText;
-                            }
-                            break;
-                        }
-                    }
-                    if (!svgTried) {
-                        svgText = ImageHelper::LoadSvgText(ib.url);
-                        if (img_cache_.size() >= 128) {
-                            if (img_cache_.front().bmp)
-                                img_cache_.front().bmp->Release();
-                            img_cache_.erase(img_cache_.begin());
-                        }
-                        img_cache_.push_back(
-                            {ib.url, nullptr, svgText.empty(), svgText});
-                    }
-                    if (!svgText.empty()) {
-                        svg::SvgDoc svgDoc;
-                        if (svgDoc.Load(d2d_ctx5_, svgText)) {
-                            RememberImageSize(ib.url, svgDoc.Width(),
-                                              svgDoc.Height());
-                            float drawW2 = 0.0f, drawH2 = 0.0f;
-                            FitInlineImage(svgDoc.Width(), svgDoc.Height(),
-                                           drawW, zoom_, &drawW2, &drawH2);
-                            if (drawW2 > 0.0f && drawH2 > 0.0f) {
-                                svgDoc.Draw(d2d_ctx5_, dw, drawX, curY,
-                                            drawW2, drawH2);
-                                curY += drawH2 + m.paraGap;
-                                drewImages = true;
-                            }
-                        }
-                    }
-                } else {
-                    // Inline raster image: fetch once per URL, reuse across
-                    // repaints (the old code re-downloaded on every frame,
-                    // blocking the UI thread on each scroll tick).
-                    ID2D1Bitmap* bmp = nullptr;
-                    bool alreadyTried = false;
-                    for (const auto& e : img_cache_) {
-                        if (e.url == ib.url) {
-                            bmp = e.bmp;
-                            alreadyTried = true;
-                            break;
-                        }
-                    }
-                    if (!bmp && !alreadyTried) {
-                        bmp = ImageHelper::LoadBitmapFromUrl(
-                            rt, ib.url, drawW);
-                        // Cache the outcome either way. Remembering the
-                        // failure is what stops a dead URL from being
-                        // fetched again on the next repaint.
-                        if (img_cache_.size() >= 128) {
-                            if (img_cache_.front().bmp)
-                                img_cache_.front().bmp->Release();
-                            img_cache_.erase(img_cache_.begin());
-                        }
-                        img_cache_.push_back({ib.url, bmp, bmp == nullptr});
-                    }
-                    if (bmp) {
-                        D2D1_SIZE_F bmpSize = bmp->GetSize();
-                        RememberImageSize(ib.url, bmpSize.width,
-                                          bmpSize.height);
-                        float drawW2 = 0.0f, drawH2 = 0.0f;
-                        FitInlineImage(bmpSize.width, bmpSize.height,
-                                       drawW, zoom_, &drawW2, &drawH2);
-                        if (drawW2 > 0.0f && drawH2 > 0.0f) {
-                            D2D1_RECT_F dest = D2D1::RectF(
-                                drawX, curY, drawX + drawW2, curY + drawH2);
-                            D2D1_RECT_F src = D2D1::RectF(
-                                0, 0, bmpSize.width, bmpSize.height);
-                            rt->DrawBitmap(bmp, dest, 1.0f,
-                                D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, src);
-                            // Bitmaps in the cache are owned by the cache;
-                            // nothing to release per frame.
-                            curY += drawH2 + m.paraGap;
-                            drewImages = true;
-                        }
-                    }
-                }
-            }
-        }
-        if (drewImages) {
-            // Images advance curY; draw the paragraph text below them
-            // instead of dropping it (the old code released the layout
-            // and skipped the text entirely).
-            rt->DrawTextLayout(D2D1::Point2F(textX, curY), layout, textBrush);
+        // A block whose image drew keeps no caret record: the image
+        // owns the band the way it always did (the old pass released
+        // the layout there and moved on past the washes). What such a
+        // block shows on screen, the fitted bitmap and the text below
+        // it, is the walk's and the resolver's own work now.
+        if (nodeDrewImage[nodeIdx]) {
             layout->Release();
-            prevBlock = n.block;
-            prevDepth = n.depth;
             continue;
         }
 
@@ -2073,49 +2135,10 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             codeBg->Release();
         }
 
-        if (n.taskMark >= 0) {
-            // The task checkbox: an outlined box in the gutter, with a
-            // check when the item is done. The shape carries the state,
-            // not the colour. The box is centred on the first line, so
-            // it sits where the bullet of a plain item sits.
-            float box = markerW - m.taskBoxInset;
-            if (box > m.taskBoxMax) box = m.taskBoxMax;
-            if (box < m.taskBoxMin) box = m.taskBoxMin;
-            float lineH = 21.0f;
-            DWRITE_LINE_METRICS lineMetrics;
-            UINT32 lineCount = 0;
-            if (SUCCEEDED(layout->GetLineMetrics(&lineMetrics, 1,
-                                                 &lineCount)) &&
-                lineCount > 0) {
-                lineH = lineMetrics.height;
-            }
-            const float bx = drawX + 1.0f;
-            const float by = curY + (lineH - box) * 0.5f;
-            D2D1_RECT_F boxRect = D2D1::RectF(bx, by, bx + box, by + box);
-            rt->DrawRectangle(boxRect, blockBrush, 1.2f);
-            if (n.taskMark > 0) {
-                rt->DrawLine(
-                    D2D1::Point2F(bx + box * 0.22f, by + box * 0.55f),
-                    D2D1::Point2F(bx + box * 0.42f, by + box * 0.78f),
-                    blockBrush, 1.2f);
-                rt->DrawLine(
-                    D2D1::Point2F(bx + box * 0.42f, by + box * 0.78f),
-                    D2D1::Point2F(bx + box * 0.82f, by + box * 0.25f),
-                    blockBrush, 1.2f);
-            }
-        } else if (!marker16.empty()) {
-            IDWriteTextLayout* markerLayout = nullptr;
-            hr = dw->CreateTextLayout(
-                reinterpret_cast<const WCHAR*>(marker16.data()),
-                static_cast<UINT32>(marker16.size()),
-                fmt, markerW, 1.0e9f, &markerLayout);
-            if (SUCCEEDED(hr) && markerLayout) {
-                D2D1_POINT_2F mOrigin = D2D1::Point2F(drawX, curY);
-                rt->DrawTextLayout(mOrigin, markerLayout, blockBrush,
-                    D2D1_DRAW_TEXT_OPTIONS_CLIP);
-                markerLayout->Release();
-            }
-        }
+        // The task checkbox, the counter and the bullet marker are the
+        // walk's display items now (the stroke pair, the clipped gutter
+        // run), so they paint once, under the glyph replay, at the
+        // exact origin the walk's own scale chose.
 
         // Marker layer first, then the search fills on top of it.
         if (markerBrush && markerLine && !u16ToSrc.empty() &&
@@ -2175,25 +2198,11 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             }
         }
 
-        if (n.block == BlockKind::Heading && sharedByNode[nodeIdx]) {
-            // The glyphs and the H1/H2 rule are the shared records,
-            // the phantom line included; the caret's DirectWrite side
-            // keeps running through the inline layout below it.
-            playShared(*sharedByNode[nodeIdx], textX, nodeIdx);
-        } else if (linkBrush) {
-            ColorTextRenderer ctr(rt, blockBrush, linkBrush);
-            layout->Draw(nullptr, &ctr, textX, curY);
-        } else {
-            rt->DrawTextLayout(D2D1::Point2F(textX, curY), layout,
-                blockBrush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
-        }
-
-        if (n.block == BlockKind::BlockQuote && quoteBorder) {
-            float barX = drawX - m.quoteIndent + 4.0f;
-            D2D1_POINT_2F p1 = D2D1::Point2F(barX, curY);
-            D2D1_POINT_2F p2 = D2D1::Point2F(barX, curY + metrics.height);
-            rt->DrawLine(p1, p2, quoteBorder, m.quoteBarWidth);
-        }
+        // No glyph draw here: the replay below paints every text run at
+        // the walk's own positions, one translate for the frame. The
+        // DirectWrite layout's only remaining job is the caret cache
+        // record above, the same layout, the same maps, the same
+        // coordinates as before.
 
         if (cache_) {
             BlockLayout bl;
@@ -2215,28 +2224,46 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         } else {
             layout->Release();
         }
-
-        // Advance curY: the heading advances by the shared height.
-        curY += (n.block == BlockKind::Heading && sharedByNode[nodeIdx])
-                    ? sharedByNode[nodeIdx]->height
-                    : blankAdvance;
-        prevBlock = n.block;
-        prevDepth = n.depth;
     }
+
+    // Phase two, the replay: the whole display list under one
+    // translate, the exact structure the mac twin uses. Every band
+    // sits at padTop + topOffset + record.y, exactly where the per
+    // node pass puts the caret bands, so the glyphs land on the same
+    // lines the cache points at; the scroll-only translate keeps every
+    // item at its walked width and position.
+    {
+        const float originY = m.padTop + topOffsetDip;
+        platform::D2DTarget player(rt);
+        rt->SetTransform(D2D1::Matrix3x2F::Translation(
+            originX - scrollX, originY - scrollY));
+        display::Play(shared.list, &player,
+                      [this](const display::Image& item) {
+                          return ImageHandleFor(item);
+                      });
+        rt->SetTransform(D2D1::Matrix3x2F::Translation(-scrollX, -scrollY));
+    }
+
+    // Phase three, the opaque layers above the glyph pass: cards and
+    // cells that cover their own bands, so they re-run on the raw
+    // target, in view coordinates, each at RecordY.
+    PaintSharedOverlays(rt, dw, doc, sharedByNode, shared, m, contentWidth,
+                        originX, topOffsetDip, sel, scrollY);
 
     rt->SetTransform(D2D1::Matrix3x2F::Identity());
     rt->PopAxisAlignedClip();
 
-    if (textBrush) textBrush->Release();
-    if (mutedBrush) mutedBrush->Release();
-    if (linkBrush) linkBrush->Release();
-    if (quoteBorder) quoteBorder->Release();
     if (selBrush) selBrush->Release();
     if (markerBrush) markerBrush->Release();
     if (markerLine) markerLine->Release();
     if (matchBrush) matchBrush->Release();
     if (currentBrush) currentBrush->Release();
-    return curY;
+    // The same extent the old curY walk returned: the last band's
+    // bottom on the frame, gaps included, so Measure and this pass
+    // still answer callers with one number.
+    if (shared.blocks.empty()) return m.padTop + topOffsetDip;
+    const layout::LaidBlock& last = shared.blocks.back();
+    return m.padTop + topOffsetDip + last.y + last.height;
 }
 
 // --- Source view: render raw markdown as monospace text with word wrap ---
@@ -2642,77 +2669,6 @@ svg::SvgDoc* Renderer::GetSvgDoc(const Node& n, float availW) {
     return &svg_cache_.back().doc;
 }
 
-float Renderer::MeasureSvgBlock(IDWriteFactory* dw, const Node& n,
-                                  float x, float width) {
-    if (!d2d_ctx5_) return 0.0f;
-
-    LayoutMetrics m = ComputeMetrics();
-    float availW = width - 2.0f * m.codePad;
-
-    svg::SvgDoc* doc = GetSvgDoc(n, availW);
-    if (!doc || doc->Width() <= 0 || doc->Height() <= 0) return 0.0f;
-
-    // A standalone .svg is a page image, and a browser shows it at its
-    // intrinsic size with the window scrolling around it. Fitting it to the
-    // column made a wide diagram a thumbnail whose labels could not be read
-    // at any zoom, because the column is itself capped by the viewport.
-    // Natural size times the zoom is the browser's 100%, and it scales from
-    // there.
-    const float renderedH = doc->Height() * zoom_;
-    return renderedH + 2.0f * m.codePad;
-}
-
-void Renderer::DrawSvgBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
-                             const Node& n, float x, float y, float width,
-                             float& outH, const Selection* sel) {
-    outH = 0.0f;
-    if (!rt || !d2d_ctx5_) { outH = 0.0f; return; }
-
-    LayoutMetrics m = ComputeMetrics();
-    Palette pal = BasePalette();
-    float availW = width - 2.0f * m.codePad;
-
-    // Edit mode: if caret is inside this block, show raw code.
-    bool caretInBlock = false;
-    if (sel) {
-        uint32_t off = sel->active.offset;
-        if (off >= n.srcOffset &&
-            off < n.srcOffset + n.srcLength) {
-            caretInBlock = true;
-        }
-    }
-
-    if (caretInBlock) {
-        // Fall back to code block rendering.
-        diag::TraceFmt("SVGDRAW off=%u caret-edit fallback", n.srcOffset);
-        DrawCodeBlock(rt, dw, n, x, y, width, outH, sel);
-        return;
-    }
-
-    svg::SvgDoc* doc = GetSvgDoc(n, availW);
-    if (!doc || doc->Width() <= 0 || doc->Height() <= 0) {
-        // Parse failed, fall back to code block.
-        diag::TraceFmt("SVGDRAW off=%u load-failed fallback", n.srcOffset);
-        DrawCodeBlock(rt, dw, n, x, y, width, outH, sel);
-        return;
-    }
-    diag::TraceFmt("SVGDRAW off=%u painting w=%.1f h=%.1f",
-                   n.srcOffset, doc->Width(), doc->Height());
-
-    // Natural size times the zoom, the same rule Measure charges for.
-    const float renderedW = doc->Width() * zoom_;
-    const float renderedH = doc->Height() * zoom_;
-    outH = renderedH + 2.0f * m.codePad;
-
-    // Draw the SVG document with no card: a standalone .svg file is
-    // a page image, not a code specimen, so no code background or
-    // border goes behind it.
-    doc->Draw(d2d_ctx5_, dw, x + m.codePad, y + m.codePad,
-              renderedW, renderedH);
-}
-
-
-
 // -----------------------------------------------------------------------------
 // Mermaid flowchart rendering (Task 12).
 // -----------------------------------------------------------------------------
@@ -2741,14 +2697,6 @@ std::shared_ptr<mermaid::LaidOutFlowchart> Renderer::GetMermaidLayout(
         return laid;
     }
     return n.mermaid_layout;
-}
-
-float Renderer::MeasureMermaidBlock(IDWriteFactory* dw, const Node& n,
-                                    float width) const {
-    const auto lo = GetMermaidLayout(dw, n);
-    if (!lo) return 0.0f;
-    const float availW = width - 2.0f * mermaid::kMermaidBlockPad;
-    return mermaid::MeasureLayoutHeight(*lo, zoom_, availW);
 }
 
 static void DrawArrowHead(ID2D1RenderTarget* rt, ID2D1Factory* fac,

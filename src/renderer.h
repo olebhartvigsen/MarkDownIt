@@ -245,21 +245,55 @@ private:
     // ContentWidthDip.
     float widestBlockRight_ = 0.0f;
 
-    void DrawSvgBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
-                      const Node& n, float x, float y, float width,
-                      float& outH, const Selection* sel);
-    float MeasureSvgBlock(IDWriteFactory* dw, const Node& n,
-                          float x, float width);
-
     LayoutMetrics ComputeMetrics() const;
 
-    // One shared layout pass, Batch 3 / Batch 3.2 step 1: the whole
-    // document through layout::LayoutDocument; only the hr and heading
-    // records (and their display items) are consumed until the other
-    // kinds' slices land. byNode receives those records by node.
+    // One shared layout pass, Batch 3: the whole document through
+    // layout::LayoutDocument. Every owned kind is consumed from it:
+    // heights and display items by the frame, the caret side of the
+    // text blocks by the per node pass in Render. sel answers the
+    // picture question of a ```svg fence (the caret keeping the fence
+    // a code specimen); Measure passes null because its band choice
+    // cannot depend on the caret.
     layout::DocumentLayout SharedLayoutPass(const Document& doc,
         const LayoutMetrics& metrics, const Palette* palette,
-        float contentWidth, std::vector<const layout::LaidBlock*>* byNode);
+        float contentWidth, std::vector<const layout::LaidBlock*>* byNode,
+        const Selection* sel);
+
+    // The image size answers of the shared walk: "svg:" urls answer
+    // the SvgDoc natural size of their fence (unknown when the caret
+    // sits in it, so the walk lays the code form), raster urls answer
+    // the intrinsic size the inline cache knows.
+    layout::ImageSize ImageSizeForUrl(const Document& doc,
+                                      const std::string& url,
+                                      const Selection* sel,
+                                      float drawW);
+    // The handle the display list replay draws a raster image with:
+    // the cached ID2D1Bitmap of that url, or null when nothing is
+    // decoded yet. The vector pictures answer null here and are drawn
+    // by the renderer's own painters from the cached SvgDoc.
+    platform::BitmapHandle ImageHandleFor(const display::Image& item);
+
+    // The layer above the shared replay: the opaque surfaces whose
+    // painters own their whole band (the code card, the table rows)
+    // re-run after the list has drawn, so their washes and glyphs sit
+    // back above the card the replay painted, the svg fence pictures
+    // draw from the SvgDoc cache and the mermaid painters draw the
+    // walk's measured band. Every band sits at the shared record's y,
+    // so the frame never drifts from the walk that measured it.
+    void PaintSharedOverlays(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+                             const Document& doc,
+                             const std::vector<const layout::LaidBlock*>& byNode,
+                             const layout::DocumentLayout& shared,
+                             const LayoutMetrics& m, float contentWidth,
+                             float originX, float topOffsetDip,
+                             const Selection* sel, float scrollY);
+
+    // The parsed document of a ```svg fence in picture form: a
+    // standalone .svg file, a caret outside it and a parse that
+    // produced a positive size. Null for every other fence, which
+    // the caller then lays and paints as the code specimen it is.
+    svg::SvgDoc* SvgPictureDocFor(const Node& n, const Selection* sel,
+                                  float drawW);
 
     std::u16string ToUtf16(const std::u32string& s32);
 
@@ -314,11 +348,8 @@ private:
     void DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                    const Node& n, float x, float y, float width, float& outH,
                    const Selection* sel = nullptr, float scrollY = 0.0f);
-    float MeasureTable(IDWriteFactory* dw, const Node& n,
-                       float x, float width);
     void DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                           const Node& n, float x, float y, float width);
-    float MeasureMermaidBlock(IDWriteFactory* dw, const Node& n, float width) const;
     std::shared_ptr<mermaid::LaidOutFlowchart> GetMermaidLayout(
         IDWriteFactory* dw, const Node& n) const;
     void DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
