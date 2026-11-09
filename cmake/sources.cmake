@@ -121,4 +121,5 @@ set(MARKDOWNIT_WINDOWS_APP_SOURCES
     src/settings_win.cpp
     src/clipboard_win.cpp
     src/windows/text_engine_win.cpp
+    src/windows/render_target_win.cpp
 )
