@@ -24,7 +24,7 @@ import os
 import re
 import sys
 
-ROW_RE = re.compile(r"^\|\s*([A-Za-z0-9_]+(?:\.\*)?)\s*\|\s*(\w+)\s*\|")
+ROW_RE = re.compile(r"^\|\s*([A-Za-z0-9_][A-Za-z0-9_.]*(?:\.\*)?)\s*\|\s*(\w+)\s*\|")
 
 
 def read_inventory(path):
