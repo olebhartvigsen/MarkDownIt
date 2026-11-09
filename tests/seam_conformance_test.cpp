@@ -42,7 +42,7 @@ FontSpec MakeFont(float size = 14.0f) {
 
 // What every conforming engine owes its callers. label only names the
 // engine in the failure output.
-void CheckTextEngine(TextEngine& engine, const char* label) {
+void CheckTextEngine(TextEngine& engine) {
     // Line height is deterministic and follows the size.
     const float h1 = engine.LineHeight(MakeFont(14.0f));
     const float h1again = engine.LineHeight(MakeFont(14.0f));
@@ -79,23 +79,34 @@ void CheckTextEngine(TextEngine& engine, const char* label) {
     EXPECT_EQ(again.size(), unbounded.size());
     EXPECT_NEAR(again[0].width, unbounded[0].width, 0.001f);
 
-    // A bounded width keeps every run and never lets a line outrun the
-    // bound, unless a single run cannot fit the bound on its own.
+    // A bounded width keeps every character, in order, and wrapping
+    // never makes the text wider than the unbounded line was. Engines
+    // may merge runs that share a style or split a run at a line break,
+    // so the grid counts code points, not run entries: whatever the
+    // engine did to the runs, the reading order and the ink must
+    // survive the wrap.
     std::vector<GlyphRun> many = {MakeRun("aaaa"), MakeRun("bbbb"),
                                   MakeRun("cccc")};
     const float bound = 0.75f * unbounded[0].width;
     ASSERT_TRUE(bound > 0.0f);
     engine.BeginLayout();
     std::vector<TextLine> wrapped = engine.MeasureWrapped(many, bound, 0.0f);
-    size_t runsSeen = 0;
+    std::string wrappedText;
+    float wrappedWidth = 0.0f;
     for (const TextLine& line : wrapped) {
-        runsSeen += line.runs.size();
-        if (line.width > bound) {
-            EXPECT_EQ(line.runs.size(), static_cast<size_t>(1));
+        float x = -1.0f;
+        for (const GlyphRun& run : line.runs) {
+            wrappedText += run.text;
+            EXPECT_TRUE(run.x >= x);
+            x = run.x;
         }
+        wrappedWidth += line.width;
         EXPECT_GT(line.height, 0.0f);
     }
-    EXPECT_EQ(runsSeen, static_cast<size_t>(3));
+    std::string sourceText;
+    for (const GlyphRun& run : many) sourceText += run.text;
+    EXPECT_EQ(wrappedText, sourceText);
+    EXPECT_LE(wrappedWidth, unbounded[0].width + 0.001f);
 
     // Hit test and caret rect agree about position and direction.
     const TextLine& line = unbounded[0];
@@ -114,12 +125,12 @@ void CheckTextEngine(TextEngine& engine, const char* label) {
 
 TEST(SeamConformance, FakeEngineFollowsTheSeam) {
     fake::FakeTextEngine engine;
-    CheckTextEngine(engine, "fake");
+    CheckTextEngine(engine);
 }
 
 #ifdef __APPLE__
 TEST(SeamConformance, CoreTextEngineFollowsTheSeam) {
     platform::CoreTextEngine engine;
-    CheckTextEngine(engine, "Core Text");
+    CheckTextEngine(engine);
 }
 #endif
