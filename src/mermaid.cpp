@@ -6,7 +6,7 @@
 #include <sstream>
 #include <algorithm>
 
-namespace mermaid {
+namespace mermaid::legacy {
 
 // --- Helpers ---
 
@@ -541,4 +541,4 @@ Diagram Parse(const std::string& src) {
     return d;
 }
 
-}  // namespace mermaid
+}  // namespace mermaid::legacy

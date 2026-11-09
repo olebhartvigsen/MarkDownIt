@@ -6,7 +6,7 @@
 #include <unordered_set>
 #include <queue>
 
-namespace mermaid {
+namespace mermaid::legacy {
 
 // --- Constants (DIPs) ---
 
@@ -386,4 +386,4 @@ Layout ComputeLayout(const Diagram& d, float maxWidth,
     return layout;
 }
 
-}  // namespace mermaid
+}  // namespace mermaid::legacy

@@ -6,7 +6,9 @@
 #include <string>
 #include <vector>
 
-namespace mermaid {
+// Keep the old engine's types separate from the current engine. In particular,
+// SeqMessage and NodeShape have different layouts and meanings in each engine.
+namespace mermaid::legacy {
 
 enum class DiagramType { Unknown, Flowchart, Sequence };
 enum class Direction   { TD, LR, RL, BT };
@@ -49,4 +51,4 @@ struct Diagram {
 // result.error explains why, so the caller can fall back to code rendering.
 Diagram Parse(const std::string& src);
 
-}  // namespace mermaid
+}  // namespace mermaid::legacy

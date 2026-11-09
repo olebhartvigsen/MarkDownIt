@@ -1,7 +1,7 @@
 #include "gtest_lite.h"
 #include "mermaid.h"
 
-using namespace mermaid;
+using namespace mermaid::legacy;
 
 // --- Opgave 4: Detect diagram type and direction ---
 

@@ -1,7 +1,7 @@
 #include "gtest_lite.h"
 #include "diagramcache.h"
 
-using namespace mermaid;
+using namespace mermaid::legacy;
 
 // --- Opgave 14: Diagram cache ---
 

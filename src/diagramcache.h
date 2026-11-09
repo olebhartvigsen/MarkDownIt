@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <cstdint>
 
-namespace mermaid {
+namespace mermaid::legacy {
 
 // Key: hash of source text + rounded width.
 struct DiagramCacheKey {
@@ -53,4 +53,4 @@ private:
     static std::string HashText(const std::u32string& raw);
 };
 
-}  // namespace mermaid
+}  // namespace mermaid::legacy

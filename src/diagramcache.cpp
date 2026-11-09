@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-namespace mermaid {
+namespace mermaid::legacy {
 
 // Simple hash: FNV-1a of the UTF-8 encoded text.
 // Not cryptographically secure, but sufficient for cache keying.
@@ -90,4 +90,4 @@ const Layout* DiagramCache::Get(uint32_t srcOffset,
     return &result.first->second;
 }
 
-}  // namespace mermaid
+}  // namespace mermaid::legacy

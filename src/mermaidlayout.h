@@ -1,6 +1,6 @@
 #pragma once
 
-// Turns a parsed mermaid::Diagram into positioned geometry.
+// Turns a parsed mermaid::legacy::Diagram into positioned geometry.
 // Portable C++17: no Windows types, so it is unit testable in WSL.
 
 #include "mermaid.h"
@@ -8,7 +8,7 @@
 #include <vector>
 #include <utility>
 
-namespace mermaid {
+namespace mermaid::legacy {
 
 struct LaidOutNode {
     float x = 0, y = 0, w = 0, h = 0;   // top-left plus size, in DIPs
@@ -38,4 +38,4 @@ Layout ComputeLayout(const Diagram& d, float maxWidth,
                      MeasureFn measure, void* measureCtx,
                      float scale = 1.0f);
 
-}  // namespace mermaid
+}  // namespace mermaid::legacy
