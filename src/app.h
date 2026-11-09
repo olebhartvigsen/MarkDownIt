@@ -14,6 +14,7 @@
 #include "layoutcache.h"
 #include "caret.h"
 #include "editcontroller.h"
+#include "documentcontroller.h"
 #include "navigation.h"
 #include "undostack.h"
 #include "clipboard.h"
@@ -274,10 +275,15 @@ private:
     void SaveMarkers();
     void OnContentHScroll(HWND hwnd, int code, int pos);
 
-    // Editor state
-    TextBuffer   buffer_;
+    // Editor state. The buffer, the selection, the edit controller
+    // and the undo stack belong to the document controller
+    // (documentcontroller.h); the names below are aliases of its
+    // state, so every address the window code holds is the same
+    // object in the same place.
+    DocumentController controller_;
+    TextBuffer&   buffer_;
     LayoutCache  layout_cache_;
-    Selection    sel_;
+    Selection&    sel_;
     bool         caret_visible_ = false;
     int          caret_height_ = 0;   // current caret height in px (for resize on font change)
     bool         editing_ = false;
@@ -290,9 +296,9 @@ private:
     DWORD        last_click_time_ = 0;
     int          last_click_y_ = -1;
     int          click_count_ = 0;
-    bool         has_focus_ = false;
-    EditController  editor_;
-    UndoStack       undo_stack_;
+    bool            has_focus_ = false;
+    EditController& editor_;
+    UndoStack&      undo_stack_;
     wchar_t         surrogate_buf_ = 0;  // high surrogate waiting for low
     bool            has_surrogate_ = false;
     float           desiredX_ = -1.0f;  // preserved column for vertical nav

@@ -7,6 +7,7 @@
 #include "app_mac.h"
 #include "formatting.h"
 
+#include <chrono>
 #include <fstream>
 #include <sstream>
 
@@ -19,11 +20,24 @@
 #include "navigation.h"
 #include "parser.h"
 #include "platform/seams.h"
+#include "platformservices.h"
 #include "tableedit.h"
 #include "textdrag.h"
 #include "textenc.h"
 
 namespace platform {
+
+// The clock of the shared code: the mac port answers with the steady
+// clock, so the undo entries the controller stamps coalesce under
+// the same 800 ms rule the Windows port applies (platformservices.h,
+// undo stack guide). Before the controller existed this port stamped
+// zero, which turned the rule off.
+uint64_t GetMonotonicMs() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+}
 
 namespace {
 
@@ -48,8 +62,14 @@ bool FindScopeIsRendered(uint32_t start, uint32_t length, void* context) {
 
 }  // namespace
 
-App::App() : editor_(&buffer_, &sel_) {
-    editor_.SetUndoStack(&undo_);
+// The buffer, the selection, the editor and the undo stack belong to
+// the shared document controller now; the aliases bind to it here.
+// The controller wires the editor to the buffer, the selection and
+// the undo stack in its own constructor.
+App::App() : buffer_(controller_.buffer()),
+             sel_(controller_.selection()),
+             editor_(controller_.editor()),
+             undo_(controller_.undo()) {
     findBar_ = std::make_unique<FindBar>();
 
     // The bar asks the app where the caret is, and tells it what to do
@@ -195,6 +215,10 @@ std::string App::TextForSaving() const {
 
 void App::SetEditing(bool on) {
     editing_ = on;
+    // The document controller gates its own command bodies: keep its
+    // edit flag in step, so a family command in read mode is a no-op
+    // there too.
+    controller_.SetEditing(on);
     // The layout follows the mode: reading draws the blank line next
     // to a list as a thin strip, editing keeps its full line, so the
     // document view re-measures.
@@ -953,22 +977,13 @@ void App::ApplyPendingTypingFormat(const std::string& value) {
 // et tomt caret rule 5).
 void App::RecordPendingFormatUndo(bool beforeBold, bool beforeItalic,
                                   bool beforeBoldSet, bool beforeItalicSet) {
-    UndoEntry entry{};
-    entry.offset = sel_.active.offset;
-    entry.selBefore = sel_;
-    entry.selAfter = sel_;
-    entry.timestamp = 0;
-    entry.type = EditType::PendingFormat;
-    entry.hasPendingFormat = true;
-    entry.pendingBold = beforeBold;
-    entry.pendingItalic = beforeItalic;
-    entry.pendingBoldSet = beforeBoldSet;
-    entry.pendingItalicSet = beforeItalicSet;
-    entry.afterPendingBold = pendingBold_;
-    entry.afterPendingItalic = pendingItalic_;
-    entry.afterPendingBoldSet = pendingBoldSet_;
-    entry.afterPendingItalicSet = pendingItalicSet_;
-    undo_.Push(entry);
+    // The entry is built by the shared document controller now, on
+    // the platform clock; the app passes the before state from its
+    // caller and its own pending state as the after state.
+    controller_.RecordPendingFormatUndo(sel_, beforeBold, beforeItalic,
+                                        beforeBoldSet, beforeItalicSet,
+                                        pendingBold_, pendingItalic_,
+                                        pendingBoldSet_, pendingItalicSet_);
 }
 
 void App::RestorePendingFormat(const UndoEntry& entry, bool redo) {

@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "caret.h"
+#include "documentcontroller.h"
 #include "dom.h"
 #include "editcontroller.h"
 #include "findbar_model.h"
@@ -68,6 +69,12 @@ public:
 
     // The undo stack.
     UndoStack& undo() { return undo_; }
+
+    // The document controller, which owns the buffer, the selection,
+    // the editor and the undo stack. The mac command twins call the
+    // shared command bodies on it; the accessors above stay and alias
+    // its state, so every mac path keeps one address space.
+    DocumentController& controller() { return controller_; }
 
     // The marker store, which holds the highlights.
     MarkerStore& markers() { return markerStore_; }
@@ -440,18 +447,23 @@ private:
     Document document_;
     DocumentChangedHandler documentChanged_;
     SelectionChangedHandler selectionChanged_;
-    TextBuffer buffer_;
+    // The document state belongs to the shared document controller
+    // (documentcontroller.h): the names below alias its buffer,
+    // selection, editor and undo stack, so every mac path keeps one
+    // address space.
+    DocumentController controller_;
+    TextBuffer& buffer_;
     // True while the window shows the raw source (spec C2).
     bool sourceView_ = false;
-    Selection sel_;
+    Selection& sel_;
 
     // The Cmd+A escalation run in a table (plan 19): the tier of
     // the last press and the caret it left behind. A caret that
     // moved between presses resets the run to the first tier.
     int selectAllTier_ = 0;
     uint32_t selectAllCaret_ = UINT32_MAX;
-    EditController editor_;
-    UndoStack undo_;
+    EditController& editor_;
+    UndoStack& undo_;
     // Edit mode is on until a caller turns it off; a fresh document
     // turns it back on, the way the Windows build does.
     // A file opens for reading first, the default the Windows window

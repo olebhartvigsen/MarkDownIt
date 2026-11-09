@@ -30,6 +30,7 @@
 #include <sstream>
 
 #include "formatting.h"
+#include "commands.h"
 #include "office/docx_export.h"
 #include "office/docx_import.h"
 #include "office/markdown_bridge.h"
@@ -407,6 +408,16 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The toolbar follows the document: undo and redo depend on
         // what is pending, and the buttons mirror it.
         [self toolbarSync];
+    });
+
+    // The shared command bodies end in reparse and redraw: the On*
+    // twins of the headings and lists family each ran this pair by
+    // hand before the controller took the bodies, so the controller's
+    // completion notification runs it now (documentcontroller.h,
+    // family 2).
+    app_->controller().SetDocumentChangedHandler([self] {
+        app_->OnTextChanged();
+        [view_ setNeedsDisplay:YES];
     });
 
     // The toolbar reads the command states again from the selection,
@@ -1998,25 +2009,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // The menu actions that change the document: the format, paragraph,
 // heading, table, undo and clipboard cut commands. Copy, Find, the
 // zoom, the view switches and the markers keep working in read mode.
+// The answer is the mutating flag of the command table (commands.h),
+// sourced from this very list united with the Windows edit-mode
+// gates, so the mac menu gate and the ribbon gate read one table.
 - (BOOL)actionChangesTheDocument:(SEL)action {
-    static const char* const kMutatingActions[] = {
-        "undo:", "redo:", "cut:", "paste:",
-        "toggleBold:", "toggleItalic:", "toggleStrike:", "toggleCode:",
-        "setHeading1:", "setHeading2:", "setHeading3:",
-        "toggleBullets:", "toggleNumbering:", "toggleQuote:",
-        "indentBlock:", "outdentBlock:", "toggleLink:", "clearFormat:",
-        "insertTable:", "addRowAbove:", "addRowBelow:", "removeRow:",
-        "addColumnLeft:", "addColumnRight:", "removeColumn:",
-        "removeTable:", "splitCell:",
-        "alignLeft:", "alignCenter:", "alignRight:",
-    };
-    for (const char* const name : kMutatingActions) {
-        if (action == NSSelectorFromString(
-                          [NSString stringWithUTF8String:name])) {
-            return YES;
-        }
-    }
-    return NO;
+    const char* name = [NSStringFromSelector(action) UTF8String];
+    return commands::MutatingSelector(name) ? YES : NO;
 }
 - (void)addRowAbove:(id)sender { (void)sender; [self OnAddTableRow:NO]; }
 - (void)addRowBelow:(id)sender { (void)sender; [self OnAddTableRow:YES]; }
@@ -2896,29 +2894,26 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [view_ setNeedsDisplay:YES];
 }
 
+// Family 2, headings and lists, lives in the shared document
+// controller now (documentcontroller.h): these twins hand the call
+// over, and the controller's completion notification runs the
+// reparse and the redraw the twins used to do by hand.
 - (void)OnHeading:(int)level {
-    SetHeadingLevel(&app_->buffer(), &app_->selection(), level,
-                    &app_->undo());
-    app_->OnTextChanged();
-    [view_ setNeedsDisplay:YES];
+    // The mac menu items apply a level outright; the Windows ribbon
+    // is the side that toggles.
+    app_->controller().SetHeading(level);
 }
 
 - (void)OnToggleBullets {
-    ToggleUnorderedList(&app_->buffer(), &app_->selection(), &app_->undo());
-    app_->OnTextChanged();
-    [view_ setNeedsDisplay:YES];
+    app_->controller().ToggleBullets();
 }
 
 - (void)OnToggleNumbering {
-    ToggleOrderedList(&app_->buffer(), &app_->selection(), &app_->undo());
-    app_->OnTextChanged();
-    [view_ setNeedsDisplay:YES];
+    app_->controller().ToggleNumbering();
 }
 
 - (void)OnToggleQuote {
-    ToggleBlockquote(&app_->buffer(), &app_->selection(), &app_->undo());
-    app_->OnTextChanged();
-    [view_ setNeedsDisplay:YES];
+    app_->controller().ToggleQuote();
 }
 
 - (void)OnInsertTable {
@@ -2980,15 +2975,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 }
 
 - (void)OnIndent {
-    IndentLine(&app_->buffer(), &app_->selection(), &app_->undo());
-    app_->OnTextChanged();
-    [view_ setNeedsDisplay:YES];
+    app_->controller().Indent();
 }
 
 - (void)OnOutdent {
-    OutdentLine(&app_->buffer(), &app_->selection(), &app_->undo());
-    app_->OnTextChanged();
-    [view_ setNeedsDisplay:YES];
+    app_->controller().Outdent();
 }
 
 - (void)OnToggleBold {

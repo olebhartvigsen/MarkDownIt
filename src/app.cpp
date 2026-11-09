@@ -1,5 +1,7 @@
 #include "app.h"
+#include "commands.h"
 #include "formatting.h"
+#include "platformservices.h"
 #include "resource.h"
 #include "ribbon.h"
 #include "fileassoc.h"
@@ -64,7 +66,34 @@ static UINT GetWindowDpi(HWND hwnd) {
     return 96;
 }
 
-AppWindow::AppWindow() {}
+// The clock of the shared code: the Windows tick count is monotonic
+// and already served the 800 ms coalescing rule of the undo stack,
+// so it is the monotonic clock here (platformservices.h, undo stack
+// guide).
+namespace platform {
+
+uint64_t GetMonotonicMs() { return GetTickCount64(); }
+
+}  // namespace platform
+
+// The document controller owns the buffer, the selection, the editor
+// and the undo stack; the window aliases them, and its commands run
+// through the controller bodies. What a command changed ends here:
+// reparse through OnBufferChanged, then paint now, because a ribbon
+// click steals focus from the content window and the deferred
+// InvalidateRect may not deliver a WM_PAINT until the user clicks
+// back into the document (the old wrapper bodies each did this).
+AppWindow::AppWindow()
+    : controller_(),
+      buffer_(controller_.buffer()),
+      sel_(controller_.selection()),
+      editor_(controller_.editor()),
+      undo_stack_(controller_.undo()) {
+    controller_.SetDocumentChangedHandler([this] {
+        OnBufferChanged();
+        ForceRepaintNow();
+    });
+}
 
 // Process selected text for clipboard copy in view mode.
 // Converts soft line breaks (single \n within a paragraph) to spaces,
@@ -566,6 +595,140 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
 
     if (vk != 0x41) last_selectall_tier_ = 0;  // any other key ends the Ctrl+A escalation run
 
+    // Command accelerators. The command table answers for the case
+    // ladder that used to sit inside the switch below: each row names
+    // its key and the modifiers it requires (commands.h), and a key
+    // pressed with modifiers no row names still answers nothing
+    // here. The switch keeps the keys that are not commands
+    // (navigation, Tab, Backspace, Delete, Return) and hands the rest
+    // to DefWindowProcW.
+    if (const commands::CommandSpec* spec = commands::MatchWinAccelerator(
+            static_cast<uint32_t>(vk), ctrl, shift)) {
+        switch (spec->id) {
+            case commands::CommandId::Reload:
+                // OnReload (not Reload): prompts before discarding unsaved edits.
+                OnReload();
+                break;
+            case commands::CommandId::Heading1:
+            case commands::CommandId::Heading2:
+            case commands::CommandId::Heading3:
+            case commands::CommandId::Heading4:
+            case commands::CommandId::Heading5:
+            case commands::CommandId::Heading6: {
+                int level = 0;
+                if (commands::HeadingLevel(spec->id, &level)) SetHeading(level);
+                break;
+            }
+            case commands::CommandId::Numbering:
+                ToggleNumbering();
+                break;
+            case commands::CommandId::Bullets:
+                ToggleBullets();
+                break;
+            case commands::CommandId::Quote:
+                ToggleQuote();
+                break;
+            case commands::CommandId::Bold:
+                ToggleBold();
+                break;
+            case commands::CommandId::SelectAll:
+                SelectAll();
+                break;
+            case commands::CommandId::Italic:
+                ToggleItalic();
+                break;
+            case commands::CommandId::Link:
+                InsertLinkCmd();
+                break;
+            case commands::CommandId::Strike:
+                // The keyboard path keeps the shared inline toggle; the
+                // ribbon command resolves the block shapes around it.
+                ToggleInlineMarker(&buffer_, &sel_, "~~", &undo_stack_);
+                editor_.BreakUndoCoalesce();
+                OnBufferChanged();
+                break;
+            case commands::CommandId::Cut:
+                // An empty selection is a no-op and must not switch modes.
+                // Cut is editing: read-only documents stay untouched, and
+                // no shortcut may itself switch the mode.
+                if (!sel_.Empty() && editing_) {
+                    std::string sel_text = SelectionForClipboard();
+                    if (ClipboardCut(hwnd_content_, sel_text)) {
+                        editor_.DeleteSelection();
+                        OnBufferChanged();
+                    }
+                }
+                break;
+            case commands::CommandId::Code:
+                ToggleInlineMarker(&buffer_, &sel_, "`", &undo_stack_);
+                editor_.BreakUndoCoalesce();
+                OnBufferChanged();
+                break;
+            case commands::CommandId::SaveAs:
+                SaveAs();
+                break;
+            case commands::CommandId::Save:
+                Save();
+                break;
+            case commands::CommandId::Copy:
+                // SelectionForClipboard already applies the view-mode cleanup
+                // (soft line breaks become spaces, paragraph and forced breaks
+                // survive), so the text is used exactly as returned.
+                if (!sel_.Empty()) {
+                    ClipboardCopy(hwnd_content_, SelectionForClipboard());
+                }
+                break;
+            case commands::CommandId::Paste: {
+                // Paste is editing: read-only documents stay untouched and
+                // no shortcut switches the mode by itself.
+                if (!editing_) break;
+                std::string rawText;
+                std::string text = ClipboardPasteRaw(hwnd_content_, &rawText);
+                if (!text.empty()) {
+                    // Tables are single-line Markdown syntax: a paste
+                    // inside a cell must never introduce pipes or row
+                    // breaks (nested tables are not expressible here).
+                    // The selection's anchor side decides, like Tab.
+                    if (CaretInTable())
+                        text = SanitizePasteForTableCell(text);
+                    if (!CaretInTable()) {
+                        // Excel rows become a table (§40) in one paste.
+                        std::string table;
+                        uint32_t cellCaret = 0;
+                        if (TabSeparatedToMarkdownTable(rawText, &table, &cellCaret)) {
+                            InsertPastedTableAtCaret(table, cellCaret);
+                            break;
+                        }
+                    }
+                    if (!text.empty()) {
+                        pending_run_active_ = false;
+                        pending_run_suffix_bytes_ = 0;
+                        editor_.InsertText(text);
+                        OnBufferChanged();
+                    }
+                }
+                break;
+            }
+            case commands::CommandId::Undo:
+                pending_run_active_ = false;
+                pending_run_suffix_bytes_ = 0;
+                pending_bold_set_ = false;
+                pending_italic_set_ = false;
+                ApplyUndo(false);
+                break;
+            case commands::CommandId::Redo:
+                pending_run_active_ = false;
+                pending_run_suffix_bytes_ = 0;
+                pending_bold_set_ = false;
+                pending_italic_set_ = false;
+                ApplyUndo(true);
+                break;
+            default:
+                break;
+        }
+        return;
+    }
+
     switch (vk) {
         case VK_LEFT: {
             uint32_t newOffset = (!shift && !sel_.Empty())
@@ -774,42 +937,6 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             Repaint();
             break;
         }
-        case VK_F5:
-            // OnReload (not Reload): prompts before discarding unsaved edits.
-            OnReload();
-            break;
-        case 0x31:  // Ctrl+1 = H1
-        case 0x32:  // Ctrl+2 = H2
-        case 0x33:  // Ctrl+3 = H3
-        case 0x34:  // Ctrl+4 = H4
-        case 0x35:  // Ctrl+5 = H5
-        case 0x36:  // Ctrl+6 = H6
-            if (ctrl && !shift) {
-                int level = static_cast<int>(vk - 0x30);
-                SetHeading(level);
-            }
-            break;
-        case 0x37:  // Ctrl+7/Ctrl+Shift+7 = ordered list
-            if (ctrl && shift) {
-                ToggleOrderedList(&buffer_, &sel_, &undo_stack_);
-                editor_.BreakUndoCoalesce();
-                OnBufferChanged();
-            }
-            break;
-        case 0x38:  // Ctrl+8/Ctrl+Shift+8 = unordered list
-            if (ctrl && shift) {
-                ToggleUnorderedList(&buffer_, &sel_, &undo_stack_);
-                editor_.BreakUndoCoalesce();
-                OnBufferChanged();
-            }
-            break;
-        case VK_OEM_PERIOD:  // Ctrl+Shift+. = blockquote
-            if (ctrl && shift) {
-                ToggleBlockquote(&buffer_, &sel_, &undo_stack_);
-                editor_.BreakUndoCoalesce();
-                OnBufferChanged();
-            }
-            break;
         case VK_TAB: {
             // Markdown tables keep each cell on one source line. Tab moves
             // between cells instead of inserting indentation or changing the
@@ -898,125 +1025,6 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             OnBufferChanged();
             break;
         }
-        case 0x42:  // Ctrl+B = bold
-            if (ctrl && !shift) {
-                ToggleBold();
-            }
-            break;
-        case 0x41:  // Ctrl+A = select all
-            if (ctrl && !shift) {
-                SelectAll();
-            }
-            break;
-        case 0x49:  // Ctrl+I = italic
-            if (ctrl && !shift) {
-                ToggleItalic();
-            }
-            break;
-        case 0x4B:  // Ctrl+K = link dialog
-            if (ctrl && !shift) {
-                InsertLinkCmd();
-            }
-            break;
-        case 0x58:  // Ctrl+X = cut, Ctrl+Shift+X = strikethrough
-            if (ctrl && shift) {
-                ToggleInlineMarker(&buffer_, &sel_, "~~", &undo_stack_);
-                editor_.BreakUndoCoalesce();
-                OnBufferChanged();
-            } else if (ctrl && !shift) {
-                // An empty selection is a no-op and must not switch modes.
-                // Cut is editing: read-only documents stay untouched, and
-                // no shortcut may itself switch the mode.
-                if (!sel_.Empty() && editing_) {
-                    std::string sel_text = SelectionForClipboard();
-                    if (ClipboardCut(hwnd_content_, sel_text)) {
-                        editor_.DeleteSelection();
-                        OnBufferChanged();
-                    }
-                }
-            }
-            break;
-        case VK_OEM_3:  // Ctrl+` = inline code (backtick key)
-            if (ctrl && !shift) {
-                ToggleInlineMarker(&buffer_, &sel_, "`", &undo_stack_);
-                editor_.BreakUndoCoalesce();
-                OnBufferChanged();
-            }
-            break;
-        case 0x53:  // Ctrl+S = save, Ctrl+Shift+S = save as
-            if (ctrl && shift) {
-                SaveAs();
-            } else if (ctrl && !shift) {
-                Save();
-            }
-            break;
-        case 0x43:  // Ctrl+C = copy
-            // SelectionForClipboard already applies the view-mode cleanup
-            // (soft line breaks become spaces, paragraph and forced breaks
-            // survive), so the text is used exactly as returned.
-            if (ctrl && !shift) {
-                if (!sel_.Empty()) {
-                    ClipboardCopy(hwnd_content_, SelectionForClipboard());
-                }
-            }
-            break;
-
-        case 0x56:  // Ctrl+V = paste
-            if (ctrl && !shift) {
-                // Paste is editing: read-only documents stay untouched and
-                // no shortcut switches the mode by itself.
-                if (!editing_) break;
-                std::string rawText;
-                std::string text = ClipboardPasteRaw(hwnd_content_, &rawText);
-                if (!text.empty()) {
-                    // Tables are single-line Markdown syntax: a paste
-                    // inside a cell must never introduce pipes or row
-                    // breaks (nested tables are not expressible here).
-                    // The selection's anchor side decides, like Tab.
-                    if (CaretInTable())
-                        text = SanitizePasteForTableCell(text);
-                    if (!CaretInTable()) {
-                        // Excel rows become a table (§40) in one paste.
-                        std::string table;
-                        uint32_t cellCaret = 0;
-                        if (TabSeparatedToMarkdownTable(rawText, &table, &cellCaret)) {
-                            InsertPastedTableAtCaret(table, cellCaret);
-                            break;
-                        }
-                    }
-                    if (!text.empty()) {
-                        pending_run_active_ = false;
-                        pending_run_suffix_bytes_ = 0;
-                        editor_.InsertText(text);
-                        OnBufferChanged();
-                    }
-                }
-            }
-            break;
-        case 0x5A:  // Ctrl+Z = undo
-            if (ctrl && !shift) {
-                pending_run_active_ = false;
-                pending_run_suffix_bytes_ = 0;
-                pending_bold_set_ = false;
-                pending_italic_set_ = false;
-                ApplyUndo(false);
-            } else if (ctrl && shift) {
-                pending_run_active_ = false;
-                pending_run_suffix_bytes_ = 0;
-                pending_bold_set_ = false;
-                pending_italic_set_ = false;
-                ApplyUndo(true);
-            }
-            break;
-        case 0x59:  // Ctrl+Y = redo
-            if (ctrl) {
-                pending_run_active_ = false;
-                pending_run_suffix_bytes_ = 0;
-                pending_bold_set_ = false;
-                pending_italic_set_ = false;
-                ApplyUndo(true);
-            }
-            break;
         case VK_BACK: {
             pending_run_active_ = false;
             pending_run_suffix_bytes_ = 0;
@@ -3818,6 +3826,10 @@ void AppWindow::NewDocument() {
 
 void AppWindow::SetEdit(bool on) {
     editing_ = on;
+    // The document controller gates its own command bodies: keep its
+    // edit flag in step, so a family command in read mode is a no-op
+    // there too.
+    controller_.SetEditing(on);
     // The layout follows the mode: reading draws the blank line next
     // to a list as a thin strip, editing keeps its full line. The next
     // paint re-measures and picks the new height up.
@@ -5052,25 +5064,12 @@ void AppWindow::InsertLinkCmd() {
     ForceRepaintNow();
 }
 
+// The splice and its undo entry live in the document controller now,
+// shared by both ports and stamped on the platform clock; the table
+// and find paths call through this shell.
 void AppWindow::SpliceWithUndo(uint32_t offset, uint32_t length,
-                                   const std::string& replacement) {
-    std::string removed = buffer_.Text().substr(
-        std::min(offset, static_cast<uint32_t>(buffer_.Text().size())),
-        std::min(length, static_cast<uint32_t>(
-            buffer_.Text().size() - std::min(offset,
-                static_cast<uint32_t>(buffer_.Text().size())))));
-    Selection selBefore = sel_;
-    buffer_.Splice(offset, length, replacement);
-    Selection selAfter = sel_;
-    UndoEntry entry{};
-    entry.offset = offset;
-    entry.removed = removed;
-    entry.inserted = replacement;
-    entry.selBefore = selBefore;
-    entry.selAfter = selAfter;
-    entry.timestamp = GetTickCount64();
-    entry.type = EditType::Insert;
-    undo_stack_.Push(entry);
+                               const std::string& replacement) {
+    controller_.SpliceWithUndo(offset, length, replacement);
 }
 
 // Table support: insert table, add/remove row/column
@@ -5699,87 +5698,41 @@ void AppWindow::ClearFormat() {
     ForceRepaintNow();
 }
 
+// Family 2, headings and lists: the bodies live in the document
+// controller now (DocumentController::SetHeading and friends), the
+// same splice, undo entry and coalescing break for both ports. Keep
+// these shells: the ribbon map and the key handler call them.
 void AppWindow::SetHeading(int level) {
     if (!editing_) return;
-    // Toggle: if the caret is already in a heading of this level,
-    // remove the heading (revert to paragraph).
+    // The ribbon buttons are toggles: pressing the level's own button
+    // reverts the block to a paragraph. The mac menu items apply a
+    // level outright, so the resolution stays with the port that
+    // knows its own chrome and the controller takes the resolved
+    // level.
     FormatState fs = GetFormatState();
-    if (fs.headingLevel == level) {
-        SetHeadingLevel(&buffer_, &sel_, 0, &undo_stack_);
-    } else {
-        SetHeadingLevel(&buffer_, &sel_, level, &undo_stack_);
-    }
-    editor_.BreakUndoCoalesce();
-    OnBufferChanged();
-    // The ribbon button click steals focus from the content window, so the
-    // deferred InvalidateRect in Repaint() may not deliver a WM_PAINT until
-    // the user clicks back into the document. Force an immediate repaint.
-    ForceRepaintNow();
+    controller_.SetHeading(fs.headingLevel == level ? 0 : level);
 }
 
-void AppWindow::ToggleBullets() {
-    if (!editing_) return;
-    ToggleUnorderedList(&buffer_, &sel_, &undo_stack_);
-    editor_.BreakUndoCoalesce();
-    OnBufferChanged();
-    ForceRepaintNow();
-}
+void AppWindow::ToggleBullets() { controller_.ToggleBullets(); }
 
-void AppWindow::ToggleNumbering() {
-    if (!editing_) return;
-    ToggleOrderedList(&buffer_, &sel_, &undo_stack_);
-    editor_.BreakUndoCoalesce();
-    OnBufferChanged();
-    ForceRepaintNow();
-}
+void AppWindow::ToggleNumbering() { controller_.ToggleNumbering(); }
 
-void AppWindow::ToggleQuote() {
-    if (!editing_) return;
-    ToggleBlockquote(&buffer_, &sel_, &undo_stack_);
-    editor_.BreakUndoCoalesce();
-    OnBufferChanged();
-    ForceRepaintNow();
-}
+void AppWindow::ToggleQuote() { controller_.ToggleQuote(); }
 
-void AppWindow::Indent() {
-    if (!editing_) return;
-    IndentLine(&buffer_, &sel_, &undo_stack_);
-    editor_.BreakUndoCoalesce();
-    OnBufferChanged();
-    ForceRepaintNow();
-}
+void AppWindow::Indent() { controller_.Indent(); }
 
-void AppWindow::Outdent() {
-    if (!editing_) return;
-    OutdentLine(&buffer_, &sel_, &undo_stack_);
-    editor_.BreakUndoCoalesce();
-    OnBufferChanged();
-    ForceRepaintNow();
-}
+void AppWindow::Outdent() { controller_.Outdent(); }
 
+// The entry is built by the document controller now, on the shared
+// platform clock; the window passes the before state from its caller
+// and its own pending state as the after state.
 void AppWindow::RecordPendingFormatUndo(bool beforeBold, bool beforeItalic,
-                                         bool beforeBoldSet, bool beforeItalicSet) {
-    UndoEntry entry{};
-    entry.offset = sel_.active.offset;
-    entry.selBefore = sel_;
-    entry.selAfter = sel_;
-    entry.timestamp = GetTickCount64();
-    entry.type = EditType::PendingFormat;
-    entry.hasPendingFormat = true;
-    entry.pendingBold = beforeBold;
-    entry.pendingItalic = beforeItalic;
-    entry.pendingBoldSet = beforeBoldSet;
-    entry.pendingItalicSet = beforeItalicSet;
-    entry.afterPendingBold = pending_bold_;
-    entry.afterPendingItalic = pending_italic_;
-    entry.afterPendingBoldSet = pending_bold_set_;
-    entry.afterPendingItalicSet = pending_italic_set_;
-    undo_stack_.Push(entry);
-
-    // Store the after-state in the same entry by pushing it through the
-    // redo side is not possible with the public stack API. The current
-    // state is deterministic from the before-state and this toggle, so
-    // ApplyUndo/ApplyRedo recomputes the opposite state for this entry.
+                                        bool beforeBoldSet, bool beforeItalicSet) {
+    controller_.RecordPendingFormatUndo(sel_, beforeBold, beforeItalic,
+                                         beforeBoldSet, beforeItalicSet,
+                                         pending_bold_, pending_italic_,
+                                         pending_bold_set_,
+                                         pending_italic_set_);
 }
 
 void AppWindow::ApplyUndo(bool redo) {

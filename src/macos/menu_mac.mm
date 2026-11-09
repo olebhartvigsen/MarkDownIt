@@ -7,6 +7,14 @@
 // Full Screen, Minimize and Zoom, and the app menu's Services and Hide
 // Others.
 //
+// The key equivalents of the command items come from the shared
+// command table (commands.h): each menu item names its selector, the
+// same selector its table row carries, and the row names the key and
+// the extra modifiers, so the mac menu and the Windows accelerators
+// read one binding list instead of two. The items that are AppKit's
+// own (Hide, Minimize, Full Screen) carry no table row and keep
+// their literal keys.
+//
 // The items carry no target of their own. AppKit walks the responder
 // chain, which ends at the app delegate, and calls the command there.
 // The responder chain is also what enables the items, so an item is grey
@@ -15,24 +23,70 @@
 
 #include "menu_mac.h"
 
+#include "commands.h"
+
 #import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
 
-// Builds a submenu with the given items.
-//
-// The items are given as title, selector and key equivalent triples.
+namespace {
+
+// The key equivalent of a command item: the row of the command table
+// whose selector matches carries the key. The Command mask is the
+// baseline; Shift or Option join it only when the row says so (a key
+// that needs a modifier its own character does not spell out, like
+// the Replace row's Option). An upper case letter already implies
+// Shift, so Save As carries "S" without a flag and AppKit shows the
+// Shift glyph itself.
+struct MacKeyEquivalent {
+    NSString* key;
+    bool extraMask;
+    NSEventModifierFlags mask;
+};
+
+MacKeyEquivalent KeyForCommand(SEL action) {
+    const commands::CommandSpec* spec =
+        commands::FindBySelector([NSStringFromSelector(action) UTF8String]);
+    MacKeyEquivalent out{@"", false, NSEventModifierFlagCommand};
+    if (spec && spec->mac.key) {
+        out.key = [NSString stringWithUTF8String:spec->mac.key];
+        if (spec->mac.shift) {
+            out.extraMask = true;
+            out.mask |= NSEventModifierFlagShift;
+        }
+        if (spec->mac.option) {
+            out.extraMask = true;
+            out.mask |= NSEventModifierFlagOption;
+        }
+    }
+    return out;
+}
+
+// Adds an item whose key equivalent comes from the command table, the
+// shape every command item in the bar shares.
+NSMenuItem* CommandItem(NSMenu* menu, const char* title, SEL action) {
+    MacKeyEquivalent key = KeyForCommand(action);
+    NSMenuItem* item = [menu
+        addItemWithTitle:[NSString stringWithUTF8String:title]
+                  action:action
+           keyEquivalent:key.key];
+    if (key.extraMask) [item setKeyEquivalentModifierMask:key.mask];
+    return item;
+}
+
+}  // namespace
+
+// Builds a submenu with the given items. Every item is a command, so
+// every key equivalent resolves through the command table.
 NSMenu* BuildSubmenu(const char* title,
-                     const std::vector<std::pair<const char*, SEL>>& items,
-                     const std::vector<const char*>& shortcuts) {
+                     const std::vector<std::pair<const char*, SEL>>& items) {
     NSMenu* menu = [[NSMenu alloc] initWithTitle:[NSString stringWithUTF8String:title]];
     for (size_t i = 0; i < items.size(); ++i) {
-        NSString* itemTitle = [NSString stringWithUTF8String:items[i].first];
-        NSString* shortcut = @"";
-        if (i < shortcuts.size() && shortcuts[i]) {
-            shortcut = [NSString stringWithUTF8String:shortcuts[i]];
-        }
-        [menu addItemWithTitle:itemTitle action:items[i].second
-                keyEquivalent:shortcut];
+        MacKeyEquivalent key = KeyForCommand(items[i].second);
+        NSMenuItem* added = [menu
+            addItemWithTitle:[NSString stringWithUTF8String:items[i].first]
+                      action:items[i].second
+               keyEquivalent:key.key];
+        if (key.extraMask) [added setKeyEquivalentModifierMask:key.mask];
     }
     return menu;
 }
@@ -76,18 +130,17 @@ NSMenu* BuildMainMenu() {
     NSMenu* mainMenu = [[NSMenu alloc] init];
 
     // The application menu, the one that carries the name of the app.
+    // About, Settings and the reader default are commands with table
+    // rows; the hide and quit items are AppKit's own and keep their
+    // literal keys.
     {
         NSMenu* appMenu = [[NSMenu alloc] init];
-        [appMenu addItemWithTitle:@"About MarkDownIt"
-                           action:@selector(orderFrontStandardAboutPanel:)
-                    keyEquivalent:@""];
+        CommandItem(appMenu, "About MarkDownIt",
+                    @selector(orderFrontStandardAboutPanel:));
         [appMenu addItem:[NSMenuItem separatorItem]];
-        [appMenu addItemWithTitle:@"Settings\u2026"
-                           action:@selector(openSettings:)
-                    keyEquivalent:@","];
-        [appMenu addItemWithTitle:@"Set as Default Reader\u2026"
-                           action:@selector(setAsDefaultReader:)
-                    keyEquivalent:@""];
+        CommandItem(appMenu, "Settings\u2026", @selector(openSettings:));
+        CommandItem(appMenu, "Set as Default Reader\u2026",
+                    @selector(setAsDefaultReader:));
         [appMenu addItem:[NSMenuItem separatorItem]];
         // The Services menu is the system's own: the app menu holds
         // the item, and the system fills the submenu.
@@ -116,12 +169,8 @@ NSMenu* BuildMainMenu() {
     // File.
     {
         NSMenu* fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
-        [fileMenu addItemWithTitle:@"New"
-                            action:@selector(newDocument:)
-                     keyEquivalent:@"n"];
-        [fileMenu addItemWithTitle:@"Open\u2026"
-                            action:@selector(openDocument:)
-                     keyEquivalent:@"o"];
+        CommandItem(fileMenu, "New", @selector(newDocument:));
+        CommandItem(fileMenu, "Open\u2026", @selector(openDocument:));
 
         // Open Recent fills itself from the same list the welcome
         // screen shows, whenever it opens: the app delegate is the
@@ -130,21 +179,11 @@ NSMenu* BuildMainMenu() {
         [recentMenu setDelegate:(id<NSMenuDelegate>)[NSApp delegate]];
         AddSubmenu(fileMenu, "Open Recent", recentMenu);
 
-        [fileMenu addItemWithTitle:@"Reload"
-                            action:@selector(reloadDocument:)
-                     keyEquivalent:@"r"];
-        [fileMenu addItemWithTitle:@"Close"
-                            action:@selector(closeDocument:)
-                     keyEquivalent:@"w"];
-        [fileMenu addItemWithTitle:@"Save"
-                            action:@selector(saveDocument:)
-                     keyEquivalent:@"s"];
-        [fileMenu addItemWithTitle:@"Save As\u2026"
-                            action:@selector(saveDocumentAs:)
-                     keyEquivalent:@"S"];
-        [fileMenu addItemWithTitle:@"Share\u2026"
-                            action:@selector(shareDocument:)
-                     keyEquivalent:@""];
+        CommandItem(fileMenu, "Reload", @selector(reloadDocument:));
+        CommandItem(fileMenu, "Close", @selector(closeDocument:));
+        CommandItem(fileMenu, "Save", @selector(saveDocument:));
+        CommandItem(fileMenu, "Save As\u2026", @selector(saveDocumentAs:));
+        CommandItem(fileMenu, "Share\u2026", @selector(shareDocument:));
         [fileMenu addItem:[NSMenuItem separatorItem]];
 
         // The office commands sit in their own menu, the way the other
@@ -154,8 +193,7 @@ NSMenu* BuildMainMenu() {
             {{"Import from Word\u2026", @selector(importWord:)},
              {"Import from PDF\u2026", @selector(importPdf:)},
              {"Export as Word\u2026", @selector(exportWord:)},
-             {"Export as PDF\u2026", @selector(exportPdf:)}},
-            {"", "", "", ""});
+             {"Export as PDF\u2026", @selector(exportPdf:)}});
         AddSubmenu(fileMenu, "Office", officeMenu);
         AddTopLevel(mainMenu, "File", fileMenu);
     }
@@ -169,30 +207,22 @@ NSMenu* BuildMainMenu() {
              {"Cut", @selector(cut:)},
              {"Copy", @selector(copy:)},
              {"Paste", @selector(paste:)},
-             {"Select All", @selector(selectAll:)}},
-            {"z", "Z", "x", "c", "v", "a"});
+             {"Select All", @selector(selectAll:)}});
         // The standard selectors travel the responder chain, so a
         // focused text field handles its own undo and clipboard before
         // the document does (spec AC-01).
         [editMenu addItem:[NSMenuItem separatorItem]];
 
         // Find is a submenu, the way every mac app carries it: the
-        // field, the two steps through the matches, and replace.
+        // field, the two steps through the matches, and replace. The
+        // Shift of Find Previous and the Option of Replace come from
+        // their table rows, like every other key.
         NSMenu* findMenu = BuildSubmenu(
             "Find",
             {{"Find\u2026", @selector(findDocument:)},
              {"Find Next", @selector(findNext:)},
              {"Find Previous", @selector(findPrevious:)},
-             {"Replace\u2026", @selector(replaceInDocument:)}},
-            {"f", "g", "G", "f"});
-        [[findMenu itemWithTitle:@"Find Previous"]
-            setKeyEquivalentModifierMask:NSEventModifierFlagCommand |
-                                        NSEventModifierFlagShift];
-        // Replace opens with Cmd+Option+F, because Cmd+H belongs to
-        // Hide (spec AC-11).
-        [[findMenu itemWithTitle:@"Replace\u2026"]
-            setKeyEquivalentModifierMask:NSEventModifierFlagCommand |
-                                        NSEventModifierFlagOption];
+             {"Replace\u2026", @selector(replaceInDocument:)}});
         AddSubmenu(editMenu, "Find", findMenu);
         AddTopLevel(mainMenu, "Edit", editMenu);
     }
@@ -209,11 +239,11 @@ NSMenu* BuildMainMenu() {
              {"Outline", @selector(toggleOutline:)},
              {"Recent Documents", @selector(showRecents:)},
              {"Show Tab Bar", @selector(toggleTabBar:)},
-             {"Wrap Text", @selector(toggleWrap:)}},
-            {"+", "-", "0", "", "", "O", "", "", ""});
+             {"Wrap Text", @selector(toggleWrap:)}});
         [viewMenu addItem:[NSMenuItem separatorItem]];
         // Full screen is a View command on the mac, with the system's
-        // own key: Control, Command, F.
+        // own key: Control, Command, F. It is AppKit's own item, so it
+        // carries no table row.
         NSMenuItem* fullScreen =
             [viewMenu addItemWithTitle:@"Enter Full Screen"
                                 action:@selector(toggleFullScreen:)
@@ -226,18 +256,24 @@ NSMenu* BuildMainMenu() {
         // most layouts the "+" above needs Shift, and a zoom key
         // must stay a command with a modifier rather than a bare
         // character, or it would eat typing (zoom guide,
-        // keyboard safety). The item stays hidden; AppKit still
+        // keyboard safety). The key is the ZoomIn row's mac alias
+        // in the command table. The item stays hidden; AppKit still
         // routes its key equivalent.
         NSMenuItem* zoomInPlain = [[NSMenuItem alloc]
             initWithTitle:@"Zoom In"
                    action:@selector(zoomIn:)
-            keyEquivalent:@"="];
+            keyEquivalent:[NSString stringWithUTF8String:
+                commands::MacAliasKey(commands::CommandId::ZoomIn)]];
         [zoomInPlain setHidden:YES];
         [viewMenu addItem:zoomInPlain];
     }
 
     // Format.
     {
+        // Marking carries the Windows shortcut with Command on the
+        // mac: Ctrl+Shift+H becomes Cmd+Shift+H (highlighting guide
+        // 20). The Shift comes from the Highlight table row now,
+        // like the other extra modifiers.
         NSMenu* formatMenu = BuildSubmenu(
             "Format",
             {{"Bold", @selector(toggleBold:)},
@@ -246,14 +282,7 @@ NSMenu* BuildMainMenu() {
              {"Code", @selector(toggleCode:)},
              {"Link", @selector(toggleLink:)},
              {"Highlight", @selector(toggleMark:)},
-             {"Clear Formatting", @selector(clearFormat:)}},
-            {"b", "i", "", "", "k", "h", ""});
-        // Marking carries the Windows shortcut with Command on the
-        // mac: Ctrl+Shift+H becomes Cmd+Shift+H (highlighting guide
-        // 20).
-        [[formatMenu itemWithTitle:@"Highlight"]
-            setKeyEquivalentModifierMask:NSEventModifierFlagCommand |
-                                        NSEventModifierFlagShift];
+             {"Clear Formatting", @selector(clearFormat:)}});
         // The block commands live in their own menu, the way the Format
         // menu of the other editors has them.
         NSMenu* blockMenu = BuildSubmenu(
@@ -265,8 +294,7 @@ NSMenu* BuildMainMenu() {
              {"Numbered List", @selector(toggleNumbering:)},
              {"Quote", @selector(toggleQuote:)},
              {"Indent", @selector(indentBlock:)},
-             {"Outdent", @selector(outdentBlock:)}},
-            {"1", "2", "3", "", "", "", "", ""});
+             {"Outdent", @selector(outdentBlock:)}});
         AddSubmenu(formatMenu, "Blocks", blockMenu);
         AddTopLevel(mainMenu, "Format", formatMenu);
     }
@@ -287,8 +315,7 @@ NSMenu* BuildMainMenu() {
              {"Align Left", @selector(alignLeft:)},
              {"Align Center", @selector(alignCenter:)},
              {"Align Right", @selector(alignRight:)},
-             {"Delete Table", @selector(removeTable:)}},
-            {"", "", "", "", "", "", "", "", "", "", "", ""});
+             {"Delete Table", @selector(removeTable:)}});
         AddTopLevel(mainMenu, "Table", tableMenu);
     }
 

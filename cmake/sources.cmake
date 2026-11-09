@@ -32,6 +32,7 @@ set(MARKDOWNIT_CORE_SOURCES
     src/layout/display_player.cpp
     src/layoutcache.cpp
     src/editcontroller.cpp
+    src/documentcontroller.cpp
     src/navigation.cpp
     src/tableedit.cpp
     src/undostack.cpp
