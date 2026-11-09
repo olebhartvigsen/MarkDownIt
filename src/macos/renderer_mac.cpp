@@ -9,13 +9,14 @@
 // document out the same way. Only the drawing calls differ.
 
 #include "renderer_mac.h"
-#include "blockspacing.h"
 #include "hash.h"
+#include "layout/display_player.h"
 #include "markers.h"
 
 #include <algorithm>
 #include <cmath>
 #include <utility>
+#include <variant>
 
 #include "editcontroller.h"
 #include "mermaid/layout_cache.h"
@@ -65,39 +66,13 @@ std::string Utf32ToUtf8(const std::u32string& text) {
     return out;
 }
 
-// The text of a block's inline children, in UTF-8.
-std::string InlineTextUtf8(const Node& node) {
-    std::string text;
-    for (const InlineBlock& child : node.children) {
-        text += Utf32ToUtf8(child.text);
-    }
-    return text;
-}
-
-// A node that holds one run of text, so the table code can reuse the run
-// builder without building a whole DOM node.
-Node TextNode(const std::u32string& text) {
-    Node node;
-    InlineBlock child;
-    child.kind = InlineKind::Text;
-    child.text = text;
-    node.children.push_back(child);
-    return node;
-}
-
-// The height an image takes when its size is not known yet.
-//
-// The Windows renderer charges the same height, so the two agree on how
-// much room an image takes before it has been measured.
-constexpr float kImageFallbackHeight = 100.0f;
+// The fallback image height and the reading blank strip moved into the
+// shared modules with the pass that uses them, so the renderer no longer
+// holds its own copy.
 
 // The width of the text column when the word wrap is off. The text is
 // laid out on one very wide line and the user scrolls to its end.
 constexpr float kNoWrapContentWidthDip = 10000.0f;
-
-// The height of a blank line while reading: the caret paragraph next
-// to a list keeps its line, but not a full empty row.
-constexpr float kReadBlankLineStripDip = 4.0f;
 
 // The theme sizes are points, and the Windows renderer converts them to
 // DIPs with this factor (kPtToDip there) when it creates its text
@@ -343,6 +318,146 @@ float MermaidMeasureWidth(const mermaid::MermaidRender& diagram,
     return width > 2.0f * pad ? width - 2.0f * pad : 0.0f;
 }
 
+// The engine the shared layout measures through.
+//
+// The shared modules speak points into the seam and bake the zoom into
+// neither the font sizes nor the wrap width, because the Windows engine
+// applies the zoom when it creates its text formats. The mac fonts carry
+// the zoom in the FontSpec instead (MakeFont callers multiply by it), so
+// the renderer wraps its engine in this adapter when it hands it to the
+// shared walk: the runs gain the zoom on the way in, and everything the
+// engine measures and returns comes back in the zoomed space the mac
+// renderer has always drawn in. At a zoom of one the adapter is a
+// pass-through, value for value.
+class ZoomEngine final : public TextEngine {
+public:
+    ZoomEngine(TextEngine* inner, float zoom) : inner_(inner), zoom_(zoom) {}
+
+    void BeginLayout() override { inner_->BeginLayout(); }
+
+    std::vector<TextLine> MeasureWrapped(const std::vector<GlyphRun>& runs,
+                                         float maxWidth,
+                                         float lineSpacing) override {
+        std::vector<GlyphRun> scaled = runs;
+        if (zoom_ != 1.0f) {
+            for (GlyphRun& run : scaled) run.font.size *= zoom_;
+        }
+        return inner_->MeasureWrapped(scaled, maxWidth, lineSpacing);
+    }
+
+    uint32_t HitTestOffset(const TextLine& line, float x,
+                           bool* outTrailing) const override {
+        return inner_->HitTestOffset(line, x, outTrailing);
+    }
+
+    Rect OffsetToRect(const TextLine& line, uint32_t offset) const override {
+        return inner_->OffsetToRect(line, offset);
+    }
+
+    // The font the line spacing asks about comes out of a measured
+    // line, so its size already carries the zoom.
+    float LineHeight(const FontSpec& font) const override {
+        return inner_->LineHeight(font);
+    }
+
+private:
+    TextEngine* inner_;
+    float zoom_;
+};
+
+// The target the finished display list replays onto.
+//
+// The list is in content column coordinates: origin at the top left
+// of the column, y growing down, the scroll not applied. The renderer
+// draws in view coordinates with the column pinned at originX_, so one
+// translate wraps the real target and every replayed item lands where
+// the per block painter used to draw it.
+class TranslatedTarget final : public RenderTarget {
+public:
+    TranslatedTarget(RenderTarget* inner, float dx, float dy)
+        : inner_(inner), dx_(dx), dy_(dy) {}
+
+    void FillRect(const Rect& rect, const Color& color) override {
+        inner_->FillRect(Shift(rect), color);
+    }
+    void FillRoundedRect(const Rect& rect, float radius,
+                         const Color& color) override {
+        inner_->FillRoundedRect(Shift(rect), radius, color);
+    }
+    void FillRoundedRectSides(const Rect& rect, float radius,
+                              const Color& color, bool roundLeft,
+                              bool roundRight) override {
+        inner_->FillRoundedRectSides(Shift(rect), radius, color, roundLeft,
+                                     roundRight);
+    }
+    void StrokeRect(const Rect& rect, const Color& color,
+                    float lineWidth) override {
+        inner_->StrokeRect(Shift(rect), color, lineWidth);
+    }
+    void StrokeRoundedRect(const Rect& rect, float radius,
+                           const Color& color, float lineWidth) override {
+        inner_->StrokeRoundedRect(Shift(rect), radius, color, lineWidth);
+    }
+    void StrokeLine(float x0, float y0, float x1, float y1,
+                    const Color& color, float lineWidth) override {
+        inner_->StrokeLine(x0 + dx_, y0 + dy_, x1 + dx_, y1 + dy_, color,
+                           lineWidth);
+    }
+    void DrawText(const std::string& utf8, const FontSpec& font, float x,
+                  float baselineY, const Color& color) override {
+        inner_->DrawText(utf8, font, x + dx_, baselineY + dy_, color);
+    }
+    void DrawBitmap(BitmapHandle image, const Rect& rect) override {
+        inner_->DrawBitmap(image, Shift(rect));
+    }
+    void FillEllipse(const Rect& rect, const Color& color) override {
+        inner_->FillEllipse(Shift(rect), color);
+    }
+    void StrokeEllipse(const Rect& rect, const Color& color,
+                       float lineWidth) override {
+        inner_->StrokeEllipse(Shift(rect), color, lineWidth);
+    }
+    void FillPolygon(const std::vector<Point>& points,
+                     const Color& color) override {
+        inner_->FillPolygon(Shift(points), color);
+    }
+    void StrokePolygon(const std::vector<Point>& points,
+                       const Color& color, float lineWidth,
+                       bool closed) override {
+        inner_->StrokePolygon(Shift(points), color, lineWidth, closed);
+    }
+    void FillPieSlice(const Rect& rect, float startAngle, float endAngle,
+                      const Color& color) override {
+        inner_->FillPieSlice(Shift(rect), startAngle, endAngle, color);
+    }
+    void PushClip(const Rect& rect) override { inner_->PushClip(Shift(rect)); }
+    void PopClip() override { inner_->PopClip(); }
+    void DrawChevron(const Rect& rect, bool expanded,
+                     const Color& color) override {
+        inner_->DrawChevron(Shift(rect), expanded, color);
+    }
+
+private:
+    Rect Shift(const Rect& rect) const {
+        Rect out = rect;
+        out.x += dx_;
+        out.y += dy_;
+        return out;
+    }
+    std::vector<Point> Shift(const std::vector<Point>& points) const {
+        std::vector<Point> out = points;
+        for (Point& p : out) {
+            p.x += dx_;
+            p.y += dy_;
+        }
+        return out;
+    }
+
+    RenderTarget* inner_;
+    float dx_;
+    float dy_;
+};
+
 }  // namespace
 
 // The mermaid layout of a block, in the form the painter takes.
@@ -401,14 +516,6 @@ MacRenderer::MacRenderer() {
 }
 MacRenderer::~MacRenderer() = default;
 
-FontSpec MacRenderer::FontFor(const Node& node, float baseSize, bool bold,
-                               bool italic, bool monospace,
-                               const char* family) const {
-    (void)node;
-    return MakeFont(metrics_, baseSize * kPtToDip * zoom_, bold, italic,
-                    monospace, family);
-}
-
 FontSpec MacRenderer::DiagramFontFor(const Node& node, float baseSize,
                                       bool bold, bool italic,
                                       bool monospace) const {
@@ -442,138 +549,9 @@ void MacRenderer::ApplyLineSpacing(std::vector<TextLine>* lines, float ptSize,
     }
 }
 
-std::vector<GlyphRun> MacRenderer::BuildCellRuns(const TableCell& cell,
-                                                  bool bold,
-                                                  const Color& color) const {
-    // The cell text, cut into runs at the boundaries of the inline
-    // spans. The spans index the text in UTF-16 units, so the walk
-    // counts them as it goes.
-    std::vector<GlyphRun> runs;
-    const std::u32string& text = cell.text;
-    const size_t count = text.size();
-
-    auto styleAt = [&](uint32_t index, bool* strong, bool* em, bool* code,
-                       bool* strike) {
-        *strong = bold;
-        *em = false;
-        *code = false;
-        *strike = false;
-        for (const CellInlineSpan& span : cell.inlineSpans) {
-            if (index < span.u16Start || index >= span.u16End) continue;
-            *strong = *strong || span.bold;
-            *em = *em || span.italic;
-            *code = *code || span.code;
-            *strike = *strike || span.strike;
-        }
-    };
-    auto isLink = [&](uint32_t index) {
-        if (index >= cell.u16ToSrc.size()) return false;
-        const uint32_t source = cell.u16ToSrc[index];
-        for (const TableLink& link : cell.links) {
-            if (source >= link.srcOffset &&
-                source < link.srcOffset + link.srcLength) {
-                return true;
-            }
-        }
-        return false;
-    };
-
-    uint32_t u16 = 0;
-    size_t i = 0;
-    while (i < count) {
-        bool strong = false, em = false, code = false, strike = false;
-        styleAt(u16, &strong, &em, &code, &strike);
-        const bool link = isLink(u16);
-
-        // The run takes every code point with the same style.
-        std::string run;
-        while (i < count) {
-            bool next = false, nextEm = false, nextCode = false;
-            bool nextStrike = false;
-            styleAt(u16, &next, &nextEm, &nextCode, &nextStrike);
-            if (next != strong || nextEm != em || nextCode != code ||
-                nextStrike != strike || isLink(u16) != link) {
-                break;
-            }
-            run += Utf32ToUtf8(std::u32string(1, text[i]));
-            u16 += text[i] > 0xFFFF ? 2u : 1u;
-            ++i;
-        }
-        if (run.empty()) continue;
-
-        GlyphRun glyph;
-        glyph.text = std::move(run);
-        // A cell code span gets the code family at GitHub's 85% size,
-        // the same switch the Windows table makes. A header cell and a
-        // strong span draw in the semibold face: the guideline asks a
-        // table heading for the semibold weight, not the full bold
-        // trait.
-        const float cellSize =
-            code ? metrics_.codeFontSize : metrics_.bodyFontSize;
-        const bool codeBold = code && strong;
-        glyph.font = FontFor(Node{}, cellSize, codeBold, em, code,
-                             strong ? THEME_BODY_FONT_SEMIBOLD : nullptr);
-        glyph.r = color.r;
-        glyph.g = color.g;
-        glyph.b = color.b;
-        glyph.a = color.a;
-        glyph.underline = link;
-        glyph.strike = strike;
-        runs.push_back(std::move(glyph));
-    }
-    return runs;
-}
-
-std::vector<GlyphRun> MacRenderer::BuildRuns(const Node& node, float baseSize,
-                                              bool bold, bool italic,
-                                              const Color& color,
-                                              bool monospace,
-                                              const char* family) const {
-    std::vector<GlyphRun> runs;
-
-    // The children are walked one by one, so a run carries the style of
-    // the span it came from. A link is a colour change and an
-    // underline, an inline code span switches to the smaller code face,
-    // and everything else is a font change.
-    for (const InlineBlock& child : node.children) {
-        const std::string runText = Utf32ToUtf8(child.text);
-        if (runText.empty()) continue;
-
-        GlyphRun run;
-        run.text = runText;
-        // An inline code span uses the code size, the way the Windows
-        // renderer sets codeFontSize on the span.
-        const bool childCode = child.code;
-        const float runSize = childCode ? metrics_.codeFontSize : baseSize;
-        // A strong span draws in the semibold face, the emphasis the
-        // style guide asks for within a sentence. A heading already
-        // draws in that family, so its strong spans keep it.
-        const char* runFamily = family;
-        bool runBold = bold;
-        if (child.strong && runFamily == nullptr) {
-            runFamily = THEME_BODY_FONT_SEMIBOLD;
-            runBold = false;
-        }
-        run.font = FontFor(node, runSize, runBold,
-                           italic || child.em, monospace || childCode,
-                           runFamily);
-        // A link is drawn in the link colour, everything else in the text
-        // colour of the block.
-        const bool link = child.kind == InlineKind::Link;
-        const Color runColor = link ? ToColor(palette_.link) : color;
-        run.r = runColor.r;
-        run.g = runColor.g;
-        run.b = runColor.b;
-        run.a = runColor.a;
-        run.underline = link;
-        run.strike = child.strike;
-        runs.push_back(run);
-    }
-    return runs;
-}
-
 float MacRenderer::Measure(const Document& doc, float widthDip) {
     blocks_.clear();
+    displayList_ = display::DisplayList{};
     needsLayout_ = false;
 
     // The engine drops the measurements of the pass before this one, so
@@ -604,9 +582,6 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
     originX_ = pad;
 
     float y = metrics_.padTop;
-    BlockKind prevBlock = BlockKind::Paragraph;
-    int prevDepth = -1;
-    bool first = true;
 
     // The source view (find guide 4) lays the raw buffer out
     // instead of the document: one monospace block with every
@@ -618,21 +593,142 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
         return totalHeight_;
     }
 
-    for (const Node& node : doc.nodes) {
-        // The gap belongs to the block that follows it, and the first
-        // block gets none, the same model the Windows renderer uses.
-        if (!first) {
-            y += GapForTransition(prevBlock, node.block, metrics_);
+    // One shared pass. The walk of the document, the measuring of
+    // every block kind and the display items they paint from are the
+    // layout module's now; the renderer owns the seams it hands in:
+    // the zoom-carrying engine adapter, the image size answers, and
+    // the mapping of the records into the shape the caret, the hits
+    // and the app layers read.
+    ZoomEngine layoutEngine(engine_, zoom_);
+    layout::LayoutInput in;
+    in.doc = &doc;
+    in.metrics = &metrics_;
+    in.palette = &palette_;
+    in.contentWidth = contentWidth_;
+    in.zoom = zoom_;
+    in.editing = editing_;
+    in.engine = engine_ ? &layoutEngine : nullptr;
+    in.imageSize = [this, &doc](const std::string& url) {
+        return ImageSizeForUrl(doc, url);
+    };
+    layout::DocumentLayout laid = layout::LayoutDocument(in);
+    displayList_ = std::move(laid.list);
+
+    // The one Text item the modules build by hand is the list marker:
+    // its line box borrows the measured first line, but the run in it
+    // never passed the engine, so unlike every other run it is still
+    // in the point space the modules speak. The marker is the only
+    // Text item of the list with no source length of its own, no
+    // measured width on its line, and the clip of the gutter around
+    // it, so it is found here once and scaled to the zoomed space the
+    // replay draws the rest of the document at.
+    if (zoom_ != 1.0f) {
+        bool insideMarkerClip = false;
+        for (display::Item& item : displayList_.items) {
+            if (std::holds_alternative<display::PushClip>(item)) {
+                insideMarkerClip = true;
+            } else if (std::holds_alternative<display::PopClip>(item)) {
+                insideMarkerClip = false;
+            } else if (auto* text =
+                           std::get_if<display::Text>(&item)) {
+                if (insideMarkerClip && text->srcLength == 0 &&
+                    text->line.width == 0.0f) {
+                    for (GlyphRun& run : text->line.runs) {
+                        run.font.size *= zoom_;
+                    }
+                }
+            }
         }
-        first = false;
-        LayoutBlock(node, originX_, contentWidth_, &y);
-        prevBlock = node.block;
-        prevDepth = node.depth;
     }
 
-    totalHeight_ = y + metrics_.padTop * 2.0f;
-    // A picture wider than the column extends the scrollable area. Without
-    // this its right-hand part could not be reached.
+    blocks_.reserve(laid.blocks.size());
+    for (const layout::LaidBlock& lb : laid.blocks) {
+        AppendBlockFromLaid(doc, lb);
+    }
+
+    // The item spans of the blocks, computed once here. The walk
+    // pushes its items in block order, the same order as the records
+    // above, so one merge of the two streams names the range every
+    // block owns: a block with no items keeps an empty range. The
+    // frame replays the whole list in one pass today, so nothing
+    // slices by these spans yet; they are the contract a future per
+    // block replay will take.
+    blockItemSpans_.assign(blocks_.size(),
+                           {displayList_.items.size(),
+                            displayList_.items.size()});
+    {
+        size_t item = 0;
+        size_t block = 0;
+        const float padTop = metrics_.padTop;
+        auto blockStartsBy = [&](size_t i) {
+            return blocks_[i].y - padTop;
+        };
+        for (; item < displayList_.items.size(); ++item) {
+            const display::Item& di = displayList_.items[item];
+            float refY = 0.0f;
+            bool hasY = false;
+            if (const auto* fill = std::get_if<display::FillRect>(&di)) {
+                refY = fill->rect.y; hasY = true;
+            } else if (const auto* fill =
+                           std::get_if<display::FillRoundedRect>(&di)) {
+                refY = fill->rect.y; hasY = true;
+            } else if (const auto* fill =
+                           std::get_if<display::FillRoundedRectSides>(&di)) {
+                refY = fill->rect.y; hasY = true;
+            } else if (const auto* s =
+                           std::get_if<display::StrokeRect>(&di)) {
+                refY = s->rect.y; hasY = true;
+            } else if (const auto* s =
+                           std::get_if<display::StrokeRoundedRect>(&di)) {
+                refY = s->rect.y; hasY = true;
+            } else if (const auto* s =
+                           std::get_if<display::StrokeLine>(&di)) {
+                refY = s->y0; hasY = true;
+            } else if (const auto* s =
+                           std::get_if<display::StrokePolygon>(&di)) {
+                if (!s->points.empty()) { refY = s->points[0].y; hasY = true; }
+            } else if (const auto* f =
+                           std::get_if<display::FillPolygon>(&di)) {
+                if (!f->points.empty()) { refY = f->points[0].y; hasY = true; }
+            } else if (const auto* e =
+                           std::get_if<display::FillEllipse>(&di)) {
+                refY = e->rect.y; hasY = true;
+            } else if (const auto* e =
+                           std::get_if<display::StrokeEllipse>(&di)) {
+                refY = e->rect.y; hasY = true;
+            } else if (const auto* pie =
+                           std::get_if<display::PieSlice>(&di)) {
+                refY = pie->bounds.y; hasY = true;
+            } else if (const auto* t = std::get_if<display::Text>(&di)) {
+                refY = t->top; hasY = true;
+            } else if (const auto* img =
+                           std::get_if<display::Image>(&di)) {
+                refY = img->rect.y; hasY = true;
+            } else if (const auto* clip =
+                           std::get_if<display::PushClip>(&di)) {
+                refY = clip->rect.y; hasY = true;
+            }
+            // PopClip carries no place of its own; it closes the clip
+            // of the block the cursor is already in.
+            if (!hasY) continue;
+            while (block + 1 < blocks_.size() &&
+                   blockStartsBy(block + 1) <= refY) {
+                ++block;
+            }
+            if (blockItemSpans_[block].first > item) {
+                blockItemSpans_[block].first = item;
+            }
+            blockItemSpans_[block].second = item + 1;
+        }
+    }
+
+    // The column starts one padTop under the top of the view and the
+    // shared walk measures from the column's own top, so the height is
+    // the pad, the walked height, and the pad the bottom margin keeps.
+    totalHeight_ = displayList_.height + metrics_.padTop * 3.0f;
+    // A picture wider than the column extends the scrollable area.
+    // Without this its right-hand part could not be reached.
+    widestRight_ = displayList_.width;
     if (widestRight_ > contentWidth_) contentWidth_ = widestRight_;
     return totalHeight_;
 }
@@ -689,49 +785,6 @@ const SvgDoc* MacRenderer::GetSvgDoc(const Node& node) {
     return &svgDocs_.back().doc;
 }
 
-float MacRenderer::ChargeForImages(LaidOutBlock* block) {
-    // The images are drawn above the text of the block, so the block
-    // has to reserve the room for them, the same height the Windows
-    // layout charges.
-    //
-    // A remote image is fetched in the background. Until it has arrived
-    // the block gets the fallback height, and the document is laid out
-    // again when the image shows up.
-    float imageHeight = 0.0f;
-    for (const InlineBlock& child : block->node->children) {
-        if (child.kind != InlineKind::Image || child.url.empty()) continue;
-
-        images_.Prefetch(child.url);
-
-        // The room the paint will draw the image in: its aspect height
-        // at the column's width, under the height cap, so the text
-        // below an image lands where the image ends.
-        float height = kImageFallbackHeight;
-        float chargedW = 0.0f;
-        float chargedH = 0.0f;
-        if (images_.GetSize(child.url, &chargedW, &chargedH) &&
-            chargedW > 0.0f && chargedH > 0.0f) {
-            // The browser rule: intrinsic size, shrunk to the column when it
-            // is wider, then scaled by the page zoom. The old 400 DIP cap cut
-            // tall pictures off and left their bottom unreachable, and the
-            // charge has to use the block's own width because that is what
-            // PaintImages draws into.
-            const float column =
-                block->width > 0.0f ? block->width : contentWidth_;
-            const float scale = std::min(1.0f, column / chargedW) * zoom_;
-            height = chargedH * scale;
-        }
-        imageHeight += height + metrics_.paraGap;
-        block->images.push_back(child.url);
-
-        if (!images_.GetSize(child.url, nullptr, nullptr)) {
-            needsLayout_ = true;
-        }
-    }
-    block->imagesHeight = imageHeight;
-    return imageHeight;
-}
-
 void MacRenderer::LayoutSourceBlocks(float x, float width, float* y) {
     if (!sourceText_ || sourceText_->empty()) return;
 
@@ -775,283 +828,72 @@ void MacRenderer::LayoutSourceBlocks(float x, float width, float* y) {
     blocks_.push_back(std::move(block));
 }
 
-void MacRenderer::LayoutBlock(const Node& node, float x, float width,
-                              float* y) {
+void MacRenderer::AppendBlockFromLaid(const Document& doc,
+                                      const layout::LaidBlock& lb) {
+    // The shared records count the nodes; the walk never points past
+    // the document it measured.
+    if (lb.nodeIndex >= doc.nodes.size()) return;
+    const Node& node = doc.nodes[lb.nodeIndex];
+
+    // The shared layout is in content column coordinates, its first
+    // block at the column's own top left; the renderer's records carry
+    // the origin and the top pad the way they always did, so the caret,
+    // the hits and the app layers keep reading the same geometry.
     LaidOutBlock block;
     block.node = &node;
-    block.kind = node.block;
-    block.level = node.level;
+    block.kind = lb.kind;
+    block.level = lb.level;
+    block.x = originX_ + lb.x;
+    block.y = metrics_.padTop + lb.y;
+    block.width = lb.width;
+    block.height = lb.height;
+    block.lines = lb.lines;
+    block.images = lb.imageUrls;
+    block.imagesHeight = lb.imagesHeight;
 
-    // A quote and a list step their content inward, and the text
-    // narrows with it, the same way the Windows renderer measures them.
-    float drawX = x;
-    float drawW = width;
-    if (node.block == BlockKind::BlockQuote) {
-        const float indent = metrics_.quoteIndent * (node.depth + 1);
-        drawX += indent;
-        drawW -= indent;
-    } else if (node.block == BlockKind::List) {
-        const float indent = metrics_.listIndent * (node.depth + 1);
-        drawX += indent;
-        drawW -= indent;
-    }
-    block.x = drawX;
-    block.width = drawW;
-
-    switch (node.block) {
-        case BlockKind::Heading: {
-            const int level =
-                node.level < 1 ? 1 : (node.level > 6 ? 6 : node.level);
-            const float size = metrics_.headingSizes[level];
-            // Headings draw in the semibold face, the weight the
-            // Windows formats use: size and weight carry the level
-            // together, the way the style guide asks.
-            // The smallest heading reads muted, the same rule the
-            // Windows renderer applies (typography plan Task 4,
-            // step 3): a heading still, quieter than the ones above.
-            const ThemeColor headingColor = level >= 6 ? palette_.quoteText
-                                                       : palette_.heading;
-            const std::vector<GlyphRun> runs = BuildRuns(
-                node, size, false, false, ToColor(headingColor), false,
-                THEME_BODY_FONT_SEMIBOLD);
-            block.lines = engine_->MeasureWrapped(runs, drawW, 0.0f);
-            ApplyLineSpacing(&block.lines, size, metrics_.headingLineHeight);
-            for (const TextLine& line : block.lines) {
-                block.height += line.height;
+    // The table record ships its own rows and heights; the renderer's
+    // cell layout adds what only it keeps: the alignment of the
+    // column, and the per byte map of the cell's text.
+    if (lb.kind == BlockKind::Table && lb.table) {
+        block.table = &node;
+        LaidOutBlock::TableLayout& layout = block.tableLayout;
+        layout.colW = lb.table->colW;
+        layout.columnCount = lb.table->columnCount;
+        layout.rowHeights = lb.table->rowHeights;
+        for (const std::vector<layout::LaidTableCell>& row :
+             lb.table->cells) {
+            std::vector<LaidOutBlock::TableCellLayout> cells;
+            cells.reserve(row.size());
+            for (const layout::LaidTableCell& cell : row) {
+                LaidOutBlock::TableCellLayout laid;
+                laid.lines = cell.lines;
+                laid.srcCellStart = cell.srcCellStart;
+                laid.srcCellEnd = cell.srcCellEnd;
+                cells.push_back(std::move(laid));
             }
-            // GitHub's H1 and H2 carry a hairline rule under their
-            // text: .3em of padding plus a 1px border, inside the
-            // block so the following gap stays the CSS margin.
-            if (level <= 2 && !block.lines.empty()) {
-                block.height +=
-                    metrics_.headingRulePadRatio * size * kPtToDip * zoom_ +
-                    metrics_.headingRuleThickness * zoom_;
-            }
-            block.height += ChargeForImages(&block);
-            break;
+            layout.rows.push_back(std::move(cells));
         }
-
-        case BlockKind::Paragraph: {
-            const float size = metrics_.bodyFontSize;
-            std::vector<GlyphRun> runs = BuildRuns(
-                node, size, false, false, ToColor(palette_.textPrimary),
-                false);
-            if (runs.empty() && node.virtualEmptyParagraph) {
-                // A blank paragraph keeps a line, so the caret has a
-                // place to sit: the same placeholder line the Windows
-                // layout keeps for it.
-                runs = BuildRuns(TextNode(U" "), size, false, false,
-                                 ToColor(palette_.textPrimary), false);
-            }
-            block.lines = engine_->MeasureWrapped(runs, drawW, 0.0f);
-            ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight);
-            if (!editing_ && node.virtualEmptyParagraph) {
-                // While reading, the blank line next to a list is a
-                // thin strip: the blank lines in the source separate
-                // blocks, they do not open empty rows in the text.
-                // Editing keeps the full line for the caret.
-                for (TextLine& line : block.lines) {
-                    line.height = kReadBlankLineStripDip;
+        for (size_t r = 0; r < node.rows.size() &&
+                           r < layout.rows.size(); ++r) {
+            const TableRow& sourceRow = node.rows[r];
+            for (size_t c = 0; c < sourceRow.cells.size() &&
+                               c < layout.rows[r].size(); ++c) {
+                const TableCell& cell = sourceRow.cells[c];
+                LaidOutBlock::TableCellLayout& laid =
+                    layout.rows[r][c];
+                if (c < node.aligns.size()) {
+                    laid.align = node.aligns[c];
                 }
+                AppendCellMapping(cell, &laid.visToSrc,
+                                  &laid.visToSrcEnd);
             }
-            for (const TextLine& line : block.lines) {
-                block.height += line.height;
-            }
-            block.height += ChargeForImages(&block);
-            break;
-        }
-
-        case BlockKind::CodeBlock: {
-            // A standalone SVG file is a picture, not a code specimen,
-            // so it is measured as one.
-            if (node.lang == "svg" && standaloneSvg_) {
-                const SvgDoc* doc = GetSvgDoc(node);
-                if (doc && doc->Width() > 0.0f && doc->Height() > 0.0f) {
-                    // A standalone .svg is a page image: a browser shows it
-                    // at its intrinsic size and scrolls the window around it.
-                    // Fitting it to the column made a wide diagram a
-                    // thumbnail whose labels could not be read at any zoom.
-                    // The same inset the Windows renderer charges, so the
-                    // two platforms lay the picture out identically.
-                    block.height =
-                        doc->Height() * zoom_ + metrics_.codePad * 2.0f;
-                    const float right =
-                        drawX + metrics_.codePad + doc->Width() * zoom_;
-                    if (right > widestRight_) widestRight_ = right;
-                    break;
-                }
-            }
-
-            // The raw text, with the trailing newlines stripped the way
-            // the Windows measure pass strips them. A fenced block keeps
-            // its text in raw, not in inline children.
-            std::string code = Utf32ToUtf8(node.raw);
-            while (!code.empty() &&
-                   (code.back() == '\n' || code.back() == '\r')) {
-                code.pop_back();
-            }
-
-            // One run, with the line breaks kept in the text: Core Text
-            // breaks a line there, so a blank line in the source stays a
-            // blank line on screen.
-            std::vector<GlyphRun> runs;
-            if (!code.empty()) {
-                GlyphRun run;
-                run.text = code;
-                run.font = FontFor(node, metrics_.codeFontSize, false, false,
-                                   true);
-                const Color color = ToColor(palette_.textPrimary);
-                run.r = color.r;
-                run.g = color.g;
-                run.b = color.b;
-                run.a = color.a;
-                runs.push_back(std::move(run));
-            }
-            block.lines = engine_->MeasureWrapped(
-                runs, drawW - metrics_.codePad * 2.0f, 0.0f);
-            ApplyLineSpacing(&block.lines, metrics_.codeFontSize,
-                             metrics_.codeLineHeight);
-            for (const TextLine& line : block.lines) {
-                block.height += line.height;
-            }
-            block.height += metrics_.codePad * 2.0f;
-            break;
-        }
-
-        case BlockKind::BlockQuote: {
-            const float size = metrics_.bodyFontSize;
-            const std::vector<GlyphRun> runs = BuildRuns(
-                node, size, false, false, ToColor(palette_.quoteText), false);
-            block.lines = engine_->MeasureWrapped(runs, drawW, 0.0f);
-            ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight);
-            for (const TextLine& line : block.lines) {
-                block.height += line.height;
-            }
-            block.height += ChargeForImages(&block);
-            break;
-        }
-
-        case BlockKind::ThematicBreak: {
-            // GitHub's hr is a .25em bar at the 16px body size.
-            block.height = 4.0f * zoom_;
-            break;
-        }
-
-        case BlockKind::List: {
-            const float size = metrics_.bodyFontSize;
-            std::vector<GlyphRun> runs = BuildRuns(
-                node, size, false, false, ToColor(palette_.textPrimary),
-                false);
-            bool hasImage = false;
-            for (const InlineBlock& child : node.children) {
-                if (child.kind == InlineKind::Image && !child.url.empty()) {
-                    hasImage = true;
-                }
-            }
-            if (runs.empty() && !hasImage) {
-                // The marker keeps the item addressable even without
-                // text, the way the Windows layout keeps its line.
-                runs = BuildRuns(TextNode(U" "), size, false, false,
-                                 ToColor(palette_.textPrimary), false);
-            }
-            // The text wraps in the space that is left after the marker
-            // gutter: the same reservation the Windows layout makes.
-            const float markerW =
-                metrics_.listIndent * metrics_.markerRatio + metrics_.markerGutter;
-            block.lines = engine_->MeasureWrapped(runs, drawW - markerW,
-                                                  0.0f);
-            ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight);
-            for (const TextLine& line : block.lines) {
-                block.height += line.height;
-            }
-            block.height += ChargeForImages(&block);
-            break;
-        }
-
-        case BlockKind::Table: {
-            block.table = &node;
-            size_t columnCount = 0;
-            for (const TableRow& row : node.rows) {
-                columnCount = std::max(columnCount, row.cells.size());
-            }
-            if (columnCount == 0) {
-                break;
-            }
-
-            // The columns are equal, the width the Windows renderer
-            // gives them (colW = width / cols).
-            block.tableLayout.colW = drawW / static_cast<float>(columnCount);
-            block.tableLayout.columnCount = columnCount;
-            const float innerW =
-                block.tableLayout.colW - 2.0f * metrics_.cellPadX;
-
-            float total = 0.0f;
-            for (const TableRow& row : node.rows) {
-                std::vector<LaidOutBlock::TableCellLayout> cells;
-                float tallest = 0.0f;
-                for (size_t c = 0; c < row.cells.size() && c < columnCount;
-                     ++c) {
-                    const TableCell& cell = row.cells[c];
-                    LaidOutBlock::TableCellLayout laid;
-                    if (c < node.aligns.size()) {
-                        laid.align = node.aligns[c];
-                    }
-                    std::vector<GlyphRun> runs = BuildCellRuns(
-                        cell, cell.isHeader, ToColor(palette_.textPrimary));
-                    if (runs.empty()) {
-                        // An empty cell keeps a placeholder line, the
-                        // same one a blank paragraph keeps, so the
-                        // caret has a rect to draw at and the vertical
-                        // moves have a line (table guideline 7).
-                        runs = BuildRuns(TextNode(U" "), metrics_.bodyFontSize,
-                                         cell.isHeader, false,
-                                         ToColor(palette_.textPrimary), false);
-                    }
-                    laid.lines = engine_->MeasureWrapped(
-                        runs, innerW > 0.0f ? innerW : 1.0f, 0.0f);
-                    ApplyLineSpacing(&laid.lines, metrics_.bodyFontSize,
-                                     metrics_.bodyLineHeight);
-                    float height = 0.0f;
-                    for (const TextLine& line : laid.lines) {
-                        height += line.height;
-                    }
-                    if (height > tallest) tallest = height;
-                    cells.push_back(std::move(laid));
-                }
-                // A row with no text at all still keeps one body
-                // line, and every row carries the cell padding.
-                if (tallest == 0.0f) {
-                    tallest = metrics_.bodyLineHeight *
-                              metrics_.bodyFontSize * kPtToDip * zoom_;
-                }
-                const float rowH = tallest + 2.0f * metrics_.cellPadY;
-                block.tableLayout.rowHeights.push_back(rowH);
-                block.tableLayout.rows.push_back(std::move(cells));
-                total += rowH;
-            }
-            block.height = total;
-            break;
-        }
-
-        case BlockKind::MermaidFlowchart:
-        case BlockKind::MermaidPie:
-        case BlockKind::MermaidSequence: {
-            // The mermaid layout is shared and already computed by the
-            // parser. The height is the one the Windows build reserves,
-            // so the two platforms lay the document out the same way.
-            const mermaid::MermaidRender diagram = MermaidRenderFor(node);
-            float diagramHeight = 0.0f;
-            if (HasMermaidLayout(diagram)) {
-                diagramHeight = mermaid::MeasureMermaidHeight(
-                    diagram, zoom_, MermaidMeasureWidth(diagram, drawW));
-            }
-            block.height = diagramHeight > 0.0f ? diagramHeight : 100.0f;
-            break;
         }
     }
 
     // The map from the drawn text back to the source, so the caret,
     // the selection and the hit tester never land on a Markdown marker.
+    // The shared records carry only the content range, because this
+    // per byte walk is the reader side of the caret seam.
     switch (node.block) {
         case BlockKind::Heading:
         case BlockKind::Paragraph:
@@ -1093,30 +935,65 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
             break;
         }
 
-        case BlockKind::Table:
-            for (size_t r = 0; r < node.rows.size() &&
-                               r < block.tableLayout.rows.size(); ++r) {
-                const TableRow& sourceRow = node.rows[r];
-                for (size_t c = 0; c < sourceRow.cells.size() &&
-                                   c < block.tableLayout.rows[r].size();
-                     ++c) {
-                    const TableCell& cell = sourceRow.cells[c];
-                    LaidOutBlock::TableCellLayout& laid =
-                        block.tableLayout.rows[r][c];
-                    AppendCellMapping(cell, &laid.visToSrc, &laid.visToSrcEnd);
-                    laid.srcCellStart = cell.srcOffset;
-                    laid.srcCellEnd = cell.srcEnd;
-                }
-            }
-            break;
-
         default:
             break;
     }
 
-    block.y = *y;
-    *y += block.height;
     blocks_.push_back(std::move(block));
+}
+
+layout::ImageSize MacRenderer::ImageSizeForUrl(const Document& doc,
+                                               const std::string& url) {
+    layout::ImageSize size;
+    if (url.rfind("svg:", 0) == 0) {
+        // The picture questions arrive under the "svg:" convention,
+        // the fence text itself. The picture form is the caller's own
+        // fact, the same one the old measure asked for: a standalone
+        // .svg file whose document parsed. Anything else answers
+        // nothing, and the shared svg block lays the fence out as the
+        // code specimen it is.
+        if (!standaloneSvg_) return size;
+        for (const Node& node : doc.nodes) {
+            if (node.block != BlockKind::CodeBlock ||
+                node.lang != "svg") {
+                continue;
+            }
+            if (url != "svg:" + Utf32ToUtf8(node.raw)) continue;
+            const SvgDoc* svgDoc = GetSvgDoc(node);
+            if (svgDoc && svgDoc->Width() > 0.0f &&
+                svgDoc->Height() > 0.0f) {
+                size.width = svgDoc->Width();
+                size.height = svgDoc->Height();
+                size.known = true;
+            }
+            break;
+        }
+        return size;
+    }
+
+    // A raster image: the fetch starts here the way it always did, an
+    // image still on its way is unknown, and the pass that sees it
+    // arrive asks for the document to be laid out again.
+    images_.Prefetch(url);
+    float naturalW = 0.0f;
+    float naturalH = 0.0f;
+    if (images_.GetSize(url, &naturalW, &naturalH) && naturalW > 0.0f &&
+        naturalH > 0.0f) {
+        size.width = naturalW;
+        size.height = naturalH;
+        size.known = true;
+    } else {
+        needsLayout_ = true;
+    }
+    return size;
+}
+
+BitmapHandle MacRenderer::ImageHandleFor(const display::Image& item) {
+    // The picture of a standalone .svg is drawn by the renderer from
+    // its own parsed document, so the item answers nothing here and
+    // the player skips it. Everything else comes from the image cache.
+    if (item.url.rfind("svg:", 0) == 0) return nullptr;
+    return images_.Get(item.url);
 }
 
 void MacRenderer::SetMarkers(const std::vector<TextMatch>* markers) {
@@ -1140,41 +1017,134 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
     (void)doc;
     if (!target_) return;
 
-    // The marks go under the text, so they are painted first.
+    // The global marker and search washes go under everything the
+    // replay draws above them. A code card and a table row paint their
+    // own opaque surface, which hides the washes, so their fills run
+    // again after the replay, above that surface (below).
     PaintMarkerHighlights(scrollOffset);
     PaintSearchHighlights(scrollOffset);
 
-    // The ordered list markers count across a run of items, and the
-    // count restarts when the list ends or the depth changes, the same
-    // way the Windows renderer counts them.
-    int listCounter = 0;
-    BlockKind prevKind = BlockKind::Paragraph;
-    int prevDepth = -1;
+    // The inline code chips of the plain text blocks: opaque pills
+    // with the block's washes re-run above them and under the glyphs
+    // the replay draws. A renderer-side layer, because the chip rounds
+    // the real edges of each wrapped span, which the per block painter
+    // always drew from the block's own map.
     for (const LaidOutBlock& block : blocks_) {
-        std::string marker;
-        const int depth = block.node ? block.node->depth : 0;
-        const int taskMark = block.node ? block.node->taskMark : -1;
-        if (block.kind == BlockKind::List) {
-            if (prevKind != BlockKind::List || depth != prevDepth) {
-                listCounter = 0;
-            }
-            if (block.node && block.node->ordered) {
-                ++listCounter;
-                if (taskMark < 0) {
-                    marker = std::to_string(listCounter) + ". ";
-                }
-            } else if (taskMark < 0) {
-                // The marker changes with the depth, the pattern the
-                // guideline asks of nesting. The table is the shared
-                // one in theme.h, so the ports cannot drift.
-                marker = ListMarkerUtf8(depth);
-            }
-        } else {
-            listCounter = 0;
+        if (block.kind == BlockKind::Heading ||
+            block.kind == BlockKind::Paragraph ||
+            block.kind == BlockKind::List ||
+            block.kind == BlockKind::BlockQuote) {
+            PaintInlineCodeBg(block, scrollOffset);
         }
-        PaintBlock(block, scrollOffset, marker);
-        prevKind = block.kind;
-        prevDepth = depth;
+    }
+
+    // A washed text block draws its marker wash above the chips and
+    // under its glyphs, and there is no opaque surface in the list
+    // between them: the replay puts the glyphs above both, the same
+    // order the per block painter used.
+    for (const LaidOutBlock& block : blocks_) {
+        if (block.kind == BlockKind::Heading ||
+            block.kind == BlockKind::Paragraph ||
+            block.kind == BlockKind::List ||
+            block.kind == BlockKind::BlockQuote) {
+            PaintBlockHighlights(block, scrollOffset);
+        }
+    }
+
+    if (sourceMode_) {
+        // The source view has no display items; its one block draws
+        // the raw buffer itself, with the washes under the glyphs.
+        for (const LaidOutBlock& block : blocks_) {
+            PaintLines(block.lines, TextX(block),
+                       TextTop(block) - scrollOffset);
+        }
+        return;
+    }
+
+    // One replay of the whole list under one translate: the items are
+    // in content column coordinates, so the wrapper pins the column at
+    // originX_ and scrolls by the offset, the same numbers the per
+    // block painter always drew at. The player owns the run
+    // decorations and the dash flattening, so a line, a link and a
+    // table grid draw exactly as the seam spells them.
+    TranslatedTarget translated(target_, originX_,
+                                metrics_.padTop - scrollOffset);
+    display::Play(displayList_, &translated,
+                  [this](const display::Image& item) {
+                      return ImageHandleFor(item);
+                  });
+
+    // The layers the replay cannot draw. The code card and the table
+    // row cover the global washes with their opaque surface, so their
+    // fills run again above the surface, and the glyphs are drawn once
+    // more above the fills: identical fonts at identical positions, so
+    // the second pass lands exactly on the first. The mermaid diagrams
+    // and the svg pictures stay in the renderer, whose painters have
+    // them measured their own way.
+    const bool haveWashes = !markers_.empty() || !searchMatches_.empty();
+    for (const LaidOutBlock& block : blocks_) {
+        switch (block.kind) {
+            case BlockKind::CodeBlock: {
+                // A standalone SVG file is drawn as a picture, without
+                // the card behind it.
+                if (block.node && block.node->lang == "svg" &&
+                    standaloneSvg_) {
+                    const SvgDoc* svgDoc = GetSvgDoc(*block.node);
+                    if (svgDoc && svgDoc->Width() > 0.0f &&
+                        svgDoc->Height() > 0.0f) {
+                        // Natural size times the zoom, the same rule the
+                        // image size bridge measured for.
+                        svgDoc->Draw(target_, engine_,
+                                     block.x + metrics_.codePad,
+                                     block.y + metrics_.codePad -
+                                         scrollOffset,
+                                     svgDoc->Width() * zoom_,
+                                     svgDoc->Height() * zoom_);
+                        break;
+                    }
+                }
+                if (haveWashes) {
+                    // The card is opaque, so its fills sit above it and
+                    // under the glyphs, which the re-run puts back.
+                    PaintBlockHighlights(block, scrollOffset);
+                    PaintLines(block.lines, TextX(block),
+                               TextTop(block) - scrollOffset);
+                }
+                break;
+            }
+
+            case BlockKind::Table: {
+                PaintTableOverlays(block, scrollOffset);
+                break;
+            }
+
+            case BlockKind::MermaidFlowchart:
+            case BlockKind::MermaidPie:
+            case BlockKind::MermaidSequence: {
+                // The diagram is painted by the mermaid painter, which
+                // draws the shared layout through the seam. The painter
+                // follows the zoom itself, so it gets the unzoomed
+                // font.
+                const mermaid::MermaidRender diagram =
+                    MermaidRenderFor(*block.node);
+                if (!HasMermaidLayout(diagram)) break;
+                if (diagramEngine_) diagramEngine_->BeginLayout();
+                const float pad = mermaid::kMermaidBlockPad;
+                const float availWidth =
+                    block.width > 2.0f * pad ? block.width - 2.0f * pad
+                                             : 0.0f;
+                PaintMermaidDiagram(
+                    diagramEngine_ ? diagramEngine_.get() : engine_,
+                    target_, diagram, zoom_, availWidth,
+                    block.x, block.y - scrollOffset, pad, palette_,
+                    DiagramFontFor(*block.node, metrics_.bodyFontSize,
+                                   false, false, false));
+                break;
+            }
+
+            default:
+                break;
+        }
     }
 }
 
@@ -1305,202 +1275,6 @@ void MacRenderer::PaintSearchHighlights(float scrollOffset) {
     }
 }
 
-void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset,
-                              const std::string& marker) {
-    if (!target_) return;
-    const float top = block.y - scrollOffset;
-
-    switch (block.kind) {
-        case BlockKind::ThematicBreak: {
-            // The rule is the whole block: GitHub's .25em bar, the
-            // same band the Windows renderer fills.
-            Rect rect;
-            rect.x = block.x;
-            rect.y = top;
-            rect.width = block.width;
-            rect.height = 4.0f * zoom_;
-            target_->FillRect(rect, ToColor(palette_.rule));
-            break;
-        }
-
-        case BlockKind::CodeBlock: {
-            // A standalone SVG file is drawn as a picture, without the
-            // card behind it.
-            if (block.node->lang == "svg" && standaloneSvg_) {
-                const SvgDoc* doc = GetSvgDoc(*block.node);
-                if (doc && doc->Width() > 0.0f && doc->Height() > 0.0f) {
-                    // Natural size times the zoom, the same rule Measure
-                    // charges for.
-                    doc->Draw(target_, engine_,
-                              block.x + metrics_.codePad,
-                              top + metrics_.codePad,
-                              doc->Width() * zoom_, doc->Height() * zoom_);
-                    break;
-                }
-            }
-
-            // The background and the border, then the code itself. The
-            // border follows the same rounded outline as the fill, the
-            // way the Windows renderer strokes it.
-            Rect bg;
-            bg.x = block.x;
-            bg.y = top;
-            bg.width = block.width;
-            bg.height = block.height;
-            target_->FillRoundedRect(bg, metrics_.codeRadius,
-                                     ToColor(palette_.codeBg));
-
-            // The code card is opaque. Its marker and search fills go
-            // over that card and under the code glyphs, not in the global
-            // layer that was painted before this block.
-            PaintBlockHighlights(block, scrollOffset);
-            PaintLines(block.lines, block.x + metrics_.codePad,
-                       top + metrics_.codePad);
-            break;
-        }
-
-        case BlockKind::BlockQuote: {
-            // The bar steps inward with the nesting depth, and it is as
-            // tall as the text. The geometry is the Windows one: the
-            // bar is centered four points left of the text edge.
-            float textHeight = 0.0f;
-            for (const TextLine& line : block.lines) {
-                textHeight += line.height;
-            }
-            const float barX = block.x - metrics_.quoteIndent + 4.0f;
-            Rect bar;
-            bar.x = barX - metrics_.quoteBarWidth * 0.5f;
-            bar.y = top + block.imagesHeight;
-            bar.width = metrics_.quoteBarWidth;
-            bar.height = textHeight;
-            target_->FillRect(bar, ToColor(palette_.quoteBar));
-
-            PaintImages(block, top, block.width);
-            PaintInlineCodeBg(block, scrollOffset);
-            PaintLines(block.lines, block.x, top + block.imagesHeight);
-            break;
-        }
-
-        case BlockKind::List: {
-            // The text sits after the marker gutter, and the marker sits
-            // in the gutter, clipped to it the way the Windows renderer
-            // clips its marker layout.
-            const float markerW =
-                metrics_.listIndent * metrics_.markerRatio + metrics_.markerGutter;
-            float textHeight = 0.0f;
-            for (const TextLine& line : block.lines) {
-                textHeight += line.height;
-            }
-            const float textTop = top + block.imagesHeight;
-            const int taskMark = block.node ? block.node->taskMark : -1;
-            if (taskMark >= 0) {
-                // A task item draws its checkbox in the gutter where
-                // the bullet would sit: an empty box for an open task,
-                // a box with a check for a done one. The shape carries
-                // the state, not the colour.
-                float box = markerW - metrics_.taskBoxInset;
-                if (box > metrics_.taskBoxMax) box = metrics_.taskBoxMax;
-                if (box < metrics_.taskBoxMin) box = metrics_.taskBoxMin;
-                const float lineH = block.lines.empty()
-                                        ? metrics_.bodyFontSize
-                                        : block.lines.front().height;
-                Rect r;
-                r.x = block.x + 1.0f;
-                r.y = textTop + (lineH - box) * 0.5f;
-                r.width = box;
-                r.height = box;
-                const Color ink = ToColor(palette_.textPrimary);
-                target_->StrokeRoundedRect(r, 2.0f, ink, 1.2f);
-                if (taskMark > 0) {
-                    target_->StrokeLine(r.x + box * 0.22f,
-                                        r.y + box * 0.55f,
-                                        r.x + box * 0.42f,
-                                        r.y + box * 0.78f, ink, 1.2f);
-                    target_->StrokeLine(r.x + box * 0.42f,
-                                        r.y + box * 0.78f,
-                                        r.x + box * 0.82f,
-                                        r.y + box * 0.25f, ink, 1.2f);
-                }
-            }
-            if (!marker.empty()) {
-                const FontSpec markerFont = FontFor(
-                    *block.node, metrics_.bodyFontSize, false, false, false);
-                Rect clip;
-                clip.x = block.x;
-                clip.y = textTop;
-                clip.width = markerW;
-                clip.height = textHeight > 0.0f ? textHeight
-                                                : metrics_.bodyFontSize;
-                const float baseline =
-                    textTop + (block.lines.empty()
-                                   ? metrics_.bodyFontSize
-                                   : block.lines.front().ascent);
-                target_->PushClip(clip);
-                target_->DrawText(marker, markerFont, block.x, baseline,
-                                  ToColor(palette_.textPrimary));
-                target_->PopClip();
-            }
-            PaintImages(block, top, block.width);
-            PaintInlineCodeBg(block, scrollOffset);
-            PaintLines(block.lines, block.x + markerW, textTop);
-            break;
-        }
-
-        case BlockKind::Table: {
-            PaintTable(block, scrollOffset);
-            break;
-        }
-
-        case BlockKind::MermaidFlowchart:
-        case BlockKind::MermaidPie:
-        case BlockKind::MermaidSequence: {
-            // The diagram is painted by the mermaid painter, which draws
-            // the shared layout through the seam. The painter follows
-            // the zoom itself, so it gets the unzoomed font.
-            const mermaid::MermaidRender diagram =
-                MermaidRenderFor(*block.node);
-            if (!HasMermaidLayout(diagram)) break;
-            if (diagramEngine_) diagramEngine_->BeginLayout();
-            const float pad = mermaid::kMermaidBlockPad;
-            const float availWidth =
-                block.width > 2.0f * pad ? block.width - 2.0f * pad : 0.0f;
-            PaintMermaidDiagram(diagramEngine_ ? diagramEngine_.get() : engine_,
-                                target_, diagram, zoom_, availWidth,
-                                block.x, top, pad, palette_,
-                                DiagramFontFor(*block.node,
-                                               metrics_.bodyFontSize, false,
-                                               false, false));
-            break;
-        }
-
-        case BlockKind::Heading:
-        case BlockKind::Paragraph: {
-            const float textTop = top + block.imagesHeight;
-            PaintImages(block, top, block.width);
-            PaintInlineCodeBg(block, scrollOffset);
-            PaintLines(block.lines, block.x, textTop);
-
-            // GitHub's hairline under an H1 or H2, .3em below the
-            // text and inside the block the layout measured.
-            if (block.level >= 1 && block.level <= 2) {
-                float textHeight = 0.0f;
-                for (const TextLine& line : block.lines) {
-                    textHeight += line.height;
-                }
-                const float headingDip =
-                    metrics_.headingSizes[block.level] * kPtToDip * zoom_;
-                Rect rule;
-                rule.x = block.x;
-                rule.y = top + block.imagesHeight + textHeight +
-                         metrics_.headingRulePadRatio * headingDip;
-                rule.width = block.width;
-                rule.height = metrics_.headingRuleThickness * zoom_;
-                target_->FillRect(rule, ToColor(palette_.rule));
-            }
-            break;
-        }
-    }
-}
 
 void MacRenderer::PaintLines(const std::vector<TextLine>& lines, float x,
                               float top) const {
@@ -1643,70 +1417,24 @@ void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
     }
 }
 
-void MacRenderer::PaintImages(const LaidOutBlock& block, float top,
-                              float width) {
-    if (!target_) return;
-
-    // The images are drawn in the room the layout reserved for them, one
-    // under the other.
-    float y = top;
-    for (const std::string& url : block.images) {
-        float height = kImageFallbackHeight;
-        float drawnWidth = width;
-        float imageWidth = 0.0f;
-        float imageHeight = 0.0f;
-        if (images_.GetSize(url, &imageWidth, &imageHeight) &&
-            imageWidth > 0.0f && imageHeight > 0.0f) {
-            // The image keeps its aspect ratio inside the column and
-            // never grows past its own pixels: max-width is 100% in
-            // GitHub's markdown, not width 100%.
-            const float scale = std::min(1.0f, width / imageWidth) * zoom_;
-            drawnWidth = imageWidth * scale;
-            height = imageHeight * scale;
-        }
-
-        Rect rect;
-        rect.x = block.x;
-        rect.y = y;
-        rect.width = drawnWidth;
-        rect.height = height;
-
-        BitmapHandle image = images_.Get(url);
-        if (image) {
-            target_->DrawBitmap(image, rect);
-        }
-        y += height + metrics_.paraGap;
-    }
-}
-
-void MacRenderer::PaintTable(const LaidOutBlock& block, float scrollOffset) {
+void MacRenderer::PaintTableOverlays(const LaidOutBlock& block,
+                                     float scrollOffset) {
     if (!target_ || !block.table) return;
     const Node& node = *block.table;
     const LaidOutBlock::TableLayout& layout = block.tableLayout;
     if (layout.rowHeights.empty()) return;
 
+    // The stripe, the grid and the cell glyphs are already items the
+    // replay drew, but the stripe is opaque: the washed layers run
+    // again above it, row by row, with the glyphs drawn once more
+    // above the chips, at the identical lines and positions, so the
+    // re-run lands exactly on the replayed text.
     float y = block.y - scrollOffset;
     for (size_t r = 0; r < node.rows.size() && r < layout.rows.size(); ++r) {
-        const TableRow& row = node.rows[r];
         const std::vector<LaidOutBlock::TableCellLayout>& cells =
             layout.rows[r];
-        const bool isHeaderRow = !row.cells.empty() && row.cells[0].isHeader;
         const float rowH = layout.rowHeights[r];
 
-        // GitHub's stripe: the header row is the page's paper, and
-        // every second body row carries the muted fill. The row index
-        // counts the header, so the first body row (r = 1) is the
-        // first muted one.
-        Rect rowBg;
-        rowBg.x = block.x;
-        rowBg.y = y;
-        rowBg.width = block.width;
-        rowBg.height = rowH;
-        if (!isHeaderRow && r % 2 == 1) {
-            target_->FillRect(rowBg, ToColor(palette_.tableRowAlt));
-        }
-        // The row stripe is opaque too. Its marks go over the stripe
-        // and under the cell text, one row at a time.
         PaintTableRowHighlights(block, r, y + scrollOffset, rowH,
                                 scrollOffset);
 
@@ -1714,10 +1442,6 @@ void MacRenderer::PaintTable(const LaidOutBlock& block, float scrollOffset) {
         for (size_t c = 0; c < cells.size(); ++c) {
             const float cellX = block.x + static_cast<float>(c) * layout.colW;
 
-            // The lines of the cell, centered in the row, placed at
-            // the column alignment of the delimiter row, inside the
-            // cell padding, clipped to the cell the way the Windows
-            // renderer clips them.
             Rect inner;
             inner.x = cellX + metrics_.cellPadX;
             inner.y = y + metrics_.cellPadY;
@@ -1770,36 +1494,6 @@ void MacRenderer::PaintTable(const LaidOutBlock& block, float scrollOffset) {
             if (inner.width > 0.0f && inner.height > 0.0f) {
                 target_->PopClip();
             }
-        }
-        // GitHub's table grid: a hairline at every cell boundary and
-        // around the table. The row's bottom edge is the next row's
-        // top edge, so one line per boundary.
-        const Color grid = ToColor(palette_.tableBorder);
-        if (r == 0) {
-            Rect top;
-            top.x = block.x;
-            top.y = y;
-            top.width = block.width;
-            top.height = 1.0f;
-            target_->FillRect(top, grid);
-        }
-        Rect bottom;
-        bottom.x = block.x;
-        bottom.y = y + rowH - 1.0f;
-        bottom.width = block.width;
-        bottom.height = 1.0f;
-        target_->FillRect(bottom, grid);
-        const size_t columns =
-            layout.columnCount > 0 ? layout.columnCount : cells.size();
-        for (size_t c = 0; c <= columns; ++c) {
-            float gx = block.x + static_cast<float>(c) * layout.colW;
-            if (c >= columns) gx = block.x + block.width - 1.0f;
-            Rect edge;
-            edge.x = gx;
-            edge.y = y;
-            edge.width = 1.0f;
-            edge.height = rowH;
-            target_->FillRect(edge, grid);
         }
         y += rowH;
     }

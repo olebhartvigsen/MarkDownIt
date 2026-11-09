@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "dom.h"
+#include "layout/document_layout.h"
 #include "platform/seams.h"
 #include "svg_mac.h"
 #include "image_mac.h"
@@ -288,20 +289,35 @@ public:
     bool NeedsLayout() const { return needsLayout_; }
 
 private:
-    // Lays one block out and appends it.
+    // The blocks of the current pass, laid out by the shared walk.
+    void AppendBlockFromLaid(const Document& doc,
+                             const layout::LaidBlock& lb);
+
+    // The image size seam of the shared layout: the parsed svg
+    // pictures answer their natural size, the raster URLs answer the
+    // cache, and an image still on its way is unknown so the pass
+    // charges the placeholder and asks for a re-layout.
+    layout::ImageSize ImageSizeForUrl(const Document& doc,
+                                      const std::string& url);
+
+    // The bitmap an Image item of the replayed list draws with. The
+    // svg picture answers nothing, because the renderer paints it
+    // itself from its own parsed document.
+    BitmapHandle ImageHandleFor(const display::Image& item);
+
     // Lays the raw buffer out as one monospaced block whose
     // map to the source is the identity (find guide 4).
     void LayoutSourceBlocks(float x, float width, float* y);
-    void LayoutBlock(const Node& node, float x, float width, float* y);
-
-    // Charges the block for the room its images take and remembers them.
-    // Returns the height the images take above the text.
-    float ChargeForImages(LaidOutBlock* block);
 
     // The mermaid layout of a block, with flowcharts laid out again
     // through the diagram text engine and cached by source and zoom,
     // the way the Windows renderer does it with DirectWrite.
     mermaid::MermaidRender MermaidRenderFor(const Node& node) const;
+
+    // The font of the mermaid painters: the unzoomed points form,
+    // because the painters scale their text by the zoom themselves.
+    FontSpec DiagramFontFor(const Node& node, float baseSize, bool bold,
+                            bool italic, bool monospace) const;
 
     // The metrics of the current zoom and width mode, resolved the way
     // the Windows renderer resolves them.
@@ -378,9 +394,6 @@ private:
                                   float innerWidth = 0.0f,
                                   bool trimBlanks = false) const;
 
-    // Draws the images of a block under its text.
-    void PaintImages(const LaidOutBlock& block, float top, float width);
-
     // Paints the marks of the find bar under the text.
     void PaintSearchHighlights(float scrollOffset);
 
@@ -394,33 +407,12 @@ private:
                                             uint32_t start, uint32_t end,
                                             bool trimBlanks = false) const;
 
-    // The runs of a block's inline children, with the styles applied.
-    // The family override names the face a heading asks for: the theme
-    // spells semibold as a family of its own.
-    std::vector<GlyphRun> BuildRuns(const Node& node, float baseSize,
-                                     bool bold, bool italic,
-                                     const Color& color,
-                                     bool monospace,
-                                     const char* family = nullptr) const;
-
-    // The font for a run of the document text. The theme sizes are
-    // points; the font is converted to the layout unit and scaled by
-    // the zoom, the same numbers the Windows renderer creates its text
-    // formats with.
-    FontSpec FontFor(const Node& node, float baseSize, bool bold,
-                      bool italic, bool monospace,
-                      const char* family = nullptr) const;
-
-    // The font for a run that lives outside the document layout, like a
-    // mermaid label. Those painters scale by the zoom themselves, so
-    // this font stays unzoomed.
-    FontSpec DiagramFontFor(const Node& node, float baseSize, bool bold,
-                             bool italic, bool monospace) const;
-
     // Applies the Windows line spacing to measured lines: every line is
     // as tall as heightMult times the em, and its baseline sits
     // lineHeightEm is the CSS line-height: the line box is that many
     // ems tall and the glyphs are centred in it with half-leading.
+    // Only the source view layout still measures through the renderer;
+    // the document walk measures through the shared modules.
     void ApplyLineSpacing(std::vector<TextLine>* lines, float ptSize,
                           float lineHeightEm) const;
 
@@ -428,11 +420,12 @@ private:
     // down to a narrow-window minimum as the pane narrows.
     float EffectivePadX(float widthDip) const;
 
-    // The runs of a table cell, cut at the boundaries of its inline
-    // spans, so a cell carries the same styles the Windows renderer
-    // gives it.
-    std::vector<GlyphRun> BuildCellRuns(const TableCell& cell, bool bold,
-                                         const Color& color) const;
+    // Draws the table layers that sit above the replayed stripe and
+    // grid: the row washes, the code chips of the cells, and the cell
+    // glyphs above them. The stripe is opaque, so every washed row runs
+    // again; the chips and the glyphs re-run with them because the
+    // replayed text sits under the chips it needs a background for.
+    void PaintTableOverlays(const LaidOutBlock& block, float scrollOffset);
 
     // Draws the lines of a block, with their underlines and their
     // strike-throughs.
@@ -451,14 +444,6 @@ private:
     void PaintCodeRects(const std::vector<Rect>& rects,
                         float scrollOffset) const;
 
-    // Draws a laid out block. The marker is the ordered list marker for
-    // a list block, and empty for every other kind.
-    void PaintBlock(const LaidOutBlock& block, float scrollOffset,
-                    const std::string& marker);
-
-    // Draws a table.
-    void PaintTable(const LaidOutBlock& block, float scrollOffset);
-
     TextEngine* engine_ = nullptr;
     // The mermaid layouts measured at a zoom, keyed by fence source.
     // It is mutable because the layout pass caches what it measures.
@@ -475,7 +460,15 @@ private:
     LayoutMetrics metrics_{};
     Palette palette_{};
 
+    // The blocks of the laid out document, which the content view uses
+    // for hit testing, and the display list they were laid out into,
+    // which the replay paints. The spans name the item range of each
+    // block, in walk order: the list keeps no block tags, so Measure
+    // assigns every item to its block once by merging the item stream
+    // with the ordered block records.
     std::vector<LaidOutBlock> blocks_;
+    display::DisplayList displayList_;
+    std::vector<std::pair<size_t, size_t>> blockItemSpans_;
     float contentWidth_ = 0.0f;
     // Right edge of the widest block drawn, in points. A standalone .svg is
     // drawn at its natural size and an image grows with the zoom, so either
