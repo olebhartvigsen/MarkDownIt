@@ -122,19 +122,17 @@ void SvgDoc::Draw(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
     D2D1_MATRIX_3X2_F prev;
     ctx->GetTransform(&prev);
 
-    // Compose so vector p maps to x + s*p: scale first (row-vector
-    // order applies the RIGHT factor first), then translate. With
-    // Translation(x,y) * Scale(s) the translation gets scaled too,
-    // which draws the whole diagram offset up/left from its card.
+    // Direct2D uses row vectors: apply the local scale and placement,
+    // then the caller's page transform (including scrolling).
     D2D1::Matrix3x2F docT =
         D2D1::Matrix3x2F::Scale(s, s) * D2D1::Matrix3x2F::Translation(x, y);
-    ctx->SetTransform(prev * docT);
+    ctx->SetTransform(docT * prev);
 
     if (doc_) {
         ctx->DrawSvgDocument(doc_);
     }
 
-    DrawTexts(ctx, dw, docT);
+    DrawTexts(ctx, dw);
 
     ctx->SetTransform(prev);
 }
@@ -167,8 +165,7 @@ static D2D1_COLOR_F ParseColor(const std::string& s, D2D1_COLOR_F fallback) {
     return fallback;
 }
 
-void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
-                       const D2D1_MATRIX_3X2_F& docTransform) {
+void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw) {
     if (texts_.empty() || !dw) return;
 
     // SVG's initial fill is black, and a diagram's own background rect is
@@ -180,20 +177,12 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
     ctx->CreateSolidColorBrush(defaultColor, &br.p);
     if (!br.p) return;
 
-    // Restore the outer (page) transform: shapes compose prev*docT in
-    // Draw(), so text must do the same or it is drawn offset by the scroll
-    // translation whenever the document is scrolled.
+    // Draw() has already installed the complete SVG-to-page transform.
+    // Reuse it for text: composing the document transform here again
+    // shrinks and moves labels a second time, away from their shapes.
     D2D1_MATRIX_3X2_F prev;
     ctx->GetTransform(&prev);
-    // Draw text under prev*docTransform, the exact matrix the shapes
-    // are drawn with, expressed in document space. Text therefore
-    // cannot drift relative to the graphics on scroll or zoom tempo.
-    // (An earlier page-space conversion mixed transforms and produced
-    // per-run offsets; that was the bug the svg_text_layout.on marker
-    // was diagnosing. It is gone, so the marker went with it.)
-    D2D1_MATRIX_3X2_F textT = prev * docTransform;
-    const std::vector<TextRun>& drawRuns = texts_;
-    ctx->SetTransform(textT);
+    const D2D1_MATRIX_3X2_F textT = prev;
 
     // Cache text formats by (fontFamily, fontSize, bold)
     struct FmtKey {
@@ -216,7 +205,7 @@ void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
     float chainAdvance = 0.0f;
     bool  chainValid = false;
 
-    for (const auto& run : drawRuns) {
+    for (const auto& run : texts_) {
         if (run.text.empty()) continue;
 
         // Find or create text format

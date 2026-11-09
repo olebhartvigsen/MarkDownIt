@@ -56,8 +56,7 @@ public:
     void Release();
 
 private:
-    void DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
-                   const D2D1_MATRIX_3X2_F& docTransform);
+    void DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw);
 
     ID2D1SvgDocument* doc_ = nullptr;
     std::vector<TextRun> texts_;

@@ -484,6 +484,8 @@ elseif(BUILD_TESTS)
         tests/unicode_fold_test.cpp
         tests/findbar_ids_test.cpp
         tests/findbar_window_test.cpp
+        tests/svgdoc_transform_test.cpp
+        src/svgdoc.cpp
         tests/markers_test.cpp
         tests/outline_test.cpp
         tests/table_interaction_test.cpp
@@ -568,6 +570,13 @@ elseif(BUILD_TESTS)
         pdfio
         user32
         gdi32
+        d2d1
+        dwrite
+        d3d11
+        dxgi
+        ole32
+        shell32
+        shlwapi
     )
     target_include_directories(MarkDownIt.tests PRIVATE
         src
