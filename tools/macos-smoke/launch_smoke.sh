@@ -8,6 +8,18 @@
 # Usage: launch_smoke.sh [path/to/MarkDownIt.app]
 set -uo pipefail
 
+# Screen capture policy: screenshots are allowed in the build pipeline
+# (GitHub Actions) and never on a developer machine. Every capture in
+# this script goes through ci_screencapture, which refuses anywhere else.
+# tools/check_capture_policy.py fails the build on a bare screencapture.
+ci_screencapture() {
+    if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
+        echo "capture policy: screenshots are allowed only in the build pipeline (GITHUB_ACTIONS=true). Nothing was captured." >&2
+        return 3
+    fi
+    command screencapture "$@"
+}
+
 APP="${1:-build-mac/MarkDownIt.app}"
 BIN="$APP/Contents/MacOS/MarkDownIt"
 LOG="$HOME/Library/Logs/MarkDownIt/crash_trace.log"
@@ -62,7 +74,7 @@ echo "launch smoke: the window is on screen and the process is alive"
 sleep 1
 SHOT="${SMOKE_CAPTURE:-build-mac/window.png}"
 mkdir -p "$(dirname "$SHOT")"
-if screencapture -x "$SHOT" 2>/dev/null && [ -s "$SHOT" ]; then
+if ci_screencapture -x "$SHOT" 2>/dev/null && [ -s "$SHOT" ]; then
     echo "launch smoke: captured the screen to $SHOT"
 else
     echo "launch smoke: no screen capture (refused, or no display)"
@@ -130,7 +142,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
             case "$seen" in *" $name "*) continue ;; esac
             if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
                 sleep 0.6
-                if screencapture -x "$QA_DIR/$name.png" 2>/dev/null; then
+                if ci_screencapture -x "$QA_DIR/$name.png" 2>/dev/null; then
                     echo "launch smoke: captured $QA_DIR/$name.png"
                 fi
                 # The state's document rectangle, so the cross-platform
@@ -510,7 +522,7 @@ if [ -f "$COLD_DOC" ]; then
         exit 1
     fi
     sleep 1
-    screencapture -x "build-mac/qa/cold-open.png" 2>/dev/null || true
+    ci_screencapture -x "build-mac/qa/cold-open.png" 2>/dev/null || true
 
     # The settings were read before the document arrived, and the level
     # a document opens at is 100%, whatever the file said.

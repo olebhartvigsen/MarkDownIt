@@ -16,6 +16,18 @@ param(
     [int]$TimeoutSeconds = 300
 )
 
+# Screen capture policy: screenshots are allowed in the build pipeline
+# (GitHub Actions) and never on a developer machine. The script stops
+# here anywhere else, before it touches the screen. The same rule is
+# enforced by tools/check_capture_policy.py.
+function Test-CiCapturePolicy {
+    return ($env:GITHUB_ACTIONS -eq "true" -and $env:RUNNER_OS)
+}
+if (-not (Test-CiCapturePolicy)) {
+    Write-Host "capture policy: screenshots are allowed only in the build pipeline (GITHUB_ACTIONS=true). Nothing was captured."
+    exit 3
+}
+
 $ErrorActionPreference = "Stop"
 
 Add-Type -AssemblyName System.Drawing
@@ -36,6 +48,8 @@ $docPath = (Resolve-Path $Doc).Path
 $proc = Start-Process -FilePath $exePath -ArgumentList "`"$docPath`"" -PassThru
 
 function Capture-Screen([string]$path) {
+    # Second check at the point of use, in case the code above is moved.
+    if (-not (Test-CiCapturePolicy)) { throw "capture policy: not in the build pipeline" }
     $bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
     $bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
     $g = [System.Drawing.Graphics]::FromImage($bmp)

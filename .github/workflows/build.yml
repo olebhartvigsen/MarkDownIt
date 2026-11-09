@@ -13,8 +13,61 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Fast, build-free gates that every push runs. They hold the source
+  # manifest, the parity ledger and the command coverage against the
+  # tree, so drift stops the run before the expensive builds queue.
+  # tools/check_alignment.sh runs the same set locally before a push.
+  alignment-static:
+    name: Static alignment gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # The paired-file advisory reads the push range.
+          fetch-depth: 0
+
+      - name: Verify the source manifest
+        run: |
+          python3 tools/test_check_sources_listed.py
+          python3 tools/check_sources_listed.py
+
+      - name: Verify the parity ledger
+        run: |
+          python3 tools/test_check_parity_ledger.py
+          python3 tools/check_parity_ledger.py
+
+      - name: Verify the command coverage
+        run: |
+          python3 tools/test_check_command_coverage.py
+          python3 tools/check_command_coverage.py
+
+      - name: Verify the guards of the shared sources
+        run: python3 tools/check_shared_guards.py
+
+      - name: Verify the mac sources
+        run: python3 tools/check_mac_sources.py
+
+      - name: Verify the screen capture policy
+        run: |
+          python3 tools/test_check_capture_policy.py
+          python3 tools/check_capture_policy.py
+
+      - name: Verify the test inventory checker
+        run: python3 tools/test_check_test_inventory.py
+
+      # Advisory only: one side of a renderer or controller pair that
+      # changed alone is how the ports drift. A Parity: line in the
+      # commit message records the reason and silences it.
+      - name: Paired files advisory
+        env:
+          MDI_BASE: ${{ github.event.before }}
+          MDI_HEAD: ${{ github.sha }}
+        run: python3 tools/check_paired_changes.py
+
   build:
     name: Build (x64)
+    needs: alignment-static
     runs-on: windows-2022
 
     steps:
@@ -102,6 +155,19 @@ jobs:
           python tools/test_svg_arrow_contacts.py --exe build-tests/Release/MarkDownIt.svg-parity.exe
           build-tests/Release/MarkDownIt.svg-parity.exe "$RUNNER_TEMP/svg-commands.json" tests/fixtures/ai-components.svg tests/fixtures/diagram.svg tests/fixtures/svg-parity.svg tests/fixtures/svg-arrow-contacts.svg tests/fixtures/two-boxes.svg tests/fixtures/wide-diagram.svg tests/markdown-mermaid/mermaid-diagram-1788899219877.svg
           ls -la "$MDI_OFFICE_OUT_DIR"
+      # The two platform suites must stay the same suite; the parity
+      # job compares this list against the macOS one.
+      - name: Record the Windows test inventory
+        shell: bash
+        run: build-tests/Release/MarkDownIt.tests.exe --list > "$RUNNER_TEMP/test-inventory-windows.txt"
+
+      - name: Upload the Windows test inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-inventory-windows
+          path: ${{ runner.temp }}/test-inventory-windows.txt
+          if-no-files-found: error
+
 
       - name: Upload Windows SVG commands
         uses: actions/upload-artifact@v4
@@ -134,8 +200,8 @@ jobs:
       # the mac build runs. The capture-parity job compares the two
       # picture sets once both platforms are done.
       - name: Capture the states (QA walk)
-        # Windows screen capture is disabled by workspace policy.
-        if: ${{ false }}
+        # Screenshots are allowed in the build pipeline and never on a
+        # developer machine. capture.ps1 refuses to run outside Actions.
         shell: powershell
         run: powershell -File tools/windows-smoke/capture.ps1 -Exe build/Release/MarkDownIt.exe -Doc tests/fixtures/layout-showcase.md
 
@@ -162,6 +228,7 @@ jobs:
   # 2026, and macos-26 is the forward option.
   test-macos:
     name: Tests (macOS, Apple Silicon)
+    needs: alignment-static
     runs-on: ${{ vars.MACOS_RUNNER || 'macos-15-arm64' }}
     steps:
       - name: Checkout
@@ -177,6 +244,17 @@ jobs:
         env:
           MDI_SVG_NATIVE_OUT: ${{ runner.temp }}/svg-native.json
         run: ./build-native/MarkDownIt.tests
+      # The other half of the test inventory parity gate.
+      - name: Record the macOS test inventory
+        run: ./build-native/MarkDownIt.tests --list > "$RUNNER_TEMP/test-inventory-macos.txt"
+
+      - name: Upload the macOS test inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-inventory-macos
+          path: ${{ runner.temp }}/test-inventory-macos.txt
+          if-no-files-found: error
+
 
       - name: Record macOS SVG commands
         run: |
@@ -218,6 +296,7 @@ jobs:
   # downloaded and run on a real Mac.
   build-macos:
     name: Build (macOS, Apple Silicon)
+    needs: alignment-static
     runs-on: ${{ vars.MACOS_RUNNER || 'macos-15-arm64' }}
     steps:
       - name: Checkout
@@ -233,16 +312,6 @@ jobs:
       # no handler acts on is a silent no-op.
       - name: Verify the menu commands
         run: python3 tools/check_mac_menu.py
-
-      # A Windows header in a shared source has to sit inside a
-      # _WIN32 block, or the mac build stops on it.
-      - name: Verify the guards of the shared sources
-        run: python3 tools/check_shared_guards.py
-
-      # A file that is in src/macos/ but in no source list never
-      # gets compiled, so it can rot without anyone noticing.
-      - name: Verify the mac sources
-        run: python3 tools/check_mac_sources.py
 
       # The mac window wears native chrome: a standard toolbar with
       # system symbols, no ribbon strip, no custom window UI. The
@@ -341,10 +410,34 @@ jobs:
       - name: Compare native paint probes with macOS
         run: python3 tools/check_svg_native_parity.py svg-commands/macos/svg-native.json svg-commands/windows/svg-native.json
 
+  # The two test suites must carry the same tests. A suite that only
+  # one platform builds is drift the manifest cannot see, because the
+  # test lists differ on purpose in a few documented places.
+  test-inventory-parity:
+    name: Test inventory parity (Windows vs macOS)
+    needs: [build, test-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-inventory-windows
+          path: test-inventory/windows
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-inventory-macos
+          path: test-inventory/macos
+      - name: Compare the test inventories
+        run: |
+          find test-inventory -type f | sort
+          python3 tools/check_test_inventory.py \
+            --windows test-inventory/windows/test-inventory-windows.txt \
+            --macos test-inventory/macos/test-inventory-macos.txt
+
   capture-parity:
     name: Capture parity (Windows vs macOS)
-    # This gate needs Windows captures, which workspace policy forbids.
-    if: ${{ false }}
+    # Screenshots are taken in the pipeline only (tools/check_capture_policy.py).
     needs: [build, build-macos]
     runs-on: ubuntu-latest
     steps:
