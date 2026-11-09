@@ -135,7 +135,9 @@ DocumentLayout LayoutDocument(const LayoutInput& in) {
             node.block == BlockKind::Heading ||
             node.block == BlockKind::Paragraph ||
             node.block == BlockKind::List ||
-            node.block == BlockKind::BlockQuote;
+            node.block == BlockKind::BlockQuote ||
+            node.block == BlockKind::CodeBlock ||
+            node.block == BlockKind::Table;
         if (!owned) {
             havePrev = true;
             prev = node.block;
@@ -166,6 +168,12 @@ DocumentLayout LayoutDocument(const LayoutInput& in) {
                 break;
             case BlockKind::BlockQuote:
                 block = LayoutQuote(ctx, node, i, &curY);
+                break;
+            case BlockKind::CodeBlock:
+                block = LayoutCodeBlock(ctx, node, i, &curY);
+                break;
+            case BlockKind::Table:
+                block = LayoutTableBlock(ctx, node, i, &curY);
                 break;
             default:
                 break;
