@@ -8,6 +8,15 @@
 #include <vector>
 #include "dom.h"
 #include "theme.h"
+// windows.h reaches some translation units that include this header
+// before it reaches them and turns DrawText into a DrawTextW macro,
+// which would rip the text seam's virtual out of the shared layout
+// classes; same removal render_target_win.h performs.
+#ifdef DrawText
+#undef DrawText
+#endif
+#include "layout/document_layout.h"
+#include "windows/text_engine_win.h"
 #include "layoutcache.h"
 #include "svgdoc.h"
 #include "caret.h"
@@ -174,6 +183,10 @@ private:
     std::map<const void*, float> lineHeightCache_;
     ID2D1DeviceContext5* d2d_ctx5_ = nullptr;  // may be null
     mutable mermaid::MermaidLayoutCache mermaid_layout_cache_;
+    // The DirectWrite engine behind the shared block layout, Batch 3
+    // first slice. Self contained (own factory, format cache keyed by
+    // font roles): a plain value member, needs nothing from Init.
+    platform::DWriteEngine layoutEngine_;
 
 public:
     void SetD2DDeviceContext5(ID2D1DeviceContext5* ctx) { d2d_ctx5_ = ctx; }
@@ -240,6 +253,14 @@ private:
 
     LayoutMetrics ComputeMetrics() const;
 
+    // One shared layout pass, Batch 3 / Batch 3.2 step 1: the whole
+    // document through layout::LayoutDocument; only the hr and heading
+    // records (and their display items) are consumed until the other
+    // kinds' slices land. byNode receives those records by node.
+    layout::DocumentLayout SharedLayoutPass(const Document& doc,
+        const LayoutMetrics& metrics, const Palette* palette,
+        float contentWidth, std::vector<const layout::LaidBlock*>* byNode);
+
     std::u16string ToUtf16(const std::u32string& s32);
 
     // True when there is at least one match to paint. The four paint paths
@@ -290,7 +311,6 @@ private:
     void DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                        const Node& n, float x, float y, float width, float& outH,
                        const Selection* sel = nullptr, float scrollY = 0.0f);
-    void DrawThematicBreak(ID2D1RenderTarget* rt, float x, float y, float width);
     void DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                    const Node& n, float x, float y, float width, float& outH,
                    const Selection* sel = nullptr, float scrollY = 0.0f);

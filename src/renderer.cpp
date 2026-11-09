@@ -18,14 +18,41 @@
 #include "mermaid/measure_dwrite.h"
 #include <cmath>
 
+// crash_trace.h above brings windows.h, which redefines DrawText
+// after renderer.h's removal; the player and the seam target the
+// shared layout hands back must keep the seam's spelling.
+#ifdef DrawText
+#undef DrawText
+#endif
+#include "layout/display_player.h"
+#include "windows/render_target_win.h"
+
+#include <utility>
+
 static const float kPtToDip = 96.0f / 72.0f;
 
-// The room GitHub gives an H1 or H2 under its text: .3em of padding
-// plus a 1px border. Other levels reserve nothing.
-static float HeadingRuleExtra(const LayoutMetrics& m, int level, float zoom) {
-    if (level < 1 || level > 2) return 0.0f;
-    return m.headingRulePadRatio * m.headingSizes[level] * kPtToDip * zoom +
-           m.headingRuleThickness * zoom;
+// The shared walk answers a textless heading with one phantom line,
+// the caret line the spec wants, so both passes charge and paint the
+// record as the walk hands it back. The phantom keeps Measure and
+// Render on the same advance, and it matches the mac walk the shared
+// layout is ported from.
+
+// The vertical extent of a display item, when it is one of the two
+// shapes the hr and the heading emit. Other shapes belong to a kind
+// this slice does not consume.
+static bool ItemExtent(const display::Item& item, float* top,
+                       float* bottom) {
+    if (const auto* fill = std::get_if<display::FillRect>(&item)) {
+        *top = fill->rect.y;
+        *bottom = fill->rect.y + fill->rect.height;
+        return true;
+    }
+    if (const auto* text = std::get_if<display::Text>(&item)) {
+        *top = text->top;
+        *bottom = text->top + text->line.height;
+        return true;
+    }
+    return false;
 }
 
 // Fill the selection highlight for a UTF-16 range of a text layout.
@@ -436,6 +463,36 @@ LayoutMetrics Renderer::ComputeMetrics() const {
         m.maxContentWidth = 100000.0f;           // Full window width
     }
     return m;
+}
+
+layout::DocumentLayout Renderer::SharedLayoutPass(
+    const Document& doc, const LayoutMetrics& metrics,
+    const Palette* palette, float contentWidth,
+    std::vector<const layout::LaidBlock*>* byNode) {
+    // Batch 3 first slice: fill the input, run the walk, hand back
+    // the hr and heading records by node.
+    layout::LayoutInput in;
+    in.doc = &doc;
+    in.metrics = &metrics;
+    in.palette = palette;
+    in.contentWidth = contentWidth;
+    in.zoom = zoom_;
+    in.editing = editing_;
+    in.engine = &layoutEngine_;
+    // imageSize stays empty for this slice: neither the hr nor the
+    // heading carries images.
+    layout::DocumentLayout out = layout::LayoutDocument(in);
+    if (byNode) {
+        byNode->assign(doc.nodes.size(), nullptr);
+        for (const layout::LaidBlock& b : out.blocks) {
+            if (b.nodeIndex < byNode->size() &&
+                (b.kind == BlockKind::ThematicBreak ||
+                 b.kind == BlockKind::Heading)) {
+                (*byNode)[b.nodeIndex] = &b;
+            }
+        }
+    }
+    return out;
 }
 
 bool Renderer::Init(IDWriteFactory* dw) {
@@ -849,16 +906,6 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (bgBrush) bgBrush->Release();
     if (codeBrush) codeBrush->Release();
     outH = blockH;
-}
-
-void Renderer::DrawThematicBreak(ID2D1RenderTarget* rt, float x, float y,
-                                  float width) {
-    Palette pal = BasePalette();
-    ID2D1SolidColorBrush* lineBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.rule, &lineBrush);
-    if (!lineBrush) return;
-    rt->FillRectangle(D2D1::RectF(x, y, x + width, y + 4.0f * zoom_), lineBrush);
-    lineBrush->Release();
 }
 
 float Renderer::MeasureTable(IDWriteFactory* dw, const Node& n,
@@ -1292,11 +1339,18 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
         ? (widthDip - contentWidth) * 0.5f
         : m.padX;
 
+    // Batch 3, first slice: the hr and heading heights come from one
+    // shared pass; its display list is ignored, Measure is height only.
+    const Palette measurePal = BasePalette();
+    std::vector<const layout::LaidBlock*> sharedByNode;
+    SharedLayoutPass(doc, m, &measurePal, contentWidth, &sharedByNode);
+
     float curY = m.padTop + topOffsetDip;
     BlockKind prevBlock = BlockKind::Paragraph;
     int prevDepth = -1;
 
-    for (const auto& n : doc.nodes) {
+    for (size_t nodeIdx = 0; nodeIdx < doc.nodes.size(); ++nodeIdx) {
+        const auto& n = doc.nodes[nodeIdx];
         float blockH = 0.0f;
         // Width of the block's drawn content when it can exceed the column
         // (a picture). Zero for everything that is laid out to the column.
@@ -1354,7 +1408,11 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
             }
             }
         } else if (n.block == BlockKind::ThematicBreak) {
-            blockH = 4.0f * zoom_;
+            // The shared walk owns the height; the fallback keeps the
+            // old value for a pass that answered nothing.
+            blockH = sharedByNode[nodeIdx]
+                         ? sharedByNode[nodeIdx]->height
+                         : 4.0f * zoom_;
         } else if (n.block == BlockKind::MermaidFlowchart) {
             blockH = MeasureMermaidBlock(dw, n, drawW);
         } else if (n.block == BlockKind::MermaidPie) {
@@ -1363,16 +1421,18 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
             blockH = mermaid::MeasureSequenceHeight(*n.mermaid_seq, zoom_, drawW);
         } else if (n.block == BlockKind::Table) {
             blockH = MeasureTable(dw, n, drawX, drawW);
+        } else if (n.block == BlockKind::Heading) {
+            // Lines plus the H1/H2 rule room, one charge for both
+            // passes, phantom line included; no record keeps the old
+            // zero charge.
+            blockH = sharedByNode[nodeIdx]
+                         ? sharedByNode[nodeIdx]->height
+                         : 0.0f;
         } else {
             IDWriteTextFormat* fmt = nullptr;
-            if (n.block == BlockKind::Heading) {
-                int lvl = n.level;
-                if (lvl < 1) lvl = 1;
-                if (lvl > 6) lvl = 6;
-                fmt = heading_fmt_[lvl];
-            } else if (n.block == BlockKind::Paragraph ||
-                       n.block == BlockKind::BlockQuote ||
-                       n.block == BlockKind::List) {
+            if (n.block == BlockKind::Paragraph ||
+                n.block == BlockKind::BlockQuote ||
+                n.block == BlockKind::List) {
                 fmt = body_fmt_;
             }
             if (fmt) {
@@ -1440,10 +1500,6 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
                         layout->Release();
                     }
                 }
-                // GitHub's H1/H2 rule room: .3em of padding plus 1px.
-                if (n.block == BlockKind::Heading && n.level <= 2) {
-                    blockH += HeadingRuleExtra(m, n.level, zoom_);
-                }
             }
         }
 
@@ -1495,9 +1551,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     rt->CreateSolidColorBrush(pal.textPrimary, &textBrush);
     if (!textBrush) return m.padTop;
 
-    ID2D1SolidColorBrush* headingBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.heading, &headingBrush);
-
     ID2D1SolidColorBrush* mutedBrush = nullptr;
     rt->CreateSolidColorBrush(pal.textMuted, &mutedBrush);
 
@@ -1542,7 +1595,71 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // Clear the layout cache before rebuilding.
     if (cache_) cache_->Clear();
 
+    // Batch 3, first slice: one shared pass for the frame; the hr and
+    // heading are painted from its display items and advance by its
+    // heights, every other kind keeps the inline path.
+    std::vector<const layout::LaidBlock*> sharedByNode;
+    layout::DocumentLayout shared =
+        SharedLayoutPass(doc, m, &pal, contentWidth, &sharedByNode);
+    // The consumed blocks' items, sliced in one pass: blocks and
+    // items both come in document order, so the cursor walks them
+    // forward together. A block owns exactly the items whose extent
+    // falls inside its band: the walk advances y monotonically and no
+    // block's ink crosses another's.
+    std::vector<std::pair<uint32_t, uint32_t>> itemRangeByNode(
+        doc.nodes.size(), std::make_pair(0u, 0u));
+    {
+        const std::vector<display::Item>& items = shared.list.items;
+        uint32_t sentinel = static_cast<uint32_t>(doc.nodes.size()) + 1;
+        size_t cursorBlock = 0;
+        uint32_t openNode = sentinel;
+        uint32_t openStart = 0;
+        for (uint32_t i = 0; i < items.size(); ++i) {
+            float top = 0.0f;
+            float bottom = 0.0f;
+            if (!ItemExtent(items[i], &top, &bottom)) continue;
+            while (cursorBlock < shared.blocks.size() &&
+                   shared.blocks[cursorBlock].y +
+                           shared.blocks[cursorBlock].height <= top) {
+                ++cursorBlock;
+            }
+            if (cursorBlock >= shared.blocks.size()) break;
+            const layout::LaidBlock& b = shared.blocks[cursorBlock];
+            if (!(top >= b.y && bottom <= b.y + b.height)) continue;
+            if (b.kind != BlockKind::ThematicBreak &&
+                b.kind != BlockKind::Heading) {
+                openNode = sentinel;
+                continue;
+            }
+            if (b.nodeIndex != openNode) {
+                openNode = b.nodeIndex;
+                openStart = i;
+            }
+            itemRangeByNode[openNode] = std::make_pair(openStart, i + 1);
+        }
+    }
     float curY = m.padTop + topOffsetDip;
+
+    // Wraps rt for display::Play, borrowed, built at most once per
+    // frame; replays one block at the y the walk stands, so paint
+    // and advance cannot drift apart.
+    std::unique_ptr<platform::D2DTarget> d2dTarget;
+    auto playShared = [&](const layout::LaidBlock& b, float x,
+                          size_t nodeIdx) {
+        if (!d2dTarget)
+            d2dTarget.reset(new platform::D2DTarget(rt));
+        const auto range = itemRangeByNode[nodeIdx];
+        display::DisplayList blockList;
+        blockList.items.assign(
+            shared.list.items.begin() + range.first,
+            shared.list.items.begin() + range.second);
+        rt->SetTransform(D2D1::Matrix3x2F::Translation(
+            x - b.x - scrollX, curY - b.y - scrollY));
+        display::Play(blockList, d2dTarget.get());
+        rt->SetTransform(D2D1::Matrix3x2F::Translation(
+            -scrollX, -scrollY));
+    };
+
     int listCounter = 0;
     BlockKind prevBlock = BlockKind::Paragraph;
     int prevDepth = -1;
@@ -1602,8 +1719,11 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
 
         if (n.block == BlockKind::ThematicBreak) {
-            DrawThematicBreak(rt, drawX, curY, drawW);
-            curY += 4.0f * zoom_;
+            const layout::LaidBlock* b = sharedByNode[nodeIdx];
+            // The bar is one FillRect in the shared list, the old
+            // DrawThematicBreak's numbers on the theme palette.
+            if (b) playShared(*b, drawX, nodeIdx);
+            curY += b ? b->height : 4.0f * zoom_;
             prevBlock = n.block;
             prevDepth = n.depth;
             continue;
@@ -1636,17 +1756,12 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         IDWriteTextFormat* fmt = nullptr;
         ID2D1SolidColorBrush* blockBrush = textBrush;
         if (n.block == BlockKind::Heading) {
+            // Only the caret's DirectWrite side: fmt feeds the cache
+            // and washes; the glyphs and rule come from the list.
             int lvl = n.level;
             if (lvl < 1) lvl = 1;
             if (lvl > 6) lvl = 6;
             fmt = heading_fmt_[lvl];
-            // The smallest heading reads muted, the way the typography
-            // plan asks: a heading still, quieter than the ones above.
-            if (lvl >= 6 && mutedBrush) {
-                blockBrush = mutedBrush;
-            } else {
-                blockBrush = headingBrush ? headingBrush : textBrush;
-            }
         } else if (n.block == BlockKind::Paragraph ||
                    n.block == BlockKind::BlockQuote ||
                    n.block == BlockKind::List) {
@@ -2060,13 +2175,17 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             }
         }
 
-        D2D1_POINT_2F origin = D2D1::Point2F(textX, curY);
-        if (linkBrush) {
+        if (n.block == BlockKind::Heading && sharedByNode[nodeIdx]) {
+            // The glyphs and the H1/H2 rule are the shared records,
+            // the phantom line included; the caret's DirectWrite side
+            // keeps running through the inline layout below it.
+            playShared(*sharedByNode[nodeIdx], textX, nodeIdx);
+        } else if (linkBrush) {
             ColorTextRenderer ctr(rt, blockBrush, linkBrush);
-            layout->Draw(nullptr, &ctr, origin.x, origin.y);
+            layout->Draw(nullptr, &ctr, textX, curY);
         } else {
-            rt->DrawTextLayout(origin, layout, blockBrush,
-                D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            rt->DrawTextLayout(D2D1::Point2F(textX, curY), layout,
+                blockBrush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
         }
 
         if (n.block == BlockKind::BlockQuote && quoteBorder) {
@@ -2074,19 +2193,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             D2D1_POINT_2F p1 = D2D1::Point2F(barX, curY);
             D2D1_POINT_2F p2 = D2D1::Point2F(barX, curY + metrics.height);
             rt->DrawLine(p1, p2, quoteBorder, m.quoteBarWidth);
-        }
-
-        // GitHub's hairline under an H1 or H2, .3em below the text.
-        if (n.block == BlockKind::Heading && n.level >= 1 && n.level <= 2) {
-            const float rulePad =
-                HeadingRuleExtra(m, n.level, zoom_) - 1.0f;
-            const float ruleY = curY + metrics.height + rulePad;
-            if (quoteBorder) {
-                rt->DrawLine(
-                    D2D1::Point2F(textX, ruleY),
-                    D2D1::Point2F(textX + (textW > 0 ? textW : drawW), ruleY),
-                    quoteBorder, 1.0f);
-            }
         }
 
         if (cache_) {
@@ -2110,8 +2216,10 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             layout->Release();
         }
 
-        // Advance curY past the text and the H1/H2 rule room.
-        curY += blankAdvance + HeadingRuleExtra(m, n.level, zoom_);
+        // Advance curY: the heading advances by the shared height.
+        curY += (n.block == BlockKind::Heading && sharedByNode[nodeIdx])
+                    ? sharedByNode[nodeIdx]->height
+                    : blankAdvance;
         prevBlock = n.block;
         prevDepth = n.depth;
     }
@@ -2120,7 +2228,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     rt->PopAxisAlignedClip();
 
     if (textBrush) textBrush->Release();
-    if (headingBrush) headingBrush->Release();
     if (mutedBrush) mutedBrush->Release();
     if (linkBrush) linkBrush->Release();
     if (quoteBorder) quoteBorder->Release();
