@@ -963,10 +963,6 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                           (double)zoom_,
                           (double)clip.origin.x, (double)clip.origin.y,
                           (double)clip.size.width, (double)clip.size.height);
-            // The level belongs to this capture: the walk after it reads
-            // the page at 100% and its overlay assertion says so.
-            [self setZoom:zoom::kDefaultZoom quietly:YES];
-            [zoomHud_ hideNow];
         }
     } else if ([state isEqualToString:@"svg-swap"]) {
         // One picture, then another. Only the second may show.
@@ -1049,7 +1045,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"zoom-hud"]) {
         // The overlay a reader sees while zooming: it names the level,
-        // and it is up when the picture is taken.
+        // and it is up when the picture is taken. The level is put back
+        // to 100% first, so the assertion reads 110% whatever the state
+        // before it left behind.
+        [self setZoom:zoom::kDefaultZoom quietly:YES];
+        [zoomHud_ hideNow];
         [self setZoom:zoom::Step(zoom_, true)];
         const NSRect inWindow = [zoomHud_ convertRect:[zoomHud_ bounds]
                                                toView:nil];
@@ -1065,6 +1065,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     } else if ([state isEqualToString:@"zoom-hud-dark"]) {
         // The same overlay in a dark window: the material follows the
         // appearance, so the pill goes dark and the digits light.
+        [self setZoom:zoom::kDefaultZoom quietly:YES];
+        [zoomHud_ hideNow];
         [self setZoom:zoom::Step(zoom_, true)];
         const NSRect inWindow = [zoomHud_ convertRect:[zoomHud_ bounds]
                                                toView:nil];
