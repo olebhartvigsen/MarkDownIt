@@ -377,7 +377,46 @@ struct HtmlLabel {
     Color color;
     bool bold = false;
     bool italic = false;
+    // The lines the browser lays the label out on, and the leading it uses
+    // between them. A label is written as HTML in one place and as tspan
+    // lines in the other, and the two disagree: a short label is often one
+    // HTML line but two tspans, which drew an extra line.
+    std::vector<std::string> lines;
+    float lineHeight = 0.0f;   // in points, or a multiplier below 4
+    bool centred = false;      // the HTML block is centred vertically
 };
+
+// The lines a browser lays the label's HTML out on: a block element and a
+// <br> both start a new line, inline text joins the line it is on.
+void ReadHtmlLines(const pugi::xml_node& node, std::vector<std::string>* lines,
+                   bool fresh) {
+    for (pugi::xml_node child = node.first_child(); child;
+         child = child.next_sibling()) {
+        const std::string name = child.name();
+        if (name.empty()) {  // a text node
+            std::string text = child.value();
+            const size_t first = text.find_first_not_of(" \t\r\n");
+            const size_t last = text.find_last_not_of(" \t\r\n");
+            if (first == std::string::npos) continue;
+            text = text.substr(first, last - first + 1);
+            if (fresh || lines->empty()) {
+                lines->push_back(text);
+                fresh = false;
+            } else {
+                lines->back() += text;
+            }
+            continue;
+        }
+        if (name == "br") {
+            fresh = true;
+            continue;
+        }
+        const bool block = name == "div" || name == "p";
+        if (block && !lines->empty()) fresh = true;
+        ReadHtmlLines(child, lines, fresh);
+        if (block) fresh = true;
+    }
+}
 
 // Reads the typography out of a <foreignObject>, deepest element last,
 // which is the cascade order the browser applies.
@@ -420,9 +459,20 @@ void ReadHtmlLabel(const pugi::xml_node& node, HtmlLabel* label) {
             if (!slant.empty()) {
                 label->italic = slant == "italic" || slant == "oblique";
             }
+            const std::string align = CssValue(style, "align-items");
+            if (!align.empty()) label->centred = align.find("center") != std::string::npos;
+            const std::string leading = CssValue(style, "line-height");
+            if (!leading.empty()) {
+                const float value = ReadLengthText(leading);
+                if (value > 0.0f) label->lineHeight = value;
+            }
         }
         ReadHtmlLabel(child, label);
     }
+    if (!label->valid) return;
+    std::vector<std::string> lines;
+    ReadHtmlLines(node, &lines, false);
+    if (!lines.empty()) label->lines = lines;
 }
 
 // Reads the style of a shape, which the group may have set.
@@ -985,6 +1035,37 @@ void ReadShapes(const pugi::xml_node& node, const SvgDoc::Style& style,
             }
             childStyle.bold = html->bold;
             childStyle.italic = html->italic;
+
+            // The browser breaks the HTML's lines, not the exporter's
+            // tspans: a short label is one HTML line though it is written
+            // as two tspans, and drawing both added a line.
+            if (!html->lines.empty()) {
+                const float size =
+                    childStyle.fontSize > 0.0f ? childStyle.fontSize : 12.0f;
+                float leading = html->lineHeight;
+                if (leading > 0.0f && leading < 4.0f) leading *= size;
+                if (leading <= 0.0f) leading = size * 1.2f;
+                float first = y;
+                if (!tspanLines.empty()) first = tspanLines.front().points[0].y;
+                if (html->centred && !tspanLines.empty()) {
+                    // The block is centred on the box, so a line count
+                    // other than the tspans' one moves the whole block.
+                    const float last = tspanLines.back().points[0].y;
+                    first = (first + last) * 0.5f -
+                            (static_cast<float>(html->lines.size()) - 1.0f) *
+                                leading * 0.5f;
+                }
+                tspanLines.clear();
+                for (size_t i = 0; i < html->lines.size(); ++i) {
+                    SvgDoc::Shape line;
+                    line.kind = SvgDoc::Kind::Text;
+                    line.points.push_back(
+                        Point{x, first + static_cast<float>(i) * leading});
+                    line.text = html->lines[i];
+                    tspanLines.push_back(line);
+                }
+                shape.text.clear();
+            }
         }
     } else {
         shape.kind = SvgDoc::Kind::Polygon;
