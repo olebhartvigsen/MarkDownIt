@@ -481,6 +481,12 @@ elseif(BUILD_TESTS)
         ${MARKDOWNIT_MERMAID_LEGACY_SOURCES}
         ${MARKDOWNIT_OFFICE_SOURCES}
         ${MARKDOWNIT_WINDOWS_APP_SOURCES}
+        # The Windows renderer chain the batch 5.3 twin drives: the
+        # painters the wash test renders through, and their win-only
+        # pie and sequence siblings the same renderer.cpp pulls in.
+        src/renderer.cpp
+        src/renderer_pie.cpp
+        src/renderer_sequence.cpp
         src/textlayout_dwrite.cpp
         src/findbar.cpp
         src/svgdoc.cpp
