@@ -137,7 +137,10 @@ DocumentLayout LayoutDocument(const LayoutInput& in) {
             node.block == BlockKind::List ||
             node.block == BlockKind::BlockQuote ||
             node.block == BlockKind::CodeBlock ||
-            node.block == BlockKind::Table;
+            node.block == BlockKind::Table ||
+            node.block == BlockKind::MermaidFlowchart ||
+            node.block == BlockKind::MermaidPie ||
+            node.block == BlockKind::MermaidSequence;
         if (!owned) {
             havePrev = true;
             prev = node.block;
@@ -170,7 +173,19 @@ DocumentLayout LayoutDocument(const LayoutInput& in) {
                 block = LayoutQuote(ctx, node, i, &curY);
                 break;
             case BlockKind::CodeBlock:
+                // A standalone svg fence is the picture form; the code
+                // card only when the size is unknown or the caller
+                // holds the caret inside the fence.
+                if (node.lang == "svg") {
+                    block = LayoutSvgBlock(ctx, node, i, &curY);
+                    break;
+                }
                 block = LayoutCodeBlock(ctx, node, i, &curY);
+                break;
+            case BlockKind::MermaidFlowchart:
+            case BlockKind::MermaidPie:
+            case BlockKind::MermaidSequence:
+                block = LayoutMermaidBlock(ctx, node, i, &curY);
                 break;
             case BlockKind::Table:
                 block = LayoutTableBlock(ctx, node, i, &curY);

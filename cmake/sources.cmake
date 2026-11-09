@@ -28,6 +28,7 @@ set(MARKDOWNIT_CORE_SOURCES
     src/layout/list_layout.cpp
     src/layout/code_layout.cpp
     src/layout/table_layout.cpp
+    src/layout/svg_mermaid_layout.cpp
     src/layoutcache.cpp
     src/editcontroller.cpp
     src/navigation.cpp

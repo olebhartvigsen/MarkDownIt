@@ -322,6 +322,7 @@ if(BUILD_TESTS AND APPLE)
         tests/layout_golden_test.cpp
         tests/paragraph_list_quote_test.cpp
         tests/code_table_layout_test.cpp
+        tests/svg_mermaid_layout_test.cpp
         tests/mermaid_model_test.cpp
         tests/mermaid_parse_test.cpp
         tests/mermaid_class_golden_test.cpp
@@ -432,6 +433,7 @@ elseif(BUILD_TESTS)
         tests/layout_golden_test.cpp
         tests/paragraph_list_quote_test.cpp
         tests/code_table_layout_test.cpp
+        tests/svg_mermaid_layout_test.cpp
         tests/mermaid_legacy_test.cpp
         tests/mermaid_model_test.cpp
         tests/mermaid_parse_test.cpp
