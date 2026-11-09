@@ -621,6 +621,13 @@ uint32_t CoreTextEngine::HitTestOffset(const TextLine& line, float x,
         // origin is at its left edge, so the point is the x the caller
         // asked about.
         const CGPoint position = CGPointMake(x, 0.0);
+        // A hit at or past the trailing edge of the line answers the
+        // last position, the line's full byte length, the same rule as
+        // the Windows and fake engines.
+        if (x >= entry.width - 0.5f) {
+            return static_cast<uint32_t>(entry.text.size());
+        }
+
         const CFIndex index =
             CTLineGetStringIndexForPosition(entry.line, position);
 

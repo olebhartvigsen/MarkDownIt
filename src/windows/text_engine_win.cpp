@@ -265,7 +265,7 @@ uint32_t DWriteEngine::HitTestOffset(const TextLine& line, float x,
         }
         seenBytes += (uint32_t)run.text.size();
     }
-    return seen;
+    return seenBytes;
 }
 
 Rect DWriteEngine::OffsetToRect(const TextLine& line,
