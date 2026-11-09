@@ -711,6 +711,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // and the count, not just an empty bar.
         app_->findBar().model().SetSearchText(L"list");
         app_->RefreshFindResults(false);
+        // The mac find bar rides over the pane and the document lands
+        // lower under it, while the Windows bar sits in the ribbon and
+        // the page stands still. Scroll back to the top so both
+        // captures show the same part of the page with the live query.
+        content_->SetScrollOffset(0.0f);
+        NSClipView* clip = [scrollView_ contentView];
+        [clip scrollToPoint:NSMakePoint(0.0f, 0.0f)];
+        [scrollView_ reflectScrolledClipView:clip];
     } else if ([state isEqualToString:@"edit"]) {
         app_->SetEditing(true);
         // The mac window has no ribbon tabs, so there is no page to
