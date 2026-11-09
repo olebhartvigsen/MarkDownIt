@@ -126,7 +126,7 @@ bool QaWalkRunning() {
         if (shownFor != self->generation_) return;
         [self setHidden:YES];
         if (QaWalkRunning()) {
-            mac::TraceMac("qa zoom hud: hid itself");
+            platform::TraceMac("qa zoom hud: hid itself");
         }
     }];
 }

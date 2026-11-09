@@ -22,7 +22,7 @@
 
 #include "dom.h"
 #include "outline.h"
-#include "seams.h"
+#include "platform/seams.h"
 #include "theme.h"
 
 namespace mac {

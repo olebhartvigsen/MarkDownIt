@@ -22,7 +22,7 @@
 #include "renderer_mac.h"
 #include "welcome_mac.h"
 #include "searchreplace.h"
-#include "seams.h"
+#include "platform/seams.h"
 
 namespace mac {
 

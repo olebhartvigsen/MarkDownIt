@@ -8,7 +8,7 @@
 
 #include <CoreText/CoreText.h>
 
-#include "seams.h"
+#include "platform/seams.h"
 
 namespace mac {
 

@@ -19,7 +19,7 @@ class OutlinePane;
 @interface MdOutlineView : NSView
 
 // Creates a view that draws the given pane.
-- (instancetype)initWithPane:(mac::OutlinePane*)pane;
+- (instancetype)initWithPane:(platform::OutlinePane*)pane;
 
 // Scrolls a visible row into view, with a small margin, so the active
 // heading and the keyboard selection stay readable (outline spec 6.1).

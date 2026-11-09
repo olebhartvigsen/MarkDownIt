@@ -8,7 +8,7 @@
 
 #include <CoreGraphics/CoreGraphics.h>
 
-#include "seams.h"
+#include "platform/seams.h"
 
 namespace mac {
 

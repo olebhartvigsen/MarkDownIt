@@ -15,17 +15,17 @@
 
 #include <CoreText/CoreText.h>
 
-using mac::CoreTextEngine;
-using mac::FontSpec;
-using mac::GlyphRun;
-using mac::TextLine;
+using platform::CoreTextEngine;
+using platform::FontSpec;
+using platform::GlyphRun;
+using platform::TextLine;
 
 // The bundled faces still register before any test runs (the bundle
 // keeps them), but the engine draws with the platform's own faces. The
 // tests run from the repo root, where the vendored fonts live.
 const bool kFontsRegistered = []() {
-    mac::RegisterFontsFromDirectory("third_party/selawik");
-    mac::RegisterFontsFromDirectory("third_party/cascadia-mono");
+    platform::RegisterFontsFromDirectory("third_party/selawik");
+    platform::RegisterFontsFromDirectory("third_party/cascadia-mono");
     return true;
 }();
 
@@ -70,7 +70,7 @@ std::string FamilyOf(const char* name) {
 
 // The postscript name of the face the engine picks for a spec.
 std::string PostscriptOf(const FontSpec& spec) {
-    CTFontRef font = mac::CoreTextFontFor(spec);
+    CTFontRef font = platform::CoreTextFontFor(spec);
     if (!font) return "";
     CFStringRef have = CTFontCopyPostScriptName(font);
     std::string out;
@@ -89,12 +89,12 @@ TEST(TextEngineMac, UsesThePlatformFonts) {
     // The mapping the theme's family names travel through: the Windows
     // names land on the platform's own faces, the port plan's font
     // note (the system UI font for text, the system's fixed-pitch face for code).
-    EXPECT_EQ(mac::ResolvedFamily("Segoe UI", false),
+    EXPECT_EQ(platform::ResolvedFamily("Segoe UI", false),
               std::string("System UI"));
-    EXPECT_EQ(mac::ResolvedFamily("Segoe UI Semibold", false),
+    EXPECT_EQ(platform::ResolvedFamily("Segoe UI Semibold", false),
               std::string("System UI"));
-    EXPECT_EQ(mac::ResolvedFamily("", true), std::string("System Mono"));
-    EXPECT_EQ(mac::ResolvedFamily("Helvetica Neue", false),
+    EXPECT_EQ(platform::ResolvedFamily("", true), std::string("System Mono"));
+    EXPECT_EQ(platform::ResolvedFamily("Helvetica Neue", false),
               std::string("Helvetica Neue"));
 
     // The bundled faces still answer by name, so the files stay usable.
@@ -141,7 +141,7 @@ TEST(TextEngineMac, UsesAnItalicThatIsNotTheUprightFace) {
     italic.family = "Segoe UI";
     italic.size = 16.0f;
     italic.italic = true;
-    CTFontRef font = mac::CoreTextFontFor(italic);
+    CTFontRef font = platform::CoreTextFontFor(italic);
     ASSERT_TRUE(font != nullptr);
     // The system family carries real italics: the engine asks for one
     // through the slant trait. The answer must be a distinct face, or
@@ -220,7 +220,7 @@ TEST(TextEngineMac, HitTestsAndPlacesOffsets) {
     EXPECT_GT(middle, 0u);
     EXPECT_LT(middle, static_cast<uint32_t>(std::string("offset test").size()));
 
-    const mac::Rect rect = engine.OffsetToRect(lines[0], 6);
+    const platform::Rect rect = engine.OffsetToRect(lines[0], 6);
     EXPECT_TRUE(rect.x >= 0.0f);
     EXPECT_GT(rect.height, 0.0f);
 }

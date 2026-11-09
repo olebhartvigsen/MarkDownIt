@@ -17,7 +17,7 @@
 #include <vector>
 
 #include "dom.h"
-#include "seams.h"
+#include "platform/seams.h"
 #include "svg_mac.h"
 #include "image_mac.h"
 #include "searchreplace.h"

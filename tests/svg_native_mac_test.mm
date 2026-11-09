@@ -144,21 +144,21 @@ std::string TextSvg(const TextFixture& fixture) {
 
 TEST(SvgNativeMac, CoreGraphicsReferencePixelsAndCoreTextBounds) {
     @autoreleasepool {
-        mac::CoreTextEngine engine;
-        mac::FontSpec font;
+        platform::CoreTextEngine engine;
+        platform::FontSpec font;
         font.family = "Arial";
         font.size = 24.0f;
         // This is a borrowed cached font, not a Create/Copy result to release.
-        ASSERT_TRUE(mac::CoreTextFontFor(font) != nullptr);
+        ASSERT_TRUE(platform::CoreTextFontFor(font) != nullptr);
         EXPECT_TRUE(engine.LineHeight(font) > 0);
 
         OffscreenBitmap shapes;
         ASSERT_TRUE(shapes.context() != nullptr);
-        mac::SvgDoc document;
+        platform::SvgDoc document;
         ASSERT_TRUE(document.Load(svg_native_fixture::kSvg));
         ASSERT_EQ(document.Width(), static_cast<float>(kWidth));
         ASSERT_EQ(document.Height(), static_cast<float>(kHeight));
-        mac::CoreGraphicsTarget target(shapes.context());
+        platform::CoreGraphicsTarget target(shapes.context());
         document.Draw(&target, &engine, 0, 0, kWidth, kHeight);
         CGContextFlush(shapes.context());
 
@@ -185,20 +185,20 @@ TEST(SvgNativeMac, CoreGraphicsReferencePixelsAndCoreTextBounds) {
             const auto& fixture = kTextFixtures[i];
             OffscreenBitmap text;
             ASSERT_TRUE(text.context() != nullptr);
-            mac::SvgDoc textDocument;
+            platform::SvgDoc textDocument;
             ASSERT_TRUE(textDocument.Load(TextSvg(fixture)));
             ASSERT_EQ(textDocument.Width(), static_cast<float>(kWidth));
             ASSERT_EQ(textDocument.Height(), static_cast<float>(kHeight));
             ASSERT_EQ(textDocument.shapes().size(), size_t{1});
             const auto& shape = textDocument.shapes().front();
-            ASSERT_TRUE(shape.kind == mac::SvgDoc::Kind::Text);
+            ASSERT_TRUE(shape.kind == platform::SvgDoc::Kind::Text);
             // Prove the XML character reference reaches the authoritative
             // scene unchanged. Do not remove newlines or predict CTLine width.
             ASSERT_EQ(shape.text, std::string(fixture.parsedText));
             ASSERT_EQ(shape.points.size(), size_t{1});
             EXPECT_EQ(shape.points.front().y, 130.0f);
             engine.BeginLayout();
-            mac::CoreGraphicsTarget textTarget(text.context());
+            platform::CoreGraphicsTarget textTarget(text.context());
             textDocument.Draw(&textTarget, &engine, 0, 0, kWidth, kHeight);
             CGContextFlush(text.context());
             const Bounds bounds = DarkBounds(text);
@@ -213,11 +213,11 @@ TEST(SvgNativeMac, CoreGraphicsReferencePixelsAndCoreTextBounds) {
 
         OffscreenBitmap arrows;
         ASSERT_TRUE(arrows.context() != nullptr);
-        mac::SvgDoc arrowDocument;
+        platform::SvgDoc arrowDocument;
         ASSERT_TRUE(arrowDocument.Load(svg_native_fixture::kArrowSvg));
         ASSERT_EQ(arrowDocument.Width(), static_cast<float>(kWidth));
         ASSERT_EQ(arrowDocument.Height(), static_cast<float>(kHeight));
-        mac::CoreGraphicsTarget arrowTarget(arrows.context());
+        platform::CoreGraphicsTarget arrowTarget(arrows.context());
         arrowDocument.Draw(&arrowTarget, &engine, 0, 0, kWidth, kHeight);
         CGContextFlush(arrows.context());
 

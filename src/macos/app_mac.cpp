@@ -18,7 +18,7 @@
 #include "inputfilter.h"
 #include "navigation.h"
 #include "parser.h"
-#include "seams.h"
+#include "platform/seams.h"
 #include "tableedit.h"
 #include "textdrag.h"
 #include "textenc.h"
@@ -1723,7 +1723,7 @@ bool App::OpenExternalUrl(const std::string& url) const {
                          lower.rfind("https://", 0) == 0 ||
                          lower.rfind("mailto:", 0) == 0;
     if (!allowed) return false;
-    return mac::OpenExternalUrl(url);
+    return platform::OpenExternalUrl(url);
 }
 
 bool App::MoveTableRow(bool up, uint32_t* out) {

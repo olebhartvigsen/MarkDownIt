@@ -11,11 +11,11 @@
 #import "cg_target_mac.h"
 
 @implementation MdOutlineView {
-    mac::OutlinePane* _pane;
+    platform::OutlinePane* _pane;
     NSTrackingArea* _tracking;
 }
 
-- (instancetype)initWithPane:(mac::OutlinePane*)pane {
+- (instancetype)initWithPane:(platform::OutlinePane*)pane {
     self = [super initWithFrame:NSMakeRect(0, 0, 200, 400)];
     if (self) {
         _pane = pane;
@@ -58,7 +58,7 @@
     // the y axis already points down, which is the space the pane lays
     // its rows out in. Flipping the context again here turned the rows
     // over.
-    mac::CoreGraphicsTarget target(context);
+    platform::CoreGraphicsTarget target(context);
     _pane->Draw(&target, static_cast<float>(self.bounds.size.width),
                 static_cast<float>(self.bounds.size.height));
 }
@@ -113,11 +113,11 @@
 - (void)scrollRowIntoView:(int)row {
     if (!_pane || row < 0) return;
     NSRect rect = NSMakeRect(0,
-                             row * mac::OutlinePane::kRowHeightDip,
+                             row * platform::OutlinePane::kRowHeightDip,
                              self.bounds.size.width,
-                             mac::OutlinePane::kRowHeightDip);
-    rect.origin.y -= mac::OutlinePane::kRowHeightDip * 0.5f;
-    rect.size.height += mac::OutlinePane::kRowHeightDip;
+                             platform::OutlinePane::kRowHeightDip);
+    rect.origin.y -= platform::OutlinePane::kRowHeightDip * 0.5f;
+    rect.size.height += platform::OutlinePane::kRowHeightDip;
     [self scrollRectToVisible:rect];
 }
 
@@ -180,7 +180,7 @@
     if (!_pane) return;
     [self removeAllToolTips];
     for (size_t row = 0; row < _pane->Visible().size(); row++) {
-        const mac::Rect bounds =
+        const platform::Rect bounds =
             _pane->RowBounds(static_cast<int>(row), self.bounds.size.width);
         [self addToolTipRect:NSMakeRect(bounds.x, bounds.y, bounds.width,
                                         bounds.height)
@@ -215,7 +215,7 @@
             _pane->FullTextAt(static_cast<int>(row));
         if (text.empty()) continue;
 
-        const mac::Rect bounds = _pane->RowBounds(
+        const platform::Rect bounds = _pane->RowBounds(
             static_cast<int>(row), self.bounds.size.width);
         NSRect rect = [self convertRect:NSMakeRect(bounds.x, bounds.y,
                                                    bounds.width,

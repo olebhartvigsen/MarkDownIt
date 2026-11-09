@@ -26,8 +26,8 @@ class ContentView;
 
 // Creates a view that draws the given content. The app is where the
 // edits go.
-- (instancetype)initWithContent:(mac::ContentView*)content
-                            app:(mac::App*)app;
+- (instancetype)initWithContent:(platform::ContentView*)content
+                            app:(platform::App*)app;
 
 // Applies the zoom around the middle of the viewport, the way the menu
 // and the buttons do it.

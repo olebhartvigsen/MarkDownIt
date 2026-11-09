@@ -1,6 +1,6 @@
 #pragma once
 
-// Windows paint adapter for the authoritative mac::SvgDoc scene. Parsing,
+// Windows paint adapter for the authoritative platform::SvgDoc scene. Parsing,
 // geometry, text placement and fitting all belong to that shared scene.
 
 // Some callers already included Win32's DrawText macro. The shared seam
@@ -36,11 +36,11 @@ public:
     // against Mac scene commands without comparing system font metrics.
     void Draw(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
               float x, float y, float w, float h,
-              mac::RenderTarget* trace = nullptr, mac::TextEngine* metrics = nullptr);
+              platform::RenderTarget* trace = nullptr, platform::TextEngine* metrics = nullptr);
     void Release();
 
 private:
-    std::unique_ptr<mac::SvgDoc> scene_;
+    std::unique_ptr<platform::SvgDoc> scene_;
 };
 
 }  // namespace svg

@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-namespace mac {
+namespace platform {
 
 // ---------------------------------------------------------------------------
 // TextEngine: measure and place text
@@ -327,4 +327,4 @@ public:
 // system took it.
 bool OpenExternalUrl(const std::string& url);
 
-}  // namespace mac
+}  // namespace platform

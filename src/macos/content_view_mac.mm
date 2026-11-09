@@ -47,7 +47,7 @@ ContentView::ContentView(App* app)
     // expects it.
     renderer_.SetDiagramTextEngine(std::make_unique<CoreTextEngine>());
     renderer_.SetTextEngine(engine_.get());
-    renderer_.SetTheme(BaseMetrics(), mac::SystemPalette());
+    renderer_.SetTheme(BaseMetrics(), platform::SystemPalette());
     renderer_.SetStandaloneSvg(app_ && app_->IsStandaloneSvg());
     // The renderer reads the source when it normalizes a caret past a
     // marker, the same pointer the Windows cache holds.
@@ -196,7 +196,7 @@ void ContentView::SetEditing(bool on) {
 }
 
 void ContentView::RefreshTheme() {
-    renderer_.SetTheme(BaseMetrics(), mac::SystemPalette());
+    renderer_.SetTheme(BaseMetrics(), platform::SystemPalette());
     // The laid-out runs carry the palette's colours inside them, so the
     // document is laid out again. Without that a palette switch kept
     // the previous appearance baked into the text: dark mode drew the
@@ -542,7 +542,7 @@ Color ContentView::SelectionColor() const {
     // appearance: the system's selected-content colour at the weight
     // the fixed blue carried, its alpha light so the text under it
     // stays readable.
-    const ThemeColor c = mac::SystemPalette().selectionBg;
+    const ThemeColor c = platform::SystemPalette().selectionBg;
     Color color;
     color.r = c.r;
     color.g = c.g;
@@ -555,7 +555,7 @@ Color ContentView::CaretColor() const {
     // The caret follows the label colour, so it stays visible in
     // both appearances: a fixed near-black bar disappeared over the
     // dark paper.
-    const ThemeColor c = mac::SystemPalette().textPrimary;
+    const ThemeColor c = platform::SystemPalette().textPrimary;
     Color color;
     color.r = c.r;
     color.g = c.g;
@@ -696,8 +696,8 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
 // turns the mouse and the keyboard into edits through the shared edit
 // controller.
 @implementation MdContentView {
-    mac::ContentView* content_;
-    mac::App* app_;
+    platform::ContentView* content_;
+    platform::App* app_;
     // The timer that blinks the caret.
     NSTimer* blinkTimer_;
     // The area that tells the view the mouse moved over it.
@@ -726,7 +726,7 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     void (^themeChangedHandler_)(void);
 }
 
-- (instancetype)initWithContent:(mac::ContentView*)content app:(mac::App*)app {
+- (instancetype)initWithContent:(platform::ContentView*)content app:(platform::App*)app {
     self = [super initWithFrame:NSMakeRect(0, 0, 900, 700)];
     if (self) {
         content_ = content;
@@ -1014,7 +1014,7 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     // the y axis already points down, which is the space the renderer
     // lays the document out in. Flipping the context again here turned
     // the whole document over.
-    mac::CoreGraphicsTarget target(context);
+    platform::CoreGraphicsTarget target(context);
     content_->Draw(&target);
 }
 
@@ -1303,7 +1303,7 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     [self caretMoved];
     [self setNeedsDisplay:YES];
 
-    mac::App* app = content_->app();
+    platform::App* app = content_->app();
     id target = [NSApp delegate];
     if (!app || !target) return;
 
@@ -1729,7 +1729,7 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     return @"Document";
 }
 
-- (NSRect)axFrameForRect:(const mac::Rect*)rect {
+- (NSRect)axFrameForRect:(const platform::Rect*)rect {
     NSRect inView = NSMakeRect(rect->x, rect->y, rect->width, rect->height);
     NSRect inWindow = [self convertRect:inView toView:nil];
     return [self.window convertRectToScreen:inWindow];
@@ -1738,10 +1738,10 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
 - (NSArray*)accessibilityChildren {
     NSMutableArray* children = [NSMutableArray array];
     if (!content_) return children;
-    const std::vector<mac::ContentView::AxTable> tables =
+    const std::vector<platform::ContentView::AxTable> tables =
         content_->AccessibilityTables();
-    for (const mac::ContentView::AxTable& table : tables) {
-        const mac::Rect tableRect{table.x, table.y, table.width, table.height};
+    for (const platform::ContentView::AxTable& table : tables) {
+        const platform::Rect tableRect{table.x, table.y, table.width, table.height};
         NSAccessibilityElement* tableElement =
             [NSAccessibilityElement accessibilityElementWithRole:
                                         NSAccessibilityTableRole
@@ -1753,17 +1753,17 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
         while (i < table.cells.size()) {
             const int rowIndex = table.cells[i].row;
             NSMutableArray* rowCells = [NSMutableArray array];
-            const mac::ContentView::AxCell& first = table.cells[i];
+            const platform::ContentView::AxCell& first = table.cells[i];
             float minX = first.x, minY = first.y;
             float maxX = first.x + first.width;
             float maxY = first.y + first.height;
             while (i < table.cells.size() && table.cells[i].row == rowIndex) {
-                const mac::ContentView::AxCell& cell = table.cells[i];
+                const platform::ContentView::AxCell& cell = table.cells[i];
                 if (cell.x < minX) minX = cell.x;
                 if (cell.y < minY) minY = cell.y;
                 if (cell.x + cell.width > maxX) maxX = cell.x + cell.width;
                 if (cell.y + cell.height > maxY) maxY = cell.y + cell.height;
-                const mac::Rect cellRect{cell.x, cell.y, cell.width, cell.height};
+                const platform::Rect cellRect{cell.x, cell.y, cell.width, cell.height};
                 NSAccessibilityElement* cellElement =
                     [NSAccessibilityElement accessibilityElementWithRole:
                                                 NSAccessibilityStaticTextRole
@@ -1780,7 +1780,7 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
                 [rowCells addObject:cellElement];
                 ++i;
             }
-            const mac::Rect rowRect{minX, minY, maxX - minX, maxY - minY};
+            const platform::Rect rowRect{minX, minY, maxX - minX, maxY - minY};
             NSAccessibilityElement* rowElement =
                 [NSAccessibilityElement accessibilityElementWithRole:
                                             NSAccessibilityRowRole

@@ -8,7 +8,7 @@
 // (mermaid::MermaidRender), so only the drawing calls differ.
 
 #include "mermaid/layout_cache.h"
-#include "seams.h"
+#include "platform/seams.h"
 #include "theme.h"
 
 namespace mac {

@@ -123,9 +123,9 @@ static std::wstring CounterText(const FindBarModel& model) {
     [replaceField_ setDelegate:self];
 
     findLabel_ = [NSTextField labelWithString:@"Find:"];
-    [findLabel_ setFont:mac::SystemUIFont(12.0f)];
+    [findLabel_ setFont:platform::SystemUIFont(12.0f)];
     replaceLabel_ = [NSTextField labelWithString:@"Replace with:"];
-    [replaceLabel_ setFont:mac::SystemUIFont(12.0f)];
+    [replaceLabel_ setFont:platform::SystemUIFont(12.0f)];
 
     // The system's find-bar pair: one segmented control, back and
     // forward, with the system's chevrons. The glyphs are the ones the
@@ -173,7 +173,7 @@ static std::wstring CounterText(const FindBarModel& model) {
 
     statusLabel_ = [NSTextField labelWithString:@""];
     [statusLabel_ setTextColor:[NSColor secondaryLabelColor]];
-    [statusLabel_ setFont:mac::SystemUIFont(11.0f)];
+    [statusLabel_ setFont:platform::SystemUIFont(11.0f)];
 }
 
 // A button with a title, a tooltip and an action.

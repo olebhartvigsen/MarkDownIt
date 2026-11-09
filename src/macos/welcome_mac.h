@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-#include "seams.h"
+#include "platform/seams.h"
 #include "settings.h"
 
 namespace mac {

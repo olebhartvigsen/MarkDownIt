@@ -48,11 +48,11 @@ std::string Json(const std::string& value) {
     return out.str();
 }
 
-class FixedMetrics final : public mac::TextEngine {
+class FixedMetrics final : public platform::TextEngine {
 public:
-    std::vector<mac::TextLine> MeasureWrapped(
-        const std::vector<mac::GlyphRun>& runs, float, float) override {
-        mac::TextLine line;
+    std::vector<platform::TextLine> MeasureWrapped(
+        const std::vector<platform::GlyphRun>& runs, float, float) override {
+        platform::TextLine line;
         line.runs = runs;
         for (const auto& run : runs) {
             std::size_t count = 0;
@@ -63,21 +63,21 @@ public:
         }
         return {line};
     }
-    uint32_t HitTestOffset(const mac::TextLine&, float, bool*) const override {
+    uint32_t HitTestOffset(const platform::TextLine&, float, bool*) const override {
         throw std::logic_error("SVG must not request hit testing");
     }
-    mac::Rect OffsetToRect(const mac::TextLine&, uint32_t) const override {
+    platform::Rect OffsetToRect(const platform::TextLine&, uint32_t) const override {
         throw std::logic_error("SVG must not request caret placement");
     }
-    float LineHeight(const mac::FontSpec& font) const override { return font.size; }
+    float LineHeight(const platform::FontSpec& font) const override { return font.size; }
 };
 
-class Commands final : public mac::RenderTarget {
+class Commands final : public platform::RenderTarget {
 public:
     std::vector<std::string> ops;
     // Record red shafts and green markers apart from black box strokes.
-    std::vector<mac::Point> relationPoints;
-    std::vector<mac::Point> markerPoints;
+    std::vector<platform::Point> relationPoints;
+    std::vector<platform::Point> markerPoints;
 
     void CheckArrowContacts(float zoom, int translated) const {
         const float dx = translated ? 67.0f : 0.0f;
@@ -115,20 +115,20 @@ public:
         }
     }
 
-    void FillRect(const mac::Rect& r, const mac::Color& c) override {
+    void FillRect(const platform::Rect& r, const platform::Color& c) override {
         Rect("fillRect", r, 0, c, 0);
     }
-    void FillRoundedRect(const mac::Rect& r, float radius, const mac::Color& c) override {
+    void FillRoundedRect(const platform::Rect& r, float radius, const platform::Color& c) override {
         Rect("fillRoundedRect", r, radius, c, 0);
     }
-    void StrokeRect(const mac::Rect& r, const mac::Color& c, float width) override {
+    void StrokeRect(const platform::Rect& r, const platform::Color& c, float width) override {
         Rect("strokeRect", r, 0, c, width);
     }
-    void StrokeRoundedRect(const mac::Rect& r, float radius, const mac::Color& c,
+    void StrokeRoundedRect(const platform::Rect& r, float radius, const platform::Color& c,
                            float width) override {
         Rect("strokeRoundedRect", r, radius, c, width);
     }
-    void StrokeLine(float x0, float y0, float x1, float y1, const mac::Color& c,
+    void StrokeLine(float x0, float y0, float x1, float y1, const platform::Color& c,
                     float width) override {
         auto out = Begin("line");
         if (c.r > 0.5f && c.g < 0.25f && c.b < 0.25f) {
@@ -140,8 +140,8 @@ public:
         out << ',' << width << ']';
         ops.push_back(out.str());
     }
-    void DrawText(const std::string& text, const mac::FontSpec& font, float x,
-                  float baseline, const mac::Color& c) override {
+    void DrawText(const std::string& text, const platform::FontSpec& font, float x,
+                  float baseline, const platform::Color& c) override {
         auto out = Begin("text");
         out << ',' << Json(text) << ',' << Json(font.family) << ',' << font.size
             << ',' << font.bold << ',' << font.italic << ',' << font.monospace
@@ -150,24 +150,24 @@ public:
         out << ']';
         ops.push_back(out.str());
     }
-    void DrawBitmap(mac::BitmapHandle, const mac::Rect&) override {
+    void DrawBitmap(platform::BitmapHandle, const platform::Rect&) override {
         throw std::logic_error("SVG reference has no bitmap primitive");
     }
-    void FillEllipse(const mac::Rect& r, const mac::Color& c) override {
+    void FillEllipse(const platform::Rect& r, const platform::Color& c) override {
         Rect("fillEllipse", r, 0, c, 0);
     }
-    void StrokeEllipse(const mac::Rect& r, const mac::Color& c, float width) override {
+    void StrokeEllipse(const platform::Rect& r, const platform::Color& c, float width) override {
         Rect("strokeEllipse", r, 0, c, width);
     }
-    void FillPolygon(const std::vector<mac::Point>& points, const mac::Color& c) override {
+    void FillPolygon(const std::vector<platform::Point>& points, const platform::Color& c) override {
         Polygon("fillPolygon", points, c, 0, true);
     }
-    void StrokePolygon(const std::vector<mac::Point>& points, const mac::Color& c,
+    void StrokePolygon(const std::vector<platform::Point>& points, const platform::Color& c,
                        float width, bool closed) override {
         Polygon("strokePolygon", points, c, width, closed);
     }
-    void FillPieSlice(const mac::Rect& r, float start, float end,
-                      const mac::Color& c) override {
+    void FillPieSlice(const platform::Rect& r, float start, float end,
+                      const platform::Color& c) override {
         auto out = Begin("pieSlice");
         out << ',' << r.x << ',' << r.y << ',' << r.width << ',' << r.height
             << ',' << start << ',' << end;
@@ -175,7 +175,7 @@ public:
         out << ']';
         ops.push_back(out.str());
     }
-    void PushClip(const mac::Rect& r) override { Rect("pushClip", r, 0, {}, 0); }
+    void PushClip(const platform::Rect& r) override { Rect("pushClip", r, 0, {}, 0); }
     void PopClip() override { ops.push_back("[\"popClip\"]"); }
 private:
     static std::ostringstream Begin(const char* name) {
@@ -184,11 +184,11 @@ private:
         out << std::setprecision(9) << '[' << Json(name);
         return out;
     }
-    static void Color(std::ostringstream& out, const mac::Color& c) {
+    static void Color(std::ostringstream& out, const platform::Color& c) {
         out << ',' << c.r << ',' << c.g << ',' << c.b << ',' << c.a;
     }
-    void Rect(const char* name, const mac::Rect& r, float radius,
-              const mac::Color& c, float width) {
+    void Rect(const char* name, const platform::Rect& r, float radius,
+              const platform::Color& c, float width) {
         auto out = Begin(name);
         out << ',' << r.x << ',' << r.y << ',' << r.width << ',' << r.height
             << ',' << radius;
@@ -196,8 +196,8 @@ private:
         out << ',' << width << ']';
         ops.push_back(out.str());
     }
-    void Polygon(const char* name, const std::vector<mac::Point>& points,
-                 const mac::Color& c, float width, bool closed) {
+    void Polygon(const char* name, const std::vector<platform::Point>& points,
+                 const platform::Color& c, float width, bool closed) {
         auto out = Begin(name);
         const bool red = c.r > 0.5f && c.g < 0.25f && c.b < 0.25f;
         const bool green = c.g > 0.5f && c.r < 0.25f && c.b < 0.25f;
@@ -309,7 +309,7 @@ int main(int argc, char** argv) {
             svg::SvgDoc doc;
             if (!doc.Load(native.Context(), xml)) throw std::runtime_error("Cannot parse SVG fixture");
 #else
-            mac::SvgDoc doc;
+            platform::SvgDoc doc;
             if (!doc.Load(xml)) throw std::runtime_error("Cannot parse SVG fixture");
 #endif
             for (float zoom : {0.4f, 1.0f, 2.0f}) {

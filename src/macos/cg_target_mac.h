@@ -13,7 +13,7 @@
 
 #import <CoreGraphics/CoreGraphics.h>
 
-#include "seams.h"
+#include "platform/seams.h"
 #include "image_draw_mac.h"
 #include "text_engine_mac.h"
 
@@ -178,7 +178,7 @@ public:
             static_cast<CFIndex>(utf8.size()), kCFStringEncodingUTF8, false);
         if (!text) return;
 
-        CTFontRef ctFont = mac::CoreTextFontFor(font);
+        CTFontRef ctFont = platform::CoreTextFontFor(font);
         if (!ctFont) {
             CFRelease(text);
             return;
@@ -227,14 +227,14 @@ public:
     }
 
     void DrawBitmap(BitmapHandle image, const Rect& rect) override {
-        mac::DrawImageIntoContext(context_, image, rect);
+        platform::DrawImageIntoContext(context_, image, rect);
     }
 
     void DrawChevron(const Rect& rect, bool expanded,
                      const Color& color) override {
         // The system's own chevron symbol, and the small triangle as
         // the fallback when the symbol is not there.
-        if (!mac::DrawChevronIntoContext(context_, rect, expanded, color)) {
+        if (!platform::DrawChevronIntoContext(context_, rect, expanded, color)) {
             RenderTarget::DrawChevron(rect, expanded, color);
         }
     }

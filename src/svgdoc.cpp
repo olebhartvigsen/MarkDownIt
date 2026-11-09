@@ -41,7 +41,7 @@ std::wstring Utf16(const std::string& utf8) {
     return result;
 }
 
-bool SameFont(const mac::FontSpec& a, const mac::FontSpec& b) {
+bool SameFont(const platform::FontSpec& a, const platform::FontSpec& b) {
     return a.family == b.family && a.size == b.size && a.bold == b.bold &&
            a.italic == b.italic && a.monospace == b.monospace;
 }
@@ -71,7 +71,7 @@ struct DrawStatus {
 // Private to the SVG adapter, not a general markdown/editor TextEngine.
 // SvgDoc only measures a single unwrapped run; unsupported editor seams fail
 // explicitly rather than returning invented hit-test positions.
-class SvgTextEngine final : public mac::TextEngine {
+class SvgTextEngine final : public platform::TextEngine {
 public:
     struct Layout {
         ComPtr<IDWriteTextLayout> native;
@@ -85,7 +85,7 @@ public:
         if (factory_) status_.Check(factory_->GetSystemFontCollection(&fonts_));
     }
 
-    const Layout* GetLayout(const std::string& text, const mac::FontSpec& font) const {
+    const Layout* GetLayout(const std::string& text, const platform::FontSpec& font) const {
         for (const auto& entry : layouts_) {
             if (entry.text == text && SameFont(entry.font, font)) return &entry.layout;
         }
@@ -152,7 +152,7 @@ public:
         return &layouts_.back().layout;
     }
 
-    std::vector<mac::TextLine> MeasureWrapped(const std::vector<mac::GlyphRun>& runs,
+    std::vector<platform::TextLine> MeasureWrapped(const std::vector<platform::GlyphRun>& runs,
                                              float maxWidth, float lineSpacing) override {
         if (runs.size() != 1 || maxWidth != 1.0e9f || lineSpacing != 0.0f) {
             throw std::logic_error("SVG adapter only measures the shared scene's unwrapped run");
@@ -161,7 +161,7 @@ public:
         const std::string first = text.substr(0, text.find_first_of("\r\n"));
         const Layout* layout = GetLayout(first.empty() ? " " : first, runs.front().font);
         if (!layout) return {};
-        mac::TextLine line;
+        platform::TextLine line;
         line.width = first.empty() ? 0.0f : layout->width;
         line.height = layout->height;
         line.ascent = layout->baseline;
@@ -169,13 +169,13 @@ public:
         return {std::move(line)};
     }
 
-    uint32_t HitTestOffset(const mac::TextLine&, float, bool*) const override {
+    uint32_t HitTestOffset(const platform::TextLine&, float, bool*) const override {
         throw std::logic_error("SVG adapter does not provide editor hit testing");
     }
-    mac::Rect OffsetToRect(const mac::TextLine&, uint32_t) const override {
+    platform::Rect OffsetToRect(const platform::TextLine&, uint32_t) const override {
         throw std::logic_error("SVG adapter does not provide editor offset rectangles");
     }
-    float LineHeight(const mac::FontSpec& font) const override {
+    float LineHeight(const platform::FontSpec& font) const override {
         const Layout* layout = GetLayout(" ", font);
         return layout ? layout->height : 0.0f;
     }
@@ -188,7 +188,7 @@ private:
         return status_.Check(fonts_->FindFamilyName(family.c_str(), &index, &exists)) && exists;
     }
 
-    std::wstring ResolveFamily(const mac::FontSpec& font) const {
+    std::wstring ResolveFamily(const platform::FontSpec& font) const {
         std::wstring family = Utf16(font.family);
         // Prefer the same installed named face, including Helvetica/Menlo.
         // Only substitute absent Mac families. Any other missing family uses
@@ -205,12 +205,12 @@ private:
     }
 
     struct FormatEntry {
-        mac::FontSpec font;
+        platform::FontSpec font;
         ComPtr<IDWriteTextFormat> native;
     };
     struct LayoutEntry {
         std::string text;
-        mac::FontSpec font;
+        platform::FontSpec font;
         Layout layout;
     };
     IDWriteFactory* factory_;
@@ -220,30 +220,30 @@ private:
     mutable std::vector<LayoutEntry> layouts_;
 };
 
-D2D1_RECT_F Bounds(const mac::Rect& rect) {
+D2D1_RECT_F Bounds(const platform::Rect& rect) {
     return D2D1::RectF((std::min)(rect.x, rect.x + rect.width),
                        (std::min)(rect.y, rect.y + rect.height),
                        (std::max)(rect.x, rect.x + rect.width),
                        (std::max)(rect.y, rect.y + rect.height));
 }
 
-D2D1_ROUNDED_RECT Rounded(const mac::Rect& rect, float radius) {
+D2D1_ROUNDED_RECT Rounded(const platform::Rect& rect, float radius) {
     const auto bounds = Bounds(rect);
     const float r = (std::max)(0.0f, (std::min)(radius,
         (std::min)(bounds.right - bounds.left, bounds.bottom - bounds.top) * 0.5f));
     return D2D1::RoundedRect(bounds, r, r);
 }
 
-D2D1_ELLIPSE Ellipse(const mac::Rect& rect) {
+D2D1_ELLIPSE Ellipse(const platform::Rect& rect) {
     return D2D1::Ellipse(D2D1::Point2F(rect.x + rect.width * 0.5f,
                                     rect.y + rect.height * 0.5f),
                          std::abs(rect.width) * 0.5f, std::abs(rect.height) * 0.5f);
 }
 
-class SvgRenderTarget final : public mac::RenderTarget {
+class SvgRenderTarget final : public platform::RenderTarget {
 public:
     SvgRenderTarget(ID2D1DeviceContext5* context, SvgTextEngine& text, DrawStatus& status,
-                    mac::RenderTarget* trace)
+                    platform::RenderTarget* trace)
         : context_(context), text_(text), status_(status), trace_(trace) {
         // The scene has already fitted every coordinate. Never install a
         // wrapper document transform: all primitives inherit the caller's.
@@ -251,33 +251,33 @@ public:
         status_.Check(context_->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 1.0f), &brush_));
     }
 
-    void FillRect(const mac::Rect& rect, const mac::Color& color) override {
+    void FillRect(const platform::Rect& rect, const platform::Color& color) override {
         if (trace_) trace_->FillRect(rect, color);
         if (Brush(color)) context_->FillRectangle(Bounds(rect), brush_.Get());
     }
-    void FillRoundedRect(const mac::Rect& rect, float radius,
-                         const mac::Color& color) override {
+    void FillRoundedRect(const platform::Rect& rect, float radius,
+                         const platform::Color& color) override {
         if (trace_) trace_->FillRoundedRect(rect, radius, color);
         if (Brush(color)) context_->FillRoundedRectangle(Rounded(rect, radius), brush_.Get());
     }
-    void StrokeRect(const mac::Rect& rect, const mac::Color& color, float width) override {
+    void StrokeRect(const platform::Rect& rect, const platform::Color& color, float width) override {
         if (trace_) trace_->StrokeRect(rect, color, width);
         if (Brush(color)) context_->DrawRectangle(Bounds(rect), brush_.Get(), width);
     }
-    void StrokeRoundedRect(const mac::Rect& rect, float radius,
-                           const mac::Color& color, float width) override {
+    void StrokeRoundedRect(const platform::Rect& rect, float radius,
+                           const platform::Color& color, float width) override {
         if (trace_) trace_->StrokeRoundedRect(rect, radius, color, width);
         if (Brush(color)) context_->DrawRoundedRectangle(
             Rounded(rect, radius), brush_.Get(), width > 0.0f ? width : 1.0f);
     }
     void StrokeLine(float x0, float y0, float x1, float y1,
-                    const mac::Color& color, float width) override {
+                    const platform::Color& color, float width) override {
         if (trace_) trace_->StrokeLine(x0, y0, x1, y1, color, width);
         if (Brush(color)) context_->DrawLine(D2D1::Point2F(x0, y0), D2D1::Point2F(x1, y1),
                                              brush_.Get(), width);
     }
-    void DrawText(const std::string& utf8, const mac::FontSpec& font,
-                  float x, float baselineY, const mac::Color& color) override {
+    void DrawText(const std::string& utf8, const platform::FontSpec& font,
+                  float x, float baselineY, const platform::Color& color) override {
         if (trace_) trace_->DrawText(utf8, font, x, baselineY, color);
         if (SingleLine(utf8).empty() || !Brush(color)) return;
         const auto* layout = text_.GetLayout(utf8, font);
@@ -286,36 +286,36 @@ public:
                                 layout->native.Get(), brush_.Get(),
                                 D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
     }
-    void DrawBitmap(mac::BitmapHandle, const mac::Rect&) override {
+    void DrawBitmap(platform::BitmapHandle, const platform::Rect&) override {
         // The reference SVG scene does not emit bitmap drawing operations.
         throw std::logic_error("SVG adapter does not support bitmap drawing");
     }
-    void FillEllipse(const mac::Rect& rect, const mac::Color& color) override {
+    void FillEllipse(const platform::Rect& rect, const platform::Color& color) override {
         if (trace_) trace_->FillEllipse(rect, color);
         if (Brush(color)) context_->FillEllipse(Ellipse(rect), brush_.Get());
     }
-    void StrokeEllipse(const mac::Rect& rect, const mac::Color& color, float width) override {
+    void StrokeEllipse(const platform::Rect& rect, const platform::Color& color, float width) override {
         if (trace_) trace_->StrokeEllipse(rect, color, width);
         if (Brush(color)) context_->DrawEllipse(Ellipse(rect), brush_.Get(), width);
     }
-    void FillPolygon(const std::vector<mac::Point>& points, const mac::Color& color) override {
+    void FillPolygon(const std::vector<platform::Point>& points, const platform::Color& color) override {
         if (trace_) trace_->FillPolygon(points, color);
         if (points.size() < 3 || !Brush(color)) return;
         const auto path = Polygon(points, true, true);
         if (path) context_->FillGeometry(path.Get(), brush_.Get());
     }
-    void StrokePolygon(const std::vector<mac::Point>& points, const mac::Color& color,
+    void StrokePolygon(const std::vector<platform::Point>& points, const platform::Color& color,
                        float width, bool closed) override {
         if (trace_) trace_->StrokePolygon(points, color, width, closed);
         if (points.size() < 2 || !Brush(color)) return;
         const auto path = Polygon(points, closed, false);
         if (path) context_->DrawGeometry(path.Get(), brush_.Get(), width > 0.0f ? width : 1.0f);
     }
-    void FillPieSlice(const mac::Rect&, float, float, const mac::Color&) override {
-        // No pie-slice operation is emitted by mac::SvgDoc, either.
+    void FillPieSlice(const platform::Rect&, float, float, const platform::Color&) override {
+        // No pie-slice operation is emitted by platform::SvgDoc, either.
         throw std::logic_error("SVG adapter does not support pie-slice operations");
     }
-    void PushClip(const mac::Rect& rect) override {
+    void PushClip(const platform::Rect& rect) override {
         if (trace_) trace_->PushClip(rect);
         context_->PushAxisAlignedClip(Bounds(rect), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
     }
@@ -325,13 +325,13 @@ public:
     }
 
 private:
-    bool Brush(const mac::Color& color) {
+    bool Brush(const platform::Color& color) {
         if (!brush_) return false;
         brush_->SetColor(D2D1::ColorF(color.r, color.g, color.b, color.a));
         return true;
     }
 
-    ComPtr<ID2D1PathGeometry> Polygon(const std::vector<mac::Point>& points,
+    ComPtr<ID2D1PathGeometry> Polygon(const std::vector<platform::Point>& points,
                                      bool closed, bool filled) {
         ComPtr<ID2D1PathGeometry> path;
         if (!factory_) {
@@ -357,7 +357,7 @@ private:
     ID2D1DeviceContext5* context_;
     SvgTextEngine& text_;
     DrawStatus& status_;
-    mac::RenderTarget* trace_;
+    platform::RenderTarget* trace_;
     ComPtr<ID2D1Factory> factory_;
     ComPtr<ID2D1SolidColorBrush> brush_;
 };
@@ -373,7 +373,7 @@ void SvgDoc::Release() {
 bool SvgDoc::Load(ID2D1DeviceContext5* ctx, const std::string& xml) {
     Release();
     if (!ctx || xml.empty()) return false;
-    auto scene = std::make_unique<mac::SvgDoc>();
+    auto scene = std::make_unique<platform::SvgDoc>();
     const bool loaded = scene->Load(xml);
     diag::TraceFmt("SVGDOC mode=shared-scene loaded=%d shapes=%zu w=%g h=%g",
                    loaded ? 1 : 0, scene->shapes().size(), scene->Width(), scene->Height());
@@ -384,7 +384,7 @@ bool SvgDoc::Load(ID2D1DeviceContext5* ctx, const std::string& xml) {
 
 void SvgDoc::Draw(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
                   float x, float y, float w, float h,
-                  mac::RenderTarget* trace, mac::TextEngine* metrics) {
+                  platform::RenderTarget* trace, platform::TextEngine* metrics) {
     if (!ctx || !scene_) return;
     DrawStatus status;
     SvgTextEngine text(dw, status);

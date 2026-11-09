@@ -70,9 +70,9 @@ bool OpenExternalUrl(const std::string& url) {
 @interface MdAppDelegate
     : NSObject <NSApplicationDelegate, NSWindowDelegate,
                 NSMenuDelegate, MacSettingsHost> {
-    std::unique_ptr<mac::App> app_;
+    std::unique_ptr<platform::App> app_;
     // Owned by app_; this is a non-owning observer.
-    mac::ContentView* content_;
+    platform::ContentView* content_;
     // The window content, which holds the command strip, the find bar
     // and the document.
     NSStackView* container_;
@@ -82,7 +82,7 @@ bool OpenExternalUrl(const std::string& url) {
     MdToolbarController* toolbar_;
 
     // The outline pane and the view that draws it.
-    std::unique_ptr<mac::OutlinePane> outlinePane_;
+    std::unique_ptr<platform::OutlinePane> outlinePane_;
     MdOutlineView* outlineView_;
     NSScrollView* outlineScroll_;
     // The window material the pane sits on.
@@ -96,7 +96,7 @@ bool OpenExternalUrl(const std::string& url) {
     bool outlineVisible_;
     // Whether the open document has headings at all.
     bool outlineHasHeadings_;
-    mac::MacSettings settings_;
+    platform::MacSettings settings_;
     NSWindow* window_;
     // Set when windowWillClose saved the frame, so the terminate path
     // does not read a window that AppKit has already taken down.
@@ -214,7 +214,7 @@ bool OpenExternalUrl(const std::string& url) {
 static std::string OcrPdfPage(void* data, const std::string& path,
                               std::size_t page_index) {
     (void)data;
-    return mac::RecognizePdfPage(path, page_index);
+    return platform::RecognizePdfPage(path, page_index);
 }
 
 // Counts the refreshes the scroll path asks for, so a dead wiring and a
@@ -225,8 +225,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (instancetype)init {
     self = [super init];
     if (self) {
-        app_ = std::make_unique<mac::App>();
-        app_->SetContentView(std::make_unique<mac::ContentView>(app_.get()));
+        app_ = std::make_unique<platform::App>();
+        app_->SetContentView(std::make_unique<platform::ContentView>(app_.get()));
         content_ = app_->contentView();
         zoom_ = zoom::kDefaultZoom;
         sourceView_ = false;
@@ -249,7 +249,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
 - (void)applicationWillFinishLaunching:(NSNotification*)notification {
     (void)notification;
-    mac::TraceMac("willFinishLaunching enter");
+    platform::TraceMac("willFinishLaunching enter");
     // The settings are read before anything else, because a document
     // handed over by the Finder arrives BEFORE didFinishLaunching: the
     // open path adds the file to the recent list and saves. Reading the
@@ -262,10 +262,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
     (void)notification;
 
-    mac::TraceMac("didFinishLaunching enter");
+    platform::TraceMac("didFinishLaunching enter");
     // The bundled fonts come first: everything laid out after this
     // line, the welcome screen included, measures with them.
-    mac::RegisterBundledFonts();
+    platform::RegisterBundledFonts();
     // A document handed over by the Finder is already open here, and a
     // document opens at 100%: the stored level belongs to the window
     // that comes up on the recents page instead.
@@ -350,7 +350,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
     // The outline pane sits to the left of the document, in a split
     // view, so the reader can drag the divider between them.
-    outlinePane_ = std::make_unique<mac::OutlinePane>();
+    outlinePane_ = std::make_unique<platform::OutlinePane>();
     outlineView_ = [[MdOutlineView alloc] initWithPane:outlinePane_.get()];
     outlineVisible_ = settings_.settings().outlineVisible;
 
@@ -380,7 +380,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // after every reparse.
     outlinePane_->SetDocument(&app_->GetDocument());
     outlinePane_->SetChromePalette(
-        mac::SidebarPaletteForAppearance([view_ effectiveAppearance]));
+        platform::SidebarPaletteForAppearance([view_ effectiveAppearance]));
     // The palette belongs to the appearance, so a switch refreshes the
     // outline pane beside the document too. Wired here, after the pane
     // exists: with the handler wired early, the first palette resolve
@@ -389,13 +389,13 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // Locals, so the block does not capture self: the handler lives on
     // the content view, and a self capture would make the two keep
     // each other alive.
-    mac::OutlinePane* themePane = outlinePane_.get();
+    platform::OutlinePane* themePane = outlinePane_.get();
     NSView* themePaneView = outlineView_;
     __weak MdContentView* themeContentView = view_;
     [view_ setThemeChangedHandler:^{
         if (themePane) {
             themePane->SetChromePalette(
-                mac::SidebarPaletteForAppearance(
+                platform::SidebarPaletteForAppearance(
                     [themeContentView effectiveAppearance]));
             [themePaneView setNeedsDisplay:YES];
         }
@@ -563,7 +563,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // The document view takes the keyboard from the start, so typing
     // reaches the edit controller without a click first.
     [window_ makeFirstResponder:view_];
-    mac::TraceMac("the window is on screen");
+    platform::TraceMac("the window is on screen");
 
     // The delegate takes the files that are dropped on the window.
     [window_ registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
@@ -574,14 +574,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // the document behind a list of recent ones.
     if (app_->filePath().empty()) {
         [self showWelcomeScreen];
-        mac::TraceMac("the welcome screen is up");
+        platform::TraceMac("the welcome screen is up");
     } else {
         [self hideWelcomeScreen];
         [self refreshWindowTitle:app_->filePath()];
         [self applyOutlineHeads];
         [view_ setNeedsDisplay:YES];
     }
-    mac::TraceMac("launch: file=%s welcome=%d zoom=%.0f",
+    platform::TraceMac("launch: file=%s welcome=%d zoom=%.0f",
                   app_->filePath().c_str(), app_->WelcomeMode() ? 1 : 0,
                   static_cast<double>(content_->zoom() * 100.0f));
 
@@ -605,7 +605,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
     // The menu bar. The items find their command through the responder
     // chain, which ends at this delegate.
-    NSMenu* menu = mac::BuildMainMenu();
+    NSMenu* menu = platform::BuildMainMenu();
     [NSApp setMainMenu:menu];
     [NSApp activateIgnoringOtherApps:YES];
 
@@ -662,7 +662,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
 - (void)qaStep:(NSArray<NSString*>*)states at:(NSUInteger)index {
     if (index >= states.count) {
-        mac::TraceMac("qa states done");
+        platform::TraceMac("qa states done");
         // One more beat for the last capture, then the walk is over.
         dispatch_after(
             dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4 * NSEC_PER_SEC)),
@@ -693,7 +693,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         (int)lround((screenHeight - NSMaxY(paneOnScreen)) * scale),
         (int)lround(NSWidth(paneOnScreen) * scale),
         (int)lround(NSHeight(paneOnScreen) * scale)];
-    mac::TraceMac([line UTF8String]);
+    platform::TraceMac([line UTF8String]);
     dispatch_after(
         dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)),
         dispatch_get_main_queue(), ^{
@@ -781,7 +781,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         const uint32_t scrolled = content_->HitTestPoint(
             static_cast<float>(inView.x),
             static_cast<float>(inView.y + scrollBefore));
-        mac::TraceMac(
+        platform::TraceMac(
             "qa click-scroll: scroll=%.0f flipped=%d clickViewY=%.0f "
             "windowY=%.0f caret=%u direct=%u scrolled=%u scrollAfter=%.0f",
             static_cast<double>(scrollBefore),
@@ -846,12 +846,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         NSClipView* clip = [[view_ enclosingScrollView] contentView];
         [view_ syncFrameToContent];
         [view_ scrollToDocumentPoint:NSMakePoint(240.0, 0.0)];
-        mac::TraceMac(
+        platform::TraceMac(
             "qa welcome-scrolled: before offset=%.0f frame=%.0f clip=%.0f",
             (double)[clip bounds].origin.x, (double)NSWidth([view_ frame]),
             (double)NSWidth([clip bounds]));
         [self showRecents:nil];
-        mac::TraceMac(
+        platform::TraceMac(
             "qa welcome-scrolled: after offset=%.0f frame=%.0f clip=%.0f",
             (double)[clip bounds].origin.x, (double)NSWidth([view_ frame]),
             (double)NSWidth([clip bounds]));
@@ -911,14 +911,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             [self OpenPath:std::string(
                 [[dir stringByAppendingPathComponent:@"layout-showcase.md"]
                     UTF8String])];
-            mac::TraceMac(
+            platform::TraceMac(
                 "qa svg: markdown headings=%d visible=%d hidden=%d document=%.0f",
                 outlineHasHeadings_ ? 1 : 0, outlineVisible_ ? 1 : 0,
                 [backdrop_ isHidden] ? 1 : 0, (double)NSWidth([view_ frame]));
             [self OpenPath:std::string(
                 [[dir stringByAppendingPathComponent:@"diagram.svg"]
                     UTF8String])];
-            mac::TraceMac(
+            platform::TraceMac(
                 "qa svg: picture headings=%d visible=%d hidden=%d document=%.0f "
                 "height=%.0f",
                 outlineHasHeadings_ ? 1 : 0, outlineVisible_ ? 1 : 0,
@@ -935,7 +935,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             [self OpenPath:std::string(
                 [[dir stringByAppendingPathComponent:@"two-boxes.svg"]
                     UTF8String])];
-            mac::TraceMac("qa svg: fresh file=%s height=%.0f",
+            platform::TraceMac("qa svg: fresh file=%s height=%.0f",
                           [[[window_ representedFilename] lastPathComponent]
                               UTF8String],
                           (double)content_->DocumentHeight());
@@ -962,7 +962,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             [self setZoom:(fit > 0.1f ? fit : 0.1f) quietly:YES];
             [zoomHud_ hideNow];
             const NSRect clip = [[view_ enclosingScrollView] documentVisibleRect];
-            mac::TraceMac("qa svg: drawio file=%s height=%.0f width=%.0f "
+            platform::TraceMac("qa svg: drawio file=%s height=%.0f width=%.0f "
                           "zoom=%.3f visible=%.0f,%.0f,%.0f,%.0f",
                           [[[window_ representedFilename] lastPathComponent]
                               UTF8String],
@@ -985,7 +985,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             NSClipView* clip = [scroll contentView];
             [clip scrollToPoint:NSMakePoint(150.0, 470.0)];
             [scroll reflectScrolledClipView:clip];
-            mac::TraceMac("qa svg: drawio100 height=%.0f width=%.0f zoom=%.3f "
+            platform::TraceMac("qa svg: drawio100 height=%.0f width=%.0f zoom=%.3f "
                           "visible=%.0f,%.0f,%.0f,%.0f",
                           (double)content_->DocumentHeight(),
                           (double)content_->ContentWidth(),
@@ -1006,7 +1006,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             [self OpenPath:std::string(
                 [[dir stringByAppendingPathComponent:@"two-boxes.svg"]
                     UTF8String])];
-            mac::TraceMac("qa svg: swap file=%s height=%.0f",
+            platform::TraceMac("qa svg: swap file=%s height=%.0f",
                           [[[window_ representedFilename] lastPathComponent]
                               UTF8String],
                           (double)content_->DocumentHeight());
@@ -1018,7 +1018,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The pane is asked for first, so the hide that follows can
         // only come from the document and not from the walk's order.
         [self applyOutlineVisible:YES];
-        mac::TraceMac(
+        platform::TraceMac(
             "qa no-headings: before headings=%d visible=%d document=%.0f",
             outlineHasHeadings_ ? 1 : 0, outlineVisible_ ? 1 : 0,
             (double)NSWidth([view_ frame]));
@@ -1031,7 +1031,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             [self OpenPath:std::string([path UTF8String])];
         }
         NSClipView* clip = [scrollView_ contentView];
-        mac::TraceMac(
+        platform::TraceMac(
             "qa no-headings: after headings=%d visible=%d document=%.0f clip=%.0f",
             outlineHasHeadings_ ? 1 : 0, outlineVisible_ ? 1 : 0,
             (double)NSWidth([view_ frame]),
@@ -1069,10 +1069,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         app_->SetSelection(0, 0);
         const std::vector<TextMarker>& marks = app_->markers().Markers();
         for (const TextMarker& mark : marks) {
-            mac::TraceMac("qa mark: exact=\"%s\" start=%u end=%u",
+            platform::TraceMac("qa mark: exact=\"%s\" start=%u end=%u",
                           mark.exact.c_str(), mark.start, mark.end);
         }
-        mac::TraceMac("qa mark: markers=%zu", marks.size());
+        platform::TraceMac("qa mark: markers=%zu", marks.size());
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"zoom-hud"]) {
         // The overlay a reader sees while zooming: it names the level,
@@ -1084,7 +1084,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [self setZoom:zoom::Step(zoom_, true)];
         const NSRect inWindow = [zoomHud_ convertRect:[zoomHud_ bounds]
                                                toView:nil];
-        mac::TraceMac("qa zoom-hud: percent=%.0f showing=%d "
+        platform::TraceMac("qa zoom-hud: percent=%.0f showing=%d "
                       "hidden=%d alpha=%.2f frame=%.0f,%.0f,%.0f,%.0f",
                       (double)(zoom_ * 100.0f),
                       [zoomHud_ isShowing] ? 1 : 0,
@@ -1101,7 +1101,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [self setZoom:zoom::Step(zoom_, true)];
         const NSRect inWindow = [zoomHud_ convertRect:[zoomHud_ bounds]
                                                toView:nil];
-        mac::TraceMac("qa zoom-hud: dark percent=%.0f showing=%d "
+        platform::TraceMac("qa zoom-hud: dark percent=%.0f showing=%d "
                       "hidden=%d alpha=%.2f frame=%.0f,%.0f,%.0f,%.0f",
                       (double)(zoom_ * 100.0f),
                       [zoomHud_ isShowing] ? 1 : 0,
@@ -1115,7 +1115,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // down: the rest of the walk reads the page at its normal size.
         [self setZoom:zoom::kDefaultZoom];
         [zoomHud_ hideNow];
-        mac::TraceMac("qa zoom-hud: cleared showing=%d",
+        platform::TraceMac("qa zoom-hud: cleared showing=%d",
                       [zoomHud_ isShowing] ? 1 : 0);
     } else if ([state isEqualToString:@"zoom-reopen"]) {
         // A document opens at 100%, whatever the page in front of it was
@@ -1130,7 +1130,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                 [[dir stringByAppendingPathComponent:@"layout-showcase.md"]
                     UTF8String])];
         }
-        mac::TraceMac("qa zoom-reopen: before=%d after=%d showing=%d",
+        platform::TraceMac("qa zoom-reopen: before=%d after=%d showing=%d",
                       before, zoom::Percent(zoom_),
                       [zoomHud_ isShowing] ? 1 : 0);
     } else if ([state isEqualToString:@"welcome"]) {
@@ -1146,7 +1146,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                 [items appendFormat:@"(on=%d)", [item isEnabled] ? 1 : 0];
             }
         }
-        mac::TraceMac("qa welcome: mode=%d toolbar=%s",
+        platform::TraceMac("qa welcome: mode=%d toolbar=%s",
                       app_->WelcomeMode() ? 1 : 0, [items UTF8String]);
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"wheel"]) {
@@ -1180,7 +1180,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         const CGFloat startClip = [clip bounds].origin.y;
         [self outlineActiveRefresh:YES];
         pump();
-        mac::TraceMac("qa wheel: outline before row=%d probe=%u clip=%.1f",
+        platform::TraceMac("qa wheel: outline before row=%d probe=%u clip=%.1f",
                       outlinePane_->ActiveVisibleRow(),
                       content_->ViewportProbeOffset(), startClip);
 
@@ -1230,10 +1230,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             CFRelease(ev);
             pump();
         }
-        mac::TraceMac("qa wheel: start=%.1f end=%.1f x=%.1f doc=%.1f->%.1f",
+        platform::TraceMac("qa wheel: start=%.1f end=%.1f x=%.1f doc=%.1f->%.1f",
                       startClip, [clip bounds].origin.y, [clip bounds].origin.x,
                       docBefore, [view_ frame].size.height);
-        mac::TraceMac("qa wheel: outline after row=%d probe=%u clip=%.1f",
+        platform::TraceMac("qa wheel: outline after row=%d probe=%u clip=%.1f",
                       outlinePane_->ActiveVisibleRow(),
                       content_->ViewportProbeOffset(),
                       [clip bounds].origin.y);
@@ -1247,11 +1247,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             [scrollView_ reflectScrolledClipView:clip];
         }
         [self outlineActiveRefresh:NO];
-        mac::TraceMac("qa no-outline: before pane=%.0f document=%.0f",
+        platform::TraceMac("qa no-outline: before pane=%.0f document=%.0f",
                       (double)NSWidth([backdrop_ frame]),
                       (double)NSWidth([view_ frame]));
         [self applyOutlineVisible:NO];
-        mac::TraceMac("qa no-outline: after pane=%.0f document=%.0f clip=%.0f",
+        platform::TraceMac("qa no-outline: after pane=%.0f document=%.0f clip=%.0f",
                       (double)NSWidth([backdrop_ frame]),
                       (double)NSWidth([view_ frame]),
                       (double)NSWidth([clip bounds]));
@@ -1268,7 +1268,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [window_ center];
         [self windowDidResize:nil];
         [self qaScrollToTop];
-        mac::TraceMac(
+        platform::TraceMac(
             "qa grow: before win=%.0f container=%.0f split=%.0f "
             "scroll=%.0f clip=%.0f contentSize=%.0f document=%.0f "
             "content=%.0f",
@@ -1282,7 +1282,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             (double)content_->ContentWidth());
         [window_ setContentSize:NSMakeSize(1024.0, 720.0)];
         [window_ center];
-        mac::TraceMac(
+        platform::TraceMac(
             "qa grow: first win=%.0f container=%.0f split=%.0f "
             "scroll=%.0f clip=%.0f contentSize=%.0f document=%.0f "
             "content=%.0f",
@@ -1298,7 +1298,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // right width, the first pass read a frame AppKit had not
         // resized yet.
         [self windowDidResize:nil];
-        mac::TraceMac(
+        platform::TraceMac(
             "qa grow: second win=%.0f container=%.0f split=%.0f "
             "scroll=%.0f clip=%.0f contentSize=%.0f document=%.0f "
             "content=%.0f",
@@ -1314,7 +1314,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // kept has to survive it, which is exactly what the reader
         // saw fail when the frame grew.
         [container_ layoutSubtreeIfNeeded];
-        mac::TraceMac(
+        platform::TraceMac(
             "qa grow: settled win=%.0f container=%.0f split=%.0f "
             "scroll=%.0f clip=%.0f contentSize=%.0f document=%.0f "
             "content=%.0f",
@@ -1394,8 +1394,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     app_->SetCaret(norm);
     const uint32_t caretBefore = app_->selection().active.offset;
     {
-        const std::vector<mac::LaidOutBlock>& blocks = content_->renderer().blocks();
-        mac::TraceMac("qa keys start: raw=%u norm=%u blocks=%zu lines=%zu",
+        const std::vector<platform::LaidOutBlock>& blocks = content_->renderer().blocks();
+        platform::TraceMac("qa keys start: raw=%u norm=%u blocks=%zu lines=%zu",
                       start, norm, blocks.size(),
                       blocks.empty() ? 0 : blocks.front().lines.size());
         // The block the caret is in: in the rendered view the first
@@ -1411,8 +1411,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             }
         }
         for (size_t i = caretBlock; i < blocks.size() && i < caretBlock + 1; ++i) {
-            const mac::LaidOutBlock& b = blocks[i];
-            mac::TraceMac("qa keys block: index=%zu x=%.1f y=%.1f w=%.1f "
+            const platform::LaidOutBlock& b = blocks[i];
+            platform::TraceMac("qa keys block: index=%zu x=%.1f y=%.1f w=%.1f "
                           "h=%.1f map=%zu lines=%zu src=%u..%u",
                           caretBlock, (double)b.x, (double)b.y,
                           (double)b.width, (double)b.height,
@@ -1420,10 +1420,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                           b.visToSrc.empty() ? 0 : b.visToSrc.front(),
                           b.visToSrc.empty() ? 0 : b.visToSrc.back());
             for (size_t j = 0; j < b.lines.size() && j < 4; ++j) {
-                const mac::TextLine& line = b.lines[j];
+                const platform::TextLine& line = b.lines[j];
                 size_t bytes = 0;
-                for (const mac::GlyphRun& run : line.runs) bytes += run.text.size();
-                mac::TraceMac("qa keys line %zu: w=%.1f h=%.1f bytes=%zu runs=%zu",
+                for (const platform::GlyphRun& run : line.runs) bytes += run.text.size();
+                platform::TraceMac("qa keys line %zu: w=%.1f h=%.1f bytes=%zu runs=%zu",
                               j, (double)line.width, (double)line.height, bytes,
                               line.runs.size());
             }
@@ -1433,11 +1433,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     const bool hasRect = content_->OffsetToRect(caretBefore, &cx, &cy, &cw, &ch);
     NSString* responderName =
         NSStringFromClass([[window_ firstResponder] class]);
-    mac::TraceMac("qa keys focus: responder=%s editing=%d caret_visible=%d",
+    platform::TraceMac("qa keys focus: responder=%s editing=%d caret_visible=%d",
                   responderName ? [responderName UTF8String] : "nil",
                   app_->Editing() ? 1 : 0,
                   content_->caretVisible() ? 1 : 0);
-    mac::TraceMac(
+    platform::TraceMac(
         "qa keys rect: ok=%d x=%.1f y=%.1f w=%.1f h=%.1f line_end=%u "
         "next_line=%u",
         hasRect ? 1 : 0, (double)cx, (double)cy, (double)cw, (double)ch,
@@ -1461,7 +1461,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     const uint32_t afterTyping = app_->selection().active.offset;
     app_->SetCaret(lengthAfter);
     [view_ caretMoved];
-    mac::TraceMac(
+    platform::TraceMac(
         "qa keys %s: editing=%d caret=%u right=%u down=%u down2=%u up=%u "
         "typed_len=%u->%u caret_after_type=%u scroll=%.0f height=%.0f "
         "view=%.0f",
@@ -1479,7 +1479,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [view_ caretMoved];
     for (int i = 0; i < 10; ++i) {
         [self qaKeyPress:125 function:NSDownArrowFunctionKey];
-        mac::TraceMac("qa keys walk %s %d: caret=%u scroll=%.0f",
+        platform::TraceMac("qa keys walk %s %d: caret=%u scroll=%.0f",
                       label, i,
                       app_->selection().active.offset,
                       (double)content_->scrollOffset());
@@ -1535,7 +1535,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (BOOL)application:(NSApplication*)application
             openFile:(NSString*)filename {
     (void)application;
-    mac::TraceMac("apple event: open file");
+    platform::TraceMac("apple event: open file");
     [self OpenPath:[filename UTF8String]];
     return YES;
 }
@@ -1546,7 +1546,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 }
 
 - (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
-    mac::TraceMac("drag: drop");
+    platform::TraceMac("drag: drop");
     NSPasteboard* pasteboard = [sender draggingPasteboard];
     NSArray<NSURL*>* urls =
         [pasteboard readObjectsForClasses:@[[NSURL class]]
@@ -1740,7 +1740,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
 // Opens a file, and reports a failure to the user.
 - (void)OpenPath:(const std::string&)path {
-    mac::TraceMac("open: %s", path.c_str());
+    platform::TraceMac("open: %s", path.c_str());
     [self hideWelcomeScreen];
     if (path.empty()) return;
 
@@ -1765,7 +1765,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // headings brings it back as the reader left it.
     [self applyOutlineHeads];
     [view_ setNeedsDisplay:YES];
-    mac::TraceMac("open: done");
+    platform::TraceMac("open: done");
 }
 
 // ---------------------------------------------------------------------------
@@ -3144,17 +3144,17 @@ int main(int argc, const char* argv[]) {
         // The breadcrumbs name each stage of the start-up, so a launch
         // that dies before the window appears can be read back from
         // ~/Library/Logs/MarkDownIt/crash_trace.log.
-        mac::TraceMac("main enter");
+        platform::TraceMac("main enter");
         // A crash writes its backtrace to the same log, so the next
         // report names the code that faulted.
-        mac::InstallCrashHandler();
+        platform::InstallCrashHandler();
 
         NSApplication* application = [NSApplication sharedApplication];
         [application setActivationPolicy:NSApplicationActivationPolicyRegular];
 
         MdAppDelegate* delegate = [[MdAppDelegate alloc] init];
         [application setDelegate:delegate];
-        mac::TraceMac("the delegate is assigned and the run loop starts");
+        platform::TraceMac("the delegate is assigned and the run loop starts");
         [application run];
     }
     return 0;

@@ -18,13 +18,13 @@
 #include <string>
 #include <vector>
 
-using mac::FontSpec;
-using mac::GlyphRun;
-using mac::LaidOutBlock;
-using mac::MacRenderer;
-using mac::Rect;
-using mac::TextEngine;
-using mac::TextLine;
+using platform::FontSpec;
+using platform::GlyphRun;
+using platform::LaidOutBlock;
+using platform::MacRenderer;
+using platform::Rect;
+using platform::TextEngine;
+using platform::TextLine;
 
 namespace {
 
@@ -137,12 +137,12 @@ private:
 
 // A target that records what was drawn, so the paint side can be
 // checked without a screen.
-class RecordingTarget : public mac::RenderTarget {
+class RecordingTarget : public platform::RenderTarget {
 public:
     struct Fill {
         Rect rect;
         float radius = 0.0f;
-        mac::Color color;
+        platform::Color color;
         bool roundLeft = true;
         bool roundRight = true;
     };
@@ -153,10 +153,10 @@ public:
         float y1 = 0.0f;
         float width = 0.0f;
         float radius = 0.0f;
-        mac::Color color;
+        platform::Color color;
     };
     struct Polygon {
-        std::vector<mac::Point> points;
+        std::vector<platform::Point> points;
         bool closed = false;
         bool filled = false;
     };
@@ -164,7 +164,7 @@ public:
         std::string text;
         float x = 0.0f;
         float baseline = 0.0f;
-        mac::Color color;
+        platform::Color color;
         FontSpec font;
     };
 
@@ -174,14 +174,14 @@ public:
     std::vector<Polygon> polygons;
     int clips = 0;
 
-    void FillRect(const Rect& rect, const mac::Color& color) override {
+    void FillRect(const Rect& rect, const platform::Color& color) override {
         Fill fill;
         fill.rect = rect;
         fill.color = color;
         fills.push_back(fill);
     }
     void FillRoundedRect(const Rect& rect, float radius,
-                          const mac::Color& color) override {
+                          const platform::Color& color) override {
         Fill fill;
         fill.rect = rect;
         fill.radius = radius;
@@ -189,7 +189,7 @@ public:
         fills.push_back(fill);
     }
     void FillRoundedRectSides(const Rect& rect, float radius,
-                              const mac::Color& color, bool roundLeft,
+                              const platform::Color& color, bool roundLeft,
                               bool roundRight) override {
         Fill fill;
         fill.rect = rect;
@@ -199,7 +199,7 @@ public:
         fill.roundRight = roundRight;
         fills.push_back(fill);
     }
-    void StrokeRect(const Rect& rect, const mac::Color& color,
+    void StrokeRect(const Rect& rect, const platform::Color& color,
                     float lineWidth) override {
         Stroke stroke;
         stroke.x0 = rect.x;
@@ -211,13 +211,13 @@ public:
         strokes.push_back(stroke);
     }
     void StrokeRoundedRect(const Rect& rect, float radius,
-                            const mac::Color& color,
+                            const platform::Color& color,
                             float lineWidth) override {
         StrokeRect(rect, color, lineWidth);
         strokes.back().radius = radius;
     }
     void StrokeLine(float x0, float y0, float x1, float y1,
-                    const mac::Color& color, float lineWidth) override {
+                    const platform::Color& color, float lineWidth) override {
         Stroke stroke;
         stroke.x0 = x0;
         stroke.y0 = y0;
@@ -228,7 +228,7 @@ public:
         strokes.push_back(stroke);
     }
     void DrawText(const std::string& utf8, const FontSpec& font, float x,
-                  float baselineY, const mac::Color& color) override {
+                  float baselineY, const platform::Color& color) override {
         Text text;
         text.text = utf8;
         text.x = x;
@@ -237,22 +237,22 @@ public:
         text.font = font;
         texts.push_back(text);
     }
-    void DrawBitmap(mac::BitmapHandle image, const Rect& rect) override {
+    void DrawBitmap(platform::BitmapHandle image, const Rect& rect) override {
         (void)image;
         (void)rect;
     }
-    void FillEllipse(const Rect& rect, const mac::Color& color) override {
+    void FillEllipse(const Rect& rect, const platform::Color& color) override {
         (void)rect;
         (void)color;
     }
-    void StrokeEllipse(const Rect& rect, const mac::Color& color,
+    void StrokeEllipse(const Rect& rect, const platform::Color& color,
                         float lineWidth) override {
         (void)rect;
         (void)color;
         (void)lineWidth;
     }
-    void FillPolygon(const std::vector<mac::Point>& points,
-                      const mac::Color& color) override {
+    void FillPolygon(const std::vector<platform::Point>& points,
+                      const platform::Color& color) override {
         (void)color;
         Polygon polygon;
         polygon.points = points;
@@ -260,8 +260,8 @@ public:
         polygon.closed = true;
         polygons.push_back(polygon);
     }
-    void StrokePolygon(const std::vector<mac::Point>& points,
-                        const mac::Color& color, float lineWidth,
+    void StrokePolygon(const std::vector<platform::Point>& points,
+                        const platform::Color& color, float lineWidth,
                         bool closed) override {
         (void)color;
         (void)lineWidth;
@@ -271,7 +271,7 @@ public:
         polygons.push_back(polygon);
     }
     void FillPieSlice(const Rect& rect, float startAngle, float endAngle,
-                       const mac::Color& color) override {
+                       const platform::Color& color) override {
         (void)rect;
         (void)startAngle;
         (void)endAngle;
@@ -372,12 +372,12 @@ const float kBodyEm = kBase.bodyFontSize * kPtToDip;
 const float kH1Em = kBase.headingSizes[1] * kPtToDip;
 const float kCodeEm = kBase.codeFontSize * kPtToDip;
 
-bool SameColor(const mac::Color& a, const mac::Color& b) {
+bool SameColor(const platform::Color& a, const platform::Color& b) {
     return std::fabs(a.r - b.r) < 1e-6f && std::fabs(a.g - b.g) < 1e-6f &&
            std::fabs(a.b - b.b) < 1e-6f && std::fabs(a.a - b.a) < 1e-6f;
 }
 
-bool SameColor(const mac::Color& a, const ThemeColor& b) {
+bool SameColor(const platform::Color& a, const ThemeColor& b) {
     return std::fabs(a.r - b.r) < 1e-6f && std::fabs(a.g - b.g) < 1e-6f &&
            std::fabs(a.b - b.b) < 1e-6f && std::fabs(a.a - b.a) < 1e-6f;
 }
@@ -1657,7 +1657,7 @@ TEST(RendererMac, CollapsesTheBlankLineWhileReading) {
 // uses. A browser is the reference for every one of them.
 
 TEST(RendererMac, SvgCentresAMiddleAnchoredLabel) {
-    mac::SvgDoc doc;
+    platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='100'>"
         "<text x='100' y='40' text-anchor='middle' font-size='10'>abcd</text>"
@@ -1674,7 +1674,7 @@ TEST(RendererMac, SvgCentresAMiddleAnchoredLabel) {
 }
 
 TEST(RendererMac, SvgKeepsTheStartAnchorAtItsOwnX) {
-    mac::SvgDoc doc;
+    platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='100'>"
         "<text x='100' y='40' text-anchor='start' font-size='10'>abcd</text>"
@@ -1688,7 +1688,7 @@ TEST(RendererMac, SvgKeepsTheStartAnchorAtItsOwnX) {
 }
 
 TEST(RendererMac, SvgAppliesTheGroupTranslate) {
-    mac::SvgDoc doc;
+    platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='200'>"
         "<g transform='translate(0,44)'>"
@@ -1703,7 +1703,7 @@ TEST(RendererMac, SvgAppliesTheGroupTranslate) {
 }
 
 TEST(RendererMac, SvgDrawsARoundedRectRounded) {
-    mac::SvgDoc doc;
+    platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='100'>"
         "<rect x='10' y='10' width='80' height='40' rx='10'"
@@ -1720,7 +1720,7 @@ TEST(RendererMac, SvgDrawsARoundedRectRounded) {
 }
 
 TEST(RendererMac, SvgSplitsADashedPathIntoSegments) {
-    mac::SvgDoc doc;
+    platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='100'>"
         "<path d='M0,0 L100,0' fill='none' stroke='#c00'"
@@ -1735,7 +1735,7 @@ TEST(RendererMac, SvgSplitsADashedPathIntoSegments) {
 }
 
 TEST(RendererMac, SvgDoesNotCloseAnOpenPath) {
-    mac::SvgDoc doc;
+    platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='200'>"
         "<path d='M10,10 L10,100 L100,100' fill='none' stroke='#000'"
@@ -1752,7 +1752,7 @@ TEST(RendererMac, SvgDoesNotCloseAnOpenPath) {
 }
 
 TEST(RendererMac, SvgTurnsAMarkerEndIntoAnArrowhead) {
-    mac::SvgDoc doc;
+    platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='200'>"
         "<defs><marker id='a' markerWidth='10' markerHeight='8' refX='9'"
@@ -1776,7 +1776,7 @@ TEST(RendererMac, SvgTurnsAMarkerEndIntoAnArrowhead) {
 }
 
 TEST(RendererMac, SvgIgnoresAClosedPathInsideDefs) {
-    mac::SvgDoc doc;
+    platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='200'>"
         "<defs><path d='M0,0 L10,4 L0,8 z' fill='#000'/></defs>"
@@ -1790,7 +1790,7 @@ TEST(RendererMac, SvgIgnoresAClosedPathInsideDefs) {
 }
 
 TEST(RendererMac, SvgKeepsTheItalicOfALabel) {
-    mac::SvgDoc doc;
+    platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='100' font-family='Arial, Helvetica, sans-serif'>"
         "<text x='10' y='40' font-size='10' font-style='italic'>a</text>"
@@ -1807,7 +1807,7 @@ TEST(RendererMac, SvgKeepsTheItalicOfALabel) {
 
 
 TEST(RendererMac, SvgRotatesAMarkerWithItsLine) {
-    mac::SvgDoc doc;
+    platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='200'>"
         "<defs><marker id='a' markerWidth='10' markerHeight='8' refX='9'"
@@ -1820,7 +1820,7 @@ TEST(RendererMac, SvgRotatesAMarkerWithItsLine) {
     FakeEngine engine;
     doc.Draw(&target, &engine, 0.0f, 0.0f, 200.0f, 200.0f);
 
-    const std::vector<mac::Point>* head = nullptr;
+    const std::vector<platform::Point>* head = nullptr;
     for (const RecordingTarget::Polygon& polygon : target.polygons) {
         if (polygon.filled && polygon.points.size() == 4) head = &polygon.points;
     }
@@ -1837,7 +1837,7 @@ TEST(RendererMac, SvgRotatesAMarkerWithItsLine) {
 }
 
 TEST(RendererMac, SvgAppliesAScaleBeforeTheTranslate) {
-    mac::SvgDoc doc;
+    platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='300' height='100'>"
         "<g transform='translate(100,0) scale(2)'>"
@@ -1858,7 +1858,7 @@ TEST(RendererMac, SvgAppliesAScaleBeforeTheTranslate) {
 }
 
 TEST(RendererMac, SvgDrawsAnEllipticalArc) {
-    mac::SvgDoc doc;
+    platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='100' height='100'>"
         "<path d='M10,10 L40,10 a6,6 0 0 1 0,12 L40,40' fill='none'"
@@ -1870,7 +1870,7 @@ TEST(RendererMac, SvgDrawsAnEllipticalArc) {
 
     ASSERT_EQ(target.polygons.size(), 1u);
     float furthest = 0.0f;
-    for (const mac::Point& point : target.polygons[0].points) {
+    for (const platform::Point& point : target.polygons[0].points) {
         if (point.x > furthest) furthest = point.x;
     }
     // The half circle bulges six points to the right of the elbow at x=40.

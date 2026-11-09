@@ -15,13 +15,13 @@
 #include <string>
 #include <vector>
 
-using mac::Color;
-using mac::FontSpec;
-using mac::GlyphRun;
-using mac::Rect;
-using mac::TextEngine;
-using mac::TextLine;
-using mac::WelcomeScreen;
+using platform::Color;
+using platform::FontSpec;
+using platform::GlyphRun;
+using platform::Rect;
+using platform::TextEngine;
+using platform::TextLine;
+using platform::WelcomeScreen;
 
 namespace {
 
@@ -80,7 +80,7 @@ public:
 };
 
 // A target that remembers what was drawn.
-class RecordingTarget : public mac::RenderTarget {
+class RecordingTarget : public platform::RenderTarget {
 public:
     struct TextCall {
         std::string text;
@@ -130,7 +130,7 @@ public:
         (void)color;
         texts.push_back(TextCall{utf8, font, x, baselineY});
     }
-    void DrawBitmap(mac::BitmapHandle image, const Rect& rect) override {
+    void DrawBitmap(platform::BitmapHandle image, const Rect& rect) override {
         (void)image;
         (void)rect;
     }
@@ -143,12 +143,12 @@ public:
         (void)color;
         (void)lineWidth;
     }
-    void FillPolygon(const std::vector<mac::Point>& points,
+    void FillPolygon(const std::vector<platform::Point>& points,
                       const Color& color) override {
         (void)points;
         (void)color;
     }
-    void StrokePolygon(const std::vector<mac::Point>& points,
+    void StrokePolygon(const std::vector<platform::Point>& points,
                         const Color& color, float lineWidth,
                         bool closed) override {
         (void)points;
