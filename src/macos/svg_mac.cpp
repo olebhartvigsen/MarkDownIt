@@ -301,6 +301,114 @@ SvgDoc::Placement ReadPlacement(const pugi::xml_node& node,
     return placement;
 }
 
+// One declaration out of an inline style, trimmed; empty when absent.
+std::string CssValue(const std::string& style, const std::string& property) {
+    const std::string key = property + ":";
+    size_t at = style.find(key);
+    while (at != std::string::npos) {
+        // A whole property name, not the tail of another one.
+        if (at == 0 || style[at - 1] == ';' || style[at - 1] == ' ') {
+            const size_t end = style.find(';', at);
+            std::string value = style.substr(
+                at + key.size(),
+                (end == std::string::npos ? style.size() : end) - at - key.size());
+            const size_t first = value.find_first_not_of(" \t\r\n");
+            const size_t last = value.find_last_not_of(" \t\r\n");
+            if (first == std::string::npos) return std::string();
+            return value.substr(first, last - first + 1);
+        }
+        at = style.find(key, at + 1);
+    }
+    return std::string();
+}
+
+// A CSS colour. light-dark() names the light value first, which is the one
+// a light page shows; the first argument may itself hold commas inside
+// rgb().
+bool ReadCssColor(const std::string& value, Color* out) {
+    const size_t at = value.find("light-dark");
+    if (at != std::string::npos) {
+        const size_t open = value.find('(', at);
+        if (open == std::string::npos) return false;
+        size_t depth = 0;
+        size_t end = open + 1;
+        for (; end < value.size(); ++end) {
+            if (value[end] == '(') {
+                ++depth;
+            } else if (value[end] == ')') {
+                if (depth == 0) break;
+                --depth;
+            } else if (value[end] == ',' && depth == 0) {
+                break;
+            }
+        }
+        return ReadColor(value.substr(open + 1, end - open - 1), out);
+    }
+    return ReadColor(value, out);
+}
+
+// The typography a browser draws for a diagram label.
+//
+// draw.io and its kin put every label inside a <switch> as HTML in a
+// <foreignObject>, with the same words repeated as a <text> fallback for
+// viewers without HTML. This renderer draws the fallback, because it has
+// no HTML layout, but the typography of the HTML is what the browser
+// shows: the exporter writes 'Architects Daughter' on the <text> while
+// the label's own span says the family that actually renders.
+struct HtmlLabel {
+    bool valid = false;
+    std::string fontFamily;
+    float fontSize = 0.0f;
+    bool hasColor = false;
+    Color color;
+    bool bold = false;
+    bool italic = false;
+};
+
+// Reads the typography out of a <foreignObject>, deepest element last,
+// which is the cascade order the browser applies.
+void ReadHtmlLabel(const pugi::xml_node& node, HtmlLabel* label) {
+    for (pugi::xml_node child = node.first_child(); child;
+         child = child.next_sibling()) {
+        const std::string style = child.attribute("style").value();
+        if (!style.empty()) {
+            const std::string family = CssValue(style, "font-family");
+            if (!family.empty()) {
+                label->fontFamily = family;
+                label->valid = true;
+            }
+            const std::string size = CssValue(style, "font-size");
+            if (!size.empty()) {
+                const float value = ReadLength(size.c_str(), 0.0f);
+                if (value > 0.0f) {
+                    label->fontSize = value;
+                    label->valid = true;
+                }
+            }
+            const std::string color = CssValue(style, "color");
+            if (!color.empty() && color != "transparent") {
+                Color parsed;
+                if (ReadCssColor(color, &parsed)) {
+                    label->color = parsed;
+                    label->hasColor = true;
+                    label->valid = true;
+                }
+            }
+            const std::string weight = CssValue(style, "font-weight");
+            if (!weight.empty()) {
+                label->bold = weight == "bold" || weight == "600" ||
+                              weight == "700" || weight == "800" ||
+                              weight == "900";
+            }
+            const std::string slant = CssValue(style, "font-style");
+            if (!slant.empty()) {
+                label->italic = slant == "italic" || slant == "oblique";
+            }
+        }
+        ReadHtmlLabel(child, label);
+    }
+}
+
 // Reads the style of a shape, which the group may have set.
 SvgDoc::Style ReadStyle(const pugi::xml_node& node,
                           const SvgDoc::Style& base) {
@@ -707,13 +815,13 @@ std::vector<Point> ReadPath(const std::string& text, bool* closed) {
 
 // Reads the shapes out of a node and its children.
 void ReadShapes(const pugi::xml_node& node, const SvgDoc::Style& style,
-                const SvgDoc::Placement& placement,
+                const SvgDoc::Placement& placement, const HtmlLabel* html,
                 std::vector<SvgDoc::Shape>* out);
 
 void ReadShapes(const pugi::xml_node& node, const SvgDoc::Style& style,
-                const SvgDoc::Placement& placement,
+                const SvgDoc::Placement& placement, const HtmlLabel* html,
                 std::vector<SvgDoc::Shape>* out) {
-    const SvgDoc::Style childStyle = ReadStyle(node, style);
+    SvgDoc::Style childStyle = ReadStyle(node, style);
     const SvgDoc::Placement childPlacement = ReadPlacement(node, placement);
 
     const std::string name = node.name();
@@ -729,7 +837,37 @@ void ReadShapes(const pugi::xml_node& node, const SvgDoc::Style& style,
         return;
     }
 
+    // A switch draws its first branch whose feature tests pass. This
+    // renderer cannot lay out HTML, so a <foreignObject> branch is passed
+    // over and the next branch, in a diagram export always the <text>
+    // fallback, is drawn with the HTML's own typography. When the first
+    // branch is something that can be drawn, even an empty
+    // <g requiredFeatures=".."/>, the switch ends there: everything after
+    // it is a fallback, and a browser draws none of it. The draw.io
+    // "Text is not SVG - cannot display" notice lives in exactly such a
+    // tail switch.
+    if (name == "switch") {
+        HtmlLabel label;
+        for (pugi::xml_node child = node.first_child(); child;
+             child = child.next_sibling()) {
+            const std::string branch = child.name();
+            if (branch.empty()) continue;  // a text node between branches
+            if (branch == "foreignObject") {
+                ReadHtmlLabel(child, &label);
+                continue;
+            }
+            ReadShapes(child, childStyle, childPlacement,
+                       label.valid ? &label : nullptr, out);
+            break;
+        }
+        return;
+    }
+
     SvgDoc::Shape shape;
+    // A label the exporter wrapped line by line: every <tspan> carries its
+    // own x and y. Joining them into one string ran the wrap together and
+    // let a long label spill out of its box.
+    std::vector<SvgDoc::Shape> tspanLines;
 
     if (name == "rect") {
         const float x = ReadLength(node.attribute("x"), 0.0f);
@@ -799,12 +937,51 @@ void ReadShapes(const pugi::xml_node& node, const SvgDoc::Style& style,
             content += child.child_value();
         }
         shape.text = content;
+
+        // One line per positioned <tspan>: that is how a wrapped label is
+        // written, and the browser draws each one where its x and y say.
+        for (pugi::xml_node child = node.first_child(); child;
+             child = child.next_sibling()) {
+            if (std::string(child.name()) != "tspan") continue;
+            const bool hasX = !child.attribute("x").empty();
+            const bool hasY = !child.attribute("y").empty();
+            if (!hasX && !hasY) continue;
+            SvgDoc::Shape line;
+            line.kind = SvgDoc::Kind::Text;
+            line.points.push_back(Point{
+                hasX ? ReadLength(child.attribute("x"), x) : x,
+                hasY ? ReadLength(child.attribute("y"), y) : y});
+            line.text = child.child_value();
+            if (line.text.empty()) continue;
+            tspanLines.push_back(line);
+        }
+        if (!tspanLines.empty()) shape.text.clear();
+
+        // The HTML label the switch passed over is what a browser draws.
+        if (html && html->valid) {
+            if (!html->fontFamily.empty()) {
+                childStyle.fontFamily = html->fontFamily;
+            }
+            if (html->fontSize > 0.0f) childStyle.fontSize = html->fontSize;
+            if (html->hasColor) {
+                childStyle.fill = html->color;
+                childStyle.hasFill = true;
+            }
+            childStyle.bold = html->bold;
+            childStyle.italic = html->italic;
+        }
     } else {
         shape.kind = SvgDoc::Kind::Polygon;
         shape.points.clear();
     }
 
-    if (!shape.points.empty() || name == "text") {
+    if (!tspanLines.empty()) {
+        for (SvgDoc::Shape& line : tspanLines) {
+            line.style = childStyle;
+            line.placement = childPlacement;
+            out->push_back(line);
+        }
+    } else if (!shape.points.empty() || name == "text") {
         shape.style = childStyle;
         shape.placement = childPlacement;
         out->push_back(shape);
@@ -812,7 +989,7 @@ void ReadShapes(const pugi::xml_node& node, const SvgDoc::Style& style,
 
     for (pugi::xml_node child = node.first_child(); child;
          child = child.next_sibling()) {
-        ReadShapes(child, childStyle, childPlacement, out);
+        ReadShapes(child, childStyle, childPlacement, nullptr, out);
     }
 }
 
@@ -881,7 +1058,7 @@ bool SvgDoc::Load(const std::string& xml) {
     style.fill = Color{0.0f, 0.0f, 0.0f, 1.0f};
     style.hasFill = true;
     SvgDoc::Placement placement;
-    ReadShapes(root, style, placement, &shapes_);
+    ReadShapes(root, style, placement, nullptr, &shapes_);
     return !shapes_.empty();
 }
 
