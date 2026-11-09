@@ -317,6 +317,7 @@ if(BUILD_TESTS AND APPLE)
         tests/outline_test.cpp
         tests/table_interaction_test.cpp
         tests/tableedit_test.cpp
+        tests/fake_engine_test.cpp
         tests/mermaid_model_test.cpp
         tests/mermaid_parse_test.cpp
         tests/mermaid_class_golden_test.cpp
@@ -422,6 +423,7 @@ elseif(BUILD_TESTS)
         tests/outline_test.cpp
         tests/table_interaction_test.cpp
         tests/tableedit_test.cpp
+        tests/fake_engine_test.cpp
         tests/mermaid_legacy_test.cpp
         tests/mermaid_model_test.cpp
         tests/mermaid_parse_test.cpp
