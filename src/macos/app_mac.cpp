@@ -24,6 +24,11 @@
 #include "textdrag.h"
 #include "textenc.h"
 
+// The whole file defines members of the platform namespace: the app,
+// its clipboard and its renderer declare there. The closing brace at
+// the bottom of the file matches this one.
+namespace platform {
+
 namespace {
 
 // The clipboard the app uses. There is one pasteboard on macOS, so one
