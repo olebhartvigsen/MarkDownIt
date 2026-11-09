@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="1075" font-family="Segoe UI,Arial,sans-serif"><rect width="1240" height="1075" fill="white"/>
+<defs><marker id="a" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0L10,4L0,8z" fill="#444"/></marker></defs>
+<text x="620.0" y="30" text-anchor="middle" font-size="22" font-weight="bold" fill="#222">MarkDownIt TO-BE: arkitektur efter port-alignment-planen</text>
+<text x="620.0" y="50" text-anchor="middle" font-size="12" fill="#555">Stiplet kant = nyt i planen. Fuld kant = findes i dag (kan ændre indhold). Topdown: delt kerne, smal søm, tynde platformslag, pipeline der holder porterne ens.</text>
+<rect x="30" y="65" width="1180" height="335" rx="12" fill="#e8f5e9" stroke="#2e7d32" stroke-width="3"/>
+<text x="620.0" y="90" text-anchor="middle" font-size="16" font-weight="bold" fill="#1b5e20">DELT: samme filer, bygget af MSVC og Apple clang (i dag ca. 40 % af koden, planen flytter renderer- og controllerlogik hertil)</text>
+<rect x="50" y="105" width="180" height="100" rx="8" fill="#c8e6c9" stroke="#2e7d32" stroke-width="2"/>
+<text x="140.0" y="125" text-anchor="middle" font-size="14" font-weight="bold" fill="#222">Parser</text>
+<text x="140.0" y="144" text-anchor="middle" font-size="12" fill="#222">parser.cpp, md4c</text>
+<rect x="240" y="105" width="180" height="100" rx="8" fill="#c8e6c9" stroke="#2e7d32" stroke-width="2"/>
+<text x="330.0" y="125" text-anchor="middle" font-size="14" font-weight="bold" fill="#222">Tekstmodel + redigering</text>
+<text x="330.0" y="144" text-anchor="middle" font-size="12" fill="#222">textbuffer, editcontroller</text>
+<text x="330.0" y="160" text-anchor="middle" font-size="12" fill="#222">navigation, undostack</text>
+<text x="330.0" y="176" text-anchor="middle" font-size="12" fill="#222">formatting, tableedit</text>
+<rect x="430" y="105" width="180" height="100" rx="8" fill="#c8e6c9" stroke="#2e7d32" stroke-width="2"/>
+<text x="520.0" y="125" text-anchor="middle" font-size="14" font-weight="bold" fill="#222">Find + disposition</text>
+<text x="520.0" y="144" text-anchor="middle" font-size="12" fill="#222">findstate, unicode_fold</text>
+<text x="520.0" y="160" text-anchor="middle" font-size="12" fill="#222">markers, outline</text>
+<rect x="620" y="105" width="180" height="100" rx="8" fill="#c8e6c9" stroke="#2e7d32" stroke-width="2"/>
+<text x="710.0" y="125" text-anchor="middle" font-size="14" font-weight="bold" fill="#222">Mermaid-motor</text>
+<text x="710.0" y="144" text-anchor="middle" font-size="12" fill="#222">parse + layout, dagre-port</text>
+<text x="710.0" y="160" text-anchor="middle" font-size="12" fill="#222">flow, class, pie, sequence</text>
+<text x="710.0" y="176" text-anchor="middle" font-size="12" fill="#222">state (afgøres i opg. 1.1)</text>
+<rect x="810" y="105" width="180" height="100" rx="8" fill="#c8e6c9" stroke="#2e7d32" stroke-width="2"/>
+<text x="900.0" y="125" text-anchor="middle" font-size="14" font-weight="bold" fill="#222">Office</text>
+<text x="900.0" y="144" text-anchor="middle" font-size="12" fill="#222">docx + pdf ind/ud</text>
+<text x="900.0" y="160" text-anchor="middle" font-size="12" fill="#222">markdown_bridge</text>
+<rect x="1000" y="105" width="180" height="100" rx="8" fill="#c8e6c9" stroke="#2e7d32" stroke-width="2"/>
+<text x="1090.0" y="125" text-anchor="middle" font-size="14" font-weight="bold" fill="#222">SVG + tema</text>
+<text x="1090.0" y="144" text-anchor="middle" font-size="12" fill="#222">svg-læser, blockspacing</text>
+<text x="1090.0" y="160" text-anchor="middle" font-size="12" fill="#222">LayoutMetrics (alle mål)</text>
+<rect x="50" y="222" width="350" height="165" rx="8" fill="#a5d6a7" stroke="#1b5e20" stroke-width="3" stroke-dasharray="7 4"/>
+<text x="225.0" y="242" text-anchor="middle" font-size="14" font-weight="bold" fill="#222">Delt dokumentcontroller</text>
+<text x="225.0" y="261" text-anchor="middle" font-size="12" fill="#222">src/documentcontroller.cpp (Batch 4)</text>
+<text x="225.0" y="277" text-anchor="middle" font-size="12" fill="#222">ejer buffer, markering, fortryd, EditController</text>
+<text x="225.0" y="293" text-anchor="middle" font-size="12" fill="#222">kommandoer: fed, kursiv, link, overskrift,</text>
+<text x="225.0" y="309" text-anchor="middle" font-size="12" fill="#222">tabel, find, erstat, åbn, gem, import/eksport</text>
+<text x="225.0" y="325" text-anchor="middle" font-size="12" fill="#222">platformsting kommer ind via PlatformServices</text>
+<rect x="412" y="222" width="350" height="165" rx="8" fill="#a5d6a7" stroke="#1b5e20" stroke-width="3" stroke-dasharray="7 4"/>
+<text x="587.0" y="242" text-anchor="middle" font-size="14" font-weight="bold" fill="#222">Delt layout + displayliste</text>
+<text x="587.0" y="261" text-anchor="middle" font-size="12" fill="#222">src/layout/displaylist.h (Batch 3)</text>
+<text x="587.0" y="277" text-anchor="middle" font-size="12" fill="#222">blokvis layout: overskrift, afsnit, lister,</text>
+<text x="587.0" y="293" text-anchor="middle" font-size="12" fill="#222">citater, kode, tabeller, billeder, Mermaid</text>
+<text x="587.0" y="309" text-anchor="middle" font-size="12" fill="#222">hit-test og markering på displaylisten</text>
+<text x="587.0" y="325" text-anchor="middle" font-size="12" fill="#222">ét kanonisk caret, jf. word-processor-guidelines</text>
+<rect x="774" y="222" width="210" height="165" rx="8" fill="#a5d6a7" stroke="#1b5e20" stroke-width="3" stroke-dasharray="7 4"/>
+<text x="879.0" y="242" text-anchor="middle" font-size="14" font-weight="bold" fill="#222">Fælles kilder</text>
+<text x="879.0" y="261" text-anchor="middle" font-size="12" fill="#222">cmake/sources.cmake</text>
+<text x="879.0" y="277" text-anchor="middle" font-size="12" fill="#222">én manifest til begge</text>
+<text x="879.0" y="293" text-anchor="middle" font-size="12" fill="#222">platform-parity.md</text>
+<text x="879.0" y="309" text-anchor="middle" font-size="12" fill="#222">(ledger med årsager)</text>
+<text x="879.0" y="325" text-anchor="middle" font-size="12" fill="#222">commands.h (kommandotabel)</text>
+<rect x="996" y="222" width="200" height="165" rx="8" fill="#a5d6a7" stroke="#1b5e20" stroke-width="3" stroke-dasharray="7 4"/>
+<text x="1096.0" y="242" text-anchor="middle" font-size="14" font-weight="bold" fill="#222">Delte testdata</text>
+<text x="1096.0" y="261" text-anchor="middle" font-size="12" fill="#222">fixtures/parity/*.md</text>
+<text x="1096.0" y="277" text-anchor="middle" font-size="12" fill="#222">layout-golden/</text>
+<text x="1096.0" y="293" text-anchor="middle" font-size="12" fill="#222">transcripts/*.json</text>
+<text x="1096.0" y="309" text-anchor="middle" font-size="12" fill="#222">fake måler: 8 px pr. glyf</text>
+<text x="1096.0" y="325" text-anchor="middle" font-size="12" fill="#222">samme tests på begge</text>
+<rect x="30" y="425" width="1180" height="90" rx="12" fill="#fffde7" stroke="#f9a825" stroke-width="3"/>
+<text x="620.0" y="449" text-anchor="middle" font-size="16" font-weight="bold" fill="#7a5b00">SØM: src/platform/seams.h (smalle grænseflader, flyttet ud af macos/)</text>
+<rect x="48" y="458" width="222" height="48" rx="8" fill="#fff9c4" stroke="#f9a825" stroke-width="2"/>
+<text x="159.0" y="477" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Tekstmotor</text>
+<text x="159.0" y="494" text-anchor="middle" font-size="11" fill="#222">mål, linjebrud, UTF-16-positioner</text>
+<rect x="278" y="458" width="222" height="48" rx="8" fill="#fff9c4" stroke="#f9a825" stroke-width="2"/>
+<text x="389.0" y="477" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Rendermål</text>
+<text x="389.0" y="494" text-anchor="middle" font-size="11" fill="#222">fyld, streg, glyfkørsler, clip</text>
+<rect x="508" y="458" width="222" height="48" rx="8" fill="#fff9c4" stroke="#f9a825" stroke-width="2"/>
+<text x="619.0" y="477" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Billedkilde</text>
+<text x="619.0" y="494" text-anchor="middle" font-size="11" fill="#222">afkodning, SVG-raster</text>
+<rect x="738" y="458" width="222" height="48" rx="8" fill="#fff9c4" stroke="#f9a825" stroke-width="2" stroke-dasharray="7 4"/>
+<text x="849.0" y="477" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">PlatformServices</text>
+<text x="849.0" y="494" text-anchor="middle" font-size="11" fill="#222">dialoger, udklipsholder, timere, filovervågning</text>
+<rect x="968" y="458" width="222" height="48" rx="8" fill="#fff9c4" stroke="#f9a825" stroke-width="2" stroke-dasharray="7 4"/>
+<text x="1079.0" y="477" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Generisk motor</text>
+<text x="1079.0" y="494" text-anchor="middle" font-size="11" fill="#222">portable build og tests</text>
+<line x1="620.0" y1="387" x2="620.0" y2="423" stroke="#444" stroke-width="2.2" marker-end="url(#a)"/>
+<rect x="30" y="545" width="575" height="255" rx="12" fill="#e3f2fd" stroke="#1565c0" stroke-width="3"/>
+<text x="317" y="569" text-anchor="middle" font-size="16" font-weight="bold" fill="#1565c0">WINDOWS (Win32, Direct2D, DirectWrite)</text>
+<rect x="42" y="580" width="268" height="48" rx="8" fill="#ffffff" stroke="#1565c0" stroke-width="2" stroke-dasharray="7 4"/>
+<text x="176" y="599" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Tekstmotor: DirectWrite</text>
+<text x="176" y="617" text-anchor="middle" font-size="11" fill="#222">src/windows/text_engine_win.cpp</text>
+<rect x="325" y="580" width="268" height="48" rx="8" fill="#ffffff" stroke="#1565c0" stroke-width="2" stroke-dasharray="7 4"/>
+<text x="459" y="599" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Rendermål: Direct2D</text>
+<text x="459" y="617" text-anchor="middle" font-size="11" fill="#222">src/windows/render_target_win.cpp</text>
+<rect x="42" y="634" width="268" height="48" rx="8" fill="#ffffff" stroke="#1565c0" stroke-width="2"/>
+<text x="176" y="653" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Tynd renderer</text>
+<text x="176" y="671" text-anchor="middle" font-size="11" fill="#222">renderer.cpp maler displaylisten</text>
+<rect x="325" y="634" width="268" height="48" rx="8" fill="#ffffff" stroke="#1565c0" stroke-width="2"/>
+<text x="459" y="653" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">App-skal: Win32</text>
+<text x="459" y="671" text-anchor="middle" font-size="11" fill="#222">AppWindow: vindue, input, beskedløkke</text>
+<rect x="42" y="688" width="268" height="48" rx="8" fill="#ffffff" stroke="#1565c0" stroke-width="2"/>
+<text x="176" y="707" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Chrome: ribbon</text>
+<text x="176" y="725" text-anchor="middle" font-size="11" fill="#222">ribbon.xml, ids fra commands.h</text>
+<rect x="325" y="688" width="268" height="48" rx="8" fill="#ffffff" stroke="#1565c0" stroke-width="2" stroke-dasharray="7 4"/>
+<text x="459" y="707" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">PlatformServices: Win32</text>
+<text x="459" y="725" text-anchor="middle" font-size="11" fill="#222">dialoger, clipboard_win, filovervågning</text>
+<rect x="42" y="742" width="268" height="48" rx="8" fill="#ffffff" stroke="#1565c0" stroke-width="2" stroke-dasharray="7 4"/>
+<text x="176" y="761" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Indstillinger: Registry</text>
+<text x="176" y="779" text-anchor="middle" font-size="11" fill="#222">settings_win.cpp</text>
+<rect x="325" y="742" width="268" height="48" rx="8" fill="#ffffff" stroke="#1565c0" stroke-width="2"/>
+<text x="459" y="761" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Kun Windows (ledger)</text>
+<text x="459" y="779" text-anchor="middle" font-size="11" fill="#222">indholdsbredde-cap, MSI + MSIX</text>
+<rect x="635" y="545" width="575" height="255" rx="12" fill="#fff3e0" stroke="#e65100" stroke-width="3"/>
+<text x="922" y="569" text-anchor="middle" font-size="16" font-weight="bold" fill="#e65100">MACOS (AppKit, Core Text, CoreGraphics)</text>
+<rect x="647" y="580" width="268" height="48" rx="8" fill="#ffffff" stroke="#e65100" stroke-width="2"/>
+<text x="781" y="599" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Tekstmotor: Core Text</text>
+<text x="781" y="617" text-anchor="middle" font-size="11" fill="#222">text_engine_mac.cpp, textlayout_coretext.cpp</text>
+<rect x="930" y="580" width="268" height="48" rx="8" fill="#ffffff" stroke="#e65100" stroke-width="2"/>
+<text x="1064" y="599" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Rendermål: CoreGraphics</text>
+<text x="1064" y="617" text-anchor="middle" font-size="11" fill="#222">cg_target_mac.h (CoreGraphics)</text>
+<rect x="647" y="634" width="268" height="48" rx="8" fill="#ffffff" stroke="#e65100" stroke-width="2"/>
+<text x="781" y="653" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Tynd renderer</text>
+<text x="781" y="671" text-anchor="middle" font-size="11" fill="#222">renderer_mac.cpp maler displaylisten</text>
+<rect x="930" y="634" width="268" height="48" rx="8" fill="#ffffff" stroke="#e65100" stroke-width="2"/>
+<text x="1064" y="653" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">App-skal: AppKit</text>
+<text x="1064" y="671" text-anchor="middle" font-size="11" fill="#222">app_mac.cpp, main_mac.mm: vindue, input</text>
+<rect x="647" y="688" width="268" height="48" rx="8" fill="#ffffff" stroke="#e65100" stroke-width="2"/>
+<text x="781" y="707" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Chrome: native værktøjslinje</text>
+<text x="781" y="725" text-anchor="middle" font-size="11" fill="#222">menu_mac.mm, toolbar_mac.mm, ids: commands.h</text>
+<rect x="930" y="688" width="268" height="48" rx="8" fill="#ffffff" stroke="#e65100" stroke-width="2"/>
+<text x="1064" y="707" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">PlatformServices: AppKit</text>
+<text x="1064" y="725" text-anchor="middle" font-size="11" fill="#222">NSOpenPanel, clipboard_mac.mm</text>
+<rect x="647" y="742" width="268" height="48" rx="8" fill="#ffffff" stroke="#e65100" stroke-width="2"/>
+<text x="781" y="761" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Indstillinger: JSON</text>
+<text x="781" y="779" text-anchor="middle" font-size="11" fill="#222">settings_mac.cpp</text>
+<rect x="930" y="742" width="268" height="48" rx="8" fill="#ffffff" stroke="#e65100" stroke-width="2"/>
+<text x="1064" y="761" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Kun mac (ledger)</text>
+<text x="1064" y="779" text-anchor="middle" font-size="11" fill="#222">native chrome, bundle + signering</text>
+<line x1="320" y1="515" x2="320" y2="543" stroke="#444" stroke-width="2.2" marker-end="url(#a)"/>
+<line x1="920" y1="515" x2="920" y2="543" stroke="#444" stroke-width="2.2" marker-end="url(#a)"/>
+<rect x="30" y="815" width="1180" height="52" rx="10" fill="#ffebee" stroke="#c62828" stroke-width="2" stroke-dasharray="7 4"/>
+<text x="620.0" y="837" text-anchor="middle" font-size="13" font-weight="bold" fill="#b71c1c">BEVIDST IKKE DELT: chrome (ribbon mod native værktøjslinje), indstillingslager, dialoger, systemfonte og motor, platformsemballage</text>
+<text x="620.0" y="856" text-anchor="middle" font-size="12" fill="#222">Hver forskel har en række i references/platform-parity.md med årsag. En forskel uden række fejler i alignment-static.</text>
+<rect x="30" y="885" width="1180" height="160" rx="12" fill="#ede7f6" stroke="#4527a0" stroke-width="3"/>
+<text x="620.0" y="908" text-anchor="middle" font-size="15" font-weight="bold" fill="#311b92">BYGGEPIPELINE (GitHub Actions): drift mellem portene gør et job rødt. Screenshots kun her, aldrig lokalt.</text>
+<rect x="48" y="920" width="200" height="110" rx="8" fill="#d1c4e9" stroke="#4527a0" stroke-width="2"/>
+<text x="148.0" y="940" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">1. alignment-static</text>
+<text x="148.0" y="959" text-anchor="middle" font-size="12" fill="#222">ubuntu, sekunder</text>
+<text x="148.0" y="975" text-anchor="middle" font-size="12" fill="#222">kilde-manifest, ledger,</text>
+<text x="148.0" y="991" text-anchor="middle" font-size="12" fill="#222">kommando-dækning,</text>
+<text x="148.0" y="1007" text-anchor="middle" font-size="12" fill="#222">delte guards, capture-politik</text>
+<line x1="248" y1="975" x2="278" y2="975" stroke="#444" stroke-width="2.2" marker-end="url(#a)"/>
+<rect x="280" y="920" width="300" height="110" rx="8" fill="#d1c4e9" stroke="#4527a0" stroke-width="2"/>
+<text x="430.0" y="940" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">2. Platformsjobs (parallelt)</text>
+<text x="430.0" y="959" text-anchor="middle" font-size="12" fill="#222">build: windows-2022</text>
+<text x="430.0" y="975" text-anchor="middle" font-size="12" fill="#222">test-macos + build-macos: macos-26</text>
+<text x="430.0" y="991" text-anchor="middle" font-size="12" fill="#222">tests, søm-konformans, layout-dump,</text>
+<text x="430.0" y="1007" text-anchor="middle" font-size="12" fill="#222">transskripter, testinventar, capture</text>
+<line x1="580" y1="975" x2="610" y2="975" stroke="#444" stroke-width="2.2" marker-end="url(#a)"/>
+<rect x="612" y="920" width="370" height="110" rx="8" fill="#d1c4e9" stroke="#4527a0" stroke-width="3" stroke-dasharray="7 4"/>
+<text x="797.0" y="940" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">3. Sammenligning (ubuntu)</text>
+<text x="797.0" y="959" text-anchor="middle" font-size="12" fill="#222">svg-parity, test-inventory-parity</text>
+<text x="797.0" y="975" text-anchor="middle" font-size="12" fill="#222">layout-parity (byte-ens mod golden og på tværs)</text>
+<text x="797.0" y="991" text-anchor="middle" font-size="12" fill="#222">transcript-parity</text>
+<text x="797.0" y="1007" text-anchor="middle" font-size="12" fill="#222">capture-parity: skærmbilleder side om side</text>
+<line x1="982" y1="975" x2="1012" y2="975" stroke="#444" stroke-width="2.2" marker-end="url(#a)"/>
+<rect x="1014" y="920" width="182" height="110" rx="8" fill="#d1c4e9" stroke="#4527a0" stroke-width="2"/>
+<text x="1105.0" y="940" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">4. Orakler</text>
+<text x="1105.0" y="959" text-anchor="middle" font-size="12" fill="#222">oracle (Mermaid)</text>
+<text x="1105.0" y="975" text-anchor="middle" font-size="12" fill="#222">verify-export</text>
+<text x="1105.0" y="991" text-anchor="middle" font-size="12" fill="#222">(Word og PDF)</text>
+<text x="620.0" y="1063" text-anchor="middle" font-size="11" fill="#666">Kilde: .hermes/plans/2026-11-09_103000-port-alignment.md. Tegnet efter planen, ikke efter kode der findes endnu.</text>
+</svg>
