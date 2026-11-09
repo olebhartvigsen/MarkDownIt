@@ -421,6 +421,7 @@ elseif(BUILD_TESTS)
         tests/markers_test.cpp
         tests/outline_test.cpp
         tests/table_interaction_test.cpp
+        tests/tableedit_test.cpp
         tests/mermaid_legacy_test.cpp
         tests/mermaid_model_test.cpp
         tests/mermaid_parse_test.cpp
