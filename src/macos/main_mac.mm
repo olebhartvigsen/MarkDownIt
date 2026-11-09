@@ -963,6 +963,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                           (double)zoom_,
                           (double)clip.origin.x, (double)clip.origin.y,
                           (double)clip.size.width, (double)clip.size.height);
+            // The level belongs to this capture: the walk after it reads
+            // the page at 100% and its overlay assertion says so.
+            [self setZoom:zoom::kDefaultZoom quietly:YES];
+            [zoomHud_ hideNow];
         }
     } else if ([state isEqualToString:@"svg-swap"]) {
         // One picture, then another. Only the second may show.
