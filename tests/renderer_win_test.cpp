@@ -438,7 +438,7 @@ public:
         for (UINT32 i = 0; i < n; ++i) {
             if (lineMetrics) {
                 lineMetrics[i].length = 1;
-                lineMetrics[i].trailingWhitespace = 0;
+                lineMetrics[i].trailingWhitespaceLength = 0;
                 lineMetrics[i].newlineLength = 0;
                 lineMetrics[i].height = st.size;
                 lineMetrics[i].baseline = st.size * 0.8f;
@@ -1001,7 +1001,7 @@ public:
     HRESULT Flush(D2D1_TAG*, D2D1_TAG*) { return 0; }
     HRESULT EndDraw(D2D1_TAG*, D2D1_TAG*) { return 0; }
     void SaveDrawingState(ID2D1DrawingStateBlock*) const {}
-    void RestoreDrawingState(ID2D1DrawingStateBlock*) const {}
+    void RestoreDrawingState(ID2D1DrawingStateBlock*) {}
     void SetDpi(FLOAT, FLOAT) {}
     BOOL IsSupported(const D2D1_RENDER_TARGET_PROPERTIES*) const {
         return TRUE;
