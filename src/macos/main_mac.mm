@@ -964,6 +964,29 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                           (double)clip.origin.x, (double)clip.origin.y,
                           (double)clip.size.width, (double)clip.size.height);
         }
+    } else if ([state isEqualToString:@"svg-drawio-100"]) {
+        // The same drawing at 100%, which is the only level at which the
+        // labels can be compared with a browser's glyph for glyph.
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"ai-components.svg"]
+                    UTF8String])];
+            NSScrollView* scroll = [view_ enclosingScrollView];
+            NSClipView* clip = [scroll contentView];
+            [clip scrollToPoint:NSMakePoint(150.0, 470.0)];
+            [scroll reflectScrolledClipView:clip];
+            mac::TraceMac("qa svg: drawio100 height=%.0f width=%.0f zoom=%.3f "
+                          "visible=%.0f,%.0f,%.0f,%.0f",
+                          (double)content_->DocumentHeight(),
+                          (double)content_->ContentWidth(),
+                          (double)zoom_,
+                          (double)clip.documentVisibleRect.origin.x,
+                          (double)clip.documentVisibleRect.origin.y,
+                          (double)clip.documentVisibleRect.size.width,
+                          (double)clip.documentVisibleRect.size.height);
+        }
     } else if ([state isEqualToString:@"svg-swap"]) {
         // One picture, then another. Only the second may show.
         NSString* dir = [[window_ representedFilename]
