@@ -29,18 +29,10 @@
 #include "textdrag.h"
 #include "zoomhud.h"
 
-// Active formatting state at the caret position, used to set
-// the pressed/unpressed state of ribbon toggle buttons.
-struct FormatState {
-    bool bold = false;
-    bool italic = false;
-    bool code = false;
-    bool strike = false;
-    int  headingLevel = 0;
-    bool inBullets = false;
-    bool inNumbering = false;
-    bool inQuote = false;
-};
+// The format state query lives in the shared document controller now
+// (documentcontroller.h, family 3): FormatState and GetFormatState
+// answer from there, so the Windows ribbon and the mac strip read
+// one query and cannot drift apart.
 
 class AppWindow {
 public:
@@ -94,18 +86,14 @@ public:
     bool CanUndo() const { return undo_stack_.CanUndo(); }
     bool CanRedo() const { return undo_stack_.CanRedo(); }
     FormatState GetFormatState() const;
-    // Remove ALL formatting of the given type from the current selection.
-    void RemoveAllFormattingInSelection(bool wantStrong, bool wantEm,
-                                        bool wantCode, bool wantStrike,
-                                        uint32_t mlen);
-    // Expand selection to cover a formatting span + its markers, so
-    // ToggleInlineMarker can detect and remove them. Returns true if
-    // the selection was expanded.
-    bool ExpandSelectionToFormatSpan(bool wantStrong, bool wantEm,
-                                      bool wantCode, bool wantStrike,
-                                      uint32_t mlen);
-    void InvalidateFormatButtons();
     void ToggleEdit() { SetEdit(!editing_); }
+    // The inline format family lives in the shared document
+    // controller now (documentcontroller.h): the Toggle shells below
+    // stay because the ribbon map, the command ids and the keyboard
+    // walk call them by name. InvalidateFormatButtons remains the
+    // Windows shell's own: it repaints the ribbon, which is Win32
+    // detail and never controller state.
+    void InvalidateFormatButtons();
 
     // Marker layer (ribbon: Home tab, Markers group; Ctrl+Shift+H). A
     // marker annotates rendered text: it never touches the Markdown
@@ -203,7 +191,6 @@ private:
     Renderer               renderer_;
     bool                   renderer_inited_ = false;
 
-    Document               doc_;
     std::wstring           file_path_;
 
     FileWatcher            watcher_;
@@ -281,6 +268,13 @@ private:
     // state, so every address the window code holds is the same
     // object in the same place.
     DocumentController controller_;
+    // The parsed document. Owned by the document controller (family
+    // 3: the format state query and the clear format engine read it
+    // there); this name is a reference to the same Document object,
+    // bound in the constructor, so the reparse paths keep writing
+    // into it. It is declared after the controller so the binding in
+    // the constructor initialization list sees a live controller.
+    Document&             doc_;
     TextBuffer&   buffer_;
     LayoutCache  layout_cache_;
     Selection&    sel_;
@@ -302,12 +296,16 @@ private:
     wchar_t         surrogate_buf_ = 0;  // high surrogate waiting for low
     bool            has_surrogate_ = false;
     float           desiredX_ = -1.0f;  // preserved column for vertical nav
-    bool            pending_bold_ = false;
-    bool            pending_italic_ = false;
-    bool            pending_bold_set_ = false;
-    bool            pending_italic_set_ = false;
-    bool            pending_run_active_ = false;
-    uint32_t        pending_run_suffix_bytes_ = 0;
+    // The pending typing format (bold or italic toggled with an
+    // empty caret). The state itself belongs to the document
+    // controller (family 3); these are references into it so the
+    // typing paths below keep reading the same fields.
+    bool&           pending_bold_;
+    bool&           pending_italic_;
+    bool&           pending_bold_set_;
+    bool&           pending_italic_set_;
+    bool&           pending_run_active_;
+    uint32_t&       pending_run_suffix_bytes_;
     UINT_PTR        reparse_timer_ = 0;
     bool        reparse_pending_ = false;
 
@@ -481,8 +479,6 @@ private:
     void InitEditor();
     void OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp);
     void ApplyUndo(bool redo);
-    void RecordPendingFormatUndo(bool beforeBold, bool beforeItalic,
-                                 bool beforeBoldSet, bool beforeItalicSet);
     void OnReparseTimer();
     void ScheduleReparse();
     void OnDestroy();

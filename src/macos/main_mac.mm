@@ -1982,6 +1982,30 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                                                    : NSControlStateValueOff)];
         return !app_->WelcomeMode();
     }
+    // The inline format commands show pressed state from the one
+    // shared format state query (family 3): the same answer the
+    // Windows ribbon reads, with the pending typing format folded
+    // into the empty caret case.
+    if ([item action] == @selector(toggleBold:)) {
+        [item setState:(app_->FormatButtonOn("**") ? NSControlStateValueOn
+                                                   : NSControlStateValueOff)];
+        return !app_->WelcomeMode();
+    }
+    if ([item action] == @selector(toggleItalic:)) {
+        [item setState:(app_->FormatButtonOn("*") ? NSControlStateValueOn
+                                                  : NSControlStateValueOff)];
+        return !app_->WelcomeMode();
+    }
+    if ([item action] == @selector(toggleStrike:)) {
+        [item setState:(app_->FormatButtonOn("~~") ? NSControlStateValueOn
+                                                   : NSControlStateValueOff)];
+        return !app_->WelcomeMode();
+    }
+    if ([item action] == @selector(toggleCode:)) {
+        [item setState:(app_->FormatButtonOn("`") ? NSControlStateValueOn
+                                                  : NSControlStateValueOff)];
+        return !app_->WelcomeMode();
+    }
     if ([item action] == @selector(toggleOutline:)) {
         // The pane is only on offer while the document has headings.
         [item setState:(outlineVisible_ ? NSControlStateValueOn
@@ -2883,14 +2907,17 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 }
 
 - (void)OnClearFormat {
+    // The body lives in the document controller (family 3); its
+    // completion notification runs OnTextChanged from inside.
     app_->ClearFormat();
-    app_->OnTextChanged();
+    [self toolbarSync];
     [view_ setNeedsDisplay:YES];
 }
 
 - (void)OnToggleStrike {
-    ToggleInlineMarker(&app_->buffer(), &app_->selection(), "~~", &app_->undo());
-    app_->OnTextChanged();
+    // The shared controller body (family 3): the strip-all shortcut
+    // is behind ClearFormat only, on both ports.
+    app_->controller().ToggleStrike();
     [view_ setNeedsDisplay:YES];
 }
 
@@ -2995,8 +3022,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 }
 
 - (void)OnToggleCode {
-    ToggleInlineMarker(&app_->buffer(), &app_->selection(), "`", &app_->undo());
-    app_->OnTextChanged();
+    // The shared controller body (family 3), fenced whole line
+    // branch included: the mac menu item gains the code block shape
+    // instead of carrying a second body.
+    app_->controller().ToggleCode();
     [view_ setNeedsDisplay:YES];
 }
 
@@ -3032,8 +3061,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             !hadSelection) {
             return;
         }
-        InsertLink(&app_->buffer(), &app_->selection(), url, &app_->undo());
-        app_->OnTextChanged();
+        // The alert is the port's dialog; the insert is the shared
+        // controller body (family 3), whose completion notification
+        // runs OnTextChanged.
+        app_->controller().ToggleInlineLink(url);
         [view_ setNeedsDisplay:YES];
     }];
 }

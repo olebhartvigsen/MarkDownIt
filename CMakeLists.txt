@@ -321,6 +321,10 @@ if(BUILD_TESTS AND APPLE)
         tests/seam_conformance_test.cpp
         tests/layout_golden_test.cpp
         tests/paragraph_list_quote_test.cpp
+        # The transcript replay of the inline formatting family
+        # (family 3): reads tests/transcripts/inline_formatting from
+        # the repo root, the way the perf harness reads its fixture.
+        tests/documentcontroller_transcript_test.cpp
         tests/code_table_layout_test.cpp
         tests/svg_mermaid_layout_test.cpp
         tests/display_player_test.cpp
@@ -433,6 +437,10 @@ elseif(BUILD_TESTS)
         tests/seam_conformance_test.cpp
         tests/layout_golden_test.cpp
         tests/paragraph_list_quote_test.cpp
+        # The transcript replay of the inline formatting family
+        # (family 3): reads tests/transcripts/inline_formatting from
+        # the repo root, the way the perf harness reads its fixture.
+        tests/documentcontroller_transcript_test.cpp
         tests/code_table_layout_test.cpp
         tests/svg_mermaid_layout_test.cpp
         tests/display_player_test.cpp

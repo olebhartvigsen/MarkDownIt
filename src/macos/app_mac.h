@@ -400,23 +400,14 @@ public:
     void ReplaceAllMatches(const std::wstring& query,
                            const std::wstring& replacement);
 
-    // The shared body of the bold and italic commands.
-    void ToggleInlineWithPending(const std::string& marker, bool bold);
-
-    // Puts typed text through the pending format: the first character
-    // opens the markers around itself, the next ones extend the run.
+    // The pending typing format reaches the document through the
+    // document controller's body (family 3); this is the shell the
+    // typing path calls.
     void ApplyPendingTypingFormat(const std::string& value);
 
-    // Records a pending toggle as its own undo step.
-    void RecordPendingFormatUndo(bool beforeBold, bool beforeItalic,
-                                 bool beforeBoldSet, bool beforeItalicSet);
-
-    // Restores the pending state an undo or redo entry carries.
+    // Restores the pending state an undo or redo entry carries, the
+    // controller's restore under the mac name.
     void RestorePendingFormat(const UndoEntry& entry, bool redo);
-
-    // Whether the caret sits in a span of the format, which is where a
-    // pending toggle starts from.
-    bool CaretFormatIsActive(const std::string& marker) const;
 
     // Ends the pending format and the typing run.
     void ClearPendingFormat();
@@ -444,7 +435,6 @@ public:
 
 private:
     std::string filePath_;
-    Document document_;
     DocumentChangedHandler documentChanged_;
     SelectionChangedHandler selectionChanged_;
     // The document state belongs to the shared document controller
@@ -452,6 +442,13 @@ private:
     // selection, editor and undo stack, so every mac path keeps one
     // address space.
     DocumentController controller_;
+    // The parsed document belongs to the shared document controller
+    // (family 3); this name is a reference to the same Document
+    // object, bound in the constructor, so the reparse paths keep
+    // writing into it. It is declared after the controller so the
+    // binding in the constructor initialization list sees a live
+    // controller.
+    Document& document_;
     TextBuffer& buffer_;
     // True while the window shows the raw source (spec C2).
     bool sourceView_ = false;
@@ -472,15 +469,17 @@ private:
     bool editing_ = false;
     // The pending typing format: bold or italic toggled with an empty
     // caret, waiting for the next typed characters (text guide, fed og
-    // kursiv ved et tomt caret).
-    bool pendingBold_ = false;
-    bool pendingItalic_ = false;
-    bool pendingBoldSet_ = false;
-    bool pendingItalicSet_ = false;
+    // kursiv ved et tomt caret). The state belongs to the document
+    // controller (family 3); these are references into it, so the mac
+    // paths read and write the same fields.
+    bool& pendingBold_;
+    bool& pendingItalic_;
+    bool& pendingBoldSet_;
+    bool& pendingItalicSet_;
     // Whether the caret still sits on the suffix markers of the run
     // being typed, which lets the next characters extend that run.
-    bool pendingRunActive_ = false;
-    uint32_t pendingRunSuffixBytes_ = 0;
+    bool& pendingRunActive_;
+    uint32_t& pendingRunSuffixBytes_;
     // Whether the welcome screen is shown instead of a document.
     bool welcomeMode_ = false;
     // The handler that opens a file.

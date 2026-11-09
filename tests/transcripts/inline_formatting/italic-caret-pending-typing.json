@@ -1,0 +1,14 @@
+{
+  "name": "italic-caret-pending-typing",
+  "comment": "The empty caret rule: a pending italic toggle writes nothing to the document. The next typed characters open one italic run around themselves, and the typing after that extends the same run by reusing its closing marker, so continuous input stays one span instead of nesting (text guide, fed og kursiv ved et tomt caret, rules 1 and 2). The caret lands after the run's closing marker. Undo depth 3: the pending toggle entry, the insert that opened the run, the extend splice of the second burst.",
+  "start_text": "alpha",
+  "commands": [
+    { "cmd": "set_caret", "offset": 5 },
+    { "cmd": "toggle_italic" },
+    { "cmd": "type", "text": " beta" },
+    { "cmd": "type", "text": " gamma" }
+  ],
+  "expected_text": "alpha* beta gamma*",
+  "expected_selection": { "anchor": 18, "active": 18 },
+  "expected_undo_depth": 3
+}

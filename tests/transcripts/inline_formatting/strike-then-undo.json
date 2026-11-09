@@ -1,0 +1,13 @@
+{
+  "name": "strike-then-undo",
+  "comment": "Strikethrough over a selection, then one undo: the text returns to what it was and the selection returns with it. After the undo the stack is empty.",
+  "start_text": "axe",
+  "commands": [
+    { "cmd": "select", "start": 0, "end": 3 },
+    { "cmd": "toggle_strike" },
+    { "cmd": "undo" }
+  ],
+  "expected_text": "axe",
+  "expected_selection": { "anchor": 0, "active": 3 },
+  "expected_undo_depth": 0
+}

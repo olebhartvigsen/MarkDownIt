@@ -7,7 +7,6 @@
 #include "app_mac.h"
 #include "formatting.h"
 
-#include <chrono>
 #include <fstream>
 #include <sstream>
 
@@ -24,20 +23,6 @@
 #include "tableedit.h"
 #include "textdrag.h"
 #include "textenc.h"
-
-namespace platform {
-
-// The clock of the shared code: the mac port answers with the steady
-// clock, so the undo entries the controller stamps coalesce under
-// the same 800 ms rule the Windows port applies (platformservices.h,
-// undo stack guide). Before the controller existed this port stamped
-// zero, which turned the rule off.
-uint64_t GetMonotonicMs() {
-    return static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch())
-            .count());
-}
 
 namespace {
 
@@ -67,9 +52,28 @@ bool FindScopeIsRendered(uint32_t start, uint32_t length, void* context) {
 // The controller wires the editor to the buffer, the selection and
 // the undo stack in its own constructor.
 App::App() : buffer_(controller_.buffer()),
+             document_(controller_.document()),
              sel_(controller_.selection()),
              editor_(controller_.editor()),
-             undo_(controller_.undo()) {
+             undo_(controller_.undo()),
+             pendingBold_(controller_.pending().bold),
+             pendingItalic_(controller_.pending().italic),
+             pendingBoldSet_(controller_.pending().boldSet),
+             pendingItalicSet_(controller_.pending().italicSet),
+             pendingRunActive_(controller_.pending().runActive),
+             pendingRunSuffixBytes_(controller_.pending().runSuffixBytes) {
+    // The document changed handler of the controller runs the mac
+    // reparse path: a controller command that changed the text lands
+    // here, so OnTextChanged no longer needs a second, manual run
+    // after every command.
+    controller_.SetDocumentChangedHandler([this] {
+        OnTextChanged();
+    });
+    // A pending format toggle with an empty caret changes no text: the
+    // mac shell only refreshes through its selection path.
+    controller_.SetSelectionChangedHandler([this] {
+        OnSelectionChanged();
+    });
     findBar_ = std::make_unique<FindBar>();
 
     // The bar asks the app where the caret is, and tells it what to do
@@ -826,226 +830,64 @@ void App::Reparse() {
     if (documentChanged_) documentChanged_();
 }
 
-// The formatting goes away from the selection. The block markers are
-// taken out first, because they move the text around, and the inline
-// markers go last, by the shared module, so the two builds clear the
-// same way.
+// The formatting goes away from the selection: the whole body lives
+// in the document controller now (family 3), the shared strip-all
+// engine for the inline markers and the block resets in one undo
+// trail. The mac body this replaces cleared the block prefix with a
+// blind splice that recorded no undo entry and moved the inline
+// clears through stale offsets; one engine on both ports instead.
+// The controller's completion notification runs OnTextChanged, so
+// the shell below only forwards.
 void App::ClearFormat() {
-    if (!editing_) return;
-    if (sel_.Empty()) return;
-
-    uint32_t start = sel_.Start();
-    uint32_t end = sel_.End();
-
-    // Only the first line of the selection is cleared. A selection
-    // over many lines keeps its block formatting, because taking it
-    // away would change the shape of the document.
-    const uint32_t lineStart = buffer_.LineStart(start);
-    const std::string prefix = buffer_.Text().substr(lineStart, start - lineStart);
-
-    // The heading markers.
-    uint32_t removeCount = 0;
-    uint32_t removeTo = lineStart;
-    {
-        size_t hashes = 0;
-        while (hashes < prefix.size() && prefix[hashes] == '#') ++hashes;
-        if (hashes > 0 && hashes < prefix.size() && prefix[hashes] == ' ') {
-            removeCount = static_cast<uint32_t>(hashes) + 1;
-            removeTo = lineStart + removeCount;
-        }
-    }
-
-    // The quote and the list markers. They come after the heading
-    // markers, because a quote of a heading is written that way.
-    if (removeCount == 0) {
-        size_t spaces = 0;
-        while (spaces < prefix.size() && prefix[spaces] == ' ') ++spaces;
-        if (spaces < prefix.size()) {
-            const char ch = prefix[spaces];
-            const bool isQuote = ch == '>';
-            const bool isList = ch == '-' || ch == '*' || ch == '+';
-            if (isQuote || isList) {
-                removeCount = static_cast<uint32_t>(spaces) + 1;
-                removeTo = lineStart + removeCount;
-                if (removeTo < buffer_.Text().size() &&
-                    buffer_.Text()[removeTo] == ' ') {
-                    ++removeTo;
-                    ++removeCount;
-                }
-            }
-        }
-    }
-
-    if (removeCount > 0) {
-        buffer_.Splice(lineStart, removeCount, "");
-        const uint32_t shift = removeCount;
-        start = (start > shift) ? start - shift : 0;
-        end = (end > shift) ? end - shift : 0;
-        sel_.anchor = {start};
-        sel_.active = {end};
-    }
-
-    // The inline markers go last, because the block change moved the
-    // text around.
-    ClearInlineFormatting(document_, &buffer_, &sel_, &undo_);
+    controller_.ClearFormat();
 }
 
-// The two marker commands carry the pending typing format.
+// The two marker commands carry the pending typing format: the
+// bodies live in the document controller (family 3), the pending
+// state included. What the controller changed runs back through
+// the handlers the App constructor wires: the selection case ends
+// in OnTextChanged, the empty caret case in OnSelectionChanged.
 void App::ToggleBold() {
-    if (!editing_) return; ToggleInlineWithPending("**", true); }
+    controller_.ToggleBold();
+}
 
 void App::ToggleItalic() {
-    if (!editing_) return; ToggleInlineWithPending("*", false); }
-
-// With a selection the shared marker toggle applies the guide's rules.
-// An empty caret toggles what the NEXT characters get and changes
-// nothing in the document (text guide, fed og kursiv ved et tomt
-// caret rules 1 and 2).
-void App::ToggleInlineWithPending(const std::string& marker, bool bold) {
-    if (!editing_) return;
-    if (!sel_.Empty()) {
-        ClearPendingFormat();
-        ToggleInlineMarker(&buffer_, &sel_, marker, &undo_);
-        editor_.BreakUndoCoalesce();
-        OnTextChanged();
-        return;
-    }
-
-    const bool beforeBold = pendingBold_;
-    const bool beforeItalic = pendingItalic_;
-    const bool beforeBoldSet = pendingBoldSet_;
-    const bool beforeItalicSet = pendingItalicSet_;
-
-    bool& value = bold ? pendingBold_ : pendingItalic_;
-    bool& set = bold ? pendingBoldSet_ : pendingItalicSet_;
-    // The pending state starts from the format the caret sits in when
-    // nothing is pending yet, the way the Windows build reads it.
-    const bool current = set ? value : CaretFormatIsActive(marker);
-    value = !current;
-    set = true;
-    pendingRunActive_ = false;
-    pendingRunSuffixBytes_ = 0;
-    RecordPendingFormatUndo(beforeBold, beforeItalic, beforeBoldSet,
-                            beforeItalicSet);
-    editor_.BreakUndoCoalesce();
-    OnSelectionChanged();
+    controller_.ToggleItalic();
 }
 
 // The pending format reaches the document only when text does. The
-// first typed character opens the markers around itself; the next ones
-// replace the run's closing markers with themselves plus the markers,
-// so the run extends instead of nesting (text guide, fed og kursiv ved
-// et tomt caret rules 1 and 2).
+// body lives in the document controller now (family 3): the first
+// typed character opens the markers around itself; the next ones
+// replace the run's closing markers with themselves plus the
+// markers, so the run extends instead of nesting (text guide, fed
+// og kursiv ved et tomt caret rules 1 and 2).
 void App::ApplyPendingTypingFormat(const std::string& value) {
-    std::string prefix;
-    std::string suffix;
-    if (pendingBoldSet_ && pendingBold_) {
-        prefix += "**";
-        suffix = "**" + suffix;
-    }
-    if (pendingItalicSet_ && pendingItalic_) {
-        prefix += "*";
-        suffix = "*" + suffix;
-    }
-
-    if (suffix.empty()) {
-        editor_.InsertText(value);
-        pendingRunActive_ = false;
-        pendingRunSuffixBytes_ = 0;
-        return;
-    }
-
-    const std::string& source = buffer_.Text();
-    const uint32_t caret = sel_.active.offset;
-    const uint32_t suffixBytes = static_cast<uint32_t>(suffix.size());
-    const bool extend = pendingRunActive_ && sel_.Empty() &&
-        pendingRunSuffixBytes_ == suffixBytes && caret >= suffixBytes &&
-        source.compare(caret - suffixBytes, suffixBytes, suffix) == 0;
-
-    if (extend) {
-        editor_.ReplaceTextRange(caret - suffixBytes, suffixBytes,
-                                 value + suffix, EditType::Insert);
-    } else {
-        editor_.InsertText(prefix + value + suffix);
-    }
-    pendingRunActive_ = true;
-    pendingRunSuffixBytes_ = suffixBytes;
-}
-
-// One undo step for a pending toggle, so Cmd+Z brings the old pending
-// state back before it touches any text (text guide, fed og kursiv ved
-// et tomt caret rule 5).
-void App::RecordPendingFormatUndo(bool beforeBold, bool beforeItalic,
-                                  bool beforeBoldSet, bool beforeItalicSet) {
-    // The entry is built by the shared document controller now, on
-    // the platform clock; the app passes the before state from its
-    // caller and its own pending state as the after state.
-    controller_.RecordPendingFormatUndo(sel_, beforeBold, beforeItalic,
-                                        beforeBoldSet, beforeItalicSet,
-                                        pendingBold_, pendingItalic_,
-                                        pendingBoldSet_, pendingItalicSet_);
+    controller_.ApplyPendingTypingFormat(value);
 }
 
 void App::RestorePendingFormat(const UndoEntry& entry, bool redo) {
-    if (!entry.hasPendingFormat) return;
-    if (redo) {
-        pendingBold_ = entry.afterPendingBold;
-        pendingItalic_ = entry.afterPendingItalic;
-        pendingBoldSet_ = entry.afterPendingBoldSet;
-        pendingItalicSet_ = entry.afterPendingItalicSet;
-    } else {
-        pendingBold_ = entry.pendingBold;
-        pendingItalic_ = entry.pendingItalic;
-        pendingBoldSet_ = entry.pendingBoldSet;
-        pendingItalicSet_ = entry.pendingItalicSet;
-    }
-    pendingRunActive_ = false;
-    pendingRunSuffixBytes_ = 0;
+    controller_.RestorePendingFormat(entry, redo);
 }
 
-// Whether the caret sits inside a span of the format, which is where
-// the pending toggle starts from (text guide, fed og kursiv ved et
-// tomt caret rule 3).
-bool App::CaretFormatIsActive(const std::string& marker) const {
-    const bool wantBold = marker == "**";
-    const uint32_t caret = sel_.active.offset;
-    for (const auto& node : document_.nodes) {
-        const uint32_t blockStart = node.srcOffset;
-        const uint32_t blockEnd = blockStart + node.srcLength;
-        if (caret < blockStart || caret > blockEnd) continue;
-        for (const auto& child : node.children) {
-            const uint32_t start = child.srcOffset;
-            const uint32_t end = start + child.srcLength;
-            if (start <= caret && caret <= end) {
-                if (wantBold && child.strong) return true;
-                if (!wantBold && child.em) return true;
-            }
-        }
-    }
-    return false;
-}
-
-// What the strip reads for the bold and italic buttons. The pending
-// typing format shows pressed first; with a selection the wrapped
-// check answers for the rest.
+// What the strip and the menu validation read for the format
+// buttons: the controller's format state query, one answer for both
+// ports (family 3). The pending typing format shows pressed first,
+// because the query already folds it into the empty caret answer.
 bool App::FormatButtonOn(const std::string& marker) const {
-    const bool bold = marker == "**";
-    if (bold && pendingBoldSet_) return pendingBold_;
-    if (!bold && pendingItalicSet_) return pendingItalic_;
-    if (sel_.Empty()) return CaretFormatIsActive(marker);
-    return IsWrappedIn(buffer_.Text(), sel_.Start(),
-                       sel_.Start() + sel_.Length(), marker);
+    const FormatState fs = controller_.GetFormatState();
+    if (marker == "**") return fs.bold;
+    if (marker == "*")  return fs.italic;
+    if (marker == "~~") return fs.strike;
+    if (marker == "`")  return fs.code;
+    return false;
 }
 
 // A caret move ends the pending format: the next characters start
 // fresh wherever the caret lands (text guide, fed og kursiv ved et
 // tomt caret rule 3). Every click and caret move arrives through
-// SetCaret or SetSelection.
+// SetCaret or SetSelection, which call this shell.
 void App::ClearPendingFormat() {
-    pendingBoldSet_ = false;
-    pendingItalicSet_ = false;
-    pendingRunActive_ = false;
-    pendingRunSuffixBytes_ = 0;
+    controller_.ClearPendingFormat();
 }
 
 // Whether the selection overlaps any marker. A partial overlap counts,

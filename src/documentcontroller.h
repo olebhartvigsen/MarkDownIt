@@ -9,16 +9,31 @@
 // command bodies move in one at a time, family by family
 // (references/batch4-controller-extraction.md).
 //
-// This wave carries the skeleton and family 2, headings and lists:
-// SetHeading, ToggleBullets, ToggleNumbering, ToggleQuote, Indent
-// and Outdent, the twins that used to live in app.cpp and
-// main_mac.mm.
+// This wave carries the skeleton, family 2 (headings and lists:
+// SetHeading, ToggleBullets, ToggleNumbering, ToggleQuote, Indent and
+// Outdent) and family 3, the inline formatting and undo plumbing:
+// the bold, italic, strikethrough, code and link toggles, Clear
+// Formatting, the pending typing format of an empty caret, and the
+// format state query the chrome of both ports reads.
 //
 // The controller is deliberately thin about everything that is not
 // text: it does not know a window, a renderer or a dialog. A command
 // body ends by notifying the port through the document changed
 // handler, and the port does its own re-parse, redraw and menu
-// sync, exactly what the command twins used to do by hand.
+// sync, exactly what the command twins used to do by hand. A command
+// that only moved the notion of which format is active (a pending
+// toggle with no selection) ends with the selection changed handler
+// instead, because nothing about the text changed and the port only
+// needs to refresh its buttons.
+//
+// Family 3 resolved the map's divergence 1 on the way in: the inline
+// toggles answer the SHARED formatting semantics of formatting.cpp
+// (per marker run, what the mac build did), not the Windows shortcut
+// that stripped every run of the type through
+// RemoveAllFormattingInSelection. The strip-all engine survives as
+// exactly what ClearFormat is: ClearInlineFormatting, one body on
+// both ports now. The transcript corpus in
+// tests/transcripts/inline_formatting pins the resolution.
 
 #pragma once
 
@@ -27,9 +42,42 @@
 #include <string>
 
 #include "caret.h"
+#include "dom.h"
 #include "editcontroller.h"
 #include "textbuffer.h"
 #include "undostack.h"
+
+// Active formatting state at the caret position or over the
+// selection. This moved in from the Windows app.h: the ribbon reads
+// it through the shell that forwards to the controller query, and
+// the mac strip reads the same answer, so the pressed state of the
+// toggle buttons can no longer drift between the ports.
+struct FormatState {
+    bool bold = false;
+    bool italic = false;
+    bool code = false;
+    bool strike = false;
+    int  headingLevel = 0;
+    bool inBullets = false;
+    bool inNumbering = false;
+    bool inQuote = false;
+};
+
+// The pending typing format: bold or italic toggled with an empty
+// caret, waiting for the next typed characters (text guide, fed og
+// kursiv ved et tomt caret, rules 1 to 5). Both ports carried this
+// state once each with different spellings; the aliases in the
+// ports now bind to these fields.
+struct PendingFormatState {
+    bool bold = false;
+    bool italic = false;
+    bool boldSet = false;
+    bool italicSet = false;
+    // Whether the caret still sits on the suffix markers of the run
+    // being typed, which lets the next characters extend that run.
+    bool runActive = false;
+    uint32_t runSuffixBytes = 0;
+};
 
 class DocumentController {
 public:
@@ -41,6 +89,13 @@ public:
     Selection& selection() { return sel_; }
     EditController& editor() { return editor_; }
     UndoStack& undo() { return undo_; }
+    // The parsed document. Both ports parse the buffer text into it
+    // through their reparse paths (the alias they hold), and the
+    // controller reads it back for the format state query and the
+    // clear format engine.
+    Document& document() { return document_; }
+    // The pending typing format (see PendingFormatState above).
+    PendingFormatState& pending() { return pending_; }
 
     // The edit-mode gate. The ports own the mode flag (their views
     // and bars read it too); they keep the controller in step, and
@@ -67,23 +122,69 @@ public:
     void Indent();
     void Outdent();
 
+    // -------------------------------------------------------------------
+    // Family 3: inline formatting and the undo plumbing around it.
+    // -------------------------------------------------------------------
+
+    // What the toggle buttons and the menu validation read: the
+    // bold, italic, code, strike (and block) state at the caret or
+    // over the selection, with the pending typing format on top
+    // when it is set. One query for both ports, moved in from the
+    // Windows body.
+    FormatState GetFormatState() const;
+
+    // The inline toggles. With a non-empty selection they apply the
+    // shared per-run marker semantics of ToggleInlineMarker
+    // (formatting.cpp), the resolution of divergence 1: a selection
+    // that only partially overlaps a run extends it, an exactly
+    // wrapped selection unwraps, and a multi run selection merges
+    // into one wrap around what the runs covered. With an empty
+    // caret, bold and italic toggle the PENDING typing format
+    // instead and write nothing to the document (the empty caret
+    // rules of the text guide); strikethrough and code insert the
+    // bare marker pair with the caret between, the empty selection
+    // branch of ToggleInlineMarker.
+    void ToggleBold();
+    void ToggleItalic();
+    void ToggleStrike();
+    // Code keeps the Windows whole line branch: a selection that
+    // spans one or more entire lines toggles a fenced code block
+    // (the shared ToggleCodeBlock) rather than inline backticks.
+    void ToggleCode();
+    // The link command. The url prompt stays with the port (the
+    // Win32 dialog builder, the mac alert); the shell passes the
+    // resolved destination here. The link needs a non-empty
+    // selection, and the insert itself is the shared InsertLink.
+    void ToggleInlineLink(const std::string& url);
+    // Takes EVERY inline formatting marker away from the selection,
+    // through the shared strip-all engine (ClearInlineFormatting),
+    // plus the block formatting of the first line. This is the
+    // home of the strip-all behavior the family's toggles gave up
+    // when they unified on the per-run semantics.
+    void ClearFormat();
+
+    // Puts typed text through the pending format: the first typed
+    // character opens the markers around itself, the next ones
+    // extend the run by replacing its closing markers, so a
+    // continuous input stays one span instead of nesting markers
+    // (text guide, rules 1 and 2). Moved in from both ports, whose
+    // bodies were the same modulo spelled state.
+    void ApplyPendingTypingFormat(const std::string& value);
+    // Ends the pending format and the typing run. The port calls it
+    // from every caret move and every path that replaces the
+    // selection (word processor guide A-H, the canonical caret).
+    void ClearPendingFormat();
+    // Restores the pending state an undo or redo entry carries, so
+    // Cmd+Z brings the old pending toggles back before it touches
+    // any text (the empty caret rules, rule 5).
+    void RestorePendingFormat(const UndoEntry& entry, bool redo);
+
     // Splices the buffer and records the undo entry in one step, so
     // the table, find and link paths of both ports share one entry
     // shape. The stamp comes from the platform clock, so both ports
     // stamp the same monotonic ms.
     void SpliceWithUndo(uint32_t offset, uint32_t length,
                         const std::string& replacement);
-
-    // One undo step for a pending format toggle, so undo brings the
-    // old pending state back before it touches any text (text guide,
-    // bold and italic at an empty caret, rule 5). The port passes the
-    // selection and the before state from its arguments plus its own
-    // current pending state as the after state.
-    void RecordPendingFormatUndo(const Selection& sel, bool beforeBold,
-                                bool beforeItalic, bool beforeBoldSet,
-                                bool beforeItalicSet, bool afterBold,
-                                bool afterItalic, bool afterBoldSet,
-                                bool afterItalicSet);
 
     // What a command body calls when it has changed the document:
     // the port re-parses, re-renders and re-syncs its chrome. The
@@ -94,6 +195,15 @@ public:
         documentChanged_ = std::move(handler);
     }
 
+    // What a command body calls when only the caret notion changed:
+    // a pending toggle at an empty caret, or a query that depends
+    // on the selection. The port refreshes its buttons and menus;
+    // nothing about the document text changed.
+    using SelectionChangedHandler = std::function<void()>;
+    void SetSelectionChangedHandler(SelectionChangedHandler handler) {
+        selectionChanged_ = std::move(handler);
+    }
+
 private:
     // Declaration order matters: the edit controller binds to the
     // buffer and the selection by address in its constructor.
@@ -101,10 +211,35 @@ private:
     Selection sel_;
     EditController editor_;
     UndoStack undo_;
+    // The parsed document, refreshed by the ports' reparse paths
+    // (their alias of document()). It is declared here because it
+    // depends on nothing; no binding order applies to it.
+    Document document_;
+    // The pending typing format state.
+    PendingFormatState pending_;
     bool editing_ = false;
     DocumentChangedHandler documentChanged_;
+    SelectionChangedHandler selectionChanged_;
+
+    // The shared body of the bold and italic toggles: a pending
+    // toggle at an empty caret, the shared marker toggle over a
+    // selection (moved in from App::ToggleInlineWithPending).
+    void ToggleInlineWithPending(const std::string& marker, bool bold);
+
+    // One undo step for a pending toggle, recorded by the toggle
+    // body above (text guide, bold and italic at an empty caret,
+    // rule 5). It carried the port-side callers of the pre
+    // controller waves; those shells are gone now.
+    void RecordPendingFormatUndo(const Selection& sel, bool beforeBold,
+                                 bool beforeItalic, bool beforeBoldSet,
+                                 bool beforeItalicSet, bool afterBold,
+                                 bool afterItalic, bool afterBoldSet,
+                                 bool afterItalicSet);
 
     void NotifyDocumentChanged() {
         if (documentChanged_) documentChanged_();
+    }
+    void NotifySelectionChanged() {
+        if (selectionChanged_) selectionChanged_();
     }
 };

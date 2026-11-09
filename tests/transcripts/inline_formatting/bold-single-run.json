@@ -1,0 +1,12 @@
+{
+  "name": "bold-single-run",
+  "comment": "The shared toggle wraps a plain selection in one bold run. The markers land around the selected text only; the undo trail holds the one command entry.",
+  "start_text": "hello world",
+  "commands": [
+    { "cmd": "select", "start": 0, "end": 5 },
+    { "cmd": "toggle_bold" }
+  ],
+  "expected_text": "**hello** world",
+  "expected_selection": { "anchor": 0, "active": 9 },
+  "expected_undo_depth": 1
+}

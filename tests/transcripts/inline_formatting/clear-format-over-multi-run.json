@@ -1,0 +1,12 @@
+{
+  "name": "clear-format-over-multi-run",
+  "comment": "ClearFormat is the strip-all engine's home now: a selection covering a bold run, a plain word and an italic run loses both runs' inline markers in one command, every removal its own undo entry.",
+  "start_text": "**bold** plain *ital*",
+  "commands": [
+    { "cmd": "select", "start": 0, "end": 20 },
+    { "cmd": "clear_format" }
+  ],
+  "expected_text": "bold plain ital",
+  "expected_selection": { "anchor": 0, "active": 14 },
+  "expected_undo_depth": 2
+}

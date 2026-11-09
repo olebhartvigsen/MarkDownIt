@@ -66,16 +66,6 @@ static UINT GetWindowDpi(HWND hwnd) {
     return 96;
 }
 
-// The clock of the shared code: the Windows tick count is monotonic
-// and already served the 800 ms coalescing rule of the undo stack,
-// so it is the monotonic clock here (platformservices.h, undo stack
-// guide).
-namespace platform {
-
-uint64_t GetMonotonicMs() { return GetTickCount64(); }
-
-}  // namespace platform
-
 // The document controller owns the buffer, the selection, the editor
 // and the undo stack; the window aliases them, and its commands run
 // through the controller bodies. What a command changed ends here:
@@ -88,10 +78,26 @@ AppWindow::AppWindow()
       buffer_(controller_.buffer()),
       sel_(controller_.selection()),
       editor_(controller_.editor()),
-      undo_stack_(controller_.undo()) {
+      undo_stack_(controller_.undo()),
+      // The parsed document and the pending typing format live in the
+      // controller now (family 3); the names stay as references so the
+      // reparse paths and the typing paths keep the same objects.
+      doc_(controller_.document()),
+      pending_bold_(controller_.pending().bold),
+      pending_italic_(controller_.pending().italic),
+      pending_bold_set_(controller_.pending().boldSet),
+      pending_italic_set_(controller_.pending().italicSet),
+      pending_run_active_(controller_.pending().runActive),
+      pending_run_suffix_bytes_(controller_.pending().runSuffixBytes) {
     controller_.SetDocumentChangedHandler([this] {
         OnBufferChanged();
         ForceRepaintNow();
+    });
+    // A pending format toggle with an empty caret changes no text: the
+    // shell only refreshes its buttons, through the same handler the
+    // selection paths already use.
+    controller_.SetSelectionChangedHandler([this] {
+        InvalidateFormatButtons();
     });
 }
 
@@ -439,10 +445,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
     // applies while the caret remains at the insertion point.
     if (vk == VK_LEFT || vk == VK_RIGHT || vk == VK_UP || vk == VK_DOWN ||
         vk == VK_HOME || vk == VK_END || vk == VK_PRIOR || vk == VK_NEXT) {
-        pending_bold_set_ = false;
-        pending_italic_set_ = false;
-        pending_run_active_ = false;
-        pending_run_suffix_bytes_ = 0;
+        controller_.ClearPendingFormat();
     }
 
     bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
@@ -641,11 +644,9 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 InsertLinkCmd();
                 break;
             case commands::CommandId::Strike:
-                // The keyboard path keeps the shared inline toggle; the
-                // ribbon command resolves the block shapes around it.
-                ToggleInlineMarker(&buffer_, &sel_, "~~", &undo_stack_);
-                editor_.BreakUndoCoalesce();
-                OnBufferChanged();
+                // The keyboard path and the ribbon resolve to the one
+                // controller body now (family 3).
+                ToggleStrike();
                 break;
             case commands::CommandId::Cut:
                 // An empty selection is a no-op and must not switch modes.
@@ -660,9 +661,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 }
                 break;
             case commands::CommandId::Code:
-                ToggleInlineMarker(&buffer_, &sel_, "`", &undo_stack_);
-                editor_.BreakUndoCoalesce();
-                OnBufferChanged();
+                ToggleCode();
                 break;
             case commands::CommandId::SaveAs:
                 SaveAs();
@@ -701,8 +700,7 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                         }
                     }
                     if (!text.empty()) {
-                        pending_run_active_ = false;
-                        pending_run_suffix_bytes_ = 0;
+                        controller_.ClearPendingFormat();
                         editor_.InsertText(text);
                         OnBufferChanged();
                     }
@@ -710,17 +708,11 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 break;
             }
             case commands::CommandId::Undo:
-                pending_run_active_ = false;
-                pending_run_suffix_bytes_ = 0;
-                pending_bold_set_ = false;
-                pending_italic_set_ = false;
+                controller_.ClearPendingFormat();
                 ApplyUndo(false);
                 break;
             case commands::CommandId::Redo:
-                pending_run_active_ = false;
-                pending_run_suffix_bytes_ = 0;
-                pending_bold_set_ = false;
-                pending_italic_set_ = false;
+                controller_.ClearPendingFormat();
                 ApplyUndo(true);
                 break;
             default:
@@ -1500,10 +1492,9 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     }
 
     bool shiftDown = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-    pending_bold_set_ = false;
-    pending_italic_set_ = false;
-    pending_run_active_ = false;
-    pending_run_suffix_bytes_ = 0;
+    // A click ends the pending typing format: the canonical caret moves,
+    // and the next characters start fresh (word processor guide A to H).
+    controller_.ClearPendingFormat();
     word_dragging_ = false;
     paragraph_dragging_ = false;
     selection_dragging_ = false;
@@ -2238,49 +2229,12 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
     // Edit mode is entered explicitly via the Edit button or Ctrl+E.
     if (!editing_) return;
 
-    // Keep one continuous Markdown span while the caret remains at the end
-    // of text typed with pending formatting. Reusing the same closing markers
-    // avoids producing **a****b****c** for a continuous input sequence.
+    // The pending typing format reached the document through a lambda
+    // here before; the body lives in the document controller now
+    // (family 3, ApplyPendingTypingFormat), so the typing paths call
+    // it and the state they touch is the controller's own.
     auto ApplyPendingTypingFormat = [&](const std::string& value) -> void {
-        std::string prefix;
-        std::string suffix;
-        if (pending_bold_set_ && pending_bold_) {
-            prefix += "**";
-            suffix = "**" + suffix;
-        }
-        if (pending_italic_set_ && pending_italic_) {
-            prefix += "*";
-            suffix = "*" + suffix;
-        }
-
-        if (value.empty()) {
-            pending_run_active_ = false;
-            pending_run_suffix_bytes_ = 0;
-            return;
-        }
-        if (suffix.empty()) {
-            editor_.InsertText(value);
-            pending_run_active_ = false;
-            pending_run_suffix_bytes_ = 0;
-            return;
-        }
-
-        const std::string& source = buffer_.Text();
-        const uint32_t caret = sel_.active.offset;
-        const uint32_t suffixBytes = static_cast<uint32_t>(suffix.size());
-        const bool canExtend = pending_run_active_ && sel_.Empty() &&
-            pending_run_suffix_bytes_ == suffixBytes &&
-            caret >= suffixBytes &&
-            source.compare(caret - suffixBytes, suffixBytes, suffix) == 0;
-
-        if (canExtend) {
-            editor_.ReplaceTextRange(caret - suffixBytes, suffixBytes,
-                                      value + suffix, EditType::Insert);
-        } else {
-            editor_.InsertText(prefix + value + suffix);
-        }
-        pending_run_active_ = true;
-        pending_run_suffix_bytes_ = suffixBytes;
+        controller_.ApplyPendingTypingFormat(value);
         return;
     };
 
@@ -3897,195 +3851,10 @@ void AppWindow::SetEdit(bool on) {
     Repaint();
 }
 
+// The format state query lives in the document controller (family 3):
+// this shell forwards so the ribbon keeps its local call sites.
 FormatState AppWindow::GetFormatState() const {
-    FormatState fs;
-    const auto& text = buffer_.Text();
-    if (text.empty()) return fs;
-
-    uint32_t caret = sel_.active.offset;
-    if (caret > text.size()) caret = static_cast<uint32_t>(text.size());
-
-    // Helper lambda: check table cell inline formatting.
-    // For a table node, iterate all rows/cells and check if the caret
-    // or selection overlaps any CellInlineSpan (converting u16 indices
-    // to source byte offsets via u16ToSrc). Also scan the raw source
-    // text for markdown markers as a fallback.
-    auto checkTableCells = [&](const Node& node, uint32_t chkStart, uint32_t chkEnd) {
-        // Path 1: CellInlineSpan via u16ToSrc mapping.
-        for (const auto& row : node.rows) {
-            for (const auto& cell : row.cells) {
-                if (cell.u16ToSrc.empty() || cell.inlineSpans.empty()) continue;
-                uint32_t cellSrcStart = cell.srcOffset;
-                uint32_t cellSrcEnd = cell.u16ToSrc.back() + 1;
-                if (chkEnd <= cellSrcStart || chkStart >= cellSrcEnd) continue;
-
-                for (const auto& span : cell.inlineSpans) {
-                    if (span.u16Start >= cell.u16ToSrc.size()) continue;
-                    uint32_t spanSrcStart = cell.u16ToSrc[span.u16Start];
-                    uint32_t spanSrcEnd;
-                    if (span.u16End < cell.u16ToSrc.size())
-                        spanSrcEnd = cell.u16ToSrc[span.u16End];
-                    else
-                        spanSrcEnd = cellSrcEnd;
-
-                    // Check overlap with [chkStart, chkEnd).
-                    if (spanSrcEnd <= chkStart || spanSrcStart >= chkEnd) continue;
-                    if (span.bold)   fs.bold = true;
-                    if (span.italic) fs.italic = true;
-                    if (span.code)   fs.code = true;
-                    if (span.strike) fs.strike = true;
-                }
-            }
-        }
-
-        // Path 2: raw source text marker scan (fallback).
-        // Scan the source text around chkStart for markdown markers.
-        // This catches formatting that u16ToSrc mapping might miss.
-        // Find cell boundaries (pipe chars or newlines).
-        uint32_t pos = (chkStart + chkEnd) / 2; // use midpoint
-        if (pos >= text.size()) return;
-        uint32_t left = pos;
-        while (left > 0 && text[left - 1] != '|' && text[left - 1] != '\n')
-            left--;
-        uint32_t right = pos;
-        while (right < text.size() && text[right] != '|' && text[right] != '\n')
-            right++;
-        // For each marker type, scan left for opening, right for closing.
-        auto findFmt = [&](char ch, uint32_t mlen) -> bool {
-            // Scan left from `pos` for `mlen` consecutive `ch` chars.
-            for (uint32_t i = pos; i >= left + mlen; i--) {
-                bool match = true;
-                for (uint32_t k = 0; k < mlen; k++)
-                    if (text[i - 1 - k] != ch) { match = false; break; }
-                if (match) {
-                    // Check that these aren't part of a longer run (e.g.
-                    // *** is both bold+italic, not just bold).
-                    // Also check the char before the run to distinguish
-                    // ** (bold) from * (italic).
-                    if (mlen == 1 && i >= left + 2 && text[i - 2] == ch)
-                        continue; // part of a longer ** run, skip for single-*
-                    // Found opening. Scan right for closing of same length.
-                    for (uint32_t j = pos; j + mlen <= right; j++) {
-                        bool match2 = true;
-                        for (uint32_t k = 0; k < mlen; k++)
-                            if (text[j + k] != ch) { match2 = false; break; }
-                        if (match2) return true;
-                    }
-                    return false;
-                }
-                if (i == 0) break;
-            }
-            return false;
-        };
-        if (findFmt('*', 2)) fs.bold = true;
-        if (findFmt('~', 2)) fs.strike = true;
-        if (findFmt('`', 1)) fs.code = true;
-        if (!fs.bold && findFmt('*', 1)) fs.italic = true;
-    };
-
-    // Collapsed caret: check any inline span whose [cs, ce) range
-    // contains the caret position, using CLOSED intervals (cs <= P
-    // AND P <= ce). This detects formatting at both the start and end
-    // of a span, matching how Word and VS Code behave. Also detect
-    // spans that end right before or start right after the caret
-    // (adjacent), so the button stays active at boundaries.
-    if (sel_.Empty()) {
-        uint32_t lo = (caret > 0) ? caret - 1 : 0;
-        uint32_t hi = (caret < text.size()) ? caret + 1 : caret;
-
-        for (const auto& node : doc_.nodes) {
-            uint32_t bs = node.srcOffset;
-            uint32_t be = bs + node.srcLength;
-            if (caret < bs || caret > be) continue;
-
-            if (node.block == BlockKind::Heading) {
-                fs.headingLevel = node.level;
-            } else if (node.block == BlockKind::List) {
-                if (node.ordered) fs.inNumbering = true;
-                else fs.inBullets = true;
-            } else if (node.block == BlockKind::BlockQuote) {
-                fs.inQuote = true;
-            }
-
-            // Regular inline spans.
-            for (const auto& child : node.children) {
-                uint32_t cs = child.srcOffset;
-                uint32_t ce = cs + child.srcLength;
-                bool hit = (cs <= caret && caret <= ce);
-                if (!hit) {
-                    if (ce == lo) hit = true;      // span ends right before caret
-                    if (cs == hi) hit = true;      // span starts right after caret
-                }
-                if (hit) {
-                    if (child.strong) fs.bold = true;
-                    if (child.em)     fs.italic = true;
-                    if (child.code)   fs.code = true;
-                    if (child.strike) fs.strike = true;
-                }
-            }
-
-            // Table cell spans.
-            if (node.block == BlockKind::Table) {
-                checkTableCells(node, caret, caret + 1);
-            }
-        }
-        if (pending_bold_set_) fs.bold = pending_bold_;
-        if (pending_italic_set_) fs.italic = pending_italic_;
-        return fs;
-    }
-
-    // Non-empty selection: trim whitespace, then check ALL blocks and
-    // ALL inline blocks that overlap the trimmed range. Do NOT stop
-    // after the first block, since the selection may span paragraphs.
-    uint32_t start = sel_.Start();
-    uint32_t end = start + sel_.Length();
-    if (end > text.size()) end = static_cast<uint32_t>(text.size());
-
-    while (start < end &&
-           (text[start] == ' ' || text[start] == '\t' ||
-            text[start] == '\n' || text[start] == '\r'))
-        start++;
-    while (end > start &&
-           (text[end - 1] == ' ' || text[end - 1] == '\t' ||
-            text[end - 1] == '\n' || text[end - 1] == '\r'))
-        end--;
-
-    if (start >= end) {
-        start = sel_.Start();
-        end = start + 1;
-        if (end > text.size()) end = static_cast<uint32_t>(text.size());
-    }
-
-    for (const auto& node : doc_.nodes) {
-        uint32_t bs = node.srcOffset;
-        uint32_t be = bs + node.srcLength;
-        if (end <= bs || start >= be) continue;
-
-        if (node.block == BlockKind::Heading) {
-            fs.headingLevel = node.level;
-        } else if (node.block == BlockKind::List) {
-            if (node.ordered) fs.inNumbering = true;
-            else fs.inBullets = true;
-        } else if (node.block == BlockKind::BlockQuote) {
-            fs.inQuote = true;
-        }
-
-        for (const auto& child : node.children) {
-            uint32_t cs = child.srcOffset;
-            uint32_t ce = cs + child.srcLength;
-            if (cs >= end || ce <= start) continue;
-            if (child.strong) fs.bold = true;
-            if (child.em)     fs.italic = true;
-            if (child.code)   fs.code = true;
-            if (child.strike) fs.strike = true;
-        }
-
-        // Table cell spans.
-        if (node.block == BlockKind::Table) {
-            checkTableCells(node, start, end);
-        }
-    }
-    return fs;
+    return controller_.GetFormatState();
 }
 
 void AppWindow::InvalidateFormatButtons() {
@@ -4121,364 +3890,38 @@ void AppWindow::InvalidateFormatButtons() {
     }
 }
 
-// Remove ALL inline formatting of a specific type from the selection.
-// Used by ToggleBold/Italic/Strike/Code when the format is detected as
-// active; instead of removing just the first matching span, this
-// iterates all spans and removes all markers of that type.
-void AppWindow::RemoveAllFormattingInSelection(bool wantStrong, bool wantEm,
-                                                bool wantCode, bool wantStrike,
-                                                uint32_t mlen) {
-    if (doc_.nodes.empty()) return;
-    const std::string& text = buffer_.Text();
-    uint32_t selStart = sel_.Start();
-    uint32_t selEnd = selStart + sel_.Length();
-    if (selEnd > text.size()) selEnd = static_cast<uint32_t>(text.size());
+// The inline format family lives in the document controller
+// (documentcontroller.cpp, family 3). The strip-all removal engine
+// (RemoveAllFormattingInSelection) and the span expansion moved with
+// it in the shape they already had as the shared formatting module's
+// ClearInlineFormatting; what stays here is the shell that forwards
+// to the controller bodies.
 
-    // Collect all formatting spans of the requested type.
-    struct Removal {
-        uint32_t markerStart, markerEnd, contentStart, contentEnd;
-    };
-    std::vector<Removal> removals;
-
-    char mc = '*';
-    if (wantCode) mc = '`';
-    if (wantStrike) mc = '~';
-
-    for (const auto& node : doc_.nodes) {
-        uint32_t bs = node.srcOffset;
-        uint32_t be = bs + node.srcLength;
-        if (selEnd <= bs || selStart >= be) continue;
-
-        // Path 1: regular inline spans (node.children).
-        for (const auto& child : node.children) {
-            if (wantStrong  && !child.strong)  continue;
-            if (wantEm      && !child.em)      continue;
-            if (wantCode    && !child.code)    continue;
-            if (wantStrike  && !child.strike)  continue;
-
-            uint32_t cs = child.srcOffset;
-            uint32_t ce = cs + child.srcLength;
-            if (ce <= cs) continue;
-            if (ce <= selStart || cs >= selEnd) continue;
-
-            uint32_t leftRun = 0;
-            while (cs > leftRun && text[cs - leftRun - 1] == mc)
-                leftRun++;
-            uint32_t rightRun = 0;
-            while (ce + rightRun < text.size() && text[ce + rightRun] == mc)
-                rightRun++;
-
-            if (leftRun >= mlen && rightRun >= mlen) {
-                removals.push_back({cs - leftRun, ce + rightRun, cs, ce});
-            }
-        }
-
-        // Path 2: table cells; scan raw source text for markers.
-        // Table cells don't create node.children (parser returns early),
-        // so we must scan the source text directly.
-        if (node.block == BlockKind::Table) {
-            // For each cell, find marker pairs overlapping the selection.
-            // Scan the source text within each cell for the requested marker.
-            auto scanCellMarkers = [&](uint32_t cellLeft, uint32_t cellRight) {
-                // Find all marker pairs of type `mc` with length `mlen`
-                // within [cellLeft, cellRight) that overlap [selStart, selEnd).
-                uint32_t i = cellLeft;
-                while (i + mlen <= cellRight) {
-                    // Check for `mlen` consecutive `mc` chars at position i.
-                    bool isMarker = true;
-                    for (uint32_t k = 0; k < mlen; k++) {
-                        if (text[i + k] != mc) { isMarker = false; break; }
-                    }
-                    if (!isMarker) { i++; continue; }
-                    // Skip if this is part of a longer run (e.g. ** is also
-                    // two * chars). For bold (mlen=2), skip if the char before
-                    // is also * (would be *** or more).
-                    if (i > cellLeft && text[i - 1] == mc) {
-                        i++; continue;
-                    }
-                    uint32_t openStart = i;
-                    uint32_t contentStart = i + mlen;
-                    // Find closing marker of same length.
-                    uint32_t j = contentStart;
-                    uint32_t closePos = UINT32_MAX;
-                    while (j + mlen <= cellRight) {
-                        bool isClose = true;
-                        for (uint32_t k = 0; k < mlen; k++) {
-                            if (text[j + k] != mc) { isClose = false; break; }
-                        }
-                        if (isClose) {
-                            // Skip if this close is part of a longer run
-                            if (j + mlen < cellRight && text[j + mlen] == mc) {
-                                j++; continue;
-                            }
-                            closePos = j;
-                            break;
-                        }
-                        j++;
-                    }
-                    if (closePos == UINT32_MAX) { i = contentStart; continue; }
-                    uint32_t contentEnd = closePos;
-                    uint32_t markerEnd = closePos + mlen;
-                    // Check if this marker pair overlaps the selection.
-                    if (markerEnd > selStart && openStart < selEnd) {
-                        removals.push_back({openStart, markerEnd,
-                                           contentStart, contentEnd});
-                    }
-                    i = markerEnd;
-                }
-            };
-            // Iterate cells to find their boundaries.
-            for (const auto& row : node.rows) {
-                for (const auto& cell : row.cells) {
-                    if (cell.srcOffset == 0) continue;
-                    // Cell content range in source text.
-                    uint32_t cellLeft = cell.srcOffset;
-                    uint32_t cellRight = cellLeft;
-                    for (char32_t cp : cell.text) {
-                        cellRight += (cp <= 0x7F) ? 1 : (cp <= 0x7FF) ? 2 :
-                                     (cp <= 0xFFFF) ? 3 : 4;
-                    }
-                    // Extend cellRight to include gap characters (markers
-                    // after content like ** that were gap-filled).
-                    // Use u16ToSrc if available.
-                    if (!cell.u16ToSrc.empty()) {
-                        cellRight = cell.u16ToSrc.back() + 1;
-                    }
-                    if (selEnd <= cellLeft || selStart >= cellRight) continue;
-                    scanCellMarkers(cellLeft, cellRight);
-                }
-            }
-        }
-    }
-
-    // Sort rightmost first and merge overlapping.
-    std::sort(removals.begin(), removals.end(),
-              [](const Removal& a, const Removal& b) {
-                  return a.markerStart > b.markerStart;
-              });
-    std::vector<Removal> merged;
-    for (const auto& r : removals) {
-        if (!merged.empty() && r.markerEnd >= merged.back().markerStart) {
-            merged.back().markerStart = std::min(merged.back().markerStart, r.markerStart);
-            merged.back().markerEnd = std::max(merged.back().markerEnd, r.markerEnd);
-            merged.back().contentStart = std::min(merged.back().contentStart, r.contentStart);
-            merged.back().contentEnd = std::max(merged.back().contentEnd, r.contentEnd);
-        } else {
-            merged.push_back(r);
-        }
-    }
-
-    Selection selBefore = sel_;
-    int32_t totalDelta = 0; // net chars removed (markers removed - content kept)
-    for (const auto& r : merged) {
-        std::string content = buffer_.Text().substr(r.contentStart, r.contentEnd - r.contentStart);
-        std::string removed = buffer_.Text().substr(r.markerStart, r.markerEnd - r.markerStart);
-        buffer_.Splice(r.markerStart, r.markerEnd - r.markerStart, content);
-        UndoEntry entry{};
-        entry.offset = r.markerStart;
-        entry.removed = removed;
-        entry.inserted = content;
-        entry.selBefore = selBefore;
-        entry.selAfter = sel_;
-        entry.type = EditType::Other;
-        undo_stack_.Push(entry);
-        totalDelta += static_cast<int32_t>(removed.size()) - static_cast<int32_t>(content.size());
-    }
-    // Keep the selection covering the same text (now without markers).
-    // Adjust the end by the net delta of removed marker chars.
-    uint32_t newEnd = (selEnd > static_cast<uint32_t>(totalDelta))
-                      ? selEnd - static_cast<uint32_t>(totalDelta) : selStart;
-    sel_.anchor = {selStart};
-    sel_.active = {newEnd};
-}
-
-// If the caret or selection is inside a formatted span (matching the
-// given flags), expand the selection to include the full span content
-// plus the surrounding markdown markers. After this, ToggleInlineMarker
-// can detect the markers via IsWrappedIn and remove them.
-bool AppWindow::ExpandSelectionToFormatSpan(bool wantStrong, bool wantEm,
-                                             bool wantCode, bool wantStrike,
-                                             uint32_t mlen) {
-    if (doc_.nodes.empty()) return false;
-    const auto& text = buffer_.Text();
-    uint32_t caret = sel_.active.offset;
-    if (caret > text.size()) caret = static_cast<uint32_t>(text.size());
-    uint32_t selStart = sel_.Start();
-    uint32_t selEnd = selStart + sel_.Length();
-
-    for (const auto& node : doc_.nodes) {
-        for (const auto& child : node.children) {
-            if (wantStrong && !child.strong) continue;
-            if (wantEm    && !child.em)     continue;
-            if (wantCode   && !child.code)   continue;
-            if (wantStrike && !child.strike) continue;
-
-            uint32_t cs = child.srcOffset;
-            uint32_t ce = cs + child.srcLength;
-            if (ce <= cs) continue; // skip empty spans
-
-            // Check if caret/selection overlaps this span.
-            bool hit = false;
-            if (sel_.Empty()) {
-                hit = (cs <= caret && caret <= ce);
-            } else {
-                hit = (cs < selEnd && ce > selStart);
-            }
-            if (!hit) continue;
-
-            // Verify markers exist outside the content.
-            if (cs < mlen || ce + mlen > text.size()) continue;
-            bool ok = true;
-            char mc = (wantCode) ? '`' : '*';
-            if (wantStrike) mc = '~';
-            if (wantEm && !wantStrong) mc = '*';
-            for (uint32_t i = 0; i < mlen && ok; i++) {
-                if (text[cs - mlen + i] != mc) ok = false;
-                if (text[ce + i] != mc)       ok = false;
-            }
-            if (!ok) continue;
-
-            // Expand selection to include the markers.
-            sel_.anchor = {cs - mlen};
-            sel_.active = {ce + mlen};
-            return true;
-        }
-    }
-    return false;
-}
-
+// The bold and italic shells: the empty caret pending path and the
+// shared marker semantics both live in the controller body
+// (DocumentController::ToggleBold / ToggleItalic). The legacy
+// Windows shortcut that stripped every bold run from a multi run
+// selection is gone on purpose: both ports unified on the shared
+// per-run toggle semantics, and ClearFormat kept the strip-all
+// engine (the divergence 1 resolution of the controller-extraction
+// map, pinned by tests/transcripts/inline_formatting).
 void AppWindow::ToggleBold() {
-    if (!editing_) return;
-    if (sel_.Empty()) {
-        bool beforeBold = pending_bold_;
-        bool beforeItalic = pending_italic_;
-        bool beforeBoldSet = pending_bold_set_;
-        bool beforeItalicSet = pending_italic_set_;
-        FormatState fs = GetFormatState();
-        bool current = pending_bold_set_ ? pending_bold_ : fs.bold;
-        pending_bold_ = !current;
-        pending_bold_set_ = true;
-        pending_run_active_ = false;
-        pending_run_suffix_bytes_ = 0;
-        RecordPendingFormatUndo(beforeBold, beforeItalic,
-                                beforeBoldSet, beforeItalicSet);
-        editor_.BreakUndoCoalesce();
-        InvalidateFormatButtons();
-        return;
-    }
-    FormatState fs = GetFormatState();
-    if (fs.bold && !sel_.Empty()) {
-        // Selection contains bold text: remove ALL bold markers.
-        RemoveAllFormattingInSelection(true, false, false, false, 2);
-    } else if (fs.bold) {
-        // Caret is in bold text: expand to span and remove.
-        ExpandSelectionToFormatSpan(true, false, false, false, 2);
-        ToggleInlineMarker(&buffer_, &sel_, "**", &undo_stack_);
-    } else {
-        // No bold: add markers.
-        ToggleInlineMarker(&buffer_, &sel_, "**", &undo_stack_);
-    }
-    editor_.BreakUndoCoalesce();
-    OnBufferChanged();
-    ForceRepaintNow();
+    controller_.ToggleBold();
 }
 
 void AppWindow::ToggleItalic() {
-    if (!editing_) return;
-    if (sel_.Empty()) {
-        bool beforeBold = pending_bold_;
-        bool beforeItalic = pending_italic_;
-        bool beforeBoldSet = pending_bold_set_;
-        bool beforeItalicSet = pending_italic_set_;
-        FormatState fs = GetFormatState();
-        bool current = pending_italic_set_ ? pending_italic_ : fs.italic;
-        pending_italic_ = !current;
-        pending_italic_set_ = true;
-        pending_run_active_ = false;
-        pending_run_suffix_bytes_ = 0;
-        RecordPendingFormatUndo(beforeBold, beforeItalic,
-                                beforeBoldSet, beforeItalicSet);
-        editor_.BreakUndoCoalesce();
-        InvalidateFormatButtons();
-        return;
-    }
-    FormatState fs = GetFormatState();
-    if (fs.italic && !sel_.Empty()) {
-        RemoveAllFormattingInSelection(false, true, false, false, 1);
-    } else if (fs.italic) {
-        ExpandSelectionToFormatSpan(false, true, false, false, 1);
-        ToggleInlineMarker(&buffer_, &sel_, "*", &undo_stack_);
-    } else {
-        ToggleInlineMarker(&buffer_, &sel_, "*", &undo_stack_);
-    }
-    editor_.BreakUndoCoalesce();
-    OnBufferChanged();
-    ForceRepaintNow();
+    controller_.ToggleItalic();
 }
 
 void AppWindow::ToggleStrike() {
-    if (!editing_) return;
-    FormatState fs = GetFormatState();
-    if (fs.strike && !sel_.Empty()) {
-        RemoveAllFormattingInSelection(false, false, false, true, 2);
-    } else if (fs.strike) {
-        ExpandSelectionToFormatSpan(false, false, false, true, 2);
-        ToggleInlineMarker(&buffer_, &sel_, "~~", &undo_stack_);
-    } else {
-        ToggleInlineMarker(&buffer_, &sel_, "~~", &undo_stack_);
-    }
-    editor_.BreakUndoCoalesce();
-    OnBufferChanged();
-    ForceRepaintNow();
+    controller_.ToggleStrike();
 }
 
+// Code keeps its shell because the whole line branch reads the
+// buffer; the branch itself moved with it (the controller body
+// answers the fenced block or the shared inline marker pair).
 void AppWindow::ToggleCode() {
-    if (!editing_) return;
-    // If the selection spans one or more entire lines (paragraphs),
-    // toggle a fenced code block (``` ```). Otherwise, toggle inline code (`).
-    if (!sel_.Empty()) {
-        const std::string& text = buffer_.Text();
-        uint32_t start = sel_.Start();
-        uint32_t end = start + sel_.Length();
-        // Check if the selection starts at the beginning of a line and
-        // ends at the end of a line (or at a newline character).
-        bool startsAtLineStart = (start == 0 || text[start - 1] == '\n');
-        bool endsAtLineEnd = (end >= text.size() || text[end] == '\n');
-        // Also handle selections that end right before the newline
-        // (e.g. the last visible character, not including the newline).
-        if (end > 0 && end <= text.size() && end < text.size() && text[end] != '\n') {
-            // Check if the rest of the line is only whitespace
-            uint32_t check = end;
-            while (check < text.size() && text[check] != '\n') {
-                if (text[check] != ' ' && text[check] != '\t') break;
-                check++;
-            }
-            if (check >= text.size() || text[check] == '\n')
-                endsAtLineEnd = true;
-        }
-        if (startsAtLineStart && endsAtLineEnd) {
-            ToggleCodeBlock(&buffer_, &sel_, &undo_stack_);
-            editor_.BreakUndoCoalesce();
-            OnBufferChanged();
-            ForceRepaintNow();
-            return;
-        }
-    }
-    // Default: inline code (single backticks)
-    {
-        FormatState fs = GetFormatState();
-        if (fs.code && !sel_.Empty()) {
-            RemoveAllFormattingInSelection(false, false, true, false, 1);
-        } else if (fs.code) {
-            ExpandSelectionToFormatSpan(false, false, true, false, 1);
-            ToggleInlineMarker(&buffer_, &sel_, "`", &undo_stack_);
-        } else {
-            ToggleInlineMarker(&buffer_, &sel_, "`", &undo_stack_);
-        }
-    }
-    editor_.BreakUndoCoalesce();
-    OnBufferChanged();
-    ForceRepaintNow();
+    controller_.ToggleCode();
 }
 
 // Build an in-memory dialog template for the Insert Link dialog.
@@ -5057,11 +4500,9 @@ void AppWindow::InsertLinkCmd() {
         LinkDialogProc,
         reinterpret_cast<LPARAM>(&url));
     if (result != IDOK || url.empty() || !hadSelection) return;
-    std::string urlUtf8 = WideToUtf8(url);
-    InsertLink(&buffer_, &sel_, urlUtf8, &undo_stack_);
-    editor_.BreakUndoCoalesce();
-    OnBufferChanged();
-    ForceRepaintNow();
+    // The dialog is the port's; the link insert moved to the
+    // controller (family 3), one body for both ports.
+    controller_.ToggleInlineLink(WideToUtf8(url));
 }
 
 // The splice and its undo entry live in the document controller now,
@@ -5676,26 +5117,12 @@ bool AppWindow::SplitTableCell() {
     return true;
 }
 
+// The whole clear formatting body lives in the document controller
+// now (family 3): the shared strip-all engine for the inline markers
+// and the block resets in one trail of undo entries, the same body
+// the mac menu runs.
 void AppWindow::ClearFormat() {
-    if (!editing_) return;
-    if (sel_.Empty()) return; // Need a selection to clear formatting.
-
-    // The inline markers go away first, and the shared module does the
-    // work, so the mac build clears the same markers.
-    ClearInlineFormatting(doc_, &buffer_, &sel_, &undo_stack_);
-
-    // Remove BLOCK-level formatting: headings, lists, blockquotes.
-    FormatState fs = GetFormatState(); // re-read after inline changes
-    if (fs.headingLevel > 0) {
-        SetHeadingLevel(&buffer_, &sel_, 0, &undo_stack_);
-    }
-    if (fs.inBullets)  ToggleUnorderedList(&buffer_, &sel_, &undo_stack_);
-    if (fs.inNumbering) ToggleOrderedList(&buffer_, &sel_, &undo_stack_);
-    if (fs.inQuote)    ToggleBlockquote(&buffer_, &sel_, &undo_stack_);
-
-    editor_.BreakUndoCoalesce();
-    OnBufferChanged();
-    ForceRepaintNow();
+    controller_.ClearFormat();
 }
 
 // Family 2, headings and lists: the bodies live in the document
@@ -5723,37 +5150,14 @@ void AppWindow::Indent() { controller_.Indent(); }
 
 void AppWindow::Outdent() { controller_.Outdent(); }
 
-// The entry is built by the document controller now, on the shared
-// platform clock; the window passes the before state from its caller
-// and its own pending state as the after state.
-void AppWindow::RecordPendingFormatUndo(bool beforeBold, bool beforeItalic,
-                                        bool beforeBoldSet, bool beforeItalicSet) {
-    controller_.RecordPendingFormatUndo(sel_, beforeBold, beforeItalic,
-                                         beforeBoldSet, beforeItalicSet,
-                                         pending_bold_, pending_italic_,
-                                         pending_bold_set_,
-                                         pending_italic_set_);
-}
-
 void AppWindow::ApplyUndo(bool redo) {
     UndoEntry entry{};
     bool changed = redo ? editor_.Redo(&entry) : editor_.Undo(&entry);
     if (!changed) return;
-    if (entry.hasPendingFormat) {
-        if (redo) {
-            pending_bold_ = entry.afterPendingBold;
-            pending_italic_ = entry.afterPendingItalic;
-            pending_bold_set_ = entry.afterPendingBoldSet;
-            pending_italic_set_ = entry.afterPendingItalicSet;
-        } else {
-            pending_bold_ = entry.pendingBold;
-            pending_italic_ = entry.pendingItalic;
-            pending_bold_set_ = entry.pendingBoldSet;
-            pending_italic_set_ = entry.pendingItalicSet;
-        }
-        pending_run_active_ = false;
-        pending_run_suffix_bytes_ = 0;
-    }
+    // The pending typing format travels with the undo history: the
+    // restore through the controller brings the old pending toggles
+    // back before this path touches anything else.
+    controller_.RestorePendingFormat(entry, redo);
     OnBufferChanged();
     InvalidateFormatButtons();
     ForceRepaintNow();

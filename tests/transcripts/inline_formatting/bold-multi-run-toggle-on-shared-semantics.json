@@ -1,0 +1,12 @@
+{
+  "name": "bold-multi-run-toggle-on-shared-semantics",
+  "comment": "The divergence 1 pin. A selection that fully covers a bold run, an unbolded word and another bold run answers the SHARED per-run toggle semantics, the resolution both ports unified on: the runs merge into one bold run around everything the selection covered, the inner markers go away, one undo entry. The retired Windows shortcut stripped every bold marker instead and would have left \"bold and more\"; that behavior lives on in ClearFormat only.",
+  "start_text": "**bold** and **more**",
+  "commands": [
+    { "cmd": "select", "start": 0, "end": 17 },
+    { "cmd": "toggle_bold" }
+  ],
+  "expected_text": "**bold and more**",
+  "expected_selection": { "anchor": 0, "active": 17 },
+  "expected_undo_depth": 1
+}
