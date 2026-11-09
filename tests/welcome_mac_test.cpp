@@ -7,7 +7,7 @@
 
 #include "gtest_lite.h"
 
-#include "../src/macos/seams.h"
+#include "../src/platform/seams.h"
 #include "../src/macos/welcome_mac.h"
 
 #include <filesystem>

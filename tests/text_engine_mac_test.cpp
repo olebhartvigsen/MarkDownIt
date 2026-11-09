@@ -10,7 +10,7 @@
 #include "gtest_lite.h"
 
 #include "../src/macos/fonts_mac.h"
-#include "../src/macos/seams.h"
+#include "../src/platform/seams.h"
 #include "../src/macos/text_engine_mac.h"
 
 #include <CoreText/CoreText.h>
