@@ -18,6 +18,10 @@
 #include "../src/macos/text_engine_mac.h"
 #endif
 
+#ifdef _WIN32
+#include "../src/windows/text_engine_win.h"
+#endif
+
 using platform::FontSpec;
 using platform::GlyphRun;
 using platform::TextEngine;
@@ -131,6 +135,13 @@ TEST(SeamConformance, FakeEngineFollowsTheSeam) {
 #ifdef __APPLE__
 TEST(SeamConformance, CoreTextEngineFollowsTheSeam) {
     platform::CoreTextEngine engine;
+    CheckTextEngine(engine);
+}
+#endif
+
+#ifdef _WIN32
+TEST(SeamConformance, DWriteEngineFollowsTheSeam) {
+    platform::DWriteEngine engine;
     CheckTextEngine(engine);
 }
 #endif

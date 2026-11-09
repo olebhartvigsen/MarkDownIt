@@ -132,7 +132,8 @@ row whose pattern matches nothing on its platform is stale and fails.
 | ClearInlineFormatting.* | macos | The clear formatting tests run on macOS only today, although the Windows side carries the command. Move the file into the shared suite in plan Batch 4. |
 | InlineMarkerRuns.* | macos | Same as ClearInlineFormatting. |
 | TextEngineMac.* | macos | The Core Text engine behind the seam. |
-| SeamConformance.CoreTextEngineFollowsTheSeam | macos | The Core Text enrollment in the shared conformance grid. The grid itself runs on both runners through the fake engine; the DirectWrite engine enrolls on the Windows side when it lands and gets its own row here. |
+| SeamConformance.DWriteEngineFollowsTheSeam | windows | The DirectWrite enrollment in the shared conformance grid, the twin of the Core Text row below. |
+| SeamConformance.CoreTextEngineFollowsTheSeam | macos | The Core Text enrollment in the shared conformance grid. The grid itself runs on both runners through the fake engine; the DirectWrite engine has its own row above. |
 | SvgNativeMac.* | macos | The CoreGraphics SVG probes behind the same seam. |
 | RendererMac.* | macos | The mac renderer layout arithmetic. |
 | WelcomeMac.* | macos | The mac welcome pane. |
