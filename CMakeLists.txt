@@ -27,6 +27,11 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY
     "$<$<CONFIG:Debug>:MultiThreadedDebug>$<$<CONFIG:Release>:MultiThreaded>$<$<CONFIG:RelWithDebInfo>:MultiThreaded>$<$<CONFIG:MinSizeRel>:MultiThreaded>"
 )
 
+# The one source manifest. Every target composes the shared source pools
+# from cmake/sources.cmake; tools/check_sources_listed.py holds the
+# groups and the targets to the usage declared there.
+include(cmake/sources.cmake)
+
 # md4c: vendored markdown parser (MIT, release-0.5.3, tag commit 472c417).
 add_library(md4c STATIC third_party/md4c/md4c.c)
 target_include_directories(md4c PUBLIC third_party/md4c)
@@ -157,6 +162,12 @@ endif()
 # own target, so the Windows target is not defined there.
 if(NOT APPLE)
 add_executable(MarkDownIt WIN32
+    ${MARKDOWNIT_CORE_SOURCES}
+    ${MARKDOWNIT_SVG_SHARED_SOURCES}
+    ${MARKDOWNIT_MERMAID_SOURCES}
+    ${MARKDOWNIT_MERMAID_WINDOWS_SOURCES}
+    ${MARKDOWNIT_OFFICE_SOURCES}
+    ${MARKDOWNIT_WINDOWS_APP_SOURCES}
     src/main.cpp
     src/app.cpp
     src/renderer.cpp
@@ -165,56 +176,13 @@ add_executable(MarkDownIt WIN32
     src/colortext.cpp
     src/imagehelper.cpp
     src/filewatch.cpp
-    src/parser.cpp
-    src/mermaid/class_parse.cpp
-    src/mermaid/class_layout.cpp
-    src/mermaid/layout_acyclic.cpp
-    src/mermaid/layout_edges.cpp
-    src/mermaid/layout_normalize.cpp
-    src/mermaid/layout_order.cpp
-    src/mermaid/layout_position.cpp
-    src/mermaid/layout_rank.cpp
-    src/mermaid/layout.cpp
-    src/mermaid/layout_measure.cpp
-    src/mermaid/measure_dwrite.cpp
-    src/mermaid/parse.cpp
-    src/mermaid/pie_parse.cpp
-    src/mermaid/pie_layout.cpp
-    src/mermaid/seq_parse.cpp
-    src/mermaid/seq_layout.cpp
-    src/mermaid/swimlanes.cpp
     src/ribbon.cpp
-    src/textbuffer.cpp
-    src/layoutcache.cpp
     src/textlayout_dwrite.cpp
-    src/editcontroller.cpp
-    src/navigation.cpp
-    src/tableedit.cpp
-    src/undostack.cpp
-    src/clipboard.cpp
-    src/formatting.cpp
-    src/autoformat.cpp
-    src/inputfilter.cpp
-    src/searchreplace.cpp
-    src/unicode_fold.cpp
-    src/findstate.cpp
-    src/findbar_model.cpp
     src/findbar.cpp
-    src/markers.cpp
-    src/outline.cpp
     src/outlinepane.cpp
-    src/textdrag.cpp
     src/fileassoc.cpp
-    src/settings.cpp
     src/welcomescreen.cpp
-    src/svgtext.cpp
     src/svgdoc.cpp
-    src/macos/svg_mac.cpp
-    src/office/docx_import.cpp
-    src/office/docx_export.cpp
-    src/office/pdf_export.cpp
-    src/office/pdf_import.cpp
-    src/office/markdown_bridge.cpp
 )
 
 if(MSVC AND RIBBON_AVAILABLE)
@@ -374,49 +342,12 @@ if(BUILD_TESTS AND APPLE)
         tests/office_pdf_import_test.cpp
         tests/office_markdown_bridge_test.cpp
         tests/table_picker_test.cpp
-        src/parser.cpp
-        src/textbuffer.cpp
-        src/layoutcache.cpp
+        ${MARKDOWNIT_CORE_SOURCES}
+        ${MARKDOWNIT_SVG_SHARED_SOURCES}
+        ${MARKDOWNIT_MERMAID_SOURCES}
+        ${MARKDOWNIT_MERMAID_STATE_SOURCES}
+        ${MARKDOWNIT_OFFICE_SOURCES}
         src/textlayout_coretext.cpp
-        src/editcontroller.cpp
-        src/navigation.cpp
-        src/tableedit.cpp
-        src/undostack.cpp
-        src/clipboard.cpp
-        src/formatting.cpp
-        src/autoformat.cpp
-        src/inputfilter.cpp
-        src/searchreplace.cpp
-        src/unicode_fold.cpp
-        src/findstate.cpp
-        src/findbar_model.cpp
-        src/markers.cpp
-        src/outline.cpp
-        src/textdrag.cpp
-        src/svgtext.cpp
-        src/mermaid/class_layout.cpp
-        src/mermaid/class_parse.cpp
-        src/mermaid/layout.cpp
-        src/mermaid/layout_acyclic.cpp
-        src/mermaid/layout_edges.cpp
-        src/mermaid/layout_measure.cpp
-        src/mermaid/layout_normalize.cpp
-        src/mermaid/layout_order.cpp
-        src/mermaid/layout_position.cpp
-        src/mermaid/layout_rank.cpp
-        src/mermaid/parse.cpp
-        src/mermaid/pie_layout.cpp
-        src/mermaid/pie_parse.cpp
-        src/mermaid/seq_layout.cpp
-        src/mermaid/seq_parse.cpp
-        src/mermaid/state_layout.cpp
-        src/mermaid/state_parse.cpp
-        src/mermaid/swimlanes.cpp
-        src/office/docx_import.cpp
-        src/office/docx_export.cpp
-        src/office/pdf_export.cpp
-        src/office/pdf_import.cpp
-        src/office/markdown_bridge.cpp
     )
     target_include_directories(MarkDownIt.tests PRIVATE
         src
@@ -461,7 +392,6 @@ if(BUILD_TESTS AND APPLE)
         # fixed text engine, so the typography runs in CI and not only
         # on real hardware. The renderer links the pieces it draws with.
         src/macos/renderer_mac.cpp
-        src/macos/svg_mac.cpp
         src/macos/image_mac.mm
         src/macos/image_draw_mac.mm
         src/macos/mermaid_painter_mac.cpp
@@ -488,8 +418,6 @@ elseif(BUILD_TESTS)
         tests/findbar_ids_test.cpp
         tests/findbar_window_test.cpp
         tests/svgdoc_transform_test.cpp
-        src/svgdoc.cpp
-        src/macos/svg_mac.cpp
         tests/markers_test.cpp
         tests/outline_test.cpp
         tests/table_interaction_test.cpp
@@ -519,53 +447,16 @@ elseif(BUILD_TESTS)
         tests/office_pdf_import_test.cpp
         tests/office_markdown_bridge_test.cpp
         tests/table_picker_test.cpp
-        src/parser.cpp
-        src/mermaid.cpp
-        src/mermaidlayout.cpp
-        src/diagramcache.cpp
-        src/textbuffer.cpp
-        src/layoutcache.cpp
+        ${MARKDOWNIT_CORE_SOURCES}
+        ${MARKDOWNIT_SVG_SHARED_SOURCES}
+        ${MARKDOWNIT_MERMAID_SOURCES}
+        ${MARKDOWNIT_MERMAID_STATE_SOURCES}
+        ${MARKDOWNIT_MERMAID_LEGACY_SOURCES}
+        ${MARKDOWNIT_OFFICE_SOURCES}
+        ${MARKDOWNIT_WINDOWS_APP_SOURCES}
         src/textlayout_dwrite.cpp
-        src/editcontroller.cpp
-        src/navigation.cpp
-        src/tableedit.cpp
-        src/undostack.cpp
-        src/clipboard.cpp
-        src/formatting.cpp
-        src/autoformat.cpp
-        src/inputfilter.cpp
-        src/searchreplace.cpp
-        src/unicode_fold.cpp
-        src/findstate.cpp
         src/findbar.cpp
-        src/findbar_model.cpp
-        src/markers.cpp
-        src/outline.cpp
-        src/textdrag.cpp
-        src/mermaid/class_parse.cpp
-        src/mermaid/class_layout.cpp
-        src/mermaid/state_parse.cpp
-        src/mermaid/state_layout.cpp
-        src/mermaid/layout_acyclic.cpp
-        src/mermaid/layout_edges.cpp
-        src/mermaid/layout_normalize.cpp
-        src/mermaid/layout_order.cpp
-        src/mermaid/layout_position.cpp
-        src/mermaid/layout_rank.cpp
-        src/mermaid/layout.cpp
-        src/mermaid/layout_measure.cpp
-        src/mermaid/parse.cpp
-        src/mermaid/pie_parse.cpp
-        src/mermaid/pie_layout.cpp
-        src/mermaid/seq_parse.cpp
-        src/mermaid/seq_layout.cpp
-        src/mermaid/swimlanes.cpp
-        src/svgtext.cpp
-        src/office/docx_import.cpp
-        src/office/docx_export.cpp
-        src/office/pdf_export.cpp
-        src/office/pdf_import.cpp
-        src/office/markdown_bridge.cpp
+        src/svgdoc.cpp
     )
     target_link_libraries(MarkDownIt.tests PRIVATE
         md4c
@@ -573,6 +464,7 @@ elseif(BUILD_TESTS)
         pugixml
         pdfio
         user32
+        advapi32
         gdi32
         d2d1
         dwrite
@@ -632,52 +524,18 @@ endif()
 # shared sources are compiled as they are; the files under src/macos/ add
 # the platform pieces. The Windows build above is untouched.
 if(APPLE)
-    # The shared core. These sources have no Windows headers, so the same
-    # files feed the Windows build, the macOS build and both test targets.
-    set(MARKDOWNIT_CORE_SOURCES
-        src/parser.cpp
-        src/textbuffer.cpp
-        src/layoutcache.cpp
-        src/editcontroller.cpp
-        src/navigation.cpp
-        src/tableedit.cpp
-        src/undostack.cpp
-        src/clipboard.cpp
-        src/formatting.cpp
-        src/autoformat.cpp
-        src/inputfilter.cpp
-        src/searchreplace.cpp
-        src/unicode_fold.cpp
-        src/findstate.cpp
-        src/findbar_model.cpp
-        src/markers.cpp
-        src/outline.cpp
-        src/textdrag.cpp
-        src/svgtext.cpp
-        src/settings.cpp
-    )
-
-    # The Mermaid engine. The layout is shared and golden tested; the mac
-    # side only adds a painter and a Core Text measurement seam.
-    file(GLOB MARKDOWNIT_MERMAID_SOURCES
-         ${CMAKE_SOURCE_DIR}/src/mermaid/*.cpp)
-    list(REMOVE_ITEM MARKDOWNIT_MERMAID_SOURCES
-         ${CMAKE_SOURCE_DIR}/src/mermaid/measure_dwrite.cpp)
-
-    # The document bridge for the Office formats.
-    set(MARKDOWNIT_OFFICE_SOURCES
-        src/office/docx_import.cpp
-        src/office/docx_export.cpp
-        src/office/pdf_export.cpp
-        src/office/pdf_import.cpp
-        src/office/markdown_bridge.cpp
-    )
-
+    # The shared core takes its source pools from cmake/sources.cmake:
+    # core, Mermaid (with the state diagrams) and Office. The layouts sit
+    # behind the textlayout.h seam, which the mac side answers with Core
+    # Text. tools/check_sources_listed.py holds this composition to the
+    # usage declared in the manifest.
     add_library(markdownit_core STATIC
         ${MARKDOWNIT_CORE_SOURCES}
         ${MARKDOWNIT_MERMAID_SOURCES}
+        ${MARKDOWNIT_MERMAID_STATE_SOURCES}
         ${MARKDOWNIT_OFFICE_SOURCES}
         src/textlayout_coretext.cpp
+
     )
     target_include_directories(markdownit_core
         PUBLIC
@@ -718,7 +576,7 @@ if(APPLE)
         src/macos/findbar_mac.mm
         src/macos/toolbar_mac.mm
         src/macos/table_picker_mac.mm
-        src/macos/svg_mac.cpp
+        ${MARKDOWNIT_SVG_SHARED_SOURCES}
         src/macos/welcome_mac.cpp
         src/macos/zoom_hud_mac.mm
         src/macos/zoom_hud_mac.h

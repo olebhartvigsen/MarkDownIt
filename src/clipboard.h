@@ -38,3 +38,8 @@ std::string HtmlToMarkdown(const std::string& html);
 // Escape markdown metacharacters in plain text so a pasted
 // asterisk does not become emphasis.
 std::string EscapeMarkdown(const std::string& text);
+
+// Line ending normalizers shared by the platform stores. The Windows
+// clipboard and the mac pasteboard ride them in opposite directions.
+std::string NormalizeToCrlf(const std::string& text);
+std::string NormalizeToLf(const std::string& text);
