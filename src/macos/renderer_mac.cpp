@@ -467,6 +467,33 @@ private:
 // and the result is cached by fence source and zoom. Without an
 // engine, or when the re-layout comes back empty, the parse-time
 // layout stands.
+// The flowchart the painter draws, the one layout object the paint and
+// the charge then share. The relaid comes from the diagram engine when
+// the fence measured up, the parse provisional layout otherwise; the
+// cache keeps the two callers of a frame on one object.
+std::shared_ptr<mermaid::LaidOutFlowchart> MacRenderer::FlowRelaidFor(
+    const Node& node) const {
+    if (node.mermaid_flowchart && !node.mermaid_source.empty() &&
+        diagramEngine_) {
+        if (auto cached = mermaid_layout_cache_.Find(node.mermaid_source,
+                                                   zoom_)) {
+            return cached;
+        }
+        EngineMeasureCtx ctx;
+        ctx.engine = diagramEngine_.get();
+        ctx.font = DiagramFontFor(node, metrics_.bodyFontSize,
+                                  false, false, false);
+        auto laid = std::make_shared<mermaid::LaidOutFlowchart>(
+            mermaid::LayoutFlowchartWith(*node.mermaid_flowchart,
+                                         MeasureWithEngine, &ctx));
+        if (!laid->nodes.empty()) {
+            mermaid_layout_cache_.Put(node.mermaid_source, zoom_, laid);
+            return laid;
+        }
+    }
+    return node.mermaid_layout;
+}
+
 mermaid::MermaidRender MacRenderer::MermaidRenderFor(const Node& node) const {
     mermaid::MermaidRender diagram;
     switch (node.block) {
@@ -481,27 +508,7 @@ mermaid::MermaidRender MacRenderer::MermaidRenderFor(const Node& node) const {
         case BlockKind::MermaidFlowchart:
         default: {
             diagram.kind = mermaid::MermaidKind::Flowchart;
-            if (node.mermaid_flowchart && !node.mermaid_source.empty() &&
-                diagramEngine_) {
-                if (auto cached = mermaid_layout_cache_.Find(
-                        node.mermaid_source, zoom_)) {
-                    diagram.flow = cached;
-                    break;
-                }
-                EngineMeasureCtx ctx;
-                ctx.engine = diagramEngine_.get();
-                ctx.font = DiagramFontFor(node, metrics_.bodyFontSize,
-                                          false, false, false);
-                auto laid = std::make_shared<mermaid::LaidOutFlowchart>(
-                    mermaid::LayoutFlowchartWith(*node.mermaid_flowchart,
-                                                 MeasureWithEngine, &ctx));
-                if (!laid->nodes.empty()) {
-                    mermaid_layout_cache_.Put(node.mermaid_source, zoom_, laid);
-                    diagram.flow = laid;
-                    break;
-                }
-            }
-            diagram.flow = node.mermaid_layout;
+            diagram.flow = FlowRelaidFor(node);
             break;
         }
     }
@@ -610,6 +617,12 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
     in.engine = engine_ ? &layoutEngine : nullptr;
     in.imageSize = [this, &doc](const std::string& url) {
         return ImageSizeForUrl(doc, url);
+    };
+    // The flowchart relaid the paint shares with the walk, the same
+    // layout object MermaidRenderFor hands the diagram painter: the
+    // charged band is then the ink the frame paints.
+    in.flowchartRelaid = [this](const Node& n) {
+        return FlowRelaidFor(n);
     };
     layout::DocumentLayout laid = layout::LayoutDocument(in);
     displayList_ = std::move(laid.list);

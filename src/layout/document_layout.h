@@ -19,6 +19,10 @@
 #include <string>
 #include <vector>
 
+namespace mermaid {
+struct LaidOutFlowchart;
+}  // namespace mermaid
+
 namespace layout {
 
 // The intrinsic size of an image, which the image caches learn as
@@ -103,6 +107,13 @@ struct LayoutInput {
     // sizes are unknown yet and the layout charges the 100 DIP
     // placeholder, like both renderers do today.
     std::function<ImageSize(const std::string&)> imageSize;
+    // The flowchart the calling renderer's painter has measured for a
+    // fence, the same layout object the paint path will draw. The walk
+    // charges this relaid when the caller answers one, so the reserved
+    // room and the painted ink stay one story; an empty answer keeps
+    // the provisional layout the parser left on the node.
+    std::function<std::shared_ptr<mermaid::LaidOutFlowchart>(const Node&)>
+        flowchartRelaid;
 };
 
 // The per type layout entry points. Each one receives the walk state

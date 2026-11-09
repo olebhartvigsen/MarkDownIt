@@ -22,15 +22,15 @@
 // same code view the renderers switch to, and routes here only a
 // stand alone .svg file's fence, another caller fact layout cannot see.
 //
-// Mermaid: the three kinds charge from the layouts the parser left on
-// the node, mermaid_pie and mermaid_seq always, a flowchart through
-// node.mermaid_layout. No engine is consulted, on purpose: the
-// document engine belongs to the text and the painters keep their own
-// diagram engine. That is a deliberate divergence from the mac
-// renderer, which re-lays a flowchart out before measuring it; only
-// the CHARGED height is shared now, from the parse time layout, while
-// the painters may keep re-laying the diagram through their engine. A
-// node with no layout at all, because mermaid_source never measured
+// Mermaid: the three kinds charge from the layouts of the node,
+// mermaid_pie and mermaid_seq always, a flowchart through the relaid
+// the calling renderer's painter will draw, which arrives on the
+// LayoutInput flowchartRelaid seam. Without a hook, or on an empty
+// answer, the provisional layout the parser left on the node keeps the
+// room. The charged room and the painted ink are then one story on
+// both platforms: each painter draws the very layout it handed over,
+// its own diagram engine's metrics, and the walk charges that band.
+// A node with no layout at all, because mermaid_source never measured
 // up, keeps the 100 DIP placeholder and no width, so the block still
 // holds its room. Mermaid blocks emit NO display items: the renderers
 // keep painting the diagrams themselves from the node layouts.
@@ -166,6 +166,18 @@ LaidBlock LayoutMermaidBlock(const LayoutCtx& ctx, const Node& node,
             diagram.kind = mermaid::MermaidKind::Flowchart;
             diagram.flow = node.mermaid_layout;
             break;
+    }
+
+    // The band holds the relaid the painter will draw when the caller
+    // answers one, the same layout object its paint path measured and
+    // cached for this fence; the parse provisional layout keeps the
+    // room when no relaid comes back, a painter without its diagram
+    // engine or a fence that never measured up.
+    if (node.block == BlockKind::MermaidFlowchart && in.flowchartRelaid) {
+        if (std::shared_ptr<mermaid::LaidOutFlowchart> relaid =
+                in.flowchartRelaid(node)) {
+            if (!relaid->nodes.empty()) diagram.flow = relaid;
+        }
     }
 
     const float natural = MermaidNaturalWidth(diagram);

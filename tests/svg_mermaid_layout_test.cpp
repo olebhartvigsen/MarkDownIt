@@ -120,6 +120,53 @@ TEST(SvgMermaidLayout, MermaidFlowchartChargesTheSharedLayout) {
     EXPECT_EQ(rig.list.items.size(), static_cast<size_t>(0));
 }
 
+TEST(SvgMermaidLayout, FlowchartRelaidHookChargesThePaintersLayout) {
+    // The relaid the painter hands over becomes the band: the walk
+    // charges what the paint will draw, so an engine re-laid flowchart
+    // holds the same room in the walk as the ink it paints. Without
+    // the hook, or on an empty answer, the parse provisional layout
+    // keeps the room, the older rule.
+    auto parse = std::make_shared<mermaid::LaidOutFlowchart>();
+    mermaid::LayoutNode p; p.id = 0; p.label = "P";
+    p.width = 100.0f; p.height = 30.0f;
+    parse->nodes = {p}; parse->edges = {};
+    parse->width = 100.0f; parse->height = 40.0f;
+
+    auto relaid = std::make_shared<mermaid::LaidOutFlowchart>();
+    mermaid::LayoutNode a; a.id = 0; a.label = "Document";
+    a.width = 150.0f; a.height = 44.0f;
+    relaid->nodes = {a}; relaid->edges = {};
+    relaid->width = 240.0f; relaid->height = 90.0f;
+
+    Node n;
+    n.block = BlockKind::MermaidFlowchart;
+    n.mermaid_layout = parse;  // the parse provisional layout
+    n.mermaid_source = "graph LR";
+    Rig rig(1000.0f);  // a wide column: no fit shrink at zoom 1
+    rig.in.flowchartRelaid = [&relaid](const Node&) {
+        return relaid;
+    };
+    float y = 0.0f;
+    layout::LaidBlock b = layout::LayoutMermaidBlock(rig.ctx, n, 0, &y);
+
+    mermaid::MermaidRender d;  // the charge the relaid defines
+    d.kind = mermaid::MermaidKind::Flowchart; d.flow = relaid;
+    const float measureW = 1000.0f - 2.0f * mermaid::kMermaidBlockPad;
+    NEAR(b.height, mermaid::MeasureMermaidHeight(d, 1.0f, measureW));
+    NEAR(b.width, 240.0f + 2.0f * mermaid::kMermaidBlockPad);
+
+    // An empty answer keeps the provisional parse room.
+    rig.in.flowchartRelaid = [](const Node&) {
+        return std::shared_ptr<mermaid::LaidOutFlowchart>();
+    };
+    float y2 = 0.0f;
+    layout::LaidBlock b2 = layout::LayoutMermaidBlock(rig.ctx, n, 0, &y2);
+    mermaid::MermaidRender d2;
+    d2.kind = mermaid::MermaidKind::Flowchart; d2.flow = parse;
+    NEAR(b2.height, mermaid::MeasureMermaidHeight(d2, 1.0f, measureW));
+    EXPECT_EQ(rig.list.items.size(), static_cast<size_t>(0));
+}
+
 TEST(SvgMermaidLayout, MermaidWithoutLayoutKeepsPlaceholder) {
     Node n;  // a flowchart whose source never measured up
     n.block = BlockKind::MermaidFlowchart;

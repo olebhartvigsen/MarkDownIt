@@ -635,7 +635,8 @@ LayoutMetrics Renderer::ComputeMetrics() const {
 }
 
 layout::DocumentLayout Renderer::SharedLayoutPass(
-    const Document& doc, const LayoutMetrics& metrics,
+    const Document& doc, IDWriteFactory* dw,
+    const LayoutMetrics& metrics,
     const Palette* palette, float contentWidth,
     std::vector<const layout::LaidBlock*>* byNode,
     const Selection* sel) {
@@ -657,6 +658,13 @@ layout::DocumentLayout Renderer::SharedLayoutPass(
     // the intrinsic size the inline cache knows.
     in.imageSize = [this, &doc, sel, contentWidth](const std::string& url) {
         return ImageSizeForUrl(doc, url, sel, contentWidth);
+    };
+    // The flowchart relaid the painter shares with the walk: the very
+    // layout object DrawMermaidBlock lays its hands on, its cache and
+    // its measure format, so the charged band is the ink the frame
+    // paints. A null factory keeps the parse provisional layout.
+    in.flowchartRelaid = [this, dw](const Node& n) {
+        return GetMermaidLayout(dw, n);
     };
     layout::DocumentLayout out = layout::LayoutDocument(in);
 
@@ -1703,7 +1711,7 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
     // only.
     const Palette measurePal = BasePalette();
     layout::DocumentLayout shared =
-        SharedLayoutPass(doc, m, &measurePal, contentWidth, nullptr,
+        SharedLayoutPass(doc, dw, m, &measurePal, contentWidth, nullptr,
                          nullptr);
     std::vector<std::pair<uint32_t, uint32_t>> spans;
     MergeNodeItemSpans(shared.blocks, shared.list, doc.nodes.size(),
@@ -1822,7 +1830,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // are decoded before the walk reads their sizes.
     std::vector<const layout::LaidBlock*> sharedByNode;
     layout::DocumentLayout shared =
-        SharedLayoutPass(doc, m, &pal, contentWidth, &sharedByNode, sel);
+        SharedLayoutPass(doc, dw, m, &pal, contentWidth, &sharedByNode, sel);
 
     // Phase zero, before the walk's image questions are answered: the
     // inline images of the text nodes are fetched here, where the per

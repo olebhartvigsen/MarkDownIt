@@ -255,9 +255,9 @@ private:
     // a code specimen); Measure passes null because its band choice
     // cannot depend on the caret.
     layout::DocumentLayout SharedLayoutPass(const Document& doc,
-        const LayoutMetrics& metrics, const Palette* palette,
-        float contentWidth, std::vector<const layout::LaidBlock*>* byNode,
-        const Selection* sel);
+        IDWriteFactory* dw, const LayoutMetrics& metrics,
+        const Palette* palette, float contentWidth,
+        std::vector<const layout::LaidBlock*>* byNode, const Selection* sel);
 
     // The image size answers of the shared walk: "svg:" urls answer
     // the SvgDoc natural size of their fence (unknown when the caret

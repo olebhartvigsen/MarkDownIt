@@ -313,6 +313,8 @@ private:
     // through the diagram text engine and cached by source and zoom,
     // the way the Windows renderer does it with DirectWrite.
     mermaid::MermaidRender MermaidRenderFor(const Node& node) const;
+    std::shared_ptr<mermaid::LaidOutFlowchart> FlowRelaidFor(
+        const Node& node) const;
 
     // The font of the mermaid painters: the unzoomed points form,
     // because the painters scale their text by the zoom themselves.
