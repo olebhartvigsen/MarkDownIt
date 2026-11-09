@@ -45,6 +45,10 @@ static const Node* FindContainingTable(const Document& doc, uint32_t offset);
 const wchar_t* AppWindow::kClassName = L"MarkDownItWindow";
 const wchar_t* AppWindow::kContentClassName = L"MarkDownItContent";
 
+// IDs 1..6 serve startup/reparse/scroll/settings; 7 is the main QA timer.
+// This timer belongs only to the content window and never touches input.
+static constexpr UINT_PTR kZoomHudTimerId = 8;
+
 template <typename T>
 inline void SafeRelease(T*& p) {
     if (p) { p->Release(); p = nullptr; }
@@ -1100,6 +1104,7 @@ void AppWindow::PruneMissingRecentFiles() {
 }
 
 void AppWindow::LoadSampleDoc() {
+    HideZoomHud();
     // Instead of showing a placeholder text, show the welcome screen
     // with recent files cards.
     welcome_mode_ = true;
@@ -2455,6 +2460,7 @@ void AppWindow::OpenFile(const std::wstring& path) {
 // nothing is watched and Save falls back to Save As. The caller ends edit
 // mode and tracks recent files; this function only loads.
 void AppWindow::LoadDocumentText(const std::string& raw, const std::wstring& path) {
+    HideZoomHud();
     welcome_mode_ = false;  // a document is in the editor
 
 
@@ -3242,6 +3248,98 @@ void AppWindow::UpdateDpi() {
     }
 }
 
+void AppWindow::ShowZoomHud(float oldZoom, float newZoom) {
+    if (!hwnd_content_ || welcome_mode_) return;
+    if (!zoom_hud_.ShowZoomChange(oldZoom, newZoom, GetTickCount64())) return;
+    if (!zoom_hud_timer_)
+        zoom_hud_timer_ = SetTimer(hwnd_content_, kZoomHudTimerId, 16, nullptr);
+    // Do not leave a permanent overlay behind if a timer cannot be armed.
+    if (!zoom_hud_timer_) zoom_hud_.Hide();
+}
+
+void AppWindow::HideZoomHud() {
+    const bool wasActive = zoom_hud_.Active();
+    zoom_hud_.Hide();
+    if (zoom_hud_timer_) {
+        KillTimer(hwnd_content_, zoom_hud_timer_);
+        zoom_hud_timer_ = 0;
+    }
+    if (wasActive) Repaint();
+}
+
+void AppWindow::PaintZoomHud() {
+    if (!rt_ || !dw_factory_) return;
+    const float alpha = zoom_hud_.Opacity(GetTickCount64());
+    zoom_hud_painted_opacity_ = alpha;
+    if (alpha <= 0.0f) return;
+
+    // All resources are local to this paint. No brush survives a device
+    // loss, and no document zoom or monitor pixel scale enters the font.
+    IDWriteTextFormat* format = nullptr;
+    IDWriteTextLayout* layout = nullptr;
+    IDWriteTypography* typography = nullptr;
+    ID2D1SolidColorBrush* brush = nullptr;
+    wchar_t text[16] = {};
+    const int length = swprintf_s(text, 16, L"%d%%", zoom_hud_.Percent());
+    HRESULT hr = dw_factory_->CreateTextFormat(L"Segoe UI", nullptr,
+        DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL, zoomhud::kFontSizeDip, L"en-us", &format);
+    if (SUCCEEDED(hr)) {
+        format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+        hr = dw_factory_->CreateTextLayout(text, static_cast<UINT32>(length),
+            format, 256.0f, 64.0f, &layout);
+    }
+    if (SUCCEEDED(hr) && SUCCEEDED(dw_factory_->CreateTypography(&typography))) {
+        // Tabular figures match the Mac monospaced-digit system font.
+        const DWRITE_FONT_FEATURE figures = {DWRITE_FONT_FEATURE_TAG_TABULAR_FIGURES, 1};
+        typography->AddFontFeature(figures);
+        layout->SetTypography(typography, DWRITE_TEXT_RANGE{0, static_cast<UINT32>(length)});
+    }
+    DWRITE_TEXT_METRICS metrics = {};
+    if (SUCCEEDED(hr)) hr = layout->GetMetrics(&metrics);
+    if (SUCCEEDED(hr))
+        hr = rt_->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.72f * alpha), &brush);
+    if (SUCCEEDED(hr)) {
+        const float width = (std::max)(zoomhud::kMinWidthDip,
+            metrics.widthIncludingTrailingWhitespace + 2.0f * zoomhud::kPaddingXDip);
+        const float height = metrics.height + 2.0f * zoomhud::kPaddingYDip;
+        const auto viewport = rt_->GetSize();
+        if (!zoomhud::FitsViewport(viewport.width, viewport.height, width, height)) {
+            SafeRelease(brush);
+            SafeRelease(typography);
+            SafeRelease(layout);
+            SafeRelease(format);
+            return;
+        }
+        const float left = (viewport.width - width) * 0.5f;
+        const float top = zoomhud::kTopDip;
+        const auto pill = D2D1::RoundedRect(
+            D2D1::RectF(left, top, left + width, top + height),
+            zoomhud::kRadiusDip, zoomhud::kRadiusDip);
+
+        // The document renderer may leave a scroll/zoom transform behind.
+        // Paint in viewport DIPs, then restore every state changed here.
+        D2D1_MATRIX_3X2_F savedTransform;
+        rt_->GetTransform(&savedTransform);
+        const auto savedTextAntialias = rt_->GetTextAntialiasMode();
+        rt_->SetTransform(D2D1::Matrix3x2F::Identity());
+        rt_->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+        rt_->FillRoundedRectangle(pill, brush);
+        brush->SetColor(D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.12f * alpha));
+        rt_->DrawRoundedRectangle(pill, brush, 0.8f);
+        brush->SetColor(D2D1::ColorF(1.0f, 1.0f, 1.0f, alpha));
+        rt_->DrawTextLayout(D2D1::Point2F(
+            left + (width - metrics.widthIncludingTrailingWhitespace) * 0.5f,
+            top + zoomhud::kPaddingYDip), layout, brush);
+        rt_->SetTextAntialiasMode(savedTextAntialias);
+        rt_->SetTransform(savedTransform);
+    }
+    SafeRelease(brush);
+    SafeRelease(typography);
+    SafeRelease(layout);
+    SafeRelease(format);
+}
+
 void AppWindow::OnContentPaint(HWND hwnd) {
     if (!rt_) {
             RecreateRenderTarget();
@@ -3296,6 +3394,8 @@ void AppWindow::OnContentPaint(HWND hwnd) {
                 0.0f, scrollX_, &sel_);
         }
     }
+
+    PaintZoomHud();
 
     HRESULT hr = rt_->EndDraw();
     if (hr == D2DERR_RECREATE_TARGET) {
@@ -5719,6 +5819,7 @@ void AppWindow::RedoAction() {
 
 
 void AppWindow::OnDestroy() {
+    HideZoomHud();
     // The bar is an owned popup: tear its windows down before this window
     // disappears, so nothing is left pointing at a dead owner.
     find_bar_.Destroy();
@@ -6101,6 +6202,7 @@ void AppWindow::ApplyZoom(float newZoom, float focusYdip, float focusXdip) {
         }
     }
     UpdateScrollInfo();
+    ShowZoomHud(oldZoom, newZoomClamped);
     Repaint();
 
     // Re-query the zoom buttons. Without this they keep whatever enabled
@@ -6700,6 +6802,9 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 //
 LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
+        case WM_DESTROY:
+            HideZoomHud();
+            return 0;
         case WM_APP + 1: {
             // Grid table picker sent col (wParam) and row (lParam).
             ReleaseCapture();
@@ -6826,7 +6931,18 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         case WM_TIMER:
-            if (wp == 4) {
+            if (wp == kZoomHudTimerId) {
+                const auto now = GetTickCount64();
+                if (!zoom_hud_.Tick(now)) {
+                    HideZoomHud();
+                    // Tick retires active state first, so explicitly clear
+                    // the last painted frame even after a delayed timer.
+                    Repaint();
+                } else if (zoom_hud_.Opacity(now) != zoom_hud_painted_opacity_) {
+                    // The steady hold needs no document measure or render.
+                    Repaint();
+                }
+            } else if (wp == 4) {
                 OnScrollTick();
             } else if (wp == 2) {
                 // Reparse debounce timer for large documents

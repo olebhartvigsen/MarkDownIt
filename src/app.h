@@ -26,6 +26,7 @@
 #include "searchreplace.h"
 #include "findbar.h"
 #include "textdrag.h"
+#include "zoomhud.h"
 
 // Active formatting state at the caret position, used to set
 // the pressed/unpressed state of ribbon toggle buttons.
@@ -257,6 +258,13 @@ private:
     // for a wheel gesture and the viewport centre for a button or
     // shortcut, which is what the zoom guide asks for.
     void ApplyZoom(float newZoom, float focusYdip, float focusXdip);
+
+    zoomhud::State zoom_hud_;
+    UINT_PTR zoom_hud_timer_ = 0;
+    float zoom_hud_painted_opacity_ = 0.0f;
+    void ShowZoomHud(float oldZoom, float newZoom);
+    void HideZoomHud();
+    void PaintZoomHud();
 
     // Marker layer plumbing (see MarkSelection and friends above).
     std::string MarkerDocumentPath() const;

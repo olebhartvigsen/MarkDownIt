@@ -365,6 +365,7 @@ if(BUILD_TESTS AND APPLE)
         tests/test_main.cpp
         tests/svgtext_test.cpp
         tests/zoommodel_test.cpp
+        tests/zoomhud_test.cpp
         tests/office_interop_smoke_test.cpp
         tests/office_docx_import_test.cpp
         tests/office_docx_export_test.cpp
@@ -504,6 +505,7 @@ elseif(BUILD_TESTS)
         tests/test_main.cpp
         tests/svgtext_test.cpp
         tests/zoommodel_test.cpp
+        tests/zoomhud_test.cpp
         tests/office_interop_smoke_test.cpp
         tests/office_docx_import_test.cpp
         tests/office_docx_export_test.cpp
