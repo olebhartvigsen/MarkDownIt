@@ -274,7 +274,6 @@ public:
     FLOAT STDMETHODCALLTYPE GetFontSize() const { return st.size; }
     FLOAT STDMETHODCALLTYPE GetFontSize() { return st.size; }
 
-#ifdef MARKDOWNIT_REAL_SDK
     // Real SDK only: reading direction, flow, tabs, trimming and the
     // locale getters the real format adds.
     HRESULT STDMETHODCALLTYPE SetReadingDirection(
@@ -299,7 +298,6 @@ public:
     }
     UINT32 STDMETHODCALLTYPE GetLocaleNameLength() { return 0; }
     HRESULT STDMETHODCALLTYPE GetLocaleName(WCHAR*, UINT32) { return 0; }
-#endif
 };
 
 class FakeTextLayout : public IDWriteTextLayout {
@@ -440,7 +438,7 @@ public:
         for (UINT32 i = 0; i < n; ++i) {
             if (lineMetrics) {
                 lineMetrics[i].length = 1;
-                lineMetrics[i].trailingWhitespaceRemaining = 0;
+                lineMetrics[i].trailingWhitespace = 0;
                 lineMetrics[i].newlineLength = 0;
                 lineMetrics[i].height = st.size;
                 lineMetrics[i].baseline = st.size * 0.8f;
@@ -484,8 +482,7 @@ public:
         UINT32, UINT32* actualHitTestMetricsCount) override {
         if (m) {
             m->left = 0; m->top = 0; m->width = 0; m->height = 0;
-            m->baseline = 0; m->isTrimmed = 0; m->isInside = 0;
-            m->textPosition = 0; m->length = 0;
+            m->textPosition = 0; m->length = 0; m->isTrimmed = 0;
         }
         if (actualHitTestMetricsCount) *actualHitTestMetricsCount = 0;
         return 0;
@@ -497,8 +494,7 @@ public:
         if (isInside) *isInside = 0;
         if (m) {
             m->left = 0; m->top = 0; m->width = 0; m->height = 0;
-            m->baseline = 0; m->isTrimmed = 0; m->isInside = 0;
-            m->textPosition = 0; m->length = 0;
+            m->textPosition = 0; m->length = 0; m->isTrimmed = 0;
         }
         return 0;
     }
@@ -509,13 +505,11 @@ public:
         if (pointY) *pointY = 0.0f;
         if (m) {
             m->left = 0; m->top = 0; m->width = 0; m->height = 0;
-            m->baseline = 0; m->isTrimmed = 0; m->isInside = 0;
-            m->textPosition = 0; m->length = 0;
+            m->textPosition = 0; m->length = 0; m->isTrimmed = 0;
         }
         return 0;
     }
 
-#ifdef MARKDOWNIT_REAL_SDK
     // Real SDK only: the format getters the real layout redeclares
     // with a position argument, plus the rest of its own surface.
     HRESULT STDMETHODCALLTYPE SetReadingDirection(
@@ -559,9 +553,10 @@ public:
         if (fontCollection) *fontCollection = nullptr;
         return 0;
     }
-    UINT32 STDMETHODCALLTYPE GetFontFamilyNameLength(UINT32,
-                                                    DWRITE_TEXT_RANGE*) {
-        return static_cast<UINT32>(st.family.size());
+    HRESULT STDMETHODCALLTYPE GetFontFamilyNameLength(
+        UINT32, UINT32* nameLength, DWRITE_TEXT_RANGE*) {
+        if (nameLength) *nameLength = static_cast<UINT32>(st.family.size());
+        return 0;
     }
     HRESULT STDMETHODCALLTYPE GetFontFamilyName(UINT32, WCHAR* name,
                                                UINT32 nameSize,
@@ -610,7 +605,9 @@ public:
         (void)t;
         return 0;
     }
-    UINT32 STDMETHODCALLTYPE GetLocaleNameLength(UINT32, DWRITE_TEXT_RANGE*) {
+    HRESULT STDMETHODCALLTYPE GetLocaleNameLength(
+        UINT32, UINT32* nameLength, DWRITE_TEXT_RANGE*) {
+        if (nameLength) *nameLength = 0;
         return 0;
     }
     HRESULT STDMETHODCALLTYPE GetLocaleName(UINT32, WCHAR* n, UINT32 sz,
@@ -631,11 +628,10 @@ public:
         if (out) *out = 0;
         return 0;
     }
-    HRESULT STDMETHODCALLTYPE GetMinWidth(FLOAT* w) {
-        if (w) *w = 0.0f;
+    HRESULT STDMETHODCALLTYPE DetermineMinWidth(FLOAT* minWidth) {
+        if (minWidth) *minWidth = 0.0f;
         return 0;
     }
-#endif
 
 private:
     std::wstring text_;
@@ -692,7 +688,6 @@ public:
         return 0;
     }
 
-#ifdef MARKDOWNIT_REAL_SDK
     // Real SDK only: the rest of the factory's pure surface. None of
     // it is reached by these tests; the bodies only complete the
     // interface so the class is concrete on the runner.
@@ -702,11 +697,22 @@ public:
         if (fontCollection) *fontCollection = nullptr;
         return 0;
     }
-    HRESULT STDMETHODCALLTYPE CreateFontCollection(
+    HRESULT STDMETHODCALLTYPE CreateCustomFontCollection(
         IDWriteFontCollectionLoader* collectionLoader, const void* collectionKey,
         UINT32 collectionKeySize, IDWriteFontCollection** fontCollection) {
         (void)collectionLoader; (void)collectionKey; (void)collectionKeySize;
         if (fontCollection) *fontCollection = nullptr;
+        return 0x80004001L;
+    }
+    HRESULT STDMETHODCALLTYPE CreateGdiCompatibleTextLayout(
+        const WCHAR* string, UINT32 stringLength, IDWriteTextFormat* textFormat,
+        FLOAT maxWidth, FLOAT maxHeight, FLOAT pixelsPerDip,
+        const DWRITE_MATRIX* transform, BOOL useGdiNatural,
+        IDWriteTextLayout** textLayout) {
+        (void)string; (void)stringLength; (void)textFormat; (void)maxWidth;
+        (void)maxHeight; (void)pixelsPerDip; (void)transform;
+        (void)useGdiNatural;
+        if (textLayout) *textLayout = nullptr;
         return 0x80004001L;
     }
     HRESULT STDMETHODCALLTYPE RegisterFontCollectionLoader(
@@ -764,10 +770,12 @@ public:
     HRESULT STDMETHODCALLTYPE UnregisterFontFileLoader(IDWriteFontFileLoader*) {
         return 0;
     }
-    HRESULT STDMETHODCALLTYPE CreateTypography(IDWriteTypography*) {
+    HRESULT STDMETHODCALLTYPE CreateTypography(IDWriteTypography** typography) {
+        if (typography) *typography = nullptr;
         return 0x80004001L;
     }
-    HRESULT STDMETHODCALLTYPE CreateGdiInterop(IDWriteGdiInterop**) {
+    HRESULT STDMETHODCALLTYPE GetGdiInterop(IDWriteGdiInterop** gdiInterop) {
+        if (gdiInterop) *gdiInterop = nullptr;
         return 0x80004001L;
     }
     HRESULT STDMETHODCALLTYPE CreateEllipsisTrimmingSign(
@@ -788,7 +796,6 @@ public:
         IDWriteGlyphRunAnalysis**) {
         return 0x80004001L;
     }
-#endif
 };
 
 // ---------------------------------------------------------------------------
@@ -810,7 +817,9 @@ public:
     ULONG STDMETHODCALLTYPE Release() override { return 1; }
 
     void SetColor(const D2D1_COLOR_F& c) { color = c; }
-#ifdef MARKDOWNIT_REAL_SDK
+    void GetFactory(ID2D1Factory** factory) const {
+        if (factory) *factory = nullptr;
+    }
     void SetColor(const D2D1_COLOR_F* c) {
         if (c) color = *c;
     }
@@ -821,7 +830,6 @@ public:
     void GetTransform(D2D1_MATRIX_3X2_F* out) const {
         if (out) *out = D2D1_MATRIX_3X2_F();
     }
-#endif
     D2D1_COLOR_F GetColor() const { return color; }
 };
 
@@ -856,12 +864,9 @@ public:
     // The stub spells the rect takes by reference, the real header
     // takes them by pointer behind inline helpers, so both
     // spellings exist and record the same ink.
-    void SetTransform(const D2D1_MATRIX_3X2F&) {}
-#ifdef MARKDOWNIT_REAL_SDK
     void SetTransform(const D2D1_MATRIX_3X2_F*) {}
-#endif
-    void GetTransform(D2D1_MATRIX_3X2F* out) {
-        if (out) *out = D2D1_MATRIX_3X2F();
+    void GetTransform(D2D1_MATRIX_3X2_F* out) const {
+        if (out) *out = D2D1_MATRIX_3X2_F();
     }
     void Clear(const D2D1_COLOR_F*) { ++clears; }
 
@@ -903,7 +908,6 @@ public:
         if (factory) *factory = nullptr;
     }
 
-#ifdef MARKDOWNIT_REAL_SDK
     // Real SDK only: the pointer forms the real interface declares.
     void DrawRectangle(const D2D1_RECT_F*, ID2D1Brush*, FLOAT = 1.0f,
                        ID2D1StrokeStyle* = nullptr) {}
@@ -976,9 +980,9 @@ public:
         return 0x80004001L;
     }
     HRESULT CreateMesh(ID2D1Mesh**) { return 0x80004001L; }
-    void DrawText(const WCHAR*, UINT32, IDWriteTextFormat*,
-                  const D2D1_RECT_F*, ID2D1Brush*,
-                  D2D1_DRAW_TEXT_OPTIONS, DWRITE_MEASURING_MODE) {}
+    void DrawTextW(const WCHAR*, UINT32, IDWriteTextFormat*,
+                   const D2D1_RECT_F*, ID2D1Brush*,
+                   D2D1_DRAW_TEXT_OPTIONS, DWRITE_MEASURING_MODE) {}
     void DrawGlyphRun(D2D1_POINT_2F, const DWRITE_GLYPH_RUN*, ID2D1Brush*,
                       DWRITE_MEASURING_MODE) {}
     void FillMesh(ID2D1Mesh*, ID2D1Brush*) {}
@@ -988,15 +992,40 @@ public:
     void SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE) {}
     void SetTextRenderingParams(IDWriteRenderingParams*) {}
     void SetTags(D2D1_TAG, D2D1_TAG) {}
-    HRESULT GetTags(D2D1_TAG*, D2D1_TAG*) { return 0; }
+    void GetTags(D2D1_TAG* tag1, D2D1_TAG* tag2) const {
+        if (tag1) *tag1 = 0;
+        if (tag2) *tag2 = 0;
+    }
     void PushLayer(const D2D1_LAYER_PARAMETERS*, ID2D1Layer*) {}
     void PopLayer() {}
     HRESULT Flush(D2D1_TAG*, D2D1_TAG*) { return 0; }
     HRESULT EndDraw(D2D1_TAG*, D2D1_TAG*) { return 0; }
-    void SaveDrawingState(ID2D1DrawingStateBlock*) {}
-    void RestoreDrawingState(ID2D1DrawingStateBlock*) {}
+    void SaveDrawingState(ID2D1DrawingStateBlock*) const {}
+    void RestoreDrawingState(ID2D1DrawingStateBlock*) const {}
     void SetDpi(FLOAT, FLOAT) {}
-#endif
+    BOOL IsSupported(const D2D1_RENDER_TARGET_PROPERTIES*) const {
+        return TRUE;
+    }
+    D2D1_ANTIALIAS_MODE GetAntialiasMode() const {
+        return D2D1_ANTIALIAS_MODE_PER_PRIMITIVE;
+    }
+    D2D1_PIXEL_FORMAT GetPixelFormat() const {
+        return D2D1_PIXEL_FORMAT();
+    }
+    D2D1_SIZE_U GetPixelSize() const { return D2D1_SIZE_U(); }
+    D2D1_TEXT_ANTIALIAS_MODE GetTextAntialiasMode() const {
+        return D2D1_TEXT_ANTIALIAS_MODE_DEFAULT;
+    }
+    UINT32 GetMaximumBitmapSize() const { return 0; }
+    void BeginDraw() {}
+    void GetDpi(FLOAT* dpiX, FLOAT* dpiY) const {
+        if (dpiX) *dpiX = 96.0f;
+        if (dpiY) *dpiY = 96.0f;
+    }
+    void GetTextRenderingParams(
+        IDWriteRenderingParams** textRenderingParams) const {
+        if (textRenderingParams) *textRenderingParams = nullptr;
+    }
 
 private:
     void Record(const D2D1_RECT_F* rect, ID2D1Brush* brush) {
