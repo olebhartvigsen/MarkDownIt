@@ -66,10 +66,11 @@ TEST(CodeTableLayout, CodeBlockCardAndText) {
 
     ASSERT_EQ(static_cast<int>(b.kind),
               static_cast<int>(BlockKind::CodeBlock));
-    ASSERT_EQ(b.lines.size(), static_cast<size_t>(1));  // one fake run
-    ASSERT_EQ(rig.list.items.size(), static_cast<size_t>(2));
+    ASSERT_EQ(b.lines.size(), static_cast<size_t>(2));  // split at the byte
+    ASSERT_EQ(rig.list.items.size(), static_cast<size_t>(3));
     EXPECT_EQ(rig.list.items[0].index(), kCard);  // the card first,
-    EXPECT_EQ(rig.list.items[1].index(), kText);  // then the glyphs
+    EXPECT_EQ(rig.list.items[1].index(), kText);  // then a glyph line
+    EXPECT_EQ(rig.list.items[2].index(), kText);  // per source line
 
     const float em = kM.codeFontSize * kPt;  // the code face in DIP
     const float h = kM.codeLineHeight * em;
@@ -77,22 +78,31 @@ TEST(CodeTableLayout, CodeBlockCardAndText) {
         At<display::FillRoundedRect>(rig.list, 0);
     NEAR(card.rect.x, 0.0f); NEAR(card.rect.y, 0.0f);
     NEAR(card.rect.width, 300.0f);
-    NEAR(card.rect.height, h + 2.0f * kM.codePad);
+    NEAR(card.rect.height, 2.0f * h + 2.0f * kM.codePad);
     NEAR(card.radius, kM.codeRadius);
     NEAR(card.color.r, kPal.codeBg.r);
     // The glyphs one code pad in, their source bytes from the offset.
-    const Text& text = At<Text>(rig.list, 1);
-    NEAR(text.x, kM.codePad); NEAR(text.top, kM.codePad);
-    NEAR(text.line.width, 88.0f);  // 11 code points at 8 DIP
-    NEAR(text.line.height, h);
-    NEAR(text.line.ascent, (h - em * 1.5f) * 0.5f + em);
-    EXPECT_EQ(text.line.runs[0].text, std::string("alpha\nbravo"));
-    EXPECT_EQ(text.line.runs[0].font.family, std::string("Cascadia Mono"));
-    EXPECT_TRUE(text.line.runs[0].font.monospace);
-    EXPECT_EQ(text.srcOffset, static_cast<uint32_t>(42));
-    EXPECT_EQ(text.srcLength, static_cast<uint32_t>(11));
+    // The break byte stays on the line it ends, the account's rule.
+    const Text& first = At<Text>(rig.list, 1);
+    NEAR(first.x, kM.codePad); NEAR(first.top, kM.codePad);
+    NEAR(first.line.width, 48.0f);  // "alpha\n" is 6 glyphs at 8 DIP
+    NEAR(first.line.height, h);
+    NEAR(first.line.ascent, (h - em * 1.5f) * 0.5f + em);
+    EXPECT_EQ(first.line.runs[0].text, std::string("alpha\n"));
+    EXPECT_EQ(first.line.runs[0].font.family, std::string("Cascadia Mono"));
+    EXPECT_TRUE(first.line.runs[0].font.monospace);
+    EXPECT_EQ(first.srcOffset, static_cast<uint32_t>(42));
+    EXPECT_EQ(first.srcLength, static_cast<uint32_t>(6));
+    const Text& second = At<Text>(rig.list, 2);
+    NEAR(second.x, kM.codePad); NEAR(second.top, kM.codePad + h);
+    NEAR(second.line.width, 40.0f);  // "bravo" is 5 glyph at 8 DIP
+    EXPECT_EQ(second.line.runs[0].text, std::string("bravo"));
+    EXPECT_EQ(second.srcOffset, static_cast<uint32_t>(48));
+    EXPECT_EQ(second.srcLength, static_cast<uint32_t>(5));
+    NEAR(b.lines[0].width, 48.0f);
+    NEAR(b.lines[1].width, 40.0f);
     // The record: the card's height and the trimmed source range.
-    NEAR(b.height, h + 2.0f * kM.codePad);
+    NEAR(b.height, 2.0f * h + 2.0f * kM.codePad);
     EXPECT_EQ(b.srcOffset, static_cast<uint32_t>(42));
     EXPECT_EQ(b.srcLength, static_cast<uint32_t>(11));
     NEAR(y, b.height);

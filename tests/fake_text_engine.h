@@ -39,11 +39,36 @@ public:
             const std::vector<platform::GlyphRun>& runs,
             float maxWidth, float lineSpacing) override {
         (void)lineSpacing;  // spacing rides LayoutMetrics, not the engine
+        // An explicit line break belongs to the engine, so a run may
+        // carry '\n' bytes inside it. The text splits at them, the break
+        // byte stays with the piece before it (the byte account must
+        // survive the layout), and the line closes after that piece no
+        // matter what still fits.
+        std::vector<platform::GlyphRun> prepared;
+        std::vector<char> closeAfter;  // 1 when this piece ends a line
+        for (const platform::GlyphRun& run : runs) {
+            size_t start = 0;
+            while (true) {
+                const size_t nl = run.text.find('\n', start);
+                platform::GlyphRun piece = run;
+                if (nl == std::string::npos) {
+                    piece.text = run.text.substr(start);
+                    prepared.push_back(std::move(piece));
+                    closeAfter.push_back(0);
+                    break;
+                }
+                piece.text = run.text.substr(start, nl + 1 - start);
+                prepared.push_back(std::move(piece));
+                closeAfter.push_back(1);
+                start = nl + 1;
+            }
+        }
         std::vector<platform::TextLine> lines;
         platform::TextLine line;
         line.height = LineHeightOfWidest(runs);
         float x = 0.0f;
-        for (const platform::GlyphRun& run : runs) {
+        for (size_t i = 0; i < prepared.size(); ++i) {
+            const platform::GlyphRun& run = prepared[i];
             const float w = static_cast<float>(CodePointCount(run.text)) *
                             kGlyphWidth;
             // A run never breaks inside itself; a full run moves to the
@@ -60,6 +85,13 @@ public:
             onLine.x = x;
             x += w;
             line.runs.push_back(std::move(onLine));
+            if (closeAfter[i]) {
+                line.width = x;
+                lines.push_back(std::move(line));
+                line = platform::TextLine();
+                line.height = LineHeightOfWidest(runs);
+                x = 0.0f;
+            }
         }
         line.width = x;
         // An empty run list still draws one empty line, like text areas

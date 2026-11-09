@@ -1,10 +1,9 @@
-// The DirectWrite engine behind the text seam, plan task 2.2. It maps
-// the seam's run model onto one DirectWrite layout per run: a run is
-// measured as one unbreakable piece, the same wrap rule as the fake
-// engine and the Core Text twin, so the three engines answer the same
-// questions. Offsets are UTF-16 code units, the native DirectWrite
-// position unit; the seam leaves that choice to each engine and the
-// conformance grid checks the behavior, not the unit.
+// The DirectWrite engine behind the text seam, plan task 2.2. The runs
+// of a paragraph go into one DirectWrite layout with word wrapping,
+// the same shape the Core Text twin gives its typesetter, and every
+// line answers the runs it holds a slice of. Offsets are answered in
+// UTF-8 bytes, the seam's contract unit; the UTF-16 mapping is
+// DirectWrite's native position grid.
 
 #include "windows/text_engine_win.h"
 
@@ -201,34 +200,166 @@ std::vector<TextLine> DWriteEngine::MeasureWrapped(
         const std::vector<GlyphRun>& runs,
         float maxWidth, float lineSpacing) {
     (void)lineSpacing;  // spacing rides LayoutMetrics, not the engine
-    std::vector<TextLine> lines;
-    TextLine line;
-    line.height = WidestLineHeight(runs);
-    float x = 0.0f;
-    for (const GlyphRun& run : runs) {
-        const float w = MeasureRun(run, maxWidth);
-        // A run never breaks inside itself; a full run moves to the
-        // next line when it no longer fits, and a first run stays on
-        // the line even when too wide, the shared wrap rule.
-        if (maxWidth > 0.0f && x > 0.0f && x + w > maxWidth) {
-            line.width = x;
-            lines.push_back(std::move(line));
+    // One layout over the whole run list, the shape the Core Text
+    // twin gives its typesetter: the words wrap at the width inside
+    // the engine, a run shows a slice on every line it lands on, and
+    // the break bytes stay with the line they end so the byte account
+    // survives the wrap. If the account ever fails, the answer falls
+    // back to the old run-glide composition, which never loses a
+    // byte, and the mismatch shows up as drift to referee.
+    const auto glideCompose = [&]() {
+        std::vector<TextLine> out;
+        TextLine line;
+        line.height = WidestLineHeight(runs);
+        float x = 0.0f;
+        for (const GlyphRun& run : runs) {
+            const float w = MeasureRun(run, maxWidth);
+            // A run never breaks inside itself; a full run moves to
+            // the next line when it no longer fits, and a first run
+            // stays on the line even when too wide, the shared wrap
+            // rule.
+            if (maxWidth > 0.0f && x > 0.0f && x + w > maxWidth) {
+                line.width = x;
+                out.push_back(std::move(line));
+                line = TextLine();
+                line.height = WidestLineHeight(runs);
+                x = 0.0f;
+            }
+            GlyphRun onLine = run;
+            onLine.x = x;
+            x += w;
+            line.runs.push_back(std::move(onLine));
+        }
+        line.width = x;
+        if (line.runs.empty() || x > 0.0f) out.push_back(std::move(line));
+        if (out.empty()) {
             line = TextLine();
             line.height = WidestLineHeight(runs);
-            x = 0.0f;
+            out.push_back(std::move(line));
         }
-        GlyphRun onLine = run;
-        onLine.x = x;
-        x += w;
-        line.runs.push_back(std::move(onLine));
+        return out;
+    };
+
+    // The spans: one per run, in order, with the run's own UTF-16 to
+    // byte map so a slice can name its source bytes.
+    struct Span {
+        size_t runIndex;
+        UINT32 u16Start;
+        UINT32 u16Length;
+        std::vector<uint32_t> u16ToByte;
+    };
+    std::vector<Span> spans;
+    std::wstring text;
+    size_t byteTotal = 0;
+    for (size_t r = 0; r < runs.size(); ++r) {
+        Span span;
+        span.runIndex = r;
+        span.u16Start = (UINT32)text.size();
+        span.u16ToByte = U16ToByte(runs[r].text);
+        const std::wstring part = ToUtf16(runs[r].text);
+        span.u16Length = (UINT32)part.size();
+        text += part;
+        byteTotal += runs[r].text.size();
+        spans.push_back(std::move(span));
     }
-    line.width = x;
-    if (line.runs.empty() || x > 0.0f) lines.push_back(std::move(line));
-    if (lines.empty()) {
-        line = TextLine();
+    if (!factory_ || spans.empty() || text.empty() || byteTotal == 0) {
+        TextLine line;
         line.height = WidestLineHeight(runs);
-        lines.push_back(std::move(line));
+        std::vector<TextLine> out;
+        out.push_back(std::move(line));
+        return out;
     }
+
+    // The first run with text owns the base format; every run dresses
+    // its own span with its family, size, weight and decorations.
+    size_t base = 0;
+    while (base < runs.size() && runs[base].text.empty()) ++base;
+    IDWriteTextFormat* format = base < runs.size()
+        ? FormatFor(runs[base].font) : nullptr;
+    IDWriteTextLayout* layout = nullptr;
+    const bool wrap = maxWidth > 0.0f;
+    if (!format || FAILED(factory_->CreateTextLayout(
+            text.c_str(), (UINT32)text.size(), format,
+            wrap ? maxWidth : 100000.0f, 100000.0f, &layout)) || !layout) {
+        return glideCompose();
+    }
+    layout->SetWordWrapping(wrap ? DWRITE_WORD_WRAPPING_WRAP
+                                 : DWRITE_WORD_WRAPPING_NO_WRAP);
+    for (size_t r = 0; r < runs.size(); ++r) {
+        if (runs[r].text.empty()) continue;
+        const DWRITE_TEXT_RANGE range = {spans[r].u16Start,
+                                         spans[r].u16Length};
+        const std::wstring family = FamilyFor(runs[r].font.family);
+        layout->SetFontFamilyName(family.c_str(), range);
+        layout->SetFontSize(
+            runs[r].font.size > 0.0f ? runs[r].font.size : 14.0f, range);
+        if (runs[r].font.bold)
+            layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, range);
+        if (runs[r].font.italic)
+            layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, range);
+        if (runs[r].underline) layout->SetUnderline(TRUE, range);
+        if (runs[r].strike) layout->SetStrikethrough(TRUE, range);
+    }
+
+    // The lines DirectWrite broke, sliced back onto the runs.
+    UINT32 lineCount = 0;
+    if (FAILED(layout->GetLineMetrics(nullptr, 0, &lineCount)) ||
+        lineCount == 0) {
+        layout->Release();
+        return glideCompose();
+    }
+    std::vector<DWRITE_LINE_METRICS> lineMetrics(lineCount);
+    UINT32 got = 0;
+    if (FAILED(layout->GetLineMetrics(lineMetrics.data(), lineCount, &got)) ||
+        got == 0) {
+        layout->Release();
+        return glideCompose();
+    }
+    lineMetrics.resize(got);
+
+    std::vector<TextLine> lines;
+    UINT32 cursor = 0;  // the UTF-16 index the current line starts at
+    size_t slicedBytes = 0;
+    for (const DWRITE_LINE_METRICS& m : lineMetrics) {
+        const UINT32 start = cursor;
+        const UINT32 end = start + m.length;
+        cursor = end;
+        TextLine out;
+        out.height = m.height > 0.0f ? m.height : WidestLineHeight(runs);
+        out.ascent = m.baseline;
+        float lastX = 0.0f;
+        for (const Span& span : spans) {
+            const UINT32 rs = span.u16Start;
+            const UINT32 re = rs + span.u16Length;
+            if (re <= start) continue;
+            if (rs >= end) break;
+            const UINT32 a = rs > start ? rs : start;
+            const UINT32 b = re < end ? re : end;
+            if (b <= a) continue;
+            GlyphRun slice = runs[span.runIndex];
+            const UINT32 byteA = span.u16ToByte[a - rs];
+            const UINT32 byteB = span.u16ToByte[b - rs];
+            slice.text = slice.text.substr(byteA, byteB - byteA);
+            float hx = 0.0f;
+            float hy = 0.0f;
+            DWRITE_HIT_TEST_METRICS hit = {};
+            if (FAILED(layout->HitTestTextPosition(a, false, &hx, &hy,
+                                                   &hit))) {
+                hx = lastX;
+            }
+            slice.x = hx;
+            out.runs.push_back(std::move(slice));
+            lastX = hx;
+            slicedBytes += byteB - byteA;
+        }
+        if (!out.runs.empty()) {
+            const GlyphRun& last = out.runs.back();
+            out.width = last.x + MeasureRun(last, 100000.0f);
+        }
+        lines.push_back(std::move(out));
+    }
+    layout->Release();
+    if (slicedBytes != byteTotal) return glideCompose();
     return lines;
 }
 
