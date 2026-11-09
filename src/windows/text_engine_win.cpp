@@ -326,7 +326,7 @@ std::vector<TextLine> DWriteEngine::MeasureWrapped(
         // hold every byte, so the break characters belong to this
         // line's last slice, the same piece the fake keeps them with.
         const UINT32 start = cursor;
-        const UINT32 end = start + m.length + m.newLineLength;
+        const UINT32 end = start + m.length + m.newlineLength;
         cursor = end;
         TextLine out;
         out.height = m.height > 0.0f ? m.height : WidestLineHeight(runs);
