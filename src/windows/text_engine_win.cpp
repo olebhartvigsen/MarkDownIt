@@ -116,10 +116,10 @@ IDWriteTextFormat* DWriteEngine::FormatFor(const FontSpec& font) const {
     if (it != formats_.end()) return it->second;
     IDWriteTextFormat* format = nullptr;
     if (FAILED(factory_->CreateTextFormat(family.c_str(), nullptr,
-                                          size, size,
                                           DWRITE_FONT_WEIGHT_NORMAL,
                                           DWRITE_FONT_STYLE_NORMAL,
                                           DWRITE_FONT_STRETCH_NORMAL,
+                                          size, L"",
                                           &format))) {
         format = nullptr;
     }
@@ -165,9 +165,9 @@ float DWriteEngine::PositionInRun(const GlyphRun& run, float maxWidth,
     }
     float x = 0.0f;
     float y = 0.0f;
-    BOOL trailing = FALSE;
+    DWRITE_HIT_TEST_METRICS hit = {};
     if (FAILED(layout->HitTestTextPosition(utf16Offset, false,
-                                            &x, &y, &trailing))) {
+                                           &x, &y, &hit))) {
         x = 0.0f;
     }
     layout->Release();
