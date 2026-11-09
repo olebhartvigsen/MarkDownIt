@@ -33,7 +33,7 @@ Windows with the Mac trace. Windows records calls inside its actual native
 paint adapter on a private WARP target. A failed native drawing call fails
 the recording. Windows screen capture stays disabled.
 
-The gate checks six SVG fixtures at 40, 100, and 200 percent, both at the
+The gate checks seven SVG fixtures at 40, 100, and 200 percent, both at the
 origin and at an offset. It compares command counts, draw order, geometry,
 colors, line widths, font requests, text, and baselines. Numeric tolerance
 is 0.001 user units. The text engine has fixed metrics so missing fonts cannot
@@ -42,13 +42,28 @@ the same primitive fixture into private bitmaps. They compare 18 interior
 pixel probes for fills, strokes, rounded corners, ellipses, open and closed
 paths, and winding. Three text probes check baseline bounds and embedded
 newlines. Color tolerance is two byte values; glyph ink bounds allow three
-pixels for native hinting. No bitmap is saved and no window is opened.
+pixels for native hinting. Four arrow cases check source and destination
+contact in every direction, with solid and dashed paths. The combined shaft
+and marker bounds must match fixed contacts within one pixel on each platform.
+The green marker is also measured on its own, so a shaft reaching the border
+cannot hide an arrow tip that stops short. Both checks use fixed expectations,
+even if both platforms would otherwise agree on a bad result. No bitmap is
+saved and no window is opened.
+
+Each native command recorder also runs 16 changed SVGs. They must fail for
+source gaps, path overshoot, marker overshoot, and marker undershoot in all
+four directions. A valid fixture must pass at every tested zoom and placement.
+
+The fixture's marker tip and `refX` are both 10, so the tip ends at the path
+endpoint. The renderer must preserve explicit SVG geometry. It must not move
+an endpoint or change `refX` to snap a relation to a nearby box.
 
 The Windows tests also check zoom, page transforms, paint order, viewBox
 placement, start anchors, and short-hex and RGB label colors.
 
 The fixtures are `ai-components.svg`, `diagram.svg`, `svg-parity.svg`,
-`two-boxes.svg`, `wide-diagram.svg`, and the saved Mermaid sequence diagram
+`svg-arrow-contacts.svg`, `two-boxes.svg`, `wide-diagram.svg`, and the saved
+Mermaid sequence diagram
 `tests/markdown-mermaid/mermaid-diagram-1788899219877.svg`. The new parity
 fixture covers arcs,
 curves, dashes, markers, rounded shapes, text styles, positioned tspans, HTML

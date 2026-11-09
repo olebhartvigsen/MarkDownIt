@@ -1,6 +1,7 @@
 // Records the macOS reference renderer's drawing commands, without a display.
 // Fixed text metrics isolate scene parity from platform font rasterization.
 #include "macos/svg_mac.h"
+#include "svg_native_fixture.h"
 
 #ifdef _WIN32
 #include "svgdoc.h"
@@ -74,6 +75,46 @@ public:
 class Commands final : public mac::RenderTarget {
 public:
     std::vector<std::string> ops;
+    // Record red shafts and green markers apart from black box strokes.
+    std::vector<mac::Point> relationPoints;
+    std::vector<mac::Point> markerPoints;
+
+    void CheckArrowContacts(float zoom, int translated) const {
+        const float dx = translated ? 67.0f : 0.0f;
+        const float dy = translated ? 49.0f : 0.0f;
+        for (const auto& arrow : svg_native_fixture::kArrows) {
+            for (const bool markerOnly : {false, true}) {
+                float left = 1.0e9f, top = 1.0e9f;
+                float right = -1.0e9f, bottom = -1.0e9f;
+                std::size_t count = 0;
+                const auto& points = markerOnly ? markerPoints : relationPoints;
+                for (const auto& point : points) {
+                    if (point.x < dx + arrow.left * zoom ||
+                        point.x >= dx + arrow.right * zoom ||
+                        point.y < dy + arrow.top * zoom ||
+                        point.y >= dy + arrow.bottom * zoom) continue;
+                    left = std::min(left, point.x);
+                    top = std::min(top, point.y);
+                    right = std::max(right, point.x);
+                    bottom = std::max(bottom, point.y);
+                    ++count;
+                }
+                const float expectedLeft = markerOnly ? arrow.expectedMarkerLeft : arrow.expectedLeft;
+                const float expectedTop = markerOnly ? arrow.expectedMarkerTop : arrow.expectedTop;
+                const float expectedRight = markerOnly ? arrow.expectedMarkerRight : arrow.expectedRight;
+                const float expectedBottom = markerOnly ? arrow.expectedMarkerBottom : arrow.expectedBottom;
+                if (count < (markerOnly ? 3u : 6u) ||
+                    std::abs(left - (dx + expectedLeft * zoom)) > 0.001f ||
+                    std::abs(top - (dy + expectedTop * zoom)) > 0.001f ||
+                    std::abs(right - (dx + expectedRight * zoom)) > 0.001f ||
+                    std::abs(bottom - (dy + expectedBottom * zoom)) > 0.001f) {
+                    throw std::runtime_error(std::string("SVG arrow border contact failed: ") +
+                                             arrow.id + (markerOnly ? " marker" : " shaft/marker"));
+                }
+            }
+        }
+    }
+
     void FillRect(const mac::Rect& r, const mac::Color& c) override {
         Rect("fillRect", r, 0, c, 0);
     }
@@ -90,6 +131,10 @@ public:
     void StrokeLine(float x0, float y0, float x1, float y1, const mac::Color& c,
                     float width) override {
         auto out = Begin("line");
+        if (c.r > 0.5f && c.g < 0.25f && c.b < 0.25f) {
+            relationPoints.push_back({x0, y0});
+            relationPoints.push_back({x1, y1});
+        }
         out << ',' << x0 << ',' << y0 << ',' << x1 << ',' << y1;
         Color(out, c);
         out << ',' << width << ']';
@@ -154,6 +199,12 @@ private:
     void Polygon(const char* name, const std::vector<mac::Point>& points,
                  const mac::Color& c, float width, bool closed) {
         auto out = Begin(name);
+        const bool red = c.r > 0.5f && c.g < 0.25f && c.b < 0.25f;
+        const bool green = c.g > 0.5f && c.r < 0.25f && c.b < 0.25f;
+        if (red || green) {
+            relationPoints.insert(relationPoints.end(), points.begin(), points.end());
+        }
+        if (green) markerPoints.insert(markerPoints.end(), points.begin(), points.end());
         out << ",[";
         bool first = true;
         for (const auto& p : points) {
@@ -274,6 +325,9 @@ int main(int argc, char** argv) {
                              translated ? 49.0f : 0.0f,
                              doc.Width() * zoom, doc.Height() * zoom);
 #endif
+                    if (std::filesystem::path(argv[i]).filename() == "svg-arrow-contacts.svg") {
+                        target.CheckArrowContacts(zoom, translated);
+                    }
                     if (target.ops.empty()) throw std::runtime_error("Empty SVG scene");
                     if (!first) out << ',';
                     first = false;

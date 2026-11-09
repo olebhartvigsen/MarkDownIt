@@ -24,6 +24,8 @@ constexpr int kHeight = svg_native_fixture::kHeight;
 static_assert(kWidth == 240 && kHeight == 140, "Native fixture dimensions");
 static_assert(std::size(svg_native_fixture::kProbes) == 18,
               "All native shape probes must be sampled");
+static_assert(std::size(svg_native_fixture::kArrows) == 4,
+              "All native arrow-contact corridors must be sampled");
 
 using ColorSpacePtr = std::unique_ptr<
     std::remove_pointer_t<CGColorSpaceRef>, decltype(&CGColorSpaceRelease)>;
@@ -85,6 +87,27 @@ Bounds DarkBounds(const OffscreenBitmap& bitmap) {
         for (int x = 0; x < kWidth; ++x) {
             const auto rgb = bitmap.rgb(x, y);
             if (rgb[0] < 128 && rgb[1] < 128 && rgb[2] < 128) {
+                result.left = std::min(result.left, x);
+                result.top = std::min(result.top, y);
+                result.right = std::max(result.right, x + 1);
+                result.bottom = std::max(result.bottom, y + 1);
+            }
+        }
+    }
+    return result;
+}
+
+Bounds RelationBounds(const OffscreenBitmap& bitmap, int left, int top,
+                      int right, int bottom, bool markerOnly = false) {
+    Bounds result;
+    for (int y = top; y < bottom; ++y) {
+        for (int x = left; x < right; ++x) {
+            const auto rgb = bitmap.rgb(x, y);
+            const int r = rgb[0], g = rgb[1], b = rgb[2];
+            // Match Windows, retaining antialiased ink on black and white.
+            const bool red = r > 32 && r > g + 32 && r > b + 32;
+            const bool green = g > 32 && g > r + 32 && g > b + 32;
+            if (green || (!markerOnly && red)) {
                 result.left = std::min(result.left, x);
                 result.top = std::min(result.top, y);
                 result.right = std::max(result.right, x + 1);
@@ -188,13 +211,53 @@ TEST(SvgNativeMac, CoreGraphicsReferencePixelsAndCoreTextBounds) {
             EXPECT_LE(bounds.bottom, 131);
         }
 
+        OffscreenBitmap arrows;
+        ASSERT_TRUE(arrows.context() != nullptr);
+        mac::SvgDoc arrowDocument;
+        ASSERT_TRUE(arrowDocument.Load(svg_native_fixture::kArrowSvg));
+        ASSERT_EQ(arrowDocument.Width(), static_cast<float>(kWidth));
+        ASSERT_EQ(arrowDocument.Height(), static_cast<float>(kHeight));
+        mac::CoreGraphicsTarget arrowTarget(arrows.context());
+        arrowDocument.Draw(&arrowTarget, &engine, 0, 0, kWidth, kHeight);
+        CGContextFlush(arrows.context());
+
+        // Measure red shaft/green marker ink, not parsed path endpoints.
+        // The fixed source contacts use marker refX=10; do not snap to boxes.
+        std::array<Bounds, std::size(svg_native_fixture::kArrows)> arrowBounds;
+        std::array<Bounds, std::size(svg_native_fixture::kArrows)> markerBounds;
+        for (size_t i = 0; i < std::size(svg_native_fixture::kArrows); ++i) {
+            const auto& fixture = svg_native_fixture::kArrows[i];
+            ASSERT_TRUE(fixture.left >= 0 && fixture.left < fixture.right);
+            ASSERT_TRUE(fixture.top >= 0 && fixture.top < fixture.bottom);
+            ASSERT_TRUE(fixture.right <= kWidth && fixture.bottom <= kHeight);
+            const Bounds bounds = RelationBounds(arrows, fixture.left, fixture.top,
+                                                 fixture.right, fixture.bottom);
+            arrowBounds[i] = bounds;
+            const Bounds marker = RelationBounds(arrows, fixture.left, fixture.top,
+                                                 fixture.right, fixture.bottom, true);
+            markerBounds[i] = marker;
+            std::cout << "  Native Mac arrow " << fixture.id << " bounds ["
+                      << bounds.left << ',' << bounds.top << ',' << bounds.right
+                      << ',' << bounds.bottom << "]\n";
+            EXPECT_TRUE(bounds.nonempty());
+            EXPECT_NEAR(bounds.left, fixture.expectedLeft, 1);
+            EXPECT_NEAR(bounds.top, fixture.expectedTop, 1);
+            EXPECT_NEAR(bounds.right, fixture.expectedRight, 1);
+            EXPECT_NEAR(bounds.bottom, fixture.expectedBottom, 1);
+            EXPECT_TRUE(marker.nonempty());
+            EXPECT_NEAR(marker.left, fixture.expectedMarkerLeft, 1);
+            EXPECT_NEAR(marker.top, fixture.expectedMarkerTop, 1);
+            EXPECT_NEAR(marker.right, fixture.expectedMarkerRight, 1);
+            EXPECT_NEAR(marker.bottom, fixture.expectedMarkerBottom, 1);
+        }
+
         // Export only measured numbers, never an image or a screen capture.
         // Keep emitting actual measurements on assertion failures for CI triage.
         if (const char* path = std::getenv("MDI_SVG_NATIVE_OUT")) {
             ASSERT_TRUE(*path != '\0');
             std::ofstream output(path, std::ios::out | std::ios::trunc);
             ASSERT_TRUE(output.is_open());
-            output << "{\"schema\":1,\"probes\":[";
+            output << "{\"schema\":2,\"probes\":[";
             for (size_t i = 0; i < samples.size(); ++i) {
                 if (i) output << ',';
                 const auto& rgb = samples[i];
@@ -209,6 +272,17 @@ TEST(SvgNativeMac, CoreGraphicsReferencePixelsAndCoreTextBounds) {
                 output << "{\"id\":\"" << kTextFixtures[i].id
                        << "\",\"bounds\":[" << bounds.left << ',' << bounds.top
                        << ',' << bounds.right << ',' << bounds.bottom << "]}";
+            }
+            output << "],\"arrows\":[";
+            for (size_t i = 0; i < std::size(svg_native_fixture::kArrows); ++i) {
+                if (i) output << ',';
+                const auto& bounds = arrowBounds[i];
+                const auto& marker = markerBounds[i];
+                output << "{\"id\":\"" << svg_native_fixture::kArrows[i].id
+                       << "\",\"bounds\":[" << bounds.left << ',' << bounds.top
+                       << ',' << bounds.right << ',' << bounds.bottom
+                       << "],\"marker\":[" << marker.left << ',' << marker.top
+                       << ',' << marker.right << ',' << marker.bottom << "]}";
             }
             output << "]}\n";
             output.close();

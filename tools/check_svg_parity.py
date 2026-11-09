@@ -10,7 +10,7 @@ import json
 import math
 from pathlib import Path
 
-FILES = ("ai-components.svg", "diagram.svg", "svg-parity.svg", "two-boxes.svg", "wide-diagram.svg", "mermaid-diagram-1788899219877.svg")
+FILES = ("ai-components.svg", "diagram.svg", "svg-parity.svg", "svg-arrow-contacts.svg", "two-boxes.svg", "wide-diagram.svg", "mermaid-diagram-1788899219877.svg")
 ZOOMS = (0.4, 1, 2)
 TOLERANCE = 0.001
 

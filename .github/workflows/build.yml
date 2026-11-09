@@ -99,7 +99,8 @@ jobs:
           cmake -B build-tests -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTS=ON
           cmake --build build-tests --config Release
           build-tests/Release/MarkDownIt.tests.exe
-          build-tests/Release/MarkDownIt.svg-parity.exe "$RUNNER_TEMP/svg-commands.json" tests/fixtures/ai-components.svg tests/fixtures/diagram.svg tests/fixtures/svg-parity.svg tests/fixtures/two-boxes.svg tests/fixtures/wide-diagram.svg tests/markdown-mermaid/mermaid-diagram-1788899219877.svg
+          python tools/test_svg_arrow_contacts.py --exe build-tests/Release/MarkDownIt.svg-parity.exe
+          build-tests/Release/MarkDownIt.svg-parity.exe "$RUNNER_TEMP/svg-commands.json" tests/fixtures/ai-components.svg tests/fixtures/diagram.svg tests/fixtures/svg-parity.svg tests/fixtures/svg-arrow-contacts.svg tests/fixtures/two-boxes.svg tests/fixtures/wide-diagram.svg tests/markdown-mermaid/mermaid-diagram-1788899219877.svg
           ls -la "$MDI_OFFICE_OUT_DIR"
 
       - name: Upload Windows SVG commands
@@ -178,7 +179,9 @@ jobs:
         run: ./build-native/MarkDownIt.tests
 
       - name: Record macOS SVG commands
-        run: ./build-native/MarkDownIt.svg-parity "$RUNNER_TEMP/svg-commands.json" tests/fixtures/ai-components.svg tests/fixtures/diagram.svg tests/fixtures/svg-parity.svg tests/fixtures/two-boxes.svg tests/fixtures/wide-diagram.svg tests/markdown-mermaid/mermaid-diagram-1788899219877.svg
+        run: |
+          python3 tools/test_svg_arrow_contacts.py --exe ./build-native/MarkDownIt.svg-parity
+          ./build-native/MarkDownIt.svg-parity "$RUNNER_TEMP/svg-commands.json" tests/fixtures/ai-components.svg tests/fixtures/diagram.svg tests/fixtures/svg-parity.svg tests/fixtures/svg-arrow-contacts.svg tests/fixtures/two-boxes.svg tests/fixtures/wide-diagram.svg tests/markdown-mermaid/mermaid-diagram-1788899219877.svg
 
       - name: Upload macOS SVG commands
         uses: actions/upload-artifact@v4

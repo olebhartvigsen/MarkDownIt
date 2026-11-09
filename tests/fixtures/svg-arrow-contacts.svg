@@ -1,0 +1,17 @@
+<svg width="240" height="140">
+<defs><marker id="arrow" markerWidth="10" markerHeight="8" refX="10" refY="4" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,4 L0,8 Z" fill="#00ff00"/></marker></defs>
+<g fill="#40a0e0" stroke="#000" stroke-width="2">
+<rect x="10" y="10" width="20" height="20"/>
+<rect x="80" y="10" width="20" height="20"/>
+<rect x="140" y="10" width="20" height="20"/>
+<rect x="210" y="10" width="20" height="20"/>
+<rect x="10" y="60" width="20" height="20"/>
+<rect x="10" y="110" width="20" height="20"/>
+<rect x="70" y="60" width="20" height="20"/>
+<rect x="70" y="110" width="20" height="20"/>
+</g>
+<path d="M30,20 L80,20" fill="none" stroke="#ff0000" stroke-width="4" marker-end="url(#arrow)"/>
+<path d="M210,20 L160,20" fill="none" stroke="#ff0000" stroke-width="4" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+<path d="M20,80 L20,110" fill="none" stroke="#ff0000" stroke-width="4" marker-end="url(#arrow)"/>
+<path d="M80,110 L80,80" fill="none" stroke="#ff0000" stroke-width="4" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+</svg>

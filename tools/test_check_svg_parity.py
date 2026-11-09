@@ -3,6 +3,7 @@
 
 import copy
 import unittest
+from pathlib import Path
 
 from check_svg_parity import FILES, OP_FIELDS, ZOOMS, compare
 
@@ -47,6 +48,13 @@ def replace_operation(data, operation):
 
 
 class ParityGateTests(unittest.TestCase):
+    def test_arrow_fixture_matches_native_input(self):
+        root = Path(__file__).resolve().parents[1]
+        header = (root / "tests/svg_native_fixture.h").read_text(encoding="utf-8")
+        native_svg = header.split('constexpr char kArrowSvg[] = R"svg(', 1)[1].split(')svg";', 1)[0]
+        command_svg = (root / "tests/fixtures/svg-arrow-contacts.svg").read_text(encoding="utf-8")
+        self.assertEqual(native_svg, command_svg)
+
     def assert_rejected(self, change):
         # Invalid data must fail on either side, even when both sides agree.
         for side in ("macOS", "Windows", "both"):
@@ -65,10 +73,10 @@ class ParityGateTests(unittest.TestCase):
 
     def test_equal_traces_pass(self):
         data = trace()
-        self.assertEqual(len(FILES), 6)
-        self.assertEqual(len(data["cases"]), 36)
+        self.assertEqual(len(FILES), 7)
+        self.assertEqual(len(data["cases"]), 42)
         self.assertEqual(set(OP_FIELDS), {op[0] for op in operations()})
-        self.assertEqual(compare(data, copy.deepcopy(data)), (36, 36 * len(operations())))
+        self.assertEqual(compare(data, copy.deepcopy(data)), (42, 42 * len(operations())))
 
     def test_top_level_type_fails(self):
         for value in (None, [], "trace", 1, True):
@@ -201,7 +209,7 @@ class ParityGateTests(unittest.TestCase):
                     operation[index] += 0.0001
                 elif kind == "p":
                     operation[index][0][0] += 0.0001
-        self.assertEqual(compare(reference, windows)[0], 36)
+        self.assertEqual(compare(reference, windows)[0], 42)
 
     def test_numeric_drift_fails_for_every_field(self):
         for operation_index, operation in enumerate(operations()):
@@ -262,7 +270,7 @@ class ParityGateTests(unittest.TestCase):
         reference = trace()
         windows = copy.deepcopy(reference)
         windows["cases"].reverse()
-        self.assertEqual(compare(reference, windows)[0], 36)
+        self.assertEqual(compare(reference, windows)[0], 42)
 
 
 if __name__ == "__main__":

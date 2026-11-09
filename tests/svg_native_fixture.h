@@ -44,4 +44,47 @@ constexpr Probe kProbes[] = {
     {"closed path diagonal", 150, 77, 0, 0, 0},
     {"nonzero winding fill", 210, 80, 64, 160, 224},
 };
+// Keep this SVG byte-for-byte equal to fixtures/svg-arrow-contacts.svg.
+// A tip at marker x=10 and refX=10 meets the path endpoint exactly.
+constexpr char kArrowSvg[] = R"svg(<svg width="240" height="140">
+<defs><marker id="arrow" markerWidth="10" markerHeight="8" refX="10" refY="4" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,4 L0,8 Z" fill="#00ff00"/></marker></defs>
+<g fill="#40a0e0" stroke="#000" stroke-width="2">
+<rect x="10" y="10" width="20" height="20"/>
+<rect x="80" y="10" width="20" height="20"/>
+<rect x="140" y="10" width="20" height="20"/>
+<rect x="210" y="10" width="20" height="20"/>
+<rect x="10" y="60" width="20" height="20"/>
+<rect x="10" y="110" width="20" height="20"/>
+<rect x="70" y="60" width="20" height="20"/>
+<rect x="70" y="110" width="20" height="20"/>
+</g>
+<path d="M30,20 L80,20" fill="none" stroke="#ff0000" stroke-width="4" marker-end="url(#arrow)"/>
+<path d="M210,20 L160,20" fill="none" stroke="#ff0000" stroke-width="4" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+<path d="M20,80 L20,110" fill="none" stroke="#ff0000" stroke-width="4" marker-end="url(#arrow)"/>
+<path d="M80,110 L80,80" fill="none" stroke="#ff0000" stroke-width="4" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+</svg>)svg";
+
+struct Arrow {
+    const char* id;
+    int left;
+    int top;
+    int right;
+    int bottom;
+    int expectedLeft;
+    int expectedTop;
+    int expectedRight;
+    int expectedBottom;
+    int expectedMarkerLeft;
+    int expectedMarkerTop;
+    int expectedMarkerRight;
+    int expectedMarkerBottom;
+};
+// Separate green markers from red shafts so a shaft reaching the border cannot
+// hide an arrow tip that stops short. Blue fills and black borders are excluded.
+constexpr Arrow kArrows[] = {
+    {"right", 5, 5, 105, 35, 30, 16, 80, 24, 70, 16, 80, 24},
+    {"left-dashed", 135, 5, 235, 35, 160, 16, 210, 24, 160, 16, 170, 24},
+    {"down", 5, 55, 35, 135, 16, 80, 24, 110, 16, 100, 24, 110},
+    {"up-dashed", 65, 55, 95, 135, 76, 80, 84, 110, 76, 80, 84, 90},
+};
 }  // namespace svg_native_fixture

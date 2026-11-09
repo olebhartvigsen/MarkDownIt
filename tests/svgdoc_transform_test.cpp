@@ -19,6 +19,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <string>
 #include <utility>
 #include <vector>
@@ -78,6 +79,24 @@ struct RenderResult {
     std::vector<unsigned int> pixels;
     D2D1_MATRIX_3X2_F restored = {};
 };
+
+InkBounds RelationBounds(const RenderResult& result, int left, int top,
+                         int right, int bottom, bool markerOnly = false) {
+    InkBounds bounds;
+    for (int y = top; y < bottom; ++y) {
+        for (int x = left; x < right; ++x) {
+            const auto color = result.pixels[static_cast<std::size_t>(y) * kBitmapWidth + x];
+            const int r = static_cast<int>((color >> 16) & 255);
+            const int g = static_cast<int>((color >> 8) & 255);
+            const int b = static_cast<int>(color & 255);
+            // Match the Mac contrast test, including antialiased arrow tips.
+            const bool red = r > 32 && r > g + 32 && r > b + 32;
+            const bool green = g > 32 && g > r + 32 && g > b + 32;
+            if (green || (!markerOnly && red)) bounds.Add(x, y);
+        }
+    }
+    return bounds;
+}
 
 class OffscreenSvg {
 public:
@@ -349,6 +368,10 @@ TEST(SvgDocReference, RgbTextColorMatchesMac) {
 }
 
 TEST(SvgDocReference, NativePrimitiveAndSingleLineProbes) {
+    static_assert(std::size(svg_native_fixture::kProbes) == 18,
+                  "All native shape probes must be sampled");
+    static_assert(std::size(svg_native_fixture::kArrows) == 4,
+                  "All native arrow-contact corridors must be sampled");
     OffscreenSvg renderer;
     ASSERT_TRUE(SUCCEEDED(renderer.Initialize()));
     ASSERT_TRUE(renderer.Load(svg_native_fixture::kSvg));
@@ -393,10 +416,42 @@ TEST(SvgDocReference, NativePrimitiveAndSingleLineProbes) {
         EXPECT_LE(nativeText.bottom, 131);
         bounds.push_back(nativeText);
     }
+    ASSERT_TRUE(renderer.Load(svg_native_fixture::kArrowSvg));
+    ASSERT_TRUE(SUCCEEDED(renderer.Render(1, 0, 0, D2D1::Matrix3x2F::Identity(), actual)));
+    // Measure red shaft/green marker ink, not parsed path endpoints.
+    // The fixed source contacts use marker refX=10; do not snap to boxes.
+    std::array<InkBounds, std::size(svg_native_fixture::kArrows)> arrowBounds;
+    std::array<InkBounds, std::size(svg_native_fixture::kArrows)> markerBounds;
+    for (std::size_t i = 0; i < std::size(svg_native_fixture::kArrows); ++i) {
+        const auto& fixture = svg_native_fixture::kArrows[i];
+        ASSERT_TRUE(fixture.left >= 0 && fixture.left < fixture.right);
+        ASSERT_TRUE(fixture.top >= 0 && fixture.top < fixture.bottom);
+        ASSERT_TRUE(fixture.right <= svg_native_fixture::kWidth &&
+                    fixture.bottom <= svg_native_fixture::kHeight);
+        const InkBounds measured = RelationBounds(actual, fixture.left, fixture.top,
+                                                  fixture.right, fixture.bottom);
+        arrowBounds[i] = measured;
+        const InkBounds marker = RelationBounds(actual, fixture.left, fixture.top,
+                                                fixture.right, fixture.bottom, true);
+        markerBounds[i] = marker;
+        std::cout << "  Native Windows arrow " << fixture.id << " bounds ["
+                  << measured.left << ',' << measured.top << ',' << measured.right
+                  << ',' << measured.bottom << "]\n";
+        EXPECT_TRUE(measured.pixels > 0);
+        ExpectBounds(measured, static_cast<float>(fixture.expectedLeft),
+                     static_cast<float>(fixture.expectedTop),
+                     static_cast<float>(fixture.expectedRight),
+                     static_cast<float>(fixture.expectedBottom), 1.0f);
+        EXPECT_TRUE(marker.pixels > 0);
+        ExpectBounds(marker, static_cast<float>(fixture.expectedMarkerLeft),
+                     static_cast<float>(fixture.expectedMarkerTop),
+                     static_cast<float>(fixture.expectedMarkerRight),
+                     static_cast<float>(fixture.expectedMarkerBottom), 1.0f);
+    }
     if (const char* path = std::getenv("MDI_SVG_NATIVE_OUT")) {
         std::ofstream output(path, std::ios::binary);
         ASSERT_TRUE(output.good());
-        output << "{\"schema\":1,\"probes\":[";
+        output << "{\"schema\":2,\"probes\":[";
         for (std::size_t i = 0; i < colors.size(); ++i) {
             if (i) output << ',';
             output << "{\"name\":\"" << svg_native_fixture::kProbes[i].name
@@ -407,6 +462,17 @@ TEST(SvgDocReference, NativePrimitiveAndSingleLineProbes) {
             if (i) output << ',';
             output << "{\"id\":\"" << ids[i] << "\",\"bounds\":[" << bounds[i].left << ','
                    << bounds[i].top << ',' << bounds[i].right << ',' << bounds[i].bottom << "]}";
+        }
+        output << "],\"arrows\":[";
+        for (std::size_t i = 0; i < std::size(svg_native_fixture::kArrows); ++i) {
+            if (i) output << ',';
+            const auto& measured = arrowBounds[i];
+            const auto& marker = markerBounds[i];
+            output << "{\"id\":\"" << svg_native_fixture::kArrows[i].id
+                   << "\",\"bounds\":[" << measured.left << ',' << measured.top
+                   << ',' << measured.right << ',' << measured.bottom
+                   << "],\"marker\":[" << marker.left << ',' << marker.top
+                   << ',' << marker.right << ',' << marker.bottom << "]}";
         }
         output << "]}\n";
         output.close();
