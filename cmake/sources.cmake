@@ -21,6 +21,7 @@
 set(MARKDOWNIT_CORE_SOURCES
     src/parser.cpp
     src/textbuffer.cpp
+    src/layout/break_heading_layout.cpp
     src/layoutcache.cpp
     src/editcontroller.cpp
     src/navigation.cpp
