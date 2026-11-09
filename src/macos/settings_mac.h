@@ -12,7 +12,7 @@
 
 #include "settings.h"
 
-namespace mac {
+namespace platform {
 
 // Reads and writes the settings file.
 class MacSettings {
@@ -61,4 +61,4 @@ private:
     bool loaded_ = false;
 };
 
-}  // namespace mac
+}  // namespace platform

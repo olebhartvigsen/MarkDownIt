@@ -20,7 +20,7 @@
 #include "mermaid/pie_layout.h"
 #include "mermaid/seq_layout.h"
 
-namespace mac {
+namespace platform {
 namespace {
 
 // The mermaid default-theme pie palette (pie1..pie12).
@@ -942,4 +942,4 @@ void PaintMermaidDiagram(TextEngine* engine, RenderTarget* target,
     }
 }
 
-}  // namespace mac
+}  // namespace platform

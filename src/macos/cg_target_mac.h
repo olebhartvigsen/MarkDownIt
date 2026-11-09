@@ -17,7 +17,7 @@
 #include "image_draw_mac.h"
 #include "text_engine_mac.h"
 
-namespace mac {
+namespace platform {
 
 // The value of pi, for the arcs.
 constexpr double kPi = 3.14159265358979323846;
@@ -332,4 +332,4 @@ private:
     CGContextRef context_;
 };
 
-}  // namespace mac
+}  // namespace platform

@@ -16,7 +16,7 @@
 #include <algorithm>
 #include <vector>
 
-namespace mac {
+namespace platform {
 
 namespace {
 
@@ -464,4 +464,4 @@ void OutlinePane::Draw(RenderTarget* target, float width, float height) {
     }
 }
 
-}  // namespace mac
+}  // namespace platform

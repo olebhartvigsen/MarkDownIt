@@ -16,7 +16,7 @@
 #include "svg_mac.h"
 #include "textenc.h"
 
-namespace mac {
+namespace platform {
 namespace {
 
 // The size of a card and the space around them.
@@ -519,4 +519,4 @@ const std::string& WelcomeScreen::GetPath(int index) const {
     return cards_[index].filePath;
 }
 
-}  // namespace mac
+}  // namespace platform

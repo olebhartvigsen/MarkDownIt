@@ -18,7 +18,7 @@
 @class NSFont;
 #endif
 
-namespace mac {
+namespace platform {
 
 // Registers every .ttf in the directory for this process. A file that
 // is already registered counts as registered, because the call is made
@@ -35,4 +35,4 @@ int RegisterBundledFonts();
 NSFont* SystemUIFont(float size);
 #endif
 
-}  // namespace mac
+}  // namespace platform

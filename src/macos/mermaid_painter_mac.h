@@ -11,7 +11,7 @@
 #include "platform/seams.h"
 #include "theme.h"
 
-namespace mac {
+namespace platform {
 
 // Paints a mermaid diagram.
 //
@@ -35,4 +35,4 @@ void PaintMermaidDiagram(TextEngine* engine,
                           const Palette& palette,
                           const FontSpec& bodyFont);
 
-}  // namespace mac
+}  // namespace platform

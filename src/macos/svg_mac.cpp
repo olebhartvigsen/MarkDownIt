@@ -15,7 +15,7 @@
 #include "pugixml.hpp"
 #include "svgtext.h"
 
-namespace mac {
+namespace platform {
 namespace {
 
 // The first family of a CSS font-family list, trimmed. Core Text takes one
@@ -1373,4 +1373,4 @@ void SvgDoc::Draw(RenderTarget* target, TextEngine* engine, float x, float y,
     }
 }
 
-}  // namespace mac
+}  // namespace platform

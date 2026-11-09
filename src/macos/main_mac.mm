@@ -42,7 +42,7 @@
 #include "zoom_hud_mac.h"
 #include "table_picker_mac.h"
 
-namespace mac {
+namespace platform {
 
 // Opens a URL in the user's browser. The caller has checked the
 // scheme; this only performs the handoff.
@@ -56,7 +56,7 @@ bool OpenExternalUrl(const std::string& url) {
                                                              : false;
 }
 
-}  // namespace mac
+}  // namespace platform
 #include "crash_trace_mac.h"
 #include "fonts_mac.h"
 #include "settings_mac.h"

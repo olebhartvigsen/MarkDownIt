@@ -24,7 +24,7 @@
 #include "searchreplace.h"
 #include "platform/seams.h"
 
-namespace mac {
+namespace platform {
 
 class ContentView {
 public:
@@ -298,4 +298,4 @@ private:
     std::function<void(bool)> editingChanged_;
 };
 
-}  // namespace mac
+}  // namespace platform

@@ -25,7 +25,7 @@
 #include "platform/seams.h"
 #include "theme.h"
 
-namespace mac {
+namespace platform {
 
 // The pane model and the drawing, without any AppKit.
 class OutlinePane {
@@ -170,4 +170,4 @@ private:
     Color activeText_;
 };
 
-}  // namespace mac
+}  // namespace platform

@@ -13,7 +13,7 @@
 #include "platform/seams.h"
 #include "settings.h"
 
-namespace mac {
+namespace platform {
 
 // The parsed diagram of a card. The header keeps the SVG reader out of
 // it, and a card holds one only when the file is an SVG.
@@ -94,4 +94,4 @@ private:
     Rect openButton_;
 };
 
-}  // namespace mac
+}  // namespace platform

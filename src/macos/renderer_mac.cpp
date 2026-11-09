@@ -27,7 +27,7 @@
 #include "navigation.h"
 #include "svg_mac.h"
 
-namespace mac {
+namespace platform {
 namespace {
 
 // A colour from the palette.
@@ -2712,4 +2712,4 @@ std::vector<Rect> MacRenderer::RectsForRangeInBlock(const LaidOutBlock& block,
     return rects;
 }
 
-}  // namespace mac
+}  // namespace platform

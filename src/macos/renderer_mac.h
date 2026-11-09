@@ -24,7 +24,7 @@
 #include "theme.h"
 #include "mermaid/layout_cache.h"
 
-namespace mac {
+namespace platform {
 
 // A laid out piece of the document. The renderer produces a list of these
 // when it lays the document out, and draws them when it paints.
@@ -527,4 +527,4 @@ private:
     bool sourceMode_ = false;
 };
 
-}  // namespace mac
+}  // namespace platform

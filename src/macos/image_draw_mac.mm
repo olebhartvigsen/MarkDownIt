@@ -4,7 +4,7 @@
 
 #include "image_draw_mac.h"
 
-namespace mac {
+namespace platform {
 
 void DrawImageIntoContext(CGContextRef context, BitmapHandle image,
                           const Rect& rect) {
@@ -98,4 +98,4 @@ bool DrawChevronIntoContext(CGContextRef context, const Rect& rect,
     return true;
 }
 
-}  // namespace mac
+}  // namespace platform

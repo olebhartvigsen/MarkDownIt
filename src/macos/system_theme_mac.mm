@@ -13,7 +13,7 @@
 
 #include "system_theme_mac.h"
 
-namespace mac {
+namespace platform {
 namespace {
 
 // One semantic colour as the palette's four floats, resolved through
@@ -134,4 +134,4 @@ ChromePalette SystemChromePalette() {
     return ChromePaletteForAppearance(nil);
 }
 
-}  // namespace mac
+}  // namespace platform

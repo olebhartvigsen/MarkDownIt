@@ -27,7 +27,7 @@
 #include "textbuffer.h"
 #include "undostack.h"
 
-namespace mac {
+namespace platform {
 
 class ContentView;
 
@@ -488,4 +488,4 @@ private:
     std::unique_ptr<ContentView> contentView_;
 };
 
-}  // namespace mac
+}  // namespace platform

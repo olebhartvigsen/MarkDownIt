@@ -25,7 +25,7 @@
 
 #include "textenc.h"
 
-namespace mac {
+namespace platform {
 namespace {
 
 // The log file, opened on first use.
@@ -123,4 +123,4 @@ void InstallCrashHandler() {
     }
 }
 
-}  // namespace mac
+}  // namespace platform

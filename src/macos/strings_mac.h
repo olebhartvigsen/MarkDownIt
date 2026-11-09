@@ -30,4 +30,4 @@ static NSString* const kSettingsWindowTitle = @"MarkDownIt Settings";
 static NSString* const kSettingsViewSection = @"View";
 static NSString* const kSettingsOutlineLabel = @"Show the outline pane";
 
-}  // namespace macstrings
+}  // namespace platformstrings

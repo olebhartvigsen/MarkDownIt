@@ -31,7 +31,7 @@
 #include <unistd.h>
 #endif
 
-namespace mac {
+namespace platform {
 
 namespace {
 
@@ -404,4 +404,4 @@ void MacSettings::RemoveRecentFile(const std::string& path) {
     }
 }
 
-}  // namespace mac
+}  // namespace platform

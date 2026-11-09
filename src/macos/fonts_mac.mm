@@ -14,7 +14,7 @@
 #import <CoreText/CoreText.h>
 #import <Foundation/Foundation.h>
 
-namespace mac {
+namespace platform {
 
 int RegisterFontsFromDirectory(const std::string& dir) {
     NSString* path = [NSString stringWithUTF8String:dir.c_str()];
@@ -72,4 +72,4 @@ NSFont* SystemUIFont(float size) {
 }
 #endif
 
-}  // namespace mac
+}  // namespace platform

@@ -7,7 +7,7 @@
 
 #include <string>
 
-namespace mac {
+namespace platform {
 
 // Reads and writes plain text on the general pasteboard.
 class Clipboard {
@@ -27,4 +27,4 @@ public:
     bool HasText() const;
 };
 
-}  // namespace mac
+}  // namespace platform

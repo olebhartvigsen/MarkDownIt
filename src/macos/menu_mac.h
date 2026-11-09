@@ -16,11 +16,11 @@
 
 @class NSMenu;
 
-namespace mac {
+namespace platform {
 
 // Builds the main menu bar and returns it.
 //
 // The returned menu is owned by the caller, which hands it to NSApp.
 NSMenu* BuildMainMenu();
 
-}  // namespace mac
+}  // namespace platform

@@ -16,7 +16,7 @@
 
 #include "platform/seams.h"
 
-namespace mac {
+namespace platform {
 
 class SvgDoc {
 public:
@@ -117,4 +117,4 @@ private:
     std::vector<Shape> shapes_;
 };
 
-}  // namespace mac
+}  // namespace platform

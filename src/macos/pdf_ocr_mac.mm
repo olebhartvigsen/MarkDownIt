@@ -8,7 +8,7 @@
 #import <Foundation/Foundation.h>
 #import <Vision/Vision.h>
 
-namespace mac {
+namespace platform {
 
 std::string RecognizePdfPage(const std::string& path, std::size_t page_index) {
     @autoreleasepool {
@@ -111,4 +111,4 @@ std::string RecognizePdfPage(const std::string& path, std::size_t page_index) {
     }
 }
 
-}  // namespace mac
+}  // namespace platform

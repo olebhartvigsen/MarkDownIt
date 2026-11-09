@@ -9,7 +9,7 @@
 #include <cstdarg>
 #include <string>
 
-namespace mac {
+namespace platform {
 
 // Appends one breadcrumb line and flushes it immediately, so the last
 // line names the stage that ran when the process died.
@@ -25,4 +25,4 @@ void TraceMacWide(const std::wstring& text);
 // when no crash report can be read back.
 void InstallCrashHandler();
 
-}  // namespace mac
+}  // namespace platform

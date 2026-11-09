@@ -20,7 +20,7 @@
 #include <utility>
 #include <vector>
 
-namespace mac {
+namespace platform {
 
 // The entry the cache keeps for one source.
 struct ImageCache::Entry {
@@ -307,4 +307,4 @@ void ImageCache::Prefetch(const std::string& source) {
     [task resume];
 }
 
-}  // namespace mac
+}  // namespace platform

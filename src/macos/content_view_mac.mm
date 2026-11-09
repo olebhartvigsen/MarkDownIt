@@ -24,7 +24,7 @@
 #include "image_draw_mac.h"
 #include "zoommodel.h"
 
-namespace mac {
+namespace platform {
 
 namespace {
 
@@ -653,7 +653,7 @@ float ContentView::CaretHeight() const {
     return engine_->LineHeight(FontSpec{}) * 1.2f;
 }
 
-}  // namespace mac
+}  // namespace platform
 
 // ---------------------------------------------------------------------------
 // The NSView

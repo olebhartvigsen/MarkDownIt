@@ -10,7 +10,7 @@
 
 #include "platform/seams.h"
 
-namespace mac {
+namespace platform {
 
 // Draws the image into the rectangle.
 //
@@ -26,4 +26,4 @@ void DrawImageIntoContext(CGContextRef context, BitmapHandle image,
 bool DrawChevronIntoContext(CGContextRef context, const Rect& rect,
                             bool expanded, const Color& color);
 
-}  // namespace mac
+}  // namespace platform

@@ -15,7 +15,7 @@
 
 #include <string>
 
-namespace mac {
+namespace platform {
 
 namespace {
 
@@ -68,4 +68,4 @@ bool Clipboard::HasText() const {
     return [GeneralPasteboard() stringForType:NSPasteboardTypeString] != nil;
 }
 
-}  // namespace mac
+}  // namespace platform

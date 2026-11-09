@@ -10,7 +10,7 @@
 
 #include "platform/seams.h"
 
-namespace mac {
+namespace platform {
 
 // The font the engine takes for a spec, which the drawing side shares,
 // so the measured metrics and the drawn glyphs come from one font.
@@ -56,4 +56,4 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace mac
+}  // namespace platform

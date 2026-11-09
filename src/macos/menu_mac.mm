@@ -37,7 +37,7 @@ NSMenu* BuildSubmenu(const char* title,
     return menu;
 }
 
-namespace mac {
+namespace platform {
 
 namespace {
 
@@ -324,4 +324,4 @@ NSMenu* BuildMainMenu() {
     return mainMenu;
 }
 
-}  // namespace mac
+}  // namespace platform

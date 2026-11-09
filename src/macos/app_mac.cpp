@@ -23,7 +23,7 @@
 #include "textdrag.h"
 #include "textenc.h"
 
-namespace mac {
+namespace platform {
 
 namespace {
 
@@ -1624,9 +1624,9 @@ void App::SetContentView(std::unique_ptr<ContentView> view) {
     contentView_ = std::move(view);
 }
 
-}  // namespace mac
+}  // namespace platform
 
-namespace mac {
+namespace platform {
 
 namespace {
 
@@ -1813,4 +1813,4 @@ bool App::MoveSelectedText(uint32_t drop) {
     return true;
 }
 
-}  // namespace mac
+}  // namespace platform

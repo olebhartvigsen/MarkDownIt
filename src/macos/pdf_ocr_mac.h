@@ -7,10 +7,10 @@
 #include <cstddef>
 #include <string>
 
-namespace mac {
+namespace platform {
 
 // Recognizes the text of one page (0 based). An empty result means the
 // recognizer found nothing or is unavailable.
 std::string RecognizePdfPage(const std::string& path, std::size_t page_index);
 
-}  // namespace mac
+}  // namespace platform

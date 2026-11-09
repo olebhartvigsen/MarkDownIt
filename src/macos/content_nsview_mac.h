@@ -9,12 +9,12 @@
 
 #import <AppKit/AppKit.h>
 
-namespace mac {
+namespace platform {
 
 class App;
 class ContentView;
 
-}  // namespace mac
+}  // namespace platform
 
 // The content view of the window.
 //

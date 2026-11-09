@@ -40,7 +40,7 @@
 #include <memory>
 #include <vector>
 
-namespace mac {
+namespace platform {
 namespace {
 
 // The family name that stands for "the platform's own UI face". Core
@@ -696,4 +696,4 @@ std::string CoreTextEngine::LineTextUtf8(const TextLine& line) {
     return text;
 }
 
-}  // namespace mac
+}  // namespace platform

@@ -20,7 +20,7 @@
 
 #include "platform/seams.h"
 
-namespace mac {
+namespace platform {
 
 // The largest image the loader accepts, in bytes.
 constexpr size_t kMaxImageBytes = 32u * 1024u * 1024u;
@@ -76,4 +76,4 @@ private:
     std::vector<std::unique_ptr<Entry>> entries_;
 };
 
-}  // namespace mac
+}  // namespace platform

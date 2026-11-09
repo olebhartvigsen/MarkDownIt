@@ -9,11 +9,11 @@
 
 #import <AppKit/AppKit.h>
 
-namespace mac {
+namespace platform {
 
 class OutlinePane;
 
-}  // namespace mac
+}  // namespace platform
 
 // The outline view of the window.
 @interface MdOutlineView : NSView

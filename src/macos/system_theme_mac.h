@@ -8,7 +8,7 @@
 @class NSAppearance;
 #endif
 
-namespace mac {
+namespace platform {
 
 // The document's colours: the theme's colour slots, resolved from the
 // platform's own semantic colours so the values follow Light Mode and
@@ -36,4 +36,4 @@ ChromePalette ChromePaletteForAppearance(NSAppearance* appearance);
 ChromePalette SidebarPaletteForAppearance(NSAppearance* appearance);
 #endif
 
-}  // namespace mac
+}  // namespace platform

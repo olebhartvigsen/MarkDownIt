@@ -535,7 +535,7 @@ static std::wstring CounterText(const FindBarModel& model) {
 
 @end
 
-namespace mac {
+namespace platform {
 
 FindBar::FindBar() {
     MdFindBarView* bar = [[MdFindBarView alloc] initWithModel:&model_];
@@ -578,4 +578,4 @@ float FindBar::Height() const {
     return visible_ ? kFindBarHeight : 0.0f;
 }
 
-}  // namespace mac
+}  // namespace platform

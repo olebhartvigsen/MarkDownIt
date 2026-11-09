@@ -14,7 +14,7 @@
 
 #include "findbar_model.h"
 
-namespace mac {
+namespace platform {
 
 class FindBar {
 public:
@@ -65,4 +65,4 @@ private:
     bool visible_ = false;
 };
 
-}  // namespace mac
+}  // namespace platform
