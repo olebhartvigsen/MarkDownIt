@@ -133,12 +133,16 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc" "$BIN" "$DOC" &
+    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,shared" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
-    while [ "$waited" -lt 240 ]; do
-        for name in doc wheel find edit outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap svg-drawio svg-drawio-100 zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc; do
+    # The walk runs one state every five seconds and shared runs last,
+    # so the watcher's budget has to span the whole walk plus startup;
+    # a shared announcement that lands past the budget is a silently
+    # missing capture on the mac side.
+    while [ "$waited" -lt 420 ]; do
+        for name in doc wheel find edit outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap svg-drawio svg-drawio-100 zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc shared; do
             case "$seen" in *" $name "*) continue ;; esac
             if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
                 sleep 0.6
@@ -428,6 +432,26 @@ WALK_EOF
         echo "launch smoke: ten downs walk the $label page to $LAST"
     done
     echo "launch smoke: the arrows, the scroll and typing behave in both views"
+
+    # The shared state drives the shared document controller through
+    # one sequence: a typed line, a bold toggle, an applied heading
+    # level and an inserted table row. The digest line in the trace is
+    # the smoke's hold on it; the cross-platform comparison of the
+    # capture and the transcript digests do the rest.
+    SHARED_LINE=$(grep "qa shared: bytes=" "$LOG" 2>/dev/null | tail -1)
+    if [ -z "$SHARED_LINE" ]; then
+        echo "launch smoke FAILED: the shared state ran no commands"
+        grep "qa shared" "$LOG" | head -3
+        exit 1
+    fi
+    SHARED_EDITING=$(printf '%s' "$SHARED_LINE" \
+        | grep -o "editing=[0-9]*" | cut -d= -f2)
+    if [ "$SHARED_EDITING" != "1" ]; then
+        echo "launch smoke FAILED: the shared state was not in edit mode"
+        echo "$SHARED_LINE"
+        exit 1
+    fi
+    echo "launch smoke: the shared state typed, bolded, re-leveled and added a row"
 
     # The recents page must fit the window and start at its own origin,
     # even when the document behind it was scrolled sideways. The page

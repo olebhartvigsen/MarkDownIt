@@ -3458,6 +3458,11 @@ void AppWindow::QAAdvance() {
     if (qa_index_ >= qa_states_.size()) {
         QALogLine("qa states done");
         KillTimer(hwnd_, kQATimerId);
+        // The shared state below edits the document on purpose; its
+        // edits belong to the capture alone. The walk has no hands to
+        // answer the unsaved-changes prompt, so the window must close
+        // without one.
+        ClearDirty();
         PostMessage(hwnd_, WM_CLOSE, 0, 0);
         return;
     }
@@ -3510,6 +3515,88 @@ void AppWindow::QAAdvance() {
         } else if (state == "tail") {
             heading = 8;
         }
+        if (heading < static_cast<int>(outline_items_.size())) {
+            int blkIdx = layout_cache_.BlockForOffset(
+                outline_items_[heading].offset);
+            if (blkIdx >= 0) {
+                const auto& blocks = layout_cache_.Blocks();
+                float target = blocks[blkIdx].y - drop;
+                if (target < 0.0f) target = 0.0f;
+                scrollY_ = ClampScroll(target);
+                StopScrollAnimation();
+                UpdateScrollInfo();
+                Repaint();
+            }
+        }
+    } else if (state == "shared") {
+        // The shared walk, one capture state per new visible feature
+        // (plan, capture parity): the document controller and the
+        // shared paths are now what the editing commands run through
+        // on both platforms, so the state drives the whole sequence
+        // end to end and the capture compares the two results. A line
+        // typed below the showcase's first table, the typed words
+        // bolded, the "A table" heading moved one level up and a row
+        // inserted under the table's own last row, all through the
+        // same command bodies the ribbon carries.
+        if (IsSourceView()) ToggleSourceView();
+        SetEdit(true);
+        static const char kTypedWords[] = "A line the shared walk typed";
+        const size_t kTypedLen = sizeof(kTypedWords) - 1;
+        const std::string text(buffer_.Text());
+        const size_t third = text.find("| Third");
+        const size_t rowEnd = (third == std::string::npos)
+            ? std::string::npos : text.find('\n', third);
+        const size_t headAt = text.find("### A table");
+        if (third != std::string::npos &&
+                rowEnd != std::string::npos &&
+                headAt != std::string::npos) {
+            const uint32_t typedAt =
+                static_cast<uint32_t>(rowEnd + 1);
+            // Type the line right below the table, through the same
+            // edit controller the keyboard path drives.
+            sel_.anchor = {typedAt};
+            sel_.active = {typedAt};
+            pending_run_active_ = false;
+            pending_run_suffix_bytes_ = 0;
+            editor_.InsertText(kTypedWords);
+            OnBufferChanged();
+            // Bold them through the ribbon's own command.
+            sel_.anchor = {typedAt};
+            sel_.active = {typedAt + static_cast<uint32_t>(kTypedLen)};
+            ToggleBold();
+            // The heading the table sits under, one level up. The
+            // showcase spells it level 3, so level 2 applies on both
+            // sides: the ribbon's own toggle resolves only when the
+            // current level equals the pressed one.
+            sel_.Collapse({static_cast<uint32_t>(headAt + 3)});
+            SetHeading(2);
+            // A row under the table's own last row, through the
+            // table command family. The offsets above moved, so the
+            // row is found again in the fresh text.
+            const std::string after(buffer_.Text());
+            const size_t thirdAfter = after.find("| Third");
+            if (thirdAfter != std::string::npos) {
+                sel_.Collapse({static_cast<uint32_t>(thirdAfter + 2)});
+                AddTableRow(true);
+            }
+            // Leave the pane without a selection band, the way the
+            // other edit states do.
+            sel_.Collapse({typedAt});
+            UpdateCaretPosition();
+            char line[128];
+            snprintf(line, sizeof(line),
+                     "qa shared: bytes=%zu caret=%u editing=%d",
+                     buffer_.Text().size(), sel_.active.offset,
+                     editing_ ? 1 : 0);
+            QALogLine(line);
+        } else {
+            QALogLine("qa shared: showcase anchors missing");
+        }
+        // Frame the shared ground: the heading, the table with its
+        // fresh row and the typed line below, anchored the way the
+        // lower states anchor.
+        int heading = 3;
+        float drop = 24.0f;
         if (heading < static_cast<int>(outline_items_.size())) {
             int blkIdx = layout_cache_.BlockForOffset(
                 outline_items_[heading].offset);

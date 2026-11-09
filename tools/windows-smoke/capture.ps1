@@ -38,7 +38,9 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $log = (Resolve-Path $OutDir).Path + "\walk.log"
 
 # The app walks the states the comparison covers on both platforms.
-$states = @("doc", "find", "edit", "outline", "source", "lower", "end", "tail", "tail2")
+# shared runs last: it types into the document, so every state that
+# must see the pristine page comes first.
+$states = @("doc", "find", "edit", "outline", "source", "lower", "end", "tail", "tail2", "shared")
 $env:MARKDOWNIT_QA_STATES = ($states -join ",")
 $env:MARKDOWNIT_QA_LOG = $log
 

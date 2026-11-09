@@ -35,8 +35,13 @@ from PIL import Image
 # where the two platforms clamp to the last screenful, and their total
 # page heights differ by design (the fonts resolve different leading),
 # so a foot-anchored frame cannot line its first row up.
+# shared is the shared-walk state (plan, batch 5): both platforms type
+# a line, bold it, apply a heading and insert a table row through the
+# shared command paths, so its frame compares the shared result. A
+# state missing from either side's rects is skipped, not failed, so
+# artifacts from a walk that predates a state still compare cleanly.
 STATES = ["doc", "find", "edit", "outline", "source", "lower", "end",
-          "tail", "dark", "settings"]
+          "tail", "shared", "dark", "settings"]
 
 # Tolerances, calibrated on the fonts alone: the row gap differs by up
 # to 5 px (the wrap difference moves band counts by up to 2, the first

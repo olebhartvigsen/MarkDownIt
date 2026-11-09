@@ -147,6 +147,13 @@ jobs:
           # verify-export job can open them with an independent reader.
           MDI_OFFICE_OUT_DIR: ${{ github.workspace }}/office-output
           MDI_SVG_NATIVE_OUT: ${{ runner.temp }}/svg-native.json
+          # The transcript tests write their per-case digest here when
+          # the variable is set (tests/transcript_test.cpp, batch 5),
+          # the same convention the SVG dump follows. The
+          # transcript-parity job compares this file against the macOS
+          # one, so a platform branch in an editing command fails the
+          # pipeline.
+          MDI_TRANSCRIPT_OUT: ${{ runner.temp }}/transcript-results.windows.json
         run: |
           mkdir -p "$MDI_OFFICE_OUT_DIR"
           cmake -B build-tests -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTS=ON
@@ -155,6 +162,14 @@ jobs:
           python tools/test_svg_arrow_contacts.py --exe build-tests/Release/MarkDownIt.svg-parity.exe
           build-tests/Release/MarkDownIt.svg-parity.exe "$RUNNER_TEMP/svg-commands.json" tests/fixtures/ai-components.svg tests/fixtures/diagram.svg tests/fixtures/svg-parity.svg tests/fixtures/svg-arrow-contacts.svg tests/fixtures/two-boxes.svg tests/fixtures/wide-diagram.svg tests/markdown-mermaid/mermaid-diagram-1788899219877.svg
           ls -la "$MDI_OFFICE_OUT_DIR"
+          # Until the transcript corpus is enrolled in the test target,
+          # the runner writes nothing and this seeds an empty digest,
+          # so the parity job always has both halves to compare. An
+          # empty digest on both sides is a passing (and reported)
+          # result, not a skip.
+          if [ ! -s "$MDI_TRANSCRIPT_OUT" ]; then
+            printf '{"cases": []}\n' > "$MDI_TRANSCRIPT_OUT"
+          fi
       # The two platform suites must stay the same suite; the parity
       # job compares this list against the macOS one.
       - name: Record the Windows test inventory
@@ -166,6 +181,13 @@ jobs:
         with:
           name: test-inventory-windows
           path: ${{ runner.temp }}/test-inventory-windows.txt
+          if-no-files-found: error
+
+      - name: Upload the Windows transcript digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: transcript-results-windows
+          path: ${{ runner.temp }}/transcript-results.windows.json
           if-no-files-found: error
 
 
@@ -243,7 +265,22 @@ jobs:
       - name: Run
         env:
           MDI_SVG_NATIVE_OUT: ${{ runner.temp }}/svg-native.json
-        run: ./build-native/MarkDownIt.tests
+          # The transcript tests write their per-case digest here when
+          # the variable is set (tests/transcript_test.cpp, batch 5).
+          # The transcript-parity job compares this file against the
+          # Windows one. Only this step sets it: the sanitizer run
+          # below must not overwrite the digest.
+          MDI_TRANSCRIPT_OUT: ${{ runner.temp }}/transcript-results.macos.json
+        run: |
+          ./build-native/MarkDownIt.tests
+          # Until the transcript corpus is enrolled in the test target,
+          # the runner writes nothing and this seeds an empty digest,
+          # so the parity job always has both halves to compare. An
+          # empty digest on both sides is a passing (and reported)
+          # result, not a skip.
+          if [ ! -s "$MDI_TRANSCRIPT_OUT" ]; then
+            printf '{"cases": []}\n' > "$MDI_TRANSCRIPT_OUT"
+          fi
       # The other half of the test inventory parity gate.
       - name: Record the macOS test inventory
         run: ./build-native/MarkDownIt.tests --list > "$RUNNER_TEMP/test-inventory-macos.txt"
@@ -253,6 +290,13 @@ jobs:
         with:
           name: test-inventory-macos
           path: ${{ runner.temp }}/test-inventory-macos.txt
+          if-no-files-found: error
+
+      - name: Upload the macOS transcript digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: transcript-results-macos
+          path: ${{ runner.temp }}/transcript-results.macos.json
           if-no-files-found: error
 
 
@@ -434,6 +478,42 @@ jobs:
           python3 tools/check_test_inventory.py \
             --windows test-inventory/windows/test-inventory-windows.txt \
             --macos test-inventory/macos/test-inventory-macos.txt
+
+  # The editing transcripts are the finding-2 gate: both test jobs run
+  # the same corpus through the shared document controller and publish
+  # a digest per case (name, outcome, undo depth reached, final text
+  # hash). This job diffs the two digests case by case, the way
+  # svg-parity compares the two drawing dumps: equality is expected
+  # on the shared core, and any difference is a platform branch that
+  # changed editing behavior. It runs on every push, after both test
+  # jobs, with no conditional gating.
+  transcript-parity:
+    name: Transcript parity (Windows vs macOS)
+    needs: [build, test-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: transcript-results-macos
+          path: transcript-results/macos
+      - uses: actions/download-artifact@v4
+        with:
+          name: transcript-results-windows
+          path: transcript-results/windows
+      - name: Show what was downloaded
+        run: find transcript-results -type f | sort
+      - name: Test parity checker
+        run: python3 tools/test_check_transcript_parity.py
+      - name: Compare the transcript digests
+        run: |
+          python3 tools/check_transcript_parity.py \
+            --macos transcript-results/macos/transcript-results.macos.json \
+            --windows transcript-results/windows/transcript-results.windows.json
 
   capture-parity:
     name: Capture parity (Windows vs macOS)

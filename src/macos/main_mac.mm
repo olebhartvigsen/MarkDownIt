@@ -674,6 +674,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)qaStep:(NSArray<NSString*>*)states at:(NSUInteger)index {
     if (index >= states.count) {
         platform::TraceMac("qa states done");
+        // The shared state edits the document on purpose; its edits
+        // belong to the capture alone. The walk has no hands for the
+        // discard prompt, so the document is left marked clean before
+        // the app terminates, the way the keys states exit.
+        app_->MarkClean();
+        [window_ setDocumentEdited:NO];
         // One more beat for the last capture, then the walk is over.
         dispatch_after(
             dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4 * NSEC_PER_SEC)),
@@ -838,6 +844,79 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         }
         if (sourceView_) [self OnToggleSourceView];
         [self qaKeysRun:"doc"];
+    } else if ([state isEqualToString:@"shared"]) {
+        // The shared walk, one capture state per new visible feature
+        // (plan, capture parity): the same command sequence the
+        // Windows walk drives, through the command paths the menu and
+        // the toolbar carry, so the capture compares the shared
+        // controller and the two command walks end to end. A line
+        // typed below the showcase's first table, the typed words
+        // bolded, the "A table" heading moved one level up and a row
+        // inserted under the table's own last row.
+        [window_ makeKeyAndOrderFront:nil];
+        [window_ makeFirstResponder:view_];
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            // The state opens the showcase itself, so it is robust
+            // wherever the walk lists it, and it starts from the
+            // document every capture expects.
+            app_->MarkClean();
+            [window_ setDocumentEdited:NO];
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"layout-showcase.md"]
+                    UTF8String])];
+        }
+        if (sourceView_) [self OnToggleSourceView];
+        if (!app_->Editing()) [self OnToggleEditMode];
+        const std::string words("A line the shared walk typed");
+        const std::string text(app_->buffer().Text());
+        const size_t third = text.find("| Third");
+        const size_t rowEnd = (third == std::string::npos)
+            ? std::string::npos : text.find('\n', third);
+        const size_t headAt = text.find("### A table");
+        if (third != std::string::npos &&
+                rowEnd != std::string::npos &&
+                headAt != std::string::npos) {
+            const uint32_t typedAt =
+                static_cast<uint32_t>(rowEnd + 1);
+            // Type the line right below the table, through the view
+            // the reader types in.
+            app_->SetSelection(typedAt, typedAt);
+            [view_ insertText:
+                [NSString stringWithUTF8String:words.c_str()]];
+            // Bold them through the menu's own command.
+            app_->SetSelection(typedAt,
+                               typedAt + static_cast<uint32_t>(
+                                             words.size()));
+            [self OnToggleBold];
+            // The heading the table sits under, one level up. The
+            // showcase spells it level 3, so level 2 applies on both
+            // sides: the Windows ribbon is the side that toggles, and
+            // it resolves only when the current level equals the
+            // pressed one.
+            app_->SetCaret(static_cast<uint32_t>(headAt + 3));
+            [self OnHeading:2];
+            // A row under the table's own last row. The offsets above
+            // moved, so the row is found again in the fresh text.
+            const size_t thirdAfter =
+                app_->buffer().Text().find("| Third");
+            if (thirdAfter != std::string::npos) {
+                app_->SetCaret(static_cast<uint32_t>(thirdAfter + 2));
+                [self OnAddTableRow:YES];
+            }
+            // Leave the pane without a selection band.
+            app_->SetCaret(typedAt);
+            [view_ caretMoved];
+            platform::TraceMac(
+                "qa shared: bytes=%zu caret=%u editing=%d",
+                app_->buffer().Text().size(),
+                app_->selection().active.offset,
+                app_->Editing() ? 1 : 0);
+        } else {
+            platform::TraceMac("qa shared: showcase anchors missing");
+        }
+        [self qaScrollToHeading:3 drop:24.0f];
     } else if ([state isEqualToString:@"welcome-scrolled"]) {
         // The reader scrolls a page sideways, then asks for the recents
         // page. It has to fit the window and start at its own origin.
