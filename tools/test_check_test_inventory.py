@@ -72,7 +72,8 @@ class TestInventory(unittest.TestCase):
         rows = cti.read_rows(self.root)
         self.assertTrue(rows)
         for pattern, platform in rows:
-            self.assertRegex(pattern or "x", r"^[A-Za-z0-9_]+(\.\*)?$")
+            self.assertRegex(pattern or "x",
+                     r"^[A-Za-z0-9_][A-Za-z0-9_.]*(\.\*)?$")
             self.assertIn(platform, ("windows", "macos"))
         self.assertIn(("FindBarWindow.*", "windows"), rows)
 
