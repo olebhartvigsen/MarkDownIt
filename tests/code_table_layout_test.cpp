@@ -19,7 +19,6 @@ const LayoutMetrics kM = BaseMetrics();
 const Palette kPal = BasePalette();
 // One body line of the theme metrics, the table row height unit.
 const float kBodyLine = kM.bodyLineHeight * kM.bodyFontSize * kPt;
-using display::FillRect;
 using display::PushClip;
 using display::Text;
 // The checked display::Item alternatives, by variant index.
@@ -148,14 +147,14 @@ TEST(CodeTableLayout, TableSingleMeasureAndPaintOrder) {
                             kClip, kText, kPop, kClip, kText, kText, kPop};
     for (size_t i = 0; i < rig.list.items.size(); ++i)
         EXPECT_EQ(rig.list.items[i].index(), order[i]);
-    const FillRect& zebra = At<FillRect>(rig.list, 0);
+    const display::FillRect& zebra = At<display::FillRect>(rig.list, 0);
     NEAR(zebra.rect.y, 36.0f);  // the body row only, never the header
     NEAR(zebra.color.r, kPal.tableRowAlt.r);
     for (size_t i = 1; i < 10; ++i)  // exactly nine hairlines
-        NEAR(At<FillRect>(rig.list, i).color.r, kPal.tableBorder.r);
-    NEAR(At<FillRect>(rig.list, 1).rect.y, 0.0f);   // the first top
-    NEAR(At<FillRect>(rig.list, 6).rect.y, 95.0f);  // the second row
-    const FillRect& vlast = At<FillRect>(rig.list, 9);
+        NEAR(At<display::FillRect>(rig.list, i).color.r, kPal.tableBorder.r);
+    NEAR(At<display::FillRect>(rig.list, 1).rect.y, 0.0f);   // the first top
+    NEAR(At<display::FillRect>(rig.list, 6).rect.y, 95.0f);  // the second row
+    const display::FillRect& vlast = At<display::FillRect>(rig.list, 9);
     NEAR(vlast.rect.x, 399.0f);  // right minus one, on the body row
     NEAR(vlast.rect.y, 36.0f);
     NEAR(vlast.rect.height, 60.0f);
