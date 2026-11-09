@@ -22,6 +22,10 @@ set(MARKDOWNIT_CORE_SOURCES
     src/parser.cpp
     src/textbuffer.cpp
     src/layout/break_heading_layout.cpp
+    src/layout/text_runs.cpp
+    src/layout/paragraph_layout.cpp
+    src/layout/quote_layout.cpp
+    src/layout/list_layout.cpp
     src/layoutcache.cpp
     src/editcontroller.cpp
     src/navigation.cpp

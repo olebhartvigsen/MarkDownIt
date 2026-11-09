@@ -14,9 +14,41 @@
 #include "platform/seams.h"
 #include "theme.h"
 
+#include <functional>
+#include <memory>
+#include <string>
 #include <vector>
 
 namespace layout {
+
+// The intrinsic size of an image, which the image caches learn as
+// they decode; unknown sizes fall back to the placeholder height.
+struct ImageSize {
+    float width = 0.0f;
+    float height = 0.0f;
+    bool known = false;
+};
+
+// One laid out table: the column split, the row heights and the
+// cells with their own lines, the data the caret layer needs for
+// cell addressing. Column widths share the column equally today, the
+// same rule both renderers apply.
+struct LaidTableCell {
+    std::vector<platform::TextLine> lines;
+    float x = 0.0f;
+    float y = 0.0f;
+    float width = 0.0f;
+    float height = 0.0f;
+    uint32_t srcCellStart = 0;
+    uint32_t srcCellEnd = 0;
+};
+
+struct LaidTable {
+    float colW = 0.0f;
+    size_t columnCount = 0;
+    std::vector<float> rowHeights;
+    std::vector<std::vector<LaidTableCell>> cells;
+};
 
 // One laid out block: what the caret and selection layers need while
 // plan task 3.3 still lives in the renderers. The fields mirror the
@@ -36,6 +68,17 @@ struct LaidBlock {
     // content of this block starts, and how long it is.
     uint32_t srcOffset = 0;
     uint32_t srcLength = 0;
+    // The marker of a list item: the bullet or the ordered counter,
+    // resolved to text once, in shared layout, the way paint must not
+    // have to know how to count any more.
+    std::string markerText;
+    bool task = false;
+    // A table, when this block is one.
+    std::shared_ptr<LaidTable> table;
+    // The images of a text block, their reserved heights stacked above
+    // the text, and the total height they charge.
+    std::vector<std::string> imageUrls;
+    float imagesHeight = 0.0f;
 };
 
 // The result of one layout pass.
@@ -56,9 +99,43 @@ struct LayoutInput {
     float zoom = 1.0f;
     bool editing = false;
     platform::TextEngine* engine = nullptr;
+    // Answers the intrinsic size of an image by its url; empty means
+    // sizes are unknown yet and the layout charges the 100 DIP
+    // placeholder, like both renderers do today.
+    std::function<ImageSize(const std::string&)> imageSize;
 };
 
-// Lays out the block kinds this module owns. See the header comment.
+// The per type layout entry points. Each one receives the walk state
+// and advances *y by its own height: the caller owns the gaps between
+// blocks, the function owns the inside of the block. A function returns
+// a LaidBlock with kind set and the display list fed.
+struct LayoutCtx {
+    const LayoutInput* in = nullptr;
+    display::DisplayList* list = nullptr;
+};
+
+LaidBlock LayoutBreak(const LayoutCtx& ctx, const Node& node,
+                      uint32_t nodeIndex, float* y);
+LaidBlock LayoutHeading(const LayoutCtx& ctx, const Node& node,
+                        uint32_t nodeIndex, float* y);
+LaidBlock LayoutParagraph(const LayoutCtx& ctx, const Node& node,
+                          uint32_t nodeIndex, float* y);
+LaidBlock LayoutListBlock(const LayoutCtx& ctx, const Node& node,
+                          uint32_t nodeIndex, float* y);
+LaidBlock LayoutQuote(const LayoutCtx& ctx, const Node& node,
+                      uint32_t nodeIndex, float* y);
+LaidBlock LayoutCodeBlock(const LayoutCtx& ctx, const Node& node,
+                          uint32_t nodeIndex, float* y);
+LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
+                          uint32_t nodeIndex, float* y);
+LaidBlock LayoutSvgBlock(const LayoutCtx& ctx, const Node& node,
+                         uint32_t nodeIndex, float* y);
+LaidBlock LayoutMermaidBlock(const LayoutCtx& ctx, const Node& node,
+                             uint32_t nodeIndex, float* y);
+
+// The walk: gaps, dispatch to the per type layouts, the block records.
+// Today the walk owns the break and heading; the other kinds arrive
+// with their modules and get their case here, one per batch step.
 DocumentLayout LayoutDocument(const LayoutInput& in);
 
 }  // namespace layout
