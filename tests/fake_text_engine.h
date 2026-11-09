@@ -5,8 +5,10 @@
 // mode can move a golden.
 //
 // Offsets count UTF-8 code points, so a hit test or a caret rect is the
-// same number on both runners. Real engines may use other units; this
-// one defines its own and says so here.
+// same number on both runners. Offsets count UTF-8 bytes, the
+// documented hit test unit of the seam: one position per byte, a
+// multibyte character one glyph that advances the offset by its
+// byte length.
 
 #ifndef MARKDOWNIT_TESTS_FAKE_TEXT_ENGINE_H_
 #define MARKDOWNIT_TESTS_FAKE_TEXT_ENGINE_H_
@@ -73,44 +75,49 @@ public:
 
     uint32_t HitTestOffset(const platform::TextLine& line, float x,
                            bool* outTrailing) const override {
+        // Bytes are the unit. A multibyte character is one glyph; the
+        // hit answers the byte offset where the glyph it lands in
+        // starts, and the walk never stops inside a character.
         if (outTrailing) *outTrailing = false;
-        size_t seen = 0;
+        size_t i = 0;
         float acc = 0.0f;
         for (const platform::GlyphRun& run : line.runs) {
             for (unsigned char c : run.text) {
-                if ((c & 0xC0) != 0x80) {
+                const bool lead = (c & 0xC0) != 0x80;
+                if (lead) {
                     if (acc + kGlyphWidth > x) {
                         if (outTrailing)
-                            *outTrailing = (x - acc) > kGlyphWidth * 0.5f;
-                        return (uint32_t)seen;
+                            *outTrailing =
+                                (x - acc) > kGlyphWidth * 0.5f;
+                        return (uint32_t)i;
                     }
                     acc += kGlyphWidth;
-                    ++seen;
                 }
+                ++i;
             }
         }
-        return (uint32_t)seen;
+        return (uint32_t)i;
     }
 
     platform::Rect OffsetToRect(const platform::TextLine& line,
                                 uint32_t offset) const override {
-        // Walk to the offset across runs, counting code points, and
-        // take the position where it lands.
-        uint32_t seen = 0;
+        // Walk to the byte offset across runs and take the glyph it
+        // lands in. A continuation byte belongs to its character's
+        // glyph, so it answers the same rect as its lead byte.
+        size_t i = 0;
         float x = 0.0f;
         platform::Rect rect;
         rect.height = line.height;
         for (const platform::GlyphRun& run : line.runs) {
             for (unsigned char c : run.text) {
-                if ((c & 0xC0) != 0x80) {
-                    if (seen == offset) {
-                        rect.x = x;
-                        rect.width = kGlyphWidth;
-                        return rect;
-                    }
-                    ++seen;
-                    x += kGlyphWidth;
+                const bool lead = (c & 0xC0) != 0x80;
+                if (i == offset) {
+                    rect.x = x;
+                    rect.width = kGlyphWidth;
+                    return rect;
                 }
+                ++i;
+                if (lead) x += kGlyphWidth;
             }
         }
         rect.x = x;  // at or past the end: the trailing edge

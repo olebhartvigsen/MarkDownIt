@@ -112,6 +112,21 @@ void CheckTextEngine(TextEngine& engine) {
     EXPECT_EQ(wrappedText, sourceText);
     EXPECT_LE(wrappedWidth, unbounded[0].width + 0.001f);
 
+    // Offsets are UTF-8 bytes: the multibyte line draws four
+    // characters in eight bytes, and the trailing hit answers the
+    // byte count, not the character count.
+    std::vector<GlyphRun> wide = {MakeRun("a\xC3\xA9\xF0\x9F\x8E\x89"
+                                         "b")};
+    engine.BeginLayout();
+    std::vector<TextLine> wideLines =
+        engine.MeasureWrapped(wide, 0.0f, 0.0f);
+    const platform::Rect wideEnd = engine.OffsetToRect(wideLines[0], 8);
+    bool wideTrailing = false;
+    const uint32_t wideHit = engine.HitTestOffset(wideLines[0],
+                                                  wideEnd.x + 999.0f,
+                                                  &wideTrailing);
+    EXPECT_EQ(wideHit, static_cast<uint32_t>(8));
+
     // Hit test and caret rect agree about position and direction.
     const TextLine& line = unbounded[0];
     const platform::Rect atZero = engine.OffsetToRect(line, 0);

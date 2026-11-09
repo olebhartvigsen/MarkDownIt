@@ -81,6 +81,29 @@ float WidestLineHeight(const std::vector<GlyphRun>& runs) {
     return h > 0.0f ? h : 12.0f;  // an empty line still needs a height
 }
 
+
+// Maps every UTF-16 code unit of the run's UTF-8 bytes onto the byte
+// offset of the character it belongs to, and one past the end onto the
+// total length: the unit contract of the seam's hit test, answered in
+// the bytes of run.text. A low surrogate names its pair's lead byte.
+std::vector<uint32_t> U16ToByte(const std::string& text) {
+    std::vector<uint32_t> map;
+    map.reserve(text.size() + 1);
+    size_t i = 0;
+    while (i < text.size()) {
+        const unsigned char c = (unsigned char)text[i];
+        size_t len = 1;
+        if ((c & 0xE0) == 0xC0) len = 2;
+        else if ((c & 0xF0) == 0xE0) len = 3;
+        else if ((c & 0xF8) == 0xF0) len = 4;
+        const uint32_t lead = (uint32_t)i;
+        for (size_t k = 0; k < len; ++k) map.push_back(lead);
+        i += len;
+    }
+    map.push_back((uint32_t)text.size());
+    return map;
+}
+
 }  // namespace
 
 DWriteEngine::DWriteEngine() {
@@ -214,15 +237,19 @@ uint32_t DWriteEngine::HitTestOffset(const TextLine& line, float x,
     if (outTrailing) *outTrailing = false;
     // Walk the runs with DirectWrite's own positions: every run
     // starts at run.x, and the end of a run is the start plus the
-    // advance width DirectWrite measured for its text.
-    uint32_t seen = 0;
+    // advance width DirectWrite measured for its text. Offsets are
+    // answered in UTF-8 bytes, the seam's contract unit.
+    uint32_t seenBytes = 0;
     for (const GlyphRun& run : line.runs) {
         const std::wstring text = ToUtf16(run.text);
         if (text.empty()) continue;
         const float runStart = run.x;
         const float runWidth = MeasureRun(run, 100000.0f);
         if (x < runStart + runWidth) {
-            // Find the code unit whose position first reaches x.
+            // Find the code unit whose position first reaches x, then
+            // name it in bytes through the mapping above.
+            const std::vector<uint32_t> u16ToByte =
+                U16ToByte(run.text);
             float prev = runStart;
             for (uint32_t u = 1; u <= text.size(); ++u) {
                 const float pos = runStart + PositionInRun(run,
@@ -230,13 +257,13 @@ uint32_t DWriteEngine::HitTestOffset(const TextLine& line, float x,
                 if (pos >= x) {
                     if (outTrailing)
                         *outTrailing = (x - prev) > ((pos - prev) * 0.5f);
-                    return seen + u;
+                    return seenBytes + u16ToByte[u];
                 }
                 prev = pos;
             }
-            return seen + (uint32_t)text.size();
+            return seenBytes + (uint32_t)run.text.size();
         }
-        seen += (uint32_t)text.size();
+        seenBytes += (uint32_t)run.text.size();
     }
     return seen;
 }
@@ -245,17 +272,25 @@ Rect DWriteEngine::OffsetToRect(const TextLine& line,
                                 uint32_t offset) const {
     Rect rect;
     rect.height = line.height;
-    uint32_t seen = 0;
+    // The offset names a byte in run.text. Find the run, then the
+    // code unit whose byte the offset is, and answer its position.
+    uint32_t seenBytes = 0;
     for (const GlyphRun& run : line.runs) {
-        const std::wstring text = ToUtf16(run.text);
-        if (offset < seen + text.size()) {
-            const float inside = PositionInRun(run, 100000.0f,
-                                               offset - seen);
-            rect.x = run.x + inside;
-            rect.width = 1.0f;  // a caret's sliver, not a glyph box
-            return rect;
+        if (offset < seenBytes + run.text.size()) {
+            const std::vector<uint32_t> u16ToByte =
+                U16ToByte(run.text);
+            for (uint32_t u = 0; u + 1 < u16ToByte.size(); ++u) {
+                if (u16ToByte[u] > offset - seenBytes) break;
+                if (u + 1 == u16ToByte.size() - 1 ||
+                    u16ToByte[u + 1] > offset - seenBytes) {
+                    const float inside = PositionInRun(run, 100000.0f, u);
+                    rect.x = run.x + inside;
+                    rect.width = 1.0f;  // a caret's sliver
+                    return rect;
+                }
+            }
         }
-        seen += (uint32_t)text.size();
+        seenBytes += (uint32_t)run.text.size();
     }
     // At or past the end: the trailing edge of the last run.
     float endX = 0.0f;
