@@ -321,8 +321,12 @@ std::vector<TextLine> DWriteEngine::MeasureWrapped(
     UINT32 cursor = 0;  // the UTF-16 index the current line starts at
     size_t slicedBytes = 0;
     for (const DWRITE_LINE_METRICS& m : lineMetrics) {
+        // DirectWrite's length stops before the line ending characters
+        // (they ride the newlineLength count), and the account must
+        // hold every byte, so the break characters belong to this
+        // line's last slice, the same piece the fake keeps them with.
         const UINT32 start = cursor;
-        const UINT32 end = start + m.length;
+        const UINT32 end = start + m.length + m.newLineLength;
         cursor = end;
         TextLine out;
         out.height = m.height > 0.0f ? m.height : WidestLineHeight(runs);
