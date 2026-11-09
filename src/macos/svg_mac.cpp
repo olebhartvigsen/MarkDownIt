@@ -301,6 +301,20 @@ SvgDoc::Placement ReadPlacement(const pugi::xml_node& node,
     return placement;
 }
 
+// A length written as text: "12px", "1.2em" and "12" all name a number,
+// and the unit is dropped, which is what this parser works in.
+float ReadLengthText(const std::string& text) {
+    const char* p = text.c_str();
+    while (*p && !std::isdigit(static_cast<unsigned char>(*p)) && *p != '-' &&
+           *p != '.' && *p != '+') {
+        ++p;
+    }
+    char* end = nullptr;
+    const double value = std::strtod(p, &end);
+    if (end == p) return 0.0f;
+    return static_cast<float>(value);
+}
+
 // One declaration out of an inline style, trimmed; empty when absent.
 std::string CssValue(const std::string& style, const std::string& property) {
     const std::string key = property + ":";
@@ -379,7 +393,9 @@ void ReadHtmlLabel(const pugi::xml_node& node, HtmlLabel* label) {
             }
             const std::string size = CssValue(style, "font-size");
             if (!size.empty()) {
-                const float value = ReadLength(size.c_str(), 0.0f);
+                // "12px" and "12" both name a size; the unit is dropped by
+                // the number reader.
+                const float value = ReadLengthText(size);
                 if (value > 0.0f) {
                     label->fontSize = value;
                     label->valid = true;
