@@ -11,6 +11,15 @@
 
 #include "platform/seams.h"
 
+// windows.h turns DrawText into DrawTextW through a macro, which
+// rips the seam's virtual method out of the class and leaves its
+// definition as a free function. The macro brings nothing this file
+// uses, so it goes away right here, before any member is declared.
+// The .cpp repeats the removal after its own platform includes.
+#ifdef DrawText
+#undef DrawText
+#endif
+
 struct ID2D1RenderTarget;
 struct ID2D1SolidColorBrush;
 struct IDWriteFactory;

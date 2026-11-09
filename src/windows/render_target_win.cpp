@@ -13,6 +13,13 @@
 #endif
 
 #include <algorithm>
+
+// The platform headers above re-define the DrawText macro after the
+// header removed it, and the method definitions here must keep the
+// seam's spelling.
+#ifdef DrawText
+#undef DrawText
+#endif
 #include <cctype>
 #include <cmath>
 
