@@ -107,9 +107,8 @@ constexpr float kReadBlankLineStripDip = 4.0f;
 constexpr float kPtToDip = 96.0f / 72.0f;
 
 // The rule room under an H1 or H2: GitHub pads the heading by .3em
-// and draws a 1px border under the padding.
-constexpr float kHeadingRulePadRatio = 0.3f;
-constexpr float kHeadingRuleThickness = 1.0f;
+// and draws a 1px border under the padding. Those two values live in
+// LayoutMetrics (theme.h), shared with the Windows renderer.
 
 // The inline code card: .4em of horizontal padding, .2em of vertical
 // padding and a 6px corner radius, the GitHub values.
@@ -824,8 +823,9 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
             // text: .3em of padding plus a 1px border, inside the
             // block so the following gap stays the CSS margin.
             if (level <= 2 && !block.lines.empty()) {
-                block.height += kHeadingRulePadRatio * size * kPtToDip * zoom_ +
-                                kHeadingRuleThickness * zoom_;
+                block.height +=
+                    metrics_.headingRulePadRatio * size * kPtToDip * zoom_ +
+                    metrics_.headingRuleThickness * zoom_;
             }
             block.height += ChargeForImages(&block);
             break;
@@ -957,7 +957,7 @@ void MacRenderer::LayoutBlock(const Node& node, float x, float width,
             // The text wraps in the space that is left after the marker
             // gutter: the same reservation the Windows layout makes.
             const float markerW =
-                metrics_.listIndent * 0.6f + metrics_.markerGutter;
+                metrics_.listIndent * metrics_.markerRatio + metrics_.markerGutter;
             block.lines = engine_->MeasureWrapped(runs, drawW - markerW,
                                                   0.0f);
             ApplyLineSpacing(&block.lines, size, metrics_.bodyLineHeight);
@@ -1165,14 +1165,9 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
                 }
             } else if (taskMark < 0) {
                 // The marker changes with the depth, the pattern the
-                // guideline asks of nesting and the platform's own
-                // bullets.
-                static const char* const kBullets[3] = {
-                    "\xE2\x80\xA2 ",  // U+2022 bullet
-                    "\xE2\x97\xA6 ",  // U+25E6 white bullet
-                    "\xE2\x96\xAA ",  // U+25AA small black square
-                };
-                marker = kBullets[((depth % 3) + 3) % 3];
+                // guideline asks of nesting. The table is the shared
+                // one in theme.h, so the ports cannot drift.
+                marker = ListMarkerUtf8(depth);
             }
         } else {
             listCounter = 0;
@@ -1391,7 +1386,7 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset,
             // in the gutter, clipped to it the way the Windows renderer
             // clips its marker layout.
             const float markerW =
-                metrics_.listIndent * 0.6f + metrics_.markerGutter;
+                metrics_.listIndent * metrics_.markerRatio + metrics_.markerGutter;
             float textHeight = 0.0f;
             for (const TextLine& line : block.lines) {
                 textHeight += line.height;
@@ -1403,9 +1398,9 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset,
                 // the bullet would sit: an empty box for an open task,
                 // a box with a check for a done one. The shape carries
                 // the state, not the colour.
-                float box = markerW - 3.0f;
-                if (box > 13.0f) box = 13.0f;
-                if (box < 9.0f) box = 9.0f;
+                float box = markerW - metrics_.taskBoxInset;
+                if (box > metrics_.taskBoxMax) box = metrics_.taskBoxMax;
+                if (box < metrics_.taskBoxMin) box = metrics_.taskBoxMin;
                 const float lineH = block.lines.empty()
                                         ? metrics_.bodyFontSize
                                         : block.lines.front().height;
@@ -1497,9 +1492,9 @@ void MacRenderer::PaintBlock(const LaidOutBlock& block, float scrollOffset,
                 Rect rule;
                 rule.x = block.x;
                 rule.y = top + block.imagesHeight + textHeight +
-                         kHeadingRulePadRatio * headingDip;
+                         metrics_.headingRulePadRatio * headingDip;
                 rule.width = block.width;
-                rule.height = kHeadingRuleThickness * zoom_;
+                rule.height = metrics_.headingRuleThickness * zoom_;
                 target_->FillRect(rule, ToColor(palette_.rule));
             }
             break;
@@ -1848,7 +1843,7 @@ float MacRenderer::TextX(const LaidOutBlock& block) const {
     if (block.kind == BlockKind::List) {
         // The text sits after the marker gutter, the same reservation
         // the layout makes.
-        return block.x + metrics_.listIndent * 0.6f + metrics_.markerGutter;
+        return block.x + metrics_.listIndent * metrics_.markerRatio + metrics_.markerGutter;
     }
     if (block.kind == BlockKind::CodeBlock) {
         return block.x + metrics_.codePad;
@@ -1866,7 +1861,7 @@ float MacRenderer::TextTop(const LaidOutBlock& block) const {
 float MacRenderer::TextWidth(const LaidOutBlock& block) const {
     if (block.kind == BlockKind::List) {
         return block.width -
-               (metrics_.listIndent * 0.6f + metrics_.markerGutter);
+               (metrics_.listIndent * metrics_.markerRatio + metrics_.markerGutter);
     }
     if (block.kind == BlockKind::CodeBlock) {
         return block.width - metrics_.codePad * 2.0f;

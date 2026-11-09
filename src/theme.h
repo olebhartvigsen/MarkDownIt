@@ -13,6 +13,7 @@
 
 #ifdef _WIN32
 #include <d2d1.h>
+#include <string>
 #else
 #include <cstdint>
 #include <string>
@@ -115,6 +116,19 @@ struct LayoutMetrics {
     // List.
     float listIndent;    // per depth level
     float markerGutter;  // extra space after marker
+    float markerRatio;   // marker x = listIndent * this + markerGutter
+
+    // Task checkbox edge, in the already-scaled paint space: the paint
+    // pass derives it from the marker width, so it does not ride the
+    // zoom scaling in ScaleMetrics.
+    float taskBoxInset;  // space between box edge and the marker edge
+    float taskBoxMin;    // smallest drawn edge
+    float taskBoxMax;    // largest drawn edge
+
+    // Heading rule (the line under H1 and H2). The pad ratio rides the
+    // heading font size; the thickness is zoomed at the paint site.
+    float headingRulePadRatio;
+    float headingRuleThickness;
 
     // Table.
     float cellPadX;
@@ -129,6 +143,46 @@ struct LayoutMetrics {
     ThemeFontName bodyFont;
     ThemeFontName codeFont;
 };
+
+// The unordered list marker glyphs, one table for both renderers so
+// the cycling cannot drift between the ports: a filled bullet, a
+// hollow bullet, a small square. U+2022, U+25E6, U+25AA.
+inline constexpr char16_t kListBulletGlyphs[3] = {
+    u'\u2022', u'\u25E6', u'\u25AA',
+};
+
+inline int ListBulletIndex(int depth) { return ((depth % 3) + 3) % 3; }
+
+// The marker the Windows paint pass draws, UTF-16 for DirectWrite.
+inline std::u16string ListMarker16(int depth) {
+    std::u16string s;
+    s += kListBulletGlyphs[ListBulletIndex(depth)];
+    s += u' ';
+    return s;
+}
+
+// The same marker for the Windows measure pass, UTF-32, which reserves
+// one extra space after the glyph.
+inline std::u32string ListMarker32(int depth) {
+    std::u32string s;
+    s += static_cast<char32_t>(kListBulletGlyphs[ListBulletIndex(depth)]);
+    s += U' ';
+    s += U' ';
+    return s;
+}
+
+// The same marker for the mac paint pass, UTF-8 for Core Text. Every
+// glyph sits in the three-byte UTF-8 range, so no wide encoder is
+// needed.
+inline std::string ListMarkerUtf8(int depth) {
+    std::string s;
+    const char16_t cp = kListBulletGlyphs[ListBulletIndex(depth)];
+    s += static_cast<char>(0xE0 | (cp >> 12));
+    s += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+    s += static_cast<char>(0x80 | (cp & 0x3F));
+    s += ' ';
+    return s;
+}
 
 struct Palette {
     ThemeColor textPrimary;
@@ -200,6 +254,16 @@ inline LayoutMetrics BaseMetrics() {
     // clear of the bullet.
     m.listIndent = 20.0f;
     m.markerGutter = 4.0f;
+    // The marker sits 0.6 of the indent in from the text edge, and the
+    // task checkbox runs 9 to 13 DIP centred on the first line.
+    m.markerRatio = 0.6f;
+    m.taskBoxInset = 3.0f;
+    m.taskBoxMin = 9.0f;
+    m.taskBoxMax = 13.0f;
+    // The heading rule pads 0.3 of the heading size above it and rides
+    // a 1 DIP stroke.
+    m.headingRulePadRatio = 0.3f;
+    m.headingRuleThickness = 1.0f;
     // GitHub's table cells: 6px above and below, 13px at the sides.
     m.cellPadX = 13.0f;
     m.cellPadY = 6.0f;
@@ -238,6 +302,9 @@ inline LayoutMetrics ScaleMetrics(const LayoutMetrics& base, float zoom) {
     m.quoteBarWidth *= zoom;
     m.listIndent *= zoom;
     m.markerGutter *= zoom;
+    // The remaining list constants are ratios, or already live in the
+    // scaled paint space where the renderers apply their own zoom, so
+    // they hold their value here.
     m.cellPadX *= zoom;
     m.cellPadY *= zoom;
     // Line height multipliers are unitless ratios, not DIPs.

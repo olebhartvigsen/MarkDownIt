@@ -48,3 +48,37 @@ TEST(Theme, FindMatchStaysBelowSelectionWeight) {
     EXPECT_GT(DistanceFromWhite(palette.findCurrentMatchBg),
               DistanceFromWhite(palette.selectionBg) * 0.5);
 }
+
+
+// Port alignment plan 1.4: the marker geometry and the bullet glyphs are
+// shared constants in theme.h, and both renderers read them, so the
+// ports cannot drift. The test pins the values a renderer change would
+// have to break on purpose.
+TEST(Theme, SharedMarkerMetricsArePinned) {
+    const LayoutMetrics m = BaseMetrics();
+    EXPECT_NEAR(m.markerRatio, 0.6f, 1e-6f);
+    EXPECT_NEAR(m.taskBoxInset, 3.0f, 1e-6f);
+    EXPECT_NEAR(m.taskBoxMin, 9.0f, 1e-6f);
+    EXPECT_NEAR(m.taskBoxMax, 13.0f, 1e-6f);
+    EXPECT_NEAR(m.headingRulePadRatio, 0.3f, 1e-6f);
+    EXPECT_NEAR(m.headingRuleThickness, 1.0f, 1e-6f);
+}
+
+TEST(Theme, MarkerGlyphsCycleByDepth) {
+    // Filled bullet, hollow bullet, small square, then the cycle turns.
+    const char16_t first[3] = {0x2022, 0x25E6, 0x25AA};
+    for (int depth = -3; depth <= 7; ++depth) {
+        const int expected = ((depth % 3) + 3) % 3;
+        ASSERT_EQ(ListMarker16(depth)[0], first[expected]);
+        ASSERT_EQ(static_cast<char32_t>(ListMarker32(depth)[0]),
+                  static_cast<char32_t>(first[expected]));
+        // Every UTF-8 marker is the glyph plus one space, and every
+        // marker form names the same glyph for the same depth.
+        const std::string utf8 = ListMarkerUtf8(depth);
+        ASSERT_EQ(utf8.size(), static_cast<size_t>(4));
+        ASSERT_EQ(ListBulletIndex(depth), expected);
+    }
+    std::u16string a = ListMarker16(0);
+    std::u16string b = ListMarker16(3);
+    EXPECT_EQ(a, b);
+}

@@ -24,7 +24,8 @@ static const float kPtToDip = 96.0f / 72.0f;
 // plus a 1px border. Other levels reserve nothing.
 static float HeadingRuleExtra(const LayoutMetrics& m, int level, float zoom) {
     if (level < 1 || level > 2) return 0.0f;
-    return 0.3f * m.headingSizes[level] * kPtToDip * zoom + 1.0f * zoom;
+    return m.headingRulePadRatio * m.headingSizes[level] * kPtToDip * zoom +
+           m.headingRuleThickness * zoom;
 }
 
 // Fill the selection highlight for a UTF-16 range of a text layout.
@@ -1378,13 +1379,15 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
                 std::u32string text32;
                 float markerW = 0.0f;
                 if (n.block == BlockKind::List) {
-                    markerW = m.listIndent * 0.6f + m.markerGutter;
+                    markerW = m.listIndent * m.markerRatio + m.markerGutter;
                     // A task item keeps the gutter width but not the
                     // glyph: the checkbox is drawn in the paint pass,
                     // where a bullet would sit.
                     text32 += n.taskMark >= 0
                                   ? U"   "
-                                  : (n.ordered ? U"1. " : U"\u2022  ");
+                                  : (n.ordered
+                                         ? U"1. "
+                                         : ListMarker32(n.depth));
                 }
                 for (const auto& ib : n.children) text32 += ib.text;
                 if (text32.empty() && n.virtualEmptyParagraph) text32 = U" ";
@@ -1662,7 +1665,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         float markerW = 0.0f;
         std::u16string marker16;
         if (n.block == BlockKind::List) {
-            markerW = m.listIndent * 0.6f + m.markerGutter;
+            markerW = m.listIndent * m.markerRatio + m.markerGutter;
             if (prevBlock != BlockKind::List || n.depth != prevDepth) {
                 listCounter = 0;
             }
@@ -1675,7 +1678,9 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                         marker16.push_back(static_cast<char16_t>(*p));
                 }
             } else if (n.taskMark < 0) {
-                marker16 += u"\u2022 ";
+                // The marker cycles with the depth, the shared table in
+                // theme.h, so a nested list reads apart.
+                marker16 += ListMarker16(n.depth);
             }
         } else {
             listCounter = 0;
@@ -1958,9 +1963,9 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             // check when the item is done. The shape carries the state,
             // not the colour. The box is centred on the first line, so
             // it sits where the bullet of a plain item sits.
-            float box = markerW - 3.0f;
-            if (box > 13.0f) box = 13.0f;
-            if (box < 9.0f) box = 9.0f;
+            float box = markerW - m.taskBoxInset;
+            if (box > m.taskBoxMax) box = m.taskBoxMax;
+            if (box < m.taskBoxMin) box = m.taskBoxMin;
             float lineH = 21.0f;
             DWRITE_LINE_METRICS lineMetrics;
             UINT32 lineCount = 0;
