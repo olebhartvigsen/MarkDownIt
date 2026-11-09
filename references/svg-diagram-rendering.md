@@ -2,10 +2,63 @@
 
 ## Scope
 
-A standalone `.svg` document and an `svg`-fenced block are read by the same
-code on both platforms: `svg::ExtractTextRuns` finds the words, the platform
-layer draws the shapes. The browser is the reference. Where the app and the
-browser disagree, the browser wins and the difference is recorded here.
+A standalone `.svg` document and an `svg`-fenced block use the same SVG scene
+on both platforms. The macOS version is the reference for Windows. Windows
+must not change the Mac output to match its own renderer.
+
+On Mac, inline Markdown images use the system image renderer. That path
+stays unchanged. Windows inline SVG images already use `svg::SvgDoc`, so
+they also get the shared scene. Inline images are outside this parity gate.
+
+## One renderer, two paint adapters
+
+`mac::SvgDoc` in `src/macos/svg_mac.cpp` is portable C++. Both app targets
+compile that file. It parses the shapes and text, chooses switch branches,
+reads styles, expands markers, and places the drawing in its viewport.
+
+Windows no longer gives shapes to the Direct2D SVG parser or places labels
+in a second pass. `src/svgdoc.cpp` adapts the Mac scene's drawing calls to
+Direct2D and measures its labels with DirectWrite. Text uses the baseline
+that the scene requests. The caller's page transform stays in place.
+
+This shares the Mac renderer's supported SVG features and its limits. It does
+not add support that the Mac version lacks. Native fonts can still have
+different metrics, and glyph rasterization is not pixel-identical.
+
+## Parity gate
+
+`MarkDownIt.svg-parity` records drawing commands from the same scene on both
+native CI runners. The `SVG drawing parity (macOS reference)` job compares
+Windows with the Mac trace. Windows records calls inside its actual native
+paint adapter on a private WARP target. A failed native drawing call fails
+the recording. Windows screen capture stays disabled.
+
+The gate checks six SVG fixtures at 40, 100, and 200 percent, both at the
+origin and at an offset. It compares command counts, draw order, geometry,
+colors, line widths, font requests, text, and baselines. Numeric tolerance
+is 0.001 user units. The text engine has fixed metrics so missing fonts cannot
+hide a scene-layout error. Native Core Graphics and WARP tests also render
+the same primitive fixture into private bitmaps. They compare 18 interior
+pixel probes for fills, strokes, rounded corners, ellipses, open and closed
+paths, and winding. Three text probes check baseline bounds and embedded
+newlines. Color tolerance is two byte values; glyph ink bounds allow three
+pixels for native hinting. No bitmap is saved and no window is opened.
+
+The Windows tests also check zoom, page transforms, paint order, viewBox
+placement, start anchors, and short-hex and RGB label colors.
+
+The fixtures are `ai-components.svg`, `diagram.svg`, `svg-parity.svg`,
+`two-boxes.svg`, `wide-diagram.svg`, and the saved Mermaid sequence diagram
+`tests/markdown-mermaid/mermaid-diagram-1788899219877.svg`. The new parity
+fixture covers arcs,
+curves, dashes, markers, rounded shapes, text styles, positioned tspans, HTML
+fallback labels, scaling, and an offset viewBox.
+
+## Browser reference for the Mac renderer
+
+The browser comparisons below describe how the Mac output was established.
+A change to that behavior needs its own review. Windows parity alone is not
+a reason to change it.
 
 ## A switch draws one branch
 

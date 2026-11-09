@@ -1,388 +1,404 @@
 #include "svgdoc.h"
-#include "svgtext.h"
 #include "crash_trace.h"
 
+#include <windows.h>
+#include <d2d1_1helper.h>
+#include <wrl/client.h>
+
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
 
-// SHCreateMemStream from shlwapi
-#pragma comment(lib, "shlwapi.lib")
-#include <shlwapi.h>
-
-#include <cctype>
+// Win32 maps DrawText to DrawTextW/A; the portable seam does not.
+#undef DrawText
 
 namespace svg {
+namespace {
 
+using Microsoft::WRL::ComPtr;
 
-
-SvgDoc::~SvgDoc() {
-    Release();
+// Invalid UTF-8 is replaced by U+FFFD by Windows 10/11 with flags == 0.
+// Explicit lengths preserve embedded NULs and supplementary characters.
+std::wstring Utf16(const std::string& utf8) {
+    if (utf8.empty()) return {};
+    if (utf8.size() > static_cast<std::size_t>((std::numeric_limits<int>::max)())) {
+        throw std::length_error("SVG text exceeds the UTF-8 conversion limit");
+    }
+    const int size = static_cast<int>(utf8.size());
+    const int count = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), size, nullptr, 0);
+    if (!count) throw std::runtime_error("SVG UTF-8 conversion failed");
+    std::wstring result(static_cast<std::size_t>(count), L'\0');
+    if (MultiByteToWideChar(CP_UTF8, 0, utf8.data(), size, result.data(), count) != count) {
+        throw std::runtime_error("SVG UTF-8 conversion failed");
+    }
+    return result;
 }
+
+bool SameFont(const mac::FontSpec& a, const mac::FontSpec& b) {
+    return a.family == b.family && a.size == b.size && a.bold == b.bold &&
+           a.italic == b.italic && a.monospace == b.monospace;
+}
+
+// CoreGraphicsTarget draws one CTLine, even when a text node contains a
+// character-reference newline. Keep hard breaks from creating extra native
+// DirectWrite baselines. The shared scene measures only its first text line.
+std::string SingleLine(const std::string& text) {
+    std::string result;
+    result.reserve(text.size());
+    for (char c : text) if (c != '\r' && c != '\n') result.push_back(c);
+    return result;
+}
+
+struct DrawStatus {
+    std::size_t failures = 0;
+    HRESULT firstFailure = S_OK;
+
+    bool Check(HRESULT hr) {
+        if (SUCCEEDED(hr)) return true;
+        if (!failures) firstFailure = hr;
+        ++failures;
+        return false;
+    }
+};
+
+// Private to the SVG adapter, not a general markdown/editor TextEngine.
+// SvgDoc only measures a single unwrapped run; unsupported editor seams fail
+// explicitly rather than returning invented hit-test positions.
+class SvgTextEngine final : public mac::TextEngine {
+public:
+    struct Layout {
+        ComPtr<IDWriteTextLayout> native;
+        float width = 0.0f;
+        float height = 0.0f;
+        float baseline = 0.0f;
+    };
+
+    SvgTextEngine(IDWriteFactory* factory, DrawStatus& status)
+        : factory_(factory), status_(status) {
+        if (factory_) status_.Check(factory_->GetSystemFontCollection(&fonts_));
+    }
+
+    const Layout* GetLayout(const std::string& text, const mac::FontSpec& font) const {
+        for (const auto& entry : layouts_) {
+            if (entry.text == text && SameFont(entry.font, font)) return &entry.layout;
+        }
+        if (!factory_) {
+            status_.Check(E_POINTER);
+            return nullptr;
+        }
+        if (!std::isfinite(font.size) || font.size <= 0.0f) {
+            status_.Check(E_INVALIDARG);
+            return nullptr;
+        }
+
+        IDWriteTextFormat* format = nullptr;
+        for (const auto& entry : formats_) {
+            if (SameFont(entry.font, font)) {
+                format = entry.native.Get();
+                break;
+            }
+        }
+        if (!format) {
+            FormatEntry entry;
+            entry.font = font;
+            const std::wstring family = ResolveFamily(font);
+            if (!status_.Check(factory_->CreateTextFormat(
+                    family.c_str(), fonts_.Get(),
+                    font.bold ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_REGULAR,
+                    font.italic ? DWRITE_FONT_STYLE_ITALIC : DWRITE_FONT_STYLE_NORMAL,
+                    DWRITE_FONT_STRETCH_NORMAL, font.size, L"", &entry.native))) {
+                return nullptr;
+            }
+            if (!status_.Check(entry.native->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP))) {
+                return nullptr;
+            }
+            format = entry.native.Get();
+            formats_.push_back(std::move(entry));
+        }
+
+        const std::wstring wide = Utf16(SingleLine(text));
+        LayoutEntry entry;
+        entry.text = text;
+        entry.font = font;
+        // Match the exact unbounded request made by the shared scene. The
+        // same cached layout supplies both anchor width and painted glyphs.
+        if (!status_.Check(factory_->CreateTextLayout(
+                wide.data(), static_cast<UINT32>(wide.size()), format,
+                1.0e9f, 1.0e9f, &entry.layout.native))) return nullptr;
+        DWRITE_TEXT_METRICS metrics = {};
+        if (!status_.Check(entry.layout.native->GetMetrics(&metrics))) return nullptr;
+        UINT32 count = 0;
+        // The size query normally returns E_NOT_SUFFICIENT_BUFFER.
+        const HRESULT query = entry.layout.native->GetLineMetrics(nullptr, 0, &count);
+        if (!count) {
+            status_.Check(FAILED(query) ? query : E_FAIL);
+            return nullptr;
+        }
+        std::vector<DWRITE_LINE_METRICS> lines(count);
+        if (!status_.Check(entry.layout.native->GetLineMetrics(lines.data(), count, &count))) {
+            return nullptr;
+        }
+        entry.layout.width = metrics.widthIncludingTrailingWhitespace;
+        entry.layout.height = metrics.height;
+        entry.layout.baseline = lines.front().baseline;
+        layouts_.push_back(std::move(entry));
+        return &layouts_.back().layout;
+    }
+
+    std::vector<mac::TextLine> MeasureWrapped(const std::vector<mac::GlyphRun>& runs,
+                                             float maxWidth, float lineSpacing) override {
+        if (runs.size() != 1 || maxWidth != 1.0e9f || lineSpacing != 0.0f) {
+            throw std::logic_error("SVG adapter only measures the shared scene's unwrapped run");
+        }
+        const auto& text = runs.front().text;
+        const std::string first = text.substr(0, text.find_first_of("\r\n"));
+        const Layout* layout = GetLayout(first.empty() ? " " : first, runs.front().font);
+        if (!layout) return {};
+        mac::TextLine line;
+        line.width = first.empty() ? 0.0f : layout->width;
+        line.height = layout->height;
+        line.ascent = layout->baseline;
+        line.runs = runs;
+        return {std::move(line)};
+    }
+
+    uint32_t HitTestOffset(const mac::TextLine&, float, bool*) const override {
+        throw std::logic_error("SVG adapter does not provide editor hit testing");
+    }
+    mac::Rect OffsetToRect(const mac::TextLine&, uint32_t) const override {
+        throw std::logic_error("SVG adapter does not provide editor offset rectangles");
+    }
+    float LineHeight(const mac::FontSpec& font) const override {
+        const Layout* layout = GetLayout(" ", font);
+        return layout ? layout->height : 0.0f;
+    }
+
+private:
+    bool Installed(const std::wstring& family) const {
+        if (!fonts_ || family.empty()) return false;
+        UINT32 index = 0;
+        BOOL exists = FALSE;
+        return status_.Check(fonts_->FindFamilyName(family.c_str(), &index, &exists)) && exists;
+    }
+
+    std::wstring ResolveFamily(const mac::FontSpec& font) const {
+        std::wstring family = Utf16(font.family);
+        // Prefer the same installed named face, including Helvetica/Menlo.
+        // Only substitute absent Mac families. Any other missing family uses
+        // the native UI fallback. Native metrics/rasterization are not pixel
+        // identical to Core Text, even with an identically named font.
+        if (Installed(family)) return family;
+        auto equal = [&](const wchar_t* name) {
+            return CompareStringOrdinal(family.c_str(), -1, name, -1, TRUE) == CSTR_EQUAL;
+        };
+        if (equal(L"Helvetica") || equal(L"Helvetica Neue")) family = L"Arial";
+        else if (equal(L"Menlo")) family = L"Consolas";
+        else family = L"Segoe UI";
+        return Installed(family) ? family : std::wstring(L"Segoe UI");
+    }
+
+    struct FormatEntry {
+        mac::FontSpec font;
+        ComPtr<IDWriteTextFormat> native;
+    };
+    struct LayoutEntry {
+        std::string text;
+        mac::FontSpec font;
+        Layout layout;
+    };
+    IDWriteFactory* factory_;
+    DrawStatus& status_;
+    ComPtr<IDWriteFontCollection> fonts_;
+    mutable std::vector<FormatEntry> formats_;
+    mutable std::vector<LayoutEntry> layouts_;
+};
+
+D2D1_RECT_F Bounds(const mac::Rect& rect) {
+    return D2D1::RectF((std::min)(rect.x, rect.x + rect.width),
+                       (std::min)(rect.y, rect.y + rect.height),
+                       (std::max)(rect.x, rect.x + rect.width),
+                       (std::max)(rect.y, rect.y + rect.height));
+}
+
+D2D1_ROUNDED_RECT Rounded(const mac::Rect& rect, float radius) {
+    const auto bounds = Bounds(rect);
+    const float r = (std::max)(0.0f, (std::min)(radius,
+        (std::min)(bounds.right - bounds.left, bounds.bottom - bounds.top) * 0.5f));
+    return D2D1::RoundedRect(bounds, r, r);
+}
+
+D2D1_ELLIPSE Ellipse(const mac::Rect& rect) {
+    return D2D1::Ellipse(D2D1::Point2F(rect.x + rect.width * 0.5f,
+                                    rect.y + rect.height * 0.5f),
+                         std::abs(rect.width) * 0.5f, std::abs(rect.height) * 0.5f);
+}
+
+class SvgRenderTarget final : public mac::RenderTarget {
+public:
+    SvgRenderTarget(ID2D1DeviceContext5* context, SvgTextEngine& text, DrawStatus& status,
+                    mac::RenderTarget* trace)
+        : context_(context), text_(text), status_(status), trace_(trace) {
+        // The scene has already fitted every coordinate. Never install a
+        // wrapper document transform: all primitives inherit the caller's.
+        context_->GetFactory(&factory_);
+        status_.Check(context_->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 1.0f), &brush_));
+    }
+
+    void FillRect(const mac::Rect& rect, const mac::Color& color) override {
+        if (trace_) trace_->FillRect(rect, color);
+        if (Brush(color)) context_->FillRectangle(Bounds(rect), brush_.Get());
+    }
+    void FillRoundedRect(const mac::Rect& rect, float radius,
+                         const mac::Color& color) override {
+        if (trace_) trace_->FillRoundedRect(rect, radius, color);
+        if (Brush(color)) context_->FillRoundedRectangle(Rounded(rect, radius), brush_.Get());
+    }
+    void StrokeRect(const mac::Rect& rect, const mac::Color& color, float width) override {
+        if (trace_) trace_->StrokeRect(rect, color, width);
+        if (Brush(color)) context_->DrawRectangle(Bounds(rect), brush_.Get(), width);
+    }
+    void StrokeRoundedRect(const mac::Rect& rect, float radius,
+                           const mac::Color& color, float width) override {
+        if (trace_) trace_->StrokeRoundedRect(rect, radius, color, width);
+        if (Brush(color)) context_->DrawRoundedRectangle(
+            Rounded(rect, radius), brush_.Get(), width > 0.0f ? width : 1.0f);
+    }
+    void StrokeLine(float x0, float y0, float x1, float y1,
+                    const mac::Color& color, float width) override {
+        if (trace_) trace_->StrokeLine(x0, y0, x1, y1, color, width);
+        if (Brush(color)) context_->DrawLine(D2D1::Point2F(x0, y0), D2D1::Point2F(x1, y1),
+                                             brush_.Get(), width);
+    }
+    void DrawText(const std::string& utf8, const mac::FontSpec& font,
+                  float x, float baselineY, const mac::Color& color) override {
+        if (trace_) trace_->DrawText(utf8, font, x, baselineY, color);
+        if (SingleLine(utf8).empty() || !Brush(color)) return;
+        const auto* layout = text_.GetLayout(utf8, font);
+        if (!layout) return;
+        context_->DrawTextLayout(D2D1::Point2F(x, baselineY - layout->baseline),
+                                layout->native.Get(), brush_.Get(),
+                                D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
+    }
+    void DrawBitmap(mac::BitmapHandle, const mac::Rect&) override {
+        // The reference SVG scene does not emit bitmap drawing operations.
+        throw std::logic_error("SVG adapter does not support bitmap drawing");
+    }
+    void FillEllipse(const mac::Rect& rect, const mac::Color& color) override {
+        if (trace_) trace_->FillEllipse(rect, color);
+        if (Brush(color)) context_->FillEllipse(Ellipse(rect), brush_.Get());
+    }
+    void StrokeEllipse(const mac::Rect& rect, const mac::Color& color, float width) override {
+        if (trace_) trace_->StrokeEllipse(rect, color, width);
+        if (Brush(color)) context_->DrawEllipse(Ellipse(rect), brush_.Get(), width);
+    }
+    void FillPolygon(const std::vector<mac::Point>& points, const mac::Color& color) override {
+        if (trace_) trace_->FillPolygon(points, color);
+        if (points.size() < 3 || !Brush(color)) return;
+        const auto path = Polygon(points, true, true);
+        if (path) context_->FillGeometry(path.Get(), brush_.Get());
+    }
+    void StrokePolygon(const std::vector<mac::Point>& points, const mac::Color& color,
+                       float width, bool closed) override {
+        if (trace_) trace_->StrokePolygon(points, color, width, closed);
+        if (points.size() < 2 || !Brush(color)) return;
+        const auto path = Polygon(points, closed, false);
+        if (path) context_->DrawGeometry(path.Get(), brush_.Get(), width > 0.0f ? width : 1.0f);
+    }
+    void FillPieSlice(const mac::Rect&, float, float, const mac::Color&) override {
+        // No pie-slice operation is emitted by mac::SvgDoc, either.
+        throw std::logic_error("SVG adapter does not support pie-slice operations");
+    }
+    void PushClip(const mac::Rect& rect) override {
+        if (trace_) trace_->PushClip(rect);
+        context_->PushAxisAlignedClip(Bounds(rect), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    }
+    void PopClip() override {
+        if (trace_) trace_->PopClip();
+        context_->PopAxisAlignedClip();
+    }
+
+private:
+    bool Brush(const mac::Color& color) {
+        if (!brush_) return false;
+        brush_->SetColor(D2D1::ColorF(color.r, color.g, color.b, color.a));
+        return true;
+    }
+
+    ComPtr<ID2D1PathGeometry> Polygon(const std::vector<mac::Point>& points,
+                                     bool closed, bool filled) {
+        ComPtr<ID2D1PathGeometry> path;
+        if (!factory_) {
+            status_.Check(E_POINTER);
+            return path;
+        }
+        if (!status_.Check(factory_->CreatePathGeometry(&path))) return {};
+        ComPtr<ID2D1GeometrySink> sink;
+        if (!status_.Check(path->Open(&sink))) return {};
+        // Core Graphics fills with the nonzero winding rule, not even-odd.
+        // Dashed paths have already been split into segments by the scene.
+        sink->SetFillMode(D2D1_FILL_MODE_WINDING);
+        sink->BeginFigure(D2D1::Point2F(points.front().x, points.front().y),
+                          filled ? D2D1_FIGURE_BEGIN_FILLED : D2D1_FIGURE_BEGIN_HOLLOW);
+        for (std::size_t i = 1; i < points.size(); ++i) {
+            sink->AddLine(D2D1::Point2F(points[i].x, points[i].y));
+        }
+        sink->EndFigure(closed ? D2D1_FIGURE_END_CLOSED : D2D1_FIGURE_END_OPEN);
+        if (!status_.Check(sink->Close())) return {};
+        return path;
+    }
+
+    ID2D1DeviceContext5* context_;
+    SvgTextEngine& text_;
+    DrawStatus& status_;
+    mac::RenderTarget* trace_;
+    ComPtr<ID2D1Factory> factory_;
+    ComPtr<ID2D1SolidColorBrush> brush_;
+};
+
+}  // namespace
+
+SvgDoc::~SvgDoc() = default;
 
 void SvgDoc::Release() {
-    if (doc_) { doc_->Release(); doc_ = nullptr; }
-    texts_.clear();
-    width_ = 0.0f;
-    height_ = 0.0f;
+    scene_.reset();
 }
-
 
 bool SvgDoc::Load(ID2D1DeviceContext5* ctx, const std::string& xml) {
     Release();
     if (!ctx || xml.empty()) return false;
-
-    texts_ = ExtractTextRuns(xml);
-    // Direct2D draws neither <text> nor <marker>, so the text is lifted out
-    // and drawn with DirectWrite, and every marker reference is rewritten
-    // into an explicit group it can draw.
-    std::string shapes = ExpandMarkers(StripTextElements(xml));
-    diag::TraceFmt("SVGDOC mode=strip runs=%zu", texts_.size());
-
-    if (!ReadSize(xml, &width_, &height_)) {
-        width_ = 0.0f;
-        height_ = 0.0f;
-    }
-    if (width_ <= 0.0f) width_ = 300.0f;
-    if (height_ <= 0.0f) height_ = 150.0f;
-
-    if (shapes.empty()) return true; // text-only SVG, no shapes
-
-    // CreateStream expects an IStream.
-    IStream* stream = SHCreateMemStream(
-        reinterpret_cast<const BYTE*>(shapes.data()),
-        static_cast<UINT>(shapes.size()));
-    if (!stream) return false;
-
-    HRESULT hr = ctx->CreateSvgDocument(
-        stream, D2D1::SizeF(width_, height_), &doc_);
-    stream->Release();
-
-    if (SUCCEEDED(hr) && doc_) {
-        // Diagnostic dump: what does D2D think the root looks like?
-        // Mismatch between our parsed width_ and D2D's interpretation
-        // of root width/height/viewBox shows up as text offset.
-        ID2D1SvgElement* root = nullptr;
-        doc_->GetRoot(&root);
-        if (root) {
-            wchar_t tag[64] = {};
-            UINT32 len = 0;
-            if (SUCCEEDED(root->GetTagName(tag, 64))) {
-                tag[63] = 0;
-                char tagA[66] = {};
-                for (UINT32 ci = 0; ci < len && ci < 63; ++ci) {
-                    tagA[ci] = static_cast<char>(tag[ci]);
-                }
-                diag::TraceFmt("SVGDOC root tag=[%s]", tagA);
-            }
-            for (const wchar_t* vbName : {L"viewBox", L"viewbox"}) {
-                D2D1_SVG_VIEWBOX vb = {};
-                HRESULT vhr = root->GetAttributeValue(
-                    vbName, D2D1_SVG_ATTRIBUTE_POD_TYPE_VIEWBOX,
-                    &vb, sizeof(vb));
-                diag::TraceFmt(
-                    "SVGDOC root viewBox name=%ls hr=0x%08lx x=%g y=%g w=%g h=%g",
-                    vbName, (unsigned long)vhr,
-                    vb.x, vb.y, vb.width, vb.height);
-            }
-            for (const wchar_t* szName : {L"width", L"height"}) {
-                float sz = 0.0f;
-                HRESULT shr = root->GetAttributeValue(
-                    szName, D2D1_SVG_ATTRIBUTE_POD_TYPE_FLOAT,
-                    &sz, sizeof(sz));
-                diag::TraceFmt(
-                    "SVGDOC root %ls float hr=0x%08lx v=%g",
-                    szName, (unsigned long)shr, sz);
-            }
-            root->Release();
-        }
-    }
-
-    return SUCCEEDED(hr);
+    auto scene = std::make_unique<mac::SvgDoc>();
+    const bool loaded = scene->Load(xml);
+    diag::TraceFmt("SVGDOC mode=shared-scene loaded=%d shapes=%zu w=%g h=%g",
+                   loaded ? 1 : 0, scene->shapes().size(), scene->Width(), scene->Height());
+    if (!loaded) return false;
+    scene_ = std::move(scene);
+    return true;
 }
 
 void SvgDoc::Draw(ID2D1DeviceContext5* ctx, IDWriteFactory* dw,
-                  float x, float y, float w, float h) {
-    if (!ctx) return;
-    static float lastW = -1, lastH = -1;
-    if (w != lastW || h != lastH) {
-        lastW = w; lastH = h;
-        diag::TraceFmt("SVGDOC draw x=%.1f y=%.1f w=%.1f h=%.1f docW=%.1f docH=%.1f runs=%zu",
-                       x, y, w, h, width_, height_, texts_.size());
-        for (size_t i = 0; i < texts_.size() && i < 3; ++i) {
-            diag::TraceFmt("SVGDOC run%zu x=%.2f y=%.2f fs=%.2f text=[%.24s]",
-                           i, texts_[i].x, texts_[i].y, texts_[i].fontSize,
-                           texts_[i].text.c_str());
-        }
+                  float x, float y, float w, float h,
+                  mac::RenderTarget* trace, mac::TextEngine* metrics) {
+    if (!ctx || !scene_) return;
+    DrawStatus status;
+    SvgTextEngine text(dw, status);
+    SvgRenderTarget target(ctx, text, status, trace);
+    // The adapter never changes the context transform, including on failure.
+    // Scene limitations (including transformed text) are intentionally those
+    // of the unmodified Mac reference, not a second Windows interpretation.
+    scene_->Draw(&target, metrics ? metrics : &text, x, y, w, h);
+    diag::TraceFmt("SVGDOC draw mode=shared-scene x=%g y=%g w=%g h=%g shapes=%zu failures=%zu hr=0x%08lx",
+                   x, y, w, h, scene_->shapes().size(), status.failures,
+                   static_cast<unsigned long>(status.firstFailure));
+    if (trace && status.failures) {
+        throw std::runtime_error("SVG native adapter failed during parity recording");
     }
-
-    // Compute uniform scale to fit, preserving aspect ratio.
-    float sx = (width_ > 0.0f) ? w / width_ : 1.0f;
-    float sy = (height_ > 0.0f) ? h / height_ : 1.0f;
-    float s = (sx < sy) ? sx : sy;
-
-    D2D1_MATRIX_3X2_F prev;
-    ctx->GetTransform(&prev);
-
-    // Direct2D uses row vectors: apply the local scale and placement,
-    // then the caller's page transform (including scrolling).
-    D2D1::Matrix3x2F docT =
-        D2D1::Matrix3x2F::Scale(s, s) * D2D1::Matrix3x2F::Translation(x, y);
-    ctx->SetTransform(docT * prev);
-
-    if (doc_) {
-        ctx->DrawSvgDocument(doc_);
-    }
-
-    DrawTexts(ctx, dw);
-
-    ctx->SetTransform(prev);
-}
-
-// RAII helpers for COM objects
-template <typename T>
-struct RelGuard {
-    T* p = nullptr;
-    ~RelGuard() { if (p) p->Release(); }
-};
-
-static D2D1_COLOR_F ParseColor(const std::string& s, D2D1_COLOR_F fallback) {
-    if (s.empty()) return fallback;
-    if (s[0] == '#' && s.size() >= 7) {
-        unsigned int r = 0, g = 0, b = 0;
-        if (sscanf(s.c_str() + 1, "%02x%02x%02x", &r, &g, &b) == 3) {
-            return D2D1::ColorF(r / 255.0f, g / 255.0f, b / 255.0f, 1.0f);
-        }
-        if (s.size() >= 4 && sscanf(s.c_str() + 1, "%1x%1x%1x", &r, &g, &b) == 3) {
-            return D2D1::ColorF(r / 15.0f, g / 15.0f, b / 15.0f, 1.0f);
-        }
-    }
-    // Named colors
-    if (s == "black") return D2D1::ColorF(0, 0, 0);
-    if (s == "white") return D2D1::ColorF(1, 1, 1);
-    if (s == "red") return D2D1::ColorF(1, 0, 0);
-    if (s == "green") return D2D1::ColorF(0, 0.5f, 0);
-    if (s == "blue") return D2D1::ColorF(0, 0, 1);
-    if (s == "none") return D2D1::ColorF(0, 0, 0, 0);
-    return fallback;
-}
-
-void SvgDoc::DrawTexts(ID2D1DeviceContext5* ctx, IDWriteFactory* dw) {
-    if (texts_.empty() || !dw) return;
-
-    // SVG's initial fill is black, and a diagram's own background rect is
-    // white, so text without a fill attribute is black in a browser too.
-    D2D1_COLOR_F defaultColor = D2D1::ColorF(0.0f, 0.0f, 0.0f, 1.0f);
-
-    // Create a reusable brush
-    RelGuard<ID2D1SolidColorBrush> br;
-    ctx->CreateSolidColorBrush(defaultColor, &br.p);
-    if (!br.p) return;
-
-    // Draw() has already installed the complete SVG-to-page transform.
-    // Reuse it for text: composing the document transform here again
-    // shrinks and moves labels a second time, away from their shapes.
-    D2D1_MATRIX_3X2_F prev;
-    ctx->GetTransform(&prev);
-    const D2D1_MATRIX_3X2_F textT = prev;
-
-    // Cache text formats by (fontFamily, fontSize, bold)
-    struct FmtKey {
-        std::string family;
-        float size;
-        bool bold;
-        bool italic;
-        bool operator==(const FmtKey& o) const {
-            return size == o.size && bold == o.bold && italic == o.italic &&
-                   family == o.family;
-        }
-    };
-    struct FmtEntry {
-        FmtKey key;
-        IDWriteTextFormat* fmt;
-    };
-    std::vector<FmtEntry> fmtCache;
-
-    // Pen position across runs, for text continuing after a <tspan x="...">.
-    float chainAdvance = 0.0f;
-    bool  chainValid = false;
-
-    for (const auto& run : texts_) {
-        if (run.text.empty()) continue;
-
-        // Find or create text format
-        IDWriteTextFormat* fmt = nullptr;
-        FmtKey key{ run.fontFamily, run.fontSize, run.bold, run.italic };
-        for (const auto& e : fmtCache) {
-            if (e.key == key) { fmt = e.fmt; break; }
-        }
-        if (!fmt) {
-            std::wstring fam = L"Segoe UI";
-            if (!run.fontFamily.empty() && run.fontFamily != "inherit") {
-                fam.clear();
-                for (char c : run.fontFamily) {
-                    if (c == ',') break; // first font only
-                    if (c != '\'' && c != '"') fam.push_back(static_cast<wchar_t>(c));
-                }
-                // Trim spaces before matching generic names.
-                while (!fam.empty() && fam.back() == 32) fam.pop_back();
-                size_t b = 0;
-                while (b < fam.size() && fam[b] == 32) ++b;
-                if (b) fam = fam.substr(b);
-                // Generic SVG families map to concrete Windows fonts;
-                // DirectWrite does not resolve "sans-serif"/"Dialog".
-                if (fam == L"sans-serif" || fam == L"Dialog" ||
-                    fam == L"helvetica" || fam == L"ArialMT") {
-                    fam = L"Arial";
-                } else if (fam == L"serif" || fam == L"Times" ||
-                           fam == L"Times-Roman") {
-                    fam = L"Times New Roman";
-                } else if (fam == L"monospace" || fam == L"Courier" ||
-                           fam == L"Courier-New") {
-                    fam = L"Consolas";
-                }
-            }
-            DWRITE_FONT_WEIGHT weight = run.bold
-                ? DWRITE_FONT_WEIGHT_BOLD
-                : DWRITE_FONT_WEIGHT_REGULAR;
-            DWRITE_FONT_STYLE style = run.italic
-                ? DWRITE_FONT_STYLE_ITALIC
-                : DWRITE_FONT_STYLE_NORMAL;
-            HRESULT hr = dw->CreateTextFormat(
-                fam.c_str(), nullptr, weight, style,
-                DWRITE_FONT_STRETCH_NORMAL,
-                run.fontSize, L"", &fmt);
-            if (FAILED(hr) || !fmt) continue;
-            fmtCache.push_back({ key, fmt });
-        }
-
-        // Create text layout with generous width, no wrapping.
-        // Decode UTF-8 to UTF-16 properly: byte-wise casting renders every
-        // non-ASCII label as mojibake (e.g. C3 A9 becomes two C1 controls).
-        std::u16string u16;
-        {
-            for (size_t i = 0; i < run.text.size(); ) {
-                unsigned char c = static_cast<unsigned char>(run.text[i]);
-                uint32_t cp = 0;
-                int n_b = 1;
-                if (c < 0x80) { cp = c; n_b = 1; }
-                else if ((c & 0xE0) == 0xC0 && i + 1 < run.text.size()) {
-                    cp = ((c & 0x1F) << 6) |
-                         (static_cast<unsigned char>(run.text[i+1]) & 0x3F);
-                    n_b = 2;
-                } else if ((c & 0xF0) == 0xE0 && i + 2 < run.text.size()) {
-                    cp = ((c & 0x0F) << 12) |
-                         ((static_cast<unsigned char>(run.text[i+1]) & 0x3F) << 6) |
-                         (static_cast<unsigned char>(run.text[i+2]) & 0x3F);
-                    n_b = 3;
-                } else if ((c & 0xF8) == 0xF0 && i + 3 < run.text.size()) {
-                    cp = ((c & 0x07) << 18) |
-                         ((static_cast<unsigned char>(run.text[i+1]) & 0x3F) << 12) |
-                         ((static_cast<unsigned char>(run.text[i+2]) & 0x3F) << 6) |
-                         (static_cast<unsigned char>(run.text[i+3]) & 0x3F);
-                    n_b = 4;
-                } else { cp = 0xFFFD; n_b = 1; }
-                // Reject surrogates and out-of-range code points.
-                if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) cp = 0xFFFD;
-                if (cp <= 0xFFFF) {
-                    u16.push_back(static_cast<char16_t>(cp));
-                } else {
-                    cp -= 0x10000;
-                    u16.push_back(static_cast<char16_t>(0xD800 + (cp >> 10)));
-                    u16.push_back(static_cast<char16_t>(0xDC00 + (cp & 0x3FF)));
-                }
-                i += n_b;
-            }
-        }
-
-        IDWriteTextLayout* tl = nullptr;
-        HRESULT hr = dw->CreateTextLayout(
-            reinterpret_cast<const WCHAR*>(u16.data()),
-            static_cast<UINT32>(u16.size()),
-            fmt, 10000.0f, 100.0f, &tl);
-        if (FAILED(hr) || !tl) continue;
-
-        tl->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-
-        DWRITE_TEXT_METRICS tm = {};
-        tl->GetMetrics(&tm);
-
-        // Compute position based on text-anchor. When the exporter
-        // gave a data-group box (no explicit anchor), center the
-        // glyph box on the box so font-width differences cannot
-        // shift the label sideways (Batik pre-computed start-edges
-        // with its own font metrics).
-        float tx = run.x;
-        float centerY = -1.0f;
-        if (!run.anchor.empty() && run.anchor != "inherit") {
-            if (run.anchor == "middle") tx -= tm.width / 2.0f;
-            else if (run.anchor == "end") tx -= tm.width;
-        } else if (run.boxValid && run.bw > 0.0f && run.bh > 0.0f) {
-            tx = run.bx + run.bw / 2.0f - tm.width / 2.0f;
-            centerY = run.by + run.bh / 2.0f;
-        }
-
-        // SVG y is the baseline, not the top.
-        // Approximate: move up by ~80% of the font height.
-        DWRITE_LINE_METRICS lm = {};
-        UINT32 lmCount = 0;
-        tl->GetLineMetrics(&lm, 1, &lmCount);
-        // Real value when DirectWrite reports it; the 80% guess is only a
-        // fallback for a layout that reports no line metrics.
-        float baseline = (lmCount > 0) ? lm.baseline : tm.height * 0.8f;
-        // dominant-baseline="central": x/y is the glyph center, not
-        // the baseline, so center the layout height on run.y.
-        float ty = (centerY >= 0.0f)
-            ? (centerY - tm.height / 2.0f)
-            : (run.central ? (run.y - tm.height / 2.0f)
-                           : (run.y - baseline));
-
-        // Set color
-        D2D1_COLOR_F color = ParseColor(run.fill, defaultColor);
-        br.p->SetColor(color);
-
-        // Text that follows a <tspan x="..."> continues from where the
-        // previous run ended. The extractor has no font metrics, so it marks
-        // the run instead of computing an x, and the advance happens here
-        // where tm.width is known.
-        if (run.chained && chainValid) {
-            tx += chainAdvance;
-        }
-
-        // A rotate or skew on an ancestor must turn the glyphs too. D2D draws
-        // the shapes rotated, so unrotated text sits visibly off its own shape.
-        // Compose translate(anchor) * linear * translate(-anchor) around the
-        // run's position so it spins in place.
-        if (run.transformed) {
-            const float ax = tx, ay = ty;
-            // translate(anchor) * linear * translate(-anchor): the linear part
-            // is (ma, mb, mc, md) and the translation part re-anchors it.
-            D2D1_MATRIX_3X2_F rot;
-            rot._11 = run.ma; rot._12 = run.mb;
-            rot._21 = run.mc; rot._22 = run.md;
-            rot._31 = ax - (run.ma * ax + run.mc * ay);
-            rot._32 = ay - (run.mb * ax + run.md * ay);
-            ctx->SetTransform(rot * textT);
-            ctx->DrawTextLayout(
-                D2D1::Point2F(tx, ty), tl, br.p,
-                D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
-            ctx->SetTransform(textT);
-        } else {
-            ctx->DrawTextLayout(
-                D2D1::Point2F(tx, ty), tl, br.p,
-                D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
-        }
-
-        // Remember where this run ended for the next chained run.
-        chainAdvance = tm.width;
-        chainValid = true;
-
-        tl->Release();
-    }
-
-    // Release cached formats and restore the caller's transform.
-    for (auto& e : fmtCache) {
-        if (e.fmt) e.fmt->Release();
-    }
-    ctx->SetTransform(prev);
 }
 
 }  // namespace svg

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="260" viewBox="10 20 400 240" font-family="Arial, Helvetica, sans-serif" font-size="12">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto-start-reverse">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#204060"/>
+    </marker>
+  </defs>
+  <rect x="10" y="20" width="400" height="240" fill="#ffffff"/>
+  <g transform="translate(0.5,0.5)">
+    <rect x="25" y="35" width="160" height="65" rx="8" fill="#d8eef8" stroke="#204060" stroke-width="2"/>
+    <text x="105" y="57" text-anchor="middle" font-weight="bold">Reference label</text>
+    <text x="105" y="76" text-anchor="middle" font-style="italic">Italic annotation</text>
+    <text x="230" y="50" fill="rgb(30,60,90)"><tspan x="230" y="50">First line</tspan><tspan x="230" y="67">Second line</tspan></text>
+    <ellipse cx="270" cy="112" rx="40" ry="18" fill="#f0e0a0" stroke="#806020"/>
+    <circle cx="365" cy="112" r="18" fill="#a0d0a0"/>
+    <line x1="185" y1="70" x2="230" y2="112" stroke="#204060" marker-end="url(#arrow)"/>
+    <path d="M35,140 L90,140 a12,12 0 0 1 12,12 L102,180" fill="none" stroke="#c04040" stroke-width="2" stroke-dasharray="5 3"/>
+    <path d="M140,140 C155,115 190,175 205,150 Q220,125 240,150" fill="none" stroke="#704090"/>
+    <polygon points="280,155 300,140 320,155 300,175" fill="#80c0e0" stroke="#204060"/>
+    <polyline points="340,150 365,165 390,145" fill="none" stroke="#204060"/>
+    <g transform="translate(35,210) scale(1.2)">
+      <text x="0" y="0" font-family="serif">Scaled label</text>
+    </g>
+    <switch>
+      <foreignObject x="205" y="190" width="180" height="40">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:Arial;font-size:12px;color:#305070;line-height:1.2;text-align:center">
+          <div>HTML first line</div><div>HTML second line</div>
+        </div>
+      </foreignObject>
+      <text x="295" y="204" text-anchor="middle"><tspan x="295" y="204">Fallback first line</tspan><tspan x="295" y="219">Fallback second line</tspan></text>
+    </switch>
+  </g>
+</svg>

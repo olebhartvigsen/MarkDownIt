@@ -209,6 +209,7 @@ add_executable(MarkDownIt WIN32
     src/welcomescreen.cpp
     src/svgtext.cpp
     src/svgdoc.cpp
+    src/macos/svg_mac.cpp
     src/office/docx_import.cpp
     src/office/docx_export.cpp
     src/office/pdf_export.cpp
@@ -450,6 +451,7 @@ if(BUILD_TESTS AND APPLE)
     target_compile_options(MarkDownIt.tests PRIVATE -Wall -Wextra -Wpedantic)
     target_sources(MarkDownIt.tests PRIVATE
         tests/text_engine_mac_test.cpp
+        tests/svg_native_mac_test.mm
         tests/renderer_mac_test.cpp
         tests/welcome_mac_test.cpp
         src/macos/text_engine_mac.cpp
@@ -461,6 +463,7 @@ if(BUILD_TESTS AND APPLE)
         src/macos/renderer_mac.cpp
         src/macos/svg_mac.cpp
         src/macos/image_mac.mm
+        src/macos/image_draw_mac.mm
         src/macos/mermaid_painter_mac.cpp
         src/macos/welcome_mac.cpp
     )
@@ -486,6 +489,7 @@ elseif(BUILD_TESTS)
         tests/findbar_window_test.cpp
         tests/svgdoc_transform_test.cpp
         src/svgdoc.cpp
+        src/macos/svg_mac.cpp
         tests/markers_test.cpp
         tests/outline_test.cpp
         tests/table_interaction_test.cpp
@@ -597,6 +601,27 @@ elseif(BUILD_TESTS)
     if(MSVC)
         target_compile_options(MarkDownIt.tests PRIVATE /W4)
     endif()
+endif()
+
+# Both platforms record the unchanged macOS SVG scene with injected metrics.
+# The CI parity job compares these commands without desktop captures.
+if(BUILD_TESTS)
+    add_executable(MarkDownIt.svg-parity
+        tests/svg_parity_dump.cpp
+        src/macos/svg_mac.cpp
+        src/svgtext.cpp
+    )
+    target_include_directories(MarkDownIt.svg-parity PRIVATE src)
+    target_link_libraries(MarkDownIt.svg-parity PRIVATE pugixml)
+    if(WIN32)
+        target_sources(MarkDownIt.svg-parity PRIVATE src/svgdoc.cpp)
+        target_compile_definitions(MarkDownIt.svg-parity PRIVATE
+            UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+        target_link_libraries(MarkDownIt.svg-parity PRIVATE
+            d2d1 dwrite d3d11 dxgi ole32 shell32 shlwapi)
+    endif()
+    target_compile_features(MarkDownIt.svg-parity PRIVATE cxx_std_17)
+    set_target_properties(MarkDownIt.svg-parity PROPERTIES WIN32_EXECUTABLE OFF)
 endif()
 
 # ============================================================================

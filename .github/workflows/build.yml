@@ -93,12 +93,23 @@ jobs:
           # The office export tests write the files they produce here, so the
           # verify-export job can open them with an independent reader.
           MDI_OFFICE_OUT_DIR: ${{ github.workspace }}/office-output
+          MDI_SVG_NATIVE_OUT: ${{ runner.temp }}/svg-native.json
         run: |
           mkdir -p "$MDI_OFFICE_OUT_DIR"
           cmake -B build-tests -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTS=ON
           cmake --build build-tests --config Release
           build-tests/Release/MarkDownIt.tests.exe
+          build-tests/Release/MarkDownIt.svg-parity.exe "$RUNNER_TEMP/svg-commands.json" tests/fixtures/ai-components.svg tests/fixtures/diagram.svg tests/fixtures/svg-parity.svg tests/fixtures/two-boxes.svg tests/fixtures/wide-diagram.svg tests/markdown-mermaid/mermaid-diagram-1788899219877.svg
           ls -la "$MDI_OFFICE_OUT_DIR"
+
+      - name: Upload Windows SVG commands
+        uses: actions/upload-artifact@v4
+        with:
+          name: svg-commands-windows
+          path: |
+            ${{ runner.temp }}/svg-commands.json
+            ${{ runner.temp }}/svg-native.json
+          if-no-files-found: error
 
       # The produced Word and PDF files are validated by an independent reader
       # (python-docx, pypdf) in the verify-export job, not by MarkDownIt itself.
@@ -159,10 +170,24 @@ jobs:
         run: cmake -B build-native -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
 
       - name: Build
-        run: cmake --build build-native --target MarkDownIt.tests -j2
+        run: cmake --build build-native --target MarkDownIt.tests MarkDownIt.svg-parity -j2
 
       - name: Run
+        env:
+          MDI_SVG_NATIVE_OUT: ${{ runner.temp }}/svg-native.json
         run: ./build-native/MarkDownIt.tests
+
+      - name: Record macOS SVG commands
+        run: ./build-native/MarkDownIt.svg-parity "$RUNNER_TEMP/svg-commands.json" tests/fixtures/ai-components.svg tests/fixtures/diagram.svg tests/fixtures/svg-parity.svg tests/fixtures/two-boxes.svg tests/fixtures/wide-diagram.svg tests/markdown-mermaid/mermaid-diagram-1788899219877.svg
+
+      - name: Upload macOS SVG commands
+        uses: actions/upload-artifact@v4
+        with:
+          name: svg-commands-macos
+          path: |
+            ${{ runner.temp }}/svg-commands.json
+            ${{ runner.temp }}/svg-native.json
+          if-no-files-found: error
 
       # A second build of the same suite with the sanitizers on. It runs
       # in this job rather than a job of its own: the macOS runners are
@@ -285,14 +310,34 @@ jobs:
           path: MarkDownIt-macos-arm64.zip
           if-no-files-found: error
 
-  # The two platforms photograph themselves in the same named states
-  # (tools/windows-smoke/capture.ps1 and tools/macos-smoke/launch_smoke.sh),
-  # and this job compares the picture sets: how many text bands each
-  # document pane shows, where its large gaps sit, how much ink there
-  # is. Fonts and window chrome differ by design, so the comparison is
-  # structural; a block that went missing or moved on either platform
-  # fails the run, and the side-by-side and overlay pictures land as an
-  # artifact for the eye.
+  # Compare drawing commands from native builds without screen capture.
+  # The macOS SVG scene is the reference on both platforms.
+  svg-parity:
+    name: SVG drawing parity (macOS reference)
+    needs: [build, test-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: svg-commands-macos
+          path: svg-commands/macos
+      - uses: actions/download-artifact@v4
+        with:
+          name: svg-commands-windows
+          path: svg-commands/windows
+      - name: Test parity checker
+        run: |
+          python3 tools/test_check_svg_parity.py
+          python3 tools/test_check_svg_native_parity.py
+      - name: Compare Windows drawing commands with macOS
+        run: python3 tools/check_svg_parity.py svg-commands/macos/svg-commands.json svg-commands/windows/svg-commands.json
+      - name: Compare native paint probes with macOS
+        run: python3 tools/check_svg_native_parity.py svg-commands/macos/svg-native.json svg-commands/windows/svg-native.json
+
   capture-parity:
     name: Capture parity (Windows vs macOS)
     # This gate needs Windows captures, which workspace policy forbids.
