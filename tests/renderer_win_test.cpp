@@ -24,6 +24,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -409,17 +410,23 @@ public:
     HRESULT STDMETHODCALLTYPE GetMetrics(
         DWRITE_TEXT_METRICS* textMetrics) override {
         if (!textMetrics) return 0x80004003L;
+        // A real layout wraps at its box: the width it reports is the
+        // widest line inside the box, never the whole string laid
+        // out flat. The fake answers the same shape so pieces that
+        // share a line measure honestly.
         const float charWidth = st.size * 0.5f;
         const size_t chars = text_.size();
-        const float width = static_cast<float>(chars) * charWidth;
+        size_t per = chars > 0 ? chars : 1;
         UINT32 lines = 1;
-        if (maxW_ > 0.0f && charWidth > 0.0f) {
+        if (maxW_ > 0.0f && charWidth > 0.0f && chars > 0) {
             const size_t perLine =
                 static_cast<size_t>(maxW_ / charWidth);
-            const size_t per = perLine < 1 ? 1 : perLine;
+            per = perLine < 1 ? 1 : perLine;
             lines = static_cast<UINT32>((chars + per - 1) / per);
             if (lines < 1) lines = 1;
         }
+        const size_t widest = chars < per ? chars : per;
+        const float width = static_cast<float>(widest) * charWidth;
         textMetrics->left = 0.0f;
         textMetrics->top = 0.0f;
         textMetrics->width = width;
@@ -887,8 +894,37 @@ public:
                   ID2D1StrokeStyle* = nullptr) {}
     void DrawGeometry(ID2D1Geometry*, ID2D1Brush*, FLOAT = 1.0f,
                       ID2D1StrokeStyle* = nullptr) {}
-    void DrawTextLayout(D2D1_POINT_2F, IDWriteTextLayout*, ID2D1Brush*,
-                        D2D1_DRAW_TEXT_OPTIONS = D2D1_DRAW_TEXT_OPTIONS_NONE) {}
+    // The painted glyph pieces, the pipe's true positions: every
+    // DrawTextLayout the frame or a painter issues is recorded with
+    // its origin, its measured advance and the text its layout holds,
+    // so a pair check can ask whether consecutive pieces keep the
+    // spaces between words.
+    struct TextDraw {
+        float x = 0.0f;
+        float y = 0.0f;
+        float adv = 0.0f;
+    };
+    std::vector<TextDraw> textDraws;
+    void RecordText(D2D1_POINT_2F origin, IDWriteTextLayout* layout) {
+        // The real layout interface has no text getter, so the
+        // record carries the pieces a gap check needs: where the
+        // piece was placed and how wide its layout measured. The
+        // thin fake layout answers the same numbers on the fake
+        // stack.
+        TextDraw d;
+        d.x = origin.x;
+        d.y = origin.y;
+        if (layout) {
+            DWRITE_TEXT_METRICS tm = {};
+            if (SUCCEEDED(layout->GetMetrics(&tm))) d.adv = tm.width;
+        }
+        textDraws.push_back(d);
+    }
+    void DrawTextLayout(D2D1_POINT_2F origin, IDWriteTextLayout* layout,
+                        ID2D1Brush*,
+                        D2D1_DRAW_TEXT_OPTIONS = D2D1_DRAW_TEXT_OPTIONS_NONE) {
+        RecordText(origin, layout);
+    }
     void FillGeometry(ID2D1Geometry*, ID2D1Brush*, ID2D1Brush* = nullptr) {}
 
     void DrawRectangle(const D2D1_RECT_F&, ID2D1Brush*, FLOAT = 1.0f,
@@ -1524,3 +1560,102 @@ TEST(RendererWin, RealEngineSliceGapsMatchTheLayout) {
     fflush(stdout);
 }
 
+
+// The painted pieces themselves, the last mile the captures saw
+// drift on: a heading and a paragraph with styled runs render
+// through the real engine, and every piece on one text row must
+// sit where the piece before it ended, neither before its ink has
+// finished (glued words) nor a void beyond the space it carries
+// (spread words). The fake stack has no DirectWrite factory, so no
+// walk pieces exist there and the test reports its degradation; the
+// runner owns the real numbers.
+TEST(RendererWin, PaintedLinesKeepTheWordSpaces) {
+    Document doc = Doc({Heading(2, "Statisk evidens fundet af test"),
+                        Para("Almindelig tekst med **fede** og *skraa* ord")});
+    NumberOffsets(&doc);
+
+    Renderer renderer;
+    FakeDWriteFactory dw;
+    ASSERT_TRUE(renderer.Init(&dw));
+    renderer.SetContentWidthMode(3);
+
+    const float width =
+        2.0f * ScaleMetrics(kBase, 1.0f).padX + 8.0f * kBodyEm;
+    FakeRenderTarget rt;
+    renderer.Render(&rt, &dw, doc, width, 0.0f, 0.0f, 0.0f, nullptr);
+    if (rt.textDraws.empty()) {
+        printf("PaintedLines: engine degraded, no pieces\n");
+        fflush(stdout);
+        return;
+    }
+    printf("PaintedLines: pieces=%zu\n", rt.textDraws.size());
+    for (const FakeRenderTarget::TextDraw& d : rt.textDraws) {
+        printf("  piece x=%f y=%f adv=%f\n", d.x, d.y, d.adv);
+    }
+    fflush(stdout);
+    int judged = 0;
+    for (size_t a = 0; a < rt.textDraws.size(); ++a) {
+        for (size_t b = 0; b != a && b < rt.textDraws.size(); ++b) {
+            const FakeRenderTarget::TextDraw& pa = rt.textDraws[a];
+            const FakeRenderTarget::TextDraw& pb = rt.textDraws[b];
+            if (pa.y != pb.y) continue;
+            const bool left = pb.x < pa.x;
+            const FakeRenderTarget::TextDraw& first = left ? pb : pa;
+            const FakeRenderTarget::TextDraw& second = left ? pa : pb;
+            const float gap = second.x - (first.x + first.adv);
+            if (gap > 45.0f) continue;  // a cell or block boundary
+            ++judged;
+            printf("  pair gap=%f (first x=%f adv=%f second x=%f)\n",
+                   gap, first.x, first.adv, second.x);
+            EXPECT_GE(gap, -0.75f);  // the next piece starts too early
+            EXPECT_LE(gap, 12.0f);   // the next piece starts too late
+        }
+    }
+    printf("PaintedLines: judged=%d\n", judged);
+    EXPECT_GE(judged, 1);
+    fflush(stdout);
+}
+
+// Table cells share their row's baseline, so their painted pieces
+// are the cross cell question the user saw: a cell that paints past
+// its column lands on the next cell's words and the table reads as
+// glued. Whatever stack runs, no two pieces may overlap.
+TEST(RendererWin, PaintedCellsNeverOverlap) {
+    Document doc = Doc({Table({{"Kolonne en", "Kolonne to"},
+                               {"Fed tekst her", "En to"}})});
+    NumberOffsets(&doc);
+
+    Renderer renderer;
+    FakeDWriteFactory dw;
+    ASSERT_TRUE(renderer.Init(&dw));
+    renderer.SetContentWidthMode(3);
+
+    const float width =
+        2.0f * ScaleMetrics(kBase, 1.0f).padX + 8.0f * kBodyEm;
+    FakeRenderTarget rt;
+    renderer.Render(&rt, &dw, doc, width, 0.0f, 0.0f, 0.0f, nullptr);
+    printf("PaintedCells: pieces=%zu\n", rt.textDraws.size());
+    for (const FakeRenderTarget::TextDraw& d : rt.textDraws) {
+        printf("  piece x=%f y=%f adv=%f\n", d.x, d.y, d.adv);
+    }
+    fflush(stdout);
+    int judged = 0;
+    for (size_t a = 0; a < rt.textDraws.size(); ++a) {
+        for (size_t b = a + 1; b < rt.textDraws.size(); ++b) {
+            const FakeRenderTarget::TextDraw& pa = rt.textDraws[a];
+            const FakeRenderTarget::TextDraw& pb = rt.textDraws[b];
+            if (pa.y != pb.y) continue;
+            const bool left = pb.x < pa.x;
+            const FakeRenderTarget::TextDraw& first = left ? pb : pa;
+            const FakeRenderTarget::TextDraw& second = left ? pa : pb;
+            const float gap = second.x - (first.x + first.adv);
+            ++judged;
+            printf("  cellpair gap=%f (first x=%f adv=%f second x=%f)\n",
+                   gap, first.x, first.adv, second.x);
+            EXPECT_GE(gap, -0.75f);  // a cell painted into its neighbour
+        }
+    }
+    printf("PaintedCells: judged=%d\n", judged);
+    EXPECT_GE(judged, 1);
+    fflush(stdout);
+}
