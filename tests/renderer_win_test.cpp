@@ -1584,6 +1584,11 @@ TEST(RendererWin, PaintedLinesKeepTheWordSpaces) {
     std::vector<TextMatch> marks;
     marks.push_back({0, 400});
     renderer.SetMarkers(&marks, true);
+    // The states where the drift shows run zoomed, not at 100 percent:
+    // the capture states sit near 0.71 and the reader's own window
+    // can carry any zoom. The pieces must keep their word spaces at
+    // any zoom the frame lays them at.
+    renderer.SetZoom(0.71f);
 
     const float width =
         2.0f * ScaleMetrics(kBase, 1.0f).padX + 8.0f * kBodyEm;
