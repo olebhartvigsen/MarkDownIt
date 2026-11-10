@@ -17,6 +17,7 @@
 #include "gtest_lite.h"
 
 #include "../src/renderer.h"
+#include "../src/windows/text_engine_win.h"
 #include "../src/dom.h"
 #include "../src/theme.h"
 
@@ -1447,3 +1448,79 @@ TEST(RendererWin, FrameWashesCrossingBlocksMatchTheTwin) {
     }
     fflush(stdout);
 }
+
+
+// The real engine places every slice of a line where the layout it
+// measured in placed it: the spans share one DirectWrite layout, and
+// the position a run starts at is where that layout starts it, after
+// the space the previous run carries. A run placed before its
+// predecessor's advance ends glues words; a run placed far beyond it
+// spreads them. The capture states on the runner have shown both, so
+// the engine itself is pinned here against the one authority there
+// is on a Windows runner: its own DirectWrite.
+TEST(RendererWin, RealEngineSliceGapsMatchTheLayout) {
+    platform::DWriteEngine engine;
+    std::vector<platform::GlyphRun> runs;
+    platform::GlyphRun plain;
+    plain.text = "The quick ";
+    plain.font.family = "body";
+    plain.font.size = 14.0f;
+    platform::GlyphRun boldRun = plain;
+    boldRun.text = "brown ";
+    boldRun.font.bold = true;
+    platform::GlyphRun ital = plain;
+    ital.text = "fox jumps";
+    ital.font.italic = true;
+    runs.push_back(plain);
+    runs.push_back(boldRun);
+    runs.push_back(ital);
+
+    engine.BeginLayout();
+    const std::vector<platform::TextLine> lines =
+        engine.MeasureWrapped(runs, 0.0f, 0.0f);
+    if (lines.empty() || lines[0].runs.empty()) {
+        // No DirectWrite factory in this environment (the fake stack
+        // links the engine against a stub without one); the runner
+        // owns the real answer.
+        printf("RealEngineSliceGaps: engine degraded, no layout\n");
+        fflush(stdout);
+        return;
+    }
+    ASSERT_GE(lines.size(), 1u);
+    printf("RealEngineSliceGaps: lines=%zu runs=%zu\n",
+           lines.size(), lines[0].runs.size());
+    for (size_t i = 0; i < lines[0].runs.size(); ++i) {
+        const platform::GlyphRun& r = lines[0].runs[i];
+        printf("  run i=%zu x=%f text=[%s]\n", i, r.x, r.text.c_str());
+    }
+    fflush(stdout);
+    ASSERT_GE(lines[0].runs.size(), 3u);
+    float prevX = 0.0f;
+    for (size_t i = 0; i + 1 < lines[0].runs.size(); ++i) {
+        const platform::GlyphRun& cur = lines[0].runs[i];
+        const platform::GlyphRun& next = lines[0].runs[i + 1];
+        // The visible advance of this slice, from the engine's own
+        // measure of the slice alone.
+        std::vector<platform::GlyphRun> one;
+        one.push_back(cur);
+        engine.BeginLayout();
+        const std::vector<platform::TextLine> own =
+            engine.MeasureWrapped(one, 0.0f, 0.0f);
+        ASSERT_GE(own.size(), 1u);
+        ASSERT_GE(own[0].runs.size(), 1u);
+        const float advance = own[0].width;
+        const float gap = next.x - (cur.x + advance);
+        printf("  pair i=%zu gap=%f (cur.x=%f own.width=%f)\n",
+               i, gap, cur.x, advance);
+        // Glue: the next run starts before this one's ink has ended.
+        EXPECT_GE(gap, -0.75f);
+        // Spread: the run starts no further than the space it takes
+        // plus rounding room. A space at fourteen points is under
+        // four points wide.
+        EXPECT_LE(gap, 9.0f);
+        prevX = cur.x;
+    }
+    (void)prevX;
+    fflush(stdout);
+}
+
