@@ -21,6 +21,7 @@
 #include "../src/theme.h"
 
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -1385,6 +1386,15 @@ TEST(RendererWin, SelectionRepaintAsksNoLayoutBeyondTheRects) {
         if (found) ++matched;
     }
     EXPECT_EQ(matched, twin.size());
+    if (matched != twin.size()) {
+        printf("twin=%zu matched=%zu\n", twin.size(), matched);
+        for (const Rect& r : twin)
+            printf("twin  %f %f %f %f\n", r.x, r.y, r.width, r.height);
+        for (const FakeRenderTarget::Fill& f : rt.fills)
+            printf("fill  %f %f %f %f\n", f.left, f.top,
+                   f.right, f.bottom);
+        fflush(stdout);
+    }
 }
 
 // The washes hold one shape on both ports: the frame paints the
@@ -1422,5 +1432,12 @@ TEST(RendererWin, FrameWashesCrossingBlocksMatchTheTwin) {
             }
         }
         EXPECT_TRUE(found);
+        if (!found)
+            printf("missing %f %f %f %f\n", r.x, r.y, r.width,
+                   r.height);
     }
+    for (const FakeRenderTarget::Fill& f : rt.fills)
+        printf("frame fill %f %f %f %f\n", f.left, f.top,
+               f.right, f.bottom);
+    fflush(stdout);
 }

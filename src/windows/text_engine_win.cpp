@@ -196,6 +196,30 @@ float DWriteEngine::PositionInRun(const GlyphRun& run, float maxWidth,
     return x;
 }
 
+float DWriteEngine::MeasureRunTrailing(const GlyphRun& run,
+                                       float maxWidth) const {
+    // The advance the run costs its line, trailing spaces included:
+    // DWRITE_TEXT_METRICS.width stops before trailing whitespace, and
+    // a composer that adds that trimmed width moves the next run
+    // right on top of where the spaces should carry it, gluing words.
+    IDWriteTextFormat* format = FormatFor(run.font);
+    if (!format || run.text.empty()) return 0.0f;
+    const std::wstring text = ToUtf16(run.text);
+    IDWriteTextLayout* layout = nullptr;
+    if (FAILED(factory_->CreateTextLayout(
+            text.c_str(), (UINT32)text.size(), format,
+            maxWidth > 0.0f ? maxWidth : 100000.0f, 1000.0f, &layout))) {
+        return 0.0f;
+    }
+    DWRITE_TEXT_METRICS metrics = {};
+    float width = 0.0f;
+    if (SUCCEEDED(layout->GetMetrics(&metrics))) {
+        width = metrics.widthIncludingTrailingWhitespace;
+    }
+    layout->Release();
+    return width;
+}
+
 std::vector<TextLine> DWriteEngine::MeasureWrapped(
         const std::vector<GlyphRun>& runs,
         float maxWidth, float lineSpacing) {
@@ -213,7 +237,7 @@ std::vector<TextLine> DWriteEngine::MeasureWrapped(
         line.height = WidestLineHeight(runs);
         float x = 0.0f;
         for (const GlyphRun& run : runs) {
-            const float w = MeasureRun(run, maxWidth);
+            const float w = MeasureRunTrailing(run, maxWidth);
             // A run never breaks inside itself; a full run moves to
             // the next line when it no longer fits, and a first run
             // stays on the line even when too wide, the shared wrap
@@ -321,12 +345,20 @@ std::vector<TextLine> DWriteEngine::MeasureWrapped(
     UINT32 cursor = 0;  // the UTF-16 index the current line starts at
     size_t slicedBytes = 0;
     for (const DWRITE_LINE_METRICS& m : lineMetrics) {
-        // DirectWrite's length stops before the line ending characters
-        // (they ride the newlineLength count), and the account must
-        // hold every byte, so the break characters belong to this
-        // line's last slice, the same piece the fake keeps them with.
+        // DirectWrite's length stops before the line's tail: the
+        // trailing whitespace and the newline bytes come named by
+        // their own counts. Whichever way the SDK tallies the
+        // newline inside the whitespace tail, the whole tail is
+        // charged once, never twice, because the byte account must
+        // land every tail code unit in exactly one slice, the same
+        // piece the fake keeps them with. The wrap spaces that word
+        // wrapping breaks at are tail: they ride the line that ends.
+        const UINT32 tail =
+            (m.trailingWhitespaceLength >= m.newlineLength)
+                ? m.trailingWhitespaceLength
+                : (m.trailingWhitespaceLength + m.newlineLength);
         const UINT32 start = cursor;
-        const UINT32 end = start + m.length + m.newlineLength;
+        const UINT32 end = start + m.length + tail;
         cursor = end;
         TextLine out;
         out.height = m.height > 0.0f ? m.height : WidestLineHeight(runs);

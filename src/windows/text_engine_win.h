@@ -44,6 +44,11 @@ private:
     // Measures one run. Returns the advance width of its text.
     float MeasureRun(const GlyphRun& run, float maxWidth) const;
 
+    // The advance one run costs a composed line, trailing spaces
+    // included: the trimmed width would glue the next run onto the
+    // spaces' ground.
+    float MeasureRunTrailing(const GlyphRun& run, float maxWidth) const;
+
     // The exact x of a UTF-16 offset inside one run's text, or the
     // trailing edge past the end when the offset is out of range.
     float PositionInRun(const GlyphRun& run, float maxWidth,

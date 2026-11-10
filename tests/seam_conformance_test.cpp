@@ -112,6 +112,43 @@ void CheckTextEngine(TextEngine& engine) {
     EXPECT_EQ(wrappedText, sourceText);
     EXPECT_LE(wrappedWidth, unbounded[0].width + 0.001f);
 
+    // Word wrapping breaks lines at spaces, and the space that carries
+    // the break still has to advance the ink after it: a line laid
+    // run by run at trimmed widths drops every space at a run's end,
+    // and the words come out glued. The grid pins the gap between two
+    // runs sharing a wrapped line, with the bound measured off the
+    // engine's own unbounded answer so metric guesses stay out. Runs
+    // one and two fit the bound together, run three does not.
+    std::vector<GlyphRun> parted = {MakeRun("aa ", 14.0f),
+                                   MakeRun("bb ", 14.0f),
+                                   MakeRun("ccc", 14.0f)};
+    std::vector<GlyphRun> pair = {parted[0], parted[1]};
+    engine.BeginLayout();
+    std::vector<TextLine> pairLines = engine.MeasureWrapped(pair, 0.0f, 0.0f);
+    ASSERT_TRUE(pairLines.size() >= 1);
+    ASSERT_TRUE(pairLines[0].width > 1.0f);
+    const float pairBound = pairLines[0].width + 0.5f;
+    engine.BeginLayout();
+    std::vector<TextLine> partedLines =
+        engine.MeasureWrapped(parted, pairBound, 0.0f);
+    ASSERT_TRUE(partedLines.size() >= 2);  // the third run did not fit
+    std::string partedText;
+    for (const TextLine& line : partedLines) {
+        const GlyphRun* previous = nullptr;
+        for (const GlyphRun& run : line.runs) {
+            if (previous) {
+                // The space between the runs still advances: a gap a
+                // reader can see, not the trimmed-width overlap.
+                EXPECT_GT(run.x, previous->x + 1.0f);
+            }
+            partedText += run.text;
+            previous = &run;
+        }
+    }
+    std::string partedSource;
+    for (const GlyphRun& run : parted) partedSource += run.text;
+    EXPECT_EQ(partedText, partedSource);
+
     // Offsets are UTF-8 bytes: the multibyte line draws four
     // characters in eight bytes, and the trailing hit answers the
     // byte count, not the character count.
