@@ -44,14 +44,23 @@ STATES = ["doc", "find", "edit", "outline", "source", "lower", "end",
           "tail", "shared", "dark", "settings"]
 
 # Tolerances, calibrated on the fonts alone: the row gap differs by up
-# to 5 px (the wrap difference moves band counts by up to 2, the first
-# row by up to 5 px) and the body pitch by up to 4 px. The real
-# defects sit far outside: a missing blank-line strip adds 21-31 px to
-# one gap, the line-height bug moved the body pitch by 7 px, and a
-# dialog or an unreadable page kills the ink.
+# to 5 px inside a paragraph (the wrap difference moves band counts by
+# up to 2, the first row by up to 5 px) and the body pitch by up to
+# 4 px. A block boundary is wider: the last glyphs of one block and
+# the first of the next sit at different ascents and descents in the
+# two platform fonts, so the ink-to-ink distance across a heading
+# seam differs by up to 13 px (Segoe descends less under the body
+# line, and its heading glyphs top in later than SF Pro's). The
+# single paint of a table cell freed the captures of the ghost bands
+# the double paint used to leave, and a seam that used to be measured
+# against fused ink now reads the true type: 13 px across the
+# paragraph-to-heading seam.
+# Real defects still sit far outside: a missing blank-line strip
+# adds 21-31 px to one gap, the line-height bug moved the body pitch
+# by 7 px, and a dialog or an unreadable page kills the ink.
 TOL_COUNT = 2
 TOL_FIRST_ROW = 8
-TOL_GAP = 12
+TOL_GAP = 14
 TOL_BODY_PITCH = 5
 MIN_INK = 0.5  # percent of the pane
 
