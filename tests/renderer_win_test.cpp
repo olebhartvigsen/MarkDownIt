@@ -1368,6 +1368,11 @@ TEST(RendererWin, SelectionRepaintAsksNoLayoutBeyondTheRects) {
     sel.active.offset = sel.anchor.offset + 20;
     renderer.Render(&rt, &dw, doc, width, 0.0f, 0.0f, 0.0f, &sel);
     EXPECT_EQ(engine.calls.size(), bareCalls * 2u);
+    // Temporary trace: diagwash fill counts, removed after the twin
+    // mismatch is closed.
+    printf("diagwash sel-render fills=%zu (bare %zu)\n",
+           rt.fills.size(), rtBare.fills.size());
+    fflush(stdout);
 
     // And the washes the selection frame painted are exactly the
     // twin's rects for the same selection.
