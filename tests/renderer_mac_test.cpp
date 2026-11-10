@@ -1815,6 +1815,24 @@ TEST(RendererMac, SvgDoesNotCloseAnOpenPath) {
     EXPECT_FALSE(target.polygons[0].closed);
 }
 
+TEST(RendererMac, SvgDrawsEverySegmentOfABentPolyline) {
+    platform::SvgDoc doc;
+    ASSERT_TRUE(doc.Load(
+        "<svg width='200' height='200'>"
+        "<polyline points='10,150 10,100 90,100 90,40' fill='none'"
+        " stroke='#000' stroke-width='1'/>"
+        "</svg>"));
+    RecordingTarget target;
+    FakeEngine engine;
+    doc.Draw(&target, &engine, 0.0f, 0.0f, 200.0f, 200.0f);
+
+    // A routed relation has bends. Drawing only its first segment left the
+    // horizontal run and the final rise out of the diagram.
+    ASSERT_EQ(target.polygons.size(), 1u);
+    EXPECT_EQ(target.polygons[0].points.size(), 4u);
+    EXPECT_FALSE(target.polygons[0].closed);
+}
+
 TEST(RendererMac, SvgTurnsAMarkerEndIntoAnArrowhead) {
     platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(

@@ -1297,6 +1297,24 @@ void SvgDoc::Draw(RenderTarget* target, TextEngine* engine, float x, float y,
             }
             case Kind::Line: {
                 if (shape.points.size() < 2) break;
+                if (shape.points.size() > 2) {
+                    // A polyline with bends: the routed relations of a
+                    // diagram. Every segment is drawn, not just the first.
+                    std::vector<Point> bent;
+                    bent.reserve(shape.points.size());
+                    for (const Point& point : shape.points) {
+                        bent.push_back(placeShape(point));
+                    }
+                    const float width = shape.style.strokeWidth * strokeFactor;
+                    if (!shape.style.dash.empty()) {
+                        StrokeDashed(target, bent, false, shape.style.dash,
+                                     strokeFactor, shape.style.stroke, width);
+                    } else {
+                        target->StrokePolygon(bent, shape.style.stroke, width,
+                                              false);
+                    }
+                    break;
+                }
                 const Point from = placeShape(shape.points[0]);
                 const Point to = placeShape(shape.points[1]);
                 if (!shape.style.dash.empty()) {
