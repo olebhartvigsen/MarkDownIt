@@ -2009,7 +2009,7 @@ TEST(RendererWin, ReportTableFullWalk) {
     std::sort(ys.begin(), ys.end());
     std::vector<float> bands;
     for (float y : ys) {
-        if (bands.empty() || y - bands.back() > 18.0f) bands.push_back(y);
+        if (bands.empty() || y - bands.back() > 30.0f) bands.push_back(y);
     }
     printf("FULLWALK painted y bands: %zu\n", bands.size());
     for (float b : bands) printf("FULLWALK band %f\n", b);
