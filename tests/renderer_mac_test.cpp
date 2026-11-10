@@ -542,15 +542,17 @@ TEST(RendererMac, ScalesEverythingWithTheZoom) {
                 0.02f);
 }
 
-TEST(RendererMac, MeasuresTablesTheWindowsWay) {
+TEST(RendererMac, MeasuresTablesTheWayColumnsCarryWords) {
     FakeEngine engine;
     MacRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
-    // A wrapping cell in the second column of the second row: the
-    // columns are equal, and the rows are as tall as their tallest
-    // cell.
+    // A single word of one hundred twenty glyphs in the second
+    // column of the second row: the column grows to carry the whole
+    // word instead of slicing it at the cell edge, the ether column
+    // keeps the rest of the frame, and every row stays one line
+    // tall.
     const Document doc = Doc({Table({
         {"a", "b"},
         {"c", std::string(120, 'x')},
@@ -560,13 +562,76 @@ TEST(RendererMac, MeasuresTablesTheWindowsWay) {
     const LaidOutBlock& table = renderer.blocks()[0];
     ASSERT_TRUE(table.table != nullptr);
 
-    const float colW = renderer.contentWidth() / 2.0f;
-    EXPECT_NEAR(table.tableLayout.colW, colW, 0.01f);
     EXPECT_NEAR(table.width, renderer.contentWidth(), 0.01f);
     ASSERT_EQ(table.tableLayout.rowHeights.size(), 2u);
+    ASSERT_EQ(table.tableLayout.columnCount, 2u);
+    ASSERT_EQ(table.tableLayout.colWs.size(), 2u);
 
-    // The cells were measured against the column width less GitHub's
-    // 13px side padding.
+    // The token walk of the second column's long word, answered by
+    // the engine the cells are measured with: its width is the
+    // demand the column takes, padding both sides included.
+    float charW = 0.0f;
+    for (const FakeEngine::Call& call : engine.calls) {
+        if (call.text.size() == 120u && call.size > 0.0f) {
+            charW = call.size * 0.5f;
+            break;
+        }
+    }
+    ASSERT_GE(charW, 0.01f);
+    const float word = 120.0f * charW;
+    const float growCol = word + 2.0f * kBase.cellPadX;
+    EXPECT_GT(growCol, renderer.contentWidth() / 2.0f);
+    EXPECT_NEAR(table.tableLayout.colWs[1], growCol, 0.01f);
+    EXPECT_NEAR(table.tableLayout.colWs[0],
+                renderer.contentWidth() - growCol, 0.01f);
+    EXPECT_NEAR(table.tableLayout.colWs[0] + table.tableLayout.colWs[1],
+                renderer.contentWidth(), 0.02f);
+
+    // The word's own cell is measured at the grown column less the
+    // side padding, never at a clipped share.
+    const float grownInner = growCol - 2.0f * kBase.cellPadX;
+    bool sawGrown = false;
+    for (const FakeEngine::Call& call : engine.calls) {
+        if (std::fabs(call.maxWidth - grownInner) < 0.01f) sawGrown = true;
+    }
+    EXPECT_TRUE(sawGrown);
+
+    const float lineH = kBodyEm * kBase.bodyLineHeight;
+    EXPECT_NEAR(table.tableLayout.rowHeights[0],
+                lineH + 2.0f * kBase.cellPadY, 0.02f);
+    // The long word fits its grown column, so the row it sits in is
+    // one line, the same height as the first.
+    EXPECT_NEAR(table.tableLayout.rowHeights[1],
+                table.tableLayout.rowHeights[0], 0.02f);
+    EXPECT_NEAR(table.height,
+                table.tableLayout.rowHeights[0] + table.tableLayout.rowHeights[1],
+                0.01f);
+}
+
+TEST(RendererMac, MeasuresTablesEquallyWhenWordsFit) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    // Short words everywhere: no column needs more than the equal
+    // share, so the split stays equal, the rule both renderers
+    // painted before any column carried a word.
+    const Document doc = Doc({Table({
+        {"a", "b"},
+        {"c", "d e f"},
+    })});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    const LaidOutBlock& table = renderer.blocks()[0];
+    ASSERT_TRUE(table.table != nullptr);
+
+    const float colW = renderer.contentWidth() / 2.0f;
+    EXPECT_NEAR(table.tableLayout.colW, colW, 0.01f);
+    ASSERT_EQ(table.tableLayout.colWs.size(), 2u);
+    EXPECT_NEAR(table.tableLayout.colWs[0], colW, 0.01f);
+    EXPECT_NEAR(table.tableLayout.colWs[1], colW, 0.01f);
+
     const float innerW = colW - 2.0f * kBase.cellPadX;
     bool sawInner = false;
     for (const FakeEngine::Call& call : engine.calls) {
@@ -575,12 +640,11 @@ TEST(RendererMac, MeasuresTablesTheWindowsWay) {
     EXPECT_TRUE(sawInner);
 
     const float lineH = kBodyEm * kBase.bodyLineHeight;
+    ASSERT_EQ(table.tableLayout.rowHeights.size(), 2u);
     EXPECT_NEAR(table.tableLayout.rowHeights[0],
                 lineH + 2.0f * kBase.cellPadY, 0.02f);
-    EXPECT_GT(table.tableLayout.rowHeights[1], table.tableLayout.rowHeights[0]);
-    EXPECT_NEAR(table.height,
-                table.tableLayout.rowHeights[0] + table.tableLayout.rowHeights[1],
-                0.01f);
+    EXPECT_NEAR(table.tableLayout.rowHeights[1],
+                table.tableLayout.rowHeights[0], 0.02f);
 }
 
 TEST(RendererMac, PaintsTheGitHubTableGrid) {
