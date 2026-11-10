@@ -1879,6 +1879,14 @@ TEST(RendererWin, ReportDocumentStacksAtEveryZoom) {
                 (pieces[i - 1].x + pieces[i - 1].adv);
             if (gap > 60.0f * z) continue;
             ++judged;
+            if (gap < -1.5f * z) {
+                printf("STACK FAIL zoom=%f first x=%f y=%f adv=%f "
+                       "second x=%f y=%f adv=%f gap=%f\n",
+                       z, pieces[i - 1].x, pieces[i - 1].y,
+                       pieces[i - 1].adv, pieces[i].x, pieces[i].y,
+                       pieces[i].adv, gap);
+                fflush(stdout);
+            }
             EXPECT_GE(gap, -1.5f * z);  // piece crosses its neighbour
         }
         printf("STACK zoom=%f vlines=%zu pieces=%zu judged=%d\n",
