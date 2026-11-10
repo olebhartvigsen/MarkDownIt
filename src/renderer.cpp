@@ -1654,9 +1654,16 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                         platform::D2DTarget player(
                             rt, layoutEngine_.Factory());
                         size_t paintedRuns = 0;
+                        fprintf(stderr, "DTW cell ri=%zu c=%zu cellX=%.2f "
+                                "innerCW=%.2f clipH=%.2f curY=%.2f\n",
+                                ri, c, cellX, innerCW, clipH, curY);
                         for (const platform::TextLine& line :
                              rec->cells[ri][c].lines) {
                             float lineX = cellX + m.cellPadX;
+                                fprintf(stderr, "DTW line w=%.2f "
+                                        "asc=%.2f nruns=%zu\n",
+                                        line.width, line.ascent,
+                                        line.runs.size());
                             if (align == ColumnAlign::Center)
                                 lineX += (innerCW - line.width) * 0.5f;
                             else if (align == ColumnAlign::Right)
@@ -1675,6 +1682,9 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                 const platform::Color color{
                                     run.r, run.g, run.b, run.a};
                                 if (!run.text.empty()) ++paintedRuns;
+                                fprintf(stderr, "DTW run x=%.2f w=%.2f "
+                                        "[%s]\n", run.x, width,
+                                        run.text.substr(0, 12).c_str());
                                 player.DrawText(
                                     run.text, run.font, x, baseline,
                                     color);
@@ -1704,6 +1714,9 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     }
                 }
                 if (!painted) {
+                    fprintf(stderr, "DTW FB ri=%zu c=%zu "
+                            "origin=(%.2f, %.2f)\n", ri, c,
+                            cellOrigin.x, cellOrigin.y);
                     rt->DrawTextLayout(cellOrigin, layout, textBrush,
                                        D2D1_DRAW_TEXT_OPTIONS_CLIP);
                 }
