@@ -1,0 +1,19 @@
+{
+  "name": "replace-in-table-cell-is-sanitized",
+  "comment": "Replacing a match inside a table cell with text that holds a pipe must not add a column: the replacement is sanitized like a paste (table spec rule 10). Windows used to splice the raw text.",
+  "start_text": "| a | b |\n|---|---|\n| x | y |\n",
+  "commands": [
+    {
+      "cmd": "replace_match",
+      "offset": 26,
+      "length": 1,
+      "text": "p|q"
+    }
+  ],
+  "expected_text": "| a | b |\n|---|---|\n| x | p q |\n",
+  "expected_selection": {
+    "anchor": 26,
+    "active": 29
+  },
+  "expected_undo_depth": 1
+}

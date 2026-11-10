@@ -350,29 +350,17 @@ void App::ReplaceMatch(uint32_t offset, uint32_t length) {
     if (!editing_) return;
     if (length == 0) return;
 
-    // The field holding nothing means the match goes away, which is
-    // what replacing it with an empty string is.
-    const std::wstring replacement = findBar_->model().GetReplaceText();
-    std::string text = textenc::WideToUtf8(replacement);
-
-    // A replacement inside a table cell goes through the same
-    // sanitizing a paste does, or a pipe or a row break could turn
-    // the cell into table syntax (spec rule 10 and AC-10).
-    if (IsOffsetInTable(document_, offset)) {
-        text = SanitizePasteForTableCell(text);
-    }
-
-    SetSelection(offset, offset + length);
-    editor_.ReplaceTextRange(offset, length, text, EditType::Other);
-    // The replacement is one undo step of its own; the next keystroke
-    // must not merge into it.
-    editor_.BreakUndoCoalesce();
-    OnTextChanged();
+    // The controller does the edit: one undo step, and the table cell
+    // sanitizing a paste gets (spec rule 10 and AC-10). An empty
+    // field means the match goes away.
+    controller_.ReplaceMatch(
+        offset, length,
+        textenc::WideToUtf8(findBar_->model().GetReplaceText()));
     RefreshFindResults(false);
     // The next occurrence of the query becomes the current match; when
     // none is left, the inserted text stays selected (spec AC-12).
     if (!findBar_->model().SelectMatchAt(sel_.active.offset)) {
-        SetSelection(offset, offset + static_cast<uint32_t>(text.size()));
+        SetSelection(sel_.anchor.offset, sel_.active.offset);
     }
 }
 
@@ -393,11 +381,7 @@ void App::ReplaceAllMatches(const std::wstring& query,
 
     // The whole sweep is one undo entry, so a single undo brings the
     // document back (guide 17).
-    editor_.ReplaceTextRange(0, static_cast<uint32_t>(buffer_.Length()),
-                              replaced, EditType::Other);
-    editor_.BreakUndoCoalesce();
-    sel_.Collapse(CaretPos{0});
-    OnTextChanged();
+    controller_.ReplaceAllText(replaced);
     RefreshFindResults(false);
 
     // The count is what tells the user the sweep happened (guide 15).

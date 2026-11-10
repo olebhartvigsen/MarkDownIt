@@ -1,0 +1,17 @@
+{
+  "name": "replace-all-is-one-undo-step",
+  "comment": "A Replace All sweep is one undo entry and the caret goes to the top.",
+  "start_text": "cat cat cat",
+  "commands": [
+    {
+      "cmd": "replace_all_text",
+      "text": "dog dog dog"
+    }
+  ],
+  "expected_text": "dog dog dog",
+  "expected_selection": {
+    "anchor": 0,
+    "active": 0
+  },
+  "expected_undo_depth": 1
+}

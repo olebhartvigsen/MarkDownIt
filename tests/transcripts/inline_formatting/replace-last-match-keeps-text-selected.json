@@ -1,0 +1,19 @@
+{
+  "name": "replace-last-match-keeps-text-selected",
+  "comment": "Replacing one match leaves the inserted text selected and records one undo step.",
+  "start_text": "one two",
+  "commands": [
+    {
+      "cmd": "replace_match",
+      "offset": 4,
+      "length": 3,
+      "text": "three"
+    }
+  ],
+  "expected_text": "one three",
+  "expected_selection": {
+    "anchor": 4,
+    "active": 9
+  },
+  "expected_undo_depth": 1
+}

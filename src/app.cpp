@@ -4442,14 +4442,10 @@ void AppWindow::WireFindBar() {
 
     listener.onReplaceCurrent = [this](uint32_t offset, uint32_t length) {
         if (!editing_ || length == 0) return;
-        const Selection before = sel_;
-        const std::string replacement = ImeWideToUtf8(find_bar_.GetReplaceText());
-        // The editor path records one undo entry and leaves the inserted
-        // text selected, like every other replacement in the app.
-        editor_.ReplaceTextRange(offset, length, replacement, EditType::Other,
-                                 &before);
-        editor_.BreakUndoCoalesce();
-        OnBufferChanged();
+        // The controller replaces the match (one undo step, table cell
+        // sanitizing) and leaves the inserted text selected.
+        controller_.ReplaceMatch(offset, length,
+                                 ImeWideToUtf8(find_bar_.GetReplaceText()));
         // Continue from where the replacement ended, still searching for the
         // ORIGINAL query, never for the text just inserted (guide 22).
         RefreshFindResults(false);
@@ -4461,9 +4457,8 @@ void AppWindow::WireFindBar() {
                                    const FindStateOptions&) {
         if (!editing_) return;
         FindReplaceState& state = find_bar_.state();
-        // The callback hands over wide text and the state speaks UTF-8, so
-        // convert at the boundary. SetReplaceText cannot change which
-        // ranges match, so the existing match list stays valid.
+        // SetReplaceText cannot change which ranges match, so the
+        // existing match list stays valid.
         state.SetReplaceText(ImeWideToUtf8(replacement));
         std::string result;
         const size_t count = state.BuildReplacedDocument(buffer_.Text(),
@@ -4474,23 +4469,8 @@ void AppWindow::WireFindBar() {
             find_bar_.SetStatusText(L"No matches");
             return;
         }
-        const std::string original = buffer_.Text();
-        Selection before = sel_;
-        buffer_.Splice(0, static_cast<uint32_t>(original.size()), result);
-        sel_.Collapse({0});
-        UndoEntry entry{};
-        entry.offset = 0;
-        entry.removed = original;
-        entry.inserted = std::move(result);
-        entry.selBefore = before;
-        entry.selAfter = sel_;
-        entry.timestamp = GetTickCount64();
-        // ONE undo entry for the whole sweep, so a single Ctrl+Z restores
-        // the document (guide 17).
-        entry.type = EditType::Other;
-        undo_stack_.Push(entry);
-        editor_.BreakUndoCoalesce();
-        OnBufferChanged();
+        // ONE undo entry for the whole sweep (guide 17).
+        controller_.ReplaceAllText(result);
         RefreshFindResults(false);
         wchar_t message[128] = {};
         _snwprintf_s(message, _TRUNCATE, L"%zu replacements made.", count);

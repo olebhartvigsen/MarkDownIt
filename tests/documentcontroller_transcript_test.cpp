@@ -512,6 +512,13 @@ CaseResult RunTranscript(const std::string& name) {
             controller.Indent();
         } else if (cmd == "outdent") {
             controller.Outdent();
+        } else if (cmd == "replace_match") {
+            controller.ReplaceMatch(
+                static_cast<uint32_t>(IntOf(command, "offset", 0)),
+                static_cast<uint32_t>(IntOf(command, "length", 0)),
+                StrOf(command, "text"));
+        } else if (cmd == "replace_all_text") {
+            controller.ReplaceAllText(StrOf(command, "text"));
         } else {
             result.observed = "unknown command " + cmd;
             return result;
@@ -627,4 +634,16 @@ TEST(InlineFormattingTranscript, ClearFormatOverMultiRun) {
 
 TEST(InlineFormattingTranscript, BoldMultiRunToggleOnSharedSemantics) {
     RunCase("bold-multi-run-toggle-on-shared-semantics");
+}
+
+TEST(InlineFormattingTranscript, ReplaceInTableCellIsSanitized) {
+    RunCase("replace-in-table-cell-is-sanitized");
+}
+
+TEST(InlineFormattingTranscript, ReplaceAllIsOneUndoStep) {
+    RunCase("replace-all-is-one-undo-step");
+}
+
+TEST(InlineFormattingTranscript, ReplaceLastMatchKeepsTextSelected) {
+    RunCase("replace-last-match-keeps-text-selected");
 }

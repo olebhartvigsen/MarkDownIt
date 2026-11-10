@@ -9,7 +9,8 @@
 // command bodies move in one at a time, family by family
 // (references/batch4-controller-extraction.md).
 //
-// This wave carries the skeleton, family 2 (headings and lists:
+// This wave carries the skeleton, family 4 (find and replace, the
+// text changing half only), family 2 (headings and lists:
 // SetHeading, ToggleBullets, ToggleNumbering, ToggleQuote, Indent and
 // Outdent) and family 3, the inline formatting and undo plumbing:
 // the bold, italic, strikethrough, code and link toggles, Clear
@@ -178,6 +179,29 @@ public:
     // Cmd+Z brings the old pending toggles back before it touches
     // any text (the empty caret rules, rule 5).
     void RestorePendingFormat(const UndoEntry& entry, bool redo);
+
+    // -------------------------------------------------------------------
+    // Family 4: find and replace. The bar, the match list and the
+    // scope query stay with the ports; what changes the text is here.
+    // -------------------------------------------------------------------
+
+    // Replaces one match. Inside a table cell the replacement goes
+    // through the same sanitizing a paste does, so a pipe or a row
+    // break cannot turn the cell into table syntax (table spec rule
+    // 10). This resolved the map's divergence 2: the Windows path
+    // spliced raw text. The edit is one undo step of its own, and
+    // the inserted text is left selected, so the port either moves
+    // on to the next match or leaves the text selected when none is
+    // left (find spec AC-12). Read mode is a no-op.
+    void ReplaceMatch(uint32_t offset, uint32_t length,
+                      const std::string& replacement);
+
+    // Swaps the whole document for the text the find state built
+    // for Replace All. One undo entry for the sweep, and the caret
+    // goes to the top of the document, the Windows answer. The port
+    // has already ruled out the zero match case. Read mode is a
+    // no-op.
+    void ReplaceAllText(const std::string& replaced);
 
     // Splices the buffer and records the undo entry in one step, so
     // the table, find and link paths of both ports share one entry

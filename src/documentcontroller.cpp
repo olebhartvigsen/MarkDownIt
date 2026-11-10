@@ -22,6 +22,7 @@
 #include <chrono>
 
 #include "formatting.h"
+#include "navigation.h"
 #include "platformservices.h"
 
 // The undo clock of the shared code. It lives in the controller
@@ -529,6 +530,46 @@ void DocumentController::RestorePendingFormat(const UndoEntry& entry,
     }
     pending_.runActive = false;
     pending_.runSuffixBytes = 0;
+}
+
+void DocumentController::ReplaceMatch(uint32_t offset, uint32_t length,
+                                      const std::string& replacement) {
+    if (!editing_ || length == 0) return;
+    std::string text = replacement;
+    if (IsOffsetInTable(document_, offset)) {
+        text = SanitizePasteForTableCell(text);
+    }
+    // The match is the selection the undo entry returns to.
+    sel_.anchor = CaretPos{offset};
+    sel_.active = CaretPos{offset + length};
+    editor_.ReplaceTextRange(offset, length, text, EditType::Other);
+    // The replacement is one undo step of its own; the next keystroke
+    // must not merge into it.
+    editor_.BreakUndoCoalesce();
+    // The editor leaves a caret after the text; keep the text selected.
+    sel_.anchor = CaretPos{offset};
+    ClearPendingFormat();
+    NotifyDocumentChanged();
+}
+
+void DocumentController::ReplaceAllText(const std::string& replaced) {
+    if (!editing_) return;
+    const std::string original = buffer_.Text();
+    const Selection before = sel_;
+    buffer_.Splice(0, static_cast<uint32_t>(original.size()), replaced);
+    sel_.Collapse(CaretPos{0});
+    UndoEntry entry{};
+    entry.offset = 0;
+    entry.removed = original;
+    entry.inserted = replaced;
+    entry.selBefore = before;
+    entry.selAfter = sel_;
+    entry.timestamp = platform::GetMonotonicMs();
+    entry.type = EditType::Other;
+    undo_.Push(entry);
+    editor_.BreakUndoCoalesce();
+    ClearPendingFormat();
+    NotifyDocumentChanged();
 }
 
 void DocumentController::SpliceWithUndo(uint32_t offset, uint32_t length,
