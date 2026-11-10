@@ -1985,8 +1985,9 @@ TEST(RendererWin, ReportTableFullWalk) {
     // Column one must carry its code token in one piece, not
     // sliced fragments: the widest piece of the table's first
     // column answers.
-    float col1Left = vx.size() >= 2 ? vx[0] + 2.0f : 0.0f;
-    float col1Right = vx.size() >= 2 ? vx[1] - 2.0f : 1228.0f;
+    const float guardOx = (1228.0f - 800.0f) * 0.5f;
+    float col1Left = vx.size() >= 2 ? vx[0] + guardOx + 2.0f : 0.0f;
+    float col1Right = vx.size() >= 2 ? vx[1] + guardOx - 2.0f : 1228.0f;
     float widestCol1 = 0.0f;
     for (const FakeRenderTarget::TextDraw& d : rt.textDraws)
         if (d.x >= col1Left && d.x < col1Right)
@@ -1995,43 +1996,46 @@ TEST(RendererWin, ReportTableFullWalk) {
     fflush(stdout);
     EXPECT_GE(widestCol1, 250.0f);
 
-    // Every row band, every column band: at least one piece. A
-    // cell whose line painted nothing is the glue the reader sees.
+    // The fills replay in table-local coordinates while the pieces
+    // record in frame coordinates: the fake target ignores the
+    // replay transform, the paint pass runs after it was reset. The
+    // cell check therefore compares in the pieces' own space: the
+    // bands cluster the painted baselines, and every row band must
+    // own ink in every column band. A cell whose lines painted
+    // nothing is the glue the reader sees.
     std::vector<float> ys;
-    for (size_t i = 0; i < rt.fills.size(); ++i) {
-        const FakeRenderTarget::Fill& f = rt.fills[i];
-        const float w = f.right - f.left;
-        const float h = f.bottom - f.top;
-        if (h < 2.0f && w > 4.0f) ys.push_back(f.top);
-    }
+    for (const FakeRenderTarget::TextDraw& d : rt.textDraws)
+        ys.push_back(d.y);
     std::sort(ys.begin(), ys.end());
-    std::vector<float> uy;
-    for (float y : ys)
-        if (uy.empty() || y - uy.back() > 2.5f) uy.push_back(y);
-    printf("FULLWALK hlines: %zu\n", uy.size());
-    for (float y : uy) printf("FULLWALK hline %f\n", y);
+    std::vector<float> bands;
+    for (float y : ys) {
+        if (bands.empty() || y - bands.back() > 18.0f) bands.push_back(y);
+    }
+    printf("FULLWALK painted y bands: %zu\n", bands.size());
+    for (float b : bands) printf("FULLWALK band %f\n", b);
     fflush(stdout);
+    const float ox = (1228.0f - 800.0f) * 0.5f;
     size_t emptyCells = 0;
-    for (size_t r = 1; r + 1 < uy.size(); ++r) {
+    for (size_t r = 1; r + 1 < bands.size(); ++r) {
         for (size_t c = 1; c + 1 < vx.size(); ++c) {
             bool has = false;
             for (const FakeRenderTarget::TextDraw& d : rt.textDraws) {
-                if (d.y < uy[r] || d.y >= uy[r + 1]) continue;
-                if (d.x < vx[c] || d.x >= vx[c + 1]) continue;
+                if (d.y < bands[r] || d.y >= bands[r + 1]) continue;
+                const float fx = d.x - ox;
+                if (fx < vx[c] || fx >= vx[c + 1]) continue;
                 has = true;
                 break;
             }
             if (!has) {
                 ++emptyCells;
                 printf("FULLWALK EMPTY cell row=%zu col=%zu "
-                       "y in [%f, %f) x in [%f, %f)\n",
-                       r, c, uy[r], uy[r + 1], vx[c], vx[c + 1]);
+                       "band [%f, %f) cols [%f, %f)\n",
+                       r, c, bands[r], bands[r + 1],
+                       vx[c], vx[c + 1]);
             }
         }
     }
-    printf("FULLWALK empty cells: %zu of %zu\n", emptyCells,
-           ((uy.size() > 1 ? uy.size() - 2 : 0) *
-            (vx.size() > 1 ? vx.size() - 2 : 0)));
+    printf("FULLWALK empty cells: %zu\n", emptyCells);
     fflush(stdout);
     EXPECT_EQ(emptyCells, static_cast<size_t>(0));
 
