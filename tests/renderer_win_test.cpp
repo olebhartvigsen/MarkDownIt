@@ -2081,6 +2081,54 @@ TEST(RendererWin, ReportTableFullWalk) {
         EXPECT_LE(widest, col1 + 2.0f);
     }
 
+    // The same table in the mode the report photographs: full
+    // window width, no content cap. The claim is a first table whose
+    // left column clips or loses its code token once the window
+    // stops capping the column, so the split answers here too.
+    {
+        FakeRenderTarget rt3;
+        Renderer r3;
+        ASSERT_TRUE(r3.Init(&dw));
+        r3.SetContentWidthMode(3);
+        r3.Render(&rt3, &dw, doc, 1246.0f, 0.0f, 0.0f, 0.0f, nullptr);
+        std::vector<float> xs3;
+        for (size_t i = 0; i < rt3.fills.size(); ++i) {
+            const FakeRenderTarget::Fill& f = rt3.fills[i];
+            if (f.right - f.left < 2.0f && f.bottom - f.top > 4.0f)
+                xs3.push_back(f.left);
+        }
+        std::sort(xs3.begin(), xs3.end());
+        std::vector<float> vx3;
+        for (float x : xs3)
+            if (vx3.empty() || x - vx3.back() > 2.5f) vx3.push_back(x);
+        printf("FULL3 vlines: %zu\n", vx3.size());
+        for (float x : vx3) printf("FULL3 vline %f\n", x);
+        fflush(stdout);
+        ASSERT_GE(vx3.size(), static_cast<size_t>(5));
+        size_t owned1 = 0, owned2 = 0, owned3 = 0, owned4 = 0;
+        float widest1 = 0.0f;
+        for (const FakeRenderTarget::TextDraw& d : rt3.textDraws) {
+            if (d.x >= vx3[0] && d.x < vx3[1]) { ++owned1;
+                widest1 = (std::max)(widest1, d.adv); }
+            else if (d.x >= vx3[1] && d.x < vx3[2]) ++owned2;
+            else if (d.x >= vx3[2] && d.x < vx3[3]) ++owned3;
+            else if (d.x >= vx3[3]) ++owned4;
+        }
+        printf("FULL3 owned: %zu %zu %zu %zu widest1=%f "
+               "col1=%f col2=%f col3=%f col4=%f\n",
+               owned1, owned2, owned3, owned4, widest1,
+               vx3[1] - vx3[0], vx3[2] - vx3[1], vx3[3] - vx3[2],
+               vx3[4] - vx3[3]);
+        fflush(stdout);
+        for (const FakeRenderTarget::TextDraw& d : rt3.textDraws)
+            printf("FULL3 piece x=%f y=%f adv=%f\n", d.x, d.y, d.adv);
+        fflush(stdout);
+        EXPECT_GE(owned1, static_cast<size_t>(6));
+        EXPECT_GE(owned2, static_cast<size_t>(6));
+        EXPECT_GE(owned3, static_cast<size_t>(6));
+        EXPECT_GE(owned4, static_cast<size_t>(6));
+    }
+
     // The same table at the narrow window the report photographs,
     // where the deficit begins: the columns tell whether the split
     // still carries every token and every cell paints.
