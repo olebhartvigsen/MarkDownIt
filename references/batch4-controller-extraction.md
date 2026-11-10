@@ -98,8 +98,9 @@ Four live divergences, each with file:line evidence:
    and PDF import stay mac only (ledger row `importPdf`).
 
 One more duplication, not a divergence: the Ctrl+A table escalation
-tier is written twice (`app.h:363-367`, `app_mac.h:449-452`). It
-collapses into the controller with one behavior answer.
+tier was written twice. Both windows now call the shared
+`NextTableSelectionTier` in `src/navigation.cpp`; only the run counter
+stays in each window.
 
 ## CI referees per family
 

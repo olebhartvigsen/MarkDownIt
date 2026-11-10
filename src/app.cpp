@@ -5343,52 +5343,18 @@ void AppWindow::SelectAll() {
     if (sel_.active.offset != last_selectall_caret_) {
         last_selectall_tier_ = 0;
     }
-    TableCellRef cell;
     // Source view shows the Markdown text, not rendered cells, so the
     // cell/row/table escalation has nothing to select there. Ctrl+A is
-    // the whole buffer on screen, in one press.
-    const bool inTable = !source_view_ &&
-        TableCellAtOffset(doc_, buffer_.Text(), sel_.active.offset, &cell);
-    const uint32_t textLen = static_cast<uint32_t>(buffer_.Text().size());
-    const bool activeCell = inTable && !cell.separatorRow &&
-                            cell.srcEnd > cell.srcOffset;
-    if (activeCell && last_selectall_tier_ < 4) {
-        const Node& node = doc_.nodes[cell.tableIndex];
-        if (last_selectall_tier_ == 0) {
-            // Tier 1: the current cell.
-            last_selectall_tier_ = 1;
-            sel_.anchor = {cell.srcOffset};
-            sel_.active = {std::min(cell.srcEnd, textLen)};
-            last_selectall_caret_ = std::min(cell.srcEnd, textLen);
-            if (editing_) UpdateCaretPosition();
-            Repaint();
-            return;
-        }
-        if (last_selectall_tier_ == 1 && cell.rowIndex < node.rows.size()) {
-            // Tier 2: the entire row.
-            const TableRow& row = node.rows[cell.rowIndex];
-            uint32_t rowStart = UINT32_MAX;
-            uint32_t rowEnd = 0;
-            for (const TableCell& c : row.cells) {
-                rowStart = std::min(rowStart, c.srcOffset);
-                rowEnd = std::max(rowEnd, c.srcEnd);
-            }
-            if (rowEnd > rowStart) {
-                last_selectall_tier_ = 2;
-                sel_.anchor = {rowStart};
-                sel_.active = {std::min(rowEnd, textLen)};
-                last_selectall_caret_ = std::min(rowEnd, textLen);
-                if (editing_) UpdateCaretPosition();
-                Repaint();
-                return;
-            }
-        }
-        if (last_selectall_tier_ < 3) {
-            // Tier 3: the whole table.
-            last_selectall_tier_ = 3;
-            sel_.anchor = {node.srcOffset};
-            sel_.active = {std::min(node.srcOffset + node.srcLength, textLen)};
-            last_selectall_caret_ = std::min(node.srcOffset + node.srcLength, textLen);
+    // the whole buffer on screen, in one press. The escalation itself is
+    // the shared NextTableSelectionTier, the one the mac window calls.
+    if (!source_view_) {
+        const TableSelectionTier step = NextTableSelectionTier(
+            doc_, buffer_.Text(), sel_.active.offset, last_selectall_tier_);
+        if (step.tier != 0) {
+            last_selectall_tier_ = step.tier;
+            sel_.anchor = {step.start};
+            sel_.active = {step.end};
+            last_selectall_caret_ = step.end;
             if (editing_) UpdateCaretPosition();
             Repaint();
             return;
