@@ -25,7 +25,6 @@ and why. Three checkers read this file:
 | Legacy Mermaid entry points (`src/mermaid.cpp`, `mermaidlayout.cpp`, `diagramcache.cpp`) | Windows tests only | not built | Kept while `mermaid_legacy_test.cpp` moves to the shared engine. |
 | Content width cap (`LayoutMetrics::maxContentWidth`) | applied | not applied | By design: `theme.h` says the mac renderer follows the pane width. The width commands below expose the modes on Windows only. |
 | Mermaid painters | `renderer_pie.cpp`, `renderer_sequence.cpp` | `mermaid_painter_mac.cpp` | Each side paints the shared layout with its own API. |
-| Standalone `.mmd` fence wrap | loads and saves the fence (`app.cpp` `LoadDocumentText`, `DoSave`) | not handled, only the `.svg` fence (`app_mac.cpp` `OpenFile`) | Windows-only today. Batch 4 decides the twin or the drop, tracked in `batch4-controller-extraction.md`. |
 
 ## Commands: ribbon to mac menu
 

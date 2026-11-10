@@ -125,86 +125,16 @@ App::App() : buffer_(controller_.buffer()),
 
 App::~App() = default;
 
-namespace {
-
-// Whether the text already has a fence of the given language.
-bool HasLangFence(const std::string& text, const std::string& lang) {
-    size_t i = 0;
-    while (i < text.size()) {
-        size_t eol = text.find('\n', i);
-        std::string line = text.substr(
-            i, (eol == std::string::npos ? text.size() : eol) - i);
-        if (!line.empty() && line.back() == '\r') line.pop_back();
-        size_t b = 0;
-        while (b < line.size() && b < 3 && line[b] == ' ') b++;
-        if (line.compare(b, 3, "```") == 0) {
-            std::string info = line.substr(b + 3);
-            while (!info.empty() && (info.back() == ' ' ||
-                                     info.back() == '\t' || info.back() == '\r')) {
-                info.pop_back();
-            }
-            if (info == lang) return true;
-        }
-        if (eol == std::string::npos) break;
-        i = eol + 1;
-    }
-    return false;
-}
-
-// Puts a fence around the text.
-std::string WrapLangFence(const std::string& lang, const std::string& text) {
-    std::string out = "```" + lang + "\n";
-    out += text;
-    if (out.empty() || out.back() != '\n') out += '\n';
-    if (text.empty()) out += '\n';
-    out += "```\n";
-    return out;
-}
-
-// Takes the fence away again.
-//
-// At most one fence at the top and the one at the end go, so the
-// content that has fences of its own stays as it was.
-std::string UnwrapLangFence(const std::string& lang, const std::string& text) {
-    const std::string open = "```" + lang + "\n";
-    if (text.compare(0, open.size(), open) != 0) return text;
-
-    std::string body = text.substr(open.size());
-    const size_t close = body.rfind("```");
-    if (close == std::string::npos) return text;
-    body = body.substr(0, close);
-    if (!body.empty() && body.back() == '\n') body.pop_back();
-    return body;
-}
-
-// Whether the path ends in the given extension.
-}  // namespace
-
 bool App::OpenFile(const std::string& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file) return false;
     std::ostringstream contents;
     contents << file.rdbuf();
-    std::string text = contents.str();
-
-    // A standalone SVG file is a picture, so the content is wrapped in
-    // a fence, and the normal pipeline reads it as one.
-    // The extension is compared in lower case, so a file saved as
-    // DIAGRAM.SVG is a picture too and not a page of one long line.
-    std::string tail = path.size() >= 4 ? path.substr(path.size() - 4)
-                                        : std::string();
-    for (char& c : tail) {
-        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
-    }
-    isSvg_ = tail == ".svg";
-    svgWrapped_ = false;
-    if (isSvg_ && !HasLangFence(text, "svg")) {
-        text = WrapLangFence("svg", text);
-        svgWrapped_ = true;
-    }
+    // BOM, line ends and the .svg and .mmd fence are the controller's
+    // call, the same decode the Windows window runs.
+    controller_.LoadFile(contents.str(), path);
 
     filePath_ = path;
-    buffer_.SetText(text);
     buffer_.ClearDirty();
     dirty_ = false;
     sel_.Collapse(CaretPos{0});
@@ -218,8 +148,7 @@ bool App::OpenFile(const std::string& path) {
 }
 
 std::string App::TextForSaving() const {
-    if (svgWrapped_) return UnwrapLangFence("svg", buffer_.Text());
-    return buffer_.Text();
+    return controller_.BytesForSaving();
 }
 
 void App::SetEditing(bool on) {
@@ -247,8 +176,7 @@ void App::SetEditing(bool on) {
 
 void App::NewDocument() {
     filePath_.clear();
-    isSvg_ = false;
-    svgWrapped_ = false;
+    controller_.ForgetFile();
     buffer_.SetText(std::string());
     buffer_.ClearDirty();
     dirty_ = false;
@@ -412,8 +340,7 @@ void App::AdoptImportedText(const std::string& text) {
     // the document loses its path and its name. Without this a Save
     // would write the imported text over the previous document.
     filePath_.clear();
-    isSvg_ = false;
-    svgWrapped_ = false;
+    controller_.ForgetFile();
 }
 
 // Adds a row above or below the caret's row.

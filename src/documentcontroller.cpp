@@ -863,3 +863,16 @@ void DocumentController::RecordPendingFormatUndo(
     // ApplyUndo/ApplyRedo recomputes the opposite state for this
     // entry.
 }
+
+void DocumentController::LoadFile(const std::string& raw,
+                                  const std::string& pathUtf8) {
+    const std::string text = DecodeFileText(raw, pathUtf8, &fileFormat_);
+    buffer_.SetText(text);
+    undo_.Clear();
+    sel_.Collapse(CaretPos{0});
+    pending_ = PendingFormatState{};
+}
+
+std::string DocumentController::BytesForSaving() const {
+    return EncodeFileText(buffer_.Text(), fileFormat_);
+}

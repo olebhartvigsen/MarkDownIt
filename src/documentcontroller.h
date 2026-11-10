@@ -44,6 +44,7 @@
 #include <string>
 
 #include "caret.h"
+#include "documentfile.h"
 #include "dom.h"
 #include "editcontroller.h"
 #include "textbuffer.h"
@@ -107,6 +108,19 @@ public:
     // guide, read-only documents).
     void SetEditing(bool on) { editing_ = on; }
     bool IsEditing() const { return editing_; }
+
+    // Family 6: the file side. LoadFile takes the bytes of a file (or
+    // imported text with an empty path), decodes them (BOM, line ends,
+    // the .mmd and .svg fence), swaps the buffer, clears undo and puts
+    // the caret at the top. The port re-parses, lays out and watches
+    // the file. BytesForSaving answers what goes to disk. The dialogs,
+    // the recent list and the file watcher stay native.
+    void LoadFile(const std::string& raw, const std::string& pathUtf8);
+    std::string BytesForSaving() const;
+    // The text has no file behind it any more (an import, a new
+    // document): no BOM, no fence, LF line ends.
+    void ForgetFile() { fileFormat_ = FileFormat{}; }
+    const FileFormat& fileFormat() const { return fileFormat_; }
 
     // Family 2: headings and lists. SetHeading takes the resolved
     // level: 0 means paragraph. The Windows ribbon answers a toggle
@@ -289,6 +303,7 @@ private:
     // The pending typing format state.
     PendingFormatState pending_;
     bool editing_ = false;
+    FileFormat fileFormat_;
     DocumentChangedHandler documentChanged_;
     SelectionChangedHandler selectionChanged_;
 

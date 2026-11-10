@@ -2281,89 +2281,6 @@ void AppWindow::OnChar(HWND hwnd, wchar_t ch) {
 
 // Case-insensitive check whether the path ends with the extension
 // (including the dot, e.g. L".mmd").
-static bool EndsWithExtension(const std::wstring& path,
-                               const wchar_t* ext) {
-    const size_t n = wcslen(ext);
-    if (path.size() < n) return false;
-    const wchar_t* tail = path.c_str() + path.size() - n;
-    for (size_t i = 0; i < n; i++) {
-        if (towlower(tail[i]) != towlower(ext[i])) return false;
-    }
-    return true;
-}
-
-// Does the text already contain a ```<lang> fence? Used both to
-// detect user-provided fences in a wrapped file and (indirectly)
-// to keep the wrap idempotent.
-static bool HasLangFence(const std::string& text,
-                         const std::string& lang) {
-    size_t i = 0;
-    while (i < text.size()) {
-        size_t eol = text.find('\n', i);
-        std::string line = text.substr(i,
-            (eol == std::string::npos ? text.size() : eol) - i);
-        if (!line.empty() && line.back() == '\r') line.pop_back();
-        // Accept leading indentation of up to 3 spaces (CommonMark).
-        size_t b = 0;
-        while (b < line.size() && b < 3 && line[b] == ' ') b++;
-        if (line.compare(b, 3, "```") == 0) {
-            std::string info = line.substr(b + 3);
-            if (!info.empty() && info[0] == ' ') info.erase(0, info.find_first_not_of(" \t"));
-            if (info == lang) return true;
-        }
-        if (eol == std::string::npos) break;
-        i = eol + 1;
-    }
-    return false;
-}
-
-// Wrap bare source of the given language in a fence that the
-// markdown parser promotes to a rendered block.
-static std::string WrapLangFence(const std::string& lang,
-                                 const std::string& text) {
-    std::string out = "```" + lang + "\n";
-    out += text;
-    if (out.empty() || out.back() != '\n') out += '\n';
-    if (text.empty()) out += '\n';  // keep the code block non-empty
-    out += "```\n";
-    return out;
-}
-
-// Strip the synthetic fence added by WrapLangFence. Removes at
-// most one opening fence right at the top and a matching closing
-// fence at the end, so content that legitimately contains other
-// fences stays intact when the wrap was skipped.
-static std::string UnwrapLangFence(const std::string& lang,
-                                   const std::string& text) {
-    const std::string openingFence = "```" + lang;
-    const size_t fl = openingFence.size();
-    size_t b = 0;
-    while (b < text.size() && text[b] == '\n') b++;
-    bool opening = (text.size() >= b + fl &&
-        text.compare(b, fl, openingFence) == 0 &&
-        (b + fl == text.size() || text[b + fl] == '\n' ||
-         text[b + fl] == '\r'));
-    if (!opening) return text;
-    size_t i = b + fl;
-    if (i < text.size() && (text[i] == '\n' || text[i] == '\r')) i++;
-    if (i < text.size() && text[i - 1] == '\r' && text[i] == '\n') i++;
-    size_t j = text.find("```", i);
-    // Closing fence must sit at a line start to be ours.
-    while (j != std::string::npos) {
-        if (j == 0 || text[j - 1] == '\n') break;
-        j = text.find("```", j + 1);
-    }
-    if (j == std::string::npos) return text;
-    size_t e = j + 3;
-    if (e < text.size() && text[e] == '\r') e++;
-    if (e < text.size() && text[e] == '\n') e++;
-    std::string inner = text.substr(i, j - i);
-    // Empty file: wrap added one blank line; drop it on unwrap so
-    // an empty file stays empty.
-    if (inner == "\n") return std::string();
-    return inner;
-}
-
 void AppWindow::OpenFile(const std::wstring& path) {
     // Exit edit mode: destroy caret, invalidate ribbon state.
     if (editing_) {
@@ -2401,40 +2318,16 @@ void AppWindow::LoadDocumentText(const std::string& raw, const std::wstring& pat
     welcome_mode_ = false;  // a document is in the editor
 
 
-    // Detect BOM (UTF-8 BOM: EF BB BF)
-    has_bom_ = (raw.size() >= 3 &&
-        (unsigned char)raw[0] == 0xEF &&
-        (unsigned char)raw[1] == 0xBB &&
-        (unsigned char)raw[2] == 0xBF);
-    std::string utf8 = has_bom_ ? raw.substr(3) : raw;
-
-    // Standalone Mermaid file (.mmd): the source is bare diagram
-    // commands. Wrap it in a ```mermaid fence so the normal markdown
-    // pipeline parses and renders it as a diagram. DoSave unwraps
-    // the fence again so the file on disk keeps its original form.
-    is_mmd_ = !path.empty() && EndsWithExtension(path, L".mmd");
-    is_svg_ = !path.empty() && EndsWithExtension(path, L".svg");
-    // A ```svg fence is a picture only in a standalone .svg file. In a .md
-    // file the author wrote that fence as code, so it renders as code.
-    renderer_.SetStandaloneSvg(is_svg_);
-    mmd_wrapped_ = false;
-    if (is_mmd_ && !HasLangFence(utf8, "mermaid")) {
-        utf8 = WrapLangFence("mermaid", utf8);
-        mmd_wrapped_ = true;
-    }
-    svg_wrapped_ = false;
-    if (is_svg_ && !HasLangFence(utf8, "svg")) {
-        utf8 = WrapLangFence("svg", utf8);
-        svg_wrapped_ = true;
-    }
-
-    // Detect line endings: check for CR LF (0x0D 0x0A)
-    use_crlf_ = (utf8.find("\x0D\x0A") != std::string::npos);
+    // BOM, line ends and the standalone .mmd and .svg fence are decoded in
+    // the controller; the DoSave twin is BytesForSaving. A ```svg fence
+    // is a picture only in a standalone .svg file. In a .md file the
+    // author wrote that fence as code, so it renders as code.
+    controller_.LoadFile(raw, ImeWideToUtf8(path));
+    const std::string utf8 = buffer_.Text();
+    renderer_.SetStandaloneSvg(controller_.fileFormat().isSvg);
 
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
-    buffer_.SetText(utf8);
-    undo_stack_.Clear();
     file_path_ = path;
     ClearDirty();
     scrollY_ = 0.0f;
@@ -2507,31 +2400,13 @@ void AppWindow::Reload() {
     ss << f.rdbuf();
     std::string raw = ss.str();
 
-    // Same load path as OpenFile: strip BOM and detect line endings,
-    // otherwise a saved reload writes a double BOM.
-    has_bom_ = (raw.size() >= 3 &&
-        (unsigned char)raw[0] == 0xEF &&
-        (unsigned char)raw[1] == 0xBB &&
-        (unsigned char)raw[2] == 0xBF);
-    std::string utf8 = has_bom_ ? raw.substr(3) : raw;
-    // Re-apply the .mmd fence wrap (matches OpenFile: the disk file
-    // is bare mermaid, the buffer shows it fenced).
-    mmd_wrapped_ = false;
-    if (is_mmd_ && !HasLangFence(utf8, "mermaid")) {
-        utf8 = WrapLangFence("mermaid", utf8);
-        mmd_wrapped_ = true;
-    }
-    svg_wrapped_ = false;
-    if (is_svg_ && !HasLangFence(utf8, "svg")) {
-        utf8 = WrapLangFence("svg", utf8);
-        svg_wrapped_ = true;
-    }
-    use_crlf_ = (utf8.find("\x0D\x0A") != std::string::npos);
+    // Same decode as OpenFile, otherwise a saved reload writes a double BOM.
+    controller_.LoadFile(raw, ImeWideToUtf8(file_path_));
+    const std::string utf8 = buffer_.Text();
 
     float savedY = scrollY_;
     doc_ = Document{};
     ParseMarkdown(utf8, doc_);
-    buffer_.SetText(utf8);
     // The buffer pointer may have been reallocated; stale layouts, SVG
     // documents and decoded bitmaps are all bound to the old content.
     layout_cache_.Clear();
@@ -3647,44 +3522,9 @@ void AppWindow::UpdateTitleBar() {
 }
 
 bool AppWindow::DoSave(const std::wstring& path) {
-    // Get the buffer content as UTF-8.
-    std::string content = buffer_.Text();
-
-    // Standalone .mmd documents are edited inside a synthetic
-    // ```mermaid fence (see OpenFile). The file on disk is bare
-    // mermaid source, so unwrap the fence before writing.
-    if (is_mmd_ && mmd_wrapped_) {
-        content = UnwrapLangFence("mermaid", content);
-    }
-    if (is_svg_ && svg_wrapped_) {
-        content = UnwrapLangFence("svg", content);
-    }
-
-    // Detect and strip BOM if present on load, add it back on save.
-    // Determine line endings.
-    std::string out;
-    if (has_bom_) {
-        out += (char)0xEF;
-        out += (char)0xBB;
-        out += (char)0xBF;
-    }
-    if (use_crlf_) {
-        // Convert any line ending to CRLF while preserving existing CRLF:
-        // CR followed by LF is passed through as a pair, a lone LF (or a
-        // lone CR at end of input) becomes CRLF.
-        for (size_t i = 0; i < content.size(); i++) {
-            if (content[i] == 0x0D) {
-                out += (char)0x0D; out += (char)0x0A;
-                if (i + 1 < content.size() && content[i + 1] == 0x0A) i++;
-            } else if (content[i] == 0x0A) {
-                out += (char)0x0D; out += (char)0x0A;
-            } else {
-                out += content[i];
-            }
-        }
-    } else {
-        out = content;
-    }
+    // The bytes for the disk: fence taken away, BOM and line ends put
+    // back (controller_.BytesForSaving).
+    const std::string out = controller_.BytesForSaving();
 
     // Atomic save: write to temp file in same directory, then rename.
     std::wstring tempPath = path + L".mdtmp";
@@ -4420,7 +4260,7 @@ void AppWindow::WireFindBar() {
         // The controller replaces the match (one undo step, table cell
         // sanitizing) and leaves the inserted text selected.
         controller_.ReplaceMatch(offset, length,
-                                 ImeWideToUtf8(find_bar_.GetReplaceText()));
+                                 WideToUtf8(find_bar_.GetReplaceText()));
         // Continue from where the replacement ended, still searching for the
         // ORIGINAL query, never for the text just inserted (guide 22).
         RefreshFindResults(false);
@@ -4434,7 +4274,7 @@ void AppWindow::WireFindBar() {
         FindReplaceState& state = find_bar_.state();
         // SetReplaceText cannot change which ranges match, so the
         // existing match list stays valid.
-        state.SetReplaceText(ImeWideToUtf8(replacement));
+        state.SetReplaceText(WideToUtf8(replacement));
         std::string result;
         const size_t count = state.BuildReplacedDocument(buffer_.Text(),
                                                          &result);

@@ -86,8 +86,10 @@ Four live divergences, each with file:line evidence:
    reaches the delta branch. The controller's service clock ends this.
 4. Standalone `.mmd` wrap. Windows loads and saves it
    (`app.h:313-318`, `app.cpp:2462-2562`, unwrap in `DoSave`). The mac
-   side handles only the `.svg` fence. The parity ledger row for it
-   landed with this map.
+   side handled only the `.svg` fence. Family 6 resolved it with the
+   twin: both ports decode and encode through `src/documentfile.cpp`,
+   so the mac side now wraps `.mmd` too and the ledger row is gone.
+   The same decode also gave the mac side the BOM strip it lacked.
 
 One more duplication, not a divergence: the Ctrl+A table escalation
 tier is written twice (`app.h:363-367`, `app_mac.h:449-452`). It

@@ -265,12 +265,13 @@ public:
 
     // The text of the document as it goes on the disk.
     //
-    // A standalone SVG file is wrapped in a fence while it is shown, so
-    // the text that goes back to the disk takes the fence away again.
+    // A standalone SVG or .mmd file is wrapped in a fence while it is
+    // shown, and the BOM and line ends of the file are kept, so this
+    // is the controller's encode of the buffer.
     std::string TextForSaving() const;
 
     // Whether the document is a standalone SVG file.
-    bool IsStandaloneSvg() const { return isSvg_; }
+    bool IsStandaloneSvg() const { return controller_.fileFormat().isSvg; }
 
     // The selected text, empty when there is no selection.
     std::string SelectedText() const;
@@ -477,10 +478,6 @@ private:
     // The handler that opens a file.
     std::function<void(const std::string&)> openFileHandler_;
     std::function<void()> openPanelHandler_;
-    // Whether the document is a standalone SVG file.
-    bool isSvg_ = false;
-    // Whether the fence around the SVG was put there by the app.
-    bool svgWrapped_ = false;
     // The handler that reloads the file.
     std::function<void()> reloadHandler_;
     // The find bar, which owns the search state.

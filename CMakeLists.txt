@@ -325,6 +325,9 @@ if(BUILD_TESTS AND APPLE)
         # (family 3): reads tests/transcripts/inline_formatting from
         # the repo root, the way the perf harness reads its fixture.
         tests/documentcontroller_transcript_test.cpp
+        # Family 6: what a file becomes in the editor and back (BOM,
+        # line ends, the .mmd and .svg fence).
+        tests/documentfile_test.cpp
         tests/code_table_layout_test.cpp
         tests/svg_mermaid_layout_test.cpp
         tests/display_player_test.cpp
@@ -441,6 +444,9 @@ elseif(BUILD_TESTS)
         # (family 3): reads tests/transcripts/inline_formatting from
         # the repo root, the way the perf harness reads its fixture.
         tests/documentcontroller_transcript_test.cpp
+        # Family 6: what a file becomes in the editor and back (BOM,
+        # line ends, the .mmd and .svg fence).
+        tests/documentfile_test.cpp
         tests/code_table_layout_test.cpp
         tests/svg_mermaid_layout_test.cpp
         tests/display_player_test.cpp
