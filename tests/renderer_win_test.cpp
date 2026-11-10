@@ -2067,3 +2067,59 @@ TEST(RendererWin, ReportTableFullWalk) {
         printf("NARROW piece x=%f y=%f adv=%f\n", d.x, d.y, d.adv);
     fflush(stdout);
 }
+// The column the drift report photographs: the narrow "Retning"
+// column, where the body text wraps. The engine slices the wrapped
+// layout back onto the runs, and the paint places every slice at
+// its run.x. This answers with the real DirectWrite, on the runner:
+// for each line the slice bytes total the run, and the first run of
+// a line starts at the line's origin, x=0. A line whose first slice
+// rides a number is the misplaced ink the reader sees.
+TEST(RendererWin, RealEngineWrappedSlices) {
+    platform::DWriteEngine engine;
+    struct Case { const char* text; float inner; };
+    const Case cases[] = {
+        {"AU til SLS", 64.3f},   // the Retning column at the frame
+        {"SLS til AU", 64.3f},
+        {"Internt", 64.3f},
+        {"Manuel", 64.3f},
+        {"Integration", 267.7f},  // the wide column, for contrast
+    };
+    bool measured = false;
+    for (const Case& c : cases) {
+        std::vector<platform::GlyphRun> runs;
+        platform::GlyphRun run;
+        run.text = c.text;
+        run.font.family = "body";
+        run.font.size = 14.0f;
+        runs.push_back(run);
+        engine.BeginLayout();
+        const std::vector<platform::TextLine> lines =
+            engine.MeasureWrapped(runs, c.inner, 0.0f);
+        printf("WRAPPED case [%s] inner=%f lines=%zu\n",
+               c.text, c.inner, lines.size());
+        if (lines.empty() || lines[0].runs.empty()) continue;
+        measured = true;
+        size_t bytes = 0;
+        for (size_t li = 0; li < lines.size(); ++li) {
+            const platform::TextLine& line = lines[li];
+            for (const platform::GlyphRun& r : line.runs)
+                bytes += r.text.size();
+            printf("  line %zu nruns=%zu width=%f\n",
+                   li, line.runs.size(), line.width);
+            for (size_t k = 0; k < line.runs.size(); ++k)
+                printf("    run %zu [%s] x=%f\n",
+                       k, line.runs[k].text.c_str(), line.runs[k].x);
+            EXPECT_GE(line.runs.size(), 1u);
+            // The first slice of every line begins at the line's
+            // origin: x=0, the same place the flat layout starts.
+            EXPECT_NEAR(line.runs.front().x, 0.0f, 0.5f);
+        }
+        EXPECT_EQ(bytes, strlen(c.text));
+        fflush(stdout);
+    }
+    if (!measured) {
+        printf("WRAPPED: engine degraded, no layout\n");
+        fflush(stdout);
+        return;
+    }
+}
