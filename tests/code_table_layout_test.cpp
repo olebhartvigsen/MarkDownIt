@@ -226,3 +226,56 @@ TEST(CodeTableLayout, Fallbacks) {
     NEAR(y2, 5.0f);  // no columns, so the walk advances nothing
     EXPECT_EQ(b2.table->columnCount, static_cast<size_t>(0));
 }
+
+
+TEST(TableLayout, DistributeTableColumnsMath) {
+    // Words that fit the equal share keep the equal split.
+    {
+        const std::vector<float> min = {40.0f, 50.0f, 30.0f};
+        const std::vector<float> w =
+            layout::DistributeTableColumns(min, 300.0f, 3, 6.0f);
+        EXPECT_EQ(w.size(), static_cast<size_t>(3));
+        NEAR(w[0], 100.0f);
+        NEAR(w[1], 100.0f);
+        NEAR(w[2], 100.0f);
+    }
+    // A word wider than its equal share: its column takes the
+    // demand, the others share what is left and never drop below
+    // their own demand.
+    {
+        const std::vector<float> min = {291.0f, 57.0f, 276.0f, 84.0f};
+        const std::vector<float> w =
+            layout::DistributeTableColumns(min, 1100.0f, 4, 7.5f);
+        EXPECT_EQ(w.size(), static_cast<size_t>(4));
+        NEAR(w[0], 306.0f);   // 291 + 2 * 7.5
+        NEAR(w[2], 291.0f);   // 276 + 2 * 7.5
+        const float rest = 1100.0f - 306.0f - 291.0f;
+        NEAR(w[1], rest * 0.5f);
+        NEAR(w[3], rest * 0.5f);
+        NEAR(w[0] + w[1] + w[2] + w[3], 1100.0f);
+    }
+    // Demands that outweigh the frame: the deficit is shared pro
+    // rata, no column negative, no column eating the frame alone.
+    {
+        const std::vector<float> min = {600.0f, 700.0f, 900.0f, 500.0f};
+        const std::vector<float> w =
+            layout::DistributeTableColumns(min, 1100.0f, 4, 6.0f);
+        EXPECT_EQ(w.size(), static_cast<size_t>(4));
+        float sum = 0.0f;
+        for (float x : w) {
+            EXPECT_GT(x, 0.0f);
+            sum += x;
+        }
+        NEAR(sum, 1100.0f);
+        EXPECT_GT(w[2], w[0]);  // the widest demand keeps the widest
+        EXPECT_GT(w[1], w[0]);  // share, pro rata
+        EXPECT_LT(w[2], 906.0f);  // and never its whole demand
+    }
+    // No columns at all: nothing to divide.
+    {
+        const std::vector<float> empty;
+        const std::vector<float> w =
+            layout::DistributeTableColumns(empty, 500.0f, 0, 6.0f);
+        EXPECT_EQ(w.size(), static_cast<size_t>(0));
+    }
+}

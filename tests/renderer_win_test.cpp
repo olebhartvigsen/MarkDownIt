@@ -1692,3 +1692,100 @@ TEST(RendererWin, PaintedCellsNeverOverlap) {
     EXPECT_GE(judged, 1);
     fflush(stdout);
 }
+
+// Dual geometry probe: one table, one frame, every painter must
+// read the same column split. The fake target records the fills of
+// both the display items and the overlay card; the hairlines of the
+// grid answer which x each painter placed its columns at.
+TEST(RendererWin, DualGeometryProbe) {
+    Document doc = Doc({Table({
+        {"a", "En"},
+        {"b", std::string(60, 'w')},
+        {"Enhedssupplerende-register-taellereforskel", "lidt"},
+    })});
+    NumberOffsets(&doc);
+    Renderer renderer;
+    FakeDWriteFactory dw;
+    ASSERT_TRUE(renderer.Init(&dw));
+    renderer.SetContentWidthMode(3);
+    const float width =
+        2.0f * ScaleMetrics(kBase, 1.0f).padX + 30.0f * kBodyEm;
+    FakeRenderTarget rt;
+    renderer.Render(&rt, &dw, doc, width, 0.0f, 0.0f, 0.0f, nullptr);
+    printf("DUALP fills=%zu\n", rt.fills.size());
+    for (size_t i = 0; i < rt.fills.size(); ++i) {
+        const FakeRenderTarget::Fill& f = rt.fills[i];
+        const float w = f.right - f.left;
+        const float h = f.bottom - f.top;
+        if ((w < 5.0f || h < 5.0f) && (w > 0.0f || h > 0.0f))
+            printf("DUALP grid x=%f y=%f w=%f h=%f color=%f,%f,%f\n",
+                   f.left, f.top, w, h, f.r, f.g, f.b);
+    }
+    fflush(stdout);
+    EXPECT_GT(rt.fills.size(), 0u);
+}
+
+// The reported document's own table: four columns, two long code
+// tokens, the shape the drift report saw go wild. Every grid line
+// both painters draw answers with its place, so a split that
+// disagrees shows as two verticals where there should be one, and
+// the cell pieces answer whether any column still paints across
+// its neighbour.
+TEST(RendererWin, ReportTableShapeHolds) {
+    Document doc = Doc({Table({
+        {"Integration", "Retning", "Teknik i dag", "Kilde"},
+        {"HCM til SLS: opret og aendr ansaettelsesforhold",
+         "AU til SLS",
+         "Atom feed fra Oracle HCM, Red Hat Fuse/JBoss, "
+         "SLS webservice",
+         "Confluence 160479867"},
+        {"Specialwebservice `OesSLSLoenmodtagerOpdateringList`",
+         "SLS til AU",
+         "Braendevarelse af loenmodtagerliste "
+         "med `PersonExt1Service.skiftCprKOTtilSLS`",
+         "Confluence 173314451"},
+    })});
+    NumberOffsets(&doc);
+    Renderer renderer;
+    FakeDWriteFactory dw;
+    ASSERT_TRUE(renderer.Init(&dw));
+    renderer.SetContentWidthMode(0);
+
+    FakeRenderTarget rt;
+    renderer.Render(&rt, &dw, doc, 1561.0f, 0.0f, 0.0f, 0.0f, nullptr);
+    printf("REPORT fills=%zu pieces=%zu\n", rt.fills.size(),
+           rt.textDraws.size());
+    for (size_t i = 0; i < rt.fills.size(); ++i) {
+        const FakeRenderTarget::Fill& f = rt.fills[i];
+        const float w = f.right - f.left;
+        const float h = f.bottom - f.top;
+        if (w < 5.0f || h < 5.0f)
+            printf("REPORT grid x=%f y=%f w=%f h=%f\n",
+                   f.left, f.top, w, h);
+    }
+    for (const FakeRenderTarget::TextDraw& d : rt.textDraws)
+        printf("REPORT piece x=%f y=%f adv=%f\n", d.x, d.y, d.adv);
+    fflush(stdout);
+    // The verticals of the whole table must sit at the same x per
+    // row edge from both painters: count distinct near-1px x
+    // stripes, they number columnCount + 1 plus the right edge.
+    std::vector<float> xs;
+    for (size_t i = 0; i < rt.fills.size(); ++i) {
+        const FakeRenderTarget::Fill& f = rt.fills[i];
+        const float w = f.right - f.left;
+        const float h = f.bottom - f.top;
+        if (w < 2.0f && h > 4.0f) xs.push_back(f.left);
+    }
+    std::sort(xs.begin(), xs.end());
+    std::vector<float> uniq;
+    for (float x : xs) {
+        if (uniq.empty() || x - uniq.back() > 2.5f) uniq.push_back(x);
+    }
+    printf("REPORT distinct vlines: %zu\n", uniq.size());
+    for (float x : uniq) printf("REPORT vline %f\n", x);
+    // Four columns answer five inner edges; the frame hairline at
+    // the right edge is the sixth.
+    EXPECT_GE(uniq.size(), 5u);
+    EXPECT_LE(uniq.size(), 7u);
+    fflush(stdout);
+}
