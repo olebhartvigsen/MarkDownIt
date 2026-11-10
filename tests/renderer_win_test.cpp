@@ -1899,3 +1899,171 @@ TEST(RendererWin, ReportDocumentStacksAtEveryZoom) {
         EXPECT_GE(judged, 1);
     }
 }
+
+// The reported document's whole first table, all eight rows, at the
+// wide window the drift report saw. The walk runs on the real
+// DirectWrite on the runner, so the dump answers: which x the column
+// separators took, and whether every cell painted its glyphs. A cell
+// that measured lines but painted no piece, or a code token sliced
+// into fragments because its column came out narrow, is the glue the
+// report photographs.
+TEST(RendererWin, ReportTableFullWalk) {
+    Document doc = Doc({Table({
+        {"Integration", "Retning", "Teknik i dag", "Kilde"},
+        {"HCM til SLS: opret og aendr ansaettelsesforhold",
+         "AU til SLS",
+         "Atom feed fra Oracle HCM, Red Hat Fuse/JBoss, "
+         "SLS webservice. SLS returnerer et loebenummer, "
+         "som laegges paa HCM-ansaettelsen",
+         "Confluence 160479867"},
+        {"Specialwebservice `OesSLSLoenmodtagerOpdateringList`",
+         "SLS til AU",
+         "Leveres af OEoS paa Miracle PaaS. Kraever bruger, "
+         "IP-aabning og bilag 5",
+         "Confluence 173314451"},
+        {"AU Timeloen (TIMEmSYSTEM/Visma) til SLS",
+         "AU til SLS",
+         "Server-til-server med funktionscertifikat knyttet til "
+         "webservicebrugeren `SL001WS`",
+         "Fejlsoegning `au-timelon-certifikat`"},
+        {"Fravaersindberetning til SLS",
+         "AU til SLS",
+         "Gammel SOA/OSB-composite. Skal afklares om den stadig "
+         "koerer",
+         "ADO 15437"},
+        {"Skift af KOT-CPR til SLS-CPR",
+         "Internt",
+         "`PersonExt1Service.skiftCprKOTtilSLS`, fordi SLS kun "
+         "tager rene tal i CPR-feltet",
+         "ADO 15846, 38289"},
+        {"SLS-loebenummer paa ansaettelsen",
+         "Internt",
+         "Flexfield i HCM. Audit paa feltet (ADO 32239)",
+         "ADO 32239, 23223"},
+        {"Loens manuelle processer direkte i SLS",
+         "Manuel",
+         "Individuelle kontrakter, ph.d., flexjob, loentilskud, "
+         "smaa timeloennede",
+         "ADO 19104"},
+    })});
+    NumberOffsets(&doc);
+    Renderer renderer;
+    FakeDWriteFactory dw;
+    ASSERT_TRUE(renderer.Init(&dw));
+    renderer.SetContentWidthMode(0);
+
+    FakeRenderTarget rt;
+    renderer.Render(&rt, &dw, doc, 1228.0f, 0.0f, 0.0f, 0.0f, nullptr);
+
+    float maxAdv = 0.0f;
+    for (const FakeRenderTarget::TextDraw& d : rt.textDraws)
+        maxAdv = (std::max)(maxAdv, d.adv);
+    if (maxAdv < 60.0f) {
+        // No real text metrics in this environment, fake stack
+        // without a factory: the runner owns the real answer.
+        printf("FULLWALK degraded, no real ink\n");
+        fflush(stdout);
+        return;
+    }
+
+    // The vertical separators the card painted.
+    std::vector<float> xs;
+    for (size_t i = 0; i < rt.fills.size(); ++i) {
+        const FakeRenderTarget::Fill& f = rt.fills[i];
+        const float w = f.right - f.left;
+        const float h = f.bottom - f.top;
+        if (w < 2.0f && h > 4.0f) xs.push_back(f.left);
+    }
+    std::sort(xs.begin(), xs.end());
+    std::vector<float> vx;
+    for (float x : xs)
+        if (vx.empty() || x - vx.back() > 2.5f) vx.push_back(x);
+    printf("FULLWALK vlines: %zu\n", vx.size());
+    for (float x : vx) printf("FULLWALK vline %f\n", x);
+    fflush(stdout);
+
+    // Column one must carry its code token in one piece, not
+    // sliced fragments: the widest piece of the table's first
+    // column answers.
+    float col1Left = vx.size() >= 2 ? vx[0] + 2.0f : 0.0f;
+    float col1Right = vx.size() >= 2 ? vx[1] - 2.0f : 1228.0f;
+    float widestCol1 = 0.0f;
+    for (const FakeRenderTarget::TextDraw& d : rt.textDraws)
+        if (d.x >= col1Left && d.x < col1Right)
+            widestCol1 = (std::max)(widestCol1, d.adv);
+    printf("FULLWALK widest piece in column 1: %f\n", widestCol1);
+    fflush(stdout);
+    EXPECT_GE(widestCol1, 250.0f);
+
+    // Every row band, every column band: at least one piece. A
+    // cell whose line painted nothing is the glue the reader sees.
+    std::vector<float> ys;
+    for (size_t i = 0; i < rt.fills.size(); ++i) {
+        const FakeRenderTarget::Fill& f = rt.fills[i];
+        const float w = f.right - f.left;
+        const float h = f.bottom - f.top;
+        if (h < 2.0f && w > 4.0f) ys.push_back(f.top);
+    }
+    std::sort(ys.begin(), ys.end());
+    std::vector<float> uy;
+    for (float y : ys)
+        if (uy.empty() || y - uy.back() > 2.5f) uy.push_back(y);
+    printf("FULLWALK hlines: %zu\n", uy.size());
+    for (float y : uy) printf("FULLWALK hline %f\n", y);
+    fflush(stdout);
+    size_t emptyCells = 0;
+    for (size_t r = 1; r + 1 < uy.size(); ++r) {
+        for (size_t c = 1; c + 1 < vx.size(); ++c) {
+            bool has = false;
+            for (const FakeRenderTarget::TextDraw& d : rt.textDraws) {
+                if (d.y < uy[r] || d.y >= uy[r + 1]) continue;
+                if (d.x < vx[c] || d.x >= vx[c + 1]) continue;
+                has = true;
+                break;
+            }
+            if (!has) {
+                ++emptyCells;
+                printf("FULLWALK EMPTY cell row=%zu col=%zu "
+                       "y in [%f, %f) x in [%f, %f)\n",
+                       r, c, uy[r], uy[r + 1], vx[c], vx[c + 1]);
+            }
+        }
+    }
+    printf("FULLWALK empty cells: %zu of %zu\n", emptyCells,
+           ((uy.size() > 1 ? uy.size() - 2 : 0) *
+            (vx.size() > 1 ? vx.size() - 2 : 0)));
+    fflush(stdout);
+    EXPECT_EQ(emptyCells, static_cast<size_t>(0));
+
+    for (const FakeRenderTarget::TextDraw& d : rt.textDraws)
+        printf("FULLWALK piece x=%f y=%f adv=%f\n", d.x, d.y, d.adv);
+    fflush(stdout);
+
+    // The same table at the narrow window the report photographs,
+    // where the deficit begins: the columns tell whether the split
+    // still carries every token and every cell paints.
+    FakeRenderTarget rt2;
+    renderer.Render(&rt2, &dw, doc, 983.0f, 0.0f, 0.0f, 0.0f, nullptr);
+    std::vector<float> xs2;
+    for (size_t i = 0; i < rt2.fills.size(); ++i) {
+        const FakeRenderTarget::Fill& f = rt2.fills[i];
+        const float w = f.right - f.left;
+        const float h = f.bottom - f.top;
+        if (w < 2.0f && h > 4.0f) xs2.push_back(f.left);
+    }
+    std::sort(xs2.begin(), xs2.end());
+    std::vector<float> vx2;
+    for (float x : xs2)
+        if (vx2.empty() || x - vx2.back() > 2.5f) vx2.push_back(x);
+    printf("NARROW vlines: %zu\n", vx2.size());
+    for (float x : vx2) printf("NARROW vline %f\n", x);
+    float widestNarrow = 0.0f;
+    for (const FakeRenderTarget::TextDraw& d : rt2.textDraws)
+        widestNarrow = (std::max)(widestNarrow, d.adv);
+    printf("NARROW widest piece: %f pieces=%zu\n", widestNarrow,
+           rt2.textDraws.size());
+    fflush(stdout);
+    for (const FakeRenderTarget::TextDraw& d : rt2.textDraws)
+        printf("NARROW piece x=%f y=%f adv=%f\n", d.x, d.y, d.adv);
+    fflush(stdout);
+}
