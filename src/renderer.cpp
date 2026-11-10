@@ -1621,8 +1621,91 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                         rt->FillRectangle(rect, selBrush);
                     }
                 }
-                rt->DrawTextLayout(cellOrigin, layout, textBrush,
-                    D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                // The glyphs come from the walk's own lines, the
+                // same lines the caret and the record keep, placed
+                // by the same centre the clones read, so what
+                // paints is what was measured: one geometry, one
+                // place. A table without record lines, a stack
+                // without a measured walk, falls back to the card's
+                // own layout, the paint that always worked there.
+                bool painted = false;
+                if (rec && ri < rec->cells.size() &&
+                    c < rec->cells[ri].size() &&
+                    !rec->cells[ri][c].lines.empty()) {
+                    const float innerCW = colWs[c] - 2.0f * m.cellPadX;
+                    const float clipH = rowH - 2.0f * m.cellPadY;
+                    if (innerCW > 0.0f && clipH > 0.0f) {
+                        rt->PushAxisAlignedClip(D2D1::RectF(
+                            cellX + m.cellPadX,
+                            curY + m.cellPadY,
+                            cellX + m.cellPadX + innerCW,
+                            curY + m.cellPadY + clipH),
+                            D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                        float textH = 0.0f;
+                        for (const platform::TextLine& line :
+                             rec->cells[ri][c].lines)
+                            textH += line.height;
+                        float lineY = curY +
+                            (std::max)(m.cellPadY,
+                                       (rowH - textH) * 0.5f);
+                        const ColumnAlign align =
+                            c < n.aligns.size() ? n.aligns[c]
+                                                : ColumnAlign::Default;
+                        platform::D2DTarget player(rt, dw);
+                        size_t paintedRuns = 0;
+                        for (const platform::TextLine& line :
+                             rec->cells[ri][c].lines) {
+                            float lineX = cellX + m.cellPadX;
+                            if (align == ColumnAlign::Center)
+                                lineX += (innerCW - line.width) * 0.5f;
+                            else if (align == ColumnAlign::Right)
+                                lineX += innerCW - line.width;
+                            const float baseline = lineY + line.ascent;
+                            for (size_t k = 0; k < line.runs.size();
+                                 ++k) {
+                                const platform::GlyphRun& run =
+                                    line.runs[k];
+                                const float end =
+                                    k + 1 < line.runs.size()
+                                        ? line.runs[k + 1].x
+                                        : line.width;
+                                const float width = end - run.x;
+                                const float x = lineX + run.x;
+                                const platform::Color color{
+                                    run.r, run.g, run.b, run.a};
+                                if (!run.text.empty()) ++paintedRuns;
+                                player.DrawText(
+                                    run.text, run.font, x, baseline,
+                                    color);
+                                if (run.underline)
+                                    player.StrokeLine(
+                                        x, baseline + 2.0f,
+                                        x + width, baseline + 2.0f,
+                                        color, 1.0f);
+                                if (run.strike)
+                                    player.StrokeLine(
+                                        x,
+                                        baseline - 0.30f * run.font.size,
+                                        x + width,
+                                        baseline - 0.30f * run.font.size,
+                                        color, 1.0f);
+                            }
+                            lineY += line.height;
+                        }
+                        rt->PopAxisAlignedClip();
+                        // A walk whose engine could not split the
+                        // piece leaves lines with no runs: the
+                        // record paint drew nothing, and the empty
+                        // record wins. Fall back to the card's own
+                        // layout in that case rather than leave a
+                        // cell without glyphs.
+                        painted = paintedRuns > 0;
+                    }
+                }
+                if (!painted) {
+                    rt->DrawTextLayout(cellOrigin, layout, textBrush,
+                                       D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                }
                 if (cache_) {
                     // Add cell layout to cache for hit-testing (double-click,
                     // selection, caret placement in edit mode).

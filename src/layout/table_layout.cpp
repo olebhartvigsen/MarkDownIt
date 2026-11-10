@@ -326,52 +326,15 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
         rowTop += rowH;
     }
 
-    // The cells: clip to the padded inner rect, place the lines by
-    // the column's alignment; the geometry comes from the record.
-    for (size_t r = 0; r < node.rows.size() && r < t.cells.size(); ++r) {
-        const TableRow& row = node.rows[r];
-        const float rowH = t.rowHeights[r];
-        for (size_t c = 0; c < row.cells.size() && c < t.columnCount; ++c) {
-            const LaidTableCell& lc = t.cells[r][c];
-            const float cellX = lc.x;
-            const float innerW = lc.width - 2.0f * m.cellPadX;
-            display::PushClip clip;
-            clip.rect.x = cellX + m.cellPadX;
-            clip.rect.y = lc.y + m.cellPadY;
-            clip.rect.width = innerW > 0.0f ? innerW : 0.0f;
-            clip.rect.height = rowH - 2.0f * m.cellPadY;
-            const bool clipped = clip.rect.width > 0.0f &&
-                                 clip.rect.height > 0.0f;
-            if (clipped) ctx.list->items.push_back(clip);
-            float textH = 0.0f;
-            for (const platform::TextLine& line : lc.lines)
-                textH += line.height;
-            float lineY = lc.y + (std::max)(m.cellPadY,
-                                           (rowH - textH) * 0.5f);
-            const ColumnAlign align = c < node.aligns.size()
-                                          ? node.aligns[c]
-                                          : ColumnAlign::Default;
-            uint32_t src = lc.srcCellStart;
-            for (const platform::TextLine& line : lc.lines) {
-                float lineX = cellX + m.cellPadX;
-                if (align == ColumnAlign::Center)
-                    lineX += (innerW - line.width) * 0.5f;
-                else if (align == ColumnAlign::Right)
-                    lineX += innerW - line.width;
-                display::Text item;
-                item.x = lineX;
-                item.top = lineY;
-                item.line = line;
-                item.srcOffset = src;
-                for (const platform::GlyphRun& run : line.runs)
-                    item.srcLength += static_cast<uint32_t>(run.text.size());
-                src += item.srcLength;
-                ctx.list->items.push_back(item);
-                lineY += line.height;
-            }
-            if (clipped) ctx.list->items.push_back(display::PopClip{});
-        }
-    }
+    // The cells carry no replay text any more. The record keeps
+    // their measured lines for the caret, the washes and the per
+    // port overlay painters, and each port paints the lines from
+    // that one record, placed by the column's alignment and the
+    // row's own centering. The replay used to draw a second copy
+    // beside the overlay's glyphs, and the two disagreed on line
+    // breaks in cells with mixed fonts: the pieces landed inside
+    // each other and the table read as glued. One painter, one
+    // geometry, one place.
     *y += total;
     block.y = *y - total;
     return block;

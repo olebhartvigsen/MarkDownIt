@@ -30,6 +30,10 @@ namespace platform {
 class D2DTarget final : public RenderTarget {
 public:
     explicit D2DTarget(ID2D1RenderTarget* target);
+    // The same seam over a factory the caller already owns, the
+    // one a painter drew its own layouts with, so runs paint on
+    // the same faces the cards measured.
+    D2DTarget(ID2D1RenderTarget* target, IDWriteFactory* factory);
     ~D2DTarget() override;
 
     D2DTarget(const D2DTarget&) = delete;

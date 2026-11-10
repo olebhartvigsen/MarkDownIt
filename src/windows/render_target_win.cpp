@@ -105,6 +105,17 @@ D2DTarget::D2DTarget(ID2D1RenderTarget* target) : target_(target) {
     }
 }
 
+D2DTarget::D2DTarget(ID2D1RenderTarget* target, IDWriteFactory* factory)
+    : target_(target) {
+    if (factory) {
+        write_factory_ = factory;
+        write_factory_->AddRef();
+    } else if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+                                          reinterpret_cast<IUnknown**>(&write_factory_)))) {
+        write_factory_ = nullptr;  // every later call degrades to empty
+    }
+}
+
 D2DTarget::~D2DTarget() {
     for (auto& entry : formats_) if (entry.second) entry.second->Release();
     if (write_factory_) write_factory_->Release();
