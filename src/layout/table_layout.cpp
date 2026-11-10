@@ -291,6 +291,10 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
     // mac interleaves these per row, but the hairlines sit exactly on
     // the cell edges while the text is clipped a cellPadX inside, so
     // nothing overlaps and the layer order is the z order.
+    // Fills use the document's y. Starting at the table's top keeps the
+    // grid on its own rows; starting at 0 painted it over the heading
+    // and the paragraphs above.
+    const float top = *y;
     const auto fill = [&](float fx, float fy, float fw, float fh,
                           const platform::Color& color) {
         ctx.list->items.push_back(
@@ -298,7 +302,7 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
     };
     // GitHub's stripe, full width: the header is the page's own paper,
     // every second body row carries the muted fill.
-    rowTop = 0.0f;
+    rowTop = top;
     for (size_t r = 0; r < t.rowHeights.size(); ++r) {
         const float rowH = t.rowHeights[r];
         const bool headerRow = !node.rows[r].cells.empty() &&
@@ -313,7 +317,7 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
     // every row's bottom, one vertical per column boundary, the last
     // pulled a DIP inside the right edge.
     const platform::Color grid = ToColor(in.palette->tableBorder);
-    rowTop = 0.0f;
+    rowTop = top;
     for (size_t r = 0; r < t.rowHeights.size(); ++r) {
         const float rowH = t.rowHeights[r];
         if (r == 0) fill(0.0f, rowTop, in.contentWidth, 1.0f, grid);

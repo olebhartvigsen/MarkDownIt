@@ -273,3 +273,29 @@ TEST(TableLayout, DistributeTableColumnsMath) {
         EXPECT_EQ(w.size(), static_cast<size_t>(0));
     }
 }
+
+// Every grid and wash fill lies inside its own table's block. The
+// fills once started at y 0 of the document, so a table laid below
+// the heading painted its grid over the heading and paragraphs above.
+TEST(TableLayout, FillsSitOnTheTablesOwnBlock) {
+    Node n;
+    n.block = BlockKind::Table;
+    TableRow head, body;
+    head.cells = {Cell(U"Name", true, 0, 4), Cell(U"Value", true, 5, 10)};
+    body.cells = {Cell(U"alpha", false, 11, 16), Cell(U"bravo", false, 17, 22)};
+    n.rows = {head, body, body};
+    Rig rig(400.0f);
+    float y = 40.0f;  // a heading and a paragraph sit above the table
+    layout::LaidBlock b = layout::LayoutTableBlock(rig.ctx, n, 1, &y);
+    ASSERT_TRUE(b.height > 0.0f);
+    NEAR(b.y, 40.0f);
+    size_t fills = 0;
+    for (const display::Item& item : rig.list.items) {
+        if (!std::holds_alternative<display::FillRect>(item)) continue;
+        const platform::Rect& r = std::get<display::FillRect>(item).rect;
+        ++fills;
+        EXPECT_TRUE(r.y >= b.y - 0.01f);
+        EXPECT_TRUE(r.y + r.height <= b.y + b.height + 0.01f);
+    }
+    EXPECT_TRUE(fills > 0);
+}
