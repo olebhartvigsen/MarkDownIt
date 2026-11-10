@@ -1,0 +1,21 @@
+{
+  "name": "table-remove-last-column-refused",
+  "comment": "The last remaining column cannot be removed.",
+  "start_text": "| a |\n|---|\n| x |\n",
+  "commands": [
+    {
+      "cmd": "select",
+      "start": 2,
+      "end": 2
+    },
+    {
+      "cmd": "remove_column"
+    }
+  ],
+  "expected_text": "| a |\n|---|\n| x |\n",
+  "expected_selection": {
+    "anchor": 2,
+    "active": 2
+  },
+  "expected_undo_depth": 0
+}

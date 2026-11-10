@@ -166,14 +166,6 @@ public:
     // The table the caret is in, and where in it the caret is.
     bool CaretTable(tableedit::TableLocation* out) const;
 
-    // The source span of the table the caret is in.
-    bool TableSpan(uint32_t* start, uint32_t* end) const;
-
-    // Replaces the table's source span with new text, in one edit, so
-    // one table operation is one undo step.
-    void RewriteTable(uint32_t start, uint32_t end,
-                      const std::string& text, uint32_t caret);
-
     // The content view, which the window hosts.
     ContentView* contentView() const { return contentView_.get(); }
 

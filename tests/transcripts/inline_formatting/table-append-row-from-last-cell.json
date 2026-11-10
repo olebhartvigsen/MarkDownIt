@@ -1,0 +1,21 @@
+{
+  "name": "table-append-row-from-last-cell",
+  "comment": "Tab from the last cell appends a blank row, one undo step.",
+  "start_text": "| a | b |\n|---|---|\n| x | y |\n",
+  "commands": [
+    {
+      "cmd": "select",
+      "start": 24,
+      "end": 24
+    },
+    {
+      "cmd": "append_row"
+    }
+  ],
+  "expected_text": "| a | b |\n|---|---|\n| x | y |\n|        |        |\n",
+  "expected_selection": {
+    "anchor": 31,
+    "active": 31
+  },
+  "expected_undo_depth": 1
+}

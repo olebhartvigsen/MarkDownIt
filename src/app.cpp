@@ -948,35 +948,10 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                     // Tab from the last cell appends a blank row with the
                     // active column count and puts the caret in its first
                     // cell. One undo entry removes row and caret change.
-                    const std::string& text = buffer_.Text();
-                    for (size_t ti = 0; ti < doc_.nodes.size(); ++ti) {
-                        const Node& node = doc_.nodes[ti];
-                        if (node.block != BlockKind::Table) continue;
-                        const uint32_t tblStart = node.srcOffset;
-                        const uint32_t tblEnd = tblStart + node.srcLength;
-                        if (sel_.active.offset < tblStart ||
-                            sel_.active.offset > tblEnd) continue;
-                        const int cols =
-                            static_cast<int>(TableColumnCount(doc_, ti));
-                        if (cols <= 0) break;
-                        std::string row = TableBlankRow(cols);
-                        const uint32_t insertPos = tblEnd;
-                        const bool neededBreak =
-                            insertPos > 0 && text[insertPos - 1] != '\n';
-                        if (neededBreak) row.insert(0, "\n");
-                        SpliceWithUndo(insertPos, 0, row);
-                        editor_.BreakUndoCoalesce();
-                        // The caret belongs in the new row's first cell,
-                        // which starts after its leading pipe. The row text
-                        // begins with the optional separator break, so the
-                        // cell is one further in than that break.
-                        sel_.Collapse({insertPos + (neededBreak ? 2u : 1u)});
-                        desiredX_ = -1.0f;
-                        UpdateCaretPosition();
-                        OnBufferChanged();
-                        ForceRepaintNow();
-                        break;
-                    }
+                    // The controller owns the body (family 5).
+                    controller_.AppendRowToTable();
+                    desiredX_ = -1.0f;
+                    UpdateCaretPosition();
                 }
                 break;
             }
@@ -4855,48 +4830,9 @@ void AppWindow::InsertTableCmd() {
 // Called from ContentWndProc when WM_APP+1 is received (grid picker
 // sent the selected rows x cols).
 void AppWindow::InsertTableFromGrid(int cols, int rows) {
-    if (!editing_) return;
-    // Nested tables are not supported document structure: a table may
-    // never be created inside a table (menu, picker, paste, drag alike).
-    if (IsOffsetInTable(doc_, sel_.active.offset)) return;
-
-    int dataRows = rows;
-
-    const std::string table = tableedit::BuildGrid(cols, dataRows);
-
-    // Insert at cursor position. If there is a selection, replace it.
-    // One splice, one undo step (§3): the newlines and the table text are
-    // all part of the same structural insert, and every table line ends in
-    // a newline, which would otherwise break undo coalescing into up to
-    // three separate entries.
-    uint32_t insertPos = sel_.active.offset;
-    uint32_t replaceLen = 0;
-    if (!sel_.Empty()) {
-        insertPos = sel_.Start();
-        replaceLen = sel_.Length();
-        sel_.Collapse({insertPos});
-    }
-
-    const std::string& txt = buffer_.Text();
-    std::string insertText;
-    // Same block rule as the paste path: a table always needs a blank
-    // separator line before it, or the previous block absorbs it.
-    insertText.append(TableSeparatorNewlinesBefore(txt, insertPos), '\n');
-    const uint32_t prefixLen = static_cast<uint32_t>(insertText.size());
-    insertText += table;
-    if (insertPos + replaceLen < txt.size() &&
-        txt[insertPos + replaceLen] != '\n')
-        insertText += "\n";
-
-    SpliceWithUndo(insertPos, replaceLen, insertText);
-
-    // Caret goes to the first header cell's content (after its leading
-    // pipe), not past the whole table.
-    uint32_t firstCellOffset = insertPos + prefixLen + 1;  // past leading '|'
-    sel_.Collapse({firstCellOffset});
-
-    OnBufferChanged();
-    ForceRepaintNow();
+    // Family 5: the insert lives in the document controller, the same
+    // body the mac menu runs. The grid picker stays here.
+    controller_.InsertTable(cols, rows);
 }
 
 // Shared paste path: insert a converted Excel table at the caret, on its
@@ -4904,50 +4840,14 @@ void AppWindow::InsertTableFromGrid(int cols, int rows) {
 // Mirrors InsertTableFromGrid's line handling.
 void AppWindow::InsertPastedTableAtCaret(const std::string& table,
                                         uint32_t firstCellCaret) {
-    // Defensive hard rule (§62): a table never nests, including here.
-    if (CaretInTable()) return;
-    // A structural paste is not part of any pending typing run.
-    pending_run_active_ = false;
-    pending_run_suffix_bytes_ = 0;
-    uint32_t insertPos = sel_.active.offset;
-    uint32_t replaceLen = 0;
-    if (!sel_.Empty()) {
-        insertPos = sel_.Start();
-        replaceLen = sel_.Length();
-        sel_.Collapse({insertPos});
-    }
-
-    // One splice, one undo step (§3): the newlines and the table text are
-    // all part of the same structural insert, and every table line ends in
-    // a newline, which would otherwise break undo coalescing into up to
-    // three separate entries.
-    const std::string& txt = buffer_.Text();
-    std::string insertText;
-    // A table is a block: without a blank separator line before it, the
-    // previous block (e.g. the last item of a list) absorbs the table rows
-    // as a lazy continuation. Inserting into the paragraph right after a
-    // list therefore needs a full blank line, not just one newline.
-    insertText.append(TableSeparatorNewlinesBefore(txt, insertPos), '\n');
-    const uint32_t prefixLen = static_cast<uint32_t>(insertText.size());
-    insertText += table;
-    if (insertPos + replaceLen < txt.size() &&
-        txt[insertPos + replaceLen] != '\n')
-        insertText += "\n";
-
-    SpliceWithUndo(insertPos, replaceLen, insertText);
-    sel_.Collapse({insertPos + prefixLen + firstCellCaret});
-
-    OnBufferChanged();
-    ForceRepaintNow();
+    controller_.InsertPastedTable(table, firstCellCaret);
 }
 
 // True when the caret sits inside a Markdown table. A selection counts as
 // in-table when its anchor side is in a table, matching the rule the Tab
 // handler uses to decide whether Tab is structural navigation.
 bool AppWindow::CaretInTable() const {
-    if (IsOffsetInTable(doc_, sel_.active.offset)) return true;
-    if (!sel_.Empty() && IsOffsetInTable(doc_, sel_.Start())) return true;
-    return false;
+    return controller_.CaretInTable();
 }
 
 // Find the table node containing the cursor offset.
@@ -4960,228 +4860,37 @@ static const Node* FindContainingTable(const Document& doc, uint32_t offset) {
 // A row is one line within the table block. Also return the column
 // index that the cursor is in.
 TableCapabilities AppWindow::CaretTableCapabilities() const {
-    // Resolve the caret against the same LocateInTable the commands use, so
-    // an enabled ribbon button always corresponds to a command that runs.
-    const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
-    if (!tbl) return TableCapabilities();
-    tableedit::TableLocation loc;
-    if (!tableedit::Locate(buffer_.Text(), tbl, sel_.active.offset, &loc))
-        return TableCapabilities();
-    return TableCapabilitiesFor(loc.rowIndex, loc.numCols);
+    return controller_.CaretTableCapabilities();
 }
 
 bool AppWindow::AddTableRow(bool below) {
-    if (!editing_) return false;
-    const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
-    if (!tbl) return false;
-
-    tableedit::TableLocation loc;
-    if (!tableedit::Locate(buffer_.Text(), tbl, sel_.active.offset, &loc))
-        return false;
-
-    const tableedit::TableEdit edit =
-        tableedit::AddRow(buffer_.Text(), loc, below);
-    if (!edit.ok) return false;
-
-    SpliceWithUndo(edit.start, edit.length, edit.text);
-    editor_.BreakUndoCoalesce();
-    sel_.Collapse({edit.caret});
-    OnBufferChanged();
-    ForceRepaintNow();
-    return true;
+    return controller_.AddTableRow(below);
 }
 
 void AppWindow::RemoveTable() {
-    if (!editing_) return;
-    const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
-    if (!tbl) return;
-
-    const std::string& text = buffer_.Text();
-    const uint32_t start = tbl->srcOffset;
-    const uint32_t end = start + tbl->srcLength;
-
-    // Where does the block after the table begin (pre-splice offsets)?
-    // The table's trailing newline run is inside its span, so the next
-    // block's source starts at `end` plus any extra blank lines that
-    // follow (the run that belongs to the table was consumed with it).
-    uint32_t following = end;
-    {
-        const uint32_t tail = static_cast<uint32_t>(text.size());
-        uint32_t nl = end;
-        while (nl < tail && text[nl] == '\n') ++nl;
-        // Only trust a following block when a non-empty run points at
-        // one; otherwise the caret rests on the removal site.
-        bool found = false;
-        if (nl < tail) {
-            for (const Node& n : doc_.nodes) {
-                if (n.block != BlockKind::Table && n.srcOffset == nl) {
-                    following = nl;
-                    found = true;
-                    break;
-                }
-            }
-        }
-        if (!found) following = start;
-    }
-
-    // A table is always its own paragraph-separated block, so removing
-    // its complete source span keeps the surrounding blank lines valid.
-    // The table's length is known before the splice, so `following` (a
-    // pre-splice offset) must be shifted left by that length before it is
-    // used as a post-splice caret offset.
-    const uint32_t removed = end - start;
-    SpliceWithUndo(start, removed, "");
-    editor_.BreakUndoCoalesce();
-
-    uint32_t caret = following - removed;
-    const uint32_t newLen = static_cast<uint32_t>(buffer_.Text().size());
-    if (caret > newLen) caret = newLen;
-    sel_.Collapse({caret});
-    OnBufferChanged();
-    ForceRepaintNow();
+    controller_.RemoveTable();
 }
 
 bool AppWindow::RemoveTableRow() {
-    if (!editing_) return false;
-    const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
-    if (!tbl) return false;
-
-    tableedit::TableLocation loc;
-    if (!tableedit::Locate(buffer_.Text(), tbl, sel_.active.offset, &loc))
-        return false;
-
-    const tableedit::TableEdit edit =
-        tableedit::RemoveRow(buffer_.Text(), loc);
-    if (!edit.ok) return false;
-
-    SpliceWithUndo(edit.start, edit.length, edit.text);
-    editor_.BreakUndoCoalesce();
-    sel_.Collapse({edit.caret});
-    OnBufferChanged();
-    ForceRepaintNow();
-    return true;
+    return controller_.RemoveTableRow();
 }
 
 bool AppWindow::AddTableColumn(bool right) {
-    if (!editing_) return false;
-    const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
-    if (!tbl) return false;
-
-    const std::string& text = buffer_.Text();
-    tableedit::TableLocation loc;
-    if (!tableedit::Locate(text, tbl, sel_.active.offset, &loc)) return false;
-
-    const uint32_t tblStart = tbl->srcOffset;
-    const uint32_t tblEnd = tblStart + tbl->srcLength;
-
-    // The rewrite covers the whole table span and lands as a single splice,
-    // so one Ctrl+Z removes the whole column (spec section 46).
-    std::string rebuilt;
-    uint32_t caret = 0;
-    if (!TableInsertColumn(text, tblStart, tblEnd, loc.columnIndex, right,
-                           sel_.active.offset, &rebuilt, &caret)) {
-        return false;
-    }
-
-    SpliceWithUndo(tblStart, tblEnd - tblStart, rebuilt);
-    editor_.BreakUndoCoalesce();
-    sel_.Collapse({caret});
-    OnBufferChanged();
-    ForceRepaintNow();
-    return true;
+    return controller_.AddTableColumn(right);
 }
 
 bool AppWindow::RemoveTableColumn() {
-    if (!editing_) return false;
-    const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
-    if (!tbl) return false;
-
-    const std::string& text = buffer_.Text();
-    tableedit::TableLocation loc;
-    if (!tableedit::Locate(text, tbl, sel_.active.offset, &loc)) return false;
-
-    if (!TableCapabilitiesFor(loc.rowIndex, loc.numCols).removeColumn)
-        return false; // don't remove the last column
-
-    const uint32_t tblStart = tbl->srcOffset;
-    const uint32_t tblEnd = tblStart + tbl->srcLength;
-
-    std::string rebuilt;
-    uint32_t caret = 0;
-    if (!TableRemoveColumn(text, tblStart, tblEnd, loc.columnIndex,
-                           sel_.active.offset, &rebuilt, &caret)) {
-        return false;
-    }
-
-    SpliceWithUndo(tblStart, tblEnd - tblStart, rebuilt);
-    editor_.BreakUndoCoalesce();
-    sel_.Collapse({caret});
-    OnBufferChanged();
-    ForceRepaintNow();
-    return true;
+    return controller_.RemoveTableColumn();
 }
 
 bool AppWindow::SetTableColumnAlign(TableAlignMark mark) {
-    if (!editing_) return false;
-    const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
-    if (!tbl) return false;
-
-    const std::string& text = buffer_.Text();
-    tableedit::TableLocation loc;
-    if (!tableedit::Locate(text, tbl, sel_.active.offset, &loc)) return false;
-
-    const uint32_t tblStart = tbl->srcOffset;
-    const uint32_t tblEnd = tblStart + tbl->srcLength;
-
-    std::string rebuilt;
-    uint32_t caret = 0;
-    if (!TableSetColumnAlign(text, tblStart, tblEnd, loc.columnIndex, mark,
-                             sel_.active.offset, &rebuilt, &caret)) {
-        return false;
-    }
-
-    // One splice, so one table operation is one undo step.
-    SpliceWithUndo(tblStart, tblEnd - tblStart, rebuilt);
-    editor_.BreakUndoCoalesce();
-    sel_.Collapse({caret});
-    OnBufferChanged();
-    ForceRepaintNow();
-    return true;
+    return controller_.SetTableColumnAlign(mark);
 }
 
 // Split the caret's cell in two (table guidelines section 22). Markdown has
 // no syntax for a merged cell, so there is no merge to pair this with.
 bool AppWindow::SplitTableCell() {
-    if (!editing_) return false;
-    const Node* tbl = FindContainingTable(doc_, sel_.active.offset);
-    if (!tbl) return false;
-
-    const std::string& text = buffer_.Text();
-    tableedit::TableLocation loc;
-    if (!tableedit::Locate(text, tbl, sel_.active.offset, &loc)) return false;
-
-    if (!TableCapabilitiesFor(loc.rowIndex, loc.numCols).splitCell)
-        return false; // header and delimiter rows carry the table's shape
-
-    const uint32_t tblStart = tbl->srcOffset;
-    const uint32_t tblEnd = tblStart + tbl->srcLength;
-
-    std::string rebuilt;
-    uint32_t caret = 0;
-    if (!TableSplitCell(text, tblStart, tblEnd, loc.columnIndex,
-                        loc.rowIndex, 2, sel_.active.offset,
-                        &rebuilt, &caret)) {
-        return false;
-    }
-
-    // One splice for the whole table, so one Ctrl+Z undoes the whole split
-    // rather than one row (guidelines section 46).
-    SpliceWithUndo(tblStart, tblEnd - tblStart, rebuilt);
-    editor_.BreakUndoCoalesce();
-    sel_.Collapse({caret});
-    OnBufferChanged();
-    ForceRepaintNow();
-    return true;
+    return controller_.SplitTableCell();
 }
 
 // The whole clear formatting body lives in the document controller

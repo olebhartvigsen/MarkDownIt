@@ -1,0 +1,23 @@
+{
+  "name": "table-insert-does-not-nest",
+  "comment": "Insert table with the caret in a table does nothing.",
+  "start_text": "| a | b |\n|---|---|\n| x | y |\n",
+  "commands": [
+    {
+      "cmd": "select",
+      "start": 3,
+      "end": 3
+    },
+    {
+      "cmd": "insert_table",
+      "cols": 2,
+      "rows": 1
+    }
+  ],
+  "expected_text": "| a | b |\n|---|---|\n| x | y |\n",
+  "expected_selection": {
+    "anchor": 3,
+    "active": 3
+  },
+  "expected_undo_depth": 0
+}

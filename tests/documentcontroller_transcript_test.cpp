@@ -519,6 +519,29 @@ CaseResult RunTranscript(const std::string& name) {
                 StrOf(command, "text"));
         } else if (cmd == "replace_all_text") {
             controller.ReplaceAllText(StrOf(command, "text"));
+        } else if (cmd == "add_row") {
+            controller.AddTableRow(IntOf(command, "below", 1) != 0);
+        } else if (cmd == "remove_row") {
+            controller.RemoveTableRow();
+        } else if (cmd == "add_column") {
+            controller.AddTableColumn(IntOf(command, "right", 1) != 0);
+        } else if (cmd == "remove_column") {
+            controller.RemoveTableColumn();
+        } else if (cmd == "align_column") {
+            const int mark = IntOf(command, "mark", 0);
+            controller.SetTableColumnAlign(
+                mark == 1 ? TableAlignMark::Left
+                : mark == 2 ? TableAlignMark::Center
+                : mark == 3 ? TableAlignMark::Right : TableAlignMark::None);
+        } else if (cmd == "split_cell") {
+            controller.SplitTableCell();
+        } else if (cmd == "remove_table") {
+            controller.RemoveTable();
+        } else if (cmd == "insert_table") {
+            controller.InsertTable(IntOf(command, "cols", 2),
+                                   IntOf(command, "rows", 1));
+        } else if (cmd == "append_row") {
+            controller.AppendRowToTable();
         } else {
             result.observed = "unknown command " + cmd;
             return result;
@@ -646,4 +669,40 @@ TEST(InlineFormattingTranscript, ReplaceAllIsOneUndoStep) {
 
 TEST(InlineFormattingTranscript, ReplaceLastMatchKeepsTextSelected) {
     RunCase("replace-last-match-keeps-text-selected");
+}
+
+TEST(InlineFormattingTranscript, SplitCellRefusedOnHeader) {
+    RunCase("table-split-refused-on-header");
+}
+
+TEST(InlineFormattingTranscript, RemoveTableKeepsCaretAtRemovalSite) {
+    RunCase("table-remove-keeps-caret-at-removal-site");
+}
+
+TEST(InlineFormattingTranscript, RemoveTableLandsOnFollowingBlock) {
+    RunCase("table-remove-lands-on-following-block");
+}
+
+TEST(InlineFormattingTranscript, InsertTableDoesNotNest) {
+    RunCase("table-insert-does-not-nest");
+}
+
+TEST(InlineFormattingTranscript, InsertTableReplacesSelectionInOneStep) {
+    RunCase("table-insert-replaces-selection");
+}
+
+TEST(InlineFormattingTranscript, AddRowIsOneUndoStep) {
+    RunCase("table-add-row-is-one-undo-step");
+}
+
+TEST(InlineFormattingTranscript, AppendRowFromLastCell) {
+    RunCase("table-append-row-from-last-cell");
+}
+
+TEST(InlineFormattingTranscript, RemoveLastColumnRefused) {
+    RunCase("table-remove-last-column-refused");
+}
+
+TEST(InlineFormattingTranscript, AlignColumnIsOneUndoStep) {
+    RunCase("table-align-column-is-one-undo-step");
 }

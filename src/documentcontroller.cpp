@@ -23,6 +23,7 @@
 
 #include "formatting.h"
 #include "navigation.h"
+#include "tableedit.h"
 #include "platformservices.h"
 
 // The undo clock of the shared code. It lives in the controller
@@ -570,6 +571,249 @@ void DocumentController::ReplaceAllText(const std::string& replaced) {
     editor_.BreakUndoCoalesce();
     ClearPendingFormat();
     NotifyDocumentChanged();
+}
+
+// ---------------------------------------------------------------------
+// Family 5: tables.
+// ---------------------------------------------------------------------
+
+bool DocumentController::CaretInTable() const {
+    if (IsOffsetInTable(document_, sel_.active.offset)) return true;
+    return !sel_.Empty() && IsOffsetInTable(document_, sel_.Start());
+}
+
+TableCapabilities DocumentController::CaretTableCapabilities() const {
+    // Resolve the caret the same way the commands do, so an enabled
+    // button always matches a command that runs.
+    const Node* table =
+        tableedit::ContainingTable(document_, sel_.active.offset);
+    if (!table) return TableCapabilities();
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(buffer_.Text(), table, sel_.active.offset, &loc)) {
+        return TableCapabilities();
+    }
+    return TableCapabilitiesFor(loc.rowIndex, loc.numCols);
+}
+
+void DocumentController::RewriteTableSpan(uint32_t start, uint32_t length,
+                                          const std::string& text,
+                                          uint32_t caret) {
+    SpliceWithUndo(start, length, text);
+    editor_.BreakUndoCoalesce();
+    sel_.Collapse(CaretPos{caret});
+    NotifyDocumentChanged();
+}
+
+bool DocumentController::AddTableRow(bool below) {
+    if (!editing_) return false;
+    const Node* table =
+        tableedit::ContainingTable(document_, sel_.active.offset);
+    if (!table) return false;
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(buffer_.Text(), table, sel_.active.offset, &loc)) {
+        return false;
+    }
+    const tableedit::TableEdit edit =
+        tableedit::AddRow(buffer_.Text(), loc, below);
+    if (!edit.ok) return false;
+    RewriteTableSpan(edit.start, edit.length, edit.text, edit.caret);
+    return true;
+}
+
+bool DocumentController::RemoveTableRow() {
+    if (!editing_) return false;
+    const Node* table =
+        tableedit::ContainingTable(document_, sel_.active.offset);
+    if (!table) return false;
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(buffer_.Text(), table, sel_.active.offset, &loc)) {
+        return false;
+    }
+    const tableedit::TableEdit edit =
+        tableedit::RemoveRow(buffer_.Text(), loc);
+    if (!edit.ok) return false;
+    RewriteTableSpan(edit.start, edit.length, edit.text, edit.caret);
+    return true;
+}
+
+bool DocumentController::AddTableColumn(bool right) {
+    if (!editing_) return false;
+    const Node* table =
+        tableedit::ContainingTable(document_, sel_.active.offset);
+    if (!table) return false;
+    const std::string& text = buffer_.Text();
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(text, table, sel_.active.offset, &loc)) return false;
+    const uint32_t start = table->srcOffset;
+    const uint32_t end = start + table->srcLength;
+    std::string rebuilt;
+    uint32_t caret = 0;
+    if (!TableInsertColumn(text, start, end, loc.columnIndex, right,
+                           sel_.active.offset, &rebuilt, &caret)) {
+        return false;
+    }
+    // The whole span goes in as one splice: one Ctrl+Z removes the column.
+    RewriteTableSpan(start, end - start, rebuilt, caret);
+    return true;
+}
+
+bool DocumentController::RemoveTableColumn() {
+    if (!editing_) return false;
+    const Node* table =
+        tableedit::ContainingTable(document_, sel_.active.offset);
+    if (!table) return false;
+    const std::string& text = buffer_.Text();
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(text, table, sel_.active.offset, &loc)) return false;
+    // The last column stays.
+    if (!TableCapabilitiesFor(loc.rowIndex, loc.numCols).removeColumn) {
+        return false;
+    }
+    const uint32_t start = table->srcOffset;
+    const uint32_t end = start + table->srcLength;
+    std::string rebuilt;
+    uint32_t caret = 0;
+    if (!TableRemoveColumn(text, start, end, loc.columnIndex,
+                           sel_.active.offset, &rebuilt, &caret)) {
+        return false;
+    }
+    RewriteTableSpan(start, end - start, rebuilt, caret);
+    return true;
+}
+
+bool DocumentController::SetTableColumnAlign(TableAlignMark mark) {
+    if (!editing_) return false;
+    const Node* table =
+        tableedit::ContainingTable(document_, sel_.active.offset);
+    if (!table) return false;
+    const std::string& text = buffer_.Text();
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(text, table, sel_.active.offset, &loc)) return false;
+    const uint32_t start = table->srcOffset;
+    const uint32_t end = start + table->srcLength;
+    std::string rebuilt;
+    uint32_t caret = 0;
+    if (!TableSetColumnAlign(text, start, end, loc.columnIndex, mark,
+                             sel_.active.offset, &rebuilt, &caret)) {
+        return false;
+    }
+    RewriteTableSpan(start, end - start, rebuilt, caret);
+    return true;
+}
+
+bool DocumentController::SplitTableCell() {
+    if (!editing_) return false;
+    const Node* table =
+        tableedit::ContainingTable(document_, sel_.active.offset);
+    if (!table) return false;
+    const std::string& text = buffer_.Text();
+    tableedit::TableLocation loc;
+    if (!tableedit::Locate(text, table, sel_.active.offset, &loc)) return false;
+    // The header and delimiter rows carry the table's shape.
+    if (!TableCapabilitiesFor(loc.rowIndex, loc.numCols).splitCell) {
+        return false;
+    }
+    const uint32_t start = table->srcOffset;
+    const uint32_t end = start + table->srcLength;
+    std::string rebuilt;
+    uint32_t caret = 0;
+    if (!TableSplitCell(text, start, end, loc.columnIndex, loc.rowIndex, 2,
+                        sel_.active.offset, &rebuilt, &caret)) {
+        return false;
+    }
+    RewriteTableSpan(start, end - start, rebuilt, caret);
+    return true;
+}
+
+bool DocumentController::RemoveTable() {
+    if (!editing_) return false;
+    const Node* table =
+        tableedit::ContainingTable(document_, sel_.active.offset);
+    if (!table) return false;
+    const std::string& text = buffer_.Text();
+    const uint32_t start = table->srcOffset;
+    const uint32_t end = start + table->srcLength;
+    const uint32_t removed = end - start;
+
+    // The block after the table starts at the first non-newline byte
+    // past the table, when a block begins there. Its offset shifts left
+    // by the removed length. With no such block the caret stays where
+    // the table stood; both ports once subtracted the length from that
+    // offset as well, which put the caret in the wrong place whenever
+    // the table was not at the very start of the text.
+    const uint32_t size = static_cast<uint32_t>(text.size());
+    uint32_t look = end;
+    while (look < size && text[look] == '\n') ++look;
+    uint32_t caret = start;
+    if (look < size) {
+        for (const Node& node : document_.nodes) {
+            if (node.block != BlockKind::Table && node.srcOffset == look) {
+                caret = look - removed;
+                break;
+            }
+        }
+    }
+    const uint32_t newSize = size - removed;
+    if (caret > newSize) caret = newSize;
+    RewriteTableSpan(start, removed, "", caret);
+    return true;
+}
+
+bool DocumentController::InsertTableBlock(const std::string& table,
+                                          uint32_t firstCellCaret) {
+    uint32_t insertPos = sel_.active.offset;
+    uint32_t replaceLen = 0;
+    if (!sel_.Empty()) {
+        insertPos = sel_.Start();
+        replaceLen = sel_.Length();
+        sel_.Collapse(CaretPos{insertPos});
+    }
+    // One splice, one undo step: the separator lines, the table and the
+    // trailing break are one structural insert.
+    const std::string& text = buffer_.Text();
+    std::string insertText;
+    // A table is a block: without a blank line before it, the block
+    // before (the last item of a list, say) absorbs its rows.
+    insertText.append(TableSeparatorNewlinesBefore(text, insertPos), '\n');
+    const uint32_t prefixLen = static_cast<uint32_t>(insertText.size());
+    insertText += table;
+    if (insertPos + replaceLen < text.size() &&
+        text[insertPos + replaceLen] != '\n') {
+        insertText += "\n";
+    }
+    RewriteTableSpan(insertPos, replaceLen, insertText,
+                     insertPos + prefixLen + firstCellCaret);
+    return true;
+}
+
+bool DocumentController::InsertTable(int cols, int rows) {
+    if (!editing_) return false;
+    // A table never nests: not from the menu, the picker or a paste.
+    if (CaretInTable()) return false;
+    // The caret goes to the first header cell, past its leading pipe.
+    return InsertTableBlock(tableedit::BuildGrid(cols, rows), 1);
+}
+
+bool DocumentController::InsertPastedTable(const std::string& table,
+                                           uint32_t firstCellCaret) {
+    if (!editing_) return false;
+    if (CaretInTable()) return false;
+    // A structural paste is not part of a pending typing run.
+    ClearPendingFormat();
+    return InsertTableBlock(table, firstCellCaret);
+}
+
+bool DocumentController::AppendRowToTable() {
+    if (!editing_) return false;
+    std::string row;
+    uint32_t insertPos = 0;
+    uint32_t caretAfter = 0;
+    if (!TableAppendRow(document_, buffer_.Text(), sel_.active.offset, &row,
+                        &insertPos, &caretAfter)) {
+        return false;
+    }
+    RewriteTableSpan(insertPos, 0, row, caretAfter);
+    return true;
 }
 
 void DocumentController::SpliceWithUndo(uint32_t offset, uint32_t length,

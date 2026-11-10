@@ -1,0 +1,23 @@
+{
+  "name": "table-insert-replaces-selection",
+  "comment": "A selection is replaced by the new table, with a blank line in front, in one undo step.",
+  "start_text": "hello\nworld\n",
+  "commands": [
+    {
+      "cmd": "select",
+      "start": 6,
+      "end": 11
+    },
+    {
+      "cmd": "insert_table",
+      "cols": 2,
+      "rows": 1
+    }
+  ],
+  "expected_text": "hello\n\n| Column 1 | Column 2 |\n|--------|--------|\n|        |        |\n\n",
+  "expected_selection": {
+    "anchor": 8,
+    "active": 8
+  },
+  "expected_undo_depth": 1
+}

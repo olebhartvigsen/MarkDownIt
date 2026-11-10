@@ -1,0 +1,21 @@
+{
+  "name": "table-remove-keeps-caret-at-removal-site",
+  "comment": "With no block after the table, the caret stays where the table stood. Both ports subtracted the removed length from that offset too.",
+  "start_text": "a first paragraph that is longer than the table is\n\n| a | b |\n|---|---|\n| x | y |\n",
+  "commands": [
+    {
+      "cmd": "select",
+      "start": 55,
+      "end": 55
+    },
+    {
+      "cmd": "remove_table"
+    }
+  ],
+  "expected_text": "a first paragraph that is longer than the table is\n\n",
+  "expected_selection": {
+    "anchor": 52,
+    "active": 52
+  },
+  "expected_undo_depth": 1
+}

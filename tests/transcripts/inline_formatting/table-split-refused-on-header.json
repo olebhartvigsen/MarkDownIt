@@ -1,0 +1,21 @@
+{
+  "name": "table-split-refused-on-header",
+  "comment": "Split cell on the header row does nothing: the header and delimiter rows carry the table's shape (table spec 22). The mac twin had no check.",
+  "start_text": "| a | b |\n|---|---|\n| x | y |\n",
+  "commands": [
+    {
+      "cmd": "select",
+      "start": 3,
+      "end": 3
+    },
+    {
+      "cmd": "split_cell"
+    }
+  ],
+  "expected_text": "| a | b |\n|---|---|\n| x | y |\n",
+  "expected_selection": {
+    "anchor": 3,
+    "active": 3
+  },
+  "expected_undo_depth": 0
+}

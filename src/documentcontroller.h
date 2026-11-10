@@ -38,6 +38,7 @@
 
 #pragma once
 
+#include "navigation.h"
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -203,6 +204,52 @@ public:
     // no-op.
     void ReplaceAllText(const std::string& replaced);
 
+    // -------------------------------------------------------------------
+    // Family 5: tables. The pickers (the Win32 grid, the mac popover)
+    // and the ribbon or menu wiring stay with the ports; every command
+    // that changes the table text is here. The algorithms were shared
+    // already (tableedit.cpp, navigation.cpp); what moves is the glue
+    // both ports wrote twice. Each command is one undo step and does
+    // nothing in read mode. They return whether text changed.
+    // -------------------------------------------------------------------
+
+    // True when the caret, or the anchor side of a selection, sits in
+    // a table. This is the one rule for "in a table": Tab, paste,
+    // insert and the ribbon all ask it.
+    bool CaretInTable() const;
+
+    // What the table commands can do at the caret. The ribbon greys
+    // out a command from it, and the commands call it too, so a live
+    // button never does nothing (table spec, capability rules).
+    TableCapabilities CaretTableCapabilities() const;
+
+    bool AddTableRow(bool below);
+    bool RemoveTableRow();
+    bool AddTableColumn(bool right);
+    bool RemoveTableColumn();
+    bool SetTableColumnAlign(TableAlignMark mark);
+    // Refused on the header and delimiter rows (table spec 22).
+    bool SplitTableCell();
+
+    // Removes the whole table in one splice. The caret goes to the
+    // block that followed it, or to where the table stood.
+    bool RemoveTable();
+
+    // A new table of the given size at the caret, replacing a
+    // selection. A table never nests, and it always gets a blank
+    // separator line in front, or the block before would absorb it.
+    // The caret lands in the first header cell.
+    bool InsertTable(int cols, int rows);
+
+    // A converted spreadsheet block as a table at the caret, with the
+    // same line handling. firstCellCaret is the offset of the first
+    // cell to land in, counted from the start of the table text.
+    bool InsertPastedTable(const std::string& table, uint32_t firstCellCaret);
+
+    // Tab from the last cell: a blank row with the table's column
+    // count, and the caret in its first cell.
+    bool AppendRowToTable();
+
     // Splices the buffer and records the undo entry in one step, so
     // the table, find and link paths of both ports share one entry
     // shape. The stamp comes from the platform clock, so both ports
@@ -249,6 +296,15 @@ private:
     // toggle at an empty caret, the shared marker toggle over a
     // selection (moved in from App::ToggleInlineWithPending).
     void ToggleInlineWithPending(const std::string& marker, bool bold);
+
+    // One table operation: the span goes in as one splice, the undo
+    // coalescing breaks so a following keystroke starts a new step, and
+    // the caret moves to where the operation says.
+    void RewriteTableSpan(uint32_t start, uint32_t length,
+                          const std::string& text, uint32_t caret);
+    // The shared insert of a table block at the caret (grid insert and
+    // paste): separator lines, trailing break, one splice.
+    bool InsertTableBlock(const std::string& table, uint32_t firstCellCaret);
 
     // One undo step for a pending toggle, recorded by the toggle
     // body above (text guide, bold and italic at an empty caret,

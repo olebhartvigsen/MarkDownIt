@@ -1,0 +1,22 @@
+{
+  "name": "table-add-row-is-one-undo-step",
+  "comment": "Add row below is one undo step.",
+  "start_text": "| a | b |\n|---|---|\n| x | y |\n",
+  "commands": [
+    {
+      "cmd": "select",
+      "start": 24,
+      "end": 24
+    },
+    {
+      "cmd": "add_row",
+      "below": 1
+    }
+  ],
+  "expected_text": "| a | b |\n|---|---|\n| x | y |\n|        |        |\n",
+  "expected_selection": {
+    "anchor": 50,
+    "active": 50
+  },
+  "expected_undo_depth": 1
+}

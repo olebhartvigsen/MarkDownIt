@@ -1,0 +1,22 @@
+{
+  "name": "table-align-column-is-one-undo-step",
+  "comment": "Aligning a column rewrites the delimiter row in one undo step.",
+  "start_text": "| a | b |\n|---|---|\n| x | y |\n",
+  "commands": [
+    {
+      "cmd": "select",
+      "start": 3,
+      "end": 3
+    },
+    {
+      "cmd": "align_column",
+      "mark": 2
+    }
+  ],
+  "expected_text": "| a | b |\n|:---:|---|\n| x | y |\n",
+  "expected_selection": {
+    "anchor": 3,
+    "active": 3
+  },
+  "expected_undo_depth": 1
+}

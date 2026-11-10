@@ -1,0 +1,21 @@
+{
+  "name": "table-remove-lands-on-following-block",
+  "comment": "The caret lands on the block that followed the table.",
+  "start_text": "intro\n\n| a | b |\n|---|---|\n| x | y |\n\nafter\n",
+  "commands": [
+    {
+      "cmd": "select",
+      "start": 10,
+      "end": 10
+    },
+    {
+      "cmd": "remove_table"
+    }
+  ],
+  "expected_text": "intro\n\n\nafter\n",
+  "expected_selection": {
+    "anchor": 8,
+    "active": 8
+  },
+  "expected_undo_depth": 1
+}

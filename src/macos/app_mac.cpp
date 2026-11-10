@@ -416,7 +416,9 @@ void App::AdoptImportedText(const std::string& text) {
     svgWrapped_ = false;
 }
 
-// The table the caret is in, and where in it the caret is.
+// Adds a row above or below the caret's row.
+// The table the caret is in, and where in it the caret is. The menu
+// validation reads it; the commands themselves live in the controller.
 bool App::CaretTable(tableedit::TableLocation* out) const {
     const Node* table =
         tableedit::ContainingTable(document_, sel_.active.offset);
@@ -424,185 +426,49 @@ bool App::CaretTable(tableedit::TableLocation* out) const {
     return tableedit::Locate(buffer_.Text(), table, sel_.active.offset, out);
 }
 
-// The source span of the table the caret is in. The span is empty when
-// the caret is not in a table.
-bool App::TableSpan(uint32_t* start, uint32_t* end) const {
-    const Node* table =
-        tableedit::ContainingTable(document_, sel_.active.offset);
-    if (!table) return false;
-    *start = table->srcOffset;
-    *end = table->srcOffset + table->srcLength;
-    return true;
-}
-
-// Replaces the table's source span with new text. The whole span goes
-// in one edit, so one table operation is one undo step.
-void App::RewriteTable(uint32_t start, uint32_t end,
-                       const std::string& text, uint32_t caret) {
-    if (!editing_) return;
-    editor_.ReplaceTextRange(start, end - start, text, EditType::Insert);
-    editor_.BreakUndoCoalesce();
-    sel_.Collapse({caret});
-    OnTextChanged();
-}
-
-// Adds a row above or below the caret's row.
 void App::AddTableRow(bool below) {
-    tableedit::TableLocation loc;
-    if (!CaretTable(&loc)) return;
-    const tableedit::TableEdit edit =
-        tableedit::AddRow(buffer_.Text(), loc, below);
-    if (!edit.ok) return;
-    RewriteTable(edit.start, edit.start + edit.length, edit.text, edit.caret);
+    controller_.AddTableRow(below);
 }
 
 // Removes the caret's row.
 void App::RemoveTableRow() {
-    tableedit::TableLocation loc;
-    if (!CaretTable(&loc)) return;
-    const tableedit::TableEdit edit =
-        tableedit::RemoveRow(buffer_.Text(), loc);
-    if (!edit.ok) return;
-    RewriteTable(edit.start, edit.start + edit.length, edit.text, edit.caret);
+    controller_.RemoveTableRow();
 }
 
 // Adds a column to the left or the right of the caret's column.
 void App::AddTableColumn(bool right) {
-    tableedit::TableLocation loc;
-    if (!CaretTable(&loc)) return;
-
-    uint32_t start = 0;
-    uint32_t end = 0;
-    if (!TableSpan(&start, &end)) return;
-
-    std::string rebuilt;
-    uint32_t caret = 0;
-    if (!TableInsertColumn(buffer_.Text(), start, end, loc.columnIndex, right,
-                           sel_.active.offset, &rebuilt, &caret)) {
-        return;
-    }
-    RewriteTable(start, end, rebuilt, caret);
+    controller_.AddTableColumn(right);
 }
 
 // Removes the caret's column.
 void App::RemoveTableColumn() {
-    tableedit::TableLocation loc;
-    if (!CaretTable(&loc)) return;
-    if (!TableCapabilitiesFor(loc.rowIndex, loc.numCols).removeColumn) return;
-
-    uint32_t start = 0;
-    uint32_t end = 0;
-    if (!TableSpan(&start, &end)) return;
-
-    std::string rebuilt;
-    uint32_t caret = 0;
-    if (!TableRemoveColumn(buffer_.Text(), start, end, loc.columnIndex,
-                           sel_.active.offset, &rebuilt, &caret)) {
-        return;
-    }
-    RewriteTable(start, end, rebuilt, caret);
+    controller_.RemoveTableColumn();
 }
 
 // Splits the caret's cell into two.
 void App::SplitTableCell() {
-    tableedit::TableLocation loc;
-    if (!CaretTable(&loc)) return;
-
-    uint32_t start = 0;
-    uint32_t end = 0;
-    if (!TableSpan(&start, &end)) return;
-
-    std::string rebuilt;
-    uint32_t caret = 0;
-    if (!TableSplitCell(buffer_.Text(), start, end, loc.columnIndex,
-                        loc.rowIndex, 2, sel_.active.offset,
-                        &rebuilt, &caret)) {
-        return;
-    }
-    RewriteTable(start, end, rebuilt, caret);
+    controller_.SplitTableCell();
 }
 
 // Sets the alignment of the caret's column.
 void App::AlignTableColumn(int mark) {
-    tableedit::TableLocation loc;
-    if (!CaretTable(&loc)) return;
-
-    uint32_t start = 0;
-    uint32_t end = 0;
-    if (!TableSpan(&start, &end)) return;
-
     TableAlignMark alignment = TableAlignMark::None;
     if (mark == 1) alignment = TableAlignMark::Left;
     else if (mark == 2) alignment = TableAlignMark::Center;
     else if (mark == 3) alignment = TableAlignMark::Right;
-
-    std::string rebuilt;
-    uint32_t caret = 0;
-    if (!TableSetColumnAlign(buffer_.Text(), start, end, loc.columnIndex,
-                              alignment, sel_.active.offset,
-                              &rebuilt, &caret)) {
-        return;
-    }
-    RewriteTable(start, end, rebuilt, caret);
+    controller_.SetTableColumnAlign(alignment);
 }
 
 // Removes the whole table the caret is in, in one edit, so the table
 // leaves in a single undo step. The caret lands on the block that
 // followed the table.
 void App::RemoveTable() {
-    uint32_t start = 0;
-    uint32_t end = 0;
-    if (!TableSpan(&start, &end)) return;
-
-    const std::string& text = buffer_.Text();
-    uint32_t following = start;
-    uint32_t look = end;
-    while (look < text.size() && text[look] == '\n') ++look;
-    if (look < text.size()) {
-        for (const Node& node : document_.nodes) {
-            if (node.block != BlockKind::Table && node.srcOffset == look) {
-                following = look;
-                break;
-            }
-        }
-    }
-    const uint32_t removed = end - start;
-    const uint32_t caret = following > removed ? following - removed : 0;
-    RewriteTable(start, end, "", caret);
+    controller_.RemoveTable();
 }
 
 // Inserts a new table at the caret.
 void App::InsertTable(int cols, int rows) {
-    if (!editing_) return;
-    // A table never nests, so the command does nothing inside one.
-    if (tableedit::ContainingTable(document_, sel_.active.offset)) return;
-
-    uint32_t insertPos = sel_.active.offset;
-    uint32_t replaceLen = 0;
-    if (!sel_.Empty()) {
-        insertPos = sel_.Start();
-        replaceLen = sel_.Length();
-    }
-
-    const std::string& text = buffer_.Text();
-    std::string insertText;
-    // A table needs a blank separator line in front of it, or the
-    // previous block absorbs it.
-    insertText.append(TableSeparatorNewlinesBefore(text, insertPos), '\n');
-    const uint32_t prefixLen = static_cast<uint32_t>(insertText.size());
-    insertText += tableedit::BuildGrid(cols, rows);
-    if (insertPos + replaceLen < text.size() &&
-        text[insertPos + replaceLen] != '\n') {
-        insertText += "\n";
-    }
-
-    editor_.ReplaceTextRange(insertPos, replaceLen, insertText,
-                              EditType::Insert);
-    editor_.BreakUndoCoalesce();
-    // The caret goes to the first header cell's content, not past the
-    // whole table.
-    sel_.Collapse({insertPos + prefixLen + 1});
-    OnTextChanged();
+    controller_.InsertTable(cols, rows);
 }
 
 void App::HandleTab(bool backwards) {
@@ -683,20 +549,7 @@ void App::HandleTab(bool backwards) {
 // in its first cell, so a table grows by keyboard alone. One undo step
 // covers the row and the caret.
 void App::AppendRowToTable() {
-    if (!editing_) return;
-    // The splice itself is shared with the portable suite, so the
-    // combined Tab command is covered by a test (spec X2).
-    std::string row;
-    uint32_t insertPos = 0;
-    uint32_t caretAfter = 0;
-    if (!TableAppendRow(document_, buffer_.Text(), sel_.active.offset, &row,
-                        &insertPos, &caretAfter)) {
-        return;
-    }
-    editor_.ReplaceTextRange(insertPos, 0, row, EditType::Insert);
-    editor_.BreakUndoCoalesce();
-    sel_.Collapse({caretAfter});
-    OnTextChanged();
+    controller_.AppendRowToTable();
 }
 
 // Control characters never reach the buffer: typing drops everything
@@ -780,32 +633,7 @@ void App::PasteFromClipboard() {
 // it, and one undo step for the separators, the table and the caret.
 void App::InsertPastedTable(const std::string& table,
                             uint32_t firstCellCaret) {
-    if (!editing_) return;
-    // A table never nests, so a pasted table does nothing inside one.
-    if (tableedit::ContainingTable(document_, sel_.active.offset)) return;
-
-    uint32_t insertPos = sel_.active.offset;
-    uint32_t replaceLen = 0;
-    if (!sel_.Empty()) {
-        insertPos = sel_.Start();
-        replaceLen = sel_.Length();
-    }
-
-    const std::string& text = buffer_.Text();
-    std::string insertText;
-    insertText.append(TableSeparatorNewlinesBefore(text, insertPos), '\n');
-    const uint32_t prefixLen = static_cast<uint32_t>(insertText.size());
-    insertText += table;
-    if (insertPos + replaceLen < text.size() &&
-        text[insertPos + replaceLen] != '\n') {
-        insertText += "\n";
-    }
-
-    editor_.ReplaceTextRange(insertPos, replaceLen, insertText,
-                              EditType::Insert);
-    editor_.BreakUndoCoalesce();
-    sel_.Collapse({insertPos + prefixLen + firstCellCaret});
-    OnTextChanged();
+    controller_.InsertPastedTable(table, firstCellCaret);
 }
 
 void App::Reparse() {
