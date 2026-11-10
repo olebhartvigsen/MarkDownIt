@@ -91,7 +91,7 @@ set(MARKDOWNIT_MERMAID_STATE_SOURCES
 )
 
 # DirectWrite measurement for the Mermaid engine, Windows only.
-# usage: windows-app
+# usage: windows-app windows-tests
 set(MARKDOWNIT_MERMAID_WINDOWS_SOURCES
     src/mermaid/measure_dwrite.cpp
 )

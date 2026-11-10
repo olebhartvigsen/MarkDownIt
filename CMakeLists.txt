@@ -482,11 +482,15 @@ elseif(BUILD_TESTS)
         ${MARKDOWNIT_OFFICE_SOURCES}
         ${MARKDOWNIT_WINDOWS_APP_SOURCES}
         # The Windows renderer chain the batch 5.3 twin drives: the
-        # painters the wash test renders through, and their win-only
-        # pie and sequence siblings the same renderer.cpp pulls in.
+        # painters the wash test renders through, their win-only pie
+        # and sequence siblings, the DirectWrite Mermaid measure the
+        # painters charge, and the real image loader the painters call
+        # (the twin fixtures carry no image URLs, so it only links).
         src/renderer.cpp
         src/renderer_pie.cpp
         src/renderer_sequence.cpp
+        src/imagehelper.cpp
+        ${MARKDOWNIT_MERMAID_WINDOWS_SOURCES}
         src/textlayout_dwrite.cpp
         src/findbar.cpp
         src/svgdoc.cpp
@@ -506,6 +510,8 @@ elseif(BUILD_TESTS)
         ole32
         shell32
         shlwapi
+        windowscodecs
+        winhttp
     )
     target_include_directories(MarkDownIt.tests PRIVATE
         src
