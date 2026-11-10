@@ -4,7 +4,6 @@
 
 #include <d2d1.h>
 #include <dwrite.h>
-#include <cstdio>
 #include <string>
 #include <vector>
 #include <cmath>
@@ -2423,22 +2422,14 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // lines the cache points at; the scroll-only translate keeps every
     // item at its walked width and position.
     {
-        // Temporary trace: diagwash checkpoint, removed after the
-        // twin mismatch is closed.
-        printf("diagwash play phase: blocks=%zu sel=%d\n",
-               shared.blocks.size(), sel ? 1 : 0);
-        fflush(stdout);
         const float originY = m.padTop + topOffsetDip;
         platform::D2DTarget player(rt);
         rt->SetTransform(D2D1::Matrix3x2F::Translation(
             originX - scrollX, originY - scrollY));
-        const size_t playedBefore = shared.list.items.size();
         display::Play(shared.list, &player,
                       [this](const display::Image& item) {
                           return ImageHandleFor(item);
                       });
-        printf("diagwash played items=%zu\n", playedBefore);
-        fflush(stdout);
         rt->SetTransform(D2D1::Matrix3x2F::Translation(-scrollX, -scrollY));
     }
 
@@ -2447,10 +2438,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // target, in view coordinates, each at RecordY.
     PaintSharedOverlays(rt, dw, doc, sharedByNode, shared, m, contentWidth,
                         originX, topOffsetDip, sel, scrollY);
-    // Temporary trace: diagwash checkpoint, removed after the twin
-    // mismatch is closed.
-    printf("diagwash overlays done\n");
-    fflush(stdout);
 
     rt->SetTransform(D2D1::Matrix3x2F::Identity());
     rt->PopAxisAlignedClip();

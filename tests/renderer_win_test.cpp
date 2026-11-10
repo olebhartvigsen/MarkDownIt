@@ -948,10 +948,19 @@ public:
                               ID2D1BitmapBrush**) {
         return 0x80004001L;
     }
-    HRESULT CreateSolidColorBrush(const D2D1_COLOR_F*,
-                                  const D2D1_BRUSH_PROPERTIES*,
-                                  ID2D1SolidColorBrush**) {
-        return 0x80004001L;
+    HRESULT CreateSolidColorBrush(const D2D1_COLOR_F* color,
+                                  const D2D1_BRUSH_PROPERTIES* props,
+                                  ID2D1SolidColorBrush** out) {
+        // The real interface's two-argument convenience forms forward
+        // here on the runner, through the inline headers, so this is
+        // the creator the frame's brushes actually come from there.
+        // It answers the same brush the reference form builds.
+        if (!color || !out) return 0x80004003L;
+        FakeSolidBrush* b = new FakeSolidBrush();
+        b->color = *color;
+        if (props) b->color.a *= props->opacity;
+        *out = b;
+        return 0;
     }
     HRESULT CreateGradientStopCollection(const D2D1_GRADIENT_STOP*, UINT32,
                                          D2D1_GAMMA, D2D1_EXTEND_MODE,
@@ -1368,11 +1377,6 @@ TEST(RendererWin, SelectionRepaintAsksNoLayoutBeyondTheRects) {
     sel.active.offset = sel.anchor.offset + 20;
     renderer.Render(&rt, &dw, doc, width, 0.0f, 0.0f, 0.0f, &sel);
     EXPECT_EQ(engine.calls.size(), bareCalls * 2u);
-    // Temporary trace: diagwash fill counts, removed after the twin
-    // mismatch is closed.
-    printf("diagwash sel-render fills=%zu (bare %zu)\n",
-           rt.fills.size(), rtBare.fills.size());
-    fflush(stdout);
 
     // And the washes the selection frame painted are exactly the
     // twin's rects for the same selection.
@@ -1441,8 +1445,5 @@ TEST(RendererWin, FrameWashesCrossingBlocksMatchTheTwin) {
             printf("missing %f %f %f %f\n", r.x, r.y, r.width,
                    r.height);
     }
-    for (const FakeRenderTarget::Fill& f : rt.fills)
-        printf("frame fill %f %f %f %f\n", f.left, f.top,
-               f.right, f.bottom);
     fflush(stdout);
 }
