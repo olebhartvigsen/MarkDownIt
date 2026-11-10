@@ -2026,6 +2026,61 @@ TEST(RendererWin, ReportTableFullWalk) {
         printf("FULLWALK piece x=%f y=%f adv=%f\n", d.x, d.y, d.adv);
     fflush(stdout);
 
+    // The same table at the zooms a reader turns to. The claim the
+    // report photographs, a first table whose left column clips its
+    // code away, is about scale: the walk measures the widest token
+    // through the zoomed engine, and the split must carry it at
+    // every zoom. The widest piece of the first column answers in
+    // the column's own measure.
+    for (float zoom : {0.5f, 0.62f, 0.71f, 0.85f}) {
+        FakeRenderTarget rtz;
+        Renderer rz;
+        ASSERT_TRUE(rz.Init(&dw));
+        rz.SetContentWidthMode(0);
+        rz.SetZoom(zoom);
+        rz.Render(&rtz, &dw, doc, 1228.0f, 0.0f, 0.0f, 0.0f, nullptr);
+        std::vector<float> xsz;
+        for (size_t i = 0; i < rtz.fills.size(); ++i) {
+            const FakeRenderTarget::Fill& f = rtz.fills[i];
+            if (f.right - f.left < 2.0f && f.bottom - f.top > 4.0f)
+                xsz.push_back(f.left);
+        }
+        std::sort(xsz.begin(), xsz.end());
+        std::vector<float> vxz;
+        for (float x : xsz)
+            if (vxz.empty() || x - vxz.back() > 2.5f) vxz.push_back(x);
+        float maxAdvz = 0.0f;
+        for (const FakeRenderTarget::TextDraw& d : rtz.textDraws)
+            maxAdvz = (std::max)(maxAdvz, d.adv);
+        if (maxAdvz < 60.0f * zoom) {
+            printf("ZOOM %.2f degraded\n", zoom);
+            fflush(stdout);
+            continue;
+        }
+        if (vxz.size() < 5) {
+            printf("ZOOM %.2f vlines=%zu\n", zoom, vxz.size());
+            fflush(stdout);
+        }
+        ASSERT_GE(vxz.size(), static_cast<size_t>(5));
+        const float owz = 800.0f * zoom;
+        const float oxz = (1228.0f * zoom < owz ? 0.0f
+                           : (1228.0f - owz) * 0.5f)
+            ;
+        float widest = 0.0f;
+        for (const FakeRenderTarget::TextDraw& d : rtz.textDraws) {
+            const float fx = d.x - oxz;
+            if (fx >= vxz[0] && fx < vxz[1])
+                widest = (std::max)(widest, d.adv);
+        }
+        // The frame holds the pieces in window DIPs, the metrics
+        // scale the fonts by the zoom: both must meet in one scale.
+        const float col1 = vxz[1] - vxz[0];
+        printf("ZOOM %.2f col1=%f widest=%f ox=%f v0=%f v1=%f\n",
+               zoom, col1, widest, oxz, vxz[0], vxz[1]);
+        fflush(stdout);
+        EXPECT_LE(widest, col1 + 2.0f);
+    }
+
     // The same table at the narrow window the report photographs,
     // where the deficit begins: the columns tell whether the split
     // still carries every token and every cell paints.
