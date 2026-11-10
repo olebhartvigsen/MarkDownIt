@@ -9,6 +9,7 @@
 #include "navigation.h"
 #include "tableedit.h"
 #include "office/markdown_bridge.h"
+#include "office/office_session.h"
 #include "office/docx_import.h"
 #include "office/docx_export.h"
 #include "office/pdf_export.h"
@@ -4863,22 +4864,6 @@ static std::wstring OfficeUtf8ToWide(const std::string& text) {
     return wide;
 }
 
-// The compatibility report as dialog text: one "feature: detail" line per
-// dropped or approximated feature. Empty when there was nothing to report.
-static std::wstring CompatReportText(const office::CompatReport& report) {
-    std::wstring text;
-    for (const office::CompatWarning& warning : report.warnings) {
-        text += L"- ";
-        text += OfficeUtf8ToWide(warning.feature);
-        if (!warning.detail.empty()) {
-            text += L": ";
-            text += OfficeUtf8ToWide(warning.detail);
-        }
-        text += L"\n";
-    }
-    return text;
-}
-
 // Read a whole file into a string. False when it cannot be opened.
 static bool ReadAllBytes(const std::wstring& path, std::string& out) {
     std::ifstream f(path.c_str(), std::ios::binary);
@@ -4913,6 +4898,19 @@ static bool WriteExportBytes(const std::wstring& path, const std::string& bytes)
     return true;
 }
 
+// Everything the export has to drop is listed before the save dialog, with a
+// way out. False when the user backs out. Nothing to report means no dialog.
+static bool ConfirmExportLoss(HWND owner, const wchar_t* caption,
+                              const office::CompatReport& report) {
+    const std::string notes = office::CompatNotesText(report);
+    if (notes.empty()) return true;
+    std::wstring message = L"The export will lose some content.\n\n"
+                           L"These features have no form in the file:\n\n";
+    message += OfficeUtf8ToWide(notes);
+    return MessageBoxW(owner, message.c_str(), caption,
+                       MB_OKCANCEL | MB_ICONQUESTION) == IDOK;
+}
+
 // Import a Word .docx package as markdown in the editor. The dialog takes
 // .docx; a legacy .doc or an encrypted package reaches the importer and its
 // error message says so instead of crashing.
@@ -4939,24 +4937,16 @@ void AppWindow::ImportWordDocx() {
         return;
     }
 
-    office::DocModel model;
-    office::CompatReport report;
-    std::string error;
-    if (!office::DocxImport(bytes, model, report, error)) {
-        // Empty, unreadable, legacy .doc and encrypted packages all land
-        // here with the importer's own description of the file.
-        std::wstring message = L"Could not import the Word document.";
-        if (!error.empty()) {
-            message += L"\n\n";
-            message += OfficeUtf8ToWide(error);
-        }
-        MessageBoxW(hwnd_, message.c_str(), caption, MB_ICONWARNING);
+    // The shared pipeline: empty, unreadable, legacy .doc and encrypted
+    // packages all fail here with the importer's own description of the
+    // file. The report gains everything markdown has no form for.
+    const office::ImportResult imported = office::ImportWordBytes(bytes);
+    if (!imported.ok) {
+        MessageBoxW(hwnd_, OfficeUtf8ToWide(imported.message).c_str(), caption,
+                    MB_ICONWARNING);
         return;
     }
-
-    // The document as markdown; the report gains everything markdown has no
-    // form for (a page break, for instance).
-    const std::string markdown = office::OfficeModelToMarkdown(model, report);
+    const std::string& markdown = imported.markdown;
 
     // Same load path as a document read from disk. The markdown has no file
     // of its own yet: untitled and dirty, so Save asks for a name and
@@ -4965,7 +4955,8 @@ void AppWindow::ImportWordDocx() {
     LoadDocumentText(markdown, std::wstring());
     MarkDirty();
 
-    const std::wstring notes = CompatReportText(report);
+    const std::wstring notes =
+        OfficeUtf8ToWide(office::CompatNotesText(imported.report));
     if (!notes.empty()) {
         std::wstring message = L"The document was imported with these "
                                L"compatibility notes:\n\n";
@@ -4997,29 +4988,16 @@ void AppWindow::ExportWordDocx() {
         return;
     }
 
-    office::DocModel model;
-    office::CompatReport report;
-    std::string error;
-    if (!office::MarkdownToOfficeModel(markdown, model, report, error)) {
-        std::wstring message = L"Could not convert the document for the export.";
-        if (!error.empty()) {
-            message += L"\n\n";
-            message += OfficeUtf8ToWide(error);
-        }
-        MessageBoxW(hwnd_, message.c_str(), caption, MB_ICONWARNING);
+    const office::ExportResult made = office::ExportWordBytes(markdown);
+    if (!made.ok) {
+        MessageBoxW(hwnd_, OfficeUtf8ToWide(made.message).c_str(), caption,
+                    MB_ICONWARNING);
         return;
     }
-
-    std::string bytes;
-    if (!office::DocxExport(model, bytes, report, error) || bytes.empty()) {
-        std::wstring message = L"Could not write the Word document.";
-        if (!error.empty()) {
-            message += L"\n\n";
-            message += OfficeUtf8ToWide(error);
-        }
-        MessageBoxW(hwnd_, message.c_str(), caption, MB_ICONWARNING);
-        return;
-    }
+    // Everything the conversion had to drop is shown before anything
+    // lands on disk, so the user can back out first (the mac window asks
+    // the same way).
+    if (!ConfirmExportLoss(hwnd_, caption, made.report)) return;
 
     // The save dialog is the only way an export target is chosen, so an
     // export never writes over the markdown document it was made from, and
@@ -5029,19 +5007,16 @@ void AppWindow::ExportWordDocx() {
         ExportDefaultName(L".docx"));
     if (path.empty()) return;  // cancelled
 
-    if (!WriteExportBytes(path, bytes)) {
+    if (!WriteExportBytes(path, made.bytes)) {
         MessageBoxW(hwnd_, L"Could not write the file. The export was not saved.",
                     caption, MB_ICONWARNING);
         return;
     }
 
-    const std::wstring notes = CompatReportText(report);
-    if (!notes.empty()) {
-        std::wstring message = L"The document was exported to:\n";
-        message += path;
-        message += L"\n\nCompatibility notes:\n\n";
-        message += notes;
-        MessageBoxW(hwnd_, message.c_str(), caption, MB_ICONINFORMATION);
+    if (!made.report.warnings.empty()) {
+        MessageBoxW(hwnd_, OfficeUtf8ToWide(office::ExportDoneText(
+                        WideToUtf8(path), 0, made.report)).c_str(),
+                    caption, MB_ICONINFORMATION);
     }
 }
 
@@ -5062,37 +5037,19 @@ void AppWindow::ExportPdf() {
         return;
     }
 
-    office::DocModel model;
-    office::CompatReport report;
-    std::string error;
-    if (!office::MarkdownToOfficeModel(markdown, model, report, error)) {
-        std::wstring message = L"Could not convert the document for the export.";
-        if (!error.empty()) {
-            message += L"\n\n";
-            message += OfficeUtf8ToWide(error);
-        }
-        MessageBoxW(hwnd_, message.c_str(), caption, MB_ICONWARNING);
-        return;
-    }
-
     // The whole document: the model carries the page setup.
     office::PdfExportOptions options;
     options.all_pages = true;
     options.first_page = 1;
     options.last_page = 0;
 
-    std::string bytes;
-    int page_count = 0;
-    if (!office::PdfExport(model, options, bytes, report, error, &page_count) ||
-        bytes.empty()) {
-        std::wstring message = L"Could not write the PDF file.";
-        if (!error.empty()) {
-            message += L"\n\n";
-            message += OfficeUtf8ToWide(error);
-        }
-        MessageBoxW(hwnd_, message.c_str(), caption, MB_ICONWARNING);
+    const office::ExportResult made = office::ExportPdfBytes(markdown, options);
+    if (!made.ok) {
+        MessageBoxW(hwnd_, OfficeUtf8ToWide(made.message).c_str(), caption,
+                    MB_ICONWARNING);
         return;
     }
+    if (!ConfirmExportLoss(hwnd_, caption, made.report)) return;
 
     // Same contract as the Word export: the dialog names the target.
     const std::wstring path = ExportSaveDialog(
@@ -5100,23 +5057,15 @@ void AppWindow::ExportPdf() {
         ExportDefaultName(L".pdf"));
     if (path.empty()) return;  // cancelled
 
-    if (!WriteExportBytes(path, bytes)) {
+    if (!WriteExportBytes(path, made.bytes)) {
         MessageBoxW(hwnd_, L"Could not write the file. The export was not saved.",
                     caption, MB_ICONWARNING);
         return;
     }
 
-    std::wstring message = L"The document was exported to:\n";
-    message += path;
-    wchar_t pageText[32] = {};
-    swprintf_s(pageText, 32, L"\n\nPages: %d", page_count);
-    message += pageText;
-    const std::wstring notes = CompatReportText(report);
-    if (!notes.empty()) {
-        message += L"\n\nCompatibility notes:\n\n";
-        message += notes;
-    }
-    MessageBoxW(hwnd_, message.c_str(), caption, MB_ICONINFORMATION);
+    MessageBoxW(hwnd_, OfficeUtf8ToWide(office::ExportDoneText(
+                    WideToUtf8(path), made.pageCount, made.report)).c_str(),
+                caption, MB_ICONINFORMATION);
 }
 
 // Apply a new zoom factor with a stable anchor: the document point

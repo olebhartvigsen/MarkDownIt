@@ -355,6 +355,7 @@ if(BUILD_TESTS AND APPLE)
         tests/office_pdf_export_test.cpp
         tests/office_pdf_import_test.cpp
         tests/office_markdown_bridge_test.cpp
+        tests/office_session_test.cpp
         tests/table_picker_test.cpp
         ${MARKDOWNIT_CORE_SOURCES}
         ${MARKDOWNIT_SVG_SHARED_SOURCES}
@@ -479,6 +480,7 @@ elseif(BUILD_TESTS)
         tests/office_pdf_export_test.cpp
         tests/office_pdf_import_test.cpp
         tests/office_markdown_bridge_test.cpp
+        tests/office_session_test.cpp
         tests/table_picker_test.cpp
         ${MARKDOWNIT_CORE_SOURCES}
         ${MARKDOWNIT_SVG_SHARED_SOURCES}

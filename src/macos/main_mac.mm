@@ -34,6 +34,7 @@
 #include "office/docx_export.h"
 #include "office/docx_import.h"
 #include "office/markdown_bridge.h"
+#include "office/office_session.h"
 #include "office/pdf_export.h"
 #include "office/pdf_import.h"
 #include "welcome_mac.h"
@@ -2286,27 +2287,21 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     contents << file.rdbuf();
     const std::string bytes = contents.str();
 
-    office::DocModel model;
-    office::CompatReport report;
-    std::string error;
-    if (!office::DocxImport(bytes, model, report, error)) {
-        // The importer names what is wrong (a legacy .doc, a
-        // damaged package), and the message goes out with it
-        // (office spec, general requirements).
-        NSString* text = @"The Word file could not be read.";
-        if (!error.empty()) {
-            text = [NSString stringWithFormat:@"%@\n\n%s", text,
-                                              error.c_str()];
-        }
-        [self reportError:text];
+    // The shared pipeline names what is wrong (a legacy .doc, a damaged
+    // package) and the message goes out with it (office spec, general
+    // requirements).
+    const office::ImportResult imported = office::ImportWordBytes(bytes);
+    if (!imported.ok) {
+        [self reportError:[NSString stringWithUTF8String:
+                                        imported.message.c_str()]];
         return;
     }
+    const office::CompatReport& report = imported.report;
 
     // The document becomes the markdown of the Word file. It has no
     // file of its own yet: untitled and dirty, so Save asks for a name
     // and closing asks whether to save.
-    const std::string markdown = office::OfficeModelToMarkdown(model, report);
-    app_->AdoptImportedText(markdown);
+    app_->AdoptImportedText(imported.markdown);
     [self refreshWindowTitle:std::string()];
     [window_ setDocumentEdited:YES];
     [self hideWelcomeScreen];
@@ -2527,45 +2522,16 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         }
     }
 
-    office::DocModel model;
-    office::CompatReport report;
-    std::string error;
-    if (!office::MarkdownToOfficeModel(source, model, report, error)) {
-        NSString* text = @"The document could not be read.";
-        if (!error.empty()) {
-            text = [NSString stringWithFormat:@"%@\n\n%s", text,
-                                              error.c_str()];
-        }
-        [self reportError:text];
+    const office::ExportResult made =
+        asPdf ? office::ExportPdfBytes(source, options)
+              : office::ExportWordBytes(source);
+    if (!made.ok) {
+        [self reportError:[NSString stringWithUTF8String:
+                                        made.message.c_str()]];
         return;
     }
-
-    std::string bytes;
-    int pageCount = 0;
-    if (asPdf) {
-        if (!office::PdfExport(model, options, bytes, report, error,
-                               &pageCount) ||
-            bytes.empty()) {
-            NSString* text = @"The PDF could not be written.";
-            if (!error.empty()) {
-                text = [NSString stringWithFormat:@"%@\n\n%s", text,
-                                                  error.c_str()];
-            }
-            [self reportError:text];
-            return;
-        }
-    } else {
-        if (!office::DocxExport(model, bytes, report, error) ||
-            bytes.empty()) {
-            NSString* text = @"The Word file could not be written.";
-            if (!error.empty()) {
-                text = [NSString stringWithFormat:@"%@\n\n%s", text,
-                                                  error.c_str()];
-            }
-            [self reportError:text];
-            return;
-        }
-    }
+    const std::string& bytes = made.bytes;
+    const office::CompatReport& report = made.report;
 
     // Everything the model conversion and the writer had to drop
     // is shown before anything lands on disk (office spec,
@@ -2597,22 +2563,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     file.close();
 
     // The PDF export reports the page count, and both exports report
-    // what they dropped or approximated (office spec, the
-    // compatibility report clause).
-    NSString* notes = [self compatNotesText:report];
-    if (asPdf) {
-        NSMutableString* message = [NSMutableString stringWithFormat:
-            @"The document was exported to:\n%s\n\nPages: %d",
-            path.c_str(), pageCount];
-        if ([notes length] > 0) {
-            [message appendFormat:@"\n\nCompatibility notes:\n\n%@", notes];
-        }
-        [self reportInfo:message];
-    } else if ([notes length] > 0) {
-        NSString* message = [NSString stringWithFormat:
-            @"The document was exported to:\n%s\n\nCompatibility "
-            @"notes:\n\n%@", path.c_str(), notes];
-        [self reportInfo:message];
+    // what they dropped or approximated (office spec, the compatibility
+    // report clause). A Word export is silent when nothing was dropped.
+    if (asPdf || !report.warnings.empty()) {
+        [self reportInfo:[NSString stringWithUTF8String:
+            office::ExportDoneText(path, asPdf ? made.pageCount : 0,
+                                   report).c_str()]];
     }
 }
 
@@ -3215,20 +3171,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // per dropped or approximated feature. Empty when there was nothing to
 // report.
 - (NSString*)compatNotesText:(const office::CompatReport&)report {
-    if (report.warnings.empty()) return @"";
-    NSMutableString* text = [NSMutableString string];
-    for (const office::CompatWarning& warning : report.warnings) {
-        [text appendString:@"- "];
-        [text appendString:[NSString
-            stringWithUTF8String:warning.feature.c_str()]];
-        if (!warning.detail.empty()) {
-            [text appendString:@": "];
-            [text appendString:[NSString
-                stringWithUTF8String:warning.detail.c_str()]];
-        }
-        [text appendString:@"\n"];
-    }
-    return text;
+    return [NSString stringWithUTF8String:
+                         office::CompatNotesText(report).c_str()];
 }
 
 @end

@@ -90,6 +90,12 @@ Four live divergences, each with file:line evidence:
    twin: both ports decode and encode through `src/documentfile.cpp`,
    so the mac side now wraps `.mmd` too and the ledger row is gone.
    The same decode also gave the mac side the BOM strip it lacked.
+5. Word import, Word export and PDF export. Both ports ran the same
+   chain by hand, and the compatibility notes were built twice. They
+   now call `src/office/office_session.cpp`. The Windows window also
+   asks before anything lands on disk when the export drops content,
+   the way the mac window did. Scope and protection choices for the PDF
+   and PDF import stay mac only (ledger row `importPdf`).
 
 One more duplication, not a divergence: the Ctrl+A table escalation
 tier is written twice (`app.h:363-367`, `app_mac.h:449-452`). It

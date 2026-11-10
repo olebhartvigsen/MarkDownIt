@@ -114,6 +114,7 @@ set(MARKDOWNIT_OFFICE_SOURCES
     src/office/pdf_export.cpp
     src/office/pdf_import.cpp
     src/office/markdown_bridge.cpp
+    src/office/office_session.cpp
 )
 
 # Windows platform half of a shared interface: registry settings and
