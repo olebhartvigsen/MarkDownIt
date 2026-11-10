@@ -1789,3 +1789,105 @@ TEST(RendererWin, ReportTableShapeHolds) {
     EXPECT_LE(uniq.size(), 7u);
     fflush(stdout);
 }
+
+// The whole lead of the reported document at the reader's own
+// state: several tables stacked with prose between them, the
+// window the report looked at, every zoom the QA states and the
+// reader can carry. A table that only holds itself at one hundred
+// percent breaks apart somewhere else, and the break lands on
+// screen, so the probe walks the zooms and asks the pieces and
+// the grid hairlines at every step. What painted geometry answers
+// twice where there should be one column marks the state.
+TEST(RendererWin, ReportDocumentStacksAtEveryZoom) {
+    const float zooms[] = {0.5f, 0.71f, 0.85f, 1.0f, 1.25f, 1.5f};
+    Document doc = Doc({
+        Heading(1, "Fra SLS til SLP: analyse af integrationer"),
+        Heading(2, "Metadata"),
+        Para("- Dato: 2026-10-20 - Status: udkast - Kilder: "
+             " materiale fra oecon styrelsen"),
+        Heading(2, "Hvad AU har i dag"),
+        Para("AU staaer paa listen over institutioner med "
+             "webservice integrationer til SLS."),
+        Table({
+            {"Integration", "Retning", "Teknik i dag", "Kilde"},
+            {"HCM til SLS: opret og aendr ansaettelsesforhold",
+             "AU til SLS",
+             "Atom feed fra Oracle HCM, Red Hat Fuse/JBoss, "
+             "SLS webservice. SLS returnerer et loebenummer",
+             "Confluence 160479867"},
+            {"Specialwebservice `OesSLSLoenmodtagerOpdateringList`",
+             "SLS til AU",
+             "Braender `PersonExt1Service.skiftCprKOTtilSLS` "
+             "fordi SLS kun tager rene tal",
+             "Confluence 173314451"},
+            {"Timeloen til SLS", "AU til SLS",
+             "Server til server med funktionscertifikat "
+             "knyttet til `SL001WS`", "Fejlsoegning"},
+        }),
+        Heading(2, "Aabne punkter"),
+        Para("ADO 19101 staaer som Active, mens en anden note "
+             "siger at integrationen aldrig blev lavet."),
+        Table({
+            {"Scenario", "Observed outcome",
+             "Evidence-supported interpretation"},
+            {"`145825`, working posting", "HTTP 200",
+             "The full flow completed with a lookup"},
+            {"`145897`, invalid unit", "HTTP 404",
+             "The posting was not published because department "
+             "code `9999` was unknown"},
+        }),
+        Para("Afsluttende text efter tabellerne for at prove at "
+             "gangen staar fast mellem blokkene."),
+    });
+    NumberOffsets(&doc);
+
+    for (float z : zooms) {
+        Renderer renderer;
+        FakeDWriteFactory dw;
+        ASSERT_TRUE(renderer.Init(&dw));
+        renderer.SetContentWidthMode(0);
+        renderer.SetZoom(z);
+        FakeRenderTarget rt;
+        renderer.Render(&rt, &dw, doc, 1561.0f, 0.0f, 0.0f,
+                        0.0f, nullptr);
+        // Grid hairlines: vertical stripes from the fills, distinct
+        // x positions per table must be stable per zoom; pieces
+        // must not overlap on their row.
+        std::vector<float> xs;
+        for (size_t i = 0; i < rt.fills.size(); ++i) {
+            const FakeRenderTarget::Fill& f = rt.fills[i];
+            const float w = f.right - f.left;
+            const float h = f.bottom - f.top;
+            if (w < 2.0f && h > 4.0f) xs.push_back(f.left);
+        }
+        std::sort(xs.begin(), xs.end());
+        std::vector<float> uniq;
+        for (float x : xs)
+            if (uniq.empty() || x - uniq.back() > 2.5f)
+                uniq.push_back(x);
+        int judged = 0;
+        std::vector<FakeRenderTarget::TextDraw> pieces = rt.textDraws;
+        std::sort(pieces.begin(), pieces.end(),
+                  [](const FakeRenderTarget::TextDraw& a,
+                     const FakeRenderTarget::TextDraw& b) {
+                      if (a.y != b.y) return a.y < b.y;
+                      return a.x < b.x;
+                  });
+        for (size_t i = 1; i < pieces.size(); ++i) {
+            if (pieces[i - 1].y != pieces[i].y) continue;
+            const float gap = pieces[i].x -
+                (pieces[i - 1].x + pieces[i - 1].adv);
+            if (gap > 60.0f * z) continue;
+            ++judged;
+            EXPECT_GE(gap, -1.5f * z);  // piece crosses its neighbour
+        }
+        printf("STACK zoom=%f vlines=%zu pieces=%zu judged=%d\n",
+               z, uniq.size(), pieces.size(), judged);
+        for (float x : uniq)
+            printf("STACK zoom=%f vline %f\n", z, x);
+        fflush(stdout);
+        EXPECT_GE(uniq.size(), 7u);   // two tables, their inner edges
+        EXPECT_LE(uniq.size(), 30u);
+        EXPECT_GE(judged, 1);
+    }
+}
