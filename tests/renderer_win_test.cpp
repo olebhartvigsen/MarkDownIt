@@ -1578,6 +1578,12 @@ TEST(RendererWin, PaintedLinesKeepTheWordSpaces) {
     FakeDWriteFactory dw;
     ASSERT_TRUE(renderer.Init(&dw));
     renderer.SetContentWidthMode(3);
+    // The highlight feature: a marker band under the headings and
+    // the words, the layer the drift report suspects. The wash must
+    // not move the pieces it sits under.
+    std::vector<TextMatch> marks;
+    marks.push_back({0, 400});
+    renderer.SetMarkers(&marks, true);
 
     const float width =
         2.0f * ScaleMetrics(kBase, 1.0f).padX + 8.0f * kBodyEm;
@@ -1621,14 +1627,23 @@ TEST(RendererWin, PaintedLinesKeepTheWordSpaces) {
 // its column lands on the next cell's words and the table reads as
 // glued. Whatever stack runs, no two pieces may overlap.
 TEST(RendererWin, PaintedCellsNeverOverlap) {
-    Document doc = Doc({Table({{"Kolonne en", "Kolonne to"},
-                               {"Fed tekst her", "En to"}})});
+    // The shape from the reported document: three columns, code
+    // spans in body cells and multi-word header cells, with the
+    // highlight band under it all.
+    Document doc = Doc({Table(
+        {{"Scenario", "Observed outcome",
+          "Evidence supported interpretation"},
+         {"`145825`, working posting", "HTTP 200 after seconds",
+          "The full flow completed with an Enhedsregister lookup."}})});
     NumberOffsets(&doc);
 
     Renderer renderer;
     FakeDWriteFactory dw;
     ASSERT_TRUE(renderer.Init(&dw));
     renderer.SetContentWidthMode(3);
+    std::vector<TextMatch> marks;
+    marks.push_back({0, 400});
+    renderer.SetMarkers(&marks, true);
 
     const float width =
         2.0f * ScaleMetrics(kBase, 1.0f).padX + 8.0f * kBodyEm;
