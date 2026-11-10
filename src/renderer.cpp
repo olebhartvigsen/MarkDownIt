@@ -1651,7 +1651,8 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                         const ColumnAlign align =
                             c < n.aligns.size() ? n.aligns[c]
                                                 : ColumnAlign::Default;
-                        platform::D2DTarget player(rt, dw);
+                        platform::D2DTarget player(
+                            rt, layoutEngine_.Factory());
                         size_t paintedRuns = 0;
                         for (const platform::TextLine& line :
                              rec->cells[ri][c].lines) {

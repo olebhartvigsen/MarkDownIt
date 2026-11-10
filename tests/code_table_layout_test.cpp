@@ -147,16 +147,14 @@ TEST(CodeTableLayout, TableSingleMeasureAndPaintOrder) {
     EXPECT_EQ(t.cells[1][1].lines.size(), static_cast<size_t>(2));
     NEAR(t.cells[1][0].y, 36.0f);
     NEAR(t.cells[1][1].height, 60.0f);
-    // Paint order, by variant index: the zebra wash, the hairline
-    // grid, one clip pair around each cell's text, the wrapped cell
-    // keeping its two Text items inside one pair.
-    ASSERT_EQ(rig.list.items.size(), static_cast<size_t>(23));
-    const size_t order[] = {kFill, kFill, kFill, kFill, kFill,
-                            kFill, kFill, kFill, kFill, kFill,
-                            kClip, kText, kPop, kClip, kText, kPop,
-                            kClip, kText, kPop, kClip, kText, kText, kPop};
+    // Paint order: the zebra wash and the hairline grid are the
+    // table's whole replay now. A cell leaves no replay text and
+    // no replay clip: the record keeps the measured lines, and
+    // each port paints them from that one record, so a cell
+    // paints once, with one set of line breaks.
+    ASSERT_EQ(rig.list.items.size(), static_cast<size_t>(10));
     for (size_t i = 0; i < rig.list.items.size(); ++i)
-        EXPECT_EQ(rig.list.items[i].index(), order[i]);
+        EXPECT_EQ(rig.list.items[i].index(), kFill);
     const display::FillRect& zebra = At<display::FillRect>(rig.list, 0);
     NEAR(zebra.rect.y, 36.0f);  // the body row only, never the header
     NEAR(zebra.color.r, kPal.tableRowAlt.r);
@@ -168,31 +166,23 @@ TEST(CodeTableLayout, TableSingleMeasureAndPaintOrder) {
     NEAR(vlast.rect.x, 399.0f);  // right minus one, on the body row
     NEAR(vlast.rect.y, 36.0f);
     NEAR(vlast.rect.height, 60.0f);
-    // The header cell: the semibold face at the pad, its own source
-    // range, clipped to the padded inner rect of its row.
-    const PushClip& clip0 = At<PushClip>(rig.list, 10);
-    NEAR(clip0.rect.x, 13.0f); NEAR(clip0.rect.y, 6.0f);
-    NEAR(clip0.rect.width, 174.0f);
-    const Text& nameText = At<Text>(rig.list, 11);
-    NEAR(nameText.x, 13.0f); NEAR(nameText.top, 6.0f);
-    EXPECT_EQ(nameText.line.runs[0].font.family,
+    // The header cell: the record's line carries the semibold
+    // face, its own source range on the cell.
+    ASSERT_EQ(t.cells[0][0].lines.size(), static_cast<size_t>(1));
+    const auto& nameLine = t.cells[0][0].lines[0];
+    EXPECT_EQ(nameLine.runs[0].text, std::string("Name"));
+    EXPECT_EQ(nameLine.runs[0].font.family,
               std::string("Segoe UI Semibold"));
-    EXPECT_EQ(nameText.srcOffset, static_cast<uint32_t>(10));
-    EXPECT_EQ(nameText.srcLength, static_cast<uint32_t>(4));
-    // The right aligned column shifts against the 174 DIP inner
-    // width; the wrapped cell walks its source line by line.
-    NEAR(At<Text>(rig.list, 14).x, 213.0f + (174.0f - 32.0f));
-    const Text& w1 = At<Text>(rig.list, 20);
-    const Text& w2 = At<Text>(rig.list, 21);
-    NEAR(w1.x, 213.0f + (174.0f - 88.0f));
-    NEAR(w2.x, w1.x);
-    NEAR(w1.top, 42.0f); NEAR(w2.top, 66.0f);
-    EXPECT_EQ(w2.line.runs[0].font.family, std::string("Cascadia Mono"));
-    EXPECT_TRUE(w2.line.runs[0].font.monospace);
-    EXPECT_EQ(w1.srcOffset, static_cast<uint32_t>(36));
-    EXPECT_EQ(w1.srcLength, static_cast<uint32_t>(11));
-    EXPECT_EQ(w2.srcOffset, static_cast<uint32_t>(47));
-    EXPECT_EQ(w2.srcLength, static_cast<uint32_t>(11));
+    EXPECT_EQ(t.cells[0][0].srcCellStart, static_cast<uint32_t>(10));
+    // The wrapped body cell: two lines, the body glyphs first,
+    // then the code ones on their monospace face.
+    const auto& wrapped = t.cells[1][1].lines;
+    ASSERT_EQ(wrapped.size(), static_cast<size_t>(2));
+    EXPECT_EQ(wrapped[0].runs[0].text, std::string(11, 'a'));
+    EXPECT_EQ(wrapped[1].runs[0].text, std::string(11, 'b'));
+    EXPECT_EQ(wrapped[1].runs[0].font.family,
+              std::string("Cascadia Mono"));
+    EXPECT_TRUE(wrapped[1].runs[0].font.monospace);
 }
 
 TEST(CodeTableLayout, Fallbacks) {
@@ -209,12 +199,16 @@ TEST(CodeTableLayout, Fallbacks) {
     ASSERT_EQ(t.rowHeights.size(), static_cast<size_t>(2));
     NEAR(t.rowHeights[1], kBodyLine + 2.0f * kM.cellPadY);  // no text
     NEAR(b.height, 72.0f);
-    // The zebra, seven hairlines, one placeholder cell.
-    ASSERT_EQ(rig.list.items.size(), static_cast<size_t>(11));
-    const Text& ph = At<Text>(rig.list, 9);
-    EXPECT_EQ(ph.line.runs[0].text, std::string(" "));
-    EXPECT_TRUE(ph.line.runs[0].font.bold);
-    EXPECT_EQ(ph.srcOffset, static_cast<uint32_t>(10));
+    // The zebra and seven hairlines, nothing else: the
+    // placeholder cell's line lives in the record now, where the
+    // ports read it, not in the replay.
+    ASSERT_EQ(rig.list.items.size(), static_cast<size_t>(8));
+    for (size_t i = 0; i < rig.list.items.size(); ++i)
+        EXPECT_EQ(rig.list.items[i].index(), kFill);
+    const auto& phLine = t.cells[0][0].lines[0];
+    EXPECT_EQ(phLine.runs[0].text, std::string(" "));
+    EXPECT_TRUE(phLine.runs[0].font.bold);
+    EXPECT_EQ(t.cells[0][0].srcCellStart, static_cast<uint32_t>(10));
     display::DisplayList empty;  // no columns: no measure, no items
     rig.ctx.list = &empty;
     Node none;

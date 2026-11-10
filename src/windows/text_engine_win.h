@@ -36,6 +36,12 @@ public:
 
     float LineHeight(const FontSpec& font) const override;
 
+    // The factory this engine measured with, lent to a painter that
+    // must draw exactly what the engine measured: the table cells
+    // paint their record lines from the same faces that sized
+    // them, so no second measure can disagree with the record.
+    IDWriteFactory* Factory() const { return factory_; }
+
 private:
     // A format per family and size, kept for the lifetime of the
     // engine: creating one is the expensive call in this file.
