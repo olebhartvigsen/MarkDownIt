@@ -48,11 +48,36 @@ struct LaidTableCell {
 };
 
 struct LaidTable {
+    // The equal split, kept for the fall back and the legacy
+    // consumers: contentWidth / columnCount.
     float colW = 0.0f;
     size_t columnCount = 0;
+    // The per column widths: a column carries its longest
+    // unbreakable word instead of slicing it at the cell edge.
+    // colWs[c] is the column's outer width, colXs[c] its left edge,
+    // with one extra boundary at the end.
+    std::vector<float> colWs;
+    std::vector<float> colXs;
     std::vector<float> rowHeights;
     std::vector<std::vector<LaidTableCell>> cells;
 };
+
+// The column split of a table. minInner[c] is the widest
+// unbreakable token of column c, measured by the same engine that
+// lays the cells out. Columns share contentWidth equally unless a
+// column's longest word needs more, in which case it takes its
+// need and the rest keep sharing what is left. When the demands
+// alone outweigh the table, the deficit is shared so every column
+// degrades evenly instead of one column eating the frame.
+std::vector<float> DistributeTableColumns(
+    const std::vector<float>& minInner, float contentWidth,
+    size_t columnCount, float cellPadX);
+
+// The left edge of column index and the width after it, from a
+// table's column records. A table without records falls back to
+// the equal split.
+float TableColumnX(const LaidTable& t, size_t column);
+float TableColumnW(const LaidTable& t, size_t column);
 
 // One laid out block: what the caret and selection layers need while
 // plan task 3.3 still lives in the renderers. The fields mirror the

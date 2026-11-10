@@ -868,7 +868,8 @@ void Renderer::PaintSharedOverlays(
                                           &washRects);
                 }
                 DrawTable(rt, dw, n, bandX, bandY, bandW, outH, sel,
-                          scrollY, washRects);
+                          scrollY, washRects,
+                          b->table ? b->table.get() : nullptr);
                 break;
             }
             case BlockKind::MermaidFlowchart: {
@@ -1355,7 +1356,8 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                           const Node& n, float x, float y,
                           float width, float& outH,
                           const Selection* sel, float scrollY,
-                          const std::vector<platform::Rect>& washRects) {
+                          const std::vector<platform::Rect>& washRects,
+                          const layout::LaidTable* record) {
     if (!rt || !dw || !body_fmt_ || n.rows.empty()) { outH = 0.0f; return; }
 
     LayoutMetrics m = ComputeMetrics();
@@ -1404,19 +1406,46 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         return;
     }
 
-    float colW = width / static_cast<float>(cols);
+    // One geometry source: the walk's record carries the column
+    // split that carries every column's longest word and the row
+    // heights its cells measured, so this painter reads it instead
+    // of re-measuring. The equal split stays as the fall back for
+    // a recordless call.
+    const layout::LaidTable* rec =
+        (record && record->columnCount == cols &&
+         !record->colWs.empty()) ? record : nullptr;
+    std::vector<float> colXs(cols + 1, 0.0f);
+    std::vector<float> colWs(cols, 0.0f);
+    {
+        const float equal = width / static_cast<float>(cols);
+        float edge = 0.0f;
+        for (size_t c = 0; c < cols; ++c) {
+            const float w = rec ? TableColumnW(*rec, c) : equal;
+            const float x0 = rec ? TableColumnX(*rec, c) : edge;
+            colXs[c] = x0;
+            colWs[c] = w;
+            edge = x0 + w;
+        }
+        colXs[cols] = rec && rec->colXs.size() > cols
+            ? rec->colXs[cols] : width;
+    }
     float curY = y;
 
     for (size_t ri = 0; ri < n.rows.size(); ++ri) {
         const auto& row = n.rows[ri];
         float rowH = 0.0f;
+        if (rec && ri < rec->rowHeights.size() &&
+            rec->rowHeights[ri] > 0.0f) {
+            // The record's heights already carry the cell padding.
+            rowH = rec->rowHeights[ri];
+        } else {
         for (size_t c = 0; c < row.cells.size() && c < cols; ++c) {
             std::u16string text16 = ToUtf16(row.cells[c].text);
             IDWriteTextLayout* layout = nullptr;
             HRESULT hr = dw->CreateTextLayout(
                 reinterpret_cast<const WCHAR*>(text16.data()),
                 static_cast<UINT32>(text16.size()),
-                body_fmt_, colW - 2.0f * m.cellPadX, 1.0e9f, &layout);
+                body_fmt_, colWs[c] - 2.0f * m.cellPadX, 1.0e9f, &layout);
             if (SUCCEEDED(hr) && layout) {
                 // Apply the same inline formatting as the draw pass,
                 // because code spans use a wider monospace font that
@@ -1451,6 +1480,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             rowH = m.bodyLineHeight * m.bodyFontSize * kPtToDip * zoom_;
         }
         rowH += 2.0f * m.cellPadY;
+        }
 
         bool isHeaderRow = (!row.cells.empty() && row.cells[0].isHeader);
         if (!isHeaderRow && altBg && (ri % 2 == 1)) {
@@ -1461,7 +1491,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
 
         for (size_t c = 0; c < row.cells.size() && c < cols; ++c) {
-            float cellX = x + static_cast<float>(c) * colW;
+            float cellX = x + colXs[c];
             if (borderBrush) {
                 D2D1_POINT_2F p1 = D2D1::Point2F(cellX, curY);
                 D2D1_POINT_2F p2 = D2D1::Point2F(cellX, curY + rowH);
@@ -1472,7 +1502,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             HRESULT hr = dw->CreateTextLayout(
                 reinterpret_cast<const WCHAR*>(text16.data()),
                 static_cast<UINT32>(text16.size()),
-                body_fmt_, colW - 2.0f * m.cellPadX, 1.0e9f, &layout);
+                body_fmt_, colWs[c] - 2.0f * m.cellPadX, 1.0e9f, &layout);
             if (SUCCEEDED(hr) && layout) {
                 // Honour the column alignment written in the delimiter row
                 // (`:---`, `:---:`, `---:`). DirectWrite lays the text out
@@ -1584,7 +1614,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 if (selBrush && sel && !sel->Empty() &&
                     !washRects.empty()) {
                     for (const platform::Rect& r : washRects) {
-                        if (r.x < cellX || r.x >= cellX + colW) continue;
+                        if (r.x < cellX || r.x >= cellX + colWs[c]) continue;
                         if (r.y < curY || r.y >= curY + rowH) continue;
                         const D2D1_RECT_F rect = D2D1::RectF(
                             r.x, r.y, r.x + r.width, r.y + r.height);
@@ -1603,7 +1633,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     bl.layout = layout;
                     bl.x = cellOrigin.x;
                     bl.y = cellOrigin.y;
-                    bl.width = colW - 2.0f * m.cellPadX;
+                    bl.width = colWs[c] - 2.0f * m.cellPadX;
                     bl.height = rowH - 2.0f * m.cellPadY;
                     bl.srcOffset = row.cells[c].srcOffset;
                     bl.srcLength = row.cells[c].srcEnd > bl.srcOffset
@@ -1807,7 +1837,8 @@ void Renderer::AppendBlockRangeRects(
                                           &cellVisEnd);
                 const ColumnAlign align = c < n.aligns.size()
                     ? n.aligns[c] : ColumnAlign::Default;
-                const float innerW = t.colW - 2.0f * m.cellPadX;
+                const float innerW = layout::TableColumnW(t, c) -
+                    2.0f * m.cellPadX;
                 float textH = 0.0f;
                 for (const platform::TextLine& line : cell.lines) {
                     textH += line.height;
@@ -1816,7 +1847,7 @@ void Renderer::AppendBlockRangeRects(
                     (std::max)(m.cellPadY, (rowH - textH) * 0.5f);
                 layout::AppendRangeRects(
                     cell.lines, cellVis, engine,
-                    originX + b.x + static_cast<float>(c) * t.colW +
+                    originX + b.x + layout::TableColumnX(t, c) +
                         m.cellPadX,
                     frameTop + b.y + lineY, start, end, rects,
                     align, innerW, false);

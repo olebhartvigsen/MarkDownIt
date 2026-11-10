@@ -1605,14 +1605,24 @@ TEST(RendererWin, PaintedLinesKeepTheWordSpaces) {
     }
     fflush(stdout);
     int judged = 0;
-    for (size_t a = 0; a < rt.textDraws.size(); ++a) {
-        for (size_t b = 0; b != a && b < rt.textDraws.size(); ++b) {
-            const FakeRenderTarget::TextDraw& pa = rt.textDraws[a];
-            const FakeRenderTarget::TextDraw& pb = rt.textDraws[b];
-            if (pa.y != pb.y) continue;
-            const bool left = pb.x < pa.x;
-            const FakeRenderTarget::TextDraw& first = left ? pb : pa;
-            const FakeRenderTarget::TextDraw& second = left ? pa : pb;
+    {
+        // Only neighbours judge: pieces of one row, ordered by x,
+        // each against the piece that follows it. A first against a
+        // third carries the whole middle word plus its spaces, which
+        // is a sentence, not a seam.
+        std::vector<FakeRenderTarget::TextDraw> pieces;
+        for (const FakeRenderTarget::TextDraw& d : rt.textDraws)
+            pieces.push_back(d);
+        std::sort(pieces.begin(), pieces.end(),
+                  [](const FakeRenderTarget::TextDraw& a,
+                     const FakeRenderTarget::TextDraw& b) {
+                      if (a.y != b.y) return a.y < b.y;
+                      return a.x < b.x;
+                  });
+        for (size_t i = 1; i < pieces.size(); ++i) {
+            const FakeRenderTarget::TextDraw& first = pieces[i - 1];
+            const FakeRenderTarget::TextDraw& second = pieces[i];
+            if (first.y != second.y) continue;
             const float gap = second.x - (first.x + first.adv);
             if (gap > 45.0f) continue;  // a cell or block boundary
             ++judged;
@@ -1637,7 +1647,7 @@ TEST(RendererWin, PaintedCellsNeverOverlap) {
     // highlight band under it all.
     Document doc = Doc({Table(
         {{"Scenario", "Observed outcome",
-          "Evidence supported interpretation"},
+          "Talentech-adaptor-integration table"},
          {"`145825`, working posting", "HTTP 200 after seconds",
           "The full flow completed with an Enhedsregister lookup."}})});
     NumberOffsets(&doc);
@@ -1650,8 +1660,11 @@ TEST(RendererWin, PaintedCellsNeverOverlap) {
     marks.push_back({0, 400});
     renderer.SetMarkers(&marks, true);
 
+    // A width the columns can share, with the hyphenated word the
+    // equal split could not hold: the column must widen to carry
+    // the whole word instead of slicing it into its neighbour.
     const float width =
-        2.0f * ScaleMetrics(kBase, 1.0f).padX + 8.0f * kBodyEm;
+        2.0f * ScaleMetrics(kBase, 1.0f).padX + 30.0f * kBodyEm;
     FakeRenderTarget rt;
     renderer.Render(&rt, &dw, doc, width, 0.0f, 0.0f, 0.0f, nullptr);
     printf("PaintedCells: pieces=%zu\n", rt.textDraws.size());

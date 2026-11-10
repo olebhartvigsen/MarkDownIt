@@ -400,7 +400,8 @@ private:
     void DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                    const Node& n, float x, float y, float width, float& outH,
                    const Selection* sel = nullptr, float scrollY = 0.0f,
-                   const std::vector<platform::Rect>& washRects = {});
+                   const std::vector<platform::Rect>& washRects = {},
+                   const layout::LaidTable* record = nullptr);
     void DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                           const Node& n, float x, float y, float width);
     std::shared_ptr<mermaid::LaidOutFlowchart> GetMermaidLayout(

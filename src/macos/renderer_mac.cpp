@@ -703,6 +703,20 @@ const SvgDoc* MacRenderer::GetSvgDoc(const Node& node) {
     return &svgDocs_.back().doc;
 }
 
+namespace {
+
+// The per column edge and width of a laid out table, the shared
+// record's split, with the equal fall back of the legacy record.
+float TableColumnX(const LaidOutBlock::TableLayout& t, size_t c) {
+    return c < t.colXs.size() ? t.colXs[c]
+                              : static_cast<float>(c) * t.colW;
+}
+float TableColumnW(const LaidOutBlock::TableLayout& t, size_t c) {
+    return c < t.colWs.size() ? t.colWs[c] : t.colW;
+}
+
+}  // namespace
+
 void MacRenderer::LayoutSourceBlocks(float x, float width, float* y) {
     if (!sourceText_ || sourceText_->empty()) return;
 
@@ -777,6 +791,8 @@ void MacRenderer::AppendBlockFromLaid(const Document& doc,
         LaidOutBlock::TableLayout& layout = block.tableLayout;
         layout.colW = lb.table->colW;
         layout.columnCount = lb.table->columnCount;
+        layout.colWs = lb.table->colWs;
+        layout.colXs = lb.table->colXs;
         layout.rowHeights = lb.table->rowHeights;
         for (const std::vector<layout::LaidTableCell>& row :
              lb.table->cells) {
@@ -1356,9 +1372,10 @@ void MacRenderer::PaintTableOverlays(const LaidOutBlock& block,
         PaintTableRowHighlights(block, r, y + scrollOffset, rowH,
                                 scrollOffset);
 
-        const float innerW = layout.colW - 2.0f * metrics_.cellPadX;
         for (size_t c = 0; c < cells.size(); ++c) {
-            const float cellX = block.x + static_cast<float>(c) * layout.colW;
+            const float innerW = TableColumnW(layout, c) -
+                2.0f * metrics_.cellPadX;
+            const float cellX = block.x + TableColumnX(layout, c);
 
             Rect inner;
             inner.x = cellX + metrics_.cellPadX;
@@ -1497,11 +1514,11 @@ std::vector<MacRenderer::TextRegion> MacRenderer::TextRegions() const {
                     region.visToSrc = &cell.visToSrc;
                     region.visToSrcEnd = &cell.visToSrcEnd;
                     region.trackX =
-                        block.x + static_cast<float>(c) * block.tableLayout.colW;
+                        block.x + TableColumnX(block.tableLayout, c);
                     region.x = region.trackX + metrics_.cellPadX;
                     region.top = rowTop + metrics_.cellPadY;
-                    region.width =
-                        block.tableLayout.colW - 2.0f * metrics_.cellPadX;
+                    region.width = TableColumnW(block.tableLayout, c) -
+                        2.0f * metrics_.cellPadX;
                     if (cell.lines.empty() &&
                         r < block.tableLayout.rowHeights.size()) {
                         // An empty cell draws nothing, but its box stays
@@ -2242,12 +2259,12 @@ std::vector<Rect> MacRenderer::RectsForRangeInBlock(const LaidOutBlock& block,
                                (rowH - textH) * 0.5f);
                 AppendRangeRects(
                     cell.lines, cell.visToSrc,
-                    block.x +
-                        static_cast<float>(c) * block.tableLayout.colW +
+                    block.x + TableColumnX(block.tableLayout, c) +
                         metrics_.cellPadX,
                     lineY, start, end, &rects,
                     cell.align,
-                    block.tableLayout.colW - 2.0f * metrics_.cellPadX,
+                    TableColumnW(block.tableLayout, c) -
+                        2.0f * metrics_.cellPadX,
                     trimBlanks);
             }
             rowTop += rowH;

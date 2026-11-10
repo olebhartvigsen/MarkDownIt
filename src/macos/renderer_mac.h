@@ -78,6 +78,11 @@ struct LaidOutBlock {
     struct TableLayout {
         float colW = 0.0f;
         size_t columnCount = 0;
+        // The per column split the walk measured, a column wide
+        // enough to carry its longest word. Empty falls back to the
+        // equal split, the single value above.
+        std::vector<float> colWs;
+        std::vector<float> colXs;
         std::vector<float> rowHeights;
         std::vector<std::vector<TableCellLayout>> rows;
     };

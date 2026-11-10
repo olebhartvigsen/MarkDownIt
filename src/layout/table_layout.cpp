@@ -90,7 +90,110 @@ std::vector<platform::GlyphRun> PlaceholderRuns(
                      in.metrics->codeFontSize, in.palette->link);
 }
 
+// The widest unbreakable token of one cell, the width its column
+// must carry before the word stops slicing at the cell edge. A run
+// carries one style; its words split at the whitespace the walker
+// breaks lines at, each token measured by the engine with the
+// run's own face so weight, code size and zoom all count.
+float WidestToken(const std::vector<platform::GlyphRun>& runs,
+                  const LayoutInput& in) {
+    float widest = 0.0f;
+    for (const platform::GlyphRun& run : runs) {
+        const std::string& text = run.text;
+        size_t start = 0;
+        for (size_t i = 0; i <= text.size(); ++i) {
+            const bool end = i == text.size() ||
+                             text[i] == ' ' || text[i] == '\t';
+            if (!end) continue;
+            if (i > start) {
+                std::vector<platform::GlyphRun> one;
+                platform::GlyphRun token = run;
+                token.text = text.substr(start, i - start);
+                one.push_back(std::move(token));
+                std::vector<platform::TextLine> lines =
+                    in.engine->MeasureWrapped(one, 1.0e9f, 0.0f);
+                for (const platform::TextLine& line : lines)
+                    widest = (std::max)(widest, line.width);
+            }
+            start = i + 1;
+        }
+    }
+    return widest;
+}
+
 }  // namespace
+
+std::vector<float> DistributeTableColumns(
+    const std::vector<float>& minInner, float contentWidth,
+    size_t columnCount, float cellPadX) {
+    std::vector<float> colWs(columnCount, 0.0f);
+    if (columnCount == 0 || contentWidth <= 0.0f) return colWs;
+    const float equal =
+        contentWidth / static_cast<float>(columnCount);
+    std::vector<float> need(columnCount, 0.0f);
+    bool anyTight = false;
+    float sumNeed = 0.0f;
+    for (size_t c = 0; c < columnCount; ++c) {
+        const float inner =
+            c < minInner.size() ? minInner[c] : 0.0f;
+        need[c] = inner + 2.0f * cellPadX;
+        sumNeed += need[c];
+        if (need[c] > equal) anyTight = true;
+    }
+    if (!anyTight) {
+        for (float& w : colWs) w = equal;
+        return colWs;
+    }
+    if (sumNeed <= contentWidth) {
+        // Fixpoint: a column whose longest word needs more than the
+        // running share takes its need; the rest keep sharing what
+        // is left, never below their own need.
+        std::vector<char> tight(columnCount, 0);
+        float free = contentWidth;
+        size_t flex = columnCount;
+        for (size_t round = 0; round < columnCount; ++round) {
+            const float share = free / static_cast<float>(flex);
+            bool moved = false;
+            for (size_t c = 0; c < columnCount; ++c) {
+                if (tight[c] || need[c] <= share) continue;
+                tight[c] = 1;
+                colWs[c] = need[c];
+                free -= need[c];
+                --flex;
+                moved = true;
+            }
+            if (!moved || flex == 0) break;
+        }
+        if (flex > 0) {
+            const float share = free / static_cast<float>(flex);
+            for (size_t c = 0; c < columnCount; ++c)
+                if (!tight[c]) colWs[c] = share;
+        } else {
+            for (size_t c = 0; c < columnCount; ++c)
+                if (colWs[c] <= 0.0f) colWs[c] = 0.0f;
+        }
+        return colWs;
+    }
+    // Degenerate: the words alone outweigh the table. Share the
+    // deficit pro rata so every column clips a little instead of
+    // one column eating the whole frame.
+    if (sumNeed > 0.0f) {
+        const float scale = contentWidth / sumNeed;
+        for (size_t c = 0; c < columnCount; ++c)
+            colWs[c] = need[c] * scale;
+    }
+    return colWs;
+}
+
+float TableColumnX(const LaidTable& t, size_t column) {
+    if (column < t.colXs.size()) return t.colXs[column];
+    return static_cast<float>(column) * t.colW;
+}
+
+float TableColumnW(const LaidTable& t, size_t column) {
+    if (column < t.colWs.size()) return t.colWs[column];
+    return t.colW;
+}
 
 LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
                            uint32_t nodeIndex, float* y) {
@@ -114,7 +217,33 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
     }
     t.columnCount = columnCount;
     t.colW = in.contentWidth / static_cast<float>(columnCount);
-    const float innerW = t.colW - 2.0f * m.cellPadX;
+    // The column split: a column must carry its longest unbreakable
+    // word instead of slicing it at the cell edge, so the words are
+    // token measured first and the widths follow the demand.
+    std::vector<float> minInner(columnCount, 0.0f);
+    for (const TableRow& row : node.rows) {
+        const size_t here = (std::min)(row.cells.size(), columnCount);
+        for (size_t c = 0; c < here; ++c) {
+            const TableCell& cell = row.cells[c];
+            std::vector<platform::GlyphRun> runs =
+                BuildCellRuns(cell, cell.isHeader,
+                              ToColor(in.palette->textPrimary), m);
+            if (runs.empty()) runs = PlaceholderRuns(cell.isHeader, in);
+            const float token = WidestToken(runs, in);
+            if (token > minInner[c]) minInner[c] = token;
+        }
+    }
+    t.colWs = DistributeTableColumns(minInner, in.contentWidth,
+                                     columnCount, m.cellPadX);
+    t.colXs.assign(columnCount + 1, 0.0f);
+    {
+        float x = 0.0f;
+        for (size_t c = 0; c < columnCount; ++c) {
+            t.colXs[c] = x;
+            x += t.colWs[c];
+        }
+        t.colXs[columnCount] = x;
+    }
 
     // The one measurement walk: each cell is measured once and the
     // record feeds the row heights, caret cells and paint items below.
@@ -130,6 +259,7 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
                 BuildCellRuns(cell, cell.isHeader,
                               ToColor(in.palette->textPrimary), m);
             if (runs.empty()) runs = PlaceholderRuns(cell.isHeader, in);
+            const float innerW = t.colWs[c] - 2.0f * m.cellPadX;
             std::vector<platform::TextLine> lines =
                 in.engine->MeasureWrapped(
                     runs, innerW > 0.0f ? innerW : 1.0f, 0.0f);
@@ -139,8 +269,8 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
             for (const platform::TextLine& line : lines)
                 lc.height += line.height;
             if (lc.height > tallest) tallest = lc.height;
-            lc.x = static_cast<float>(c) * t.colW;
-            lc.y = rowTop; lc.width = t.colW;
+            lc.x = t.colXs[c]; lc.width = t.colWs[c];
+            lc.y = rowTop;
             lc.srcCellStart = cell.srcOffset; lc.srcCellEnd = cell.srcEnd;
             lc.lines = std::move(lines);
             laid.push_back(std::move(lc));
@@ -189,7 +319,7 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
         if (r == 0) fill(0.0f, rowTop, in.contentWidth, 1.0f, grid);
         fill(0.0f, rowTop + rowH - 1.0f, in.contentWidth, 1.0f, grid);
         for (size_t c = 0; c <= t.columnCount; ++c) {
-            float gx = static_cast<float>(c) * t.colW;
+            float gx = TableColumnX(t, c);
             if (c >= t.columnCount) gx = in.contentWidth - 1.0f;
             fill(gx, rowTop, 1.0f, rowH, grid);
         }
@@ -203,7 +333,8 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
         const float rowH = t.rowHeights[r];
         for (size_t c = 0; c < row.cells.size() && c < t.columnCount; ++c) {
             const LaidTableCell& lc = t.cells[r][c];
-            const float cellX = static_cast<float>(c) * t.colW;
+            const float cellX = lc.x;
+            const float innerW = lc.width - 2.0f * m.cellPadX;
             display::PushClip clip;
             clip.rect.x = cellX + m.cellPadX;
             clip.rect.y = lc.y + m.cellPadY;
