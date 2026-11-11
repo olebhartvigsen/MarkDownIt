@@ -5831,7 +5831,9 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             // Natural direction is preserved: shift+wheel down still moves
             // content down, it just moves the window right.
             if (GET_KEYSTATE_WPARAM(wp) & MK_SHIFT) {
-                float shift = -static_cast<float>(delta) / 40.0f;
+                // One notch moves as far as it does vertically (it was 3 px).
+                float shift = -static_cast<float>(delta) /
+                              static_cast<float>(WHEEL_DELTA) * WHEEL_STEP_PX;
                 scrollX_ += shift;
                 if (scrollX_ < 0.0f) scrollX_ = 0.0f;
                 UpdateScrollInfo();
