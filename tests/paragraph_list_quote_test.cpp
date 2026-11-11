@@ -16,7 +16,10 @@ namespace {
 
 const float kEm = 12.0f * 96.0f / 72.0f;  // the body size in DIP
 const float kLine = 1.5f * kEm;           // the body line box
-const float kMarkerW = 20.0f * 0.6f + 4.0f;
+// The fixed gutter (20 * 0.6 + 4 = 16) is narrower than the bullet
+// marker itself: "\xE2\x80\xA2 " is 2 code points * 8 DIP (16) plus
+// the gutter (4), so the measured width (20) wins here.
+const float kMarkerW = 20.0f;
 
 // The packaged node builder the tests may keep: one text block with
 // its depth, order flag and task state.
