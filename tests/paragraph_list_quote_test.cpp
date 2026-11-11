@@ -3,11 +3,13 @@
 // at 8 DIP and the theme's own metrics feed the walk, so these
 // numbers hold on both runners or the layout has drifted.
 
+#include "blockspacing.h"
 #include "fake_text_engine.h"
 #include "gtest_lite.h"
 #include "layout/document_layout.h"
 #include "layout/paragraph_layout.h"
 
+#include <algorithm>
 #include <string>
 #include <variant>
 #include <vector>
@@ -18,8 +20,11 @@ const float kEm = 12.0f * 96.0f / 72.0f;  // the body size in DIP
 const float kLine = 1.5f * kEm;           // the body line box
 // The fixed gutter (20 * 0.6 + 4 = 16) is narrower than the bullet
 // marker itself: "\xE2\x80\xA2 " is 2 code points * 8 DIP (16) plus
-// the gutter (4), so the measured width (20) wins here.
+// the gutter (4), so the measured width (20) wins here. A task item
+// has no marker text to measure (the checkbox is its marker), so its
+// gutter stays the fixed formula: kTaskMarkerW, not kMarkerW.
 const float kMarkerW = 20.0f;
+const float kTaskMarkerW = 20.0f * 0.6f + 4.0f;
 
 // The packaged node builder the tests may keep: one text block with
 // its depth, order flag and task state.
@@ -175,7 +180,7 @@ TEST(ParagraphListQuote, ListMarkersTasksAndOrderedCounter) {
     EXPECT_NEAR(box.lineWidth, 1.2f, 0.001f);
     const display::Text& itemText =
         std::get<display::Text>(laid.list.items[19]);
-    EXPECT_NEAR(itemText.x, 20.0f + kMarkerW, 0.001f);
+    EXPECT_NEAR(itemText.x, 20.0f + kTaskMarkerW, 0.001f);
     EXPECT_NEAR(itemText.top, 112.0f, 0.001f);
     // The textless item keeps its addressable space run.
     EXPECT_EQ(laid.blocks[5].lines.size() >= 1u, true);
@@ -288,4 +293,32 @@ TEST(ParagraphListQuote, ImageChargeAboveText) {
     EXPECT_EQ(laid.blocks[0].imageUrls.size(), static_cast<size_t>(3));
     EXPECT_NEAR(laid.blocks[0].imagesHeight, 398.0f, 0.001f);
     EXPECT_NEAR(laid.blocks[0].height, 398.0f + kLine, 0.001f);
+}
+
+// A blank source line the parser keeps next to a list for the caret
+// collapses while reading: the list's own gap runs straight into the
+// next block, no extra margin for a block nobody can see.
+TEST(ParagraphListQuote, BlankLineNextToListCollapsesWhileReading) {
+    fake::FakeTextEngine engine;
+    Document doc;
+    doc.nodes.push_back(TextNodeOf(BlockKind::List, U"one item", 0, false));
+    Node blank = TextNodeOf(BlockKind::Paragraph, U"");
+    blank.virtualEmptyParagraph = true;
+    doc.nodes.push_back(blank);
+    doc.nodes.push_back(TextNodeOf(BlockKind::Paragraph, U"after"));
+
+    const LayoutMetrics m = BaseMetrics();
+    layout::DocumentLayout reading = RunLayout(doc, 300.0f, &engine, false);
+    // Two real blocks: the virtual blank is skipped entirely, not just
+    // shrunk, so only the list and the paragraph take a slot.
+    EXPECT_EQ(reading.blocks.size(), static_cast<size_t>(2));
+    const float expectedGap =
+        std::max(m.listGap, BlockTopMargin(BlockKind::Paragraph, m));
+    EXPECT_NEAR(reading.blocks[1].y,
+                reading.blocks[0].y + reading.blocks[0].height + expectedGap,
+                0.001f);
+
+    // Editing keeps the blank line as its own block, caret-addressable.
+    layout::DocumentLayout editing = RunLayout(doc, 300.0f, &engine, true);
+    EXPECT_EQ(editing.blocks.size(), static_cast<size_t>(3));
 }
