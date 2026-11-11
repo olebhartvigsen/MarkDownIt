@@ -39,7 +39,7 @@ that renders those articles, the Vector skin
 | List | 1.6em indent, 0.1em between items | `ul`, `li` |
 | Quote | 4px bar eaecf0, 32px padding, body ink | `blockquote` |
 | Code block | f8f9fa, 1px border eaecf0, 1em padding | `pre` |
-| Table | grid a2a9b1, header eaecf0 and bold, body f8f9fa | `.wikitable` |
+| Table | grid a2a9b1, header eaecf0, bold and centered, body f8f9fa | `.wikitable` |
 | Thematic break | 1px a2a9b1 | `hr` |
 
 The theme tokens live in `WikipediaMetrics()` and `WikipediaPalette()` in
@@ -49,7 +49,6 @@ a branch of their own.
 
 ## Known differences
 
-- Header cells are not centered. The wikitable centers them.
 - Inline code has no 1px border. It keeps the f8f9fa fill.
 - Ordered lists use the same indent as bullet lists. Vector indents them 3.2em.
 - Heading spacing is one value for all levels. Vector varies it per level.
@@ -65,3 +64,9 @@ break and the code card border. The test binary pins GitHub as its
 active style (`MDI_PIN_STYLE_GITHUB`), so the layout goldens keep
 measuring one fixed style. That means the shipped default style is
 covered by the profile test, not by the other goldens.
+
+## Capture parity
+
+The Wikipedia rule is dark enough to read as ink in the parity capture
+compare. `tools/compare_platform_captures.py` now treats a band of two
+pixels or less as a rule, not as a text row.

@@ -53,6 +53,20 @@ std::vector<platform::GlyphRun> BuildRuns(const Node& node,
                                           const ThemeColor& linkColor,
                                           bool underlineLinks = true);
 
+// The alignment of one table cell: the column's own mark from the
+// source, and where the column has none, the style's header rule (the
+// Wikipedia wikitable centers its header cells). Every painter and
+// every selection rect asks here, so the ports cannot disagree.
+inline ColumnAlign CellAlign(const Node& table, const TableRow& row,
+                             size_t col, const LayoutMetrics& m) {
+    ColumnAlign a = col < table.aligns.size() ? table.aligns[col]
+                                              : ColumnAlign::Default;
+    if (a == ColumnAlign::Default && m.tableHeaderCenter &&
+        col < row.cells.size() && row.cells[col].isHeader)
+        a = ColumnAlign::Center;
+    return a;
+}
+
 // The run text of a heading: the semibold face at the level's size.
 std::vector<platform::GlyphRun> BuildHeadingRuns(const Node& node,
                                                  float size,

@@ -5,6 +5,7 @@
 #include "fake_text_engine.h"
 #include "gtest_lite.h"
 #include "layout/document_layout.h"
+#include "layout/text_runs.h"
 #include "markdown_style.h"
 #include "theme.h"
 
@@ -188,4 +189,24 @@ TEST(MarkdownStyle, CodeCardGetsABorderOnlyWhereTheStyleAsksForOne) {
                 ++cards;
         EXPECT_EQ(cards, style == MarkdownStyle::GitHub ? 1 : 2);
     }
+}
+
+TEST(MarkdownStyle, WikitableCentersHeaderCellsWithoutAMark) {
+    Node table;
+    table.block = BlockKind::Table;
+    table.aligns = {ColumnAlign::Default, ColumnAlign::Right};
+    TableRow head, body;
+    for (int c = 0; c < 2; ++c) {
+        TableCell h, b;
+        h.isHeader = true;
+        head.cells.push_back(h);
+        body.cells.push_back(b);
+    }
+    const LayoutMetrics gh = BaseMetrics(MarkdownStyle::GitHub);
+    const LayoutMetrics wp = BaseMetrics(MarkdownStyle::Wikipedia);
+    EXPECT_TRUE(layout::CellAlign(table, head, 0, gh) == ColumnAlign::Default);
+    EXPECT_TRUE(layout::CellAlign(table, head, 0, wp) == ColumnAlign::Center);
+    // An explicit mark always wins, and body cells keep the column mark.
+    EXPECT_TRUE(layout::CellAlign(table, head, 1, wp) == ColumnAlign::Right);
+    EXPECT_TRUE(layout::CellAlign(table, body, 0, wp) == ColumnAlign::Default);
 }

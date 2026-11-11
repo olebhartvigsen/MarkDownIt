@@ -12,6 +12,7 @@
 #include "hash.h"
 #include "layout/display_player.h"
 #include "layout/selection_rects.h"
+#include "layout/text_runs.h"
 #include "markers.h"
 
 #include <algorithm>
@@ -815,9 +816,7 @@ void MacRenderer::AppendBlockFromLaid(const Document& doc,
                 const TableCell& cell = sourceRow.cells[c];
                 LaidOutBlock::TableCellLayout& laid =
                     layout.rows[r][c];
-                if (c < node.aligns.size()) {
-                    laid.align = node.aligns[c];
-                }
+                laid.align = layout::CellAlign(node, sourceRow, c, metrics_);
                 layout::AppendCellMapping(cell, &laid.visToSrc,
                                            &laid.visToSrcEnd);
             }

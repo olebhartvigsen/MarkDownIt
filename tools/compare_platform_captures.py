@@ -73,6 +73,7 @@ WRAP_TOL_COUNT = 4
 
 TRIM_RIGHT = 20  # the scrollbar edge
 kRowInk = 6  # ink pixels in a row before the row counts as text
+HAIRLINE_MAX = 2  # a band this tall or less is a rule, not text
 
 
 def parse_rects(path):
@@ -121,6 +122,12 @@ def band_starts(pane):
             start = None
     if start is not None:
         bands.append((start, H))
+    # A band one or two pixels tall is a rule (a heading rule, a table
+    # edge, a thematic break), not a line of text. A light-ink style
+    # such as GitHub's keeps its rules under the ink threshold; the
+    # Wikipedia rule is darker, and would otherwise count as a text row
+    # on the side where it sits clear of the heading.
+    bands = [b for b in bands if b[1] - b[0] > HAIRLINE_MAX]
     merged = []
     for b in bands:
         if merged and b[0] - merged[-1][1] < 3:

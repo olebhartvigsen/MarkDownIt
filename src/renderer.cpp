@@ -1530,12 +1530,12 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 // (`:---`, `:---:`, `---:`). DirectWrite lays the text out
                 // inside the cell, so the selection highlight below follows
                 // the same alignment automatically.
-                if (c < n.aligns.size()) {
+                {
                     // DWRITE_TEXT_ALIGNMENT is the horizontal one:
                     // LEADING is left, TRAILING is right. The paragraph
                     // enum only has NEAR, FAR and CENTER, and NEAR/FAR are
                     // vertical.
-                    switch (n.aligns[c]) {
+                    switch (layout::CellAlign(n, row, c, m)) {
                         case ColumnAlign::Left:
                             layout->SetTextAlignment(
                                 DWRITE_TEXT_ALIGNMENT_LEADING);
@@ -1672,8 +1672,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                             (std::max)(m.cellPadY,
                                        (rowH - textH) * 0.5f);
                         const ColumnAlign align =
-                            c < n.aligns.size() ? n.aligns[c]
-                                                : ColumnAlign::Default;
+                            layout::CellAlign(n, n.rows[ri], c, m);
                         platform::D2DTarget player(
                             rt, layoutEngine_.Factory());
                         size_t paintedRuns = 0;
@@ -1946,8 +1945,8 @@ void Renderer::AppendBlockRangeRects(
                 std::vector<uint32_t> cellVisEnd;
                 layout::AppendCellMapping(n.rows[r].cells[c], &cellVis,
                                           &cellVisEnd);
-                const ColumnAlign align = c < n.aligns.size()
-                    ? n.aligns[c] : ColumnAlign::Default;
+                const ColumnAlign align =
+                    layout::CellAlign(n, n.rows[r], c, m);
                 const float innerW = layout::TableColumnW(t, c) -
                     2.0f * m.cellPadX;
                 float textH = 0.0f;

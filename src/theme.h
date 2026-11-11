@@ -160,6 +160,7 @@ struct LayoutMetrics {
     bool tableHeaderFill;        // header row takes palette.tableHeaderBg
     bool tableZebra;             // every second body row takes tableRowAlt
     bool tableBodyFill;          // every body row takes tableRowAlt
+    bool tableHeaderCenter;      // header cells without a mark center
 };
 
 // The unordered list marker glyphs, one table for both renderers so
@@ -309,6 +310,7 @@ inline LayoutMetrics GitHubMetrics() {
     m.tableHeaderFill = false;
     m.tableZebra = true;
     m.tableBodyFill = false;
+    m.tableHeaderCenter = false;
     return m;
 }
 
@@ -367,6 +369,7 @@ inline LayoutMetrics WikipediaMetrics() {
     m.tableHeaderFill = true;
     m.tableZebra = false;
     m.tableBodyFill = true;
+    m.tableHeaderCenter = true;  // .wikitable th { text-align: center }
     return m;
 }
 
