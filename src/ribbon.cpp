@@ -518,7 +518,7 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         if (m_pApp && nCmdID == IDC_CMD_OUTLINE) {
             ppropvarNewValue->vt = VT_BOOL;
             ppropvarNewValue->boolVal =
-                m_pApp->HasOutlineItems() ? VARIANT_TRUE : VARIANT_FALSE;
+                m_pApp->AnswerOutlineEnabled() ? VARIANT_TRUE : VARIANT_FALSE;
             return S_OK;
         }
 

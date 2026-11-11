@@ -65,9 +65,19 @@ public:
 
     void ToggleOutline();
     void SyncOutlinePane();
-    bool outline_button_enabled_ = true;
+    bool outline_button_enabled_ = false;
     // True when the document has headings, so the outline can show.
     bool HasOutlineItems() const { return !outline_items_.empty(); }
+    // What the ribbon is told about the Outline button. The answer is
+    // remembered, so SyncOutlinePane only invalidates the button when the
+    // ribbon holds a different answer than the document now calls for.
+    // Without this the ribbon could be told "disabled" at startup while
+    // the flag still said "enabled", and a document with headings never
+    // woke the button.
+    bool AnswerOutlineEnabled() {
+        outline_button_enabled_ = !outline_items_.empty();
+        return outline_button_enabled_;
+    }
     bool IsOutlineVisible() const;
     // True while the QA walk runs: the outline sync logs its picks.
     bool qa_active_ = false;
