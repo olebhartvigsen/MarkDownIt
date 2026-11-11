@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 
 #include <d2d1.h>
 #include <d2d1_3.h>
@@ -129,6 +130,8 @@ public:
     // strip, so the blank lines in the source do not open wide holes
     // around lists in the text.
     void SetEditing(bool v) { editing_ = v; }
+    // True for a frame that only scrolled: the last layout may be reused.
+    void SetLayoutReuse(bool v) { layoutReuse_ = v; }
     const std::vector<TextMatch>* SearchMatches() const {
         return searchMatches_;
     }
@@ -305,10 +308,49 @@ private:
     // picture question of a ```svg fence (the caret keeping the fence
     // a code specimen); Measure passes null because its band choice
     // cannot depend on the caret.
-    layout::DocumentLayout SharedLayoutPass(const Document& doc,
+    std::shared_ptr<const layout::DocumentLayout> SharedLayoutPass(
+        const Document& doc,
         IDWriteFactory* dw, const LayoutMetrics& metrics,
         const Palette* palette, float contentWidth,
         std::vector<const layout::LaidBlock*>* byNode, const Selection* sel);
+    std::shared_ptr<const layout::DocumentLayout> RunSharedLayoutPass(
+        const Document& doc,
+        IDWriteFactory* dw, const LayoutMetrics& metrics,
+        const Palette* palette, float contentWidth, const Selection* sel);
+
+    // The walk of a whole document is the dominant cost of a frame, and a
+    // scroll frame asks the very question the previous frame answered. The
+    // app marks such a frame (SetLayoutReuse), and the last layout is then
+    // handed out again as long as every input that shaped it is unchanged.
+    // Any other repaint lays out afresh, so an edit or a resize can never
+    // see a stale layout. Two slots: one for the caret aware paint pass,
+    // one for the height only measure.
+    struct LayoutCacheKey {
+        const Document* doc = nullptr;
+        uint64_t fingerprint = 0;
+        float contentWidth = 0.0f;
+        float zoom = 0.0f;
+        bool editing = false;
+        bool wrap = false;
+        bool standaloneSvg = false;
+        int widthMode = 0;
+        size_t pictures = 0;
+        uint32_t caret = 0xffffffffu;
+        bool operator==(const LayoutCacheKey& o) const {
+            return doc == o.doc && fingerprint == o.fingerprint &&
+                   contentWidth == o.contentWidth && zoom == o.zoom &&
+                   editing == o.editing && wrap == o.wrap &&
+                   standaloneSvg == o.standaloneSvg &&
+                   widthMode == o.widthMode && pictures == o.pictures &&
+                   caret == o.caret;
+        }
+    };
+    struct LayoutCacheSlot {
+        LayoutCacheKey key;
+        std::shared_ptr<const layout::DocumentLayout> layout;
+    };
+    LayoutCacheSlot layoutSlots_[2];
+    bool layoutReuse_ = false;
 
     // The image size answers of the shared walk: "svg:" urls answer
     // the SvgDoc natural size of their fence (unknown when the caret

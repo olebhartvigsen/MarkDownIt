@@ -502,6 +502,7 @@ private:
     // from the in-memory list and from the saved settings.
     void PruneMissingRecentFiles();
     void Repaint();
+    void RepaintScroll();
     void ForceRepaintNow();  // Immediate repaint (for ribbon-triggered edits).
     void RecreateRenderer();
 

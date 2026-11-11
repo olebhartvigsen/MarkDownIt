@@ -1115,6 +1115,15 @@ void AppWindow::LoadSampleDoc() {
 }
 
 void AppWindow::Repaint() {
+    // Anything but a scroll lays the document out afresh.
+    renderer_.SetLayoutReuse(false);
+    if (hwnd_content_) InvalidateRect(hwnd_content_, nullptr, FALSE);
+}
+
+// A frame that only moves the view: the layout of the last frame is
+// still the right one, so the paint skips the walk of the whole document.
+void AppWindow::RepaintScroll() {
+    renderer_.SetLayoutReuse(true);
     if (hwnd_content_) InvalidateRect(hwnd_content_, nullptr, FALSE);
 }
 
@@ -2853,7 +2862,7 @@ void AppWindow::BeginTrackpadScroll(float delta, DWORD now) {
     EnsureScrollTimer();
 
     UpdateScrollInfo();
-    Repaint();
+    RepaintScroll();
 }
 
 // Transition from TRACKPAD idle to MOMENTUM (fingers lifted after flick).
@@ -2898,14 +2907,14 @@ void AppWindow::OnScrollTick() {
         scrollY_ = spring_target_ + nd;
         momentum_vel_ = nv * (16.0f / 1000.0f);
         UpdateScrollInfo();
-        Repaint();
+        RepaintScroll();
         if (editing_) UpdateCaretPosition();
 
         if (std::fabs(momentum_vel_) < SPRING_MIN_VEL && std::fabs(diff) < SPRING_SETTLE) {
             scrollY_ = spring_target_;
             StopScrollTimer();
             UpdateScrollInfo();
-            Repaint();
+            RepaintScroll();
         }
 
     } else if (scroll_phase_ == 2) {
@@ -2931,7 +2940,7 @@ void AppWindow::OnScrollTick() {
         }
 
         UpdateScrollInfo();
-        Repaint();
+        RepaintScroll();
         if (editing_) UpdateCaretPosition();
 
         if (std::fabs(momentum_vel_) < MOMENTUM_MIN_VEL) {
@@ -2965,7 +2974,7 @@ void AppWindow::OnContentVScroll(HWND hwnd, int code, int pos) {
             scrollY_ = static_cast<float>(si.nTrackPos);
             spring_target_ = scrollY_;
             UpdateScrollInfo();
-            Repaint();
+            RepaintScroll();
             UpdateCaretPosition();
             return;
         }
@@ -3002,7 +3011,7 @@ void AppWindow::OnContentHScroll(HWND hwnd, int code, int pos) {
             scrollX_ = static_cast<float>(si.nTrackPos);
             if (scrollX_ < 0.0f) scrollX_ = 0.0f;
             UpdateScrollInfo();
-            Repaint();
+            RepaintScroll();
             UpdateCaretPosition();
             return;
         }
@@ -3013,7 +3022,7 @@ void AppWindow::OnContentHScroll(HWND hwnd, int code, int pos) {
     if (targetX < 0.0f) targetX = 0.0f;
     scrollX_ = targetX;
     UpdateScrollInfo();
-    Repaint();
+    RepaintScroll();
     UpdateCaretPosition();
 }
 
@@ -3250,6 +3259,8 @@ void AppWindow::OnContentPaint(HWND hwnd) {
             RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
     }
     EndPaint(hwnd, &ps);
+    // Reuse is granted per frame; the next one has to ask again.
+    renderer_.SetLayoutReuse(false);
     UpdateCaretPosition();
 }
 
@@ -5837,7 +5848,7 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 scrollX_ += shift;
                 if (scrollX_ < 0.0f) scrollX_ = 0.0f;
                 UpdateScrollInfo();
-                Repaint();
+                RepaintScroll();
                 UpdateCaretPosition();
                 return 0;
             }

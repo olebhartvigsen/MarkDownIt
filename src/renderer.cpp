@@ -636,11 +636,64 @@ LayoutMetrics Renderer::ComputeMetrics() const {
     return m;
 }
 
-layout::DocumentLayout Renderer::SharedLayoutPass(
+std::shared_ptr<const layout::DocumentLayout> Renderer::SharedLayoutPass(
     const Document& doc, IDWriteFactory* dw,
     const LayoutMetrics& metrics,
     const Palette* palette, float contentWidth,
     std::vector<const layout::LaidBlock*>* byNode,
+    const Selection* sel) {
+    LayoutCacheSlot& slot = layoutSlots_[sel ? 1 : 0];
+    LayoutCacheKey key;
+    key.doc = &doc;
+    {
+        // A cheap digest of what the walk reads from the document, so an
+        // edit made in place cannot hand back the old layout.
+        uint64_t h = 1469598103934665603ull;
+        auto mix = [&h](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
+        mix(doc.nodes.size());
+        for (const Node& n : doc.nodes) {
+            mix(static_cast<uint64_t>(n.block));
+            mix(n.srcOffset);
+            mix(n.srcLength);
+            mix(n.raw.size());
+            mix(n.children.size());
+            mix(n.rows.size());
+            for (const InlineBlock& c : n.children) {
+                mix(c.text.size());
+                mix(c.srcLength);
+            }
+        }
+        key.fingerprint = h;
+    }
+    key.contentWidth = contentWidth;
+    key.zoom = zoom_;
+    key.editing = editing_;
+    key.wrap = wrapEnabled_;
+    key.standaloneSvg = standaloneSvg_;
+    key.widthMode = contentWidthMode_;
+    key.pictures = svg_cache_.size() + img_cache_.size() + img_size_cache_.size();
+    key.caret = sel ? sel->active.offset : 0xffffffffu;
+    if (!(layoutReuse_ && slot.layout && slot.key == key)) {
+        slot.layout = RunSharedLayoutPass(doc, dw, metrics, palette,
+                                          contentWidth, sel);
+        slot.key = key;
+    }
+    std::shared_ptr<const layout::DocumentLayout> out = slot.layout;
+    if (byNode) {
+        byNode->assign(doc.nodes.size(), nullptr);
+        for (const layout::LaidBlock& b : out->blocks) {
+            if (b.nodeIndex < byNode->size()) {
+                (*byNode)[b.nodeIndex] = &b;
+            }
+        }
+    }
+    return out;
+}
+
+std::shared_ptr<const layout::DocumentLayout> Renderer::RunSharedLayoutPass(
+    const Document& doc, IDWriteFactory* dw,
+    const LayoutMetrics& metrics,
+    const Palette* palette, float contentWidth,
     const Selection* sel) {
     // The walk measures through the adapter, never the raw engine:
     // the adapter owns the zoom and the word splitting (the same two
@@ -700,15 +753,7 @@ layout::DocumentLayout Renderer::SharedLayoutPass(
         }
     }
 
-    if (byNode) {
-        byNode->assign(doc.nodes.size(), nullptr);
-        for (const layout::LaidBlock& b : out.blocks) {
-            if (b.nodeIndex < byNode->size()) {
-                (*byNode)[b.nodeIndex] = &b;
-            }
-        }
-    }
-    return out;
+    return std::make_shared<const layout::DocumentLayout>(std::move(out));
 }
 
 layout::ImageSize Renderer::ImageSizeForUrl(const Document& doc,
@@ -1991,8 +2036,9 @@ std::vector<platform::Rect> Renderer::RectsForRange(
         : m.padX;
 
     std::vector<const layout::LaidBlock*> byNode;
-    layout::DocumentLayout shared =
+    const auto sharedHold =
         SharedLayoutPass(doc, dw, m, &pal, contentWidth, &byNode, sel);
+    const layout::DocumentLayout& shared = *sharedHold;
 
     // The engine the records were measured through: the walk measures
     // through the zooming adapter, so the rule's geometry questions
@@ -2032,9 +2078,10 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
     // its display items are built but not consumed, Measure is height
     // only.
     const Palette measurePal = BasePalette();
-    layout::DocumentLayout shared =
+    const auto sharedHold =
         SharedLayoutPass(doc, dw, m, &measurePal, contentWidth, nullptr,
                          nullptr);
+    const layout::DocumentLayout& shared = *sharedHold;
     std::vector<std::pair<uint32_t, uint32_t>> spans;
     MergeNodeItemSpans(shared.blocks, shared.list, doc.nodes.size(),
                        &spans);
@@ -2151,8 +2198,9 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // and the diagram painters re-run after the replay, and the images
     // are decoded before the walk reads their sizes.
     std::vector<const layout::LaidBlock*> sharedByNode;
-    layout::DocumentLayout shared =
+    const auto sharedHold =
         SharedLayoutPass(doc, dw, m, &pal, contentWidth, &sharedByNode, sel);
+    const layout::DocumentLayout& shared = *sharedHold;
 
     // The engine the walk and the rect twin ask their geometry
     // questions through, the same adapter those records were measured
