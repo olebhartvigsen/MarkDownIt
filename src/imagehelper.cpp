@@ -7,6 +7,8 @@
 #include <d2d1.h>
 #include <string>
 #include <cstring>
+#include <cstdint>
+#include <cctype>
 #include <vector>
 
 // Download an image from HTTP/HTTPS via WinHTTP. Returns the raw bytes.
@@ -101,6 +103,55 @@ static bool DownloadImage(const std::wstring& url, std::vector<BYTE>& out) {
     return anyData;
 }
 
+// True for a data: URI. The bytes after the comma are decoded into out
+// when the URI is base64 (the only form an editor writes for a picture).
+static bool IsDataUri(const std::string& url8) {
+    if (url8.size() < 5) return false;
+    for (size_t i = 0; i < 5; ++i) {
+        if (tolower(static_cast<unsigned char>(url8[i])) != "data:"[i])
+            return false;
+    }
+    return true;
+}
+
+static bool DecodeDataUri(const std::string& url8, std::string* out) {
+    const size_t comma = url8.find(',');
+    if (comma == std::string::npos) return false;
+    const std::string b64 = url8.substr(comma + 1);
+    static const int8_t b64tab[256] = {
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63,
+        52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1,
+        -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,
+        15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,
+        -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+        41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    };
+    out->clear();
+    out->reserve(b64.size() / 4 * 3);
+    int val = 0, bits = 0;
+    for (char ch : b64) {
+        const int d = b64tab[static_cast<unsigned char>(ch)];
+        if (d < 0) continue;  // padding, line breaks and spaces
+        val = (val << 6) | d;
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            out->push_back(static_cast<char>((val >> bits) & 0xFF));
+        }
+    }
+    return !out->empty();
+}
+
 // Create a D2D bitmap from raw image bytes via WIC.
 static ID2D1Bitmap* BitmapFromBytes(ID2D1RenderTarget* rt,
     IWICImagingFactory* wicFactory, const BYTE* data, DWORD size) {
@@ -149,6 +200,23 @@ static ID2D1Bitmap* BitmapFromBytes(ID2D1RenderTarget* rt,
 ID2D1Bitmap* ImageHelper::LoadBitmapFromUrl(ID2D1RenderTarget* rt,
     const std::string& url8, float maxWidth) {
     if (!rt || url8.empty()) return nullptr;
+
+    // A picture embedded in the document as a data: URI is decoded from
+    // memory. It can run to megabytes, so the length cap below does not
+    // apply to it.
+    if (IsDataUri(url8)) {
+        std::string bytes;
+        if (!DecodeDataUri(url8, &bytes)) return nullptr;
+        IWICImagingFactory* wic = nullptr;
+        if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&wic))) || !wic)
+            return nullptr;
+        ID2D1Bitmap* bmp = BitmapFromBytes(rt, wic,
+            reinterpret_cast<const BYTE*>(bytes.data()),
+            static_cast<DWORD>(bytes.size()));
+        wic->Release();
+        return bmp;
+    }
 
     // Convert UTF-8 to UTF-16 for Win32 APIs.
     if (url8.size() > 4096) return nullptr;
@@ -213,7 +281,41 @@ ID2D1Bitmap* ImageHelper::LoadBitmapFromUrl(ID2D1RenderTarget* rt,
 bool ImageHelper::LoadImageSize(const std::string& url8, float* w, float* h) {
     if (w) *w = 0.0f;
     if (h) *h = 0.0f;
-    if (url8.empty() || url8.size() > 4096) return false;
+    if (url8.empty()) return false;
+    if (IsDataUri(url8)) {
+        std::string bytes;
+        if (!DecodeDataUri(url8, &bytes)) return false;
+        IWICImagingFactory* wic = nullptr;
+        if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&wic))) || !wic)
+            return false;
+        bool ok = false;
+        IWICStream* stream = nullptr;
+        if (SUCCEEDED(wic->CreateStream(&stream)) && stream) {
+            IWICBitmapDecoder* dec = nullptr;
+            if (SUCCEEDED(stream->InitializeFromMemory(
+                    reinterpret_cast<BYTE*>(&bytes[0]),
+                    static_cast<DWORD>(bytes.size()))) &&
+                SUCCEEDED(wic->CreateDecoderFromStream(stream, nullptr,
+                    WICDecodeMetadataCacheOnDemand, &dec)) && dec) {
+                IWICBitmapFrameDecode* frame = nullptr;
+                UINT pw = 0, ph = 0;
+                if (SUCCEEDED(dec->GetFrame(0, &frame)) && frame) {
+                    if (SUCCEEDED(frame->GetSize(&pw, &ph)) && pw && ph) {
+                        if (w) *w = static_cast<float>(pw);
+                        if (h) *h = static_cast<float>(ph);
+                        ok = true;
+                    }
+                    frame->Release();
+                }
+                dec->Release();
+            }
+            stream->Release();
+        }
+        wic->Release();
+        return ok;
+    }
+    if (url8.size() > 4096) return false;
 
     std::string lower = url8;
     for (auto& c : lower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
@@ -283,42 +385,8 @@ std::string ImageHelper::LoadSvgText(const std::string& url8) {
 
     // Local file: also handle data:image/svg+xml;base64,...
     if (lower.find("data:image/svg+xml") == 0) {
-        // Base64 decode after the comma
-        size_t comma = url8.find(',');
-        if (comma == std::string::npos) return {};
-        std::string b64 = url8.substr(comma + 1);
-        // Decode base64
-        static const int8_t b64tab[256] = {
-            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63,
-            52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1,
-            -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,
-            15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,
-            -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
-            41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1,
-            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-            -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-        };
         std::string out;
-        int val = 0, bits = 0;
-        for (char ch : b64) {
-            if (ch == '=' || ch == '\n' || ch == '\r' || ch == ' ') continue;
-            int d = b64tab[static_cast<unsigned char>(ch)];
-            if (d < 0) continue;
-            val = (val << 6) | d;
-            bits += 6;
-            if (bits >= 8) {
-                bits -= 8;
-                out.push_back(static_cast<char>((val >> bits) & 0xFF));
-            }
-        }
+        if (!DecodeDataUri(url8, &out)) return {};
         return out;
     }
 
