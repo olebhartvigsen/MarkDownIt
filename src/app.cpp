@@ -1199,9 +1199,27 @@ void AppWindow::OnReparseTimer() {
     // can alter headings (typing, paste, cut, undo, redo) flows through
     // here, so one hook covers the whole spec event table.
     outline_items_ = CollectHeadings(doc_);
+    SyncOutlinePane();
     if (outline_.IsCreated() && outline_.IsVisible())
         outline_.SetItems(outline_items_);
     UpdateOutlineActive();
+}
+
+// Show the pane when the setting wants it and the document has headings,
+// hide it otherwise. Lays out only when the state actually changes.
+void AppWindow::SyncOutlinePane() {
+    if (!outline_.IsCreated()) return;
+    const bool want = settings_.outlineVisible && !welcome_mode_ &&
+                      !outline_items_.empty();
+    if (want == outline_.IsVisible()) return;
+    if (want) {
+        outline_.SetItems(outline_items_);
+        ShowWindow(outline_.Handle(), SW_SHOW);
+    } else {
+        ShowWindow(outline_.Handle(), SW_HIDE);
+    }
+    ResizeContentWindow();
+    UpdateScrollInfo();
 }
 
 void AppWindow::OnBufferChanged() {
@@ -2383,11 +2401,8 @@ void AppWindow::LoadDocumentText(const std::string& raw, const std::wstring& pat
     // any geometry, and without a resize pass it would sit at its
     // 10x10 creation size behind the document, absorbing the first
     // outline toggle (which would "hide" the invisible pane).
-    if (outline_.IsCreated() && settings_.outlineVisible
-        && !welcome_mode_ && !outline_.IsVisible()) {
-        ShowWindow(outline_.Handle(), SW_SHOW);
-        ResizeContentWindow();
-    }
+    // The same pass hides it for a document with no headings.
+    SyncOutlinePane();
     // Force render target recreation; the D2D hwnd target can become
     // invalid after the GetOpenFileNameW modal dialog closes.
     SafeRelease(rt_);
@@ -2666,7 +2681,12 @@ void AppWindow::ResizeContentWindow() {
     // its first ShowWindow: the layout pass then gives it geometry at
     // the same time it becomes visible, so it can never sit invisible
     // at creation size absorbing a toggle click.
+    // A document without headings (plain text, a picture) has nothing to
+    // outline, so the pane stays away for it whatever the setting says;
+    // the setting itself is untouched and applies to the next document
+    // that has headings.
     const bool paneOn = outline_.IsCreated() && !welcome_mode_
+        && !outline_items_.empty()
         && (outline_.IsVisible() || settings_.outlineVisible);
     if (paneOn) {
         const float scale = static_cast<float>(dpi_) / 96.0f;
@@ -5279,7 +5299,9 @@ float AppWindow::ViewHeightDip() {
 
 void AppWindow::ToggleOutline() {
     if (!outline_.IsCreated()) return;
-    const bool show = !outline_.IsVisible();
+    // With no headings the pane is held hidden, so the setting decides.
+    const bool show = outline_items_.empty() ? !settings_.outlineVisible
+                                             : !outline_.IsVisible();
     // Persist the pane state with the toggle (the pane re-opens as it
     // was left).
     settings_.outlineVisible = show;

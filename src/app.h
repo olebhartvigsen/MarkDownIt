@@ -64,6 +64,7 @@ public:
     float ViewHeightDip();
 
     void ToggleOutline();
+    void SyncOutlinePane();
     bool IsOutlineVisible() const;
     // True while the QA walk runs: the outline sync logs its picks.
     bool qa_active_ = false;
