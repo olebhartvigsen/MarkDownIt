@@ -814,7 +814,9 @@ svg::SvgDoc* Renderer::SvgPictureDocFor(const Node& n, const Selection* sel,
         n.lang != "svg" || !d2d_ctx5_) {
         return nullptr;
     }
-    if (sel) {
+    // Only while editing: a reader's caret (left behind by the source
+    // view, or a click) must not turn the picture into its code.
+    if (sel && editing_) {
         const uint32_t off = sel->active.offset;
         if (off >= n.srcOffset && off < n.srcOffset + n.srcLength) {
             return nullptr;
