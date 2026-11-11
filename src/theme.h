@@ -429,8 +429,9 @@ inline LayoutMetrics AppleMetrics() {
     m.codeBorderWidth = 1.0f;
     m.quoteIndent = 20.0f;
     m.quoteBarWidth = 3.0f;
-    m.headingRulePadRatio = 0.0f;
-    m.headingRuleThickness = 0.0f;
+    // A hairline under H1 and H2, in the style's own rule colour.
+    m.headingRulePadRatio = 0.2f;
+    m.headingRuleThickness = 1.0f;
     m.cellPadX = 12.0f;
     m.cellPadY = 9.0f;
     m.headingSizes[1] = 30.0f;    // 40 px title

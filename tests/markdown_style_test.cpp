@@ -277,7 +277,7 @@ TEST(AppleStyle, ProfileFollowsTheDocCScale) {
     // A strict descending scale, so the hierarchy reads at a glance.
     for (int i = 1; i < 5; ++i)
         EXPECT_TRUE(m.headingSizes[i] > m.headingSizes[i + 1]);
-    EXPECT_NEAR(m.headingRuleThickness, 0.0f, 0.001f);
+    EXPECT_NEAR(m.headingRuleThickness, 1.0f, 0.001f);
     EXPECT_FALSE(m.linkUnderline);
     EXPECT_FALSE(m.tableVerticalLines);
     EXPECT_TRUE(m.calloutBoxes);
@@ -435,7 +435,7 @@ TEST(AppleStyle, TheLineAfterTheTitleIsTheLeadDescription) {
     }
 }
 
-TEST(AppleStyle, HeadingsAreBoldTitleSemiboldRestAndNoRule) {
+TEST(AppleStyle, HeadingsAreBoldTitleSemiboldRestAndAHairlineOnH1AndH2) {
     Document doc;
     doc.nodes.push_back(Heading(1, U"Title"));
     doc.nodes.push_back(Heading(2, U"Section"));
@@ -452,7 +452,7 @@ TEST(AppleStyle, HeadingsAreBoldTitleSemiboldRestAndNoRule) {
     EXPECT_TRUE(texts[0]->line.runs[0].font.bold);
     EXPECT_EQ(texts[1]->line.runs[0].font.family,
               std::string("Segoe UI Semibold"));
-    EXPECT_EQ(rules, 0);
+    EXPECT_EQ(rules, 2);   // a hairline under each of H1 and H2
 }
 
 TEST(AppleStyle, TablesDrawRowHairlinesAndNoVerticals) {

@@ -2,7 +2,7 @@
 
 The Apple style is the default look of MarkDownIt. It follows the
 principles of Apple's DocC and Human Interface Guidelines: one calm sans
-face, plenty of space, large headings without rules, hairlines instead
+face, plenty of space, large headings with a hairline under H1 and H2, hairlines instead
 of grids, and soft surfaces with rounded corners. It borrows the
 principles and none of Apple's artwork.
 
@@ -79,6 +79,7 @@ quote, so the same file reads well in all three.
 | Body | 17 px, line height 1.47 |
 | Title (H1) | 40 px bold |
 | H2 to H4 | 28, 22 and 19 px semibold |
+| Heading rule | 1 px hairline d2d2d7 under H1 and H2 only |
 | Description | 1.2 times the body, muted ink |
 | Ink, muted ink | 1d1d1f, 6e6e73 |
 | Link | 0066cc, no underline |
