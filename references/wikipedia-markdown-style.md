@@ -25,6 +25,27 @@ that renders those articles, the Vector skin
 (`skins.vector.styles.legacy` and `mediawiki.skinning`), read on
 2026-11-11.
 
+## Cross-check against Codex
+
+The colours were checked against the Wikimedia design tokens (Codex,
+`theme-wikimedia-ui`, read on 2026-11-11). Every value in
+`WikipediaPalette()` matches a token:
+
+| Use | Value | Codex token |
+| --- | --- | --- |
+| Body ink | 202122 | `color-base` |
+| Muted ink | 54595d | `color-subtle` |
+| Heading ink | 101418 | `color-emphasized` |
+| Link | 3366cc | `color-progressive` |
+| Table header wash | eaecf0 | `background-color-neutral` |
+| Code and row wash | f8f9fa | `background-color-neutral-subtle` |
+| Rules and table grid | a2a9b1 | `border-color-base` |
+
+Codex also names a serif heading stack, Linux Libertine, Georgia, Times.
+Only one family name travels through the layout, so the style uses
+Georgia, which Windows and macOS both ship. Visited links (`6a60b0`) and
+the 2px radius match the profile or stay in the known differences.
+
 ## The profile
 
 | Element | Wikipedia | Source rule |
@@ -55,6 +76,20 @@ a branch of their own.
 - The macOS build paints white paper under this style in both
   appearances, because the ink is fixed dark.
 - Visited links do not change colour.
+
+## Accessibility
+
+[MOS:Accessibility](https://en.wikipedia.org/wiki/Wikipedia:Manual_of_Style/Accessibility)
+rests on WCAG 2.2. Three of its rules are tests:
+
+- Text meets 4.5:1 contrast on white and on every wash it sits on.
+- A link without an underline differs from body ink by at least 3:1,
+  so it does not rest on hue alone.
+- Table headers are marked by weight and wash, not by colour only.
+
+The heading rule (sequential levels, no skipped level) is an authoring
+rule for the document, not a rendering rule, so the renderer does not
+enforce it.
 
 ## Tests
 

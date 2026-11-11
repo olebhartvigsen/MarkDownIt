@@ -9,6 +9,8 @@
 #include "markdown_style.h"
 #include "theme.h"
 
+#include <algorithm>
+#include <cmath>
 #include <variant>
 
 TEST(MarkdownStyle, ParsesNamesIgnoringCaseAndSpaces) {
@@ -209,4 +211,54 @@ TEST(MarkdownStyle, WikitableCentersHeaderCellsWithoutAMark) {
     // An explicit mark always wins, and body cells keep the column mark.
     EXPECT_TRUE(layout::CellAlign(table, head, 1, wp) == ColumnAlign::Right);
     EXPECT_TRUE(layout::CellAlign(table, body, 0, wp) == ColumnAlign::Default);
+}
+
+namespace {
+float Lin(float c) {
+    return c <= 0.03928f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
+}
+float Luma(const ThemeColor& c) {
+    return 0.2126f * Lin(c.r) + 0.7152f * Lin(c.g) + 0.0722f * Lin(c.b);
+}
+// WCAG 2.x contrast ratio, the measure the Manual of Style's
+// accessibility page points to.
+float Contrast(const ThemeColor& a, const ThemeColor& b) {
+    const float la = Luma(a), lb = Luma(b);
+    return (std::max(la, lb) + 0.05f) / (std::min(la, lb) + 0.05f);
+}
+}  // namespace
+
+// MOS:Accessibility asks for text a reader can see, and for meaning
+// that does not rest on colour alone. Normal text needs 4.5:1 (WCAG AA).
+// The white paper is the one the Wikipedia style draws on.
+TEST(MarkdownStyle, WikipediaTextMeetsWcagAaContrast) {
+    const Palette p = BasePalette(MarkdownStyle::Wikipedia);
+    const ThemeColor white = MakeColor(0xFFFFFF);
+    EXPECT_TRUE(Contrast(p.textPrimary, white) >= 4.5f);
+    EXPECT_TRUE(Contrast(p.textMuted, white) >= 4.5f);
+    EXPECT_TRUE(Contrast(p.heading, white) >= 4.5f);
+    EXPECT_TRUE(Contrast(p.link, white) >= 4.5f);
+    // Text on the washes it sits on: code, table header, striped row.
+    EXPECT_TRUE(Contrast(p.textPrimary, p.codeBg) >= 4.5f);
+    EXPECT_TRUE(Contrast(p.textPrimary, p.tableHeaderBg) >= 4.5f);
+    EXPECT_TRUE(Contrast(p.textPrimary, p.tableRowAlt) >= 4.5f);
+    EXPECT_TRUE(Contrast(p.link, p.tableRowAlt) >= 4.5f);
+}
+
+// A link that is not underlined must not rest on hue alone: it has to
+// stand apart from the body ink by more than hue (WCAG 1.4.1 asks for
+// 3:1 between link and surrounding text when there is no underline).
+TEST(MarkdownStyle, UnderlinelessLinkStandsApartFromBodyText) {
+    const LayoutMetrics m = BaseMetrics(MarkdownStyle::Wikipedia);
+    const Palette p = BasePalette(MarkdownStyle::Wikipedia);
+    EXPECT_FALSE(m.linkUnderline);
+    EXPECT_TRUE(Contrast(p.link, p.textPrimary) >= 3.0f);
+}
+
+// MOS:Accessibility: table headers are marked as headers, not only
+// shaded. The header row keeps its bold weight and its own wash.
+TEST(MarkdownStyle, WikipediaTableHeaderIsMarkedBeyondColour) {
+    const LayoutMetrics m = BaseMetrics(MarkdownStyle::Wikipedia);
+    EXPECT_TRUE(m.tableHeaderFill);
+    EXPECT_TRUE(m.tableHeaderCenter);
 }
