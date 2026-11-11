@@ -79,10 +79,33 @@ LaidBlock LayoutListBlock(const LayoutCtx& ctx, const Node& node,
     const float indent = m.listIndent * (node.depth + 1);
     block.x = indent;
     block.width = in.contentWidth - indent;
-    const float markerW = m.listIndent * m.markerRatio + m.markerGutter;
+    float markerW = m.listIndent * m.markerRatio + m.markerGutter;
 
     block.markerText = MarkerTextOf(in, node, nodeIndex);
     block.task = node.taskMark >= 0;
+
+    // A fixed gutter fits a single bullet or a one-digit ordinal, but
+    // "10." and "11." are wider than that: the text crowded right up
+    // against the number instead of keeping the same gap a "1." item
+    // gets. Measure the marker itself and widen the gutter to clear
+    // it, keeping the same breathing room the fixed gutter already
+    // reserves after a single-digit marker. Every consumer (both
+    // renderers' paint passes) reads this same measured width back
+    // from the block instead of recomputing the fixed formula, so the
+    // text column painted lines up with the one this pass wrapped at.
+    if (!block.markerText.empty() && in.engine) {
+        platform::GlyphRun markerRun;
+        markerRun.text = block.markerText;
+        markerRun.font.size = m.bodyFontSize * 96.0f / 72.0f * in.zoom;
+        std::vector<platform::GlyphRun> markerRuns{markerRun};
+        std::vector<platform::TextLine> markerLines =
+            in.engine->MeasureWrapped(markerRuns, 0.0f, 0.0f);
+        if (!markerLines.empty()) {
+            const float needed = markerLines.front().width + m.markerGutter;
+            if (needed > markerW) markerW = needed;
+        }
+    }
+    block.markerWidth = markerW;
 
     const float size = m.bodyFontSize;
     std::vector<platform::GlyphRun> runs =

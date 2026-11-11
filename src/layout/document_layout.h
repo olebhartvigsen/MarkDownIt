@@ -101,6 +101,11 @@ struct LaidBlock {
     // resolved to text once, in shared layout, the way paint must not
     // have to know how to count any more.
     std::string markerText;
+    // The gutter width the marker needs: a fixed bullet/single-digit
+    // box widened when the ordinal itself ("10.", "11.") does not
+    // fit it, so every consumer reserves the same space the marker
+    // was actually measured at.
+    float markerWidth = 0.0f;
     bool task = false;
     // A table, when this block is one.
     std::shared_ptr<LaidTable> table;

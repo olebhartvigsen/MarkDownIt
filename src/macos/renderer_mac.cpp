@@ -783,6 +783,7 @@ void MacRenderer::AppendBlockFromLaid(const Document& doc,
     block.lines = lb.lines;
     block.images = lb.imageUrls;
     block.imagesHeight = lb.imagesHeight;
+    block.markerWidth = lb.markerWidth;
 
     // The table record ships its own rows and heights; the renderer's
     // cell layout adds what only it keeps: the alignment of the
@@ -1469,9 +1470,14 @@ bool MacRenderer::YForOffset(uint32_t offset, float& y) const {
 
 float MacRenderer::TextX(const LaidOutBlock& block) const {
     if (block.kind == BlockKind::List) {
-        // The text sits after the marker gutter, the same reservation
-        // the layout makes.
-        return block.x + metrics_.listIndent * metrics_.markerRatio + metrics_.markerGutter;
+        // The text sits after the marker gutter: the measured width
+        // the shared layout settled on, which widens past the fixed
+        // reservation for a wide ordinal like "10." or "11."; a block
+        // with no marker falls back to the fixed formula.
+        const float gutter = block.markerWidth > 0.0f
+            ? block.markerWidth
+            : metrics_.listIndent * metrics_.markerRatio + metrics_.markerGutter;
+        return block.x + gutter;
     }
     if (block.kind == BlockKind::CodeBlock) {
         return block.x + metrics_.codePad;
@@ -1488,8 +1494,10 @@ float MacRenderer::TextTop(const LaidOutBlock& block) const {
 
 float MacRenderer::TextWidth(const LaidOutBlock& block) const {
     if (block.kind == BlockKind::List) {
-        return block.width -
-               (metrics_.listIndent * metrics_.markerRatio + metrics_.markerGutter);
+        const float gutter = block.markerWidth > 0.0f
+            ? block.markerWidth
+            : metrics_.listIndent * metrics_.markerRatio + metrics_.markerGutter;
+        return block.width - gutter;
     }
     if (block.kind == BlockKind::CodeBlock) {
         return block.width - metrics_.codePad * 2.0f;

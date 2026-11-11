@@ -1946,7 +1946,13 @@ void Renderer::TextOriginOf(const layout::LaidBlock& b,
                             float frameTop, float* x, float* top) {
     *x = originX + b.x;
     if (b.kind == BlockKind::List) {
-        *x += m.listIndent * m.markerRatio + m.markerGutter;
+        // b.markerWidth is the measured gutter (widened past the fixed
+        // formula for a wide ordinal like "10."); a block with no
+        // marker (an empty placeholder row) still falls back to the
+        // fixed reservation.
+        *x += b.markerWidth > 0.0f
+                  ? b.markerWidth
+                  : m.listIndent * m.markerRatio + m.markerGutter;
     } else if (b.kind == BlockKind::CodeBlock) {
         *x += m.codePad;
     }
@@ -2416,7 +2422,9 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         // gutter width the caret layout reserves.
         bool hasMarker = false;
         if (n.block == BlockKind::List) {
-            markerW = m.listIndent * m.markerRatio + m.markerGutter;
+            markerW = (b && b->markerWidth > 0.0f)
+                          ? b->markerWidth
+                          : m.listIndent * m.markerRatio + m.markerGutter;
             hasMarker = (n.taskMark < 0);
         }
 

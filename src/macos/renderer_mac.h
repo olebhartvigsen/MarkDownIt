@@ -52,6 +52,12 @@ struct LaidOutBlock {
     std::vector<std::string> images;
     // The height the images take above the text.
     float imagesHeight = 0.0f;
+    // The marker gutter the shared layout measured, widened past the
+    // fixed listIndent*markerRatio+markerGutter formula when the
+    // marker text itself (a two-digit ordinal like "10.") needs more
+    // room. Zero means no marker, so TextX/TextWidth fall back to the
+    // fixed formula.
+    float markerWidth = 0.0f;
     // The map from the rendered text of the block to the source.
     //
     // One entry per byte of the drawn text: the source byte the
