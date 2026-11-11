@@ -52,23 +52,26 @@ const float kRowHeight = 16.0f;
 const size_t kMaxSvgBytes = 8u * 1024u * 1024u;
 
 // The colors of the screen.
-// The page is a soft wash: a cool tint at the top that fades to near
-// white, with a faint glow of the accent behind the heading, the way an
-// Apple window lets a little color through.
-const Color kBackgroundTop{0.918f, 0.933f, 0.973f, 1.0f};
-const Color kBackgroundBottom{0.980f, 0.980f, 0.988f, 1.0f};
-const Color kCardBackground{1.0f, 1.0f, 1.0f, 1.0f};
-const Color kCardBorder{0.0f, 0.0f, 0.0f, 0.08f};
-const Color kDivider{0.0f, 0.0f, 0.0f, 0.06f};
-const Color kShadow{0.063f, 0.094f, 0.188f, 1.0f};
-const Color kButtonText{1.0f, 1.0f, 1.0f, 1.0f};
-const Color kButtonPressed{0.0f, 0.400f, 0.720f, 1.0f};
-const Color kHoverBorder{0.0f, 0.471f, 0.831f, 1.0f};
-const Color kTitle{0.122f, 0.122f, 0.125f, 1.0f};
-const Color kPreview{0.380f, 0.380f, 0.380f, 1.0f};
-const Color kFolder{0.541f, 0.541f, 0.541f, 1.0f};
-const Color kAccent{0.0f, 0.471f, 0.831f, 1.0f};
-const Color kHint{0.627f, 0.627f, 0.627f, 1.0f};
+// The colors are the ones of the MarkDownIt site, a teal on cool white,
+// so the app and the site read as one product.
+//
+// The page is a soft wash: a faint mint at the top that fades to white,
+// with a glow of the teal behind the heading.
+const Color kBackgroundTop{0.906f, 0.949f, 0.941f, 1.000f};
+const Color kBackgroundBottom{0.984f, 0.992f, 0.992f, 1.000f};
+const Color kCardBackground{1.000f, 1.000f, 1.000f, 1.000f};
+const Color kCardBorder{0.043f, 0.118f, 0.133f, 0.090f};
+const Color kDivider{0.043f, 0.118f, 0.133f, 0.070f};
+const Color kShadow{0.043f, 0.118f, 0.133f, 1.000f};
+const Color kButtonText{1.000f, 1.000f, 1.000f, 1.000f};
+const Color kButtonPressed{0.043f, 0.369f, 0.341f, 1.000f};
+const Color kHoverBorder{0.078f, 0.722f, 0.651f, 1.000f};
+const Color kTitle{0.043f, 0.118f, 0.133f, 1.000f};
+const Color kPreview{0.357f, 0.420f, 0.478f, 1.000f};
+const Color kFolder{0.494f, 0.580f, 0.569f, 1.000f};
+const Color kAccent{0.059f, 0.463f, 0.431f, 1.000f};
+const Color kBrightTeal{0.078f, 0.722f, 0.651f, 1.0f};
+const Color kHint{0.494f, 0.580f, 0.569f, 1.000f};
 
 // The ellipsis that marks a string the card had to cut.
 const char kEllipsis[] = "\xE2\x80\xA6";
@@ -342,7 +345,7 @@ void DrawBackground(RenderTarget* target, float viewW, float viewH) {
         target->FillRect(band, color);
     }
 
-    // A glow of the accent behind the heading, from wide and faint to
+    // A glow of the bright teal behind the heading, from wide and faint to
     // narrow and a little stronger.
     for (int i = 0; i < 6; ++i) {
         const float w = viewW * (0.95f - 0.13f * static_cast<float>(i));
@@ -352,8 +355,8 @@ void DrawBackground(RenderTarget* target, float viewW, float viewH) {
         glow.y = -h * 0.55f;
         glow.width = w;
         glow.height = h;
-        Color color = kAccent;
-        color.a = 0.030f;
+        Color color = kBrightTeal;
+        color.a = 0.035f;
         target->FillEllipse(glow, color);
     }
 }
