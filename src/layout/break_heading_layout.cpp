@@ -134,14 +134,21 @@ DocumentLayout LayoutDocument(const LayoutInput& in) {
 
         // The parser inserts a virtual blank paragraph next to a list so
         // the caret has somewhere to land on that source line while
-        // editing. While reading there is no caret to place, and the
-        // blank line is not a real block: skip it entirely here so the
-        // margin collapse sees the list and its real neighbor directly,
-        // with no extra gap for a block nobody asked to read. Leaving
-        // havePrev/prev untouched means the next owned block's gap is
+        // editing. While reading there is no caret to place there, and
+        // next to a list the blank line is not a block anyone reads:
+        // skip it so the margin collapse sees the list and its real
+        // neighbor directly, with no extra gap for an invisible line.
+        // A blank line elsewhere (say, alone in an empty document)
+        // still gets its reading strip: it is the only content there
+        // is, not a line the list layout owns. Leaving havePrev/prev
+        // untouched when skipped means the next owned block's gap is
         // still measured against its true predecessor.
-        if (node.block == BlockKind::Paragraph &&
-            node.virtualEmptyParagraph && !in.editing) {
+        const bool blankNextToList = node.block == BlockKind::Paragraph &&
+            node.virtualEmptyParagraph &&
+            ((havePrev && prev == BlockKind::List) ||
+             (i + 1 < in.doc->nodes.size() &&
+              in.doc->nodes[i + 1].block == BlockKind::List));
+        if (blankNextToList && !in.editing) {
             continue;
         }
 
