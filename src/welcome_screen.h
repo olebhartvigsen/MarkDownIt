@@ -1,10 +1,11 @@
 #pragma once
 
-// The welcome screen of the macOS app.
+// The welcome screen, shared by the Windows and the macOS app.
 //
-// The Windows build shows the recent files as cards when no document is
-// open. The mac build shows the same cards, with the same layout, and
-// the drawing goes through the render target.
+// The recent files are shown as cards when no document is open. The
+// layout, the fitting of the text and the drawing live here and go
+// through the render target and the text engine, so the two platforms
+// show the same screen. The app only passes its own target and engine.
 
 #include <memory>
 #include <string>

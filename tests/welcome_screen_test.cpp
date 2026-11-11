@@ -8,7 +8,7 @@
 #include "gtest_lite.h"
 
 #include "../src/platform/seams.h"
-#include "../src/macos/welcome_mac.h"
+#include "../src/welcome_screen.h"
 
 #include <filesystem>
 #include <fstream>
@@ -194,7 +194,7 @@ bool EndsWithEllipsis(const std::string& text) {
 
 }  // namespace
 
-TEST(WelcomeMac, WrapsALongLineOfThePreview) {
+TEST(WelcomeScreen, WrapsALongLineOfThePreview) {
     WelcomeScreen screen;
     std::vector<RecentFile> files(1);
     files[0].path = Widen("/documents/long.md");
@@ -224,7 +224,7 @@ TEST(WelcomeMac, WrapsALongLineOfThePreview) {
     EXPECT_LE(rows.back().y, kCardTop + 180.0f - 12.0f);
 }
 
-TEST(WelcomeMac, SplitsAWordWiderThanTheCard) {
+TEST(WelcomeScreen, SplitsAWordWiderThanTheCard) {
     WelcomeScreen screen;
     std::vector<RecentFile> files(1);
     files[0].path = Widen("/documents/word.md");
@@ -245,7 +245,7 @@ TEST(WelcomeMac, SplitsAWordWiderThanTheCard) {
     }
 }
 
-TEST(WelcomeMac, CutsALongNameAndFolderInsideTheCard) {
+TEST(WelcomeScreen, CutsALongNameAndFolderInsideTheCard) {
     WelcomeScreen screen;
     std::vector<RecentFile> files(1);
     files[0].path = Widen(
@@ -274,7 +274,7 @@ TEST(WelcomeMac, CutsALongNameAndFolderInsideTheCard) {
     EXPECT_LE(engine.Width(folder.text, folder.font), kCardTextWidth);
 }
 
-TEST(WelcomeMac, ShowsADiagramAsAPicture) {
+TEST(WelcomeScreen, ShowsADiagramAsAPicture) {
     // A diagram on a card shows itself; the first bytes of the file are
     // the XML header, which reads as noise.
     const std::filesystem::path path =
@@ -314,7 +314,7 @@ TEST(WelcomeMac, ShowsADiagramAsAPicture) {
     std::filesystem::remove(path);
 }
 
-TEST(WelcomeMac, TheScreenOffersTheOpenButton) {
+TEST(WelcomeScreen, TheScreenOffersTheOpenButton) {
     // The button sits under the heading, inside the window and above
     // the grid, and it is found on its own: a click on it opens the
     // panel instead of whatever card is underneath.
@@ -339,7 +339,7 @@ TEST(WelcomeMac, TheScreenOffersTheOpenButton) {
     EXPECT_EQ(screen.HitTest(button.x + 4.0f, button.y + 4.0f), -1);
 }
 
-TEST(WelcomeMac, TheEmptyScreenStillOffersTheOpenButton) {
+TEST(WelcomeScreen, TheEmptyScreenStillOffersTheOpenButton) {
     // With nothing in the list the screen is a hint, and the way in
     // has to stay on it.
     WelcomeScreen screen;
@@ -349,4 +349,26 @@ TEST(WelcomeMac, TheEmptyScreenStillOffersTheOpenButton) {
     const Rect button = screen.OpenButtonRect();
     EXPECT_GT(button.width, 0.0f);
     EXPECT_TRUE(screen.HitsOpenButton(button.x + 2.0f, button.y + 2.0f));
+}
+
+TEST(WelcomeScreen, ReadsMarkdownMarksAsTheReaderSeesThem) {
+    // A card shows a heading without its hashes, a bullet as a bullet
+    // and a table row as cells divided by a bar, the way the Windows card always did.
+    WelcomeScreen screen;
+    std::vector<RecentFile> files(1);
+    files[0].path = Widen("/documents/marks.md");
+    files[0].preview = "# Title\n- item\n| a | b |\n|---|---|\n";
+    screen.SetRecentFiles(files);
+    screen.Layout(900.0f, 700.0f);
+
+    GridEngine engine;
+    RecordingTarget target;
+    screen.Render(&target, &engine, 900.0f, 700.0f, -1, false);
+
+    const std::vector<RecordingTarget::TextCall> rows =
+        target.PreviewRows(kCardTop);
+    ASSERT_EQ(rows.size(), static_cast<size_t>(3));
+    EXPECT_EQ(rows[0].text, std::string("Title"));
+    EXPECT_EQ(rows[1].text, std::string("\xE2\x80\xA2 item"));
+    EXPECT_EQ(rows[2].text, std::string("a \xE2\x94\x82 b"));
 }

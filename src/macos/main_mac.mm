@@ -37,7 +37,7 @@
 #include "office/office_session.h"
 #include "office/pdf_export.h"
 #include "office/pdf_import.h"
-#include "welcome_mac.h"
+#include "welcome_screen.h"
 #include "findbar_mac.h"
 #include "menu_mac.h"
 #include "toolbar_mac.h"

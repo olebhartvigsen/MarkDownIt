@@ -1,4 +1,6 @@
 #include "app.h"
+#include "textenc.h"
+#include "windows/render_target_win.h"
 #include "commands.h"
 #include "formatting.h"
 #include "platformservices.h"
@@ -1091,7 +1093,6 @@ void AppWindow::LoadSampleDoc() {
     if (outline_.IsCreated() && outline_.IsVisible())
         ShowWindow(outline_.Handle(), SW_HIDE);
     if (dw_factory_) {
-        welcome_.Init(dw_factory_);
         // A recent list that offers dead paths is worse than an empty
         // one: the card says the file is there, the click says it is
         // not. Remove missing files before display, and keep the
@@ -1481,10 +1482,16 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
         D2D1_SIZE_F sz = rt_ ? rt_->GetSize() : D2D1::SizeF(800, 600);
         welcome_.Layout(sz.width, sz.height);
         float scale = 96.0f / static_cast<float>(dpi_);
-        int idx = welcome_.HitTest(static_cast<float>(x) * scale,
-                                    static_cast<float>(y) * scale);
+        const float wx = static_cast<float>(x) * scale;
+        const float wy = static_cast<float>(y) * scale;
+        // The button sits above the cards, so it is asked first.
+        if (welcome_.HitsOpenButton(wx, wy)) {
+            OpenFileDialog();
+            return;
+        }
+        int idx = welcome_.HitTest(wx, wy);
         if (idx >= 0) {
-            std::wstring path = welcome_.GetPath(idx);
+            std::wstring path = textenc::Utf8ToWide(welcome_.GetPath(idx));
             if (!path.empty()) {
                 OpenFile(path);
             }
@@ -1848,10 +1855,13 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
         D2D1_SIZE_F sz = rt_ ? rt_->GetSize() : D2D1::SizeF(800, 600);
         welcome_.Layout(sz.width, sz.height);
         float scale = 96.0f / static_cast<float>(dpi_);
-        int newHover = welcome_.HitTest(static_cast<float>(x) * scale,
-            static_cast<float>(y) * scale);
-        if (newHover != welcome_hover_) {
+        const float wx = static_cast<float>(x) * scale;
+        const float wy = static_cast<float>(y) * scale;
+        const bool openHover = welcome_.HitsOpenButton(wx, wy);
+        const int newHover = openHover ? -1 : welcome_.HitTest(wx, wy);
+        if (newHover != welcome_hover_ || openHover != welcome_open_hover_) {
             welcome_hover_ = newHover;
+            welcome_open_hover_ = openHover;
             Repaint();
         }
         return;
@@ -3275,9 +3285,13 @@ void AppWindow::OnContentPaint(HWND hwnd) {
         rt_->BeginDraw();
         D2D1_SIZE_F size = rt_->GetSize();
         rt_->Clear(D2D1::ColorF(D2D1::ColorF::White));
-        welcome_.Init(dw_factory_);
         welcome_.Layout(size.width, size.height);
-        welcome_.Render(rt_, size.width, size.height, welcome_hover_);
+        {
+            platform::D2DTarget target(rt_, dw_factory_);
+            welcome_.Render(&target, &welcome_engine_, size.width,
+                            size.height, welcome_hover_,
+                            welcome_open_hover_);
+        }
         HRESULT hr = rt_->EndDraw();
         if (hr == D2DERR_RECREATE_TARGET) {
             RecreateRenderTarget();

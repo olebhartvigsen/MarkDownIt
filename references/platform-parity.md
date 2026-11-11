@@ -137,7 +137,6 @@ row whose pattern matches nothing on its platform is stale and fails.
 | SeamConformance.CoreTextEngineFollowsTheSeam | macos | The Core Text enrollment in the shared conformance grid. The grid itself runs on both runners through the fake engine; the DirectWrite engine has its own row above. |
 | SvgNativeMac.* | macos | The CoreGraphics SVG probes behind the same seam. |
 | RendererMac.* | macos | The mac renderer layout arithmetic. |
-| WelcomeMac.* | macos | The mac welcome pane. |
 
 ## Sources built by no target
 

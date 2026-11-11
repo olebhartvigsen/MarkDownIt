@@ -20,7 +20,7 @@
 #include "app_mac.h"
 #include "caret.h"
 #include "renderer_mac.h"
-#include "welcome_mac.h"
+#include "welcome_screen.h"
 #include "searchreplace.h"
 #include "platform/seams.h"
 

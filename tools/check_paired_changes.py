@@ -34,7 +34,6 @@ PAIRS = [
     (("src/settings.cpp",), ("src/macos/settings_mac.cpp",)),
     (("src/clipboard.cpp",), ("src/macos/clipboard_mac.mm",)),
     (("src/findbar.cpp",), ("src/macos/findbar_mac.mm",)),
-    (("src/welcomescreen.cpp",), ("src/macos/welcome_mac.cpp",)),
     (("src/outlinepane.cpp",),
      ("src/macos/outline_pane_mac.cpp", "src/macos/outline_nsview_mac.mm")),
 ]

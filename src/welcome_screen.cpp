@@ -1,20 +1,27 @@
-// The welcome screen of the macOS app.
+// The welcome screen, shared by the Windows and the macOS app.
 //
-// The cards are laid out the way the Windows build lays them out, and
-// the drawing goes through the render target, so the screen looks the
-// same on the two platforms.
+// The cards are laid out, fitted and drawn here, once, through the
+// RenderTarget and TextEngine seams, so the two apps cannot drift. Each
+// platform only supplies the target and the engine.
 
-#include "welcome_mac.h"
+#include "welcome_screen.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
 
-#include "svg_mac.h"
+#include "macos/svg_mac.h"
 #include "textenc.h"
+
+// A Windows header drags DrawText in as a macro, which would rename the
+// seam's method at every call below.
+#ifdef DrawText
+#undef DrawText
+#endif
 
 namespace platform {
 namespace {
@@ -116,6 +123,47 @@ bool IsHeading(const std::string& line) {
     while (at < line.size() && line[at] == ' ') ++at;
     if (at >= line.size() || line[at] != '#') return false;
     return true;
+}
+
+// The text of a preview line the way a reader sees it: a heading
+// without its hashes, a bullet as a bullet, and a table row as cells
+// divided by a bar. The line is raw markdown, and the marks are noise on
+// a card.
+std::string ReadableLine(const std::string& line) {
+    size_t at = 0;
+    while (at < line.size() && line[at] == ' ') ++at;
+    if (at < line.size() && line[at] == '#') {
+        size_t hashes = at;
+        while (hashes < line.size() && line[hashes] == '#') ++hashes;
+        while (hashes < line.size() && line[hashes] == ' ') ++hashes;
+        return line.substr(hashes);
+    }
+    if (at + 1 < line.size() && (line[at] == '-' || line[at] == '*') &&
+        line[at + 1] == ' ') {
+        return std::string("\xE2\x80\xA2 ") + line.substr(at + 2);
+    }
+    if (at < line.size() && line[at] == '|') {
+        std::string out;
+        std::string cell;
+        auto flush = [&]() {
+            size_t b = 0;
+            size_t e = cell.size();
+            while (b < e && (cell[b] == ' ' || cell[b] == '\t')) ++b;
+            while (e > b && (cell[e - 1] == ' ' || cell[e - 1] == '\t')) --e;
+            if (e > b) {
+                if (!out.empty()) out += "  \xE2\x94\x82  ";
+                out += cell.substr(b, e - b);
+            }
+            cell.clear();
+        };
+        for (size_t i = at; i < line.size(); ++i) {
+            if (line[i] == '|') flush();
+            else cell += line[i];
+        }
+        flush();
+        return out;
+    }
+    return line;
 }
 
 // The font a row of the preview is drawn with.
@@ -277,7 +325,8 @@ void FitCard(TextEngine* engine, WelcomeCard* card, float maxWidth,
 
         const bool heading = IsHeading(line);
         std::vector<std::string> wrapped;
-        WrapLine(engine, line, PreviewFont(heading), maxWidth, &wrapped);
+        WrapLine(engine, ReadableLine(line), PreviewFont(heading), maxWidth,
+                 &wrapped);
         for (const std::string& text : wrapped) {
             if (static_cast<int>(card->rows.size()) >= maxRows) break;
             WelcomeCard::Row row;
@@ -320,7 +369,10 @@ void WelcomeScreen::SetRecentFiles(const std::vector<RecentFile>& files) {
         // A diagram shows itself. The first bytes of an SVG are its XML
         // header, which reads as noise on a card.
         if (EndsWithSvg(card.filePath)) {
-            std::ifstream input(card.filePath, std::ios::binary);
+            // The wide path opens the file on every platform. A UTF-8 string
+            // is not a path on Windows.
+            std::ifstream input(std::filesystem::path(file.path),
+                                std::ios::binary);
             if (input) {
                 std::string xml;
                 char buffer[8192];

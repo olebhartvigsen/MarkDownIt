@@ -181,7 +181,7 @@ add_executable(MarkDownIt WIN32
     src/findbar.cpp
     src/outlinepane.cpp
     src/fileassoc.cpp
-    src/welcomescreen.cpp
+    src/welcome_screen.cpp
     src/svgdoc.cpp
 )
 
@@ -400,7 +400,7 @@ if(BUILD_TESTS AND APPLE)
         tests/text_engine_mac_test.cpp
         tests/svg_native_mac_test.mm
         tests/renderer_mac_test.cpp
-        tests/welcome_mac_test.cpp
+        tests/welcome_screen_test.cpp
         src/macos/text_engine_mac.cpp
         src/macos/fonts_mac.mm
         src/macos/crash_trace_mac.cpp
@@ -411,7 +411,7 @@ if(BUILD_TESTS AND APPLE)
         src/macos/image_mac.mm
         src/macos/image_draw_mac.mm
         src/macos/mermaid_painter_mac.cpp
-        src/macos/welcome_mac.cpp
+        src/welcome_screen.cpp
     )
 elseif(BUILD_TESTS)
     add_executable(MarkDownIt.tests
@@ -504,6 +504,8 @@ elseif(BUILD_TESTS)
         src/textlayout_dwrite.cpp
         src/findbar.cpp
         src/svgdoc.cpp
+        src/welcome_screen.cpp
+        tests/welcome_screen_test.cpp
     )
     target_link_libraries(MarkDownIt.tests PRIVATE
         md4c
@@ -626,7 +628,7 @@ if(APPLE)
         src/macos/toolbar_mac.mm
         src/macos/table_picker_mac.mm
         ${MARKDOWNIT_SVG_SHARED_SOURCES}
-        src/macos/welcome_mac.cpp
+        src/welcome_screen.cpp
         src/macos/zoom_hud_mac.mm
         src/macos/zoom_hud_mac.h
     )

@@ -56,7 +56,7 @@ Everything else lives in `src/macos/`:
 | `renderer_mac.*` | The renderer: blocks, inline styles, tables, images, mermaid, SVG |
 | `mermaid_painter_mac.*` | The mermaid shapes |
 | `svg_mac.*` | The SVG reader and its painter |
-| `welcome_mac.*` | The welcome screen with the recent files |
+| `welcome_screen.*` (shared with Windows) | The welcome screen with the recent files |
 | `findbar_mac.*` | The find bar |
 | `content_view_mac.*` | The view: the mouse, the keyboard, the caret, the selection |
 | `app_mac.*` | The document, the editing, the lifecycle |

@@ -22,7 +22,7 @@
 #include "autoformat.h"
 #include "inputfilter.h"
 #include "settings.h"
-#include "welcomescreen.h"
+#include "welcome_screen.h"
 #include "outlinepane.h"
 #include "searchreplace.h"
 #include "findbar.h"
@@ -326,9 +326,14 @@ private:
     AppSettings    settings_;
 
     // Welcome screen (shown when no file is open)
-    WelcomeScreen  welcome_;
+    // The screen itself is shared with the mac app (welcome_screen.h);
+    // this window only supplies the Direct2D target and the DirectWrite
+    // engine it draws with.
+    platform::WelcomeScreen welcome_;
+    platform::DWriteEngine  welcome_engine_;
     bool           welcome_mode_ = false;
     int            welcome_hover_ = -1;
+    bool           welcome_open_hover_ = false;
     OutlinePane    outline_;
     std::vector<OutlineItem> outline_items_;
 
