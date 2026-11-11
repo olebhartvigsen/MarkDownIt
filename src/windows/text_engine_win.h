@@ -10,6 +10,7 @@
 
 #include <dwrite.h>
 #include <map>
+#include <tuple>
 #include <string>
 
 namespace platform {
@@ -61,8 +62,8 @@ private:
                         uint32_t utf16Offset) const;
 
     IDWriteFactory* factory_ = nullptr;
-    mutable std::map<std::pair<std::wstring, float>,
-                     IDWriteTextFormat*> formats_;
+    using FormatKey = std::tuple<std::wstring, float, int, int>;
+    mutable std::map<FormatKey, IDWriteTextFormat*> formats_;
 };
 
 }  // namespace platform

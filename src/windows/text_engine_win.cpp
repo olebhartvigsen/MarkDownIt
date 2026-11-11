@@ -68,6 +68,7 @@ std::wstring FamilyFor(const std::string& family) {
                    [](unsigned char c) { return (char)tolower(c); });
     if (f == "code" || f == "mono" || f == "consolas") return L"Consolas";
     if (f == "serif" || f == "georgia") return L"Georgia";
+    if (f == "segoe ui semibold") return L"Segoe UI Semibold";
     return L"Segoe UI";  // body, headings, ui and anything unknown
 }
 
@@ -133,13 +134,19 @@ IDWriteTextFormat* DWriteEngine::FormatFor(const FontSpec& font) const {
     if (!factory_) return nullptr;
     const std::wstring family = FamilyFor(font.family);
     const float size = font.size > 0.0f ? font.size : 14.0f;
-    const auto key = std::make_pair(family, size);
+    // Weight and slant belong to the format, or a bold run is measured
+    // regular and drawn wider than the room it was given.
+    const int weight = font.bold ? DWRITE_FONT_WEIGHT_BOLD
+                                 : DWRITE_FONT_WEIGHT_NORMAL;
+    const int style = font.italic ? DWRITE_FONT_STYLE_ITALIC
+                                  : DWRITE_FONT_STYLE_NORMAL;
+    const FormatKey key(family, size, weight, style);
     auto it = formats_.find(key);
     if (it != formats_.end()) return it->second;
     IDWriteTextFormat* format = nullptr;
     if (FAILED(factory_->CreateTextFormat(family.c_str(), nullptr,
-                                          DWRITE_FONT_WEIGHT_NORMAL,
-                                          DWRITE_FONT_STYLE_NORMAL,
+                                          static_cast<DWRITE_FONT_WEIGHT>(weight),
+                                          static_cast<DWRITE_FONT_STYLE>(style),
                                           DWRITE_FONT_STRETCH_NORMAL,
                                           size, L"",
                                           &format))) {

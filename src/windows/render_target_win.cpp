@@ -72,6 +72,7 @@ std::wstring FamilyFor(const std::string& family) {
     std::transform(f.begin(), f.end(), f.begin(), [](unsigned char c) { return (char)tolower(c); });
     if (f == "code" || f == "mono" || f == "consolas") return L"Consolas";
     if (f == "serif" || f == "georgia") return L"Georgia";
+    if (f == "segoe ui semibold") return L"Segoe UI Semibold";
     return L"Segoe UI";  // body, headings, ui and anything unknown
 }
 
