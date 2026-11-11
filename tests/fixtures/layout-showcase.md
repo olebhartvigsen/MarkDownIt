@@ -1,12 +1,11 @@
 # MarkDownIt layout showcase
 
-One document with every element the renderer draws, so a single
-screenshot shows the whole typographic system at once. The launch smoke
-opens this file on the CI runner and photographs the states.
+One document with every element the renderer draws.
+
+The launch smoke photographs its states on the CI runner.
 
 The paragraph carries **bold**, *italic*, `inline code`, a
-[link](https://example.com), and ~~struck text~~, so the inline
-treatments sit in one line, the way the style guide describes them.
+[link](https://example.com), and ~~struck text~~.
 
 ## Lists and tasks
 
