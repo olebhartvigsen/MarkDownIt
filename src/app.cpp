@@ -2775,6 +2775,23 @@ static const float TRACKPAD_SCALE = 0.75f;
 static const float MOMENTUM_FRICTION = 0.955f;
 static const float MOMENTUM_MIN_VEL  = 0.5f;    // stop threshold (px/tick)
 
+// Scroll frame timing, summed while an animation runs and written as one
+// line when it ends (never per frame, a trace line costs about a ms).
+namespace {
+struct ScrollPaintStats {
+    int frames = 0;
+    double measureMs = 0, renderMs = 0, endMs = 0, maxFrameMs = 0;
+};
+ScrollPaintStats g_scrollStats;
+double QpcMs() {
+    LARGE_INTEGER f, c;
+    QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&c);
+    return 1000.0 * static_cast<double>(c.QuadPart) /
+           static_cast<double>(f.QuadPart);
+}
+}  // namespace
+
 float AppWindow::ScrollStepSeconds() {
     LARGE_INTEGER f, c;
     QueryPerformanceFrequency(&f);
@@ -2804,6 +2821,15 @@ void AppWindow::StopScrollTimer() {
         KillTimer(hwnd_content_, scroll_timer_);
         scroll_timer_ = 0;
         timeEndPeriod(1);
+        if (g_scrollStats.frames > 0) {
+            const double n = g_scrollStats.frames;
+            diag::TraceFmt("SCROLLPAINT frames=%d measure=%.2f render=%.2f "
+                           "enddraw=%.2f avg ms, worst frame %.1f ms",
+                           g_scrollStats.frames, g_scrollStats.measureMs / n,
+                           g_scrollStats.renderMs / n,
+                           g_scrollStats.endMs / n, g_scrollStats.maxFrameMs);
+        }
+        g_scrollStats = ScrollPaintStats();
     }
     scroll_phase_ = 0; // IDLE
     momentum_vel_ = 0.0f;
@@ -3195,6 +3221,8 @@ void AppWindow::PaintZoomHud() {
 }
 
 void AppWindow::OnContentPaint(HWND hwnd) {
+    const double t0 = QpcMs();
+    double tMeasure = 0, tRender = 0;
     if (!rt_) {
             RecreateRenderTarget();
         if (!rt_) { ValidateRect(hwnd, nullptr); return; }
@@ -3230,6 +3258,8 @@ void AppWindow::OnContentPaint(HWND hwnd) {
         }
         UpdateScrollInfo();
     }
+    const double t1 = QpcMs();
+    tMeasure = t1 - t0;
 
     PAINTSTRUCT ps;
     BeginPaint(hwnd, &ps);
@@ -3250,8 +3280,18 @@ void AppWindow::OnContentPaint(HWND hwnd) {
     }
 
     PaintZoomHud();
+    const double t2 = QpcMs();
+    tRender = t2 - t1;
 
     HRESULT hr = rt_->EndDraw();
+    if (scroll_phase_ != 0) {
+        const double t3 = QpcMs();
+        g_scrollStats.frames++;
+        g_scrollStats.measureMs += tMeasure;
+        g_scrollStats.renderMs += tRender;
+        g_scrollStats.endMs += t3 - t2;
+        g_scrollStats.maxFrameMs = std::max(g_scrollStats.maxFrameMs, t3 - t0);
+    }
     if (hr == D2DERR_RECREATE_TARGET) {
         RecreateRenderTarget();
         // Force immediate repaint after target recreation.

@@ -351,6 +351,13 @@ private:
     };
     LayoutCacheSlot layoutSlots_[2];
     bool layoutReuse_ = false;
+    // The last Measure's answer, valid while the shared layout it walked
+    // is the one still held (a new layout is a new pointer).
+    std::shared_ptr<const layout::DocumentLayout> measureHold_;
+    float measureWidth_ = 0.0f;
+    float measureTop_ = 0.0f;
+    float measureWidest_ = 0.0f;
+    float measureHeight_ = 0.0f;
 
     // The image size answers of the shared walk: "svg:" urls answer
     // the SvgDoc natural size of their fence (unknown when the caret

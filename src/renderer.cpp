@@ -645,7 +645,12 @@ std::shared_ptr<const layout::DocumentLayout> Renderer::SharedLayoutPass(
     LayoutCacheSlot& slot = layoutSlots_[sel ? 1 : 0];
     LayoutCacheKey key;
     key.doc = &doc;
-    {
+    if (layoutReuse_ && slot.layout && slot.key.doc == &doc) {
+        // A scroll frame never edits the document (the app asks for
+        // reuse only then), so the digest below, a walk of every node
+        // and inline, would only confirm the last one.
+        key.fingerprint = slot.key.fingerprint;
+    } else {
         // A cheap digest of what the walk reads from the document, so an
         // edit made in place cannot hand back the old layout.
         uint64_t h = 1469598103934665603ull;
@@ -2082,6 +2087,14 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
         SharedLayoutPass(doc, dw, m, &measurePal, contentWidth, nullptr,
                          nullptr);
     const layout::DocumentLayout& shared = *sharedHold;
+    // The same layout and width give the same height and scroll range,
+    // so a scroll frame answers from the last walk instead of redoing
+    // the span merge and the block loop below.
+    if (sharedHold == measureHold_ && widthDip == measureWidth_ &&
+        topOffsetDip == measureTop_) {
+        widestBlockRight_ = measureWidest_;
+        return measureHeight_;
+    }
     std::vector<std::pair<uint32_t, uint32_t>> spans;
     MergeNodeItemSpans(shared.blocks, shared.list, doc.nodes.size(),
                        &spans);
@@ -2125,8 +2138,14 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
     // shared walk measures from the column's own top, so the height is
     // the pad, the walked height, and the doubled pad the bottom
     // margin keeps.
-    return m.padTop + topOffsetDip + shared.list.height +
-           m.padTop * 2.0f;
+    const float height = m.padTop + topOffsetDip + shared.list.height +
+                         m.padTop * 2.0f;
+    measureHold_ = sharedHold;
+    measureWidth_ = widthDip;
+    measureTop_ = topOffsetDip;
+    measureWidest_ = widestBlockRight_;
+    measureHeight_ = height;
+    return height;
 }
 
 float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
