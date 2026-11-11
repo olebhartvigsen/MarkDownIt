@@ -228,6 +228,8 @@ private:
 
     // Momentum state (trackpad flick)
     float  momentum_vel_ = 0.0f;      // px per 16ms tick
+    long long scroll_last_qpc_ = 0;   // time of the previous animation step
+    float  ScrollStepSeconds();       // seconds since the previous step, clamped
 
     // Input tracking
     DWORD  last_wheel_time_ = 0;     // for trackpad vs mouse detection

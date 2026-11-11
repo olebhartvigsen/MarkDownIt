@@ -28,6 +28,8 @@
 #include <cstdio>
 #include <cmath>
 #include <algorithm>
+#include <mmsystem.h>
+#pragma comment(lib, "winmm.lib")
 #include <vector>
 #include <utility>
 #include <cctype>
@@ -2745,8 +2747,11 @@ float AppWindow::ClampScroll(float y) const {
 // ─────────────────────────────────────────────────────────────────
 
 // Spring constants (tuned for ~300 ms settle with critical damping).
-static const float SPRING_STIFFNESS = 0.12f; // per 16ms tick (stiffer = faster settle)
-static const float SPRING_DAMPING   = 0.45f;  // per 16ms tick (higher = less oscillation)
+// Natural frequency of the critically damped spring, in 1/s. The step is
+// solved in closed form from the real elapsed time, so the motion is the
+// same whether the timer fires every 8 or every 30 ms. 15 settles a notch
+// in about half a second with the long soft tail of macOS scrolling.
+static const float SPRING_OMEGA     = 15.0f;
 static const float SPRING_SETTLE    = 0.5f;   // stop when within 0.5px of target
 static const float SPRING_MIN_VEL   = 0.3f;   // stop when velocity below this
 
@@ -2761,9 +2766,27 @@ static const float TRACKPAD_SCALE = 0.75f;
 static const float MOMENTUM_FRICTION = 0.955f;
 static const float MOMENTUM_MIN_VEL  = 0.5f;    // stop threshold (px/tick)
 
+float AppWindow::ScrollStepSeconds() {
+    LARGE_INTEGER f, c;
+    QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&c);
+    float dt = 1.0f / 60.0f;
+    if (scroll_last_qpc_ != 0) {
+        dt = static_cast<float>(c.QuadPart - scroll_last_qpc_) /
+             static_cast<float>(f.QuadPart);
+    }
+    scroll_last_qpc_ = c.QuadPart;
+    // A stall (window drag, breakpoint) must not fling the page.
+    return std::min(std::max(dt, 0.001f), 0.05f);
+}
+
 void AppWindow::EnsureScrollTimer() {
     if (!scroll_timer_) {
-        scroll_timer_ = SetTimer(hwnd_content_, 4, 16, nullptr);
+        // The default timer resolution is about 15.6 ms, which makes a
+        // 16 ms timer fire every 16 or 31 ms and the scroll judder.
+        timeBeginPeriod(1);
+        scroll_last_qpc_ = 0;
+        scroll_timer_ = SetTimer(hwnd_content_, 4, 8, nullptr);
     }
 }
 
@@ -2771,6 +2794,7 @@ void AppWindow::StopScrollTimer() {
     if (scroll_timer_) {
         KillTimer(hwnd_content_, scroll_timer_);
         scroll_timer_ = 0;
+        timeEndPeriod(1);
     }
     scroll_phase_ = 0; // IDLE
     momentum_vel_ = 0.0f;
@@ -2861,11 +2885,18 @@ void AppWindow::OnScrollTick() {
     if (scroll_phase_ == 1) {
         // ── SPRING ──────────────────────────────────────────────
         // Semi-implicit Euler: update velocity first, then position.
-        float diff = spring_target_ - scrollY_;
-        float force = diff * SPRING_STIFFNESS;
-        momentum_vel_ += force;
-        momentum_vel_ *= (1.0f - SPRING_DAMPING);
-        scrollY_ += momentum_vel_;
+        // Closed-form critically damped step. momentum_vel_ holds px per
+        // 16 ms tick between phases; here it is converted to px/s.
+        const float dt = ScrollStepSeconds();
+        const float diff = spring_target_ - scrollY_;
+        const float d = -diff;                       // offset from rest
+        const float v = momentum_vel_ * (1000.0f / 16.0f);
+        const float e = std::exp(-SPRING_OMEGA * dt);
+        const float j = v + SPRING_OMEGA * d;
+        const float nd = (d + j * dt) * e;
+        const float nv = (v - SPRING_OMEGA * j * dt) * e;
+        scrollY_ = spring_target_ + nd;
+        momentum_vel_ = nv * (16.0f / 1000.0f);
         UpdateScrollInfo();
         Repaint();
         if (editing_) UpdateCaretPosition();
@@ -2888,8 +2919,9 @@ void AppWindow::OnScrollTick() {
 
     } else if (scroll_phase_ == 3) {
         // ── MOMENTUM ───────────────────────────────────────────
-        scrollY_ += momentum_vel_;
-        momentum_vel_ *= MOMENTUM_FRICTION;
+        const float ticks = ScrollStepSeconds() * (1000.0f / 16.0f);
+        scrollY_ += momentum_vel_ * ticks;
+        momentum_vel_ *= std::pow(MOMENTUM_FRICTION, ticks);
 
         // Clamp at edges; stop dead (no bounce).
         float prev = scrollY_;
