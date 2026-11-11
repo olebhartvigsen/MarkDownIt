@@ -46,8 +46,28 @@ ThemeColor Faded(NSColor* color, CGFloat alpha) {
 
 }  // namespace
 
+namespace {
+// The selection and search colours follow the system in every style:
+// they are app chrome, not article style.
+void ApplySystemSelectionColors(Palette* p) {
+    p->selectionBg = FromColor([NSColor selectedContentBackgroundColor]);
+    p->selectionText = FromColor([NSColor selectedTextColor]);
+    p->findMatchBg = Faded([NSColor systemYellowColor], 0.30);
+    p->findCurrentMatchBg = Faded([NSColor systemYellowColor], 0.62);
+    p->markerBg = Faded([NSColor systemYellowColor], 0.45);
+    p->markerLine = Faded([NSColor systemOrangeColor], 0.85);
+}
+}  // namespace
+
 Palette SystemPalette() {
     Palette p = BasePalette();
+    if (ActiveMarkdownStyle() != MarkdownStyle::GitHub) {
+        // A fixed-colour style (Wikipedia) keeps its own article
+        // palette in both appearances; only the selection follows the
+        // system. The GitHub style adopts the system's colours below.
+        ApplySystemSelectionColors(&p);
+        return p;
+    }
     p.textPrimary = FromColor([NSColor labelColor]);
     // The system's own secondary label measures about 3.3 to 1 over
     // white, below the guideline's 4.5 to 1 for muted text, so the

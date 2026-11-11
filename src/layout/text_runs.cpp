@@ -75,7 +75,8 @@ std::vector<platform::GlyphRun> BuildRuns(const Node& node,
                                           bool monospace,
                                           const char* family,
                                           float codeFontSize,
-                                          const ThemeColor& linkColor) {
+                                          const ThemeColor& linkColor,
+                                          bool underlineLinks) {
     std::vector<platform::GlyphRun> runs;
     for (const InlineBlock& child : node.children) {
         const std::string runText = Utf32ToUtf8(child.text);
@@ -100,7 +101,7 @@ std::vector<platform::GlyphRun> BuildRuns(const Node& node,
         run.g = runColor.g;
         run.b = runColor.b;
         run.a = runColor.a;
-        run.underline = link;
+        run.underline = link && underlineLinks;
         run.strike = child.strike;
         runs.push_back(run);
     }
@@ -113,7 +114,8 @@ std::vector<platform::GlyphRun> BuildHeadingRuns(const Node& node,
                                                  const LayoutMetrics& m,
                                                  const Palette& pal) {
     return BuildRuns(node, size, false, false, ToColor(color), false,
-                     kSemiboldBodyFont, m.codeFontSize, pal.link);
+                     kSemiboldBodyFont, m.codeFontSize, pal.link,
+                     m.linkUnderline);
 }
 
 }  // namespace layout

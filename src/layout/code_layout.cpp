@@ -70,12 +70,25 @@ LaidBlock LayoutCodeBlock(const LayoutCtx& ctx, const Node& node,
 
     // The card, first in paint order: the theme's muted surface over
     // the full column width, the corner radius the theme names.
+    // A style with a card border paints it first, as a slightly larger
+    // card in the border colour, so no port needs a stroke primitive.
+    if (m.codeBorderWidth > 0.0f) {
+        display::FillRoundedRect edge;
+        edge.rect.x = 0.0f;
+        edge.rect.y = *y;
+        edge.rect.width = in.contentWidth;
+        edge.rect.height = blockH;
+        edge.radius = m.codeRadius;
+        edge.color = ToColor(in.palette->codeBorder);
+        ctx.list->items.push_back(edge);
+    }
+    const float edgeW = m.codeBorderWidth;
     display::FillRoundedRect card;
-    card.rect.x = 0.0f;
-    card.rect.y = *y;
-    card.rect.width = in.contentWidth;
-    card.rect.height = blockH;
-    card.radius = m.codeRadius;
+    card.rect.x = edgeW;
+    card.rect.y = *y + edgeW;
+    card.rect.width = in.contentWidth - 2.0f * edgeW;
+    card.rect.height = blockH - 2.0f * edgeW;
+    card.radius = m.codeRadius > edgeW ? m.codeRadius - edgeW : 0.0f;
     card.color = ToColor(in.palette->codeBg);
     ctx.list->items.push_back(card);
 

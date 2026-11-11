@@ -1004,11 +1004,19 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
-    (void)dirtyRect;
     if (!content_) return;
 
     CGContextRef context = [[NSGraphicsContext currentContext] CGContext];
     if (!context) return;
+
+    // A fixed-colour style (Wikipedia) is drawn on white paper in both
+    // appearances, the way the Windows build clears its target: its ink
+    // is dark and would vanish on the Dark Mode paper. The GitHub style
+    // follows the system paper and paints none.
+    if (ActiveMarkdownStyle() != MarkdownStyle::GitHub) {
+        CGContextSetRGBFillColor(context, 1.0, 1.0, 1.0, 1.0);
+        CGContextFillRect(context, NSRectToCGRect(dirtyRect));
+    }
 
     // The view is flipped, so the origin is already at the top left and
     // the y axis already points down, which is the space the renderer

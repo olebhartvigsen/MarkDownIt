@@ -344,6 +344,7 @@ if(BUILD_TESTS AND APPLE)
         tests/dom_mermaid_test.cpp
         tests/mermaid_cache_test.cpp
         tests/theme_test.cpp
+        tests/markdown_style_test.cpp
         tests/perf_harness.cpp
         tests/test_main.cpp
         tests/svgtext_test.cpp
@@ -469,6 +470,7 @@ elseif(BUILD_TESTS)
         tests/dom_mermaid_test.cpp
         tests/mermaid_cache_test.cpp
         tests/theme_test.cpp
+        tests/markdown_style_test.cpp
         tests/perf_harness.cpp
         tests/test_main.cpp
         tests/svgtext_test.cpp
@@ -728,3 +730,10 @@ if(APPLE)
     # longer carries the raster icon set; the Windows ribbon keeps its
     # own copy inside its exe.
 endif()  # APPLE
+
+# The tests measure one fixed style so the layout goldens, which pin
+# GitHub's numbers, do not move with MARKDOWNIT_STYLE. The style
+# profile test names both styles explicitly.
+if(BUILD_TESTS)
+    target_compile_definitions(MarkDownIt.tests PRIVATE MDI_PIN_STYLE_GITHUB)
+endif()

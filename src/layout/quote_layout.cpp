@@ -32,7 +32,8 @@ LaidBlock LayoutQuote(const LayoutCtx& ctx, const Node& node,
     const float size = m.bodyFontSize;
     std::vector<platform::GlyphRun> runs =
         BuildRuns(node, size, false, false, ToColor(in.palette->quoteText),
-                  false, nullptr, m.codeFontSize, in.palette->link);
+                  false, nullptr, m.codeFontSize, in.palette->link,
+                  m.linkUnderline);
     std::vector<platform::TextLine> lines =
         in.engine->MeasureWrapped(runs, block.width, 0.0f);
     ApplyLineSpacing(&lines, size, m.bodyLineHeight, in.zoom, in.engine);

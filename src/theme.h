@@ -11,6 +11,8 @@
 // names refer to a plain 4-float RGBA struct and a UTF-8 string, so no
 // macOS translation unit has to include <d2d1.h>.
 
+#include "markdown_style.h"
+
 #ifdef _WIN32
 #include <d2d1.h>
 #include <string>
@@ -142,6 +144,22 @@ struct LayoutMetrics {
     // Font family names.
     ThemeFontName bodyFont;
     ThemeFontName codeFont;
+
+    // Style switches. The shared layout reads these instead of
+    // assuming one style, so a profile in BaseMetrics(style) is the
+    // whole difference between two looks.
+    //
+    // Heading face per level, UTF-8 (index 0 unused). nullptr means
+    // the semibold body face; a name takes that family, with
+    // headingBold[level] choosing its weight.
+    const char* headingFamily[7];
+    bool headingBold[7];
+    bool linkUnderline;          // links underline at rest
+    float thematicBreakThickness;  // the <hr> bar, DIP at zoom 1
+    float codeBorderWidth;       // 0 draws the fenced card borderless
+    bool tableHeaderFill;        // header row takes palette.tableHeaderBg
+    bool tableZebra;             // every second body row takes tableRowAlt
+    bool tableBodyFill;          // every body row takes tableRowAlt
 };
 
 // The unordered list marker glyphs, one table for both renderers so
@@ -217,7 +235,7 @@ struct Palette {
     ThemeColor markerLine;
 };
 
-inline LayoutMetrics BaseMetrics() {
+inline LayoutMetrics GitHubMetrics() {
     LayoutMetrics m = {};
     m.padX = 56.0f;
     m.padTop = 32.0f;
@@ -280,7 +298,81 @@ inline LayoutMetrics BaseMetrics() {
     m.headingSizes[6] = 10.2f;
     m.bodyFont = THEME_BODY_FONT;
     m.codeFont = THEME_CODE_FONT;
+    // Headings are the semibold body face at every level.
+    for (int i = 0; i < 7; ++i) {
+        m.headingFamily[i] = nullptr;
+        m.headingBold[i] = false;
+    }
+    m.linkUnderline = true;
+    m.thematicBreakThickness = 4.0f;  // GitHub's .25em bar
+    m.codeBorderWidth = 0.0f;
+    m.tableHeaderFill = false;
+    m.tableZebra = true;
+    m.tableBodyFill = false;
     return m;
+}
+
+// The Wikipedia article look. The numbers come from the Vector skin's
+// own stylesheet (skins.vector.styles.legacy, mediawiki.skinning), not
+// from guesswork: a 14px body at line-height 1.6, h1 1.8em and h2
+// 1.5em in the serif stack at normal weight with a 1px rule under
+// them, h3 to h6 bold in the sans face, paragraphs 0.5em apart,
+// lists indented 1.6em with 0.1em between items, a .wikitable cell
+// of 0.2em by 0.4em, a quote with a 4px bar and 32px of padding.
+// Points are px times 0.75. The Manual of Style itself is editorial,
+// so what it adds here is the structure it asks for: a real heading
+// hierarchy, quotations set off by indentation instead of marks, and
+// colour never the only carrier of meaning (the link keeps its
+// distinct hue and the table header keeps its bold weight).
+inline LayoutMetrics WikipediaMetrics() {
+    LayoutMetrics m = GitHubMetrics();
+    m.bodyLineHeight = 1.6f;
+    m.headingLineHeight = 1.375f;
+    m.codeLineHeight = 1.3f;
+    m.paraGap = 7.0f;
+    m.headingGapBefore = 18.0f;
+    m.headingGapAfter = 5.0f;
+    m.listItemGap = 1.4f;
+    m.listGap = 7.0f;
+    m.codeBlockGap = 10.0f;
+    m.ruleGapAbove = 7.0f;
+    m.ruleGapBelow = 7.0f;
+    m.codePad = 14.0f;
+    m.codeRadius = 2.0f;
+    m.codeBorderWidth = 1.0f;
+    m.quoteIndent = 32.0f;
+    m.quoteBarWidth = 4.0f;
+    m.listIndent = 14.0f;
+    m.markerGutter = 3.0f;
+    m.headingRulePadRatio = 0.05f;
+    m.headingRuleThickness = 1.0f;
+    m.cellPadX = 5.6f;
+    m.cellPadY = 2.8f;
+    m.bodyFontSize = 10.5f;   // 14 px
+    m.codeFontSize = 9.75f;   // 13 px, the browser's monospace rule
+    m.headingSizes[1] = 18.9f;   // 1.8em
+    m.headingSizes[2] = 15.75f;  // 1.5em
+    m.headingSizes[3] = 12.6f;   // 1.2em
+    m.headingSizes[4] = 10.5f;
+    m.headingSizes[5] = 10.5f;
+    m.headingSizes[6] = 10.5f;
+    m.headingFamily[1] = "Georgia";
+    m.headingFamily[2] = "Georgia";
+    for (int i = 3; i <= 6; ++i) {
+        m.headingFamily[i] = "Segoe UI";
+        m.headingBold[i] = true;
+    }
+    m.linkUnderline = false;
+    m.thematicBreakThickness = 1.0f;
+    m.tableHeaderFill = true;
+    m.tableZebra = false;
+    m.tableBodyFill = true;
+    return m;
+}
+
+inline LayoutMetrics BaseMetrics(MarkdownStyle style = ActiveMarkdownStyle()) {
+    return style == MarkdownStyle::Wikipedia ? WikipediaMetrics()
+                                             : GitHubMetrics();
 }
 
 inline LayoutMetrics ScaleMetrics(const LayoutMetrics& base, float zoom) {
@@ -300,6 +392,7 @@ inline LayoutMetrics ScaleMetrics(const LayoutMetrics& base, float zoom) {
     m.codeRadius *= zoom;
     m.quoteIndent *= zoom;
     m.quoteBarWidth *= zoom;
+    m.codeBorderWidth *= zoom;
     m.listIndent *= zoom;
     m.markerGutter *= zoom;
     // The remaining list constants are ratios, or already live in the
@@ -313,7 +406,7 @@ inline LayoutMetrics ScaleMetrics(const LayoutMetrics& base, float zoom) {
     return m;
 }
 
-inline Palette BasePalette() {
+inline Palette GitHubPalette() {
     Palette p = {};
     // GitHub's current markdown palette (light): the default ink, the
     // muted ink its quote and H6 rules use, the accent link, the muted
@@ -344,6 +437,35 @@ inline Palette BasePalette() {
     p.markerBg = MakeColor(0xFFD54A);
     p.markerLine = MakeColor(0xB8860B);
     return p;
+}
+
+// Wikipedia's article colours (Vector light): base ink 202122, subtle
+// ink 54595d, link 3366cc, the neutral surface f8f9fa and its darker
+// step eaecf0, and the base border a2a9b1 that draws the heading
+// rules, the thematic break and the wikitable grid. The editor's own
+// selection, find and marker colours stay as the GitHub palette has
+// them, because they are app chrome and not article style.
+inline Palette WikipediaPalette() {
+    Palette p = GitHubPalette();
+    p.textPrimary = MakeColor(0x202122);
+    p.textMuted = MakeColor(0x54595D);
+    p.heading = MakeColor(0x101418);
+    p.link = MakeColor(0x3366CC);
+    p.codeBg = MakeColor(0xF8F9FA);
+    p.codeBorder = MakeColor(0xEAECF0);
+    p.inlineCodeBg = MakeColor(0xF8F9FA);
+    p.quoteBar = MakeColor(0xEAECF0);
+    p.quoteText = MakeColor(0x202122);  // a Wikipedia quote is body ink
+    p.rule = MakeColor(0xA2A9B1);
+    p.tableBorder = MakeColor(0xA2A9B1);
+    p.tableHeaderBg = MakeColor(0xEAECF0);
+    p.tableRowAlt = MakeColor(0xF8F9FA);
+    return p;
+}
+
+inline Palette BasePalette(MarkdownStyle style = ActiveMarkdownStyle()) {
+    return style == MarkdownStyle::Wikipedia ? WikipediaPalette()
+                                             : GitHubPalette();
 }
 
 // The chrome palette: the surfaces the app draws around the document,

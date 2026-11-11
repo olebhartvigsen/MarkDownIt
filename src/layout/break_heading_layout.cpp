@@ -25,12 +25,13 @@ LaidBlock LayoutBreak(const LayoutCtx& ctx, const Node& node,
     block.srcOffset = node.contentOffset;
     block.srcLength = node.contentLength;
 
-    // GitHub's .25em bar: the rule is the whole block.
+    // The rule is the whole block: GitHub's .25em bar, or the style's
+    // own thickness.
     display::FillRect rule;
     rule.rect.x = 0.0f;
     rule.rect.y = *y;
     rule.rect.width = in.contentWidth;
-    rule.rect.height = 4.0f * in.zoom;
+    rule.rect.height = ctx.in->metrics->thematicBreakThickness * in.zoom;
     rule.color = ToColor(ctx.in->palette->rule);
     ctx.list->items.push_back(rule);
     *y += rule.rect.height;
@@ -60,10 +61,16 @@ LaidBlock LayoutHeading(const LayoutCtx& ctx, const Node& node,
     const ThemeColor headingColor =
         level >= 6 ? ctx.in->palette->quoteText
                    : ctx.in->palette->heading;
+    // The style names the face per level: the semibold body face
+    // (nullptr), or a family such as the serif the Wikipedia style
+    // sets its H1 and H2 in, with its own weight.
+    const char* headingFamily = m.headingFamily[level]
+                                    ? m.headingFamily[level]
+                                    : kSemiboldBodyFont;
     const std::vector<platform::GlyphRun> runs =
-        BuildRuns(node, size, false, false, ToColor(headingColor),
-                  false, kSemiboldBodyFont, m.codeFontSize,
-                  ctx.in->palette->link);
+        BuildRuns(node, size, m.headingBold[level], false,
+                  ToColor(headingColor), false, headingFamily,
+                  m.codeFontSize, ctx.in->palette->link, m.linkUnderline);
     in.engine->BeginLayout();
     std::vector<platform::TextLine> lines =
         in.engine->MeasureWrapped(runs, in.contentWidth, 0.0f);

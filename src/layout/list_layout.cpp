@@ -57,7 +57,8 @@ std::vector<platform::GlyphRun> PlaceholderRuns(const LayoutInput& in) {
     node.children.push_back(child);
     return BuildRuns(node, in.metrics->bodyFontSize, false, false,
                       ToColor(in.palette->textPrimary), false, nullptr,
-                      in.metrics->codeFontSize, in.palette->link);
+                      in.metrics->codeFontSize, in.palette->link,
+                      in.metrics->linkUnderline);
 }
 
 }  // namespace
@@ -86,7 +87,8 @@ LaidBlock LayoutListBlock(const LayoutCtx& ctx, const Node& node,
     const float size = m.bodyFontSize;
     std::vector<platform::GlyphRun> runs =
         BuildRuns(node, size, false, false, ToColor(in.palette->textPrimary),
-                  false, nullptr, m.codeFontSize, in.palette->link);
+                  false, nullptr, m.codeFontSize, in.palette->link,
+                  m.linkUnderline);
     bool hasImage = false;
     for (const InlineBlock& child : node.children) {
         if (child.kind == InlineKind::Image && !child.url.empty()) {

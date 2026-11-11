@@ -2,6 +2,7 @@
 #include "blockspacing.h"
 #include "hash.h"
 
+#include <cstring>
 #include <d2d1.h>
 #include <dwrite.h>
 #include <string>
@@ -1036,11 +1037,25 @@ bool Renderer::Init(IDWriteFactory* dw) {
     // wrap explicitly on the layout and keeps the flat rule.
     code_fmt_->SetWordWrapping(DWRITE_WORD_WRAPPING_WHOLE_WORD);
 
-    // Heading formats: Segoe UI Semibold, scaled by level.
+    // Heading formats, scaled by level. The face follows the style:
+    // the semibold body face, or the family the style names for the
+    // level (the serif of the Wikipedia H1 and H2). The selection
+    // washes measure with these, so they must match the drawn face.
     for (int lvl = 1; lvl <= 6; ++lvl) {
+        std::wstring headingFamilyW;
+        if (base.headingFamily[lvl])
+            headingFamilyW.assign(base.headingFamily[lvl],
+                                  base.headingFamily[lvl] +
+                                      std::strlen(base.headingFamily[lvl]));
+        const wchar_t* headingFace =
+            base.headingFamily[lvl] ? headingFamilyW.c_str() : base.bodyFont;
+        const DWRITE_FONT_WEIGHT headingWeight =
+            base.headingBold[lvl]    ? DWRITE_FONT_WEIGHT_BOLD
+            : base.headingFamily[lvl] ? DWRITE_FONT_WEIGHT_NORMAL
+                                      : DWRITE_FONT_WEIGHT_SEMI_BOLD;
         hr = dw->CreateTextFormat(
-            base.bodyFont, nullptr,
-            DWRITE_FONT_WEIGHT_SEMI_BOLD,
+            headingFace, nullptr,
+            headingWeight,
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
             base.headingSizes[lvl] * kPtToDip * zoom_,
@@ -1367,6 +1382,8 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     rt->CreateSolidColorBrush(pal.textPrimary, &textBrush);
     ID2D1SolidColorBrush* altBg = nullptr;
     rt->CreateSolidColorBrush(pal.tableRowAlt, &altBg);
+    ID2D1SolidColorBrush* hdrBg = nullptr;
+    rt->CreateSolidColorBrush(pal.tableHeaderBg, &hdrBg);
     ID2D1SolidColorBrush* borderBrush = nullptr;
     rt->CreateSolidColorBrush(pal.tableBorder, &borderBrush);
     ID2D1SolidColorBrush* selBrush = nullptr;
@@ -1397,6 +1414,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         outH = 0.0f;
         if (textBrush) textBrush->Release();
         if (altBg) altBg->Release();
+        if (hdrBg) hdrBg->Release();
         if (borderBrush) borderBrush->Release();
         if (selBrush) selBrush->Release();
         if (markerBrush) markerBrush->Release();
@@ -1483,9 +1501,13 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
 
         bool isHeaderRow = (!row.cells.empty() && row.cells[0].isHeader);
-        if (!isHeaderRow && altBg && (ri % 2 == 1)) {
-            // GitHub's zebra: the first body row is the first muted
-            // one, because the header is tr 1.
+        if (isHeaderRow && m.tableHeaderFill && hdrBg) {
+            rt->FillRectangle(
+                D2D1::RectF(x, curY, x + width, curY + rowH), hdrBg);
+        } else if (!isHeaderRow && altBg &&
+                   (m.tableBodyFill || (m.tableZebra && ri % 2 == 1))) {
+            // The style's row wash. GitHub's zebra: the first body row
+            // is the first muted one, because the header is tr 1.
             D2D1_RECT_F bg = D2D1::RectF(x, curY, x + width, curY + rowH);
             rt->FillRectangle(bg, altBg);
         }
@@ -1570,7 +1592,8 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     if (linkEnd > linkStart) {
                         DWRITE_TEXT_RANGE range = {linkStart,
                             linkEnd - linkStart};
-                        layout->SetUnderline(TRUE, range);
+                        if (m.linkUnderline)
+                            layout->SetUnderline(TRUE, range);
                     }
                 }
                 D2D1_POINT_2F cellOrigin = D2D1::Point2F(
@@ -1779,6 +1802,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
     if (textBrush) textBrush->Release();
     if (altBg) altBg->Release();
+        if (hdrBg) hdrBg->Release();
     if (borderBrush) borderBrush->Release();
     if (selBrush) selBrush->Release();
     if (markerBrush) markerBrush->Release();
@@ -2382,7 +2406,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 layout->SetFontSize(
                     base.codeFontSize * kPtToDip * zoom_, range);
             }
-            if (s.link) {
+            if (s.link && base.linkUnderline) {
                 // Underline is span metadata the hit tests never read;
                 // the colour itself is the replay's run property, so no
                 // drawing effect is attached anymore.

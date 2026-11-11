@@ -50,7 +50,8 @@ std::vector<platform::GlyphRun> BuildRuns(const Node& node,
                                           bool monospace,
                                           const char* family,
                                           float codeFontSize,
-                                          const ThemeColor& linkColor);
+                                          const ThemeColor& linkColor,
+                                          bool underlineLinks = true);
 
 // The run text of a heading: the semibold face at the level's size.
 std::vector<platform::GlyphRun> BuildHeadingRuns(const Node& node,

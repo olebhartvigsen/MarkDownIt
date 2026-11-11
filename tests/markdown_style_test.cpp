@@ -1,0 +1,191 @@
+// The visual style profiles. Every test names its style explicitly, so
+// the result does not depend on MARKDOWNIT_STYLE or on the test
+// target's pinned default.
+
+#include "fake_text_engine.h"
+#include "gtest_lite.h"
+#include "layout/document_layout.h"
+#include "markdown_style.h"
+#include "theme.h"
+
+#include <variant>
+
+TEST(MarkdownStyle, ParsesNamesIgnoringCaseAndSpaces) {
+    MarkdownStyle s = MarkdownStyle::GitHub;
+    EXPECT_TRUE(ParseMarkdownStyle("wikipedia", &s));
+    EXPECT_TRUE(s == MarkdownStyle::Wikipedia);
+    EXPECT_TRUE(ParseMarkdownStyle("  GitHub ", &s));
+    EXPECT_TRUE(s == MarkdownStyle::GitHub);
+    EXPECT_TRUE(ParseMarkdownStyle("WIKIPEDIA", &s));
+    EXPECT_TRUE(s == MarkdownStyle::Wikipedia);
+}
+
+TEST(MarkdownStyle, UnknownNameLeavesTheValueAlone) {
+    MarkdownStyle s = MarkdownStyle::GitHub;
+    EXPECT_FALSE(ParseMarkdownStyle("", &s));
+    EXPECT_FALSE(ParseMarkdownStyle("gitlab", &s));
+    EXPECT_TRUE(s == MarkdownStyle::GitHub);
+}
+
+TEST(MarkdownStyle, DefaultIsWikipedia) {
+    EXPECT_TRUE(kDefaultMarkdownStyle == MarkdownStyle::Wikipedia);
+}
+
+TEST(MarkdownStyle, GitHubProfileIsUnchanged) {
+    const LayoutMetrics m = BaseMetrics(MarkdownStyle::GitHub);
+    EXPECT_NEAR(m.bodyFontSize, 12.0f, 0.001f);
+    EXPECT_NEAR(m.headingSizes[1], 24.0f, 0.001f);
+    EXPECT_NEAR(m.thematicBreakThickness, 4.0f, 0.001f);
+    EXPECT_TRUE(m.linkUnderline);
+    EXPECT_TRUE(m.tableZebra);
+    EXPECT_FALSE(m.tableBodyFill);
+    EXPECT_NEAR(m.codeBorderWidth, 0.0f, 0.001f);
+    EXPECT_TRUE(m.headingFamily[1] == nullptr);
+    const Palette p = BasePalette(MarkdownStyle::GitHub);
+    EXPECT_NEAR(p.link.r, 9.0f / 255.0f, 0.001f);  // 0969DA
+}
+
+TEST(MarkdownStyle, WikipediaProfileFollowsVector) {
+    const LayoutMetrics m = BaseMetrics(MarkdownStyle::Wikipedia);
+    // 14 px body at line-height 1.6; h1 1.8em, h2 1.5em, h3 1.2em.
+    EXPECT_NEAR(m.bodyFontSize * 96.0f / 72.0f, 14.0f, 0.001f);
+    EXPECT_NEAR(m.bodyLineHeight, 1.6f, 0.001f);
+    EXPECT_NEAR(m.headingSizes[1] / m.bodyFontSize, 1.8f, 0.001f);
+    EXPECT_NEAR(m.headingSizes[2] / m.bodyFontSize, 1.5f, 0.001f);
+    EXPECT_NEAR(m.headingSizes[3] / m.bodyFontSize, 1.2f, 0.001f);
+    EXPECT_NEAR(m.headingSizes[4], m.bodyFontSize, 0.001f);
+    // Serif regular for h1 and h2, bold sans for h3 to h6.
+    EXPECT_EQ(std::string(m.headingFamily[1]), std::string("Georgia"));
+    EXPECT_EQ(std::string(m.headingFamily[2]), std::string("Georgia"));
+    EXPECT_FALSE(m.headingBold[1]);
+    EXPECT_FALSE(m.headingBold[2]);
+    for (int i = 3; i <= 6; ++i) EXPECT_TRUE(m.headingBold[i]);
+    EXPECT_FALSE(m.linkUnderline);
+    EXPECT_NEAR(m.thematicBreakThickness, 1.0f, 0.001f);
+    EXPECT_FALSE(m.tableZebra);
+    EXPECT_TRUE(m.tableBodyFill);
+    EXPECT_TRUE(m.tableHeaderFill);
+    const Palette p = BasePalette(MarkdownStyle::Wikipedia);
+    EXPECT_NEAR(p.link.r, 0x33 / 255.0f, 0.001f);   // 3366cc
+    EXPECT_NEAR(p.tableHeaderBg.r, 0xEA / 255.0f, 0.001f);
+    EXPECT_NEAR(p.rule.r, 0xA2 / 255.0f, 0.001f);
+}
+
+namespace {
+layout::DocumentLayout Lay(const Document& doc, const LayoutMetrics& m,
+                           const Palette& pal) {
+    static fake::FakeTextEngine engine;
+    layout::LayoutInput in;
+    in.doc = &doc; in.metrics = &m; in.palette = &pal;
+    in.contentWidth = 600.0f; in.zoom = 1.0f; in.engine = &engine;
+    return layout::LayoutDocument(in);
+}
+
+Node Heading(int level, const char32_t* text) {
+    Node n;
+    n.block = BlockKind::Heading;
+    n.level = level;
+    n.contentLength = 4;
+    InlineBlock c;
+    c.text = text;
+    n.children.push_back(c);
+    return n;
+}
+}  // namespace
+
+TEST(MarkdownStyle, HeadingFacesAndRuleFollowTheStyle) {
+    Document doc;
+    doc.nodes.push_back(Heading(1, U"Title"));
+    doc.nodes.push_back(Heading(3, U"Part"));
+    for (MarkdownStyle style :
+         {MarkdownStyle::GitHub, MarkdownStyle::Wikipedia}) {
+        const LayoutMetrics m = BaseMetrics(style);
+        const Palette pal = BasePalette(style);
+        layout::DocumentLayout laid = Lay(doc, m, pal);
+        const display::Text* h1 = nullptr;
+        const display::Text* h3 = nullptr;
+        for (const auto& item : laid.list.items) {
+            if (auto* t = std::get_if<display::Text>(&item)) {
+                (h1 ? h3 : h1) = t;
+            }
+        }
+        ASSERT_TRUE(h1 != nullptr && h3 != nullptr);
+        if (style == MarkdownStyle::GitHub) {
+            EXPECT_EQ(h1->line.runs[0].font.family,
+                      std::string("Segoe UI Semibold"));
+            EXPECT_EQ(h3->line.runs[0].font.family,
+                      std::string("Segoe UI Semibold"));
+            EXPECT_FALSE(h3->line.runs[0].font.bold);
+        } else {
+            EXPECT_EQ(h1->line.runs[0].font.family, std::string("Georgia"));
+            EXPECT_FALSE(h1->line.runs[0].font.bold);
+            EXPECT_EQ(h3->line.runs[0].font.family, std::string("Segoe UI"));
+            EXPECT_TRUE(h3->line.runs[0].font.bold);
+        }
+        // Only H1 and H2 carry a rule, in both styles.
+        int rules = 0;
+        for (const auto& item : laid.list.items)
+            if (std::holds_alternative<display::FillRect>(item)) ++rules;
+        EXPECT_EQ(rules, 1);
+    }
+}
+
+TEST(MarkdownStyle, LinkUnderlineFollowsTheStyle) {
+    Document doc;
+    Node n;
+    n.block = BlockKind::Paragraph;
+    n.contentLength = 4;
+    InlineBlock c;
+    c.text = U"link";
+    c.kind = InlineKind::Link;
+    n.children.push_back(c);
+    doc.nodes.push_back(n);
+    for (MarkdownStyle style :
+         {MarkdownStyle::GitHub, MarkdownStyle::Wikipedia}) {
+        const LayoutMetrics m = BaseMetrics(style);
+        const Palette pal = BasePalette(style);
+        layout::DocumentLayout laid = Lay(doc, m, pal);
+        const display::Text& t =
+            std::get<display::Text>(laid.list.items[0]);
+        EXPECT_EQ(t.line.runs[0].underline, style == MarkdownStyle::GitHub);
+        EXPECT_NEAR(t.line.runs[0].r,
+                    style == MarkdownStyle::GitHub ? 9.0f / 255.0f
+                                                   : 0x33 / 255.0f,
+                    0.001f);
+    }
+}
+
+TEST(MarkdownStyle, ThematicBreakThicknessFollowsTheStyle) {
+    Document doc;
+    Node n;
+    n.block = BlockKind::ThematicBreak;
+    doc.nodes.push_back(n);
+    for (MarkdownStyle style :
+         {MarkdownStyle::GitHub, MarkdownStyle::Wikipedia}) {
+        const LayoutMetrics m = BaseMetrics(style);
+        const Palette pal = BasePalette(style);
+        layout::DocumentLayout laid = Lay(doc, m, pal);
+        const display::FillRect& hr =
+            std::get<display::FillRect>(laid.list.items[0]);
+        EXPECT_NEAR(hr.rect.height, m.thematicBreakThickness, 0.001f);
+    }
+}
+
+TEST(MarkdownStyle, CodeCardGetsABorderOnlyWhereTheStyleAsksForOne) {
+    Document doc;
+    Node n;
+    n.block = BlockKind::CodeBlock;
+    n.raw = U"int x;";
+    doc.nodes.push_back(n);
+    for (MarkdownStyle style :
+         {MarkdownStyle::GitHub, MarkdownStyle::Wikipedia}) {
+        const LayoutMetrics m = BaseMetrics(style);
+        const Palette pal = BasePalette(style);
+        layout::DocumentLayout laid = Lay(doc, m, pal);
+        int cards = 0;
+        for (const auto& item : laid.list.items)
+            if (std::holds_alternative<display::FillRoundedRect>(item))
+                ++cards;
+        EXPECT_EQ(cards, style == MarkdownStyle::GitHub ? 1 : 2);
+    }
+}

@@ -71,7 +71,7 @@ std::vector<platform::GlyphRun> BuildCellRuns(const TableCell& cell,
         glyph.font = fontSpecific(size, code && strong, em, code, family);
         glyph.r = color.r; glyph.g = color.g;
         glyph.b = color.b; glyph.a = color.a;
-        glyph.underline = link; glyph.strike = strike;
+        glyph.underline = link && m.linkUnderline; glyph.strike = strike;
         runs.push_back(std::move(glyph));
     }
     return runs;
@@ -87,7 +87,8 @@ std::vector<platform::GlyphRun> PlaceholderRuns(
     node.children.push_back(child);
     return BuildRuns(node, in.metrics->bodyFontSize, header, false,
                      ToColor(in.palette->textPrimary), false, nullptr,
-                     in.metrics->codeFontSize, in.palette->link);
+                     in.metrics->codeFontSize, in.palette->link,
+                     in.metrics->linkUnderline);
 }
 
 // The widest unbreakable token of one cell, the width its column
@@ -300,16 +301,23 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
         ctx.list->items.push_back(
             display::FillRect{platform::Rect{fx, fy, fw, fh}, color});
     };
-    // GitHub's stripe, full width: the header is the page's own paper,
-    // every second body row carries the muted fill.
+    // The row washes, full width. GitHub: the header is the page's
+    // own paper and every second body row carries the muted fill.
+    // Wikipedia's wikitable: every body row carries the neutral fill
+    // and the header its darker step.
     rowTop = top;
     for (size_t r = 0; r < t.rowHeights.size(); ++r) {
         const float rowH = t.rowHeights[r];
         const bool headerRow = !node.rows[r].cells.empty() &&
                                node.rows[r].cells[0].isHeader;
-        if (!headerRow && r % 2 == 1)
+        if (headerRow) {
+            if (m.tableHeaderFill)
+                fill(0.0f, rowTop, in.contentWidth, rowH,
+                     ToColor(in.palette->tableHeaderBg));
+        } else if (m.tableBodyFill || (m.tableZebra && r % 2 == 1)) {
             fill(0.0f, rowTop, in.contentWidth, rowH,
                  ToColor(in.palette->tableRowAlt));
+        }
         rowTop += rowH;
     }
 
