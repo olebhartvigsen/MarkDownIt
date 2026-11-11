@@ -262,6 +262,36 @@ names both routes (System Settings, Privacy & Security, Open Anyway;
 or `xattr -cr`). Notarization needs an Apple Developer certificate and
 stays out of scope until one exists.
 
+## Installing a CI build on the Mac
+
+The Mac keeps the running build in the shared delivery folder
+`/workspace/MarkDownIt-macos-arm64/`. That folder is a virtiofs mount of the
+Lima VM, so it is the only place the build side can write, and the Mac sees
+it in Finder. There is no ssh back to the host (port 22 on
+`host.lima.internal` refuses connections), so a build is never launched from
+here: installing stops at a verified bundle, and the launch is the user's.
+
+Procedure, from the VM:
+
+1. Pick the newest green `build.yml` run on `main` and confirm every job
+   reports `success`; a red run never gets installed.
+2. `gh run download <run-id> -n MarkDownIt-macos-arm64 -D <scratch dir>`.
+3. `python3 scripts/install_bundle_with_modes.py <zip> /workspace/MarkDownIt-macos-arm64
+   --keep-previous`. The script resolves the folder destination to
+   `<folder>/MarkDownIt.app`, restores the executable bit from the archive,
+   and moves the old bundle to `MarkDownIt.app.previous`.
+4. `python3 tools/check_mac_bundle.py /workspace/MarkDownIt-macos-arm64/MarkDownIt.app`
+   must end with "the bundle passes the checks a first launch applies".
+5. Assert the install: `CFBundleVersion` in the installed plist equals the
+   head SHA of the run, the binary hashes to the same sha256 as the archive
+   member, and the mode is 755.
+6. Copy the zip in beside the bundle so the delivery folder matches what was
+   installed.
+
+The bundle is ad hoc signed, but files written through the VM carry no
+`com.apple.quarantine` flag, so a bundle installed this way starts without
+the Open Anyway detour that a browser download needs.
+
 ## Blockers (deliverable 4)
 
 Missing macOS APIs: none for the chosen stack. Core Graphics, Core Text,

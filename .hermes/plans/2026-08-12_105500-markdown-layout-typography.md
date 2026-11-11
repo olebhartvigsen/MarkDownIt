@@ -1,5 +1,11 @@
 # MarkDownIt Layout and Typography Overhaul Plan
 
+> Absorbed into `references/typography-and-wysiwyg.md`, which is the
+> standing reference for the page and for editing. This plan is
+> historical: the rules, the recorded divergences and the open items
+> live there, and the shipped numbers live in `src/theme.h`.
+
+
 > **For Hermes:** Use subagent-driven-development to implement this plan
 > task-by-task. Use `wsl-windows-native-dev` for the build-swap-verify loop.
 > CI (windows-2022) is the only compile gate. Write C++ via base64 through
