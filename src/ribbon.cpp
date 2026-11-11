@@ -717,6 +717,7 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     {
     case IDC_CMD_NEW:     m_pApp->NewDocument();       break;
     case IDC_CMD_OPEN:    m_pApp->OpenFileDialog();    break;
+    case IDC_CMD_RECENT:  m_pApp->ShowRecentDocuments(); break;
     case IDC_CMD_RELOAD:  m_pApp->Reload();            break;
     case IDC_CMD_SAVE:    m_pApp->Save();              break;
     case IDC_CMD_SAVEAS:  m_pApp->SaveAs();            break;

@@ -185,6 +185,7 @@ public:
     void RedoAction();
     void ShowFindReplace(bool replaceMode);
     void NewDocument();
+    void ShowRecentDocuments();
 
     // Called by CRibbonApplication::OnViewChanged when ribbon height changes.
     void OnRibbonHeightChanged();

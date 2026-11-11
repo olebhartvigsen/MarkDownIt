@@ -3818,6 +3818,21 @@ void AppWindow::NewDocument() {
     SetEdit(true);
 }
 
+void AppWindow::ShowRecentDocuments() {
+    // Same guard as NewDocument: do not silently drop unsaved edits
+    // just because the user wants to see the recents view.
+    if (dirty_) {
+        int result = PromptSaveDiscardCancel();
+        if (result == IDCANCEL) return;
+        if (result == IDYES) {
+            if (!Save()) return; // save failed or cancelled, keep document
+        }
+        // IDNO: discard changes, continue to the recents view
+    }
+    if (editing_) SetEdit(false);
+    LoadSampleDoc();
+}
+
 void AppWindow::SetEdit(bool on) {
     editing_ = on;
     // The document controller gates its own command bodies: keep its

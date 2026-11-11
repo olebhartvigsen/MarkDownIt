@@ -56,6 +56,11 @@
         <String>History</String>
       </Command.LabelTitle>
     </Command>
+    <Command Name="cmdGroupRecent" Symbol="IDC_GROUP_RECENT" Id="10013">
+      <Command.LabelTitle>
+        <String>Documents</String>
+      </Command.LabelTitle>
+    </Command>
     <Command Name="cmdOpen" Symbol="IDC_CMD_OPEN" Id="10100">
       <Command.LabelTitle>
         <String>Open</String>
@@ -120,6 +125,24 @@
       </Command.LargeImages>
       <Command.SmallImages>
         <Image Source="icons/new_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
+    <Command Name="cmdRecent" Symbol="IDC_CMD_RECENT" Id="10106">
+      <Command.LabelTitle>
+        <String>Recent</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Recent Documents</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Show the recent documents view</String>
+      </Command.TooltipDescription>
+      <Command.LargeImages>
+        <Image Source="icons/history_32.png" MinDPI="96"/>
+        <Image Source="icons/history_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/history_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
     <Command Name="cmdAppMenu" Symbol="IDC_CMD_APPMENU" Id="10000">
@@ -809,6 +832,9 @@
       </Ribbon.QuickAccessToolbar>
       <Ribbon.Tabs>
         <Tab CommandName="cmdTabHome">
+          <Group CommandName="cmdGroupRecent" SizeDefinition="OneButton">
+            <Button CommandName="cmdRecent" />
+          </Group>
           <Group CommandName="cmdGroupHistory" SizeDefinition="TwoButtons">
             <Button CommandName="cmdUndo" />
             <Button CommandName="cmdRedo" />
