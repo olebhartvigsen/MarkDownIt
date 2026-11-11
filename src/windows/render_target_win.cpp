@@ -70,6 +70,10 @@ std::wstring ToUtf16(const std::string& text) {
 std::wstring FamilyFor(const std::string& family) {
     std::string f = family;
     std::transform(f.begin(), f.end(), f.begin(), [](unsigned char c) { return (char)tolower(c); });
+    // The theme's own code face. Both the washes behind inline code and
+    // the glyphs must name the same family, or the pill is measured in
+    // one face and the text drawn in another.
+    if (f == "cascadia mono" || f == "cascadia code") return L"Cascadia Mono";
     if (f == "code" || f == "mono" || f == "consolas") return L"Consolas";
     if (f == "serif" || f == "georgia") return L"Georgia";
     return L"Segoe UI";  // body, headings, ui and anything unknown
