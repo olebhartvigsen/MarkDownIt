@@ -109,6 +109,7 @@ struct LayoutMetrics {
 
     // Code block.
     float codePad;
+    float inlineCodePadX;   // the inline code wash's side padding, in code ems
     float codeRadius;
 
     // Blockquote.
@@ -283,6 +284,7 @@ inline LayoutMetrics GitHubMetrics() {
     m.ruleGapBelow = 24.0f;
     // The fenced block's 1rem padding and 6px corner radius.
     m.codePad = 16.0f;
+    m.inlineCodePadX = 0.12f;
     m.codeRadius = 6.0f;
     // .25em bar plus 1em of padding at the body size.
     m.quoteIndent = 20.0f;

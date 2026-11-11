@@ -2266,6 +2266,50 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // at the walk's own positions, and minus the band advance, which
     // the records own. The band top is the record's: the walk's gaps
     // are the gaps today's curY walk made.
+    // The inline code washes come from the runs the replay draws, so
+    // each wash sits exactly under its glyphs. They were once placed from
+    // a second DirectWrite layout, which measured the line a little
+    // differently and drifted off the text. A wash covers the term and
+    // nothing else: the padding stays under half a space, so it never
+    // reaches the neighbouring words or spaces. They go down first, under
+    // the search and selection fills, as before.
+    {
+        ID2D1SolidColorBrush* codeBg = nullptr;
+        rt->CreateSolidColorBrush(pal.inlineCodeBg, &codeBg);
+        if (codeBg) {
+            const float codeEm = m.codeFontSize * kPtToDip * zoom_;
+            const float padX = m.inlineCodePadX * codeEm;
+            const float originY = m.padTop + topOffsetDip;
+            for (const display::Item& item : shared.list.items) {
+                const auto* t = std::get_if<display::Text>(&item);
+                if (!t) continue;
+                const float top = originY + t->top;
+                if (top > scrollY + viewH || top + t->line.height < scrollY)
+                    continue;
+                const auto& runs = t->line.runs;
+                for (size_t i = 0; i < runs.size(); ++i) {
+                    if (!runs[i].font.monospace || runs[i].text.empty())
+                        continue;
+                    const float right = i + 1 < runs.size()
+                                            ? runs[i + 1].x
+                                            : t->line.width;
+                    const float w = right - runs[i].x;
+                    if (w <= 0.0f) continue;
+                    const float boxH = std::min(t->line.height, 1.6f * codeEm);
+                    const float left = originX + t->x + runs[i].x;
+                    const float boxTop =
+                        top + (t->line.height - boxH) * 0.5f;
+                    D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(
+                        D2D1::RectF(left - padX, boxTop, left + w + padX,
+                                    boxTop + boxH),
+                        6.0f * zoom_, 6.0f * zoom_);
+                    rt->FillRoundedRectangle(rr, codeBg);
+                }
+            }
+            codeBg->Release();
+        }
+    }
+
     for (size_t nodeIdx = 0; nodeIdx < doc.nodes.size(); ++nodeIdx) {
         const Node& n = doc.nodes[nodeIdx];
         if (n.block != BlockKind::Paragraph &&
@@ -2439,36 +2483,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             continue;
         }
 
-        ID2D1SolidColorBrush* codeBg = nullptr;
-        rt->CreateSolidColorBrush(pal.inlineCodeBg, &codeBg);
-        if (codeBg) {
-            const float codeEm = m.codeFontSize * kPtToDip * zoom_;
-            const float codePadX = 0.4f * codeEm;
-            for (const auto& s : spans) {
-                if (s.code) {
-                    UINT32 hitCount = 0;
-                    DWRITE_HIT_TEST_METRICS htm[64];
-                    HRESULT hrHT = layout->HitTestTextRange(s.start, s.length,
-                        textX, curY, htm, 64, &hitCount);
-                    if (SUCCEEDED(hrHT)) {
-                        for (UINT32 h = 0; h < hitCount && h < 64; ++h) {
-                            const float boxH =
-                                std::min(htm[h].height, 1.6f * codeEm);
-                            D2D1_RECT_F r = D2D1::RectF(
-                                htm[h].left - codePadX,
-                                htm[h].top + (htm[h].height - boxH) * 0.5f,
-                                htm[h].left + htm[h].width + codePadX,
-                                htm[h].top + (htm[h].height - boxH) * 0.5f +
-                                    boxH);
-                            D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(
-                                r, 6.0f * zoom_, 6.0f * zoom_);
-                            rt->FillRoundedRectangle(rr, codeBg);
-                        }
-                    }
-                }
-            }
-            codeBg->Release();
-        }
 
         // The task checkbox, the counter and the bullet marker are the
         // walk's display items now (the stroke pair, the clipped gutter

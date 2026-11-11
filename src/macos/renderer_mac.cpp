@@ -87,9 +87,9 @@ constexpr float kPtToDip = 96.0f / 72.0f;
 // and draws a 1px border under the padding. Those two values live in
 // LayoutMetrics (theme.h), shared with the Windows renderer.
 
-// The inline code card: .4em of horizontal padding, .2em of vertical
+// The inline code card: a small side padding (LayoutMetrics::inlineCodePadX,
+// kept under half a space so it never reaches the neighbouring words), .2em of vertical
 // padding and a 6px corner radius, the GitHub values.
-constexpr float kInlineCodePadXRatio = 0.4f;
 constexpr float kInlineCodePadYRatio = 0.2f;
 constexpr float kInlineCodeRadius = 6.0f;
 
@@ -1265,7 +1265,7 @@ void MacRenderer::PaintCodeRects(const std::vector<Rect>& rects,
     // end of the span, not to every visual line: a wrapped span is
     // one run, so the middle fragments meet the line edges square.
     const float codeEm = metrics_.codeFontSize * kPtToDip * zoom_;
-    const float padX = kInlineCodePadXRatio * codeEm;
+    const float padX = metrics_.inlineCodePadX * codeEm;
     for (std::size_t i = 0; i < rects.size(); ++i) {
         const Rect& rect = rects[i];
         if (rect.height <= 0.0f) continue;

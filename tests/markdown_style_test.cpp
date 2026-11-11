@@ -519,3 +519,17 @@ TEST(AppleStyle, TheFourKindsAreDistinct) {
             EXPECT_FALSE(same);
         }
 }
+
+// The inline code wash covers the term and nothing else: its side
+// padding stays under half a space of the body face (a space is about
+// 0.28 em), so it never reaches the neighbouring words or spaces.
+TEST(MarkdownStyle, InlineCodeWashDoesNotReachTheNeighbours) {
+    for (MarkdownStyle s : {MarkdownStyle::GitHub, MarkdownStyle::Wikipedia,
+                            MarkdownStyle::Apple}) {
+        const LayoutMetrics m = BaseMetrics(s);
+        const float padPts = m.inlineCodePadX * m.codeFontSize;
+        const float halfSpacePts = 0.14f * m.bodyFontSize;
+        EXPECT_TRUE(padPts > 0.0f);
+        EXPECT_TRUE(padPts <= halfSpacePts);
+    }
+}
