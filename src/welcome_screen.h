@@ -80,7 +80,7 @@ public:
 
     // Where the grid of cards starts: below the heading and the button
     // that opens a document. The tests probe the screen at this line.
-    static constexpr float kGridTop = 148.0f;
+    static constexpr float kGridTop = 164.0f;
 
     // Whether there are any cards.
     bool HasFiles() const { return !cards_.empty(); }

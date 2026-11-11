@@ -170,7 +170,7 @@ public:
     std::vector<TextCall> PreviewRows(float cardTop) const {
         std::vector<TextCall> rows;
         for (const TextCall& call : texts) {
-            if (call.y >= cardTop + 60.0f) rows.push_back(call);
+            if (call.y >= cardTop + 70.0f) rows.push_back(call);
         }
         return rows;
     }
@@ -178,7 +178,7 @@ public:
 
 // The width of the column of text inside a card, and the top of the
 // first one.
-const float kCardTextWidth = 280.0f - 4.0f - 24.0f;
+const float kCardTextWidth = 280.0f - 32.0f;
 const float kCardTop = WelcomeScreen::kGridTop;
 
 std::wstring Widen(const std::string& text) {

@@ -31,29 +31,39 @@ namespace {
 // The numbers are the ones the Windows build uses.
 const float kCardW = 280.0f;
 const float kCardH = 180.0f;
+// The room inside a card, left and right.
+const float kPad = 16.0f;
+// The corner of a card.
+const float kCardRadius = 12.0f;
 const float kCardGap = 24.0f;
 // The heading, the button under it, and the top of the grid of cards.
-const float kHeadingBaseline = 52.0f;
-const float kButtonW = 176.0f;
-const float kButtonH = 32.0f;
-const float kButtonTop = 92.0f;
+const float kHeadingBaseline = 60.0f;
+const float kButtonW = 168.0f;
+const float kButtonH = 38.0f;
+const float kButtonTop = 84.0f;
+const float kButtonRadius = 10.0f;
 const float kSideMargin = 60.0f;
 
-// The distance between two rows of the preview, and the width of the
-// accent bar down the left of a card.
+// The distance between two rows of the preview.
 const float kRowHeight = 16.0f;
-const float kBarWidth = 4.0f;
 
 // A diagram is read into memory to be shown on a card, and a runaway
 // file should not take the app with it.
 const size_t kMaxSvgBytes = 8u * 1024u * 1024u;
 
 // The colors of the screen.
-const Color kBackground{0.968f, 0.968f, 0.973f, 1.0f};
+// The page is a soft wash: a cool tint at the top that fades to near
+// white, with a faint glow of the accent behind the heading, the way an
+// Apple window lets a little color through.
+const Color kBackgroundTop{0.918f, 0.933f, 0.973f, 1.0f};
+const Color kBackgroundBottom{0.980f, 0.980f, 0.988f, 1.0f};
 const Color kCardBackground{1.0f, 1.0f, 1.0f, 1.0f};
-const Color kCardBorder{0.878f, 0.878f, 0.894f, 1.0f};
+const Color kCardBorder{0.0f, 0.0f, 0.0f, 0.08f};
+const Color kDivider{0.0f, 0.0f, 0.0f, 0.06f};
+const Color kShadow{0.063f, 0.094f, 0.188f, 1.0f};
+const Color kButtonText{1.0f, 1.0f, 1.0f, 1.0f};
+const Color kButtonPressed{0.0f, 0.400f, 0.720f, 1.0f};
 const Color kHoverBorder{0.0f, 0.471f, 0.831f, 1.0f};
-const Color kHoverBackground{0.941f, 0.969f, 1.0f, 1.0f};
 const Color kTitle{0.122f, 0.122f, 0.125f, 1.0f};
 const Color kPreview{0.380f, 0.380f, 0.380f, 1.0f};
 const Color kFolder{0.541f, 0.541f, 0.541f, 1.0f};
@@ -292,6 +302,62 @@ void WrapLine(TextEngine* engine, const std::string& line,
     if (!current.empty()) rows->push_back(current);
 }
 
+// A soft shadow under a rounded rectangle. The seam has no blur, so the
+// shadow is a few translucent layers that grow outward and fade, which
+// reads as a diffuse shadow on both platforms.
+void DrawShadow(RenderTarget* target, const Rect& rect, float radius,
+                float lift, float strength) {
+    const int layers = 6;
+    for (int i = layers; i >= 1; --i) {
+        const float grow = static_cast<float>(i) * (1.0f + lift * 0.25f);
+        Rect layer;
+        layer.x = rect.x - grow;
+        layer.y = rect.y - grow + lift + 2.0f;
+        layer.width = rect.width + 2.0f * grow;
+        layer.height = rect.height + 2.0f * grow;
+        Color color = kShadow;
+        color.a = strength / static_cast<float>(layers) *
+                  (1.0f - static_cast<float>(i - 1) /
+                              static_cast<float>(layers + 1));
+        target->FillRoundedRect(layer, radius + grow, color);
+    }
+}
+
+// The wash behind the whole screen.
+void DrawBackground(RenderTarget* target, float viewW, float viewH) {
+    const int bands = 48;
+    const float step = viewH / static_cast<float>(bands);
+    for (int i = 0; i < bands; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(bands - 1);
+        Color color;
+        color.r = kBackgroundTop.r + (kBackgroundBottom.r - kBackgroundTop.r) * t;
+        color.g = kBackgroundTop.g + (kBackgroundBottom.g - kBackgroundTop.g) * t;
+        color.b = kBackgroundTop.b + (kBackgroundBottom.b - kBackgroundTop.b) * t;
+        Rect band;
+        band.x = 0.0f;
+        band.y = static_cast<float>(i) * step;
+        // A little overlap keeps a seam from showing between two bands.
+        band.width = viewW;
+        band.height = step + 1.0f;
+        target->FillRect(band, color);
+    }
+
+    // A glow of the accent behind the heading, from wide and faint to
+    // narrow and a little stronger.
+    for (int i = 0; i < 6; ++i) {
+        const float w = viewW * (0.95f - 0.13f * static_cast<float>(i));
+        const float h = 300.0f - 38.0f * static_cast<float>(i);
+        Rect glow;
+        glow.x = (viewW - w) * 0.5f;
+        glow.y = -h * 0.55f;
+        glow.width = w;
+        glow.height = h;
+        Color color = kAccent;
+        color.a = 0.030f;
+        target->FillEllipse(glow, color);
+    }
+}
+
 // Fits the strings of a card to its width, once.
 //
 // The card width and the fonts are fixed, so a wrap never changes and
@@ -433,17 +499,13 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
                            bool openHovered) {
     if (!target) return;
 
-    // The background of the screen.
-    Rect background;
-    background.width = viewW;
-    background.height = viewH;
-    target->FillRect(background, kBackground);
+    DrawBackground(target, viewW, viewH);
 
     // The heading.
     {
         FontSpec font;
         font.family = "Segoe UI";
-        font.size = 26.0f;
+        font.size = 28.0f;
         font.bold = true;
         const std::string heading = "Recent Documents";
         const float width = TextWidth(engine, heading, font);
@@ -451,23 +513,26 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
                          kHeadingBaseline, kTitle);
     }
 
-    // The button that opens a document, right under the heading. A
-    // reader who lands here with nothing in the list still has a way
-    // in, so it is drawn before the empty case returns.
+    // The button that opens a document, right under the heading. It is
+    // the one prominent action of the screen, so it carries the accent
+    // color and a soft shadow, and a reader who lands here with nothing
+    // in the list still has a way in, so it is drawn before the empty
+    // case returns.
     {
-        const Color fill = openHovered ? kHoverBackground : kCardBackground;
-        const Color border = openHovered ? kHoverBorder : kCardBorder;
-        target->FillRoundedRect(openButton_, 7.0f, fill);
-        target->StrokeRect(openButton_, border, 1.0f);
+        DrawShadow(target, openButton_, kButtonRadius,
+                   openHovered ? 2.0f : 0.0f, openHovered ? 0.55f : 0.40f);
+        target->FillRoundedRect(openButton_, kButtonRadius,
+                                openHovered ? kButtonPressed : kAccent);
 
         FontSpec font;
         font.family = "Segoe UI";
         font.size = 14.0f;
-        const std::string label = "Open Document\xE2\x80\xA6";
+        font.bold = true;
+        const std::string label = "Open document";
         const float width = TextWidth(engine, label, font);
         target->DrawText(label, font,
                          openButton_.x + (openButton_.width - width) * 0.5f,
-                         openButton_.y + 21.0f, kTitle);
+                         openButton_.y + 24.0f, kButtonText);
     }
 
     // Without any files there is a hint instead of the cards.
@@ -486,32 +551,29 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         WelcomeCard& card = cards_[i];
         const bool hovered = static_cast<int>(i) == hoverIndex;
 
-        // The card itself.
-        target->FillRoundedRect(card.rect, 8.0f,
-                                hovered ? kHoverBackground : kCardBackground);
-        target->StrokeRect(card.rect,
-                           hovered ? kHoverBorder : kCardBorder,
-                           hovered ? 2.0f : 1.0f);
+        // The hovered card rises a little, with a deeper shadow. The
+        // hit area stays where the card rests.
+        Rect rect = card.rect;
+        if (hovered) rect.y -= 2.0f;
 
-        // The bar on the left of the card.
-        Rect bar;
-        bar.x = card.rect.x;
-        bar.y = card.rect.y + 8.0f;
-        bar.width = kBarWidth;
-        bar.height = card.rect.height - 16.0f;
-        target->FillRect(bar, kAccent);
+        DrawShadow(target, rect, kCardRadius, hovered ? 4.0f : 0.0f,
+                   hovered ? 0.20f : 0.12f);
+        target->FillRoundedRect(rect, kCardRadius, kCardBackground);
+        target->StrokeRoundedRect(rect, kCardRadius,
+                                  hovered ? kHoverBorder : kCardBorder,
+                                  hovered ? 1.5f : 1.0f);
 
         // The text of the card, fitted to the width of it.
-        const float textX = card.rect.x + kBarWidth + 12.0f;
-        const float textWidth = card.rect.width - kBarWidth - 24.0f;
-        const float previewY = card.rect.y + 68.0f;
-        const float previewBottom = card.rect.y + card.rect.height - 12.0f;
+        const float textX = rect.x + kPad;
+        const float textWidth = rect.width - 2.0f * kPad;
+        const float previewY = rect.y + 80.0f;
+        const float previewBottom = rect.y + rect.height - 8.0f;
         const int maxRows = static_cast<int>(
             (previewBottom - previewY) / kRowHeight);
 
         if (!card.fitted) FitCard(engine, &card, textWidth, maxRows);
 
-        float textY = card.rect.y + 26.0f;
+        float textY = rect.y + 32.0f;
         FontSpec titleFont;
         titleFont.family = "Segoe UI";
         titleFont.size = 15.0f;
@@ -528,10 +590,14 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
                              kFolder);
         }
 
+        // A hairline between the name and the contents.
+        target->StrokeLine(textX, rect.y + 60.0f, textX + textWidth,
+                           rect.y + 60.0f, kDivider, 1.0f);
+
         // A diagram takes the room under the name.
         if (card.image) {
-            card.image->Draw(target, engine, textX, previewY, textWidth,
-                             previewBottom - previewY);
+            card.image->Draw(target, engine, textX, previewY - 12.0f,
+                             textWidth, previewBottom - previewY + 12.0f);
             continue;
         }
 
