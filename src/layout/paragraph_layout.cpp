@@ -99,11 +99,21 @@ LaidBlock LayoutParagraph(const LayoutCtx& ctx, const Node& node,
     block.srcOffset = node.contentOffset;
     block.srcLength = node.contentLength;
 
-    const float size = m.bodyFontSize;
+    // The page header's description: the paragraph right after the
+    // title is set larger and muted when the style asks for it.
+    const bool lead = m.leadScale > 1.0f && nodeIndex > 0 &&
+                      in.doc->nodes[nodeIndex - 1].block ==
+                          BlockKind::Heading &&
+                      in.doc->nodes[nodeIndex - 1].level == 1 &&
+                      !node.virtualEmptyParagraph;
+    const float size = lead ? m.bodyFontSize * m.leadScale : m.bodyFontSize;
     std::vector<platform::GlyphRun> runs =
-        BuildRuns(node, size, false, false, ToColor(in.palette->textPrimary),
-                  false, nullptr, m.codeFontSize, in.palette->link,
-                  m.linkUnderline);
+        BuildRuns(node, size, false, false,
+                  ToColor(lead ? in.palette->textMuted
+                               : in.palette->textPrimary),
+                  false, nullptr,
+                  lead ? m.codeFontSize * m.leadScale : m.codeFontSize,
+                  in.palette->link, m.linkUnderline);
     if (runs.empty() && node.virtualEmptyParagraph) {
         runs = PlaceholderRuns(in);
     }

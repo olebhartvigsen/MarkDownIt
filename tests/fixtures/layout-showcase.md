@@ -20,6 +20,16 @@ The paragraph carries **bold**, *italic*, `inline code`, a
 - [x] A finished task
 - [ ] An open task
 
+## Information boxes
+
+> Info: A neutral hint that adds context.
+
+> Warning: Something needs care before you go on.
+
+> Danger: This step cannot be undone.
+
+> Success: The change is live.
+
 ## A quote
 
 > Quoted text keeps the bar and reads muted, one restrained cue.

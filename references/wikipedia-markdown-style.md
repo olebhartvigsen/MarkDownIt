@@ -1,18 +1,18 @@
 # Wikipedia markdown style
 
-MarkDownIt renders markdown in one of two visual styles. GitHub is the
-reference style. Wikipedia is the default and follows the look of a
-Wikipedia article.
+MarkDownIt renders markdown in one of three visual styles: Apple (the
+default, see `apple-wiki-style-guide.md`), GitHub and Wikipedia. The
+Wikipedia style follows the look of a Wikipedia article.
 
 ## Choosing the style
 
 Set the environment variable `MARKDOWNIT_STYLE` before the app starts:
 
-- `wikipedia` (default): the Wikipedia article look.
+- `apple` (default): the Apple-inspired documentation look.
+- `wikipedia`: the Wikipedia article look.
 - `github`: GitHub's markdown look.
 
-The match ignores case and spaces. An unset or unknown value gives the
-default. The app reads the variable once at startup, so a change needs a
+The match ignores case and spaces. An unset or unknown value gives Apple. The app reads the variable once at startup, so a change needs a
 restart. The code is in `src/markdown_style.h`.
 
 ## Where the numbers come from

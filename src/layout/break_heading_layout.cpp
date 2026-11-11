@@ -93,7 +93,7 @@ LaidBlock LayoutHeading(const LayoutCtx& ctx, const Node& node,
     // The hairline under an H1 or H2: .3em of padding plus a one point
     // border, inside the block so the gap after the heading stays the
     // CSS margin.
-    if (level <= 2 && !lines.empty()) {
+    if (level <= 2 && !lines.empty() && m.headingRuleThickness > 0.0f) {
         const float pad =
             m.headingRulePadRatio * size * kPtToDip * in.zoom;
         display::FillRect rule;

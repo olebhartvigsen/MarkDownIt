@@ -30,8 +30,11 @@ TEST(MarkdownStyle, UnknownNameLeavesTheValueAlone) {
     EXPECT_TRUE(s == MarkdownStyle::GitHub);
 }
 
-TEST(MarkdownStyle, DefaultIsWikipedia) {
-    EXPECT_TRUE(kDefaultMarkdownStyle == MarkdownStyle::Wikipedia);
+TEST(MarkdownStyle, DefaultIsApple) {
+    EXPECT_TRUE(kDefaultMarkdownStyle == MarkdownStyle::Apple);
+    MarkdownStyle s = MarkdownStyle::GitHub;
+    EXPECT_TRUE(ParseMarkdownStyle(" Apple ", &s));
+    EXPECT_TRUE(s == MarkdownStyle::Apple);
 }
 
 TEST(MarkdownStyle, GitHubProfileIsUnchanged) {
@@ -261,4 +264,258 @@ TEST(MarkdownStyle, WikipediaTableHeaderIsMarkedBeyondColour) {
     const LayoutMetrics m = BaseMetrics(MarkdownStyle::Wikipedia);
     EXPECT_TRUE(m.tableHeaderFill);
     EXPECT_TRUE(m.tableHeaderCenter);
+}
+
+// ---- The Apple style ------------------------------------------------
+
+TEST(AppleStyle, ProfileFollowsTheDocCScale) {
+    const LayoutMetrics m = BaseMetrics(MarkdownStyle::Apple);
+    EXPECT_NEAR(m.bodyFontSize * 96.0f / 72.0f, 17.0f, 0.001f);
+    EXPECT_NEAR(m.headingSizes[1] * 96.0f / 72.0f, 40.0f, 0.001f);
+    EXPECT_NEAR(m.headingSizes[2] * 96.0f / 72.0f, 28.0f, 0.001f);
+    EXPECT_NEAR(m.bodyLineHeight, 1.47f, 0.001f);
+    // A strict descending scale, so the hierarchy reads at a glance.
+    for (int i = 1; i < 5; ++i)
+        EXPECT_TRUE(m.headingSizes[i] > m.headingSizes[i + 1]);
+    EXPECT_NEAR(m.headingRuleThickness, 0.0f, 0.001f);
+    EXPECT_FALSE(m.linkUnderline);
+    EXPECT_FALSE(m.tableVerticalLines);
+    EXPECT_TRUE(m.calloutBoxes);
+    EXPECT_TRUE(m.leadScale > 1.0f);
+    const Palette p = BasePalette(MarkdownStyle::Apple);
+    EXPECT_NEAR(p.link.b, 0xCC / 255.0f, 0.001f);   // 0066cc
+}
+
+TEST(AppleStyle, OtherStylesKeepTheirOwnSwitches) {
+    for (MarkdownStyle s : {MarkdownStyle::GitHub, MarkdownStyle::Wikipedia}) {
+        const LayoutMetrics m = BaseMetrics(s);
+        EXPECT_FALSE(m.calloutBoxes);
+        EXPECT_NEAR(m.leadScale, 1.0f, 0.001f);
+        EXPECT_TRUE(m.tableVerticalLines);
+    }
+}
+
+namespace {
+Node Quote(const char32_t* text) {
+    Node n;
+    n.block = BlockKind::BlockQuote;
+    n.contentLength = 8;
+    InlineBlock c;
+    c.text = text;
+    n.children.push_back(c);
+    return n;
+}
+Node Para(const char32_t* text) {
+    Node n;
+    n.block = BlockKind::Paragraph;
+    n.contentLength = 8;
+    InlineBlock c;
+    c.text = text;
+    n.children.push_back(c);
+    return n;
+}
+}  // namespace
+
+TEST(AppleStyle, DetectsTheFourInformationBoxes) {
+    struct { const char32_t* text; CalloutKind kind; } cases[] = {
+        {U"Note: a", CalloutKind::Info},
+        {U"info: a", CalloutKind::Info},
+        {U"WARNING: a", CalloutKind::Warning},
+        {U"Important: a", CalloutKind::Warning},
+        {U"Danger: a", CalloutKind::Danger},
+        {U"Error: a", CalloutKind::Danger},
+        {U"Success: a", CalloutKind::Success},
+        {U"Tip: a", CalloutKind::Success},
+    };
+    for (const auto& c : cases) {
+        const layout::CalloutMatch hit = layout::DetectCallout(Quote(c.text));
+        EXPECT_TRUE(hit.found);
+        EXPECT_TRUE(hit.kind == c.kind);
+    }
+    // Not a label: no colon, a longer word, or empty.
+    EXPECT_FALSE(layout::DetectCallout(Quote(U"Note a")).found);
+    EXPECT_FALSE(layout::DetectCallout(Quote(U"Notes: a")).found);
+    EXPECT_FALSE(layout::DetectCallout(Quote(U"")).found);
+    EXPECT_FALSE(layout::DetectCallout(Quote(U"Plain quote")).found);
+}
+
+TEST(AppleStyle, InformationBoxIsATintedRoundedSurfaceWithABoldLabel) {
+    Document doc;
+    doc.nodes.push_back(Quote(U"Warning: mind the gap"));
+    const LayoutMetrics m = BaseMetrics(MarkdownStyle::Apple);
+    const Palette pal = BasePalette(MarkdownStyle::Apple);
+    layout::DocumentLayout laid = Lay(doc, m, pal);
+    const display::FillRoundedRect* box = nullptr;
+    const display::Text* text = nullptr;
+    for (const auto& item : laid.list.items) {
+        if (auto* b = std::get_if<display::FillRoundedRect>(&item)) box = b;
+        if (auto* x = std::get_if<display::Text>(&item)) text = x;
+    }
+    ASSERT_TRUE(box != nullptr && text != nullptr);
+    EXPECT_NEAR(box->color.r, pal.calloutBg[1].r, 0.001f);
+    EXPECT_NEAR(box->radius, m.calloutRadius, 0.001f);
+    // The text sits inside the padding on every side.
+    EXPECT_TRUE(text->x >= box->rect.x + m.calloutPadX - 0.01f);
+    EXPECT_TRUE(text->top >= box->rect.y + m.calloutPadY - 0.01f);
+    EXPECT_TRUE(text->top + text->line.height <=
+                box->rect.y + box->rect.height - m.calloutPadY + 0.01f);
+    // The label word is its own bold run in the kind's colour, and the
+    // runs still spell the source text.
+    ASSERT_TRUE(text->line.runs.size() >= 2);
+    EXPECT_EQ(text->line.runs[0].text, std::string("Warning:"));
+    EXPECT_TRUE(text->line.runs[0].font.bold);
+    EXPECT_NEAR(text->line.runs[0].r, pal.calloutLabel[1].r, 0.001f);
+    std::string all;
+    for (const auto& r : text->line.runs) all += r.text;
+    EXPECT_EQ(all, std::string("Warning: mind the gap"));
+    EXPECT_FALSE(text->line.runs[1].font.bold);
+}
+
+TEST(AppleStyle, PlainQuoteKeepsItsBarAndOtherStylesDrawNoBox) {
+    Document doc;
+    doc.nodes.push_back(Quote(U"Note: kept as a plain quote"));
+    for (MarkdownStyle s : {MarkdownStyle::GitHub, MarkdownStyle::Wikipedia}) {
+        const LayoutMetrics m = BaseMetrics(s);
+        const Palette pal = BasePalette(s);
+        layout::DocumentLayout laid = Lay(doc, m, pal);
+        int boxes = 0, bars = 0;
+        for (const auto& item : laid.list.items) {
+            if (std::holds_alternative<display::FillRoundedRect>(item)) ++boxes;
+            if (std::holds_alternative<display::FillRect>(item)) ++bars;
+        }
+        EXPECT_EQ(boxes, 0);
+        EXPECT_EQ(bars, 1);
+    }
+    // An Apple quote without a label word is a bar too.
+    Document plain;
+    plain.nodes.push_back(Quote(U"Just a quote"));
+    const LayoutMetrics m = BaseMetrics(MarkdownStyle::Apple);
+    const Palette pal = BasePalette(MarkdownStyle::Apple);
+    layout::DocumentLayout laid = Lay(plain, m, pal);
+    EXPECT_TRUE(std::holds_alternative<display::FillRect>(laid.list.items[0]));
+}
+
+TEST(AppleStyle, PaddingIsChargedToTheGapNotTheBlock) {
+    Document doc;
+    doc.nodes.push_back(Quote(U"Note: one line"));
+    doc.nodes.push_back(Para(U"after"));
+    const LayoutMetrics m = BaseMetrics(MarkdownStyle::Apple);
+    const Palette pal = BasePalette(MarkdownStyle::Apple);
+    layout::DocumentLayout laid = Lay(doc, m, pal);
+    ASSERT_TRUE(laid.blocks.size() == 2);
+    const auto& q = laid.blocks[0];
+    const auto& p = laid.blocks[1];
+    // Block height is the text only; the next block starts after the
+    // bottom padding and the paragraph gap.
+    EXPECT_NEAR(p.y, q.y + q.height + m.calloutPadY + m.paraGap, 0.01f);
+}
+
+TEST(AppleStyle, TheLineAfterTheTitleIsTheLeadDescription) {
+    Document doc;
+    doc.nodes.push_back(Heading(1, U"Title"));
+    doc.nodes.push_back(Para(U"The description."));
+    doc.nodes.push_back(Para(U"Body text."));
+    for (MarkdownStyle s : {MarkdownStyle::GitHub, MarkdownStyle::Apple}) {
+        const LayoutMetrics m = BaseMetrics(s);
+        const Palette pal = BasePalette(s);
+        layout::DocumentLayout laid = Lay(doc, m, pal);
+        std::vector<const display::Text*> texts;
+        for (const auto& item : laid.list.items)
+            if (auto* t = std::get_if<display::Text>(&item)) texts.push_back(t);
+        ASSERT_TRUE(texts.size() == 3);
+        const float lead = texts[1]->line.runs[0].font.size;
+        const float body = texts[2]->line.runs[0].font.size;
+        if (s == MarkdownStyle::Apple) {
+            EXPECT_NEAR(lead, body * m.leadScale, 0.01f);
+            EXPECT_NEAR(texts[1]->line.runs[0].r, pal.textMuted.r, 0.001f);
+            EXPECT_NEAR(texts[2]->line.runs[0].r, pal.textPrimary.r, 0.001f);
+        } else {
+            EXPECT_NEAR(lead, body, 0.01f);
+        }
+    }
+}
+
+TEST(AppleStyle, HeadingsAreBoldTitleSemiboldRestAndNoRule) {
+    Document doc;
+    doc.nodes.push_back(Heading(1, U"Title"));
+    doc.nodes.push_back(Heading(2, U"Section"));
+    const LayoutMetrics m = BaseMetrics(MarkdownStyle::Apple);
+    const Palette pal = BasePalette(MarkdownStyle::Apple);
+    layout::DocumentLayout laid = Lay(doc, m, pal);
+    std::vector<const display::Text*> texts;
+    int rules = 0;
+    for (const auto& item : laid.list.items) {
+        if (auto* t = std::get_if<display::Text>(&item)) texts.push_back(t);
+        if (std::holds_alternative<display::FillRect>(item)) ++rules;
+    }
+    ASSERT_TRUE(texts.size() == 2);
+    EXPECT_TRUE(texts[0]->line.runs[0].font.bold);
+    EXPECT_EQ(texts[1]->line.runs[0].font.family,
+              std::string("Segoe UI Semibold"));
+    EXPECT_EQ(rules, 0);
+}
+
+TEST(AppleStyle, TablesDrawRowHairlinesAndNoVerticals) {
+    Node n;
+    n.block = BlockKind::Table;
+    for (int r = 0; r < 2; ++r) {
+        TableRow row;
+        for (int c = 0; c < 2; ++c) {
+            TableCell cell;
+            cell.text = r == 0 ? U"Head" : U"Cell";
+            cell.isHeader = r == 0;
+            row.cells.push_back(cell);
+        }
+        n.rows.push_back(row);
+    }
+    Document doc;
+    doc.nodes.push_back(n);
+    for (MarkdownStyle s : {MarkdownStyle::GitHub, MarkdownStyle::Apple}) {
+        const LayoutMetrics m = BaseMetrics(s);
+        const Palette pal = BasePalette(s);
+        layout::DocumentLayout laid = Lay(doc, m, pal);
+        int vertical = 0, horizontal = 0;
+        for (const auto& item : laid.list.items) {
+            auto* f = std::get_if<display::FillRect>(&item);
+            if (!f) continue;
+            if (f->rect.width <= 1.01f && f->rect.height > 2.0f) ++vertical;
+            if (f->rect.height <= 1.01f && f->rect.width > 2.0f) ++horizontal;
+        }
+        if (s == MarkdownStyle::Apple) {
+            EXPECT_EQ(vertical, 0);
+            EXPECT_EQ(horizontal, 2);   // the bottom of each row
+        } else {
+            EXPECT_TRUE(vertical > 0);
+            EXPECT_EQ(horizontal, 3);   // top plus the bottom of each row
+        }
+    }
+}
+
+TEST(AppleStyle, TextMeetsWcagAaContrast) {
+    const Palette p = BasePalette(MarkdownStyle::Apple);
+    const ThemeColor white = MakeColor(0xFFFFFF);
+    EXPECT_TRUE(Contrast(p.textPrimary, white) >= 4.5f);
+    EXPECT_TRUE(Contrast(p.textMuted, white) >= 4.5f);
+    EXPECT_TRUE(Contrast(p.link, white) >= 4.5f);
+    EXPECT_TRUE(Contrast(p.textPrimary, p.codeBg) >= 4.5f);
+    EXPECT_TRUE(Contrast(p.textPrimary, p.inlineCodeBg) >= 4.5f);
+    EXPECT_TRUE(Contrast(p.textMuted, p.codeBg) >= 4.5f);
+    for (int k = 0; k < 4; ++k) {
+        EXPECT_TRUE(Contrast(p.calloutLabel[k], p.calloutBg[k]) >= 4.5f);
+        EXPECT_TRUE(Contrast(p.textPrimary, p.calloutBg[k]) >= 4.5f);
+        EXPECT_TRUE(Contrast(p.link, p.calloutBg[k]) >= 4.5f);
+    }
+}
+
+// The kinds stay apart without colour: each box carries its label word,
+// and the four tints differ from each other.
+TEST(AppleStyle, TheFourKindsAreDistinct) {
+    const Palette p = BasePalette(MarkdownStyle::Apple);
+    for (int a = 0; a < 4; ++a)
+        for (int b = a + 1; b < 4; ++b) {
+            const bool same = p.calloutBg[a].r == p.calloutBg[b].r &&
+                              p.calloutBg[a].g == p.calloutBg[b].g &&
+                              p.calloutBg[a].b == p.calloutBg[b].b;
+            EXPECT_FALSE(same);
+        }
 }

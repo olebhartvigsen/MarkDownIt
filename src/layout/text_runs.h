@@ -53,6 +53,47 @@ std::vector<platform::GlyphRun> BuildRuns(const Node& node,
                                           const ThemeColor& linkColor,
                                           bool underlineLinks = true);
 
+// An information box: a quote that starts with a label word and a
+// colon, the way DocC writes its asides ("Note: ...", "Warning: ...").
+// The label stays in the text. Synonyms map to the four kinds.
+struct CalloutMatch {
+    bool found = false;
+    CalloutKind kind = CalloutKind::Info;
+    size_t labelLength = 0;  // characters, colon included
+};
+
+inline CalloutMatch DetectCallout(const Node& node) {
+    CalloutMatch out;
+    if (node.children.empty()) return out;
+    const InlineBlock& first = node.children[0];
+    if (first.kind != InlineKind::Text || first.code) return out;
+    static const struct { const char* word; CalloutKind kind; } kWords[] = {
+        {"info", CalloutKind::Info},       {"note", CalloutKind::Info},
+        {"warning", CalloutKind::Warning}, {"caution", CalloutKind::Warning},
+        {"important", CalloutKind::Warning},
+        {"danger", CalloutKind::Danger},   {"error", CalloutKind::Danger},
+        {"success", CalloutKind::Success}, {"tip", CalloutKind::Success},
+    };
+    for (const auto& w : kWords) {
+        size_t n = 0;
+        while (w.word[n]) ++n;
+        if (first.text.size() < n + 1 || first.text[n] != U':') continue;
+        bool ok = true;
+        for (size_t i = 0; i < n && ok; ++i) {
+            char32_t c = first.text[i];
+            if (c >= U'A' && c <= U'Z') c = c - U'A' + U'a';
+            ok = c == static_cast<char32_t>(w.word[i]);
+        }
+        if (ok) {
+            out.found = true;
+            out.kind = w.kind;
+            out.labelLength = n + 1;
+            return out;
+        }
+    }
+    return out;
+}
+
 // The alignment of one table cell: the column's own mark from the
 // source, and where the column has none, the style's header rule (the
 // Wikipedia wikitable centers its header cells). Every painter and

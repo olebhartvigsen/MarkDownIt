@@ -161,7 +161,24 @@ struct LayoutMetrics {
     bool tableZebra;             // every second body row takes tableRowAlt
     bool tableBodyFill;          // every body row takes tableRowAlt
     bool tableHeaderCenter;      // header cells without a mark center
+    bool tableVerticalLines;     // false: hairlines between rows only
+
+    // Information boxes. A quote whose text starts with "Note:",
+    // "Warning:" and so on becomes a tinted box with a coloured label.
+    // The label word stays in the text, so the source maps one to one
+    // and the meaning never rests on colour alone.
+    bool calloutBoxes;
+    float calloutPadX;           // inner side padding, DIP at zoom 1
+    float calloutPadY;           // inner top and bottom padding
+    float calloutRadius;
+
+    // Page header. The paragraph right after an H1 is the page's
+    // description: set larger and muted. 1.0 switches it off.
+    float leadScale;
 };
+
+// The four information boxes.
+enum class CalloutKind { Info = 0, Warning = 1, Danger = 2, Success = 3 };
 
 // The unordered list marker glyphs, one table for both renderers so
 // the cycling cannot drift between the ports: a filled bullet, a
@@ -234,6 +251,10 @@ struct Palette {
     // so a mark never relies on colour alone.
     ThemeColor markerBg;
     ThemeColor markerLine;
+    // Information boxes, indexed by CalloutKind: the tint behind the
+    // box and the colour of its label word.
+    ThemeColor calloutBg[4];
+    ThemeColor calloutLabel[4];
 };
 
 inline LayoutMetrics GitHubMetrics() {
@@ -311,6 +332,12 @@ inline LayoutMetrics GitHubMetrics() {
     m.tableZebra = true;
     m.tableBodyFill = false;
     m.tableHeaderCenter = false;
+    m.tableVerticalLines = true;
+    m.calloutBoxes = false;
+    m.calloutPadX = 0.0f;
+    m.calloutPadY = 0.0f;
+    m.calloutRadius = 0.0f;
+    m.leadScale = 1.0f;
     return m;
 }
 
@@ -373,9 +400,67 @@ inline LayoutMetrics WikipediaMetrics() {
     return m;
 }
 
+// The Apple-inspired documentation look. It takes its principles from
+// Apple's DocC and Human Interface Guidelines and copies none of the
+// artwork: one calm sans face, generous space, large semibold headings
+// without rules, hairlines instead of grids, soft tinted surfaces with
+// rounded corners, and one blue for everything you can act on. The
+// type scale is the DocC article scale (17 px body, 40 px title) and
+// the colours are Apple's neutral greys. See
+// references/apple-wiki-style-guide.md.
+inline LayoutMetrics AppleMetrics() {
+    LayoutMetrics m = GitHubMetrics();
+    m.maxContentWidth = 720.0f;
+    m.bodyFontSize = 12.75f;   // 17 px
+    m.codeFontSize = 11.25f;   // 15 px
+    m.bodyLineHeight = 1.47f;
+    m.headingLineHeight = 1.2f;
+    m.codeLineHeight = 1.5f;
+    m.paraGap = 15.0f;
+    m.headingGapBefore = 32.0f;
+    m.headingGapAfter = 12.0f;
+    m.listItemGap = 6.0f;
+    m.listGap = 15.0f;
+    m.codeBlockGap = 18.0f;
+    m.ruleGapAbove = 24.0f;
+    m.ruleGapBelow = 24.0f;
+    m.codePad = 16.0f;
+    m.codeRadius = 8.0f;
+    m.codeBorderWidth = 1.0f;
+    m.quoteIndent = 20.0f;
+    m.quoteBarWidth = 3.0f;
+    m.headingRulePadRatio = 0.0f;
+    m.headingRuleThickness = 0.0f;
+    m.cellPadX = 12.0f;
+    m.cellPadY = 9.0f;
+    m.headingSizes[1] = 30.0f;    // 40 px title
+    m.headingSizes[2] = 21.0f;    // 28 px
+    m.headingSizes[3] = 16.5f;    // 22 px
+    m.headingSizes[4] = 14.25f;   // 19 px
+    m.headingSizes[5] = 12.75f;
+    m.headingSizes[6] = 12.75f;
+    m.headingFamily[1] = "Segoe UI";   // the title is full bold,
+    m.headingBold[1] = true;           // the rest semibold
+    m.linkUnderline = false;
+    m.thematicBreakThickness = 1.0f;
+    m.tableHeaderFill = false;
+    m.tableZebra = false;
+    m.tableBodyFill = false;
+    m.tableVerticalLines = false;
+    m.calloutBoxes = true;
+    m.calloutPadX = 16.0f;
+    m.calloutPadY = 12.0f;
+    m.calloutRadius = 10.0f;
+    m.leadScale = 1.2f;
+    return m;
+}
+
 inline LayoutMetrics BaseMetrics(MarkdownStyle style = ActiveMarkdownStyle()) {
-    return style == MarkdownStyle::Wikipedia ? WikipediaMetrics()
-                                             : GitHubMetrics();
+    switch (style) {
+        case MarkdownStyle::Wikipedia: return WikipediaMetrics();
+        case MarkdownStyle::Apple: return AppleMetrics();
+        default: return GitHubMetrics();
+    }
 }
 
 inline LayoutMetrics ScaleMetrics(const LayoutMetrics& base, float zoom) {
@@ -396,6 +481,9 @@ inline LayoutMetrics ScaleMetrics(const LayoutMetrics& base, float zoom) {
     m.quoteIndent *= zoom;
     m.quoteBarWidth *= zoom;
     m.codeBorderWidth *= zoom;
+    m.calloutPadX *= zoom;
+    m.calloutPadY *= zoom;
+    m.calloutRadius *= zoom;
     m.listIndent *= zoom;
     m.markerGutter *= zoom;
     // The remaining list constants are ratios, or already live in the
@@ -466,9 +554,47 @@ inline Palette WikipediaPalette() {
     return p;
 }
 
+// Apple's neutral greys on white paper: ink 1d1d1f, secondary ink
+// 6e6e73, hairlines d2d2d7, the soft surface f5f5f7 and the link blue
+// 0066cc that DocC uses. The four information boxes use a pale tint
+// of the system colours behind a darker label, so the label passes
+// 4.5:1 on its own tint. Selection, find and marker colours stay as
+// the GitHub palette has them (app chrome, not article style).
+inline Palette ApplePalette() {
+    Palette p = GitHubPalette();
+    p.textPrimary = MakeColor(0x1D1D1F);
+    p.textMuted = MakeColor(0x6E6E73);
+    p.heading = MakeColor(0x1D1D1F);
+    p.link = MakeColor(0x0066CC);
+    p.codeBg = MakeColor(0xF5F5F7);
+    p.codeBorder = MakeColor(0xE5E5EA);
+    p.inlineCodeBg = MakeColor(0xF0F0F3);
+    p.quoteBar = MakeColor(0xD2D2D7);
+    p.quoteText = MakeColor(0x6E6E73);
+    p.rule = MakeColor(0xD2D2D7);
+    p.tableBorder = MakeColor(0xD2D2D7);
+    p.tableHeaderBg = MakeColor(0xF5F5F7);
+    p.tableRowAlt = MakeColor(0xF5F5F7);
+    p.mermaidNodeFill = MakeColor(0xF5F5F7);
+    p.mermaidNodeBorder = MakeColor(0xC7C7CC);
+    p.mermaidText = MakeColor(0x1D1D1F);
+    p.calloutBg[0] = MakeColor(0xE8F1FC);     // info
+    p.calloutBg[1] = MakeColor(0xFFF3E0);     // warning
+    p.calloutBg[2] = MakeColor(0xFDECEA);     // danger
+    p.calloutBg[3] = MakeColor(0xE8F6EC);     // success
+    p.calloutLabel[0] = MakeColor(0x0055AA);
+    p.calloutLabel[1] = MakeColor(0x8A4A00);
+    p.calloutLabel[2] = MakeColor(0xB00020);
+    p.calloutLabel[3] = MakeColor(0x1A6E2E);
+    return p;
+}
+
 inline Palette BasePalette(MarkdownStyle style = ActiveMarkdownStyle()) {
-    return style == MarkdownStyle::Wikipedia ? WikipediaPalette()
-                                             : GitHubPalette();
+    switch (style) {
+        case MarkdownStyle::Wikipedia: return WikipediaPalette();
+        case MarkdownStyle::Apple: return ApplePalette();
+        default: return GitHubPalette();
+    }
 }
 
 // The chrome palette: the surfaces the app draws around the document,

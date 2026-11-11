@@ -8,12 +8,15 @@
 // The style is chosen at run time by the environment variable
 // MARKDOWNIT_STYLE:
 //
+//   apple      A clean documentation look built on Apple's DocC and
+//              Human Interface Guidelines, without copying Apple's
+//              design. See references/apple-wiki-style-guide.md.
 //   github     GitHub's markdown CSS, the reference style.
 //   wikipedia  The Wikipedia article look (Vector skin), built on the
 //              Manual of Style. See references/wikipedia-markdown-style.md.
 //
 // The match ignores case and surrounding spaces. An unset or unknown
-// value selects the default, Wikipedia. The variable is read once, on
+// value selects the default, Apple. The variable is read once, on
 // the first call, so a running process never changes style midway.
 
 #include <cstdlib>
@@ -22,10 +25,11 @@
 enum class MarkdownStyle {
     GitHub,
     Wikipedia,
+    Apple,
 };
 
 // The default when MARKDOWNIT_STYLE is unset or not recognised.
-inline constexpr MarkdownStyle kDefaultMarkdownStyle = MarkdownStyle::Wikipedia;
+inline constexpr MarkdownStyle kDefaultMarkdownStyle = MarkdownStyle::Apple;
 
 // Parse a style name. Returns false and leaves *out alone when the
 // text names no style.
@@ -40,6 +44,7 @@ inline bool ParseMarkdownStyle(const std::string& text, MarkdownStyle* out) {
     }
     if (t == "github") { *out = MarkdownStyle::GitHub; return true; }
     if (t == "wikipedia") { *out = MarkdownStyle::Wikipedia; return true; }
+    if (t == "apple") { *out = MarkdownStyle::Apple; return true; }
     return false;
 }
 

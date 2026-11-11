@@ -1514,7 +1514,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
         for (size_t c = 0; c < row.cells.size() && c < cols; ++c) {
             float cellX = x + colXs[c];
-            if (borderBrush) {
+            if (borderBrush && m.tableVerticalLines) {
                 D2D1_POINT_2F p1 = D2D1::Point2F(cellX, curY);
                 D2D1_POINT_2F p2 = D2D1::Point2F(cellX, curY + rowH);
                 rt->DrawLine(p1, p2, borderBrush, 1.0f);
@@ -1782,15 +1782,18 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 }
             }
         }
-        if (borderBrush) {
+        if (borderBrush && m.tableVerticalLines) {
             D2D1_POINT_2F p1 = D2D1::Point2F(x + width, curY);
             D2D1_POINT_2F p2 = D2D1::Point2F(x + width, curY + rowH);
             rt->DrawLine(p1, p2, borderBrush, 1.0f);
         }
         if (borderBrush) {
-            rt->DrawLine(
-                D2D1::Point2F(x, curY), D2D1::Point2F(x + width, curY),
-                borderBrush, 1.0f);
+            // The top edge is part of the full grid only; a style with
+            // row hairlines draws the bottom of each row and no more.
+            if (m.tableVerticalLines)
+                rt->DrawLine(
+                    D2D1::Point2F(x, curY), D2D1::Point2F(x + width, curY),
+                    borderBrush, 1.0f);
             rt->DrawLine(
                 D2D1::Point2F(x, curY + rowH),
                 D2D1::Point2F(x + width, curY + rowH),

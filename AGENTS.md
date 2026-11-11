@@ -139,4 +139,4 @@ raw bytes on disk. Verify with raw byte inspection, not the display.
 | installer/ | WiX MSI project (MarkDownIt.wxs), License.rtf, MSIX manifest with committed PNG assets |
 | tools/msix-icons/ | Renders the MSIX PNG asset set from the app icon SVG (resvg + PIL) |
 | .hermes/plans/ | one-time task plans (viewer, typography, wysiwyg, svg/mermaid, mermaid flowchart closed, macos port, office implementation) |
-| references/ | standing design docs: wikipedia markdown style (run-time style switch), ribbon menu, text editing spec, caret model, table model, office import/export spec, dagre port, macos pipeline, release pipeline |
+| references/ | standing design docs: apple wiki style guide and wikipedia markdown style (run-time style switch, MARKDOWNIT_STYLE), ribbon menu, text editing spec, caret model, table model, office import/export spec, dagre port, macos pipeline, release pipeline |

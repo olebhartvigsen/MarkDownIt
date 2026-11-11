@@ -328,9 +328,10 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
     rowTop = top;
     for (size_t r = 0; r < t.rowHeights.size(); ++r) {
         const float rowH = t.rowHeights[r];
-        if (r == 0) fill(0.0f, rowTop, in.contentWidth, 1.0f, grid);
+        if (r == 0 && m.tableVerticalLines)
+            fill(0.0f, rowTop, in.contentWidth, 1.0f, grid);
         fill(0.0f, rowTop + rowH - 1.0f, in.contentWidth, 1.0f, grid);
-        for (size_t c = 0; c <= t.columnCount; ++c) {
+        for (size_t c = 0; c <= t.columnCount && m.tableVerticalLines; ++c) {
             float gx = TableColumnX(t, c);
             if (c >= t.columnCount) gx = in.contentWidth - 1.0f;
             fill(gx, rowTop, 1.0f, rowH, grid);
