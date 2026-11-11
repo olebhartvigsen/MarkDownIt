@@ -844,9 +844,10 @@ TEST(RendererMac, FillsTheInlineCodeBackground) {
     renderer.Render(doc, 0.0f);
 
     // The fill behind the span: the four characters of the span plus
-    // GitHub's .4em of code padding on either side.
+    // the style's side padding on either side.
     const float charW = kBodyEm * 0.5f;
-    const float expectedWidth = 4.0f * charW + 2.0f * 0.4f * kCodeEm;
+    const float expectedWidth =
+        4.0f * charW + 2.0f * BaseMetrics().inlineCodePadX * kCodeEm;
     bool sawBackground = false;
     for (const RecordingTarget::Fill& fill : target.fills) {
         if (std::fabs(fill.rect.width - expectedWidth) < 0.05f) {
@@ -874,7 +875,7 @@ TEST(RendererMac, PaintsInlineCodeAfterHiddenMarkers) {
 
     // The code span follows bold and italic markers. The wash belongs
     // under its glyphs, not in a zero-width pill at the end of the line.
-    const float pad = 2.0f * 0.4f * kCodeEm;
+    const float pad = 2.0f * BaseMetrics().inlineCodePadX * kCodeEm;
     float widest = 0.0f;
     int backgrounds = 0;
     int pills = 0;
