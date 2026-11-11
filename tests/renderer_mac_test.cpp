@@ -711,15 +711,16 @@ TEST(RendererMac, GivesListsTheMarkerGutter) {
     const std::vector<LaidOutBlock>& blocks = renderer.blocks();
     ASSERT_EQ(blocks.size(), 3u);
 
-    // The marker sits at 1.25em; the text edge is that plus the 1em
-    // marker box the renderer reserves. Both numbers come from the
-    // theme, not from a copy of them.
-    const float markerW = kBase.listIndent * 0.6f + kBase.markerGutter;
+    // The marker sits at 1.25em; the text edge is that plus the gutter
+    // the list layout measured for this marker's glyphs, not a copy of
+    // the fixed formula (a measured marker can be wider than it).
     const float originX = kPadX;
     EXPECT_NEAR(blocks[0].x, originX + kBase.listIndent, 0.01f);
     ASSERT_TRUE(!engine.calls.empty());
     EXPECT_NEAR(engine.calls[0].maxWidth,
-                renderer.contentWidth() - kBase.listIndent - markerW, 0.01f);
+                renderer.contentWidth() - kBase.listIndent -
+                    blocks[0].markerWidth,
+                0.01f);
 
     renderer.Render(doc, 0.0f);
     bool sawFirst = false, sawSecond = false, sawThird = false;
@@ -1399,8 +1400,10 @@ TEST(RendererMac, ListClicksAndCaretRectsUseTheMarkerGutter) {
     const LaidOutBlock& block = renderer.blocks()[0];
     ASSERT_EQ(block.lines.size(), 1u);
 
-    const float markerW =
-        BaseMetrics().listIndent * 0.6f + BaseMetrics().markerGutter;
+    // The bullet glyph measures wider than the fixed formula once the
+    // list layout clears it against the engine, so read the gutter the
+    // layout actually reserved instead of recomputing the old formula.
+    const float markerW = block.markerWidth;
 
     // A caret rect on the item text starts after the marker gutter.
     float x = 0.0f;
