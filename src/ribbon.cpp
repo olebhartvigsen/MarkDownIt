@@ -513,6 +513,15 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
             return S_OK;
         }
 
+        // A document with no headings has nothing to outline: the button
+        // stays in place but cannot be pressed (disable, never hide).
+        if (m_pApp && nCmdID == IDC_CMD_OUTLINE) {
+            ppropvarNewValue->vt = VT_BOOL;
+            ppropvarNewValue->boolVal =
+                m_pApp->HasOutlineItems() ? VARIANT_TRUE : VARIANT_FALSE;
+            return S_OK;
+        }
+
         // The File menu realizes its item views lazily at the first
         // open, so the startup Label invalidation (timer 6 in
         // InvalidateSettingsButtons) is dropped: no view exists to

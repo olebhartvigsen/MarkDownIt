@@ -1208,6 +1208,14 @@ void AppWindow::OnReparseTimer() {
 // Show the pane when the setting wants it and the document has headings,
 // hide it otherwise. Lays out only when the state actually changes.
 void AppWindow::SyncOutlinePane() {
+    // The ribbon button follows whether there is anything to outline.
+    const bool canOutline = !outline_items_.empty();
+    if (canOutline != outline_button_enabled_) {
+        outline_button_enabled_ = canOutline;
+        if (g_pRibbonFramework)
+            g_pRibbonFramework->InvalidateUICommand(IDC_CMD_OUTLINE,
+                UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
+    }
     if (!outline_.IsCreated()) return;
     const bool want = settings_.outlineVisible && !welcome_mode_ &&
                       !outline_items_.empty();

@@ -65,6 +65,9 @@ public:
 
     void ToggleOutline();
     void SyncOutlinePane();
+    bool outline_button_enabled_ = true;
+    // True when the document has headings, so the outline can show.
+    bool HasOutlineItems() const { return !outline_items_.empty(); }
     bool IsOutlineVisible() const;
     // True while the QA walk runs: the outline sync logs its picks.
     bool qa_active_ = false;
