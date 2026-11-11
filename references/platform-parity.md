@@ -67,6 +67,7 @@ ribbon command needs a row here or a row in the next section.
 | cmdOutdent | outdentBlock |
 | cmdOutline | toggleOutline |
 | cmdQuote | toggleQuote |
+| cmdRecent | showRecents |
 | cmdRedo | redo |
 | cmdReload | reloadDocument |
 | cmdRemoveColumn | removeColumn |
@@ -109,7 +110,6 @@ listed here with its reason, so the set stays deliberate.
 | findPrevious | Same as findNext. |
 | importPdf | The Office bridge offers PDF import on macOS; the ribbon does not expose it yet. Promote with a row change when it does. |
 | showHelp | No help system is shipped on Windows yet. |
-| showRecents | The recents list is the Start Menu jump list on Windows. |
 | shareDocument | Share is a platform service with no Windows twin in this app. |
 | toggleTabBar | The mac window has a tab bar setting with no Windows twin; the Windows frame uses the ribbon. |
 | zoomReset | The Windows zoom resets through the width or zoom commands. |

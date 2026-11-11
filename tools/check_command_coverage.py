@@ -30,7 +30,8 @@ STRUCTURAL = {
 } | {  # ribbon groups, including the width split button
     "cmdGroupEdit", "cmdGroupFile", "cmdGroupFind", "cmdGroupFormat",
     "cmdGroupHeadings", "cmdGroupHistory", "cmdGroupMarkers",
-    "cmdGroupOffice", "cmdGroupParagraph", "cmdGroupTable", "cmdGroupView",
+    "cmdGroupOffice", "cmdGroupParagraph", "cmdGroupRecent", "cmdGroupTable",
+    "cmdGroupView",
     "cmdWidthMenu",
 }
 
