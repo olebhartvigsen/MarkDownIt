@@ -72,8 +72,19 @@ std::wstring FamilyFor(const std::string& family) {
     std::transform(f.begin(), f.end(), f.begin(), [](unsigned char c) { return (char)tolower(c); });
     if (f == "code" || f == "mono" || f == "consolas") return L"Consolas";
     if (f == "serif" || f == "georgia") return L"Georgia";
-    if (f == "segoe ui semibold") return L"Segoe UI Semibold";
     return L"Segoe UI";  // body, headings, ui and anything unknown
+}
+
+// The theme spells semibold as a family of its own. Runner images and
+// stripped installs may lack that face, so ask Segoe UI for weight 600
+// instead: the same look, and DirectWrite always has it.
+int WeightFor(const FontSpec& font) {
+    if (font.bold) return DWRITE_FONT_WEIGHT_BOLD;
+    std::string f = font.family;
+    std::transform(f.begin(), f.end(), f.begin(),
+                   [](unsigned char c) { return (char)tolower(c); });
+    return f == "segoe ui semibold" ? DWRITE_FONT_WEIGHT_SEMI_BOLD
+                                    : DWRITE_FONT_WEIGHT_NORMAL;
 }
 
 // Builds one path on the target's factory, draws it once (filled or
@@ -133,7 +144,7 @@ IDWriteTextFormat* D2DTarget::FormatFor(const FontSpec& font) {
     if (!write_factory_) return nullptr;
     const std::wstring family = FamilyFor(font.family);
     const float size = font.size > 0.0f ? font.size : 14.0f;
-    const int weight = font.bold ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL;
+    const int weight = WeightFor(font);
     const int style = font.italic ? DWRITE_FONT_STYLE_ITALIC : DWRITE_FONT_STYLE_NORMAL;
     const std::tuple<std::wstring, float, int, int> key(family, size, weight, style);
     auto it = formats_.find(key);

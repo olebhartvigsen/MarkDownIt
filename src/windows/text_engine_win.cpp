@@ -68,8 +68,19 @@ std::wstring FamilyFor(const std::string& family) {
                    [](unsigned char c) { return (char)tolower(c); });
     if (f == "code" || f == "mono" || f == "consolas") return L"Consolas";
     if (f == "serif" || f == "georgia") return L"Georgia";
-    if (f == "segoe ui semibold") return L"Segoe UI Semibold";
     return L"Segoe UI";  // body, headings, ui and anything unknown
+}
+
+// The theme spells semibold as a family of its own. Runner images and
+// stripped installs may lack that face, so ask Segoe UI for weight 600
+// instead: the same look, and DirectWrite always has it.
+int WeightFor(const FontSpec& font) {
+    if (font.bold) return DWRITE_FONT_WEIGHT_BOLD;
+    std::string f = font.family;
+    std::transform(f.begin(), f.end(), f.begin(),
+                   [](unsigned char c) { return (char)tolower(c); });
+    return f == "segoe ui semibold" ? DWRITE_FONT_WEIGHT_SEMI_BOLD
+                                    : DWRITE_FONT_WEIGHT_NORMAL;
 }
 
 float WidestLineHeight(const std::vector<GlyphRun>& runs) {
@@ -136,8 +147,7 @@ IDWriteTextFormat* DWriteEngine::FormatFor(const FontSpec& font) const {
     const float size = font.size > 0.0f ? font.size : 14.0f;
     // Weight and slant belong to the format, or a bold run is measured
     // regular and drawn wider than the room it was given.
-    const int weight = font.bold ? DWRITE_FONT_WEIGHT_BOLD
-                                 : DWRITE_FONT_WEIGHT_NORMAL;
+    const int weight = WeightFor(font);
     const int style = font.italic ? DWRITE_FONT_STYLE_ITALIC
                                   : DWRITE_FONT_STYLE_NORMAL;
     const FormatKey key(family, size, weight, style);
@@ -324,8 +334,10 @@ std::vector<TextLine> DWriteEngine::MeasureWrapped(
         layout->SetFontFamilyName(family.c_str(), range);
         layout->SetFontSize(
             runs[r].font.size > 0.0f ? runs[r].font.size : 14.0f, range);
-        if (runs[r].font.bold)
-            layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, range);
+        if (WeightFor(runs[r].font) != DWRITE_FONT_WEIGHT_NORMAL)
+            layout->SetFontWeight(
+                static_cast<DWRITE_FONT_WEIGHT>(WeightFor(runs[r].font)),
+                range);
         if (runs[r].font.italic)
             layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, range);
         if (runs[r].underline) layout->SetUnderline(TRUE, range);
