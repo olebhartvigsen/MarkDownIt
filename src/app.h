@@ -232,6 +232,7 @@ private:
     float  ScrollStepSeconds();       // seconds since the previous step, clamped
 
     // Input tracking
+    DWORD  trackpad_last_event_ = 0; // previous trackpad event, for velocity
     DWORD  last_wheel_time_ = 0;     // for trackpad vs mouse detection
     int    scroll_phase_ = 0;        // 0=IDLE,1=SPRING,2=TRACKPAD,3=MOMENTUM
     // Ctrl+wheel zoom: leftover wheel delta (less than one notch) carried

@@ -2877,10 +2877,18 @@ void AppWindow::BeginTrackpadScroll(float delta, DWORD now) {
     // Track velocity as exponential moving average of recent deltas.
     // Use the actual (clamped) delta so hitting an edge zeroes velocity.
     // If same direction, blend smoothly; if reversed, snap.
+    // The velocity is px per 16 ms tick, taken from the real gap between
+    // events: precision touchpads send a delta every 4 to 12 ms, and a
+    // per event value would glide at a fraction of the finger's speed.
+    float gapMs = static_cast<float>(now - trackpad_last_event_);
+    if (trackpad_last_event_ == 0 || gapMs > 100.0f) gapMs = 16.0f;
+    gapMs = std::min(std::max(gapMs, 4.0f), 50.0f);
+    trackpad_last_event_ = now;
+    const float inst = actual * (16.0f / gapMs);
     if ((momentum_vel_ > 0) != (delta > 0)) {
-        momentum_vel_ = actual; // direction reversed → snap
+        momentum_vel_ = inst; // direction reversed → snap
     } else {
-        momentum_vel_ = momentum_vel_ * 0.6f + actual * 0.4f; // EMA
+        momentum_vel_ = momentum_vel_ * 0.6f + inst * 0.4f; // EMA
     }
 
     // Start the timer so it can detect when trackpad events stop
@@ -2899,6 +2907,9 @@ void AppWindow::EnterMomentum() {
         return;
     }
     scroll_phase_ = 3; // MOMENTUM
+    // The clock was not read while the fingers moved, so the first glide
+    // step would see a long stale gap and jump. Start it from now.
+    ScrollStepSeconds();
     EnsureScrollTimer();
 }
 
@@ -2947,6 +2958,7 @@ void AppWindow::OnScrollTick() {
         // ── TRACKPAD idle detection ────────────────────────────
         // Timer runs during trackpad input to detect when events stop.
         // If no wheel event for >80ms, fingers were lifted → momentum.
+        ScrollStepSeconds();  // keep the clock fresh for the hand-off
         DWORD now = GetTickCount();
         if (now - last_wheel_time_ > 80) {
             EnterMomentum();
