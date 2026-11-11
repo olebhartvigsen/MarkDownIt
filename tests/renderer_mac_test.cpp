@@ -716,8 +716,11 @@ TEST(RendererMac, GivesListsTheMarkerGutter) {
     // the fixed formula (a measured marker can be wider than it).
     const float originX = kPadX;
     EXPECT_NEAR(blocks[0].x, originX + kBase.listIndent, 0.01f);
-    ASSERT_TRUE(!engine.calls.empty());
-    EXPECT_NEAR(engine.calls[0].maxWidth,
+    // The list layout measures the marker itself first (maxWidth 0,
+    // unconstrained) before it measures the item text against the
+    // gutter it just found, so the text call is the second one.
+    ASSERT_TRUE(engine.calls.size() >= 2u);
+    EXPECT_NEAR(engine.calls[1].maxWidth,
                 renderer.contentWidth() - kBase.listIndent -
                     blocks[0].markerWidth,
                 0.01f);
@@ -1690,8 +1693,9 @@ TEST(RendererMac, RecoloursTheRunsWhenTheThemeChanges) {
 }
 
 // A blank line next to a list is a caret paragraph in the model (the
-// word-processor guidelines keep it addressable). While reading it must
-// not open a full empty row, so the mode decides its height.
+// word-processor guidelines keep it addressable). While reading it is
+// not a block anyone sees: it drops out of the layout entirely, so
+// the list's own gap runs straight into its neighbor.
 TEST(RendererMac, CollapsesTheBlankLineWhileReading) {
     FakeEngine engine;
     MacRenderer renderer;
@@ -1711,10 +1715,13 @@ TEST(RendererMac, CollapsesTheBlankLineWhileReading) {
     renderer.SetEditing(false);
     const float reading = renderer.Measure(doc, 1400.0f);
 
-    // The blank line keeps its line either way, one strip shorter
-    // while reading: more than the strip, less than a full line.
-    EXPECT_TRUE(editing - reading > 4.0f);
-    EXPECT_TRUE(editing - reading < 40.0f);
+    // Editing keeps the blank line as its own addressable block, one
+    // caret line tall. Reading drops it from the layout altogether (it
+    // sits next to the list), so the whole line and its own margin
+    // collapse go with it: comfortably more than one line, not an
+    // unbounded amount.
+    EXPECT_TRUE(editing - reading > kBodyEm);
+    EXPECT_TRUE(editing - reading < 4.0f * kBodyEm);
 }
 
 
