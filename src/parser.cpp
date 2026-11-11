@@ -55,6 +55,12 @@ struct SpanFrame {
     bool em;
     bool strong;
     bool code;
+    // An image: whether md4c reported alt text for it (![alt](src)), and
+    // where its src sits in the input (0xffffffff when it does not lie
+    // there, for instance after an escape rewrote it).
+    bool sawText = false;
+    uint32_t srcBegin = 0xffffffffu;
+    uint32_t srcEnd = 0xffffffffu;
 };
 
 // md4c does not expose table-cell source offsets in MD_BLOCK_TD_DETAIL.
@@ -975,6 +981,14 @@ int cb_enter_span(MD_SPANTYPE type, void* detail, void* userdata) {
         case MD_SPAN_IMG: {
             auto* img = static_cast<MD_SPAN_IMG_DETAIL*>(detail);
             frame.url = attr_to_string(img->src);
+            if (ctx->input && img->src.text >= ctx->input &&
+                img->src.text <= ctx->input + ctx->inputSize &&
+                img->src.size <= ctx->inputSize -
+                    static_cast<uint32_t>(img->src.text - ctx->input)) {
+                frame.srcBegin =
+                    static_cast<uint32_t>(img->src.text - ctx->input);
+                frame.srcEnd = frame.srcBegin + img->src.size;
+            }
             break;
         }
         case MD_SPAN_DEL:
@@ -1004,6 +1018,43 @@ int cb_enter_span(MD_SPANTYPE type, void* detail, void* userdata) {
 
 int cb_leave_span(MD_SPANTYPE type, void* detail, void* userdata) {
     auto* ctx = static_cast<ParserCtx*>(userdata);
+    // ![](src) has no alt text, so md4c never calls cb_text for it and the
+    // picture would vanish. It is an image all the same: add it here, with
+    // the source range of the whole ![](...) so the paragraph keeps a place
+    // in the file.
+    if (type == MD_SPAN_IMG && !ctx->span_stack.empty() &&
+        !ctx->span_stack.back().sawText && !ctx->cur_cell_obj &&
+        !ctx->span_stack.back().url.empty()) {
+        const SpanFrame& f = ctx->span_stack.back();
+        const int idx = current_node(*ctx);
+        if (idx >= 0) {
+            InlineBlock ib;
+            ib.kind = InlineKind::Image;
+            ib.url = f.url;
+            if (f.srcBegin != 0xffffffffu) {
+                uint32_t begin = f.srcBegin;
+                // Back over the optional <, the (, and the [] to the !.
+                while (begin > 0 && ctx->input[begin - 1] != '!') --begin;
+                if (begin > 0) --begin;
+                uint32_t end = f.srcEnd;
+                while (end < ctx->inputSize && ctx->input[end] != ')' &&
+                       ctx->input[end] != '\n') ++end;
+                if (end < ctx->inputSize && ctx->input[end] == ')') ++end;
+                ib.srcOffset = begin;
+                ib.srcLength = end - begin;
+                auto& noi = ctx->nodeOffsets[idx];
+                if (!noi.hasText) {
+                    noi.firstTextOffset = begin;
+                    noi.hasText = true;
+                    noi.lastTextEnd = end;
+                } else {
+                    noi.firstTextOffset = std::min(noi.firstTextOffset, begin);
+                    noi.lastTextEnd = std::max(noi.lastTextEnd, end);
+                }
+            }
+            ctx->doc->nodes[idx].children.push_back(std::move(ib));
+        }
+    }
     if (!ctx->span_stack.empty()) {
         ctx->span_stack.pop_back();
     }
@@ -1286,7 +1337,8 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
     bool em = false, strong = false, code = false, strike = false;
     InlineKind kind = InlineKind::Text;
     std::string url;
-    for (const auto& sf : ctx->span_stack) {
+    for (auto& sf : ctx->span_stack) {
+        if (sf.type == MD_SPAN_IMG) sf.sawText = true;
         if (sf.em) em = true;
         if (sf.strong) strong = true;
         if (sf.code) code = true;

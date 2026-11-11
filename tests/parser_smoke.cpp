@@ -842,3 +842,33 @@ TEST(Reparse, TitleFollowsTheReparse) {
     ASSERT_TRUE(ParseMarkdown("no heading here\n", doc));
     EXPECT_TRUE(doc.title.empty());
 }
+
+// ![](src) has no alt text, so md4c sends no text callback for it. The
+// parser used to drop such a picture; it must stay an image with its url
+// and keep the paragraph's place in the source.
+TEST(ImageParsing, EmptyAltStillMakesAnImage) {
+    const std::string source = "Before\n\n![](data:image/png;base64,AAAA)\n\nAfter\n";
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(source, doc));
+    const Node* img = nullptr;
+    for (const Node& n : doc.nodes) {
+        for (const InlineBlock& c : n.children) {
+            if (c.kind == InlineKind::Image) img = &n;
+        }
+    }
+    ASSERT_TRUE(img != nullptr);
+    ASSERT_EQ(img->children.size(), 1u);
+    EXPECT_EQ(img->children[0].url, std::string("data:image/png;base64,AAAA"));
+    EXPECT_EQ(img->srcOffset, source.find("![]"));
+    EXPECT_EQ(img->srcLength, std::string("![](data:image/png;base64,AAAA)").size());
+}
+
+TEST(ImageParsing, AltTextImageIsNotDoubled) {
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown("![a *b*](x.png)\n", doc));
+    size_t images = 0;
+    for (const Node& n : doc.nodes)
+        for (const InlineBlock& c : n.children)
+            if (c.kind == InlineKind::Image) ++images;
+    EXPECT_EQ(images, 2u);  // the alt runs, one block each, as before
+}
