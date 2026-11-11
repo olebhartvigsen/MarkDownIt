@@ -1124,6 +1124,7 @@ void Renderer::Release() {
     // and a newly allocated format could land on a freed one's
     // address, which would answer a different zoom's cached height.
     lineHeightCache_.clear();
+    DropSourceLayout();
     rel(body_fmt_);
     rel(code_fmt_);
     rel(num_fmt_);
@@ -2723,6 +2724,59 @@ static std::u16string Utf8ToUtf16(const std::string& s) {
     return out;
 }
 
+void Renderer::DropSourceLayout() {
+    if (srcState_.layout) srcState_.layout->Release();
+    srcState_ = SourceLayoutState();
+}
+
+bool Renderer::EnsureSourceLayout(IDWriteFactory* dw, const std::string& src,
+                                  float widthDip, float textW,
+                                  float contentWidth, bool forceRebuild) {
+    SourceLayoutState& st = srcState_;
+    const bool same = st.layout && !forceRebuild && st.width == widthDip &&
+                      st.zoom == zoom_ && st.wrap == wrapEnabled_ &&
+                      st.widthMode == contentWidthMode_ &&
+                      st.srcSize == src.size() && st.format == code_fmt_;
+    if (same) return true;
+    DropSourceLayout();
+    st.text16 = Utf8ToUtf16(src);
+    if (st.text16.empty()) return false;
+    IDWriteTextLayout* layout = nullptr;
+    const HRESULT hr = dw->CreateTextLayout(
+        reinterpret_cast<const WCHAR*>(st.text16.data()),
+        static_cast<UINT32>(st.text16.size()),
+        code_fmt_, textW > 0 ? textW : contentWidth, 1.0e9f, &layout);
+    if (FAILED(hr) || !layout) { st = SourceLayoutState(); return false; }
+    layout->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+    DWRITE_TEXT_METRICS tm = {};
+    layout->GetMetrics(&tm);
+    st.layout = layout;
+    st.height = tm.height;
+    st.u16ToSrc.reserve(st.text16.size());
+    st.u16ToSrcEnd.reserve(st.text16.size());
+    uint32_t bi = 0;
+    for (size_t si = 0; si < src.size();) {
+        const unsigned char c = static_cast<unsigned char>(src[si]);
+        const int utf8Len = (c < 0x80) ? 1 : (c < 0xC0) ? 1 :
+                            (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
+        const int utf16Len = (c < 0x80) ? 1 : (c < 0xE0) ? 1 :
+                             (c < 0xF0) ? 1 : 2;
+        for (int u = 0; u < utf16Len; ++u) {
+            st.u16ToSrc.push_back(bi);
+            st.u16ToSrcEnd.push_back(bi + static_cast<uint32_t>(utf8Len));
+        }
+        bi += utf8Len;
+        si += utf8Len;
+    }
+    st.width = widthDip;
+    st.zoom = zoom_;
+    st.wrap = wrapEnabled_;
+    st.widthMode = contentWidthMode_;
+    st.srcSize = src.size();
+    st.format = code_fmt_;
+    return true;
+}
+
 float Renderer::MeasureSourceView(IDWriteFactory* dw, const std::string& src,
                                    float widthDip, float topOffsetDip) {
     if (!dw || !code_fmt_) return 0.0f;
@@ -2741,22 +2795,13 @@ float Renderer::MeasureSourceView(IDWriteFactory* dw, const std::string& src,
         : m.padX;
     float textW = contentWidth - 2.0f * m.cellPadX;
 
-    std::u16string text16 = Utf8ToUtf16(src);
-    if (text16.empty()) return topOffsetDip + 20.0f;
-
-    IDWriteTextLayout* layout = nullptr;
-    HRESULT hr = dw->CreateTextLayout(
-        reinterpret_cast<const WCHAR*>(text16.data()),
-        static_cast<UINT32>(text16.size()),
-        code_fmt_, textW > 0 ? textW : contentWidth, 1.0e9f, &layout);
-    if (FAILED(hr) || !layout) return topOffsetDip + 20.0f;
-
-    layout->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
-
-    DWRITE_TEXT_METRICS tm = {};
-    layout->GetMetrics(&tm);
-    float totalH = m.padTop + topOffsetDip + tm.height + m.padTop;
-    layout->Release();
+    // A scroll frame (reuse granted) keeps the last layout; every other
+    // frame builds it afresh, and the render that follows uses that one.
+    if (!EnsureSourceLayout(dw, src, widthDip, textW, contentWidth,
+                            !layoutReuse_))
+        return topOffsetDip + 20.0f;
+    srcState_.fresh = true;
+    float totalH = m.padTop + topOffsetDip + srcState_.height + m.padTop;
     return totalH;
 }
 
@@ -2786,18 +2831,15 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     float textX = originX + m.cellPadX;
     float textY = m.padTop + topOffsetDip;
 
-    std::u16string text16 = Utf8ToUtf16(src);
-    if (text16.empty()) return topOffsetDip + 20.0f;
-
-    IDWriteTextLayout* layout = nullptr;
-    HRESULT hr = dw->CreateTextLayout(
-        reinterpret_cast<const WCHAR*>(text16.data()),
-        static_cast<UINT32>(text16.size()),
-        code_fmt_, textW > 0 ? textW : contentWidth, 1.0e9f, &layout);
-    if (FAILED(hr) || !layout) return m.padTop + topOffsetDip + 20.0f;
-
-    layout->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
-
+    // Reuse what this frame's measure just built, or the last layout on a
+    // scroll frame. Anything else (a render with no measure before it)
+    // builds afresh, so an edit can never show the old text.
+    const bool allowed = srcState_.fresh || layoutReuse_;
+    srcState_.fresh = false;
+    if (!EnsureSourceLayout(dw, src, widthDip, textW, contentWidth, !allowed))
+        return topOffsetDip + 20.0f;
+    const std::u16string& text16 = srcState_.text16;
+    IDWriteTextLayout* layout = srcState_.layout;
     DWRITE_TEXT_METRICS tm = {};
     layout->GetMetrics(&tm);
 
@@ -2830,24 +2872,7 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         rt->CreateSolidColorBrush(pal.markerLine, &markerLine);
     }
 
-    // Draw selection highlight behind the text.
-    // Build u16ToSrc mapping first (needed for binary search).
-    std::vector<uint32_t> u16ToSrcMap;
-    {
-        uint32_t bi = 0;
-        for (size_t si = 0; si < src.size(); ) {
-            unsigned char c = static_cast<unsigned char>(src[si]);
-            int utf8Len = (c < 0x80) ? 1 : (c < 0xC0) ? 1 :
-                          (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
-            int utf16Len = (c < 0x80) ? 1 : (c < 0xE0) ? 1 :
-                           (c < 0xF0) ? 1 : 2;
-            for (int u = 0; u < utf16Len; ++u) {
-                u16ToSrcMap.push_back(bi);
-            }
-            bi += utf8Len;
-            si += utf8Len;
-        }
-    }
+    const std::vector<uint32_t>& u16ToSrcMap = srcState_.u16ToSrc;
     // Marker layer across the whole source, behind the search fills.
     if (markerBrush && markerLine && !u16ToSrcMap.empty() &&
         !text16.empty()) {
@@ -2913,28 +2938,11 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         bl.textStartOffset = 0;
         bl.nodeIndex = 0;
         bl.fontHeight = LineHeightOf(code_fmt_);
-        // Build u16ToSrc mapping: each UTF-16 code unit maps to its
-        // source byte offset.
-        std::vector<uint32_t> sourceU16End;
-        uint32_t bi = 0;
-        for (size_t si = 0; si < src.size(); ) {
-            unsigned char c = static_cast<unsigned char>(src[si]);
-            int utf8Len = (c < 0x80) ? 1 : (c < 0xC0) ? 1 :
-                          (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
-            int utf16Len = (c < 0x80) ? 1 : (c < 0xE0) ? 1 :
-                           (c < 0xF0) ? 1 : 2;
-            for (int u = 0; u < utf16Len; ++u) {
-                bl.u16ToSrc.push_back(bi);
-                sourceU16End.push_back(bi + static_cast<uint32_t>(utf8Len));
-            }
-            bi += utf8Len;
-            si += utf8Len;
-        }
-        bl.u16ToSrcEnd = std::move(sourceU16End);
-        // layout is owned by the cache (don't Release it here).
+        bl.u16ToSrc = srcState_.u16ToSrc;
+        bl.u16ToSrcEnd = srcState_.u16ToSrcEnd;
+        // The cache holds its own reference; this renderer keeps one.
+        layout->AddRef();
         cache_->Add(bl);
-    } else {
-        layout->Release();
     }
 
     rt->SetTransform(D2D1::Matrix3x2F::Identity());

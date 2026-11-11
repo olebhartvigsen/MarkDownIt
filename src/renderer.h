@@ -5,6 +5,7 @@
 #include <d2d1_3.h>
 #include <dwrite.h>
 #include <map>
+#include <cstdint>
 #include <string>
 #include <vector>
 #include "dom.h"
@@ -351,6 +352,31 @@ private:
     };
     LayoutCacheSlot layoutSlots_[2];
     bool layoutReuse_ = false;
+    // The source view's layout of the whole buffer. Building it (UTF-16
+    // conversion, one DirectWrite layout over every byte, the offset
+    // tables) costs hundreds of milliseconds on a long file, so a scroll
+    // frame keeps the one it has. It is held only while nothing it was
+    // built from can have changed: same width, zoom, wrap, format and
+    // buffer size, and the app granting reuse (a scroll never edits).
+    struct SourceLayoutState {
+        float width = -1.0f;
+        float zoom = 0.0f;
+        bool wrap = false;
+        int widthMode = -1;
+        size_t srcSize = 0;
+        const void* format = nullptr;
+        std::u16string text16;
+        IDWriteTextLayout* layout = nullptr;  // one reference held here
+        float height = 0.0f;
+        std::vector<uint32_t> u16ToSrc;
+        std::vector<uint32_t> u16ToSrcEnd;
+        bool fresh = false;  // built by this frame's measure
+    };
+    SourceLayoutState srcState_;
+    bool EnsureSourceLayout(IDWriteFactory* dw, const std::string& src,
+                            float widthDip, float textW, float contentWidth,
+                            bool forceRebuild);
+    void DropSourceLayout();
     // The last Measure's answer, valid while the shared layout it walked
     // is the one still held (a new layout is a new pointer).
     std::shared_ptr<const layout::DocumentLayout> measureHold_;
