@@ -115,11 +115,22 @@ void CheckTextEngine(TextEngine& engine) {
     // A caret inside a wrapped line sits inside that line. The engines
     // that own their layouts answer positions in the paragraph's index
     // space, so a caller that speaks line-relative units gets that line's
-    // first byte back for every offset, and the caret never moves into
-    // the line. This is the second line on purpose: the first one starts
-    // at zero and hides the mistake.
-    ASSERT_TRUE(wrapped.size() >= 2);
-    const TextLine& secondLine = wrapped[1];
+    // first byte back for every offset, and the caret never moves into the
+    // line. The second line is the case: the first one starts at zero and
+    // hides the mistake. The bound is a fraction of this text's own
+    // unbounded width, so the wrap happens whatever glyph widths the
+    // engine picked.
+    std::vector<GlyphRun> wrapping = {MakeRun("aaaa"), MakeRun("bbbb"),
+                                      MakeRun("cccc")};
+    engine.BeginLayout();
+    std::vector<TextLine> whole = engine.MeasureWrapped(wrapping, 0.0f, 0.0f);
+    ASSERT_TRUE(whole.size() == static_cast<size_t>(1));
+    ASSERT_TRUE(whole[0].width > 3.0f);
+    engine.BeginLayout();
+    std::vector<TextLine> wrappedTwice =
+        engine.MeasureWrapped(wrapping, whole[0].width * 0.6f, 0.0f);
+    ASSERT_TRUE(wrappedTwice.size() >= static_cast<size_t>(2));
+    const TextLine& secondLine = wrappedTwice[1];
     const platform::Rect secondStart = engine.OffsetToRect(secondLine, 0);
     const platform::Rect secondInside = engine.OffsetToRect(secondLine, 2);
     EXPECT_GT(secondInside.x, secondStart.x + 0.5f);
