@@ -679,6 +679,16 @@ Rect CoreTextEngine::OffsetToRect(const TextLine& line,
         double x = 0.0;
         CTLineGetOffsetForStringIndex(entry.line, index, &x);
         rect.x = static_cast<float>(x);
+        if (offset > 0 && index == 0 &&
+            getenv("MARKDOWNIT_TRACE_HITIT") != nullptr) {
+            TraceMac("hitit: offset=%u answered the line start; line "
+                     "width=%.2f text=%zu entry width=%.2f units=%zu "
+                     "first_unit=%u", offset,
+                     static_cast<double>(line.width), wanted.size(),
+                     static_cast<double>(entry.width),
+                     entry.u16ToUtf8.size(),
+                     entry.u16ToUtf8.empty() ? 0u : entry.u16ToUtf8[0]);
+        }
         return rect;
     }
     // A read of a line the engine no longer holds: the readers below the
