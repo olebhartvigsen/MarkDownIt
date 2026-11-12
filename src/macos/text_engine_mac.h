@@ -53,6 +53,10 @@ public:
 
 private:
     struct Impl;
+    // The entry a line is measured by: its own key when it carries one,
+    // and the width and the text for a line a renderer built by hand.
+    // The index is the size of the entry list when nothing matches.
+    std::size_t EntryIndexFor(const TextLine& line) const;
     std::unique_ptr<Impl> impl_;
 };
 

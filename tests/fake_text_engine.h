@@ -37,6 +37,9 @@ public:
     // block that opens another drops the measurements of the lines
     // above it on an engine that keeps them.
     int beginLayoutCalls = 0;
+    // The key the next measured line carries; the seam's identity for a
+    // line a reader holds a copy of.
+    uint64_t nextKey_ = 0;
     void BeginLayout() override { ++beginLayoutCalls; }
 
     std::vector<platform::TextLine> MeasureWrapped(
@@ -80,6 +83,7 @@ public:
             // the line even when it is too wide (no infinite loop).
             if (maxWidth > 0.0f && x > 0.0f && x + w > maxWidth) {
                 line.width = x;
+                line.measuredKey = ++nextKey_;
                 lines.push_back(std::move(line));
                 line = platform::TextLine();
                 line.height = LineHeightOfWidest(runs);
@@ -91,6 +95,7 @@ public:
             line.runs.push_back(std::move(onLine));
             if (closeAfter[i]) {
                 line.width = x;
+                line.measuredKey = ++nextKey_;
                 lines.push_back(std::move(line));
                 line = platform::TextLine();
                 line.height = LineHeightOfWidest(runs);
@@ -100,10 +105,14 @@ public:
         line.width = x;
         // An empty run list still draws one empty line, like text areas
         // do, so callers can place a caret somewhere.
-        if (line.runs.empty() || x > 0.0f) lines.push_back(std::move(line));
+        if (line.runs.empty() || x > 0.0f) {
+            line.measuredKey = ++nextKey_;
+            lines.push_back(std::move(line));
+        }
         if (lines.empty()) {
             line = platform::TextLine();
             line.height = LineHeightOfWidest(runs);
+            line.measuredKey = ++nextKey_;
             lines.push_back(std::move(line));
         }
         return lines;

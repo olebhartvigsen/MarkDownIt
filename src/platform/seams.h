@@ -66,6 +66,12 @@ struct TextLine {
     float ascent = 0.0f;
     // The runs of the line, in order.
     std::vector<GlyphRun> runs;
+    // The engine's own handle on the line it measured, so a hit test or a
+    // caret rect asks for that line by name instead of matching a width
+    // and a text again. A width and a text are not an identity: two lines
+    // can share both, and a stale entry can share the width alone. Zero
+    // for a line that was built by hand, which the check falls back on.
+    uint64_t measuredKey = 0;
 };
 
 // A rectangle in points.

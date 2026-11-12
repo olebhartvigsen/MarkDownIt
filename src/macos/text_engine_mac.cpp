@@ -348,15 +348,20 @@ struct CoreTextEngine::Impl {
     // here, alive, until the next layout pass starts.
     struct Entry {
         CTLineRef line = nullptr;
-        // The width and the text of the line, which is how a TextLine is
-        // matched to its entry. The engine does not carry an index through
-        // the seam, so those two are the identity.
+        // The key the measured TextLine carries, which is the identity a
+        // reader asks with. The width and the text stay for the lines a
+        // renderer builds by hand, which never passed through a measure.
+        uint64_t key = 0;
         float width = 0.0f;
         std::string text;
         // The UTF-8 byte offset of every UTF-16 unit of the line.
         std::vector<uint32_t> u16ToUtf8;
     };
     std::vector<Entry> entries;
+    // The key the next measured line gets. It only grows, so a line from
+    // a layout that has since been replaced finds no entry and the check
+    // falls back to the width and the text.
+    uint64_t nextKey = 0;
 };
 
 CoreTextEngine::CoreTextEngine() : impl_(std::make_unique<Impl>()) {}
@@ -569,6 +574,8 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
 
         Impl::Entry entry;
         entry.line = line;
+        out.measuredKey = ++impl_->nextKey;
+        entry.key = out.measuredKey;
         entry.width = out.width;
         entry.text = CoreTextEngine::LineTextUtf8(out);
         // The entry's map is relative to the line's own first byte: its
@@ -609,47 +616,41 @@ uint32_t CoreTextEngine::HitTestOffset(const TextLine& line, float x,
                                        bool* outTrailing) const {
     if (outTrailing) *outTrailing = false;
 
-    // The line is identified by its width and by its text, the two
-    // things the seam carries.
-    const std::string wanted = CoreTextEngine::LineTextUtf8(line);
-    for (const Impl::Entry& entry : impl_->entries) {
-        if (!entry.line) continue;
-        if (std::fabs(entry.width - line.width) > 0.5f) continue;
-        if (!entry.text.empty() && entry.text != wanted) continue;
+    const std::size_t at = EntryIndexFor(line);
+    if (at >= impl_->entries.size()) return 0;
+    const Impl::Entry& entry = impl_->entries[at];
 
-        // The position in the line, in typographic coordinates. The line's
-        // origin is at its left edge, so the point is the x the caller
-        // asked about.
-        const CGPoint position = CGPointMake(x, 0.0);
-        // A hit at or past the trailing edge of the line answers the
-        // last position, the line's full byte length, the same rule as
-        // the Windows and fake engines.
-        if (x >= entry.width - 0.5f) {
-            return static_cast<uint32_t>(entry.text.size());
-        }
-
-        const CFIndex index =
-            CTLineGetStringIndexForPosition(entry.line, position);
-
-        // Whether the position landed on the trailing half of a glyph is
-        // decided by the distance to the character boundary, which is what
-        // the Windows side does with the hit test metrics.
-        double boundary = 0.0;
-        CTLineGetOffsetForStringIndex(entry.line, index, &boundary);
-        if (outTrailing) {
-            *outTrailing = (static_cast<double>(x) > boundary);
-        }
-
-        // The index is in UTF-16 units of the line, which maps back to a
-        // UTF-8 offset through the table the measurement built.
-        if (index <= 0) return 0;
-        const size_t u16Index = static_cast<size_t>(index);
-        if (u16Index >= entry.u16ToUtf8.size()) {
-            return entry.u16ToUtf8.empty() ? 0 : entry.u16ToUtf8.back();
-        }
-        return entry.u16ToUtf8[u16Index];
+    // A hit at or past the trailing edge of the line answers the last
+    // position, the line's full byte length, the same rule as the Windows
+    // and fake engines.
+    if (x >= entry.width - 0.5f) {
+        return static_cast<uint32_t>(entry.text.size());
     }
-    return 0;
+
+    // The position in the line, in typographic coordinates. The line's
+    // origin is at its left edge, so the point is the x the caller asked
+    // about.
+    const CGPoint position = CGPointMake(x, 0.0);
+    const CFIndex index =
+        CTLineGetStringIndexForPosition(entry.line, position);
+
+    // Whether the position landed on the trailing half of a glyph is
+    // decided by the distance to the character boundary, which is what the
+    // Windows side does with the hit test metrics.
+    double boundary = 0.0;
+    CTLineGetOffsetForStringIndex(entry.line, index, &boundary);
+    if (outTrailing) {
+        *outTrailing = (static_cast<double>(x) > boundary);
+    }
+
+    // The index is in UTF-16 units of the line, which maps back to a UTF-8
+    // offset through the table the measurement built.
+    if (index <= 0) return 0;
+    const size_t u16Index = static_cast<size_t>(index);
+    if (u16Index >= entry.u16ToUtf8.size()) {
+        return entry.u16ToUtf8.empty() ? 0 : entry.u16ToUtf8.back();
+    }
+    return entry.u16ToUtf8[u16Index];
 }
 
 Rect CoreTextEngine::OffsetToRect(const TextLine& line,
@@ -658,60 +659,34 @@ Rect CoreTextEngine::OffsetToRect(const TextLine& line,
     rect.height = line.height;
     if (impl_->entries.empty()) return rect;
 
-    const std::string wanted = CoreTextEngine::LineTextUtf8(line);
-    for (const Impl::Entry& entry : impl_->entries) {
-        if (!entry.line) continue;
-        if (std::fabs(entry.width - line.width) > 0.5f) continue;
-        if (!entry.text.empty() && entry.text != wanted) continue;
+    // A line the engine no longer holds answers its own start: the caller
+    // draws a caret at the beginning of the line rather than nothing.
+    const std::size_t at = EntryIndexFor(line);
+    if (at >= impl_->entries.size()) return rect;
+    const Impl::Entry& entry = impl_->entries[at];
 
-        // The UTF-16 index of the UTF-8 offset.
-        CFIndex index = 0;
-        for (size_t i = 0; i < entry.u16ToUtf8.size(); ++i) {
-            if (entry.u16ToUtf8[i] >= offset) {
-                index = static_cast<CFIndex>(i);
-                break;
-            }
-            index = static_cast<CFIndex>(i + 1);
+    // The UTF-16 index of the UTF-8 offset.
+    CFIndex index = 0;
+    for (size_t i = 0; i < entry.u16ToUtf8.size(); ++i) {
+        if (entry.u16ToUtf8[i] >= offset) {
+            index = static_cast<CFIndex>(i);
+            break;
         }
-
-        // The horizontal position of the character, which Core Text gives
-        // directly.
-        double x = 0.0;
-        CTLineGetOffsetForStringIndex(entry.line, index, &x);
-        rect.x = static_cast<float>(x);
-        if (offset > 0 && index == 0 &&
-            getenv("MARKDOWNIT_TRACE_HITIT") != nullptr) {
-            TraceMac("hitit: offset=%u answered the line start; line "
-                     "width=%.2f text=%zu entry width=%.2f units=%zu "
-                     "first_unit=%u", offset,
-                     static_cast<double>(line.width), wanted.size(),
-                     static_cast<double>(entry.width),
-                     entry.u16ToUtf8.size(),
-                     entry.u16ToUtf8.empty() ? 0u : entry.u16ToUtf8[0]);
-        }
-        return rect;
+        index = static_cast<CFIndex>(i + 1);
     }
-    // A read of a line the engine no longer holds: the readers below the
-    // seam answer the line's start for it, so the caller sees a caret at
-    // the beginning of the line rather than an error. The trace names the
-    // line and the entries it was measured against, so the cause is
-    // visible instead of guessed at.
-    if (const char* want = getenv("MARKDOWNIT_TRACE_HITIT")) {
-        if (want[0] == '1') {
-            TraceMac("hitit: no entry for width=%.2f text=%zu offset=%u "
-                     "entries=%zu",
-                     static_cast<double>(line.width), wanted.size(), offset,
-                     impl_->entries.size());
-            size_t shown = 0;
-            for (const Impl::Entry& entry : impl_->entries) {
-                if (!entry.line) continue;
-                if (shown >= 8) break;
-                ++shown;
-                TraceMac("hitit:   width=%.2f text=%zu same_text=%d",
-                         static_cast<double>(entry.width), entry.text.size(),
-                         entry.text == wanted ? 1 : 0);
-            }
-        }
+
+    // The horizontal position of the character, which Core Text gives
+    // directly.
+    double x = 0.0;
+    CTLineGetOffsetForStringIndex(entry.line, index, &x);
+    rect.x = static_cast<float>(x);
+    if (offset > 0 && index == 0 &&
+        getenv("MARKDOWNIT_TRACE_HITIT") != nullptr) {
+        TraceMac("hitit: offset=%u answered the line start; key=%llu "
+                 "units=%zu entry_text=%zu line_width=%.2f",
+                 offset, static_cast<unsigned long long>(entry.key),
+                 entry.u16ToUtf8.size(), entry.text.size(),
+                 static_cast<double>(line.width));
     }
     return rect;
 }
@@ -727,6 +702,27 @@ float CoreTextEngine::LineHeight(const FontSpec& font) const {
     const CGFloat leading = CTFontGetLeading(ctFont);
     const CGFloat height = ascent + descent + leading;
     return height > 0.0 ? static_cast<float>(height) : font.size * 1.2f;
+}
+
+std::size_t CoreTextEngine::EntryIndexFor(const TextLine& line) const {
+    // A measured line carries the engine's key, which is exact: two lines
+    // can share a width and a text, and an entry from a replaced layout
+    // can share the width alone.
+    if (line.measuredKey != 0) {
+        for (std::size_t i = 0; i < impl_->entries.size(); ++i) {
+            const Impl::Entry& entry = impl_->entries[i];
+            if (entry.line && entry.key == line.measuredKey) return i;
+        }
+    }
+    const std::string wanted = CoreTextEngine::LineTextUtf8(line);
+    for (std::size_t i = 0; i < impl_->entries.size(); ++i) {
+        const Impl::Entry& entry = impl_->entries[i];
+        if (!entry.line) continue;
+        if (std::fabs(entry.width - line.width) > 0.5f) continue;
+        if (!entry.text.empty() && entry.text != wanted) continue;
+        return i;
+    }
+    return impl_->entries.size();
 }
 
 std::string CoreTextEngine::LineTextUtf8(const TextLine& line) {

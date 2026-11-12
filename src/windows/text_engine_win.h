@@ -62,6 +62,9 @@ private:
                         uint32_t utf16Offset) const;
 
     IDWriteFactory* factory_ = nullptr;
+    // The key the next measured line carries, the seam's identity for a
+    // line a reader holds a copy of.
+    uint64_t nextKey_ = 0;
     using FormatKey = std::tuple<std::wstring, float, int, int>;
     mutable std::map<FormatKey, IDWriteTextFormat*> formats_;
 };

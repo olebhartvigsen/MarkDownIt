@@ -2044,16 +2044,17 @@ bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
                 const uint32_t inLine = vis >= lineEndVis
                     ? length
                     : vis - lineStartVis;
-                if (inLine == 0 && vis > 0 &&
-                    getenv("MARKDOWNIT_TRACE_HITIT") != nullptr) {
-                    TraceMac("hitit: offset=%u vis=%u lineStart=%u "
-                             "lineEnd=%u length=%u region_x=%.1f "
-                             "line_width=%.2f regions=%zu",
-                             offset, vis, lineStartVis, lineEndVis, length,
-                             static_cast<double>(region.x),
-                             static_cast<double>(line.width), regions.size());
-                }
                 const Rect rect = engine_->OffsetToRect(line, inLine);
+                if (getenv("MARKDOWNIT_TRACE_HITIT") != nullptr) {
+                    TraceMac("hitit: offset=%u vis=%u lineStart=%u "
+                             "lineEnd=%u length=%u inLine=%u region_x=%.1f "
+                             "line_width=%.2f rect_x=%.2f key=%llu",
+                             offset, vis, lineStartVis, lineEndVis, length,
+                             inLine, static_cast<double>(region.x),
+                             static_cast<double>(line.width),
+                             static_cast<double>(rect.x),
+                             static_cast<unsigned long long>(line.measuredKey));
+                }
                 if (outX) *outX = region.x + rect.x;
                 if (outY) *outY = lineTop;
                 if (outWidth) *outWidth = rect.width;

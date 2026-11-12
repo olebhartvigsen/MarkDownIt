@@ -164,6 +164,24 @@ void CheckTextEngine(TextEngine& engine) {
                                                   &wideTrailing);
     EXPECT_EQ(wideHit, static_cast<uint32_t>(8));
 
+    // A measured line carries the engine's own handle on it: set, unique
+    // within a pass, and kept by a copy, which is how every reader holds
+    // the line. Matching a line by its width and its text is not an
+    // identity, and a stale entry that shares the width alone answers the
+    // line's first byte for every offset, so the caret sits at the start
+    // of the line no matter where the click went.
+    engine.BeginLayout();
+    std::vector<TextLine> keyed = engine.MeasureWrapped(parted, 0.0f, 0.0f);
+    ASSERT_TRUE(keyed.size() >= 1);
+    for (size_t i = 0; i < keyed.size(); ++i) {
+        EXPECT_TRUE(keyed[i].measuredKey != 0u);
+        const TextLine copy = keyed[i];
+        EXPECT_EQ(copy.measuredKey, keyed[i].measuredKey);
+        for (size_t j = i + 1; j < keyed.size(); ++j) {
+            EXPECT_TRUE(keyed[i].measuredKey != keyed[j].measuredKey);
+        }
+    }
+
     // Hit test and caret rect agree about position and direction.
     const TextLine& line = unbounded[0];
     const platform::Rect atZero = engine.OffsetToRect(line, 0);

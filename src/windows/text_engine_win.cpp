@@ -415,6 +415,7 @@ std::vector<TextLine> DWriteEngine::MeasureWrapped(
             const GlyphRun& last = out.runs.back();
             out.width = last.x + MeasureRun(last, 100000.0f);
         }
+        out.measuredKey = ++nextKey_;
         lines.push_back(std::move(out));
     }
     layout->Release();
