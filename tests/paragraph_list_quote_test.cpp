@@ -295,6 +295,33 @@ TEST(ParagraphListQuote, ImageChargeAboveText) {
     EXPECT_NEAR(laid.blocks[0].height, 398.0f + kLine, 0.001f);
 }
 
+// An engine that counts the pass brackets it is given.
+class CountingEngine : public fake::FakeTextEngine {
+public:
+    int beginCount = 0;
+    void BeginLayout() override { ++beginCount; }
+};
+
+// The walk brackets the engine once per pass. A block that bracketed it
+// again dropped every line measured before it, and an engine with no
+// retained line answers a hit test with the start of the line: a click
+// mid-line put the caret at the line's beginning, and the caret could
+// not be drawn inside the line at all. The heading did exactly that.
+TEST(ParagraphListQuote, LayoutBracketsTheEngineOncePerPass) {
+    Document doc;
+    doc.nodes.push_back(TextNodeOf(BlockKind::Paragraph, U"before"));
+    Node heading = TextNodeOf(BlockKind::Heading, U"title");
+    heading.level = 2;
+    doc.nodes.push_back(heading);
+    doc.nodes.push_back(TextNodeOf(BlockKind::Paragraph, U"after"));
+    doc.nodes.push_back(TextNodeOf(BlockKind::List, U"an item"));
+
+    CountingEngine engine;
+    const layout::DocumentLayout laid = RunLayout(doc, 300.0f, &engine);
+    EXPECT_EQ(laid.blocks.size(), static_cast<size_t>(4));
+    EXPECT_EQ(engine.beginCount, 1);
+}
+
 // A blank source line the parser keeps next to a list for the caret
 // collapses while reading: the list's own gap runs straight into the
 // next block, no extra margin for a block nobody can see.

@@ -484,6 +484,27 @@ WALK_EOF
         echo "launch smoke: $label navigation, sixteen types, none dead"
     done
 
+    # The caret's place inside its line. An engine that no longer holds
+    # the line's measurement answers every offset with the line's start,
+    # which put the caret at the beginning of the line on a click and
+    # kept it there. Seven characters into the line is tens of dips in.
+    for label in doc source; do
+        CARET_LINE=$(grep "qa nav caret $label:" "$LOG" 2>/dev/null | tail -1)
+        if [ -z "$CARET_LINE" ]; then
+            echo "launch smoke FAILED: no caret place reported for the $label view"
+            grep "qa nav caret" "$LOG" | head -2
+            exit 1
+        fi
+        CARET_INSET=$(printf '%s' "$CARET_LINE" \
+            | grep -o "inset=[0-9.-]*" | cut -d= -f2)
+        if ! awk -v v="$CARET_INSET" 'BEGIN { exit !(v > 20) }'; then
+            echo "launch smoke FAILED: the $label caret sits at the line start"
+            echo "$CARET_LINE"
+            exit 1
+        fi
+        echo "launch smoke: $label caret sits ${CARET_INSET} dip into its line"
+    done
+
     # The shared state drives the shared document controller through
     # one sequence: a typed line, a bold toggle, an applied heading
     # level and an inserted table row. The digest line in the trace is

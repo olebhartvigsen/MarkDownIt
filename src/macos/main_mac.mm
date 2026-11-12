@@ -1589,6 +1589,25 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     platform::TraceMac("qa nav %s: anchor=%u editing=%d dead=%d%s", label,
                        anchor, app_->Editing() ? 1 : 0, dead, line.c_str());
 
+    // The caret's own place inside its line. A line whose measurement the
+    // engine no longer holds answers every offset with the line's start,
+    // so a click mid-line put the caret at the line's beginning and no
+    // key could move it further in. The inset from the line's start is
+    // the invariant that catches it, and the model offsets above cannot.
+    app_->SetCaret(anchor);
+    float caretX = 0.0f, caretY = 0.0f, caretW = 0.0f, caretH = 0.0f;
+    float lineX = 0.0f, lineY = 0.0f, lineW = 0.0f, lineH = 0.0f;
+    const bool caretRect = content_->OffsetToRect(anchor, &caretX, &caretY,
+                                                 &caretW, &caretH);
+    const uint32_t lineStart = content_->LineBoundary(anchor, false);
+    const bool lineRect = content_->OffsetToRect(lineStart, &lineX, &lineY,
+                                                &lineW, &lineH);
+    platform::TraceMac("qa nav caret %s: ok=%d x=%.1f line_x=%.1f inset=%.1f",
+                       label, (caretRect && lineRect) ? 1 : 0,
+                       static_cast<double>(caretX),
+                       static_cast<double>(lineX),
+                       static_cast<double>(caretX - lineX));
+
     // The walk leaves the document as it found it: a caret, no
     // selection, nothing to save, nothing to undo.
     app_->SetCaret(anchor);

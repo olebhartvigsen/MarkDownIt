@@ -71,7 +71,11 @@ LaidBlock LayoutHeading(const LayoutCtx& ctx, const Node& node,
         BuildRuns(node, size, m.headingBold[level], false,
                   ToColor(headingColor), false, headingFamily,
                   m.codeFontSize, ctx.in->palette->link, m.linkUnderline);
-    in.engine->BeginLayout();
+    // No BeginLayout here. The pass brackets the engine once, in
+    // LayoutDocument, and an engine that drops the measurements of the
+    // pass before it answers the lines above this heading with an empty
+    // hit test: a click in such a line landed at its start, and the
+    // caret could not be drawn anywhere inside it.
     std::vector<platform::TextLine> lines =
         in.engine->MeasureWrapped(runs, in.contentWidth, 0.0f);
     ApplyLineSpacing(&lines, size, m.headingLineHeight, in.zoom, in.engine);
