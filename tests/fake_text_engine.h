@@ -33,7 +33,11 @@ class FakeTextEngine final : public platform::TextEngine {
 public:
     static constexpr float kGlyphWidth = 8.0f;
 
-    void BeginLayout() override {}
+    // The pass brackets the engine once; a suite may count them, since a
+    // block that opens another drops the measurements of the lines
+    // above it on an engine that keeps them.
+    int beginLayoutCalls = 0;
+    void BeginLayout() override { ++beginLayoutCalls; }
 
     std::vector<platform::TextLine> MeasureWrapped(
             const std::vector<platform::GlyphRun>& runs,

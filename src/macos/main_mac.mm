@@ -3099,7 +3099,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // only draws it while the document view is first responder.
     if (app_->Editing()) {
         [window_ makeFirstResponder:view_];
-        [self editingModeChanged:YES];
+        [view_ editingModeChanged:YES];
     }
     [self toolbarSync];
     [view_ setNeedsDisplay:YES];
