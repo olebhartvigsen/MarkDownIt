@@ -593,6 +593,10 @@ if(BUILD_TESTS)
     )
     target_include_directories(MarkDownIt.layout-parity PRIVATE src tests)
     target_link_libraries(MarkDownIt.layout-parity PRIVATE md4c pugixml)
+    if(WIN32)
+        target_compile_definitions(MarkDownIt.layout-parity PRIVATE
+            UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+    endif()
     target_compile_features(MarkDownIt.layout-parity PRIVATE cxx_std_17)
     set_target_properties(MarkDownIt.layout-parity PROPERTIES
         WIN32_EXECUTABLE OFF)
