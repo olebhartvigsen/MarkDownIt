@@ -13,3 +13,11 @@ tests/office/fixtures/** binary
 # change both the measured document and the size assertion, so pin it like the
 # goldens above.
 tests/fixtures/large-document.md text eol=lf
+
+# The layout dump parity gate (tests/layout_parity_dump.cpp) reads
+# these fixtures byte for byte and compares the dump against a
+# committed golden on both runners. Same reason as above: a CRLF
+# checkout on Windows would shift every srcOffset in the dump by one
+# per line and fail the gate for a checkout reason, not a layout one.
+tests/fixtures/parity/* text eol=lf
+tests/fixtures/parity/** text eol=lf
