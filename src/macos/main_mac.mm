@@ -1594,16 +1594,28 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // so a click mid-line put the caret at the line's beginning and no
     // key could move it further in. The inset from the line's start is
     // the invariant that catches it, and the model offsets above cannot.
-    app_->SetCaret(anchor);
+    // The anchor sits where the two views agree on a paragraph, which is
+    // not the same place inside a line: the source view wraps the buffer
+    // by column, so the anchor can be the first byte of a wrapped line
+    // there. The probe steps forward until the offset is inside a line,
+    // which is the case it is about.
+    uint32_t midLine = anchor;
+    for (int step = 0; step < 8 && midLine + 10 < app_->sourceText().size();
+         ++step) {
+        if (content_->LineBoundary(midLine, false) != midLine) break;
+        midLine += 10;
+    }
+    app_->SetCaret(midLine);
     float caretX = 0.0f, caretY = 0.0f, caretW = 0.0f, caretH = 0.0f;
     float lineX = 0.0f, lineY = 0.0f, lineW = 0.0f, lineH = 0.0f;
-    const bool caretRect = content_->OffsetToRect(anchor, &caretX, &caretY,
+    const bool caretRect = content_->OffsetToRect(midLine, &caretX, &caretY,
                                                  &caretW, &caretH);
-    const uint32_t lineStart = content_->LineBoundary(anchor, false);
+    const uint32_t lineStart = content_->LineBoundary(midLine, false);
     const bool lineRect = content_->OffsetToRect(lineStart, &lineX, &lineY,
                                                 &lineW, &lineH);
-    platform::TraceMac("qa nav caret %s: ok=%d x=%.1f line_x=%.1f inset=%.1f",
-                       label, (caretRect && lineRect) ? 1 : 0,
+    platform::TraceMac("qa nav caret %s: ok=%d at=%u line=%u x=%.1f "
+                       "line_x=%.1f inset=%.1f",
+                       label, (caretRect && lineRect) ? 1 : 0, midLine, lineStart,
                        static_cast<double>(caretX),
                        static_cast<double>(lineX),
                        static_cast<double>(caretX - lineX));
