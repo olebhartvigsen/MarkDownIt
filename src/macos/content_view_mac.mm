@@ -18,6 +18,7 @@
 #include <cmath>
 
 #include "content_nsview_mac.h"
+#include "layout/paragraph_layout.h"
 #include "navigation.h"
 #include "cg_target_mac.h"
 #include "text_engine_mac.h"
@@ -297,7 +298,12 @@ void ContentView::Draw(RenderTarget* target) {
             drawn.x = x;
             drawn.y = y;
             drawn.width = 1.0f;
-            drawn.height = height > 0.0f ? height : CaretHeight();
+            // A bare line (the blank one next to a list) is a few points
+            // tall; the caret in it is a normal one, so the reader can see
+            // where typing goes.
+            drawn.height = height > layout::kReadBlankLineStripDip + 0.5f
+                               ? height
+                               : CaretHeight();
             target->FillRect(drawn, CaretColor());
         }
     }

@@ -156,6 +156,20 @@ DocumentLayout LayoutDocument(const LayoutInput& in) {
             continue;
         }
 
+        // While editing the block stays, because the caret has to be able
+        // to sit on that source line. It draws no ink, though: the walk
+        // lays it out as the bare strip paragraph_layout gives it, at the
+        // list's own edge, and leaves the predecessor on the list, so the
+        // next block keeps the gap it has while reading. The modes then
+        // differ by the strip's few points, not by an empty row.
+        if (blankNextToList) {
+            LayoutCtx strip;
+            strip.in = &in;
+            strip.list = &out.list;
+            out.blocks.push_back(LayoutParagraph(strip, node, i, &curY));
+            continue;
+        }
+
         // The block kinds this module owns. Everything else still
         // belongs to the renderers, one block type at a time. A
         // skipped kind is remembered anyway, because the gap of the

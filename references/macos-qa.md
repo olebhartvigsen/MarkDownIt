@@ -178,11 +178,13 @@ loop that now runs on every build.
   that line is dead space on top of the block gaps.
 - Screenshot: `qa/doc.png`; measured pixel rows in the bullet
   section (bands 448-465, 559-571, 614-626, 693-705).
-- Status: fixed in this commit. The blank line keeps a full line in
-  edit mode, so the caret's place stays, and renders as a thin strip
-  while reading, so blocks around a list sit at their normal distance.
-  Both renderers follow the mode; a mac renderer test holds the two
-  heights apart.
+- Status: fixed. The blank line next to a list is bare in both modes: it
+  draws no ink and charges no row, so the list's own gap runs straight
+  into the next block. Edit mode keeps the block, at a four point strip,
+  because the caret has to be able to sit on that source line, and the
+  caret is drawn at its full height over the strip. The shared walk and
+  both renderers follow the same rule; a layout test holds the modes four
+  points apart, and a mac renderer test holds the strip.
 
 ### The outline hint line clipped at the pane edge (Nov 1)
 - The second empty-state line ran past the 200 DIP pane and was cut

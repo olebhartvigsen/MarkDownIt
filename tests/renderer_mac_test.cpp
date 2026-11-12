@@ -1696,7 +1696,7 @@ TEST(RendererMac, RecoloursTheRunsWhenTheThemeChanges) {
 // word-processor guidelines keep it addressable). While reading it is
 // not a block anyone sees: it drops out of the layout entirely, so
 // the list's own gap runs straight into its neighbor.
-TEST(RendererMac, CollapsesTheBlankLineWhileReading) {
+TEST(RendererMac, DrawsTheBlankLineNextToListBareInBothModes) {
     FakeEngine engine;
     MacRenderer renderer;
     renderer.SetTextEngine(&engine);
@@ -1715,13 +1715,12 @@ TEST(RendererMac, CollapsesTheBlankLineWhileReading) {
     renderer.SetEditing(false);
     const float reading = renderer.Measure(doc, 1400.0f);
 
-    // Editing keeps the blank line as its own addressable block, one
-    // caret line tall. Reading drops it from the layout altogether (it
-    // sits next to the list), so the whole line and its own margin
-    // collapse go with it: comfortably more than one line, not an
-    // unbounded amount.
-    EXPECT_TRUE(editing - reading > kBodyEm);
-    EXPECT_TRUE(editing - reading < 4.0f * kBodyEm);
+    // The blank line next to the list is bare in both modes: editing
+    // keeps the block for the caret at the strip's few points, and
+    // reading drops it. The modes differ by that strip, not by an empty
+    // row, which is what a reader saw before.
+    EXPECT_TRUE(editing - reading >= 0.0f);
+    EXPECT_TRUE(editing - reading < 8.0f);
 }
 
 

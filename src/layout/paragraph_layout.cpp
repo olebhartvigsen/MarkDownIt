@@ -121,9 +121,16 @@ LaidBlock LayoutParagraph(const LayoutCtx& ctx, const Node& node,
     std::vector<platform::TextLine> lines =
         in.engine->MeasureWrapped(runs, in.contentWidth, 0.0f);
     ApplyLineSpacing(&lines, size, m.bodyLineHeight, in.zoom, in.engine);
-    if (!in.editing && node.virtualEmptyParagraph) {
-        // While reading, the blank line next to a list is a thin strip.
-        // Editing keeps the full line for the caret.
+    // The blank line that sits next to a list is bare in both modes: the
+    // source uses it to separate the list from its neighbour, so it may
+    // not open an empty row in the text. Editing keeps the block for the
+    // caret, which is drawn over the strip at its own height.
+    const bool blankNextToList = node.virtualEmptyParagraph &&
+        ((nodeIndex > 0 &&
+          in.doc->nodes[nodeIndex - 1].block == BlockKind::List) ||
+         (nodeIndex + 1 < in.doc->nodes.size() &&
+          in.doc->nodes[nodeIndex + 1].block == BlockKind::List));
+    if (blankNextToList || (!in.editing && node.virtualEmptyParagraph)) {
         for (platform::TextLine& line : lines) {
             line.height = kReadBlankLineStripDip;
         }

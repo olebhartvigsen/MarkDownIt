@@ -1613,12 +1613,19 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     const uint32_t lineStart = content_->LineBoundary(midLine, false);
     const bool lineRect = content_->OffsetToRect(lineStart, &lineX, &lineY,
                                                 &lineW, &lineH);
+    // The neighbours of the anchor, so a view whose offsets all answer the
+    // line's start shows it in the same line of the log.
+    float n1X = 0.0f, n1Y = 0.0f, n1W = 0.0f, n1H = 0.0f;
+    float n3X = 0.0f, n3Y = 0.0f, n3W = 0.0f, n3H = 0.0f;
+    content_->OffsetToRect(midLine + 1, &n1X, &n1Y, &n1W, &n1H);
+    content_->OffsetToRect(midLine + 3, &n3X, &n3Y, &n3W, &n3H);
     platform::TraceMac("qa nav caret %s: ok=%d at=%u line=%u x=%.1f "
-                       "line_x=%.1f inset=%.1f",
+                       "line_x=%.1f inset=%.1f x1=%.1f x3=%.1f",
                        label, (caretRect && lineRect) ? 1 : 0, midLine, lineStart,
                        static_cast<double>(caretX),
                        static_cast<double>(lineX),
-                       static_cast<double>(caretX - lineX));
+                       static_cast<double>(caretX - lineX),
+                       static_cast<double>(n1X), static_cast<double>(n3X));
 
     // The walk leaves the document as it found it: a caret, no
     // selection, nothing to save, nothing to undo.

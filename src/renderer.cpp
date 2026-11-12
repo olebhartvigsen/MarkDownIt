@@ -2544,12 +2544,21 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         DWRITE_TEXT_METRICS metrics = {};
         layout->GetMetrics(&metrics);
 
-        // While reading, the blank line next to a list takes the thin
-        // strip Measure charges for it, the height the cache keeps for
-        // this record.
+        // The blank line the parser keeps next to a list is bare in both
+        // modes: the source uses it to separate the list from its
+        // neighbour, so it may not open an empty row. A standalone blank
+        // line keeps its full row while editing, since it is the only
+        // line there is. The walk charges the same heights, so the caret
+        // records stay on the blocks they belong to.
+        const bool blankNextToList = n.virtualEmptyParagraph &&
+            ((nodeIdx > 0 &&
+              doc.nodes[nodeIdx - 1].block == BlockKind::List) ||
+             (nodeIdx + 1 < doc.nodes.size() &&
+              doc.nodes[nodeIdx + 1].block == BlockKind::List));
         const float blankAdvance =
-            (!editing_ && n.virtualEmptyParagraph) ? kReadBlankLineStripDip
-                                                   : metrics.height;
+            (n.virtualEmptyParagraph && (blankNextToList || !editing_))
+                ? kReadBlankLineStripDip
+                : metrics.height;
 
         // A block whose image drew keeps no caret record: the image
         // owns the band the way it always did (the old pass released

@@ -315,10 +315,12 @@ TEST(ParagraphListQuote, LayoutBracketsTheEngineOncePerPass) {
     EXPECT_EQ(engine.beginLayoutCalls, 1);
 }
 
-// A blank source line the parser keeps next to a list for the caret
-// collapses while reading: the list's own gap runs straight into the
-// next block, no extra margin for a block nobody can see.
-TEST(ParagraphListQuote, BlankLineNextToListCollapsesWhileReading) {
+// A blank source line the parser keeps next to a list for the caret is
+// bare in both modes: it draws no ink and charges no row, so the list's
+// own gap runs straight into the next block. Editing keeps the block,
+// because the caret has to be able to sit on that source line, but it is
+// the same strip the reading layout charges.
+TEST(ParagraphListQuote, BlankLineNextToListIsBareInBothModes) {
     fake::FakeTextEngine engine;
     Document doc;
     doc.nodes.push_back(TextNodeOf(BlockKind::List, U"one item", 0, false));
@@ -338,7 +340,15 @@ TEST(ParagraphListQuote, BlankLineNextToListCollapsesWhileReading) {
                 reading.blocks[0].y + reading.blocks[0].height + expectedGap,
                 0.001f);
 
-    // Editing keeps the blank line as its own block, caret-addressable.
+    // Editing keeps the blank line as its own block, caret-addressable,
+    // at the strip's height, and the next block's gap is still measured
+    // from the list, so the two modes differ by the strip alone.
     layout::DocumentLayout editing = RunLayout(doc, 300.0f, &engine, true);
     EXPECT_EQ(editing.blocks.size(), static_cast<size_t>(3));
+    EXPECT_NEAR(editing.blocks[1].height, layout::kReadBlankLineStripDip,
+                0.001f);
+    EXPECT_NEAR(editing.blocks[2].y,
+                editing.blocks[0].y + editing.blocks[0].height +
+                    layout::kReadBlankLineStripDip + expectedGap,
+                0.001f);
 }
