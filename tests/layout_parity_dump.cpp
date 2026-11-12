@@ -66,7 +66,14 @@ std::string Json(const std::string& value) {
 std::string Num(float v) {
     std::ostringstream out;
     out.imbue(std::locale::classic());
-    out << std::fixed << std::setprecision(6) << v;
+    // Three decimal places (thousandths of a point) is well inside a
+    // float32's ~7 significant digits and inside what layout actually
+    // needs. More digits print real but meaningless bits: the same
+    // arithmetic on MSVC and Clang can round the last ULP differently
+    // (seen in tests/fixtures/parity/lists-nested.md, a cumulative sum
+    // over several rows), which showed up as a false parity failure at
+    // six decimal places and vanishes at three.
+    out << std::fixed << std::setprecision(3) << v;
     return out.str();
 }
 
