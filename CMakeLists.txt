@@ -567,6 +567,37 @@ if(BUILD_TESTS)
     set_target_properties(MarkDownIt.svg-parity PROPERTIES WIN32_EXECUTABLE OFF)
 endif()
 
+# Both platforms lay out the parity fixtures with the fixed-width fake
+# text engine (tests/fake_text_engine.h) and write a canonical JSON
+# dump: block order, rectangles, line breaks, table column widths,
+# list marker positions and the display list. The CI parity job
+# compares a platform's own dump against the committed golden in
+# tests/layout-golden/, then the Windows dump directly against the
+# macOS one, the backstop if a golden was updated wrongly
+# (references/platform-parity.md, "Layout dump parity").
+if(BUILD_TESTS)
+    add_executable(MarkDownIt.layout-parity
+        tests/layout_parity_dump.cpp
+        src/parser.cpp
+        src/layout/break_heading_layout.cpp
+        src/layout/text_runs.cpp
+        src/layout/paragraph_layout.cpp
+        src/layout/quote_layout.cpp
+        src/layout/list_layout.cpp
+        src/layout/code_layout.cpp
+        src/layout/table_layout.cpp
+        src/layout/svg_mermaid_layout.cpp
+        src/layout/display_player.cpp
+        src/svgtext.cpp
+        ${MARKDOWNIT_MERMAID_SOURCES}
+    )
+    target_include_directories(MarkDownIt.layout-parity PRIVATE src tests)
+    target_link_libraries(MarkDownIt.layout-parity PRIVATE md4c pugixml)
+    target_compile_features(MarkDownIt.layout-parity PRIVATE cxx_std_17)
+    set_target_properties(MarkDownIt.layout-parity PROPERTIES
+        WIN32_EXECUTABLE OFF)
+endif()
+
 # ============================================================================
 # macOS
 # ============================================================================

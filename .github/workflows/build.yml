@@ -161,6 +161,7 @@ jobs:
           build-tests/Release/MarkDownIt.tests.exe
           python tools/test_svg_arrow_contacts.py --exe build-tests/Release/MarkDownIt.svg-parity.exe
           build-tests/Release/MarkDownIt.svg-parity.exe "$RUNNER_TEMP/svg-commands.json" tests/fixtures/ai-components.svg tests/fixtures/diagram.svg tests/fixtures/svg-parity.svg tests/fixtures/svg-arrow-contacts.svg tests/fixtures/two-boxes.svg tests/fixtures/wide-diagram.svg tests/markdown-mermaid/mermaid-diagram-1788899219877.svg
+          build-tests/Release/MarkDownIt.layout-parity.exe "$RUNNER_TEMP/layout-dump.windows.json" tests/fixtures/parity/*.md
           ls -la "$MDI_OFFICE_OUT_DIR"
           # Until the transcript corpus is enrolled in the test target,
           # the runner writes nothing and this seeds an empty digest,
@@ -198,6 +199,13 @@ jobs:
           path: |
             ${{ runner.temp }}/svg-commands.json
             ${{ runner.temp }}/svg-native.json
+          if-no-files-found: error
+
+      - name: Upload the Windows layout dump
+        uses: actions/upload-artifact@v4
+        with:
+          name: layout-dump-windows
+          path: ${{ runner.temp }}/layout-dump.windows.json
           if-no-files-found: error
 
       # The produced Word and PDF files are validated by an independent reader
@@ -260,7 +268,7 @@ jobs:
         run: cmake -B build-native -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
 
       - name: Build
-        run: cmake --build build-native --target MarkDownIt.tests MarkDownIt.svg-parity -j2
+        run: cmake --build build-native --target MarkDownIt.tests MarkDownIt.svg-parity MarkDownIt.layout-parity -j2
 
       - name: Run
         env:
@@ -312,6 +320,16 @@ jobs:
           path: |
             ${{ runner.temp }}/svg-commands.json
             ${{ runner.temp }}/svg-native.json
+          if-no-files-found: error
+
+      - name: Record macOS layout dump
+        run: ./build-native/MarkDownIt.layout-parity "$RUNNER_TEMP/layout-dump.macos.json" tests/fixtures/parity/*.md
+
+      - name: Upload the macOS layout dump
+        uses: actions/upload-artifact@v4
+        with:
+          name: layout-dump-macos
+          path: ${{ runner.temp }}/layout-dump.macos.json
           if-no-files-found: error
 
       # A second build of the same suite with the sanitizers on. It runs
@@ -453,6 +471,39 @@ jobs:
         run: python3 tools/check_svg_parity.py svg-commands/macos/svg-commands.json svg-commands/windows/svg-commands.json
       - name: Compare native paint probes with macOS
         run: python3 tools/check_svg_native_parity.py svg-commands/macos/svg-native.json svg-commands/windows/svg-native.json
+
+  # The layout dump is the Batch 5 parity gate: both platforms lay out
+  # the same fixtures with the fixed-width fake text engine, so a real
+  # measurement engine difference never has a chance to hide a layout
+  # regression. The platform's own dump is checked against the
+  # committed golden first, naming which side moved; the direct
+  # Windows-vs-macOS compare is the backstop if the golden itself was
+  # updated wrongly.
+  layout-parity:
+    name: Layout dump parity (Windows vs macOS vs golden)
+    needs: [build, test-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: layout-dump-macos
+          path: layout-dumps/macos
+      - uses: actions/download-artifact@v4
+        with:
+          name: layout-dump-windows
+          path: layout-dumps/windows
+      - name: Test parity checker
+        run: python3 tools/test_check_layout_parity.py
+      - name: Compare the macOS dump with the committed golden
+        run: python3 tools/check_layout_parity.py tests/layout-golden/layout-golden.json layout-dumps/macos/layout-dump.macos.json
+      - name: Compare the Windows dump with the committed golden
+        run: python3 tools/check_layout_parity.py tests/layout-golden/layout-golden.json layout-dumps/windows/layout-dump.windows.json
+      - name: Compare Windows directly with macOS (backstop)
+        run: python3 tools/check_layout_parity.py layout-dumps/macos/layout-dump.macos.json layout-dumps/windows/layout-dump.windows.json
 
   # The two test suites must carry the same tests. A suite that only
   # one platform builds is drift the manifest cannot see, because the
