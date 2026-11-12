@@ -487,11 +487,9 @@ WALK_EOF
     # The caret's place inside its line. An engine that no longer holds
     # the line's measurement answers every offset with the line's start,
     # which put the caret at the beginning of the line on a click and
-    # kept it there. The document view holds the hard rule: an anchor
-    # that LineBoundary says is inside a line must be drawn inside it.
-    # The source view is the raw buffer wrapped by column, where the same
-    # anchor can land on a line boundary, so its numbers are reported and
-    # only its ordering is asserted.
+    # kept it there. An anchor that LineBoundary says is inside a line must
+    # be drawn inside it, in both views: the document's paragraphs and the
+    # source view's column-wrapped buffer alike.
     for label in doc source; do
         CARET_LINE=$(grep "qa nav caret $label:" "$LOG" 2>/dev/null | tail -1)
         if [ -z "$CARET_LINE" ]; then
@@ -501,14 +499,8 @@ WALK_EOF
         fi
         CARET_INSET=$(printf '%s' "$CARET_LINE" \
             | grep -o "inset=[0-9.-]*" | cut -d= -f2)
-        if [ "$label" = "doc" ]; then
-            if ! awk -v v="$CARET_INSET" 'BEGIN { exit !(v > 20) }'; then
-                echo "launch smoke FAILED: the doc caret sits at the line start"
-                echo "$CARET_LINE"
-                exit 1
-            fi
-        elif ! awk -v v="$CARET_INSET" 'BEGIN { exit !(v >= 0) }'; then
-            echo "launch smoke FAILED: the source caret sits before its line"
+        if ! awk -v v="$CARET_INSET" 'BEGIN { exit !(v > 20) }'; then
+            echo "launch smoke FAILED: the $label caret sits at the line start"
             echo "$CARET_LINE"
             exit 1
         fi

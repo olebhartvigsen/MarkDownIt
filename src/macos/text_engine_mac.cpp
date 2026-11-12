@@ -35,7 +35,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
 #include <map>
 #include <memory>
 #include <vector>
@@ -354,6 +353,14 @@ struct CoreTextEngine::Impl {
         uint64_t key = 0;
         float width = 0.0f;
         std::string text;
+        // Core Text answers a position and a caret x in the paragraph's
+        // own index space, not the line's: a line-relative index falls
+        // outside the line's string range, and Core Text clamps it to the
+        // line's first byte. The entry keeps the range the line has there
+        // and the paragraph's byte map, so both readers speak the same
+        // units Core Text does.
+        CFIndex u16Start = 0;
+        uint32_t byteBase = 0;
         // The UTF-8 byte offset of every UTF-16 unit of the line.
         std::vector<uint32_t> u16ToUtf8;
     };
@@ -488,6 +495,9 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
 
         laidRuns.push_back(laid);
 
+        // The paragraph's map is over the whole string, so each run's
+        // bytes start where the run before it ended.
+        lineByteBase += static_cast<uint32_t>(run.text.size());
         u16Length += runLength;
     }
 
@@ -578,23 +588,21 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
         entry.key = out.measuredKey;
         entry.width = out.width;
         entry.text = CoreTextEngine::LineTextUtf8(out);
-        // The entry's map is relative to the line's own first byte: its
-        // readers ask for a position inside the line and get a byte
-        // offset inside the line back. The measurement's map runs over
-        // the whole paragraph, so the line's slice is rebased here.
-        // Handing out the paragraph offsets put a caret, a wash and a
-        // hit test on the wrong character wherever a block had more
-        // than one line.
-        const uint32_t lineBase =
-            static_cast<size_t>(start) < u16ToUtf8.size()
-                ? u16ToUtf8[static_cast<size_t>(start)]
-                : 0;
+        // The map stays in the paragraph's byte space, and the entry keeps
+        // where the line starts in it. Rebasing to the line made the byte
+        // table the callers' unit but left Core Text reading absolute
+        // indices, so every position on a wrapped line answered the
+        // line's first byte.
+        entry.u16Start = start;
+        entry.byteBase = static_cast<size_t>(start) < u16ToUtf8.size()
+                             ? u16ToUtf8[static_cast<size_t>(start)]
+                             : 0;
         entry.u16ToUtf8.reserve(static_cast<size_t>(count));
         for (CFIndex i = 0; i < count; ++i) {
             const size_t at = static_cast<size_t>(start + i);
-            const uint32_t value =
-                at < u16ToUtf8.size() ? u16ToUtf8[at] : lineBase;
-            entry.u16ToUtf8.push_back(value - lineBase);
+            entry.u16ToUtf8.push_back(
+                at < u16ToUtf8.size() ? u16ToUtf8[at]
+                                      : entry.byteBase);
         }
         impl_->entries.push_back(entry);
         lines.push_back(out);
@@ -643,14 +651,16 @@ uint32_t CoreTextEngine::HitTestOffset(const TextLine& line, float x,
         *outTrailing = (static_cast<double>(x) > boundary);
     }
 
-    // The index is in UTF-16 units of the line, which maps back to a UTF-8
-    // offset through the table the measurement built.
-    if (index <= 0) return 0;
-    const size_t u16Index = static_cast<size_t>(index);
-    if (u16Index >= entry.u16ToUtf8.size()) {
-        return entry.u16ToUtf8.empty() ? 0 : entry.u16ToUtf8.back();
+    // Core Text answered in the paragraph's units, so the index is turned
+    // back into a byte offset inside this line before it leaves the seam.
+    const CFIndex local = index - entry.u16Start;
+    if (local <= 0) return 0;
+    if (static_cast<std::size_t>(local) >= entry.u16ToUtf8.size()) {
+        return entry.u16ToUtf8.empty()
+                   ? 0
+                   : entry.u16ToUtf8.back() - entry.byteBase;
     }
-    return entry.u16ToUtf8[u16Index];
+    return entry.u16ToUtf8[static_cast<std::size_t>(local)] - entry.byteBase;
 }
 
 Rect CoreTextEngine::OffsetToRect(const TextLine& line,
@@ -665,29 +675,22 @@ Rect CoreTextEngine::OffsetToRect(const TextLine& line,
     if (at >= impl_->entries.size()) return rect;
     const Impl::Entry& entry = impl_->entries[at];
 
-    // The UTF-16 index of the UTF-8 offset.
-    CFIndex index = 0;
-    for (size_t i = 0; i < entry.u16ToUtf8.size(); ++i) {
-        if (entry.u16ToUtf8[i] >= offset) {
-            index = static_cast<CFIndex>(i);
+    // The byte the caller names, in the paragraph's space, and the UTF-16
+    // index that holds it. An offset past the line's last byte answers the
+    // line's end, which is where Core Text clamps an index out of range.
+    const uint32_t target = entry.byteBase + offset;
+    CFIndex index = entry.u16Start +
+                    static_cast<CFIndex>(entry.u16ToUtf8.size());
+    for (std::size_t i = 0; i < entry.u16ToUtf8.size(); ++i) {
+        if (entry.u16ToUtf8[i] >= target) {
+            index = entry.u16Start + static_cast<CFIndex>(i);
             break;
         }
-        index = static_cast<CFIndex>(i + 1);
     }
 
-    // The horizontal position of the character, which Core Text gives
-    // directly.
     double x = 0.0;
     CTLineGetOffsetForStringIndex(entry.line, index, &x);
     rect.x = static_cast<float>(x);
-    if (offset > 0 && index == 0 &&
-        getenv("MARKDOWNIT_TRACE_HITIT") != nullptr) {
-        TraceMac("hitit: offset=%u answered the line start; key=%llu "
-                 "units=%zu entry_text=%zu line_width=%.2f",
-                 offset, static_cast<unsigned long long>(entry.key),
-                 entry.u16ToUtf8.size(), entry.text.size(),
-                 static_cast<double>(line.width));
-    }
     return rect;
 }
 

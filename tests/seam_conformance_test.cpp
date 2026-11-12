@@ -112,6 +112,18 @@ void CheckTextEngine(TextEngine& engine) {
     EXPECT_EQ(wrappedText, sourceText);
     EXPECT_LE(wrappedWidth, unbounded[0].width + 0.001f);
 
+    // A caret inside a wrapped line sits inside that line. The engines
+    // that own their layouts answer positions in the paragraph's index
+    // space, so a caller that speaks line-relative units gets that line's
+    // first byte back for every offset, and the caret never moves into
+    // the line. This is the second line on purpose: the first one starts
+    // at zero and hides the mistake.
+    ASSERT_TRUE(wrapped.size() >= 2);
+    const TextLine& secondLine = wrapped[1];
+    const platform::Rect secondStart = engine.OffsetToRect(secondLine, 0);
+    const platform::Rect secondInside = engine.OffsetToRect(secondLine, 2);
+    EXPECT_GT(secondInside.x, secondStart.x + 0.5f);
+
     // Word wrapping breaks lines at spaces, and the space that carries
     // the break still has to advance the ink after it: a line laid
     // run by run at trimmed widths drops every space at a run's end,

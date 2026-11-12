@@ -12,13 +12,11 @@
 #include "hash.h"
 #include "layout/display_player.h"
 #include "layout/selection_rects.h"
-#include "crash_trace_mac.h"
 #include "layout/text_runs.h"
 #include "markers.h"
 
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
 #include <utility>
 #include <variant>
 
@@ -2045,16 +2043,6 @@ bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
                     ? length
                     : vis - lineStartVis;
                 const Rect rect = engine_->OffsetToRect(line, inLine);
-                if (getenv("MARKDOWNIT_TRACE_HITIT") != nullptr) {
-                    TraceMac("hitit: offset=%u vis=%u lineStart=%u "
-                             "lineEnd=%u length=%u inLine=%u region_x=%.1f "
-                             "line_width=%.2f rect_x=%.2f key=%llu",
-                             offset, vis, lineStartVis, lineEndVis, length,
-                             inLine, static_cast<double>(region.x),
-                             static_cast<double>(line.width),
-                             static_cast<double>(rect.x),
-                             static_cast<unsigned long long>(line.measuredKey));
-                }
                 if (outX) *outX = region.x + rect.x;
                 if (outY) *outY = lineTop;
                 if (outWidth) *outWidth = rect.width;
