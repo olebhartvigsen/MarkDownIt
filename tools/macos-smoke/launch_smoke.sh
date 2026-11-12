@@ -442,6 +442,18 @@ WALK_EOF
         echo "launch smoke FAILED: the navigation state reported no focus"
         exit 1
     fi
+    # Edit mode comes on while the find field holds the keyboard, the way
+    # a reader arrives at the switch after a search. The document has to
+    # take the keyboard back, or the arrows edit the field and the page
+    # never moves.
+    NAV_HOLDS=$(printf '%s' "$NAV_FOCUS" | grep -o "holds=[0-9]*" | cut -d= -f2)
+    if [ "$NAV_HOLDS" != "1" ]; then
+        echo "launch smoke FAILED: edit mode left the keyboard outside the page"
+        echo "$NAV_FOCUS"
+        exit 1
+    fi
+    echo "launch smoke: edit mode takes the keyboard back from the field"
+
     for label in doc source; do
         NAV_LINE=$(grep "qa nav $label:" "$LOG" 2>/dev/null | tail -1)
         if [ -z "$NAV_LINE" ]; then

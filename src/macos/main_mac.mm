@@ -868,14 +868,24 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                     UTF8String])];
         }
         if (sourceView_) [self OnToggleSourceView];
-        // The mode comes on through the command the toolbar switch and
-        // the menu carry, so the reader's own path is the one measured.
-        if (!app_->Editing()) [self editMode:nil];
+        // The reader's own way in: a search was open, so its field held
+        // the keyboard, and then Edit is pressed. The mode comes on
+        // through the command the toolbar switch and the menu carry.
+        if (!app_->Editing()) {
+            if (!app_->WelcomeMode()) {
+                app_->ShowFind(FindBarMode::Find);
+                [self syncFindBarLayout:YES];
+                app_->findBar().FocusSearchField();
+            }
+            [self editMode:nil];
+        }
         NSString* responder =
             NSStringFromClass([[window_ firstResponder] class]);
         platform::TraceMac("qa nav focus: responder=%s holds=%d",
                            responder ? [responder UTF8String] : "nil",
                            [window_ firstResponder] == view_ ? 1 : 0);
+        app_->HideFind();
+        [self syncFindBarLayout:NO];
         if ([window_ firstResponder] != view_) {
             // The matrix measures the moves, not the focus; a state
             // that ran earlier may still hold another responder.
@@ -3061,6 +3071,17 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
 - (void)OnToggleEditMode {
     app_->ToggleEditing();
+    // Entering edit mode has to leave the reader able to type. The
+    // command can arrive from a control that holds the keyboard (the
+    // toolbar switch, a menu item, an open find field), and then every
+    // key press goes to that control: the arrows never reach the page,
+    // which reads as dead navigation while editing. Handing the
+    // keyboard back here also restores the caret, because the mode hook
+    // only draws it while the document view is first responder.
+    if (app_->Editing()) {
+        [window_ makeFirstResponder:view_];
+        [self editingModeChanged:YES];
+    }
     [self toolbarSync];
     [view_ setNeedsDisplay:YES];
 }
