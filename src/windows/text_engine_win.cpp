@@ -265,6 +265,7 @@ std::vector<TextLine> DWriteEngine::MeasureWrapped(
             // rule.
             if (maxWidth > 0.0f && x > 0.0f && x + w > maxWidth) {
                 line.width = x;
+                line.measuredKey = ++nextKey_;
                 out.push_back(std::move(line));
                 line = TextLine();
                 line.height = WidestLineHeight(runs);
@@ -276,10 +277,14 @@ std::vector<TextLine> DWriteEngine::MeasureWrapped(
             line.runs.push_back(std::move(onLine));
         }
         line.width = x;
-        if (line.runs.empty() || x > 0.0f) out.push_back(std::move(line));
+        if (line.runs.empty() || x > 0.0f) {
+            line.measuredKey = ++nextKey_;
+            out.push_back(std::move(line));
+        }
         if (out.empty()) {
             line = TextLine();
             line.height = WidestLineHeight(runs);
+            line.measuredKey = ++nextKey_;
             out.push_back(std::move(line));
         }
         return out;
