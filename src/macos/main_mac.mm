@@ -139,6 +139,10 @@ bool OpenExternalUrl(const std::string& url) {
 - (void)applyQAState:(NSString*)state;
 - (void)qaScrollToHeading:(int)index drop:(float)drop;
 - (void)qaKeysRun:(const char*)label;
+- (void)qaNavMatrix:(const char*)label;
+- (void)qaKeyPress:(unsigned short)keyCode
+          function:(unichar)functionKey
+             flags:(NSEventModifierFlags)flags;
 - (void)qaScrollToTop;
 
 // The menu commands, as AppKit selectors.
@@ -845,6 +849,42 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         }
         if (sourceView_) [self OnToggleSourceView];
         [self qaKeysRun:"doc"];
+    } else if ([state isEqualToString:@"nav"]) {
+        // The navigation matrix, in edit mode, in both views (port
+        // alignment, AC-02). The reader reports dead keys while
+        // editing, and the earlier key runs could not see it: they
+        // press Right, Down, Down and Up once each from a single
+        // paragraph. This state presses every type once from the same
+        // anchor and names the ones that answered nothing.
+        [window_ makeKeyAndOrderFront:nil];
+        [window_ makeFirstResponder:view_];
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            app_->MarkClean();
+            [window_ setDocumentEdited:NO];
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"layout-showcase.md"]
+                    UTF8String])];
+        }
+        if (sourceView_) [self OnToggleSourceView];
+        // The mode comes on through the command the toolbar switch and
+        // the menu carry, so the reader's own path is the one measured.
+        if (!app_->Editing()) [self editMode:nil];
+        NSString* responder =
+            NSStringFromClass([[window_ firstResponder] class]);
+        platform::TraceMac("qa nav focus: responder=%s holds=%d",
+                           responder ? [responder UTF8String] : "nil",
+                           [window_ firstResponder] == view_ ? 1 : 0);
+        if ([window_ firstResponder] != view_) {
+            // The matrix measures the moves, not the focus; a state
+            // that ran earlier may still hold another responder.
+            [window_ makeFirstResponder:view_];
+        }
+        [self qaNavMatrix:"doc"];
+        if (!sourceView_) [self OnToggleSourceView];
+        [self qaNavMatrix:"source"];
+        if (sourceView_) [self OnToggleSourceView];
     } else if ([state isEqualToString:@"shared"]) {
         // The shared walk, one capture state per new visible feature
         // (plan, capture parity): the same command sequence the
@@ -1446,12 +1486,21 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // routing the keyboard uses (keyDown: -> interpretKeyEvents: -> the
 // command selector), not just the command behind it.
 - (void)qaKeyPress:(unsigned short)keyCode function:(unichar)functionKey {
+    [self qaKeyPress:keyCode function:functionKey flags:0];
+}
+
+// The same press with modifiers: Shift selects, Option moves by word and
+// Command reaches the line and the document edges on this platform.
+- (void)qaKeyPress:(unsigned short)keyCode
+          function:(unichar)functionKey
+             flags:(NSEventModifierFlags)flags {
     NSString* characters = [NSString stringWithCharacters:&functionKey length:1];
     // The flags a real arrow carries, and the window's own dispatch, so
     // the event travels the responder chain the way a key press does.
     NSEvent* event = [NSEvent keyEventWithType:NSEventTypeKeyDown
                                       location:NSZeroPoint
-                                 modifierFlags:(NSEventModifierFlagNumericPad |
+                                 modifierFlags:(flags |
+                                                NSEventModifierFlagNumericPad |
                                                 NSEventModifierFlagFunction)
                                      timestamp:0
                                   windowNumber:[window_ windowNumber]
@@ -1461,6 +1510,81 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                                      isARepeat:NO
                                        keyCode:keyCode];
     [window_ sendEvent:event];
+}
+
+// Every navigation type the keyboard carries, one press each, from the
+// same anchor: the arrows, the word moves, the vertical moves, the line
+// and document edges, and the page keys. A type that answers with the
+// offset it started from is a dead key.
+//
+// The earlier key runs press Right, Down, Down and Up once each from one
+// paragraph, so a type that answers nothing anywhere else went unseen.
+// This walks the whole matrix in the mode the reader edits in, in both
+// views, and names the types that did not move.
+- (void)qaNavMatrix:(const char*)label {
+    if (!app_ || !content_ || app_->WelcomeMode()) return;
+
+    const std::string& text = app_->buffer().Text();
+    size_t at = text.find("Quoted text keeps the bar");
+    if (at == std::string::npos) at = text.find("One document with every");
+    if (at == std::string::npos) at = 0;
+    // Mid-paragraph, so the line edges have somewhere to go, and with a
+    // block above and below it, so neither vertical move is at a wall.
+    const uint32_t anchor = content_->NormalizeToRenderedCaret(
+        static_cast<uint32_t>(at) + 7);
+
+    struct Probe {
+        const char* name;
+        unsigned short code;
+        unichar function;
+        NSEventModifierFlags flags;
+    };
+    const Probe probes[] = {
+        {"n_r", 124, NSRightArrowFunctionKey, 0},
+        {"n_l", 123, NSLeftArrowFunctionKey, 0},
+        {"n_sr", 124, NSRightArrowFunctionKey, NSEventModifierFlagShift},
+        {"n_wr", 124, NSRightArrowFunctionKey, NSEventModifierFlagOption},
+        {"n_wl", 123, NSLeftArrowFunctionKey, NSEventModifierFlagOption},
+        {"n_dn", 125, NSDownArrowFunctionKey, 0},
+        {"n_up", 126, NSUpArrowFunctionKey, 0},
+        {"n_sdn", 125, NSDownArrowFunctionKey, NSEventModifierFlagShift},
+        {"n_lr", 124, NSRightArrowFunctionKey, NSEventModifierFlagCommand},
+        {"n_ll", 123, NSLeftArrowFunctionKey, NSEventModifierFlagCommand},
+        {"n_de", 125, NSDownArrowFunctionKey, NSEventModifierFlagCommand},
+        {"n_ds", 126, NSUpArrowFunctionKey, NSEventModifierFlagCommand},
+        {"n_pdn", 121, NSPageDownFunctionKey, 0},
+        {"n_pup", 116, NSPageUpFunctionKey, 0},
+        {"n_hm", 115, NSHomeFunctionKey, 0},
+        {"n_en", 119, NSEndFunctionKey, 0},
+    };
+
+    std::string line;
+    int dead = 0;
+    for (const Probe& probe : probes) {
+        app_->SetCaret(anchor);
+        [view_ caretMoved];
+        [self qaKeyPress:probe.code function:probe.function flags:probe.flags];
+        const uint32_t after = app_->selection().active.offset;
+        if (after == anchor) {
+            ++dead;
+            line += " nva_dead_";
+            line += probe.name;
+            line += "=1";
+        }
+        line += " ";
+        line += probe.name;
+        line += "=";
+        line += std::to_string(after);
+    }
+    platform::TraceMac("qa nav %s: anchor=%u editing=%d dead=%d%s", label,
+                       anchor, app_->Editing() ? 1 : 0, dead, line.c_str());
+
+    // The walk leaves the document as it found it: a caret, no
+    // selection, nothing to save, nothing to undo.
+    app_->SetCaret(anchor);
+    [view_ caretMoved];
+    app_->MarkClean();
+    [window_ setDocumentEdited:NO];
 }
 
 - (void)qaKeysRun:(const char*)label {

@@ -133,7 +133,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,shared" "$BIN" "$DOC" &
+    MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,shared" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
@@ -432,6 +432,45 @@ WALK_EOF
         echo "launch smoke: ten downs walk the $label page to $LAST"
     done
     echo "launch smoke: the arrows, the scroll and typing behave in both views"
+
+    # Every navigation type, in edit mode, in both views: the arrows, the
+    # word moves, the vertical moves, the line and document edges and the
+    # page keys. A type that answers with the offset it started from is a
+    # dead key, which is what the reader reports while editing.
+    NAV_FOCUS=$(grep "qa nav focus:" "$LOG" 2>/dev/null | tail -1)
+    if [ -z "$NAV_FOCUS" ]; then
+        echo "launch smoke FAILED: the navigation state reported no focus"
+        exit 1
+    fi
+    for label in doc source; do
+        NAV_LINE=$(grep "qa nav $label:" "$LOG" 2>/dev/null | tail -1)
+        if [ -z "$NAV_LINE" ]; then
+            echo "launch smoke FAILED: the $label navigation matrix reported nothing"
+            grep "qa nav" "$LOG" | head -4
+            exit 1
+        fi
+        NAV_ANCHOR=$(keys_field "$NAV_LINE" anchor)
+        NAV_EDIT=$(keys_field "$NAV_LINE" editing)
+        if [ "$NAV_EDIT" != "1" ]; then
+            echo "launch smoke FAILED: the $label navigation ran outside edit mode"
+            echo "$NAV_LINE"
+            exit 1
+        fi
+        NAV_DEAD=""
+        for type in n_r n_l n_sr n_wr n_wl n_dn n_up n_sdn n_lr n_ll n_de n_ds \
+                    n_pdn n_pup n_hm n_en; do
+            NAV_VALUE=$(keys_field "$NAV_LINE" "$type")
+            if [ -z "$NAV_VALUE" ] || [ "$NAV_VALUE" = "$NAV_ANCHOR" ]; then
+                NAV_DEAD="$NAV_DEAD $type"
+            fi
+        done
+        if [ -n "$NAV_DEAD" ]; then
+            echo "launch smoke FAILED: dead navigation in the $label view:$NAV_DEAD"
+            echo "$NAV_LINE"
+            exit 1
+        fi
+        echo "launch smoke: $label navigation, sixteen types, none dead"
+    done
 
     # The shared state drives the shared document controller through
     # one sequence: a typed line, a bold toggle, an applied heading
