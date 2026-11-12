@@ -681,6 +681,28 @@ Rect CoreTextEngine::OffsetToRect(const TextLine& line,
         rect.x = static_cast<float>(x);
         return rect;
     }
+    // A read of a line the engine no longer holds: the readers below the
+    // seam answer the line's start for it, so the caller sees a caret at
+    // the beginning of the line rather than an error. The trace names the
+    // line and the entries it was measured against, so the cause is
+    // visible instead of guessed at.
+    if (const char* want = getenv("MARKDOWNIT_TRACE_HITIT")) {
+        if (want[0] == '1') {
+            TraceMac("hitit: no entry for width=%.2f text=%zu offset=%u "
+                     "entries=%zu",
+                     static_cast<double>(line.width), wanted.size(), offset,
+                     impl_->entries.size());
+            size_t shown = 0;
+            for (const Impl::Entry& entry : impl_->entries) {
+                if (!entry.line) continue;
+                if (shown >= 8) break;
+                ++shown;
+                TraceMac("hitit:   width=%.2f text=%zu same_text=%d",
+                         static_cast<double>(entry.width), entry.text.size(),
+                         entry.text == wanted ? 1 : 0);
+            }
+        }
+    }
     return rect;
 }
 
