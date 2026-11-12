@@ -5966,6 +5966,21 @@ LRESULT AppWindow::ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             OnContentMouseWheel(hwnd, delta);
             return 0;
         }
+        case WM_MOUSEHWHEEL: {
+            // Trackpads and tilt wheels send this directly instead of
+            // synthesizing shift+WM_MOUSEWHEEL. Positive delta means the
+            // content moves right, same convention as GET_WHEEL_DELTA_WPARAM
+            // on WM_MOUSEWHEEL, so the step reuses the same scaling.
+            int delta = GET_WHEEL_DELTA_WPARAM(wp);
+            float shift = static_cast<float>(delta) /
+                          static_cast<float>(WHEEL_DELTA) * WHEEL_STEP_PX;
+            scrollX_ += shift;
+            if (scrollX_ < 0.0f) scrollX_ = 0.0f;
+            UpdateScrollInfo();
+            RepaintScroll();
+            UpdateCaretPosition();
+            return 0;
+        }
         case WM_KEYDOWN:
             OnKeyDown(hwnd, wp, lp);
             return 0;
