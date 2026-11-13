@@ -262,9 +262,28 @@ uint32_t MoveRight(const TextBuffer& buf, uint32_t offset,
     if (layoutCache)
         next = skipMarkersRight(s, next, layoutCache);
     // Skip over unrendered gap bytes (blank lines between blocks,
-    // code-fence lines) so the caret always lands on visible text.
+    // code-fence lines) so the caret always lands on visible text, but
+    // only when the move starts from inside the paragraph's own rendered
+    // text. The gap right after a paragraph's last rendered character
+    // (the newline before the next block) is itself a valid caret stop,
+    // paragraph-end (references/word-processor-guidelines.md section
+    // 3/E): without the ownBlockEnd check, this loop used to keep
+    // walking through that gap straight into the next paragraph's first
+    // character, so one Right press skipped paragraph-end entirely. Once
+    // the caret already sits at or past that boundary, a further Right
+    // press falls through to the ordinary gap walk and reaches the next
+    // block, same as before.
     if (layoutCache) {
+        int startBlock = layoutCache->BlockForOffset(offset);
+        uint32_t ownBlockEnd = UINT32_MAX;
+        if (startBlock >= 0) {
+            const auto& bl =
+                layoutCache->Blocks()[static_cast<size_t>(startBlock)];
+            uint32_t end = bl.srcOffset + bl.srcLength;
+            if (offset < end) ownBlockEnd = end;
+        }
         while (next < s.size() && !layoutCache->OffsetIsRendered(next)) {
+            if (next >= ownBlockEnd) break;
             uint32_t n = NextGraphemeBoundary(s, next);
             if (n == next) break;
             next = skipMarkersRight(s, n, layoutCache);
