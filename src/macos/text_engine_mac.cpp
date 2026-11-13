@@ -468,6 +468,11 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
             if (byteIndex > run.text.size()) byteIndex = run.text.size();
         }
 
+        // The paragraph's map is over the whole string, so each run's
+        // bytes start where the run before it ended. One step per run:
+        // a second one skips a run's worth of bytes on every line that
+        // has more than one run, and the caret after a styled span then
+        // answers the span's last byte for every offset past it.
         lineByteBase += static_cast<uint32_t>(run.text.size());
 
         // The text of the run is appended first, so that the attribute
@@ -495,9 +500,6 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
 
         laidRuns.push_back(laid);
 
-        // The paragraph's map is over the whole string, so each run's
-        // bytes start where the run before it ended.
-        lineByteBase += static_cast<uint32_t>(run.text.size());
         u16Length += runLength;
     }
 

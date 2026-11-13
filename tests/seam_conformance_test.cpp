@@ -205,6 +205,33 @@ void CheckTextEngine(TextEngine& engine) {
         }
     }
 
+    // A line of several runs, the shape every paragraph with a styled
+    // span has. A caret offset is a byte inside the line, so its rect only
+    // moves right as the offset grows, across a run boundary as well as
+    // inside a run. A paragraph map that skips a run's worth of bytes
+    // makes every offset past that run answer its last byte, and the
+    // caret stops at the end of the styled span.
+    std::vector<GlyphRun> styled = {MakeRun("plain ", 14.0f),
+                                    MakeRun("code", 12.0f),
+                                    MakeRun(" after", 14.0f)};
+    engine.BeginLayout();
+    std::vector<TextLine> styledLines =
+        engine.MeasureWrapped(styled, 0.0f, 0.0f);
+    ASSERT_TRUE(styledLines.size() == static_cast<size_t>(1));
+    const TextLine& styledLine = styledLines[0];
+    float previousX = -1.0f;
+    for (uint32_t byte = 0; byte <= 16; ++byte) {
+        const platform::Rect at = engine.OffsetToRect(styledLine, byte);
+        EXPECT_TRUE(at.x >= previousX - 0.01f);
+        previousX = at.x;
+    }
+    const platform::Rect styledEnd = engine.OffsetToRect(styledLine, 16);
+    EXPECT_TRUE(styledEnd.x > 1.0f);
+    bool styledTrailing = false;
+    EXPECT_EQ(engine.HitTestOffset(styledLine, styledEnd.x + 500.0f,
+                                   &styledTrailing),
+              static_cast<uint32_t>(16));
+
     // Hit test and caret rect agree about position and direction.
     const TextLine& line = unbounded[0];
     const platform::Rect atZero = engine.OffsetToRect(line, 0);
