@@ -225,8 +225,16 @@ void CheckTextEngine(TextEngine& engine) {
         EXPECT_TRUE(at.x >= previousX - 0.01f);
         previousX = at.x;
     }
+    // The caret at the line's last byte sits at the line's end, and the
+    // caret at the last run's first byte sits a code span's width right of
+    // the code span's start. A map that skips or repeats a run's bytes
+    // parks both of them on an earlier run, which the plain sweep above
+    // cannot see: a stall is still non-decreasing.
     const platform::Rect styledEnd = engine.OffsetToRect(styledLine, 16);
-    EXPECT_TRUE(styledEnd.x > 1.0f);
+    EXPECT_TRUE(styledEnd.x >= styledLine.width - 1.0f);
+    const platform::Rect codeStart = engine.OffsetToRect(styledLine, 6);
+    const platform::Rect afterStart = engine.OffsetToRect(styledLine, 10);
+    EXPECT_TRUE(afterStart.x > codeStart.x + 1.0f);
     bool styledTrailing = false;
     EXPECT_EQ(engine.HitTestOffset(styledLine, styledEnd.x + 500.0f,
                                    &styledTrailing),
