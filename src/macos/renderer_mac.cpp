@@ -158,6 +158,7 @@ bool HasMermaidLayout(const mermaid::MermaidRender& diagram) {
     switch (diagram.kind) {
         case mermaid::MermaidKind::Pie: return diagram.pie != nullptr;
         case mermaid::MermaidKind::Sequence: return diagram.seq != nullptr;
+        case mermaid::MermaidKind::Gantt: return diagram.gantt != nullptr;
         case mermaid::MermaidKind::Flowchart:
         default: return diagram.flow != nullptr;
     }
@@ -410,6 +411,10 @@ mermaid::MermaidRender MacRenderer::MermaidRenderFor(const Node& node) const {
         case BlockKind::MermaidSequence:
             diagram.kind = mermaid::MermaidKind::Sequence;
             diagram.seq = node.mermaid_seq;
+            break;
+        case BlockKind::MermaidGantt:
+            diagram.kind = mermaid::MermaidKind::Gantt;
+            diagram.gantt = node.mermaid_gantt;
             break;
         case BlockKind::MermaidFlowchart:
         default: {

@@ -15,6 +15,8 @@
 #include "mermaid/pie_layout.h"
 #include "mermaid/seq_parse.h"
 #include "mermaid/seq_layout.h"
+#include "mermaid/gantt_parse.h"
+#include "mermaid/gantt_layout.h"
 #include "mermaid/layout.h"
 #include <chrono>
 #include <memory>
@@ -843,6 +845,25 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
                             n.mermaid_seq = laid;
                             n.block = BlockKind::MermaidSequence;
                             goto promoted;
+                        } catch (...) {
+                            // Keep as CodeBlock on layout failure.
+                        }
+                    }
+                }
+                // Not a flowchart, pie or sequence: try gantt. ParseGantt
+                // rejects non-gantt input (header must be `gantt`), so
+                // chain order does not matter here either.
+                {
+                    mermaid::GanttDiagram gd = mermaid::ParseGantt(utf8);
+                    if (gd.error.empty() && !gd.tasks.empty()) {
+                        try {
+                            auto laid = std::make_shared<mermaid::LaidOutGantt>(
+                                mermaid::LayoutGantt(gd));
+                            if (laid->error.empty()) {
+                                n.mermaid_gantt = laid;
+                                n.block = BlockKind::MermaidGantt;
+                                goto promoted;
+                            }
                         } catch (...) {
                             // Keep as CodeBlock on layout failure.
                         }

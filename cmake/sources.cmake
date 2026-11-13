@@ -79,6 +79,8 @@ set(MARKDOWNIT_MERMAID_SOURCES
     src/mermaid/pie_layout.cpp
     src/mermaid/seq_parse.cpp
     src/mermaid/seq_layout.cpp
+    src/mermaid/gantt_parse.cpp
+    src/mermaid/gantt_layout.cpp
     src/mermaid/swimlanes.cpp
 )
 

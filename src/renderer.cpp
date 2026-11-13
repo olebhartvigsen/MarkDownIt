@@ -943,6 +943,10 @@ void Renderer::PaintSharedOverlays(
                                          contentWidth);
                 break;
             }
+            case BlockKind::MermaidGantt: {
+                DrawMermaidGanttBlock(rt, dw, n, bandX, bandY, contentWidth);
+                break;
+            }
             default:
                 break;
         }

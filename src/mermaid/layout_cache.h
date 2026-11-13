@@ -12,15 +12,17 @@
 #include "mermaid/pie_parse.h"
 #include "mermaid/pie_layout.h"
 #include "mermaid/seq_layout.h"
+#include "mermaid/gantt_layout.h"
 
 namespace mermaid {
 
-enum class MermaidKind { Flowchart, Pie, Sequence };
+enum class MermaidKind { Flowchart, Pie, Sequence, Gantt };
 struct MermaidRender {
     MermaidKind kind = MermaidKind::Flowchart;
     std::shared_ptr<LaidOutFlowchart> flow;
     std::shared_ptr<LaidOutPie> pie;
     std::shared_ptr<LaidOutSequence> seq;
+    std::shared_ptr<LaidOutGantt> gantt;
 };
 
 constexpr float kMermaidBlockPad = 12.0f;
@@ -51,11 +53,20 @@ inline float MeasureSequenceHeight(const LaidOutSequence& ls, float zoom,
     }
     return static_cast<float>(ls.vbheight) * scale + 2.0f * kMermaidBlockPad;
 }
+inline float MeasureGanttHeight(const LaidOutGantt& lg, float zoom, float avail_w) {
+    float scale = zoom;
+    if (lg.width > 0 && avail_w > 0) {
+        const float fit = avail_w / static_cast<float>(lg.width);
+        if (fit < scale) scale = fit;
+    }
+    return static_cast<float>(lg.height) * scale + 2.0f * kMermaidBlockPad;
+}
 inline float MeasureMermaidHeight(const MermaidRender& mr, float zoom,
                                   float avail_w) {
     switch (mr.kind) {
         case MermaidKind::Pie: return MeasurePieHeight(*mr.pie, zoom, avail_w);
         case MermaidKind::Sequence: return MeasureSequenceHeight(*mr.seq, zoom, avail_w);
+        case MermaidKind::Gantt: return MeasureGanttHeight(*mr.gantt, zoom, avail_w);
         case MermaidKind::Flowchart: default:
             return MeasureLayoutHeight(*mr.flow, zoom, avail_w);
     }

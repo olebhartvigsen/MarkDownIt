@@ -173,6 +173,7 @@ add_executable(MarkDownIt WIN32
     src/renderer.cpp
     src/renderer_pie.cpp
     src/renderer_sequence.cpp
+    src/renderer_gantt.cpp
     src/colortext.cpp
     src/imagehelper.cpp
     src/filewatch.cpp
@@ -339,6 +340,7 @@ if(BUILD_TESTS AND APPLE)
         tests/mermaid_golden_test.cpp
         tests/mermaid_pie_golden_test.cpp
         tests/mermaid_seq_golden_test.cpp
+        tests/mermaid_gantt_test.cpp
         tests/mermaid_swimlanes_test.cpp
         tests/mermaid_measure_test.cpp
         tests/dom_mermaid_test.cpp
@@ -465,6 +467,7 @@ elseif(BUILD_TESTS)
         tests/mermaid_golden_test.cpp
         tests/mermaid_pie_golden_test.cpp
         tests/mermaid_seq_golden_test.cpp
+        tests/mermaid_gantt_test.cpp
         tests/mermaid_swimlanes_test.cpp
         tests/mermaid_measure_test.cpp
         tests/dom_mermaid_test.cpp
@@ -499,6 +502,7 @@ elseif(BUILD_TESTS)
         src/renderer.cpp
         src/renderer_pie.cpp
         src/renderer_sequence.cpp
+        src/renderer_gantt.cpp
         src/imagehelper.cpp
         ${MARKDOWNIT_MERMAID_WINDOWS_SOURCES}
         src/textlayout_dwrite.cpp

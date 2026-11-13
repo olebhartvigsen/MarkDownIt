@@ -485,4 +485,6 @@ private:
                              const Node& n, float x, float y, float width);
     void DrawMermaidSequenceBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                   const Node& n, float x, float y, float width);
+    void DrawMermaidGanttBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+                               const Node& n, float x, float y, float width);
 };

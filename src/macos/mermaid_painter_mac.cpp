@@ -911,6 +911,98 @@ void PaintSequence(TextEngine* engine, RenderTarget* target,
     }
 }
 
+// Paints a gantt chart.
+//
+// Rows stack top to bottom: a section header row (its title, no bar),
+// then that section's task rows. A plain task draws as a rounded bar; a
+// milestone as a diamond; "crit" tasks get the mermaid crit red, "done"
+// a muted fill, everything else the default teal.
+void PaintGantt(TextEngine* engine, RenderTarget* target,
+                const mermaid::LaidOutGantt& laid, float zoom,
+                float availWidth, float originX, float originY,
+                float padding, const FontSpec& bodyFont) {
+    const float scale = FitScale(zoom, laid.width, availWidth);
+    const FontSpec font = ScaledFont(bodyFont, scale);
+    FontSpec titleFont = bodyFont;
+    titleFont.size = bodyFont.size * 1.1f * scale;
+    FontSpec sectionFont = font;
+    sectionFont.bold = true;
+
+    const float ox = originX;
+    const float oy = originY + padding;
+    auto X = [&](double v) { return ox + static_cast<float>(v * scale); };
+    auto Y = [&](double v) { return oy + static_cast<float>(v * scale); };
+
+    const Color ink = Rgb(0x333333);
+    const Color gridLine = Rgb(0xE0E0E0);
+    const Color bandFill = Rgb(0xF2F2F2);
+    const Color barDefault = Rgb(0x4C9AAE);
+    const Color barCrit = Rgb(0xB33A3A);
+    const Color barDone = Rgb(0x9AA5AD);
+    const Color barActive = Rgb(0x6FB7CC);
+    const Color milestoneFill = Rgb(0x333333);
+
+    if (!laid.title.empty()) {
+        DrawLeftCentered(target, engine, laid.title, titleFont, X(laid.title_x),
+                         Y(laid.title_y), ink);
+    }
+
+    // Vertical grid lines, one per axis tick, spanning the chart body.
+    for (const auto& tick : laid.ticks) {
+        target->StrokeLine(X(tick.x), Y(laid.grid_top), X(tick.x),
+                           Y(laid.grid_bottom), gridLine, 1.0f * scale);
+        DrawCentered(target, engine, tick.label, font, X(tick.x),
+                     Y(laid.grid_bottom) + 10.0f * scale, ink);
+    }
+
+    // Section bands: an alternating pale background and the section
+    // title at the start of its header row.
+    for (const auto& band : laid.sections) {
+        if (band.color_index % 2 == 1) {
+            Rect rect;
+            rect.x = X(0.0);
+            rect.y = Y(band.y);
+            rect.width = static_cast<float>(laid.width * scale);
+            rect.height = static_cast<float>(band.height * scale);
+            target->FillRect(rect, bandFill);
+        }
+        if (!band.title.empty()) {
+            DrawLeftCentered(target, engine, band.title, sectionFont,
+                             X(band.title_x), Y(band.title_y), ink);
+        }
+    }
+
+    // The bars and milestone diamonds.
+    for (const auto& bar : laid.bars) {
+        Color fill = barDefault;
+        if (bar.crit) fill = barCrit;
+        else if (bar.done) fill = barDone;
+        else if (bar.active) fill = barActive;
+
+        if (bar.milestone) {
+            const float side = static_cast<float>(bar.height * scale);
+            const float cx = X(bar.x) + side * 0.5f;
+            const float cy = Y(bar.y) + side * 0.5f;
+            const float half = side * 0.5f;
+            const std::vector<Point> diamond = {
+                Point{cx, cy - half}, Point{cx + half, cy},
+                Point{cx, cy + half}, Point{cx - half, cy}};
+            target->FillPolygon(diamond, milestoneFill);
+        } else {
+            Rect rect;
+            rect.x = X(bar.x);
+            rect.y = Y(bar.y);
+            rect.width = static_cast<float>(bar.width * scale);
+            rect.height = static_cast<float>(bar.height * scale);
+            target->FillRoundedRect(rect, 3.0f * scale, fill);
+        }
+        if (!bar.label.empty()) {
+            DrawLeftCentered(target, engine, bar.label, font, X(bar.label_x),
+                             Y(bar.label_y), ink);
+        }
+    }
+}
+
 }  // namespace
 
 void PaintMermaidDiagram(TextEngine* engine, RenderTarget* target,
@@ -930,6 +1022,12 @@ void PaintMermaidDiagram(TextEngine* engine, RenderTarget* target,
             if (diagram.seq) {
                 PaintSequence(engine, target, *diagram.seq, zoom, availWidth,
                               originX, originY, padding, bodyFont);
+            }
+            break;
+        case mermaid::MermaidKind::Gantt:
+            if (diagram.gantt) {
+                PaintGantt(engine, target, *diagram.gantt, zoom, availWidth,
+                           originX, originY, padding, bodyFont);
             }
             break;
         case mermaid::MermaidKind::Flowchart:

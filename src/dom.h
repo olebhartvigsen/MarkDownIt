@@ -15,6 +15,7 @@ namespace mermaid { struct Flowchart; }
 namespace mermaid { struct LaidOutFlowchart; }
 namespace mermaid { struct LaidOutPie; }
 namespace mermaid { struct LaidOutSequence; }
+namespace mermaid { struct LaidOutGantt; }
 
 // Block-level elements (one per markdown block: heading, paragraph, etc.)
 enum class BlockKind {
@@ -28,6 +29,7 @@ enum class BlockKind {
     MermaidFlowchart, // fenced ```mermaid block, laid out at parse time
     MermaidPie,       // fenced ```mermaid `pie` block, laid out at parse time
     MermaidSequence,  // fenced ```mermaid `sequenceDiagram` block, laid out at parse time
+    MermaidGantt,     // fenced ```mermaid `gantt` block, laid out at parse time
 };
 
 // Inline-level elements (within a block's children)
@@ -135,6 +137,7 @@ struct Node {
     std::shared_ptr<mermaid::LaidOutFlowchart> mermaid_layout;  // populated when block == MermaidFlowchart
     std::shared_ptr<mermaid::LaidOutPie>       mermaid_pie;     // populated when block == MermaidPie
     std::shared_ptr<mermaid::LaidOutSequence>  mermaid_seq;     // populated when block == MermaidSequence
+    std::shared_ptr<mermaid::LaidOutGantt>     mermaid_gantt;   // populated when block == MermaidGantt
 };
 
 // The full parsed document: a flat list of blocks plus an optional title
