@@ -7,6 +7,7 @@
 #include "gtest_lite.h"
 #include "blockspacing.h"
 #include "layout/document_layout.h"
+#include "../src/parser.h"
 
 #include <variant>
 
@@ -102,4 +103,44 @@ TEST(LayoutGolden, BreakAndHeadingList) {
 
     // The document column, no platform rounding anywhere.
     EXPECT_NEAR(laid.list.width, 600.0f, 0.001f);
+}
+
+// Regression: a gantt fence between two headings must be laid out with
+// real height, not skipped by the block layout's "which kind owns this
+// node" switch. A gap in that switch made the diagram invisible even
+// though the parser and the mermaid layout itself were both correct.
+TEST(LayoutGolden, GanttFenceGetsOwnedAndSized) {
+    std::string md =
+        "# Before\n"
+        "\n"
+        "```mermaid\n"
+        "gantt\n"
+        "    dateFormat DD/MM/YYYY\n"
+        "    section S\n"
+        "    Task A :a1, 01/03/2026, 5d\n"
+        "```\n"
+        "\n"
+        "# After\n";
+    Document doc;
+    ParseMarkdown(md, doc);
+    ASSERT_EQ(doc.nodes.size(), static_cast<size_t>(3));
+    ASSERT_EQ(doc.nodes[1].block, BlockKind::MermaidGantt);
+    ASSERT_TRUE(doc.nodes[1].mermaid_gantt != nullptr);
+
+    fake::FakeTextEngine engine;
+    const LayoutMetrics m = BaseMetrics();
+    const Palette pal = BasePalette();
+    layout::LayoutInput in;
+    in.doc = &doc; in.metrics = &m; in.palette = &pal;
+    in.contentWidth = 600.0f; in.zoom = 1.0f; in.engine = &engine;
+    layout::DocumentLayout laid = layout::LayoutDocument(in);
+
+    ASSERT_EQ(laid.blocks.size(), static_cast<size_t>(3));
+    // The gantt block (middle) must claim real height: a zero height
+    // here is exactly the symptom the user saw (diagram not shown).
+    EXPECT_GT(laid.blocks[1].height, 0.0f);
+    EXPECT_EQ(laid.blocks[1].kind, BlockKind::MermaidGantt);
+    // The following heading must sit below the gantt block's bottom,
+    // not stacked straight on top of the first heading.
+    EXPECT_GT(laid.blocks[2].y, laid.blocks[0].y + laid.blocks[0].height);
 }

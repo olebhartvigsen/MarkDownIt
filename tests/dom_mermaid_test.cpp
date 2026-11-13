@@ -3,6 +3,7 @@
 #include "../src/dom.h"
 #include "../src/parser.h"
 #include "../src/mermaid/model.h"
+#include "../src/mermaid/gantt_layout.h"
 
 namespace {
 Document BuildDom(const std::string& md) {
@@ -31,4 +32,19 @@ TEST(DomMermaid, FallbackOnParseFailure) {
     EXPECT_EQ(doc.nodes[0].block, BlockKind::CodeBlock);
     EXPECT_TRUE(doc.nodes[0].mermaid_flowchart == nullptr);
     EXPECT_TRUE(doc.nodes[0].mermaid_layout == nullptr);
+}
+
+TEST(DomMermaid, RecognizesGanttFence) {
+    std::string md =
+        "```mermaid\n"
+        "gantt\n"
+        "    dateFormat DD/MM/YYYY\n"
+        "    section S\n"
+        "    Task A :a1, 01/03/2026, 5d\n"
+        "```\n";
+    auto doc = BuildDom(md);
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    EXPECT_EQ(doc.nodes[0].block, BlockKind::MermaidGantt);
+    ASSERT_TRUE(doc.nodes[0].mermaid_gantt != nullptr);
+    EXPECT_EQ(doc.nodes[0].mermaid_gantt->bars.size(), 1u);
 }

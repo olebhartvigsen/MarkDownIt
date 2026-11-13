@@ -185,7 +185,8 @@ DocumentLayout LayoutDocument(const LayoutInput& in) {
             node.block == BlockKind::Table ||
             node.block == BlockKind::MermaidFlowchart ||
             node.block == BlockKind::MermaidPie ||
-            node.block == BlockKind::MermaidSequence;
+            node.block == BlockKind::MermaidSequence ||
+            node.block == BlockKind::MermaidGantt;
         if (!owned) {
             havePrev = true;
             prev = node.block;
@@ -230,6 +231,7 @@ DocumentLayout LayoutDocument(const LayoutInput& in) {
             case BlockKind::MermaidFlowchart:
             case BlockKind::MermaidPie:
             case BlockKind::MermaidSequence:
+            case BlockKind::MermaidGantt:
                 block = LayoutMermaidBlock(ctx, node, i, &curY);
                 break;
             case BlockKind::Table:

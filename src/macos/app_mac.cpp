@@ -431,7 +431,8 @@ void App::HandleTab(bool backwards) {
         if ((node.block == BlockKind::CodeBlock ||
              node.block == BlockKind::MermaidFlowchart ||
              node.block == BlockKind::MermaidPie ||
-             node.block == BlockKind::MermaidSequence) &&
+             node.block == BlockKind::MermaidSequence ||
+             node.block == BlockKind::MermaidGantt) &&
             sel_.active.offset >= node.srcOffset &&
             sel_.active.offset <= node.srcOffset + node.srcLength) {
             inCodeBlock = true;

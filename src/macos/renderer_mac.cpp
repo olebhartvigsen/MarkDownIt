@@ -1059,7 +1059,8 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
 
             case BlockKind::MermaidFlowchart:
             case BlockKind::MermaidPie:
-            case BlockKind::MermaidSequence: {
+            case BlockKind::MermaidSequence:
+            case BlockKind::MermaidGantt: {
                 // The diagram is painted by the mermaid painter, which
                 // draws the shared layout through the seam. The painter
                 // follows the zoom itself, so it gets the unzoomed

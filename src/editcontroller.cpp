@@ -686,7 +686,8 @@ bool EditController::InsertParagraphBreak(const Document& doc) {
             if (n.block == BlockKind::CodeBlock ||
                 n.block == BlockKind::MermaidFlowchart ||
                 n.block == BlockKind::MermaidPie ||
-                n.block == BlockKind::MermaidSequence) {
+                n.block == BlockKind::MermaidSequence ||
+                n.block == BlockKind::MermaidGantt) {
                 inCode = true;
             }
             if (n.block == BlockKind::Table) {
@@ -789,7 +790,8 @@ bool EditController::InsertSoftBreak(const Document& doc) {
         inCode = node.block == BlockKind::CodeBlock ||
                  node.block == BlockKind::MermaidFlowchart ||
                  node.block == BlockKind::MermaidPie ||
-                 node.block == BlockKind::MermaidSequence;
+                 node.block == BlockKind::MermaidSequence ||
+                 node.block == BlockKind::MermaidGantt;
         break;
     }
     // Markdown renders a lone newline as a space. Two preceding spaces make
