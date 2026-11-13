@@ -321,6 +321,7 @@ if(BUILD_TESTS AND APPLE)
         tests/fake_engine_test.cpp
         tests/seam_conformance_test.cpp
         tests/layout_golden_test.cpp
+        tests/command_table_test.cpp
         tests/paragraph_list_quote_test.cpp
         # The transcript replay of the inline formatting family
         # (family 3): reads tests/transcripts/inline_formatting from
@@ -443,6 +444,7 @@ elseif(BUILD_TESTS)
         tests/fake_engine_test.cpp
         tests/seam_conformance_test.cpp
         tests/layout_golden_test.cpp
+        tests/command_table_test.cpp
         tests/paragraph_list_quote_test.cpp
         # The transcript replay of the inline formatting family
         # (family 3): reads tests/transcripts/inline_formatting from
@@ -655,6 +657,8 @@ if(APPLE)
         src/macos/pdf_ocr_mac.mm
         src/macos/settings_mac.cpp
             src/macos/menu_mac.mm
+        src/macos/format_bar_mac.mm
+        src/macos/format_bar_mac.h
         src/macos/toolbar_mac.h
         src/macos/outline_pane_mac.cpp
         src/macos/outline_pane_mac.h
@@ -684,6 +688,7 @@ if(APPLE)
         src/macos/findbar_mac.mm
         src/macos/fonts_mac.mm
         src/macos/toolbar_mac.mm
+        src/macos/format_bar_mac.mm
         src/macos/table_picker_mac.mm
         src/macos/zoom_hud_mac.mm
         PROPERTIES COMPILE_FLAGS "-fobjc-arc"

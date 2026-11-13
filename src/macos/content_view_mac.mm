@@ -1362,20 +1362,60 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
 
     [menu addItem:[NSMenuItem separatorItem]];
 
-    NSMenuItem* bold = [menu addItemWithTitle:@"Bold"
-                                        action:@selector(toggleBold:)
-                                 keyEquivalent:@""];
-    bold.target = target;
-
-    NSMenuItem* italic = [menu addItemWithTitle:@"Italic"
-                                          action:@selector(toggleItalic:)
+    // The format commands the menu bar carries, where the pointer is.
+    // The document commands stand down while the page is read: the
+    // controller refuses a text change in that mode, so an item that
+    // stayed enabled would be a dead click. Highlight is the exception
+    // the reader asked for: a mark is a reading note, so it works in
+    // both modes.
+    const bool editing = app->Editing();
+    const bool canMark = hasSelection && !app->WelcomeMode();
+    NSArray<NSArray<NSString*>*>* formatItems = @[
+        @[ @"Bold", @"toggleBold:" ],
+        @[ @"Italic", @"toggleItalic:" ],
+        @[ @"Strikethrough", @"toggleStrike:" ],
+        @[ @"Code", @"toggleCode:" ],
+        @[ @"Link", @"toggleLink:" ],
+        @[ @"Highlight", @"toggleMark:" ],
+    ];
+    for (NSArray<NSString*>* row in formatItems) {
+        NSMenuItem* item = [menu addItemWithTitle:row[0]
+                                          action:NSSelectorFromString(row[1])
                                    keyEquivalent:@""];
-    italic.target = target;
+        item.target = target;
+        const bool isMark = [row[1] isEqualToString:@"toggleMark:"];
+        item.enabled = isMark ? canMark : editing;
+    }
 
-    NSMenuItem* code = [menu addItemWithTitle:@"Code"
-                                        action:@selector(toggleCode:)
-                                 keyEquivalent:@""];
-    code.target = target;
+    [menu addItem:[NSMenuItem separatorItem]];
+    NSArray<NSArray<NSString*>*>* blockItems = @[
+        @[ @"Body Text", @"setBodyText:" ],
+        @[ @"Heading 1", @"setHeading1:" ],
+        @[ @"Heading 2", @"setHeading2:" ],
+        @[ @"Heading 3", @"setHeading3:" ],
+        @[ @"Bulleted List", @"toggleBullets:" ],
+        @[ @"Numbered List", @"toggleNumbering:" ],
+        @[ @"Quote", @"toggleQuote:" ],
+    ];
+    for (NSArray<NSString*>* row in blockItems) {
+        NSMenuItem* item = [menu addItemWithTitle:row[0]
+                                          action:NSSelectorFromString(row[1])
+                                   keyEquivalent:@""];
+        item.target = target;
+        item.enabled = editing;
+    }
+
+    [menu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem* tableItem = [menu addItemWithTitle:@"Insert Table\u2026"
+                                            action:@selector(insertTable:)
+                                     keyEquivalent:@""];
+    tableItem.target = target;
+    tableItem.enabled = editing;
+    NSMenuItem* clearItem = [menu addItemWithTitle:@"Clear Formatting"
+                                            action:@selector(clearFormat:)
+                                     keyEquivalent:@""];
+    clearItem.target = target;
+    clearItem.enabled = hasSelection && editing;
 
     [NSMenu popUpContextMenu:menu withEvent:event forView:self];
 }

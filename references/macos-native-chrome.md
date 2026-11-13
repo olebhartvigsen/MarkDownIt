@@ -66,6 +66,56 @@ Save is the exception: SF Symbols has no classic diskette, so it is a
 small template outline drawn in the same ink and tinted by the system.
 The toolbar allows customization and saves the user's set.
 
+## The format bar belongs to the page
+
+Editing needs formatting at the point of the text, and the menu alone
+puts it a trip away. So the window wears one more native row: a format
+bar under the toolbar, over the document pane only, so the outline keeps
+its full height and the strip never spans the window like a second
+toolbar (the Toolbars guidance allows one row, not two).
+
+It is on screen exactly while the document can be edited, and it is
+built with the system's own controls, which is why it needs no palette
+of its own and follows the appearance, the accent colour and increased
+contrast by construction:
+
+| Group | Control | Commands |
+| --- | --- | --- |
+| Paragraph | NSPopUpButton | Body Text, Heading 1 to 6 |
+| Marks | NSSegmentedControl, four segments | Bold, Italic, Strikethrough, Code |
+| Insert | two symbol buttons | Link, Insert Table |
+| Blocks | NSSegmentedControl, three segments | Bulleted List, Numbered List, Quote |
+| Trailing | one symbol button | Clear Formatting |
+
+Every control sends a command rather than a behaviour. Each one calls
+`sendAction:to:nil`, the path a menu item with no target takes, so a
+click here and a menu pick run the same selector in the same command
+table. The bar carries no idea of its own about what bold means.
+
+The caret owns the state. The shell pushes `FormatState` in on every
+chrome sync, so the popup names the paragraph style and the segments
+show the marks the caret holds. The segments track momentarily and take
+their pressed state only from that push; a row that remembered its own
+clicks would disagree with the document the first time a key moved the
+caret.
+
+The bar never takes the keyboard. Its controls refuse the first
+responder, so a click leaves the reader typing in the page. A control
+that accepted it would take the caret and every arrow key with it.
+
+The bar sits inside the document pane: the pane holds the scroll view
+and the bar, the scroll view takes the height the bar leaves. Hiding it
+sets the bar's height constraint to zero instead of leaving a gap.
+
+Highlight is deliberately not in the bar. It stays the toolbar's toggle
+and a Format menu item, and it works in both modes, since a mark is a
+reading note as much as an editing one: its pressed state and its
+command follow the selection, not the edit switch.
+
+The context menu carries the same commands where the pointer is, with
+the document commands greyed out while the page is read and Highlight
+the one exception.
+
 ## The outline pane follows the Sidebars guidance
 
 The outline keeps its own scrolling pane inside the split view, now
@@ -161,6 +211,10 @@ taken down), and tools/macos-smoke/launch_smoke.sh asserts both.
   chrome around it.
 - Transient feedback (the zoom level) is an overlay on the system HUD
   material, never a permanent readout in the toolbar.
+- Editing chrome sits on the page it edits: the format bar rides inside
+  the document pane, is on screen only while the page can be edited,
+  and is built from the system's controls over the command table.
+  Nothing on it takes the keyboard.
 - tools/check_mac_chrome.py enforces all of it in CI.
 - The Windows window keeps its ribbon and the rules in
   ribbon-menu-guidelines.md; the two files describe different
@@ -175,3 +229,6 @@ taken down), and tools/macos-smoke/launch_smoke.sh asserts both.
 - [Designing for macOS](https://developer.apple.com/design/human-interface-guidelines/designing-for-macos/), the general principles the visual style guide already cites.
 - [NSVisualEffectView](https://developer.apple.com/documentation/appkit/nsvisualeffectview), materials, blending modes and the HUD material.
 - [NSAnimationContext](https://developer.apple.com/documentation/appkit/nsanimationcontext), grouped, implicitly animated property changes.
+- [NSSegmentedControl](https://developer.apple.com/documentation/appkit/nssegmentedcontrol), the segmented row and its tracking modes.
+- [NSPopUpButton](https://developer.apple.com/documentation/appkit/nspopupbutton), the paragraph style menu.
+- [TextEdit: format with fonts and styles](https://support.apple.com/guide/textedit/format-with-fonts-and-styles-txte2be20f33/mac), the format bar model this row follows.

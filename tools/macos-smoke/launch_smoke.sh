@@ -133,7 +133,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_STATES="doc,wheel,find,edit,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,shared" "$BIN" "$DOC" &
+    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,shared" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
@@ -142,7 +142,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     # a shared announcement that lands past the budget is a silently
     # missing capture on the mac side.
     while [ "$waited" -lt 420 ]; do
-        for name in doc wheel find edit outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap svg-drawio svg-drawio-100 zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc shared; do
+        for name in doc wheel find edit format-bar outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap svg-drawio svg-drawio-100 zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc shared; do
             case "$seen" in *" $name "*) continue ;; esac
             if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
                 sleep 0.6
@@ -263,6 +263,39 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         echo "launch smoke: a mark sits on the words, not on the space" \
              "beside them"
     fi
+
+    # The format bar belongs to the editable page and to nothing else:
+    # on while the document can be edited, gone while it is read, and
+    # every control reaching a command, since a button whose selector
+    # answers nobody is a button that does nothing.
+    BAR_EDIT=$(grep "qa format bar edit:" "$LOG" 2>/dev/null | head -1)
+    if [ -z "$BAR_EDIT" ]; then
+        echo "launch smoke FAILED: no format bar in the trace"
+        exit 1
+    fi
+    BAR_SHOWN=$(printf '%s' "$BAR_EDIT" | grep -o "shown=[0-9]" | cut -d= -f2)
+    BAR_HEIGHT=$(printf '%s' "$BAR_EDIT" | grep -o "height=[0-9]*" | cut -d= -f2)
+    BAR_CHAIN=$(printf '%s' "$BAR_EDIT" | grep -o "chain=[0-9]" | cut -d= -f2)
+    if [ "$BAR_SHOWN" != "1" ] || [ "$BAR_HEIGHT" -lt 30 ]; then
+        echo "launch smoke FAILED: the format bar is not on screen in" \
+             "edit mode (shown=$BAR_SHOWN height=$BAR_HEIGHT)"
+        exit 1
+    fi
+    if [ "$BAR_CHAIN" != "1" ]; then
+        echo "launch smoke FAILED: a format bar control sends a command" \
+             "that answers nobody"
+        echo "$BAR_EDIT"
+        exit 1
+    fi
+    if ! grep -q "qa format bar view: shown=0" "$LOG" 2>/dev/null; then
+        echo "launch smoke FAILED: the format bar stayed up while the" \
+             "document was read"
+        grep "qa format bar" "$LOG" | head -3
+        exit 1
+    fi
+    echo "launch smoke: the format bar is on the editable page, off the" \
+         "page being read, and every control reaches its command" \
+         "(height=$BAR_HEIGHT)"
     # Keep the app's trace with the captures, so the artifact carries
     # everything the run said.
     if [ -f "$LOG" ]; then

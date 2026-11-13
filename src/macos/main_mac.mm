@@ -31,6 +31,7 @@
 
 #include "formatting.h"
 #include "commands.h"
+#import "format_bar_mac.h"
 #include "office/docx_export.h"
 #include "office/docx_import.h"
 #include "office/markdown_bridge.h"
@@ -106,6 +107,13 @@ bool OpenExternalUrl(const std::string& url) {
     // One deferred layout pass per resize is enough.
     BOOL settlePending_;
     NSScrollView* scrollView_;
+    // The document pane: the scroll view and the format bar above it.
+    // The bar belongs to the page, so the outline keeps its full
+    // height and the strip never spans the window like a second
+    // toolbar.
+    MdFormatBar* formatBar_;
+    NSView* documentPane_;
+    NSLayoutConstraint* formatBarHeightConstraint_;
     MdContentView* view_;
     float zoom_;
     // The overlay that says what the zoom level is while it changes.
@@ -177,6 +185,10 @@ bool OpenExternalUrl(const std::string& url) {
 // The find bar's layout hook: its height and the focus follow its
 // visibility.
 - (void)syncFindBarLayout:(BOOL)visible;
+// The bar is a function of the document's mode: on while the page can
+// be edited, gone while it is read.
+- (void)applyFormatBarVisible:(BOOL)editing;
+- (void)formatBarSync;
 // The zoom landed somewhere, so the saved value follows.
 - (void)zoomDidChange:(float)factor;
 // The same, without the overlay: for a reset the app makes itself.
@@ -190,6 +202,10 @@ bool OpenExternalUrl(const std::string& url) {
 - (void)setHeading1:(id)sender;
 - (void)setHeading2:(id)sender;
 - (void)setHeading3:(id)sender;
+- (void)setHeading4:(id)sender;
+- (void)setHeading5:(id)sender;
+- (void)setHeading6:(id)sender;
+- (void)setBodyText:(id)sender;
 - (void)toggleBullets:(id)sender;
 - (void)toggleNumbering:(id)sender;
 - (void)toggleQuote:(id)sender;
@@ -494,7 +510,38 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                                    NSViewHeightSizable];
     [backdrop_ addSubview:outlineScroll_];
     [splitView_ addSubview:backdrop_];
-    [splitView_ addSubview:scrollView_];
+    // The format bar rides above the page inside the document pane,
+    // so the outline keeps its full height and the strip stays over
+    // the text it acts on.
+    documentPane_ = [[NSView alloc] initWithFrame:frame];
+    [documentPane_ setAutoresizingMask:NSViewWidthSizable |
+                                       NSViewHeightSizable];
+    formatBar_ = [[MdFormatBar alloc] initWithFrame:NSZeroRect];
+    formatBarHeightConstraint_ =
+        [formatBar_.heightAnchor constraintEqualToConstant:0.0];
+    [formatBarHeightConstraint_ setActive:YES];
+    [formatBar_ setHidden:YES];
+    [documentPane_ addSubview:formatBar_];
+    [scrollView_ setAutoresizingMask:NSViewNotSizable];
+    [scrollView_ setTranslatesAutoresizingMaskIntoConstraints:NO];
+    [documentPane_ addSubview:scrollView_];
+    [NSLayoutConstraint activateConstraints:@[
+        [formatBar_.leadingAnchor
+            constraintEqualToAnchor:documentPane_.leadingAnchor],
+        [formatBar_.trailingAnchor
+            constraintEqualToAnchor:documentPane_.trailingAnchor],
+        [formatBar_.topAnchor
+            constraintEqualToAnchor:documentPane_.topAnchor],
+        [scrollView_.leadingAnchor
+            constraintEqualToAnchor:documentPane_.leadingAnchor],
+        [scrollView_.trailingAnchor
+            constraintEqualToAnchor:documentPane_.trailingAnchor],
+        [scrollView_.bottomAnchor
+            constraintEqualToAnchor:documentPane_.bottomAnchor],
+        [scrollView_.topAnchor
+            constraintEqualToAnchor:formatBar_.bottomAnchor],
+    ]];
+    [splitView_ addSubview:documentPane_];
     // The document takes every point the outline does not need. Without
     // this priority the split view can grow the sidebar with a wide
     // window and leave the document at its old width.
@@ -726,7 +773,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)applyQAState:(NSString*)state {
     if ([state isEqualToString:@"doc"]) {
         // The document opened at launch; the state is the picture of
-        // it as it lands.
+        // it as it lands. The bar reports itself here, so the walk can
+        // assert that reading a document carries no strip.
+        [self toolbarSync];
+        platform::TraceMac("qa format bar view: shown=%d",
+                           (formatBar_ && ![formatBar_ isHidden]) ? 1 : 0);
     } else if ([state isEqualToString:@"find"]) {
         app_->ShowFind(FindBarMode::Find);
         // A live query, so the picture carries the match highlighting
@@ -757,6 +808,40 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [scrollView_ reflectScrolledClipView:clip];
         [self toolbarSync];
         [self outlineActiveRefresh:NO];
+        [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"format-bar"]) {
+        // The strip belongs to the editable page: it carries the same
+        // controls the menu does, and its state comes from the caret.
+        app_->SetEditing(true);
+        [window_ makeFirstResponder:view_];
+        app_->SetCaret(0);
+        [self toolbarSync];
+        [window_ layoutIfNeeded];
+        const FormatState fs = app_->controller().GetFormatState();
+        // Every control sends its selector through the responder chain,
+        // the path a menu item with no target takes. If any of them
+        // answers nobody, the bar carries a dead button, so the walk
+        // resolves them all here rather than after a click.
+        NSArray<NSString*>* barActions = @[
+            @"toggleBold:", @"toggleItalic:", @"toggleStrike:", @"toggleCode:",
+            @"toggleLink:", @"insertTable:", @"clearFormat:",
+            @"toggleBullets:", @"toggleNumbering:", @"toggleQuote:",
+            @"setBodyText:", @"setHeading1:", @"setHeading2:", @"setHeading3:",
+            @"setHeading4:", @"setHeading5:", @"setHeading6:"
+        ];
+        BOOL chain = YES;
+        for (NSString* name in barActions) {
+            if (![NSApp targetForAction:NSSelectorFromString(name)]) chain = NO;
+        }
+        platform::TraceMac(
+            "qa format bar edit: shown=%d height=%.0f chain=%d style=%d bold=%d "
+            "italic=%d strike=%d code=%d bullets=%d numbering=%d quote=%d",
+            (formatBar_ && ![formatBar_ isHidden]) ? 1 : 0,
+            formatBar_ ? (double)NSHeight([formatBar_ frame]) : 0.0,
+            chain ? 1 : 0,
+            fs.headingLevel, fs.bold ? 1 : 0, fs.italic ? 1 : 0,
+            fs.strike ? 1 : 0, fs.code ? 1 : 0, fs.inBullets ? 1 : 0,
+            fs.inNumbering ? 1 : 0, fs.inQuote ? 1 : 0);
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"outline"]) {
         [self applyOutlineVisible:YES];
@@ -2163,6 +2248,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)setHeading1:(id)sender { (void)sender; [self OnHeading:1]; }
 - (void)setHeading2:(id)sender { (void)sender; [self OnHeading:2]; }
 - (void)setHeading3:(id)sender { (void)sender; [self OnHeading:3]; }
+- (void)setHeading4:(id)sender { (void)sender; [self OnHeading:4]; }
+- (void)setHeading5:(id)sender { (void)sender; [self OnHeading:5]; }
+- (void)setHeading6:(id)sender { (void)sender; [self OnHeading:6]; }
+// The style the bar names for body text: the heading markers come off
+// and the rest of the line stays as it is.
+- (void)setBodyText:(id)sender { (void)sender; [self OnHeading:0]; }
 - (void)toggleBullets:(id)sender { (void)sender; [self OnToggleBullets]; }
 - (void)toggleNumbering:(id)sender { (void)sender; [self OnToggleNumbering]; }
 - (void)toggleQuote:(id)sender { (void)sender; [self OnToggleQuote]; }
@@ -2764,6 +2855,33 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     }
 }
 
+- (void)applyFormatBarVisible:(BOOL)editing {
+    if (!formatBar_ || !formatBarHeightConstraint_) return;
+    const CGFloat height = editing ? [MdFormatBar barHeight] : 0.0;
+    const BOOL hidden = editing ? NO : YES;
+    if (formatBarHeightConstraint_.constant == height &&
+        [formatBar_ isHidden] == hidden) {
+        return;
+    }
+    formatBarHeightConstraint_.constant = height;
+    [formatBar_ setHidden:hidden];
+    // The page changes height with the strip; settle the frames before
+    // the caret is placed on the new page, the way the find bar's own
+    // toggle does.
+    if (window_) [window_ layoutIfNeeded];
+}
+
+- (void)formatBarSync {
+    if (!formatBar_) return;
+    const bool editing = app_->Editing() && !app_->WelcomeMode();
+    [formatBar_ setBarEnabled:editing ? YES : NO];
+    if (!editing) return;
+    tableedit::TableLocation location;
+    const bool inTable = app_->CaretTable(&location);
+    [formatBar_ updateWithFormatState:app_->controller().GetFormatState()
+                              inTable:inTable ? YES : NO];
+}
+
 - (void)OnFind {
     app_->ShowFind(FindBarMode::Find);
 }
@@ -2962,6 +3080,15 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                                app_->undo().CanRedo())];
         }
     }
+    // The format bar answers the same two questions the toolbar does:
+    // whether the page can be edited, and what the caret holds. One
+    // sync keeps the two surfaces from telling different stories.
+    // The welcome screen is a page to choose from, not a page to
+    // format, so it carries no strip even when the switch was left on.
+    [self applyFormatBarVisible:(app_->Editing() && !app_->WelcomeMode())
+                                    ? YES
+                                    : NO];
+    [self formatBarSync];
 }
 
 // Gives the pane the height its rows need, so the scroll view can

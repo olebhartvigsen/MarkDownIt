@@ -284,12 +284,17 @@ NSMenu* BuildMainMenu() {
              {"Highlight", @selector(toggleMark:)},
              {"Clear Formatting", @selector(clearFormat:)}});
         // The block commands live in their own menu, the way the Format
-        // menu of the other editors has them.
+        // menu of the other editors has them. Every markdown level is
+        // here, the same six the format bar's style popup names.
         NSMenu* blockMenu = BuildSubmenu(
             "Blocks",
-            {{"Heading 1", @selector(setHeading1:)},
+            {{"Body Text", @selector(setBodyText:)},
+             {"Heading 1", @selector(setHeading1:)},
              {"Heading 2", @selector(setHeading2:)},
              {"Heading 3", @selector(setHeading3:)},
+             {"Heading 4", @selector(setHeading4:)},
+             {"Heading 5", @selector(setHeading5:)},
+             {"Heading 6", @selector(setHeading6:)},
              {"Bulleted List", @selector(toggleBullets:)},
              {"Numbered List", @selector(toggleNumbering:)},
              {"Quote", @selector(toggleQuote:)},

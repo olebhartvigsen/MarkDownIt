@@ -112,7 +112,21 @@ listed here with its reason, so the set stays deliberate.
 | showHelp | No help system is shipped on Windows yet. |
 | shareDocument | Share is a platform service with no Windows twin in this app. |
 | toggleTabBar | The mac window has a tab bar setting with no Windows twin; the Windows frame uses the ribbon. |
+| setBodyText | The Windows ribbon sets a heading but never takes one off, so the command has no ribbon twin. The mac format bar's style popup names Body Text directly, and the Blocks menu carries it. Give Windows a row when the ribbon grows one. |
+| setHeading4 | The Windows ribbon offers levels 1 to 3; the mac menu and the format bar offer the six levels markdown has. Levels 4 to 6 stay reachable on Windows through their accelerators. |
+| setHeading5 | Same as setHeading4. |
+| setHeading6 | Same as setHeading4. |
 | zoomReset | The Windows zoom resets through the width or zoom commands. |
+
+## The mac format bar
+
+The mac window carries a format bar over the editable page
+(`src/macos/format_bar_mac.mm`), described in macos-native-chrome.md.
+It is chrome, not a command surface of its own: every control sends a
+row of `src/commands.h` through the responder chain, and the Windows
+ribbon in `ribbon.xml` keeps its own grouping of the same rows. The
+shared side is the command table and `GetFormatState()`; nothing in the
+bar decides what a command means.
 
 ## Tests built on one platform
 

@@ -16,6 +16,9 @@ This check keeps the design from drifting back:
 - the toolbar builds the deliberate item set, and only that set;
 - the toolbar draws system material: system symbols plus the one
   template floppy for Save, and no colours of its own;
+- the format bar is built from the system's own controls, sends the
+  command selectors the menu carries, and mixes in no colour of its
+  own;
 - the mac bundle no longer ships the raster icon set.
 
 Usage: python3 tools/check_mac_chrome.py
@@ -28,6 +31,18 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAC = os.path.join(REPO, "src", "macos")
 MAIN_MM = os.path.join(MAC, "main_mac.mm")
 TOOLBAR_MM = os.path.join(MAC, "toolbar_mac.mm")
+FORMAT_BAR_MM = os.path.join(MAC, "format_bar_mac.mm")
+
+# The selectors the format bar is allowed to send: the command table's
+# rows, nothing invented at the bar. A control that carried a command
+# of its own would be a second command surface.
+BAR_SELECTORS = [
+    "toggleBold:", "toggleItalic:", "toggleStrike:", "toggleCode:",
+    "toggleLink:", "insertTable:", "clearFormat:",
+    "toggleBullets:", "toggleNumbering:", "toggleQuote:",
+    "setBodyText:", "setHeading1:", "setHeading2:", "setHeading3:",
+    "setHeading4:", "setHeading5:", "setHeading6:",
+]
 CMAKE = os.path.join(REPO, "CMakeLists.txt")
 
 # The toolbar's deliberate set, in order. Everything else lives in the
@@ -72,14 +87,40 @@ def main():
         if re.search(pattern, toolbar):
             fail("the toolbar mixes in its own colour (%s)" % pattern)
 
+    # The format bar is a row of the system's own controls over the
+    # command table: a segmented control for the marks, a popup for the
+    # paragraph style, buttons for the rest. It draws no colour of its
+    # own and never invents a command.
+    with open(FORMAT_BAR_MM, encoding="utf-8") as fh:
+        bar = fh.read()
+    for control in ("NSSegmentedControl", "NSPopUpButton", "NSButton"):
+        if control not in bar:
+            fail("the format bar does not build a %s" % control)
+    if "imageWithSystemSymbolName" not in bar:
+        fail("the format bar draws no system symbols")
+    if "sendAction:" not in bar:
+        fail("the format bar does not route through the responder chain")
+    for selector in BAR_SELECTORS:
+        if selector not in bar:
+            fail("the format bar never sends %s" % selector)
+    for pattern in (r"colorWith", r"0x[0-9A-Fa-f]"):
+        if re.search(pattern, bar):
+            fail("the format bar mixes in its own colour (%s)" % pattern)
+    # The bar belongs to the document pane and follows the edit mode;
+    # a strip that outlived the mode would offer dead commands.
+    for needed in ("MdFormatBar", "applyFormatBarVisible", "formatBarSync"):
+        if needed not in main_mm:
+            fail("main_mac.mm never wires %s" % needed)
+
     # The raster icon set left the mac bundle with the strip.
     with open(CMAKE, encoding="utf-8") as fh:
         cmake = fh.read()
     if "Resources/icons" in cmake or "MARKDOWNIT_MAC_ICONS" in cmake:
         fail("CMake still packs the raster icon set into the mac bundle")
 
-    print("the mac window wears native chrome: %d toolbar items, "
-          "no strip, no raster icons" % len(EXPECTED))
+    print("the mac window wears native chrome: %d toolbar items, a "
+          "format bar of system controls, no strip, no raster icons"
+          % len(EXPECTED))
 
 
 if __name__ == "__main__":

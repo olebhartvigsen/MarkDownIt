@@ -42,7 +42,7 @@ enum class CommandId : uint8_t {
     // Inline format.
     Bold, Italic, Strike, Code, Link, ClearFormat,
     // Block format: headings and lists.
-    Heading1, Heading2, Heading3, Heading4, Heading5, Heading6,
+    BodyText, Heading1, Heading2, Heading3, Heading4, Heading5, Heading6,
     Bullets, Numbering, Quote, Indent, Outdent,
     // View.
     EditToggle, SourceView, Wrap, Outline,
@@ -160,26 +160,32 @@ inline constexpr CommandSpec kCommands[] = {
     {CommandId::ClearFormat, "Clear Formatting", "cmdClearFormat",
      "clearFormat:", true, NoWin, NoMac},
 
-    // Blocks: headings and lists. The mac menu carries levels 1 to 3;
-    // the Windows accelerators reach 4 to 6 as well.
+    // Blocks: headings and lists. Every level is a command of its own.
+    // Windows carries levels 1 to 3 on the ribbon and reaches 4 to 6
+    // through accelerators; the mac menu and format bar offer all six.
+    {CommandId::BodyText, "Body Text", nullptr, "setBodyText:", true,
+     NoWin, NoMac},
     {CommandId::Heading1, "Heading 1", "cmdHeading1", "setHeading1:", true,
      Ctrl(0x31 /* 1 */), Key("1")},
     {CommandId::Heading2, "Heading 2", "cmdHeading2", "setHeading2:", true,
      Ctrl(0x32 /* 2 */), Key("2")},
     {CommandId::Heading3, "Heading 3", "cmdHeading3", "setHeading3:", true,
      Ctrl(0x33 /* 3 */), Key("3")},
-    {CommandId::Heading4, "Heading 4", nullptr, nullptr, true,
+    {CommandId::Heading4, "Heading 4", nullptr, "setHeading4:", true,
      Ctrl(0x34 /* 4 */), NoMac},
-    {CommandId::Heading5, "Heading 5", nullptr, nullptr, true,
+    {CommandId::Heading5, "Heading 5", nullptr, "setHeading5:", true,
      Ctrl(0x35 /* 5 */), NoMac},
-    {CommandId::Heading6, "Heading 6", nullptr, nullptr, true,
+    {CommandId::Heading6, "Heading 6", nullptr, "setHeading6:", true,
      Ctrl(0x36 /* 6 */), NoMac},
+    // The lists keep the Windows keys with Command in place of Control,
+    // so a reader who knows one window knows the other; quote follows
+    // the period key its Windows accelerator names.
     {CommandId::Bullets, "Bulleted List", "cmdBullets", "toggleBullets:",
-     true, CtrlShift(0x38 /* 8 */), NoMac},
+     true, CtrlShift(0x38 /* 8 */), ShiftKey("8")},
     {CommandId::Numbering, "Numbered List", "cmdNumbering",
-     "toggleNumbering:", true, CtrlShift(0x37 /* 7 */), NoMac},
+     "toggleNumbering:", true, CtrlShift(0x37 /* 7 */), ShiftKey("7")},
     {CommandId::Quote, "Quote", "cmdQuote", "toggleQuote:", true,
-     CtrlShift(0xBE /* VK_OEM_PERIOD */), NoMac},
+     CtrlShift(0xBE /* VK_OEM_PERIOD */), ShiftKey(".")},
     {CommandId::Indent, "Indent", "cmdIndent", "indentBlock:", true,
      NoWin, NoMac},
     {CommandId::Outdent, "Outdent", "cmdOutdent", "outdentBlock:", true,
