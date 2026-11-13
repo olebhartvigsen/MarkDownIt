@@ -113,7 +113,11 @@ bool OpenExternalUrl(const std::string& url) {
     // toolbar.
     MdFormatBar* formatBar_;
     NSView* documentPane_;
-    NSLayoutConstraint* formatBarHeightConstraint_;
+    // Whether the bar is on screen. The window is laid out by frames
+    // (the split view's panes, the stack's rows, the clip's width), so
+    // the bar is placed the same way instead of asking Auto Layout to
+    // own one strip of a window that is otherwise frame driven.
+    BOOL formatBarShown_;
     MdContentView* view_;
     float zoom_;
     // The overlay that says what the zoom level is while it changes.
@@ -517,30 +521,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [documentPane_ setAutoresizingMask:NSViewWidthSizable |
                                        NSViewHeightSizable];
     formatBar_ = [[MdFormatBar alloc] initWithFrame:NSZeroRect];
-    formatBarHeightConstraint_ =
-        [formatBar_.heightAnchor constraintEqualToConstant:0.0];
-    [formatBarHeightConstraint_ setActive:YES];
+    [formatBar_ setAutoresizingMask:NSViewNotSizable];
     [formatBar_ setHidden:YES];
     [documentPane_ addSubview:formatBar_];
+    // The pane places both children itself, in the same pass that
+    // places the pane. An autoresizing mask on either child would move
+    // it a second time, in a direction of its own.
     [scrollView_ setAutoresizingMask:NSViewNotSizable];
-    [scrollView_ setTranslatesAutoresizingMaskIntoConstraints:NO];
     [documentPane_ addSubview:scrollView_];
-    [NSLayoutConstraint activateConstraints:@[
-        [formatBar_.leadingAnchor
-            constraintEqualToAnchor:documentPane_.leadingAnchor],
-        [formatBar_.trailingAnchor
-            constraintEqualToAnchor:documentPane_.trailingAnchor],
-        [formatBar_.topAnchor
-            constraintEqualToAnchor:documentPane_.topAnchor],
-        [scrollView_.leadingAnchor
-            constraintEqualToAnchor:documentPane_.leadingAnchor],
-        [scrollView_.trailingAnchor
-            constraintEqualToAnchor:documentPane_.trailingAnchor],
-        [scrollView_.bottomAnchor
-            constraintEqualToAnchor:documentPane_.bottomAnchor],
-        [scrollView_.topAnchor
-            constraintEqualToAnchor:formatBar_.bottomAnchor],
-    ]];
     [splitView_ addSubview:documentPane_];
     // The document takes every point the outline does not need. Without
     // this priority the split view can grow the sidebar with a wide
@@ -1968,11 +1956,28 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // split view's own arrangement, keeps the text full width for the
     // whole session and not only for the frame that closed the pane.
     const CGFloat documentX = outlineVisible_ ? outlineWidth + divider : 0.0;
-    NSRect scrollFrame = [scrollView_ frame];
-    if (scrollFrame.origin.x != documentX ||
-        scrollFrame.size.width != documentWidth) {
-        scrollFrame.origin.x = documentX;
-        scrollFrame.size.width = documentWidth;
+    const CGFloat documentHeight = splitFrame.size.height;
+    NSRect paneFrame = [documentPane_ frame];
+    if (paneFrame.origin.x != documentX ||
+        paneFrame.size.width != documentWidth ||
+        paneFrame.size.height != documentHeight) {
+        paneFrame.origin.x = documentX;
+        paneFrame.size.width = documentWidth;
+        paneFrame.size.height = documentHeight;
+        [documentPane_ setFrame:paneFrame];
+    }
+    // Inside the pane: the format bar across the top while the page can
+    // be edited, the page under it. The pane is not flipped, so the bar
+    // takes the far edge.
+    const CGFloat barHeight =
+        formatBarShown_ ? [MdFormatBar barHeight] : 0.0;
+    if (barHeight > 0.0) {
+        [formatBar_ setFrame:NSMakeRect(0.0, documentHeight - barHeight,
+                                        documentWidth, barHeight)];
+    }
+    const NSRect scrollFrame =
+        NSMakeRect(0.0, 0.0, documentWidth, documentHeight - barHeight);
+    if (!NSEqualRects([scrollView_ frame], scrollFrame)) {
         [scrollView_ setFrame:scrollFrame];
     }
     [scrollView_ tile];
@@ -2856,19 +2861,15 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 }
 
 - (void)applyFormatBarVisible:(BOOL)editing {
-    if (!formatBar_ || !formatBarHeightConstraint_) return;
-    const CGFloat height = editing ? [MdFormatBar barHeight] : 0.0;
-    const BOOL hidden = editing ? NO : YES;
-    if (formatBarHeightConstraint_.constant == height &&
-        [formatBar_ isHidden] == hidden) {
-        return;
-    }
-    formatBarHeightConstraint_.constant = height;
-    [formatBar_ setHidden:hidden];
-    // The page changes height with the strip; settle the frames before
-    // the caret is placed on the new page, the way the find bar's own
-    // toggle does.
-    if (window_) [window_ layoutIfNeeded];
+    if (!formatBar_) return;
+    const BOOL shown = editing ? YES : NO;
+    if (formatBarShown_ == shown) return;
+    formatBarShown_ = shown;
+    [formatBar_ setHidden:shown ? NO : YES];
+    // The strip takes its height from the page and gives it back, so
+    // the page is measured again in the same pass the mode flips. The
+    // caret is placed after this returns, on the new page.
+    [self layoutDocumentForWindow];
 }
 
 - (void)formatBarSync {
