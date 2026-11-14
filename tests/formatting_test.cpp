@@ -416,6 +416,26 @@ TEST(Formatting, OutdentListAtTheLeftMarginLeavesTheContinuation) {
     EXPECT_EQ(s.active.offset, 30u);
 }
 
+// A fenced block is built around the paragraph, not around the physical
+// line the caret sits on, and the opening fence closes the block again.
+TEST(Formatting, ToggleCodeBlockFencesTheWholeParagraph) {
+    TextBuffer b;
+    b.SetText("a paragraph that wraps\nonto a line");
+    Selection s;
+    s.Collapse({36});
+    ToggleCodeBlock(&b, &s);
+    EXPECT_EQ(b.Text(), "```\na paragraph that wraps\nonto a line\n```\n");
+}
+
+TEST(Formatting, ToggleCodeBlockClosesTheBlockFromItsOpeningFence) {
+    TextBuffer b;
+    b.SetText("```\ncode line\n```\n");
+    Selection s;
+    s.Collapse({0});
+    ToggleCodeBlock(&b, &s);
+    EXPECT_EQ(b.Text(), "code line\n");
+}
+
 // A wrapped paragraph that is not a list keeps line indentation, the rule
 // the text specification names for non-list lines.
 TEST(Formatting, IndentPlainParagraphStaysOnItsLine) {

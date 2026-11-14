@@ -476,8 +476,11 @@ void InsertLink(TextBuffer* buf, Selection* sel, const std::string& url,
 
 // --- Code block toggle ---
 
-// Forward declaration; LineStartOf is defined later in this file.
+// Forward declarations; the line and paragraph helpers are defined
+// later in this file.
 static uint32_t LineStartOf(const std::string& text, uint32_t offset);
+static uint32_t ParagraphStartOf(const std::string& text, uint32_t offset);
+static uint32_t ParagraphEndOf(const std::string& text, uint32_t offset);
 
 static uint32_t LineEndOf(const std::string& text, uint32_t lineStart) {
     uint32_t end = lineStart;
@@ -538,7 +541,7 @@ void ToggleCodeBlock(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     if (afterLastLine < text.size() && text[afterLastLine] == '\n') {
         ++afterLastLine;
     }
-    const uint32_t lastLineEnd = afterLastLine;
+    uint32_t lastLineEnd = afterLastLine;
 
     const std::string fence = "```";
     uint32_t fenceLineStart = 0;
@@ -567,6 +570,26 @@ void ToggleCodeBlock(TextBuffer* buf, Selection* sel, UndoStack* undo) {
             }
             const uint32_t next = LineEndOf(text, line);
             line = next < text.size() ? next + 1 : next;
+        }
+    }
+
+    // A caret standing on the opening fence takes the whole fenced block,
+    // so the same keystroke that opened the block closes it again. Without
+    // this the fence line was wrapped in a new pair of fences.
+    if (!foundOpen && sel->Empty() && IsFenceLine(text, firstLineStart, true)) {
+        uint32_t line = LineEndOf(text, firstLineStart);
+        if (line < text.size() && text[line] == '\n') ++line;
+        while (line < text.size()) {
+            if (IsFenceLine(text, line, false)) {
+                fenceLineStart = firstLineStart;
+                closeFenceStart = line;
+                foundOpen = true;
+                foundClose = true;
+                break;
+            }
+            const uint32_t next = LineEndOf(text, line);
+            if (next >= text.size()) break;
+            line = next + 1;
         }
     }
 
@@ -632,6 +655,17 @@ void ToggleCodeBlock(TextBuffer* buf, Selection* sel, UndoStack* undo) {
             undo->Push(entry);
         }
         return;
+    }
+
+    if (sel->Empty()) {
+        // A paragraph is the unit. Cutting it at the physical line the
+        // caret sits on would fence half a wrapped paragraph and leave
+        // the rest outside the block.
+        firstLineStart = ParagraphStartOf(text, sel->active.offset);
+        const uint32_t paraEnd = ParagraphEndOf(text, sel->active.offset);
+        lastLineStart = LineStartOf(text, paraEnd > 0 ? paraEnd - 1 : 0);
+        lastLineEnd = LineEndOf(text, lastLineStart);
+        if (lastLineEnd < text.size() && text[lastLineEnd] == '\n') ++lastLineEnd;
     }
 
     // Add code block fences: insert ``` on its own line before and after.
