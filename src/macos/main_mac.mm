@@ -3149,27 +3149,35 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
 // The command behind a toolbar item, by the identifier the toolbar gave
 // it. Null for an item with no command row (the sidebar toggle reads the
-// pane, not a document).
+// pane, not a document). An if chain rather than a table: this file is
+// built with ARC, and ARC keeps Objective-C objects out of structs.
 static const commands::CommandSpec* ToolbarCommand(NSString* identifier) {
-    struct Row {
-        NSString* identifier;
-        commands::CommandId id;
-    };
-    static const Row rows[] = {
-        {@"MdRecent", commands::CommandId::ViewRecent},
-        {@"MdSave", commands::CommandId::Save},
-        {@"MdShare", commands::CommandId::Share},
-        {@"MdUndo", commands::CommandId::Undo},
-        {@"MdRedo", commands::CommandId::Redo},
-        {@"MdFind", commands::CommandId::Find},
-        {@"MdHighlight", commands::CommandId::Mark},
-        {@"MdEditMode", commands::CommandId::EditToggle},
-        {@"MdOutline", commands::CommandId::Outline},
-    };
-    for (const Row& row : rows) {
-        if ([identifier isEqualToString:row.identifier]) {
-            return commands::Find(row.id);
-        }
+    if ([identifier isEqualToString:@"MdRecent"]) {
+        return commands::Find(commands::CommandId::ViewRecent);
+    }
+    if ([identifier isEqualToString:@"MdSave"]) {
+        return commands::Find(commands::CommandId::Save);
+    }
+    if ([identifier isEqualToString:@"MdShare"]) {
+        return commands::Find(commands::CommandId::Share);
+    }
+    if ([identifier isEqualToString:@"MdUndo"]) {
+        return commands::Find(commands::CommandId::Undo);
+    }
+    if ([identifier isEqualToString:@"MdRedo"]) {
+        return commands::Find(commands::CommandId::Redo);
+    }
+    if ([identifier isEqualToString:@"MdFind"]) {
+        return commands::Find(commands::CommandId::Find);
+    }
+    if ([identifier isEqualToString:@"MdHighlight"]) {
+        return commands::Find(commands::CommandId::Mark);
+    }
+    if ([identifier isEqualToString:@"MdEditMode"]) {
+        return commands::Find(commands::CommandId::EditToggle);
+    }
+    if ([identifier isEqualToString:@"MdOutline"]) {
+        return commands::Find(commands::CommandId::Outline);
     }
     return nullptr;
 }
