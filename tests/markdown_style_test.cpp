@@ -281,7 +281,6 @@ TEST(AppleStyle, ProfileFollowsTheDocCScale) {
     EXPECT_FALSE(m.linkUnderline);
     EXPECT_FALSE(m.tableVerticalLines);
     EXPECT_TRUE(m.calloutBoxes);
-    EXPECT_TRUE(m.leadScale > 1.0f);
     const Palette p = BasePalette(MarkdownStyle::Apple);
     EXPECT_NEAR(p.link.b, 0xCC / 255.0f, 0.001f);   // 0066cc
 }
@@ -290,7 +289,6 @@ TEST(AppleStyle, OtherStylesKeepTheirOwnSwitches) {
     for (MarkdownStyle s : {MarkdownStyle::GitHub, MarkdownStyle::Wikipedia}) {
         const LayoutMetrics m = BaseMetrics(s);
         EXPECT_FALSE(m.calloutBoxes);
-        EXPECT_NEAR(m.leadScale, 1.0f, 0.001f);
         EXPECT_TRUE(m.tableVerticalLines);
     }
 }
@@ -410,7 +408,11 @@ TEST(AppleStyle, PaddingIsChargedToTheGapNotTheBlock) {
     EXPECT_NEAR(p.y, q.y + q.height + m.calloutPadY + m.paraGap, 0.01f);
 }
 
-TEST(AppleStyle, TheLineAfterTheTitleIsTheLeadDescription) {
+TEST(AppleStyle, TheParagraphAfterTheTitleReadsLikeEveryOtherParagraph) {
+    // Where a paragraph sits does not change how it reads. The line after
+    // the title used to be set larger and muted as the page description,
+    // which made two paragraphs written the same way look different and
+    // gave the writer no way to say yes or no to it.
     Document doc;
     doc.nodes.push_back(Heading(1, U"Title"));
     doc.nodes.push_back(Para(U"The description."));
@@ -423,15 +425,13 @@ TEST(AppleStyle, TheLineAfterTheTitleIsTheLeadDescription) {
         for (const auto& item : laid.list.items)
             if (auto* t = std::get_if<display::Text>(&item)) texts.push_back(t);
         ASSERT_TRUE(texts.size() == 3);
-        const float lead = texts[1]->line.runs[0].font.size;
+        const float afterTitle = texts[1]->line.runs[0].font.size;
         const float body = texts[2]->line.runs[0].font.size;
-        if (s == MarkdownStyle::Apple) {
-            EXPECT_NEAR(lead, body * m.leadScale, 0.01f);
-            EXPECT_NEAR(texts[1]->line.runs[0].r, pal.textMuted.r, 0.001f);
-            EXPECT_NEAR(texts[2]->line.runs[0].r, pal.textPrimary.r, 0.001f);
-        } else {
-            EXPECT_NEAR(lead, body, 0.01f);
-        }
+        EXPECT_NEAR(afterTitle, body, 0.01f);
+        EXPECT_NEAR(afterTitle, m.bodyFontSize * layout::kPtToDip, 0.01f);
+        // Both carry the body colour, so neither stands out.
+        EXPECT_NEAR(texts[1]->line.runs[0].r, pal.textPrimary.r, 0.001f);
+        EXPECT_NEAR(texts[2]->line.runs[0].r, pal.textPrimary.r, 0.001f);
     }
 }
 

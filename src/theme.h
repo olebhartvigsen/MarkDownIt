@@ -173,9 +173,6 @@ struct LayoutMetrics {
     float calloutPadY;           // inner top and bottom padding
     float calloutRadius;
 
-    // Page header. The paragraph right after an H1 is the page's
-    // description: set larger and muted. 1.0 switches it off.
-    float leadScale;
 };
 
 // The four information boxes.
@@ -339,7 +336,6 @@ inline LayoutMetrics GitHubMetrics() {
     m.calloutPadX = 0.0f;
     m.calloutPadY = 0.0f;
     m.calloutRadius = 0.0f;
-    m.leadScale = 1.0f;
     return m;
 }
 
@@ -454,7 +450,6 @@ inline LayoutMetrics AppleMetrics() {
     m.calloutPadX = 16.0f;
     m.calloutPadY = 12.0f;
     m.calloutRadius = 10.0f;
-    m.leadScale = 1.2f;
     return m;
 }
 

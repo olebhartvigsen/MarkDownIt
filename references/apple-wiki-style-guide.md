@@ -25,8 +25,10 @@ A page in this style has eight parts. Each one is plain markdown. The
 renderer gives it a fixed look, so every wiki page reads the same way.
 
 1. **Page header.** A `#` title, then one short paragraph that describes
-   the page. The paragraph right after the title is set larger and
-   muted, as the page's description. Keep it to one or two sentences.
+   the page. Keep it to one or two sentences. The paragraph reads as body
+   text: where a paragraph sits does not change its typeface, size or
+   colour, because the writer has no way to see or refuse such a rule and
+   two paragraphs written the same way have to look the same.
 2. **Overview.** A `## Overview` section with a short introduction. Say
    what the page covers and who needs it.
 3. **Information boxes.** A quote that starts with a label word and a
@@ -119,6 +121,6 @@ does not rely on colour. `tests/markdown_style_test.cpp` checks:
 ## Tests
 
 `tests/markdown_style_test.cpp` covers the profile values, label
-detection, the box geometry, the lead paragraph, the heading faces, the
+detection, the box geometry, the paragraph after the title, the heading faces, the
 table lines and the contrast. The test binary pins GitHub as its default
 style, so the layout goldens keep one fixed style.
