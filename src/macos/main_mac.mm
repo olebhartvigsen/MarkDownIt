@@ -2869,6 +2869,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // the match into view right after this, so the layout is settled
     // first.
     [window_ layoutIfNeeded];
+    // The split view has resized its pane; the pane places the page and
+    // the format bar, and that placement is this pass. Without it the
+    // page keeps the height it had before the bar appeared and hangs
+    // out of its pane.
+    [self layoutDocumentForWindow];
     if (!visible) {
         [window_ makeFirstResponder:view_];
     }
