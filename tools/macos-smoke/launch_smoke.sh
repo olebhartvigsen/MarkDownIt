@@ -133,7 +133,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,shared" "$BIN" "$DOC" &
+    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-click,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,shared" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
@@ -559,6 +559,32 @@ WALK_EOF
         exit 1
     fi
     echo "launch smoke: the shared state typed, bolded, re-leveled and added a row"
+
+    # A press on a recent card opens its document; the movement and the
+    # release that follow belong to that press and must not leave a
+    # selection in the document it opened.
+    WCLICK=$(grep "qa welcome-click:" "$LOG" 2>/dev/null | tail -1)
+    if [ -z "$WCLICK" ]; then
+        echo "launch smoke FAILED: the welcome-click state traced nothing"
+        exit 1
+    fi
+    if ! echo "$WCLICK" | grep -q "cards=[1-9]"; then
+        echo "launch smoke FAILED: the welcome screen showed no card to press"
+        echo "$WCLICK"
+        exit 1
+    fi
+    if ! echo "$WCLICK" | grep -q "opened=1"; then
+        echo "launch smoke FAILED: pressing a card did not open its document"
+        echo "$WCLICK"
+        exit 1
+    fi
+    if ! echo "$WCLICK" | grep -q "emptyAfterDrag=1" ||
+       ! echo "$WCLICK" | grep -q "emptyAfterRelease=1"; then
+        echo "launch smoke FAILED: the press on a card selected text in the document"
+        echo "$WCLICK"
+        exit 1
+    fi
+    echo "launch smoke: a press on a recent card selects nothing"
 
     # The recents page must fit the window and start at its own origin,
     # even when the document behind it was scrolled sideways. The page

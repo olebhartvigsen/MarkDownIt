@@ -1473,6 +1473,8 @@ void AppWindow::OpenLink(const std::string& url) {
 
 void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     SetFocus(hwnd);
+    // A new press starts a new sequence, whatever the last one did.
+    gesture_.OnPress();
     // A click moves or extends the caret. Navigation continues from the new
     // caret position, which is the recommended behaviour for a word
     // processor (guide 30), and the bar reads it live.
@@ -1488,6 +1490,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
         // The button sits above the cards, so it is asked first.
         if (welcome_.HitsOpenButton(wx, wy)) {
             OpenFileDialog();
+            gesture_.Consume();
             return;
         }
         int idx = welcome_.HitTest(wx, wy);
@@ -1497,6 +1500,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
                 OpenFile(path);
             }
         }
+        gesture_.Consume();
         return;
     }
 
@@ -1665,6 +1669,7 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
             if (!url.empty()) {
             if (!editing_ || (GetKeyState(VK_CONTROL) & 0x8000)) {
                 OpenLink(url);
+                gesture_.Consume();
                 return;
             }
             }
@@ -1867,6 +1872,10 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
         }
         return;
     }
+
+    // A press the window answered itself owns the movement too: it opened
+    // a document or followed a link, and it placed no caret to drag from.
+    if (gesture_.Consumed()) return;
 
     if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) return;
     float scale = 96.0f / static_cast<float>(dpi_);
@@ -2077,6 +2086,7 @@ void AppWindow::FinishTextDrag() {
 }
 
 void AppWindow::OnLButtonUp(HWND hwnd) {
+    gesture_.OnRelease();
     FinishTextDrag();
     // The selection just settled; the marker toggle follows it. This
     // covers view mode, where no caret update runs to do the same.

@@ -256,6 +256,13 @@ std::string ContentView::WelcomePathForCard(int index) const {
     return welcome_.GetPath(index);
 }
 
+Rect ContentView::WelcomeCardRect(int index) {
+    // The draw path lays the screen out; a probe that asks before the
+    // next frame has to do it itself.
+    welcome_.Layout(width_, height_);
+    return welcome_.CardRect(index);
+}
+
 void ContentView::Draw(RenderTarget* target) {
     // Without a document the welcome screen takes its place.
     if (app_ && app_->WelcomeMode()) {
@@ -1048,6 +1055,8 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     if (!content_) return;
     const NSPoint point = [self convertPoint:[event locationInWindow]
                                     fromView:nil];
+    // A new press starts a new sequence, whatever the last one did.
+    gesture_.OnPress();
 
     // On the welcome screen the button opens the panel and a card
     // opens its file.
@@ -1055,6 +1064,7 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
         content_->WelcomeOpenAt(static_cast<float>(point.x),
                                 static_cast<float>(point.y))) {
         app_->RequestOpenPanel();
+        gesture_.Consume();
         return;
     }
     if (app_ && app_->WelcomeMode()) {
@@ -1062,6 +1072,7 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
                                                  static_cast<float>(point.y));
         if (card >= 0) {
             app_->RequestOpenFile(content_->WelcomePathForCard(card));
+            gesture_.Consume();
             return;
         }
     }
@@ -1100,6 +1111,7 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
                 } else {
                     app_->OpenExternalUrl(url);
                 }
+                gesture_.Consume();
                 return;
             }
         }
@@ -1466,6 +1478,9 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
 
 - (void)mouseDragged:(NSEvent*)event {
     if (!content_) return;
+    // A swallowed press owns the movement too: the press opened a
+    // document or followed a link, and it placed no caret to drag from.
+    if (gesture_.Consumed()) return;
     const NSPoint point = [self convertPoint:[event locationInWindow]
                                     fromView:nil];
     lastDragPoint_ = point;
@@ -1488,6 +1503,12 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
 
 - (void)mouseUp:(NSEvent*)event {
     [self stopAutoscroll];
+    if (gesture_.Consumed()) {
+        // The release ends the sequence the press took; it places nothing.
+        gesture_.OnRelease();
+        [self setNeedsDisplay:YES];
+        return;
+    }
     if (content_->textDragArmed() || content_->textDragActive()) {
         const bool dragged = content_->textDragActive();
         const uint32_t drop = content_->TextDragDropOffset();

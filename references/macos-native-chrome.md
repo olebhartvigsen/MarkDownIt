@@ -221,6 +221,10 @@ taken down), and tools/macos-smoke/launch_smoke.sh asserts both.
   the document pane, is on screen only while the page can be edited,
   and is built from the system's controls over the command table.
   Nothing on it takes the keyboard.
+- A press the window answers itself owns the whole mouse sequence; the
+  shared rule and its mechanism are in word-processor-guidelines.md, and
+  tools/macos-smoke presses a recent card, drags six points and requires
+  that nothing was selected.
 - tools/check_mac_chrome.py enforces all of it in CI.
 - The Windows window keeps its ribbon and the rules in
   ribbon-menu-guidelines.md; the two files describe different

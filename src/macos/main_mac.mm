@@ -1374,6 +1374,69 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         platform::TraceMac("qa welcome: mode=%d toolbar=%s",
                       app_->WelcomeMode() ? 1 : 0, [items UTF8String]);
         [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"welcome-click"]) {
+        // The reader's sequence: press a recent card, move the hand a few
+        // points while the button is still down, then release. The press
+        // opens a document, and the movement belongs to the press, not to
+        // the document it opened: nothing may be selected by it.
+        [self showRecents:nil];
+        [view_ setNeedsDisplay:YES];
+        const int cards = content_->WelcomeCardCount();
+        const platform::Rect card =
+            cards > 0 ? content_->WelcomeCardRect(0) : platform::Rect{};
+        NSPoint inView = NSMakePoint(
+            static_cast<CGFloat>(card.x + card.width * 0.5f),
+            static_cast<CGFloat>(card.y + card.height * 0.5f));
+        NSPoint inWindow = [view_ convertPoint:inView toView:nil];
+        NSEvent* press = [NSEvent mouseEventWithType:NSEventTypeLeftMouseDown
+                                            location:inWindow
+                                       modifierFlags:0
+                                           timestamp:0
+                                        windowNumber:[window_ windowNumber]
+                                             context:nil
+                                         eventNumber:0
+                                          clickCount:1
+                                            pressure:1.0];
+        [view_ mouseDown:press];
+        const bool opened = !app_->WelcomeMode();
+        const bool emptyAfterPress = app_->selection().Empty();
+        NSEvent* drag = [NSEvent mouseEventWithType:NSEventTypeLeftMouseDragged
+                                           location:NSMakePoint(inWindow.x,
+                                                                inWindow.y + 6.0)
+                                      modifierFlags:0
+                                          timestamp:0
+                                       windowNumber:[window_ windowNumber]
+                                            context:nil
+                                        eventNumber:0
+                                         clickCount:1
+                                           pressure:1.0];
+        [view_ mouseDragged:drag];
+        const bool emptyAfterDrag = app_->selection().Empty();
+        NSEvent* release = [NSEvent mouseEventWithType:NSEventTypeLeftMouseUp
+                                              location:NSMakePoint(inWindow.x,
+                                                                   inWindow.y + 6.0)
+                                         modifierFlags:0
+                                             timestamp:0
+                                          windowNumber:[window_ windowNumber]
+                                               context:nil
+                                           eventNumber:0
+                                            clickCount:1
+                                              pressure:1.0];
+        [view_ mouseUp:release];
+        platform::TraceMac(
+            "qa welcome-click: cards=%d opened=%d emptyAfterPress=%d "
+            "emptyAfterDrag=%d emptyAfterRelease=%d",
+            cards, opened ? 1 : 0, emptyAfterPress ? 1 : 0,
+            emptyAfterDrag ? 1 : 0, app_->selection().Empty() ? 1 : 0);
+        // The states after this one expect the fixture, so open it again.
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"layout-showcase.md"]
+                    UTF8String])];
+        }
+        [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"wheel"]) {
         // Injected events wait in the queue until the app dequeues them,
         // and this state runs inside a dispatch of its own, so the queue

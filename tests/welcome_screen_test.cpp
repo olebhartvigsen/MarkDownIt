@@ -351,6 +351,27 @@ TEST(WelcomeScreen, TheEmptyScreenStillOffersTheOpenButton) {
     EXPECT_TRUE(screen.HitsOpenButton(button.x + 2.0f, button.y + 2.0f));
 }
 
+TEST(WelcomeScreen, ACardAnswersItsOwnRect) {
+    // The grid keeps where each card sits, so the app can press one
+    // without measuring the layout itself.
+    WelcomeScreen screen;
+    std::vector<RecentFile> files(2);
+    files[0].path = Widen("/documents/first.md");
+    files[0].preview = "# First\n";
+    files[1].path = Widen("/documents/second.md");
+    files[1].preview = "# Second\n";
+    screen.SetRecentFiles(files);
+    screen.Layout(900.0f, 700.0f);
+
+    const Rect first = screen.CardRect(0);
+    EXPECT_GT(first.width, 0.0f);
+    EXPECT_GT(first.height, 0.0f);
+    EXPECT_EQ(screen.HitTest(first.x + first.width * 0.5f,
+                             first.y + first.height * 0.5f), 0);
+    EXPECT_EQ(screen.CardRect(-1).width, 0.0f);
+    EXPECT_EQ(screen.CardRect(9).width, 0.0f);
+}
+
 TEST(WelcomeScreen, ReadsMarkdownMarksAsTheReaderSeesThem) {
     // A card shows a heading without its hashes, a bullet as a bullet
     // and a table row as cells divided by a bar, the way the Windows card always did.

@@ -19,6 +19,7 @@
 
 #include "app_mac.h"
 #include "caret.h"
+#include "mousegesture.h"
 #include "renderer_mac.h"
 #include "welcome_screen.h"
 #include "searchreplace.h"
@@ -43,6 +44,10 @@ public:
 
     // The file a card of the welcome screen stands for.
     std::string WelcomePathForCard(int index) const;
+    // Where a card sits, in view points, for the QA walk's press on it.
+    Rect WelcomeCardRect(int index);
+    // How many cards the welcome screen shows.
+    int WelcomeCardCount() const { return welcome_.CardCount(); }
 
     // The card under the mouse, which is drawn in another colour.
     int HoveredWelcomeCard() const { return hoverCard_; }
@@ -293,6 +298,11 @@ private:
     float textDragDownX_ = 0.0f;
     float textDragDownY_ = 0.0f;
     uint32_t textDragTarget_ = UINT32_MAX;
+    // A press the view answered itself, the welcome screen or a modified
+    // click on a link, owns the rest of its mouse sequence: AppKit keeps
+    // sending the drag and the release here, and the document that the
+    // press opened must not read them as a selection.
+    MouseGesture gesture_;
     // The offset the last vertical step landed on. The caret at a soft
     // wrap is drawn on the lower of the two lines only when it came
     // there by Up or Down, and the step has to start from that line.

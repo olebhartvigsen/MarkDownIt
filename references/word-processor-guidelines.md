@@ -141,6 +141,31 @@ Det er især vigtigt, fordi **"visuelt nærmest" og "strukturelt korrekt" ikke a
 
 ---
 
+## Et klik, der åbner et dokument, er ikke et klik i dokumentet
+
+En musesekvens begynder med et tryk og slutter med slip. Nogle tryk
+besvarer vinduet selv: et kort på forsiden, der åbner det dokument det
+peger på, og et modificeret klik på et link. De tryk placerer ingen caret,
+og resten af sekvensen hører til trykket, ikke til det dokument der lige
+blev åbnet.
+
+Begge platforme bliver ved med at sende bevægelsen og slippet til samme
+visning, efter at dokumentet er skiftet: Windows fordi `WM_MOUSEMOVE` med
+venstre museknap nede stadig når frem, macOS fordi AppKit sender
+`mouseDragged:` og `mouseUp:` til den visning der fik trykket. Uden en
+spærring læser dokumentet den bevægelse som et træk og markerer fra
+dokumentets begyndelse, så et håndled der flytter to punkter under klikket
+efterlader en markering på den nyåbnede side.
+
+Reglen ligger i `src/mousegesture.h` og bruges af begge skaller: trykket
+kalder `OnPress()`, og når vinduet selv har besvaret det, `Consume()`.
+Bevægelses- og slipbehandlerne spørger `Consumed()` og gør intet, og
+slippet kalder `OnRelease()`. `tests/mousegesture_test.cpp` holder
+tilstanden, og `tools/macos-smoke/launch_smoke.sh` trykker på et kort,
+flytter seks punkter og kræver en tom markering.
+
+---
+
 # 3. Det kritiske edge case: klik efter sidste tegn
 
 Dette bør være et særskilt testområde.

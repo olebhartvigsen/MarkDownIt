@@ -640,4 +640,9 @@ const std::string& WelcomeScreen::GetPath(int index) const {
     return cards_[index].filePath;
 }
 
+Rect WelcomeScreen::CardRect(int index) const {
+    if (index < 0 || index >= static_cast<int>(cards_.size())) return Rect{};
+    return cards_[static_cast<size_t>(index)].rect;
+}
+
 }  // namespace platform

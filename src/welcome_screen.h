@@ -78,6 +78,10 @@ public:
     // The path of a card.
     const std::string& GetPath(int index) const;
 
+    // Where a card sits, in points, after Layout. A zero rect when the
+    // index is out of range.
+    Rect CardRect(int index) const;
+
     // Where the grid of cards starts: below the heading and the button
     // that opens a document. The tests probe the screen at this line.
     static constexpr float kGridTop = 164.0f;

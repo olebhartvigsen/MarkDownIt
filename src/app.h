@@ -24,6 +24,7 @@
 #include "settings.h"
 #include "welcome_screen.h"
 #include "outlinepane.h"
+#include "mousegesture.h"
 #include "searchreplace.h"
 #include "findbar.h"
 #include "textdrag.h"
@@ -349,6 +350,9 @@ private:
     std::vector<OutlineItem> outline_items_;
 
     // Margin drag selection: when true, mouse drag selects whole lines.
+    // A press the window answered itself, a card on the welcome screen
+    // or a link, owns the rest of its mouse sequence.
+    MouseGesture   gesture_;
     bool           margin_selecting_ = false;
     int            margin_anchor_block_ = -1;  // block index where drag started
     uint32_t       margin_anchor_start_ = 0;   // start of anchor visual line
