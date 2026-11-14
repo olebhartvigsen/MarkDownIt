@@ -339,6 +339,32 @@ TEST(WelcomeScreen, TheScreenOffersTheOpenButton) {
     EXPECT_EQ(screen.HitTest(button.x + 4.0f, button.y + 4.0f), -1);
 }
 
+TEST(WelcomeScreen, TheScreenOffersTheNewDocumentButton) {
+    // The two actions share the heading row. New sits to the left of
+    // Open, the pair is centered, and neither button answers for the
+    // other or for a card underneath.
+    WelcomeScreen screen;
+    screen.Layout(900.0f, 700.0f);
+
+    const Rect fresh = screen.NewButtonRect();
+    const Rect open = screen.OpenButtonRect();
+    EXPECT_GT(fresh.width, 0.0f);
+    EXPECT_GT(fresh.height, 0.0f);
+    EXPECT_GT(fresh.y, 60.0f);
+    EXPECT_TRUE(screen.HitsNewButton(fresh.x + fresh.width * 0.5f,
+                                     fresh.y + fresh.height * 0.5f));
+    EXPECT_LT(fresh.x, open.x);
+    EXPECT_NEAR(fresh.y, open.y, 0.01f);
+    EXPECT_NEAR((fresh.x + open.x + open.width) * 0.5f, 450.0f, 1.0f);
+
+    // The gap between them belongs to neither.
+    EXPECT_FALSE(screen.HitsNewButton(open.x - 6.0f, open.y + 4.0f));
+    EXPECT_FALSE(screen.HitsOpenButton(fresh.x + fresh.width + 6.0f,
+                                       fresh.y + 4.0f));
+    // A press on either action is not a press on a card.
+    EXPECT_EQ(screen.HitTest(fresh.x + 4.0f, fresh.y + 4.0f), -1);
+}
+
 TEST(WelcomeScreen, TheEmptyScreenStillOffersTheOpenButton) {
     // With nothing in the list the screen is a hint, and the way in
     // has to stay on it.

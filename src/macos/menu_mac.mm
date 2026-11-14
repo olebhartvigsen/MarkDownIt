@@ -172,7 +172,7 @@ NSMenu* BuildMainMenu() {
         CommandItem(fileMenu, "New", @selector(newDocument:));
         CommandItem(fileMenu, "Open\u2026", @selector(openDocument:));
 
-        // Open Recent fills itself from the same list the welcome
+        // Open Recent fills itself from the same list the home
         // screen shows, whenever it opens: the app delegate is the
         // menu's delegate, so the menu cannot go stale.
         NSMenu* recentMenu = [[NSMenu alloc] initWithTitle:@"Open Recent"];
@@ -237,7 +237,7 @@ NSMenu* BuildMainMenu() {
              {"Source View", @selector(toggleSourceView:)},
              {"Edit Mode", @selector(editMode:)},
              {"Outline", @selector(toggleOutline:)},
-             {"Recent Documents", @selector(showRecents:)},
+             {"Home", @selector(showRecents:)},
              {"Show Tab Bar", @selector(toggleTabBar:)},
              {"Wrap Text", @selector(toggleWrap:)}});
         [viewMenu addItem:[NSMenuItem separatorItem]];

@@ -43,6 +43,7 @@
 #include "findbar_mac.h"
 #include "menu_mac.h"
 #include "toolbar_mac.h"
+#include "filewatch_mac.h"
 #include "zoom_hud_mac.h"
 #include "table_picker_mac.h"
 
@@ -100,6 +101,11 @@ bool OpenExternalUrl(const std::string& url) {
     bool outlineVisible_;
     // Whether the open document has headings at all.
     bool outlineHasHeadings_;
+    // The file watch: the page's path, the poll that reads the disk, and
+    // what the disk said when this window last read or wrote the file.
+    NSTimer* fileWatchTimer_;
+    std::string fileWatchPath_;
+    watch::Tracker fileWatch_;
     platform::MacSettings settings_;
     NSWindow* window_;
     // Set when windowWillClose saved the frame, so the terminate path
@@ -157,6 +163,12 @@ bool OpenExternalUrl(const std::string& url) {
           function:(unichar)functionKey
              flags:(NSEventModifierFlags)flags;
 - (void)qaScrollToTop;
+// The file watch: the poll, the answer to a change, and the reload that
+// keeps the reader's place.
+- (void)startFileWatch:(const std::string&)path;
+- (void)stopFileWatch;
+- (void)fileWatchTick:(NSTimer*)timer;
+- (void)reloadKeepingPlace;
 
 // The menu commands, as AppKit selectors.
 - (void)newDocument:(id)sender;
@@ -661,6 +673,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // window owns.
     app_->SetOpenPanelHandler([delegate] {
         [delegate OnOpen];
+    });
+    // The other action on the home screen starts a document; the window
+    // owns the unsaved-changes question and the title.
+    app_->SetNewDocumentHandler([delegate] {
+        [delegate OnNewDocument];
     });
 
     // The menu bar. The items find their command through the responder
@@ -1996,6 +2013,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // the save once this one has happened.
 - (void)windowWillClose:(NSNotification*)notification {
     (void)notification;
+    // No poll after the window is gone: the timer would fire into a page
+    // that is no longer on screen.
+    [self stopFileWatch];
     [self saveWindowFrame];
     windowFrameSaved_ = YES;
     // Remember the user's tab bar choice while the tab group still
@@ -2160,7 +2180,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // change.
 - (void)refreshWindowTitle:(const std::string&)path {
     if (path.empty()) {
-        [window_ setTitle:@"MarkDownIt"];
+        // The home screen is the app; a document that was never saved is
+        // "Untitled", the name the system gives one.
+        [window_ setTitle:app_->WelcomeMode() ? @"MarkDownIt" : @"Untitled"];
         [window_ setSubtitle:@""];
         [window_ setRepresentedFilename:@""];
     } else {
@@ -2198,6 +2220,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
     settings_.AddRecentFile(path);
     settings_.Save();
+
+    // The page now belongs to that file, so the disk is read for it.
+    [self startFileWatch:path];
 
     [self refreshWindowTitle:path];
     // A page without headings stands the pane down, and one with
@@ -2502,10 +2527,18 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)OnNewDocument {
     if (![self confirmDiscardChanges]) return;
     app_->NewDocument();
+    // A new document is a page to write on: the window shows it, the
+    // caret is in it and the format strip is up, the way the Windows
+    // window opens one. The home screen is where documents are picked,
+    // not where a new one is written.
+    [self stopFileWatch];
+    [self hideWelcomeScreen];
     [self setZoom:zoom::kDefaultZoom quietly:YES];
     [self refreshWindowTitle:std::string()];
-    [self showWelcomeScreen];
+    [self applyOutlineHeads];
     [view_ setNeedsDisplay:YES];
+    [window_ makeFirstResponder:view_];
+    [self toolbarSync];
 }
 
 // Shows the welcome screen, which takes the place of the document when
@@ -2567,6 +2600,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     if (![self writeToPath:app_->filePath()]) return NO;
     app_->MarkClean();
     [window_ setDocumentEdited:NO];
+    // The file on disk is the one this window just wrote.
+    fileWatch_.Remember(CurrentFileStamp(app_->filePath()));
     return YES;
 }
 
@@ -2619,6 +2654,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     app_->MarkClean();
     settings_.AddRecentFile(path);
     settings_.Save();
+    // A document that was untitled has a file now, so the watch starts.
+    [self startFileWatch:path];
     [self refreshWindowTitle:path];
     return YES;
 }
@@ -3079,8 +3116,109 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     if (!app_->ReloadFile()) {
         [self reportError:@"The file could not be read."];
     }
+    // The page is the disk's now, so that stamp is not news.
+    if (!app_->filePath().empty()) {
+        fileWatch_.Remember(CurrentFileStamp(app_->filePath()));
+    }
     [self applyOutlineHeads];
     [view_ setNeedsDisplay:YES];
+}
+
+// ---------------------------------------------------------------------------
+// The file watch
+// ---------------------------------------------------------------------------
+
+// Watches the file the page came from. The window polls it on a timer, the
+// way the Windows window polls it on its own thread, and the shared policy
+// decides what a difference means (filewatch_model.h): nothing for our own
+// write, a reload when the page is clean, a question when it is not.
+- (void)startFileWatch:(const std::string&)path {
+    [self stopFileWatch];
+    if (path.empty()) return;
+    fileWatchPath_ = path;
+    fileWatch_.Remember(CurrentFileStamp(path));
+    fileWatchTimer_ =
+        [NSTimer scheduledTimerWithTimeInterval:0.5
+                                        target:self
+                                      selector:@selector(fileWatchTick:)
+                                      userInfo:nil
+                                       repeats:YES];
+    // The system may stretch the timer while the app is in the background:
+    // the page is not on screen then, so a late poll costs nothing.
+    [fileWatchTimer_ setTolerance:0.1];
+}
+
+- (void)stopFileWatch {
+    if (fileWatchTimer_) {
+        [fileWatchTimer_ invalidate];
+        fileWatchTimer_ = nil;
+    }
+    fileWatchPath_.clear();
+    fileWatch_.Forget();
+}
+
+- (void)fileWatchTick:(NSTimer*)timer {
+    (void)timer;
+    if (fileWatchPath_.empty() || !app_) return;
+    const watch::Stamp now = CurrentFileStamp(fileWatchPath_);
+    switch (fileWatch_.Observe(now, app_->IsDirty())) {
+        case watch::Change::None:
+            return;
+        case watch::Change::Ask: {
+            // Reading the disk again would throw the edits away, so the
+            // reader answers. Keeping the page is the default, because
+            // that is the answer that loses nothing.
+            NSAlert* alert = [[NSAlert alloc] init];
+            alert.messageText = @"The file has changed on disk.";
+            alert.informativeText =
+                @"Reading it again replaces the page you are editing, and "
+                @"the changes in this window are not saved yet.";
+            [alert addButtonWithTitle:@"Keep My Changes"];
+            [alert addButtonWithTitle:@"Read It Again"];
+            // Either answer settles this change: reloading reads it, and
+            // keeping the page means the reader has seen the news.
+            fileWatch_.Accept(now);
+            if ([alert runModal] != NSAlertSecondButtonReturn) return;
+            break;
+        }
+        case watch::Change::Reload:
+            fileWatch_.Accept(now);
+            break;
+    }
+    [self reloadKeepingPlace];
+}
+
+// Reads the file again and puts the reader back: the caret where it was and
+// the page under it. The mode stays where the reader put it, because an
+// external change is not a reason to take the caret away from the writer.
+- (void)reloadKeepingPlace {
+    if (fileWatchPath_.empty() || !app_) return;
+
+    const uint32_t caret = app_->selection().active.offset;
+    NSClipView* clip = [scrollView_ contentView];
+    const NSPoint scroll = clip ? [clip bounds].origin : NSZeroPoint;
+
+    if (!app_->ReloadFromDisk()) {
+        [self reportError:@"The file could not be read."];
+        return;
+    }
+    app_->MarkClean();
+    [window_ setDocumentEdited:NO];
+
+    // The caret goes back where it was, clamped to the text that arrived.
+    const uint32_t length = static_cast<uint32_t>(app_->sourceText().size());
+    app_->SetCaret(caret > length ? length : caret);
+
+    // The caret may have asked for a scroll of its own; the reader's page
+    // wins, because that is where they were looking.
+    if (NSClipView* after = [scrollView_ contentView]) {
+        [after scrollToPoint:scroll];
+        [scrollView_ reflectScrolledClipView:after];
+    }
+    [self applyOutlineHeads];
+    [view_ setNeedsDisplay:YES];
+    // What the disk says now is what this window shows.
+    fileWatch_.Remember(CurrentFileStamp(fileWatchPath_));
 }
 
 // The steps the Find menu takes. They are the same steps the find

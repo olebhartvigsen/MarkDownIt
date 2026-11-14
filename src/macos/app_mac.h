@@ -53,6 +53,10 @@ public:
     // Reads the open file again and throws the changes away. Returns
     // false when there is no file open or the file cannot be read.
     bool ReloadFile();
+    // Reads the open file again because it changed on disk, and keeps the
+    // mode the reader chose: an external change is not a reason to leave
+    // edit mode. The shell puts the caret and the page back.
+    bool ReloadFromDisk();
 
     // The document as it stands, parsed from the current text.
     const Document& GetDocument() const { return document_; }
@@ -238,6 +242,16 @@ public:
 
     void RequestOpenFile(const std::string& path) {
         if (openFileHandler_) openFileHandler_(path);
+    }
+
+    // Asks for a new document. The window owns the unsaved-changes
+    // question and the title, so the home screen asks for the document
+    // instead of making one.
+    void SetNewDocumentHandler(std::function<void()> handler) {
+        newDocumentHandler_ = std::move(handler);
+    }
+    void RequestNewDocument() {
+        if (newDocumentHandler_) newDocumentHandler_();
     }
 
     // Asks for the file to be reloaded.
@@ -478,6 +492,7 @@ private:
     // The handler that opens a file.
     std::function<void(const std::string&)> openFileHandler_;
     std::function<void()> openPanelHandler_;
+    std::function<void()> newDocumentHandler_;
     // The handler that reloads the file.
     std::function<void()> reloadHandler_;
     // The find bar, which owns the search state.

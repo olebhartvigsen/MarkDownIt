@@ -1496,9 +1496,14 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
         float scale = 96.0f / static_cast<float>(dpi_);
         const float wx = static_cast<float>(x) * scale;
         const float wy = static_cast<float>(y) * scale;
-        // The button sits above the cards, so it is asked first.
+        // The two actions sit above the cards, so they are asked first.
         if (welcome_.HitsOpenButton(wx, wy)) {
             OpenFileDialog();
+            gesture_.Consume();
+            return;
+        }
+        if (welcome_.HitsNewButton(wx, wy)) {
+            NewDocument();
             gesture_.Consume();
             return;
         }
@@ -1873,10 +1878,14 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
         const float wx = static_cast<float>(x) * scale;
         const float wy = static_cast<float>(y) * scale;
         const bool openHover = welcome_.HitsOpenButton(wx, wy);
-        const int newHover = openHover ? -1 : welcome_.HitTest(wx, wy);
-        if (newHover != welcome_hover_ || openHover != welcome_open_hover_) {
-            welcome_hover_ = newHover;
+        const bool freshHover = welcome_.HitsNewButton(wx, wy);
+        const int cardHover =
+            (openHover || freshHover) ? -1 : welcome_.HitTest(wx, wy);
+        if (cardHover != welcome_hover_ || openHover != welcome_open_hover_ ||
+            freshHover != welcome_new_hover_) {
+            welcome_hover_ = cardHover;
             welcome_open_hover_ = openHover;
+            welcome_new_hover_ = freshHover;
             Repaint();
         }
         return;
@@ -2450,8 +2459,10 @@ void AppWindow::LoadDocumentText(const std::string& raw, const std::wstring& pat
     // An untitled buffer has no file to watch.
     if (!path.empty()) {
         watcher_.Start(hwnd_, path);
+        file_watch_.Remember(CurrentFileStamp(path));
     } else {
         watcher_.Stop();
+        file_watch_.Forget();
     }
 }
 
@@ -2489,29 +2500,68 @@ void AppWindow::Reload() {
     // The file kind (.md, .mmd, .svg), the headings and the history all
     // changed, so the whole ribbon re-asks what it can do.
     InvalidateCommandStates();
+    // What the disk says now is what this window is showing.
+    file_watch_.Remember(CurrentFileStamp(file_path_));
     Repaint();
 }
 
+// The Reload command: the reader asked for the disk again, so the only
+// question left is what happens to the changes in this window.
 void AppWindow::OnReload() {
+    if (file_path_.empty()) return;
     if (dirty_) {
-        // Buffer has unsaved changes. Prompt the user.
         int result = MessageBoxW(hwnd_,
-            L"The file has been changed on disk. Keep your changes, "
-            L"or reload the file from disk?",
-            L"MarkDownIt - File Changed",
-            MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON1);
-        if (result != IDNO) return; // IDYES = keep mine
+            L"Reading the file again replaces what is in this window.\n\n"
+            L"The changes in this window are not saved yet.",
+            L"MarkDownIt - Reload",
+            MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2);
+        if (result != IDYES) return;
     }
+    ReloadKeepingPlace();
+}
 
-    // Save caret position so we can restore it after reload.
-    uint32_t savedOffset = sel_.active.offset;
+// The file changed while this window was not the one writing it. What to do
+// about it is the shared policy's call (filewatch_model.h): nothing when the
+// disk did not really move, a reload when the buffer is clean, and a
+// question when it holds edits that a reload would throw away.
+void AppWindow::OnFileChangedOnDisk() {
+    if (file_path_.empty()) return;
+    const watch::Stamp now = CurrentFileStamp(file_path_);
+    switch (file_watch_.Observe(now, dirty_)) {
+        case watch::Change::None:
+            return;
+        case watch::Change::Ask: {
+            const int result = MessageBoxW(hwnd_,
+                L"The file has changed on disk since it was opened.\n\n"
+                L"Read it again and lose the unsaved changes in this window?",
+                L"MarkDownIt - File Changed on Disk",
+                MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2);
+            // Either answer settles this change: reloading reads it, and
+            // keeping the page means the reader has seen the news already.
+            file_watch_.Accept(now);
+            if (result != IDYES) return;
+            break;
+        }
+        case watch::Change::Reload:
+            file_watch_.Accept(now);
+            break;
+    }
+    ReloadKeepingPlace();
+}
+
+// Reads the file again and puts the reader back: the page under the caret,
+// and the caret where it was. A reload is not a reason to lose the place,
+// and the mode stays where the reader put it.
+void AppWindow::ReloadKeepingPlace() {
+    if (file_path_.empty()) return;
+    const uint32_t caret = sel_.active.offset;
 
     Reload();
 
-    // Restore caret, clamped to new text length.
-    uint32_t textLen = static_cast<uint32_t>(buffer_.Text().size());
-    if (savedOffset > textLen) savedOffset = textLen;
-    sel_.Collapse({savedOffset});
+    // The page is the disk's now, so nothing here is unsaved.
+    ClearDirty();
+    const uint32_t length = static_cast<uint32_t>(buffer_.Text().size());
+    sel_.Collapse(CaretPos{caret > length ? length : caret});
     UpdateCaretPosition();
     Repaint();
 }
@@ -3313,7 +3363,7 @@ void AppWindow::OnContentPaint(HWND hwnd) {
             platform::D2DTarget target(rt_, dw_factory_);
             welcome_.Render(&target, &welcome_engine_, size.width,
                             size.height, welcome_hover_,
-                            welcome_open_hover_);
+                            welcome_open_hover_, welcome_new_hover_);
         }
         HRESULT hr = rt_->EndDraw();
         if (hr == D2DERR_RECREATE_TARGET) {
@@ -3718,8 +3768,12 @@ bool AppWindow::DoSave(const std::wstring& path) {
         return false;
     }
 
-    // Restart watcher.
-    if (!file_path_.empty()) watcher_.Start(hwnd_, file_path_);
+    // Restart watcher. The stamp it starts from is the file this save
+    // just wrote, so the write does not come back as a change on disk.
+    if (!file_path_.empty()) {
+        watcher_.Start(hwnd_, file_path_);
+        file_watch_.Remember(CurrentFileStamp(file_path_));
+    }
 
     ClearDirty();
     return true;
@@ -5832,7 +5886,7 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 diag::Trace("timer6 InvalidateSettingsButtons done");
             }
             return 0;
-        case FileWatcher::WM_USER_RELOAD: OnReload(); return 0;
+        case FileWatcher::WM_USER_RELOAD: OnFileChangedOnDisk(); return 0;
         case WM_ERASEBKGND: {
             // Fill the client so any uncovered band, for example while the
             // find strip re-docks after a monitor or DPI switch, reads as

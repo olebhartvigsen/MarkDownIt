@@ -41,6 +41,8 @@ const float kHeadingBaseline = 60.0f;
 const float kButtonW = 168.0f;
 const float kButtonH = 38.0f;
 const float kButtonTop = 84.0f;
+// The space between the two actions under the heading.
+const float kButtonGap = 16.0f;
 const float kButtonRadius = 10.0f;
 const float kSideMargin = 60.0f;
 
@@ -465,8 +467,17 @@ void WelcomeScreen::SetRecentFiles(const std::vector<RecentFile>& files) {
 void WelcomeScreen::Layout(float viewW, float viewH) {
     // The button belongs to the screen, so it is placed even when there
     // is nothing to show beside it yet.
-    openButton_.x = (viewW - kButtonW) * 0.5f;
-    if (openButton_.x < kSideMargin) openButton_.x = kSideMargin;
+    // The two actions sit side by side, centered as a pair: start a
+    // document, or open one. Reading is what the app is for, so Open keeps
+    // the accent and New is the quiet one.
+    const float pairW = kButtonW * 2.0f + kButtonGap;
+    float pairX = (viewW - pairW) * 0.5f;
+    if (pairX < kSideMargin) pairX = kSideMargin;
+    newButton_.x = pairX;
+    newButton_.y = kButtonTop;
+    newButton_.width = kButtonW;
+    newButton_.height = kButtonH;
+    openButton_.x = pairX + kButtonW + kButtonGap;
     openButton_.y = kButtonTop;
     openButton_.width = kButtonW;
     openButton_.height = kButtonH;
@@ -499,7 +510,7 @@ void WelcomeScreen::Layout(float viewW, float viewH) {
 
 void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
                            float viewW, float viewH, int hoverIndex,
-                           bool openHovered) {
+                           bool openHovered, bool newHovered) {
     if (!target) return;
 
     DrawBackground(target, viewW, viewH);
@@ -510,17 +521,38 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         font.family = "Segoe UI";
         font.size = 28.0f;
         font.bold = true;
-        const std::string heading = "Recent Documents";
+        const std::string heading = "Home";
         const float width = TextWidth(engine, heading, font);
         target->DrawText(heading, font, (viewW - width) * 0.5f,
                          kHeadingBaseline, kTitle);
     }
 
-    // The button that opens a document, right under the heading. It is
-    // the one prominent action of the screen, so it carries the accent
-    // color and a soft shadow, and a reader who lands here with nothing
-    // in the list still has a way in, so it is drawn before the empty
-    // case returns.
+    // The quiet action: a new document. It wears a card's white face and
+    // border, so the row reads as one place of two answers, and the
+    // heading keeps pointing at Open.
+    {
+        DrawShadow(target, newButton_, kButtonRadius,
+                   newHovered ? 1.0f : 0.0f, newHovered ? 0.35f : 0.20f);
+        target->FillRoundedRect(newButton_, kButtonRadius, kCardBackground);
+        target->StrokeRoundedRect(newButton_, kButtonRadius,
+                                  newHovered ? kHoverBorder : kCardBorder,
+                                  newHovered ? 1.5f : 1.0f);
+
+        FontSpec font;
+        font.family = "Segoe UI";
+        font.size = 14.0f;
+        font.bold = true;
+        const std::string label = "New document";
+        const float width = TextWidth(engine, label, font);
+        target->DrawText(label, font,
+                         newButton_.x + (newButton_.width - width) * 0.5f,
+                         newButton_.y + 24.0f, kTitle);
+    }
+
+    // The button that opens a document. It is the one prominent action of
+    // the screen, so it carries the accent color and a soft shadow, and a
+    // reader who lands here with nothing in the list still has a way in,
+    // so it is drawn before the empty case returns.
     {
         DrawShadow(target, openButton_, kButtonRadius,
                    openHovered ? 2.0f : 0.0f, openHovered ? 0.55f : 0.40f);
@@ -615,6 +647,12 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
             y += kRowHeight;
         }
     }
+}
+
+bool WelcomeScreen::HitsNewButton(float x, float y) const {
+    if (newButton_.width <= 0.0f) return false;
+    return x >= newButton_.x && x <= newButton_.x + newButton_.width &&
+           y >= newButton_.y && y <= newButton_.y + newButton_.height;
 }
 
 bool WelcomeScreen::HitsOpenButton(float x, float y) const {

@@ -129,13 +129,13 @@
     </Command>
     <Command Name="cmdRecent" Symbol="IDC_CMD_RECENT" Id="10106">
       <Command.LabelTitle>
-        <String>Recent</String>
+        <String>Home</String>
       </Command.LabelTitle>
       <Command.TooltipTitle>
-        <String>Recent Documents</String>
+        <String>Home</String>
       </Command.TooltipTitle>
       <Command.TooltipDescription>
-        <String>Show the recent documents view</String>
+        <String>Start a new document or open a recent one</String>
       </Command.TooltipDescription>
       <Command.LargeImages>
         <Image Source="icons/history_32.png" MinDPI="96"/>

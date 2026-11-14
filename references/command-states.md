@@ -50,7 +50,7 @@ commands away.
 | Command group | Welcome | View mode | Edit, markdown | Edit, code or diagram |
 |----------------|---------|-----------|----------------|------------------------|
 | New, Open, Import Word, Import PDF | yes | yes | yes | yes |
-| Recent, Show Tab Bar, About, Settings, Help | yes | yes | yes | yes |
+| Home, Show Tab Bar, About, Settings, Help | yes | yes | yes | yes |
 | Reload, Save As, Close, Share, Export | no | yes | yes | yes |
 | Save | no | no | yes | yes |
 | Undo, Redo | no | no | with history | with history |

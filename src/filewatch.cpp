@@ -3,6 +3,21 @@
 #include <windows.h>
 #include <string>
 
+watch::Stamp CurrentFileStamp(const std::wstring& path) {
+    watch::Stamp stamp;
+    WIN32_FILE_ATTRIBUTE_DATA fad = {};
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fad)) {
+        return stamp;
+    }
+    stamp.valid = true;
+    stamp.size = (static_cast<uint64_t>(fad.nFileSizeHigh) << 32) |
+                 static_cast<uint64_t>(fad.nFileSizeLow);
+    stamp.modified = static_cast<int64_t>(
+        (static_cast<uint64_t>(fad.ftLastWriteTime.dwHighDateTime) << 32) |
+        static_cast<uint64_t>(fad.ftLastWriteTime.dwLowDateTime));
+    return stamp;
+}
+
 FileWatcher::FileWatcher() {}
 FileWatcher::~FileWatcher() { Stop(); }
 
@@ -40,6 +55,8 @@ void FileWatcher::Start(HWND hwnd, const std::wstring& path) {
     WIN32_FILE_ATTRIBUTE_DATA fad;
     if (GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fad)) {
         state_.lastWrite = fad.ftLastWriteTime;
+        state_.lastSize = (static_cast<uint64_t>(fad.nFileSizeHigh) << 32) |
+                          static_cast<uint64_t>(fad.nFileSizeLow);
         state_.hasPrev = true;
     }
 
@@ -76,19 +93,25 @@ void FileWatcher::Run() {
             continue;  // file might be temporarily locked during save
         }
 
-        FILETIME current = fad.ftLastWriteTime;
-        if (state_.hasPrev) {
-            if (CompareFileTime(&current, &state_.lastWrite) > 0) {
-                state_.lastWrite = current;
-                // Small debounce: editors write in two bursts.
-                Sleep(100);
-                if (state_.running) {
-                    PostMessageW(state_.hwnd, WM_USER_RELOAD, 0, 0);
-                }
-            }
-        } else {
-            state_.lastWrite = current;
-            state_.hasPrev = true;
+        const FILETIME current = fad.ftLastWriteTime;
+        const uint64_t size = (static_cast<uint64_t>(fad.nFileSizeHigh) << 32) |
+                              static_cast<uint64_t>(fad.nFileSizeLow);
+        const bool first = !state_.hasPrev;
+        // A same-length rewrite keeps the time on a coarse filesystem, and
+        // a restore from a backup moves the time backwards, so the test is
+        // "the file differs", not "the file is newer".
+        const bool same = !first &&
+            CompareFileTime(&current, &state_.lastWrite) == 0 &&
+            size == state_.lastSize;
+        state_.lastWrite = current;
+        state_.lastSize = size;
+        state_.hasPrev = true;
+        if (first || same) continue;
+
+        // Small debounce: editors write in two bursts.
+        Sleep(100);
+        if (state_.running) {
+            PostMessageW(state_.hwnd, WM_USER_RELOAD, 0, 0);
         }
     }
 }

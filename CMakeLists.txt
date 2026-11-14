@@ -324,6 +324,7 @@ if(BUILD_TESTS AND APPLE)
         tests/layout_golden_test.cpp
         tests/command_table_test.cpp
         tests/commandstate_test.cpp
+        tests/filewatch_model_test.cpp
         tests/paragraph_list_quote_test.cpp
         # The transcript replay of the inline formatting family
         # (family 3): reads tests/transcripts/inline_formatting from
@@ -449,6 +450,7 @@ elseif(BUILD_TESTS)
         tests/layout_golden_test.cpp
         tests/command_table_test.cpp
         tests/commandstate_test.cpp
+        tests/filewatch_model_test.cpp
         tests/paragraph_list_quote_test.cpp
         # The transcript replay of the inline formatting family
         # (family 3): reads tests/transcripts/inline_formatting from
@@ -648,6 +650,8 @@ if(APPLE)
     add_executable(MarkDownItMac
         src/macos/main_mac.mm
         src/macos/app_mac.cpp
+        src/macos/filewatch_mac.cpp
+        src/macos/filewatch_mac.h
         src/macos/content_view_mac.mm
         src/macos/renderer_mac.cpp
         src/macos/mermaid_painter_mac.cpp

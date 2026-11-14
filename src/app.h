@@ -216,6 +216,9 @@ private:
     std::wstring           file_path_;
 
     FileWatcher            watcher_;
+    // What the disk last said about the open file, so a change that this
+    // window made itself (a save, a reload) is not reported back to it.
+    watch::Tracker         file_watch_;
 
     // Scroll state (in DIPs)
     float  scrollY_    = 0.0f;  // current scroll position (animated)
@@ -352,6 +355,7 @@ private:
     bool           welcome_mode_ = false;
     int            welcome_hover_ = -1;
     bool           welcome_open_hover_ = false;
+    bool           welcome_new_hover_ = false;
     OutlinePane    outline_;
     std::vector<OutlineItem> outline_items_;
 
@@ -439,6 +443,10 @@ private:
     void OnContentSize(HWND hwnd, int width, int height);
     void OnDropFiles(HWND hwnd, HDROP hDrop);
     void OnReload();
+    // The file changed while the app was not the one writing it.
+    void OnFileChangedOnDisk();
+    // Reads the file again and puts the reader back where they were.
+    void ReloadKeepingPlace();
     void OnBufferChanged();
     void UpdateCaretPosition();
     // Create the system caret at the selection's active end and show

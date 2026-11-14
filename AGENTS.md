@@ -152,8 +152,10 @@ Rules that follow from this:
   the table and the find query. The ribbon, the mac menu bar, the mac
   toolbar and the mac format bar all read it. A shell never keeps a gate
   of its own.
-- The ports keep native: dialogs, file watching, the recent list UI,
-  the ribbon or menu wiring and the pickers.
+- The ports keep native: dialogs, the file-watch poll, the recent list UI,
+  the ribbon or menu wiring and the pickers. The watch's policy is shared:
+  the platform says whether the file moved, `filewatch_model.h` says what to
+  do about it.
 
 ### What is shared, and what is native
 
@@ -166,7 +168,7 @@ Rules that follow from this:
 | Editing | `DocumentController`, `editcontroller`, `undostack`, `formatting`, `autoformat`, `tableedit`, `navigation`, `inputfilter`, `textbuffer`, `searchreplace`, `findstate`, `markers`, `outline`, `commands.h` | keyboard and mouse event translation |
 | Find | `FindBarModel` (`findbar_model.*`) | `findbar.cpp` / `findbar_mac.mm` |
 | Outline | heading collection (`outline.*`) | `outlinepane.cpp` / `outline_pane_mac.*`, `outline_nsview_mac.*` |
-| Welcome screen | `welcome_screen.*`, drawn through the seams | the shell hands in its target and engine |
+| Home screen | `welcome_screen.*`, drawn through the seams | the shell hands in its target and engine and answers the presses |
 | Diagrams | `mermaid.*`, `mermaidlayout.*`, `diagramcache.*`, `src/mermaid/*`, `svgtext`, SVG reader `src/macos/svg_mac.cpp` | measure and paint adapters |
 | Office | `src/office/*` (docx and PDF import and export) | file dialogs |
 | Settings | `AppSettings`, recent-file logic in `settings.cpp` | `settings_win.cpp` (registry) / `settings_mac.cpp` (JSON) |
@@ -259,7 +261,8 @@ Open migration steps and the reasoning behind them are in
 | `searchreplace.*`, `findstate.*`, `findbar_model.*`, `unicode_fold*`, `find_strings.h` | find and replace |
 | `outline.*` | heading list for the outline pane |
 | `documentfile.*`, `clipboard.*`, `settings.*`, `textenc.h` | file decoding, clipboard logic, settings struct, text encoding |
-| `welcome_screen.*` | the welcome screen, drawn through the seams |
+| `filewatch_model.h` | when a change on disk means a reload, a question, or nothing |
+| `welcome_screen.*` | the home screen (a new document, an open one, the recent files), drawn through the seams |
 | `svgtext.*`, `svgtypes.h`, `src/macos/svg_mac.cpp` | the SVG reader shared by both ports |
 | `mermaid.*`, `mermaidlayout.*`, `diagramcache.*`, `mermaid/` | Mermaid parsers, layouts, the dagre port, the diagram cache |
 | `office/` | docx and PDF import and export, the markdown bridge |
@@ -472,6 +475,7 @@ raw bytes on disk. Verify with raw byte inspection, not the display.
 | release-pipeline.md | MSI, MSIX and the Store |
 | mermaid-dagre-port.md, svg-diagram-rendering.md | the diagram engines |
 | outline-pane-view.md, find-replace.md, zoom-guidelines.md, cursor-blinking.md, highlighting-functionality.md, night-mode-reference.md | single features |
+| file-watch.md, home-screen.md | the open file watched for changes, and the page shown when none is open |
 
 ## Skills
 

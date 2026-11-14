@@ -198,6 +198,25 @@ bool App::ReloadFile() {
     return OpenFile(filePath_);
 }
 
+bool App::ReloadFromDisk() {
+    if (filePath_.empty()) return false;
+    std::ifstream file(filePath_, std::ios::binary);
+    if (!file) return false;
+    std::ostringstream contents;
+    contents << file.rdbuf();
+    controller_.LoadFile(contents.str(), filePath_);
+    buffer_.ClearDirty();
+    dirty_ = false;
+    // The caret belonged to the text that was here. The shell puts it back
+    // where it can, and this keeps it from pointing past the new end.
+    sel_.Collapse(CaretPos{0});
+    Reparse();
+    // The marks are sidecar data for this document, and the file on disk
+    // may have moved them.
+    LoadMarkers();
+    return true;
+}
+
 void App::ShowFind(FindBarMode mode) {
     // Without a document there is nothing to search; the Windows
     // window returns the same way.

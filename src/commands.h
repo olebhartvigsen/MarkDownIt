@@ -212,7 +212,7 @@ inline constexpr CommandSpec kCommands[] = {
      NoWin, Key("-")},
     {CommandId::ZoomReset, "Actual Size", nullptr, 0, "zoomReset:", false,
      NoWin, Key("0")},
-    {CommandId::ViewRecent, "Recent Documents", "cmdRecent", 10106,
+    {CommandId::ViewRecent, "Home", "cmdRecent", 10106,
      "showRecents:",
      false, NoWin, NoMac},
     {CommandId::Share, "Share", nullptr, 0, "shareDocument:", false,

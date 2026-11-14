@@ -57,6 +57,11 @@ public:
     bool OpenButtonHovered() const { return openHover_; }
     void SetOpenButtonHovered(bool hovered) { openHover_ = hovered; }
 
+    // The button on the welcome screen that starts a new document.
+    bool WelcomeNewAt(float x, float y) const;
+    bool NewButtonHovered() const { return newHover_; }
+    void SetNewButtonHovered(bool hovered) { newHover_ = hovered; }
+
     // Redraws the content area.
     void Invalidate();
 
@@ -276,6 +281,7 @@ private:
     int hoverCard_ = -1;
     // Whether the pointer is on the Open button of the welcome screen.
     bool openHover_ = false;
+    bool newHover_ = false;
 
     float width_ = 0.0f;
     float height_ = 0.0f;

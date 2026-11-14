@@ -1,10 +1,11 @@
 #pragma once
 
-// The welcome screen, shared by the Windows and the macOS app.
+// The home screen, shared by the Windows and the macOS app.
 //
-// The recent files are shown as cards when no document is open. The
-// layout, the fitting of the text and the drawing live here and go
-// through the render target and the text engine, so the two platforms
+// It is where the app stands when no document is open: two actions at the
+// top (start a document, or open one) and the recent files as cards under
+// them. The layout, the fitting of the text and the drawing live here and
+// go through the render target and the text engine, so the two platforms
 // show the same screen. The app only passes its own target and engine.
 
 #include <memory>
@@ -64,16 +65,20 @@ public:
     // the preview wraps inside its card instead of running over the card
     // next to it.
     void Render(RenderTarget* target, TextEngine* engine, float viewW,
-                float viewH, int hoverIndex, bool openHovered);
+                float viewH, int hoverIndex, bool openHovered,
+                bool newHovered = false);
 
     // Which card is at the point, or -1 when there is none.
     int HitTest(float x, float y) const;
 
-    // The button that opens a document sits under the heading, on the
-    // screen itself and not on a card, so it is asked for on its own.
-    // It is placed even when no file has been opened yet.
+    // The two actions sit under the heading, on the screen itself and not
+    // on a card, so each is asked for on its own. They are placed even
+    // when no file has been opened yet: a reader who lands here with an
+    // empty list still has both ways in.
     bool HitsOpenButton(float x, float y) const;
     Rect OpenButtonRect() const { return openButton_; }
+    bool HitsNewButton(float x, float y) const;
+    Rect NewButtonRect() const { return newButton_; }
 
     // The path of a card.
     const std::string& GetPath(int index) const;
@@ -97,6 +102,7 @@ private:
     std::vector<WelcomeCard> cards_;
     // Where the Open button sits, in points.
     Rect openButton_;
+    Rect newButton_;
 };
 
 }  // namespace platform
