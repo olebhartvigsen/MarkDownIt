@@ -2106,3 +2106,62 @@ TEST(RendererMac, SoftBreakKeepsTheCaretInItsBlock) {
     EXPECT_GT(offset, 0u);
     EXPECT_LT(offset, static_cast<uint32_t>(source.find("quote two")));
 }
+
+// One source position at a soft wrap has two homes on the page: the end
+// of the upper line after a horizontal move, and the start of the lower
+// one after a vertical step. The step has to start from the line the
+// caret is drawn on, or pressing Up lands two rows higher than the row
+// above and the line in between cannot be reached with the keyboard.
+TEST(RendererMac, VerticalCaretKnowsWhichSideOfAWrapItIsOn) {
+    const std::string source =
+        "A paragraph long enough that the fixed grid has to break it in two lines here\n"
+        "\n"
+        "Below paragraph.\n";
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(source, doc));
+
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    renderer.SetSourceText(&source);
+    renderer.Measure(doc, 640.0f);
+    renderer.Render(doc, 0.0f);
+
+    ASSERT_TRUE(renderer.blocks().size() >= 2u);
+    const LaidOutBlock& block = renderer.blocks()[0];
+    ASSERT_EQ(block.lines.size(), 2u);
+    uint32_t firstLineChars = 0;
+    for (const GlyphRun& run : block.lines[0].runs) {
+        firstLineChars += static_cast<uint32_t>(run.text.size());
+    }
+    ASSERT_TRUE(firstLineChars > 0);
+    ASSERT_TRUE(firstLineChars < block.visToSrc.size());
+    const uint32_t wrap = block.visToSrc[firstLineChars];
+
+    // The two homes of that one position are one line apart.
+    float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
+    renderer.SetWrappedCaretOnLowerLine(false);
+    ASSERT_TRUE(renderer.OffsetToRect(wrap, &x, &y, &w, &h));
+    const float upperY = y;
+    renderer.SetWrappedCaretOnLowerLine(true);
+    ASSERT_TRUE(renderer.OffsetToRect(wrap, &x, &y, &w, &h));
+    const float lowerY = y;
+    EXPECT_NEAR(lowerY - upperY, block.lines[0].height, 0.01f);
+
+    // Up from the paragraph below, at its own left margin, lands on that
+    // wrap. It belongs on the lower line: one line above, not two.
+    const uint32_t belowStart =
+        static_cast<uint32_t>(source.find("Below paragraph."));
+    float bx = 0.0f, by = 0.0f, bw = 0.0f, bh = 0.0f;
+    ASSERT_TRUE(renderer.OffsetToRect(belowStart, &bx, &by, &bw, &bh));
+    uint32_t up = UINT32_MAX;
+    ASSERT_TRUE(renderer.VerticalNeighbour(belowStart, bx, -1, &up));
+    EXPECT_EQ(up, wrap);
+    EXPECT_LT(by - lowerY, block.lines[1].height * 2.0f);
+
+    // And from there the step keeps going up the paragraph.
+    uint32_t further = UINT32_MAX;
+    ASSERT_TRUE(renderer.VerticalNeighbour(up, bx, -1, &further));
+    EXPECT_LT(further, up);
+}

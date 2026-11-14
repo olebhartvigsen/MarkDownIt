@@ -293,7 +293,11 @@ void ContentView::Draw(RenderTarget* target) {
         float width = 0.0f;
         float height = 0.0f;
         const uint32_t caret = selection.active.offset;
-        if (renderer_.OffsetToRect(caret, &x, &y, &width, &height)) {
+        renderer_.SetWrappedCaretOnLowerLine(caret == verticalCaretTarget_);
+        const bool caretPlaced =
+            renderer_.OffsetToRect(caret, &x, &y, &width, &height);
+        renderer_.SetWrappedCaretOnLowerLine(false);
+        if (caretPlaced) {
             Rect drawn;
             drawn.x = x;
             drawn.y = y;
@@ -404,8 +408,15 @@ uint32_t ContentView::ViewportProbeOffset() const {
 }
 
 bool ContentView::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
-                                   uint32_t* outOffset) const {
-    return renderer_.VerticalNeighbour(offset, desiredX, delta, outOffset);
+                                   uint32_t* outOffset) {
+    // A caret that a vertical step put at a soft wrap is drawn at the
+    // start of the lower line, and the next step has to start there.
+    renderer_.SetWrappedCaretOnLowerLine(offset == verticalCaretTarget_);
+    const bool moved =
+        renderer_.VerticalNeighbour(offset, desiredX, delta, outOffset);
+    renderer_.SetWrappedCaretOnLowerLine(false);
+    if (moved && outOffset) verticalCaretTarget_ = *outOffset;
+    return moved;
 }
 
 uint32_t ContentView::HitTestPoint(float x, float y) const {
@@ -429,6 +440,7 @@ bool ContentView::OffsetToRect(uint32_t offset, float* outX, float* outY,
 
 void ContentView::PlaceCaretAt(float x, float y) {
     if (!app_) return;
+    verticalCaretTarget_ = UINT32_MAX;
 
     // A point on drawn text is a caret: the renderer decides the
     // character, and the caret never lands inside a marker.

@@ -245,6 +245,15 @@ public:
     bool OffsetToRect(uint32_t offset, float* outX, float* outY,
                       float* outWidth, float* outHeight) const;
 
+    // Which of two lines owns a position that sits at a soft wrap. The
+    // position is the same source byte either way, so the caret is drawn
+    // at the end of the upper line after a horizontal move and at the
+    // start of the lower one after a vertical step. The step has to
+    // start from the line the caret is drawn on, or it lands a line off.
+    void SetWrappedCaretOnLowerLine(bool lower) {
+        wrappedCaretOnLowerLine_ = lower;
+    }
+
     // Marks the ranges the find bar matched.
     //
     // The matches are document byte offsets, the same unit the document
@@ -300,6 +309,9 @@ public:
     bool NeedsLayout() const { return needsLayout_; }
 
 private:
+    // The line the caret at a soft wrap is drawn on, see the setter.
+    bool wrappedCaretOnLowerLine_ = false;
+
     // The blocks of the current pass, laid out by the shared walk.
     void AppendBlockFromLaid(const Document& doc,
                              const layout::LaidBlock& lb);

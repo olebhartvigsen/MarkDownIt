@@ -2035,7 +2035,12 @@ bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
         if (!VisibleAtSource(*region.visToSrc, offset, &vis)) continue;
 
         // The lines are walked with the visible range each one covers,
-        // so the line the position is on is the one that is found.
+        // so the line the position is on is the one that is found. A
+        // position at a soft wrap opens the line below and ends the line
+        // above; the caller says which of the two the caret is on.
+        const TextLine* foundLine = nullptr;
+        float foundTop = 0.0f;
+        uint32_t foundStart = 0;
         float lineTop = region.top;
         uint32_t lineStartVis = 0;
         for (const TextLine& line : *region.lines) {
@@ -2045,18 +2050,30 @@ bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
             }
             const uint32_t lineEndVis = lineStartVis + length;
             if (vis >= lineStartVis && vis <= lineEndVis) {
-                const uint32_t inLine = vis >= lineEndVis
-                    ? length
-                    : vis - lineStartVis;
-                const Rect rect = engine_->OffsetToRect(line, inLine);
-                if (outX) *outX = region.x + rect.x;
-                if (outY) *outY = lineTop;
-                if (outWidth) *outWidth = rect.width;
-                if (outHeight) *outHeight = line.height;
-                return true;
+                if (!foundLine || wrappedCaretOnLowerLine_) {
+                    foundLine = &line;
+                    foundTop = lineTop;
+                    foundStart = lineStartVis;
+                }
             }
             lineStartVis = lineEndVis;
             lineTop += line.height;
+        }
+        if (foundLine) {
+            const TextLine& line = *foundLine;
+            uint32_t length = 0;
+            for (const GlyphRun& run : line.runs) {
+                length += static_cast<uint32_t>(run.text.size());
+            }
+            const uint32_t inLine = vis >= foundStart + length
+                ? length
+                : vis - foundStart;
+            const Rect rect = engine_->OffsetToRect(line, inLine);
+            if (outX) *outX = region.x + rect.x;
+            if (outY) *outY = foundTop;
+            if (outWidth) *outWidth = rect.width;
+            if (outHeight) *outHeight = line.height;
+            return true;
         }
         break;
     }
@@ -2152,13 +2169,13 @@ bool MacRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
                 length += static_cast<uint32_t>(run.text.size());
             }
             const uint32_t lineEndVis = lineStartVis + length;
-            // A position at a soft wrap belongs to the line it is drawn
-            // at the end of, which is the upper one: the same position
-            // opens the line below, and taking that one made the step
-            // start a line too low, so the arrow skipped the line it
-            // was standing on.
-            if (caretLine < 0 && holdsCaret && vis >= lineStartVis &&
-                vis <= lineEndVis) {
+            // A position at a soft wrap is drawn at the end of the upper
+            // line, or at the start of the lower one when the caret came
+            // there by a vertical step. The step has to start from that
+            // same line, or it lands a line off and skips the line the
+            // caret is standing on.
+            if (holdsCaret && vis >= lineStartVis && vis <= lineEndVis &&
+                (caretLine < 0 || wrappedCaretOnLowerLine_)) {
                 caretLine = static_cast<int>(lines.size());
             }
             LineRef ref;

@@ -164,7 +164,7 @@ public:
     // The position on the line delta lines above (negative) or below
     // (positive) the caret, at the column nearest desiredX.
     bool VerticalNeighbour(uint32_t offset, float desiredX, int delta,
-                           uint32_t* outOffset) const;
+                           uint32_t* outOffset);
 
     // The nearest drawn position to a source offset, so a caret from
     // outside the document model never lands inside a marker.
@@ -293,6 +293,10 @@ private:
     float textDragDownX_ = 0.0f;
     float textDragDownY_ = 0.0f;
     uint32_t textDragTarget_ = UINT32_MAX;
+    // The offset the last vertical step landed on. The caret at a soft
+    // wrap is drawn on the lower of the two lines only when it came
+    // there by Up or Down, and the step has to start from that line.
+    uint32_t verticalCaretTarget_ = UINT32_MAX;
     // Whether the caret is showing right now.
     bool caretVisible_ = true;
     std::function<void(bool)> editingChanged_;
