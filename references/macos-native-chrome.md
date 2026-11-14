@@ -116,6 +116,12 @@ The context menu carries the same commands where the pointer is, with
 the document commands greyed out while the page is read and Highlight
 the one exception.
 
+The QA walk has a `format-bar` state that asserts the bar is on screen
+at its height while the page is editable and that every selector it
+sends resolves through the responder chain, and the reading state
+asserts the bar is gone. A control whose selector answers nobody is a
+dead button, and no click test in the walk would see it.
+
 ## The outline pane follows the Sidebars guidance
 
 The outline keeps its own scrolling pane inside the split view, now
