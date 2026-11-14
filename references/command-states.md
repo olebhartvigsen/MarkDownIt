@@ -56,7 +56,8 @@ commands away.
 | Undo, Redo | no | no | with history | with history |
 | Paste | no | no | yes | yes |
 | Cut | no | no | with a selection | with a selection |
-| Copy, Select All | no | with a selection | yes | yes |
+| Select All | no | yes | yes | yes |
+| Copy | no | with a selection | with a selection | with a selection |
 | Bold, Italic, Strikethrough, Code, Link | no | no | yes | no |
 | Body Text, Heading 1 to 6, lists, Quote, Indent, Outdent | no | no | yes | no |
 | Clear Formatting | no | no | with a selection | no |
@@ -121,14 +122,10 @@ A few things are chrome rather than commands, and the shells keep them:
 
 ## Verification
 
-The portable suite builds the whole command state on Linux, so the
-answer can be checked without a window:
-
-```
-g++ -std=c++17 -Wall -Wextra -I tests -I src -I third_party/md4c \
-    tests/test_main.cpp tests/commandstate_test.cpp src/commandstate.cpp \
-    src/documentcontroller.cpp src/parser.cpp ... third_party/md4c/md4c.c
-```
+The portable suite builds the whole command state on Linux, with the
+fake text engine, so the answer can be checked without a window. Both
+test targets in `CMakeLists.txt` carry `commandstate_test.cpp`, so the
+two real runners check it too.
 
 On the two real ports the same answer shows up as greyed ribbon buttons
 and greyed menu items, and the launch smoke on macOS checks the toolbar
