@@ -795,6 +795,17 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [clip scrollToPoint:NSMakePoint(0.0, 0.0)];
         [scrollView_ reflectScrolledClipView:clip];
         [self toolbarSync];
+        // The format bar takes its height from the page, and this walk
+        // compares the page: give the window that height back, so the
+        // page keeps the size the other platform's page has. Without it
+        // a state anchored at the foot of the document clamps its
+        // scroll to a different place and frames other content.
+        if (formatBarShown_) {
+            NSSize contentSize = [[window_ contentView] bounds].size;
+            contentSize.height += [MdFormatBar barHeight];
+            [window_ setContentSize:contentSize];
+            [self layoutDocumentForWindow];
+        }
         [self outlineActiveRefresh:NO];
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"format-bar"]) {
@@ -1956,16 +1967,19 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // split view's own arrangement, keeps the text full width for the
     // whole session and not only for the frame that closed the pane.
     const CGFloat documentX = outlineVisible_ ? outlineWidth + divider : 0.0;
-    const CGFloat documentHeight = splitFrame.size.height;
     NSRect paneFrame = [documentPane_ frame];
     if (paneFrame.origin.x != documentX ||
-        paneFrame.size.width != documentWidth ||
-        paneFrame.size.height != documentHeight) {
+        paneFrame.size.width != documentWidth) {
         paneFrame.origin.x = documentX;
         paneFrame.size.width = documentWidth;
-        paneFrame.size.height = documentHeight;
         [documentPane_ setFrame:paneFrame];
     }
+    // The pane's height is the split view's own answer, read after it
+    // arranged its subviews: writing it from the split view's frame
+    // here reads a frame one pass behind when a row appears under the
+    // window (the find bar), and the page would hang out of the top of
+    // its pane for that pass.
+    const CGFloat documentHeight = [documentPane_ frame].size.height;
     // Inside the pane: the format bar across the top while the page can
     // be edited, the page under it. The pane is not flipped, so the bar
     // takes the far edge.
