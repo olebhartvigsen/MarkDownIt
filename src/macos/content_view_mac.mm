@@ -8,6 +8,7 @@
 // only place in the mac layer that talks to Core Graphics directly.
 
 #include "content_view_mac.h"
+#include "mousegesture.h"
 #include "system_theme_mac.h"
 
 #import <AppKit/AppKit.h>
@@ -720,6 +721,15 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
 // The view draws the document, shows the caret and the selection, and
 // turns the mouse and the keyboard into edits through the shared edit
 // controller.
+// A press the window answered itself, a card on the welcome screen or a
+// modified click on a link, owns the rest of its mouse sequence: AppKit
+// keeps sending the drag and the release of that press to this view, and
+// the document it just opened must not read them as a selection.
+@interface MdContentView () {
+    MouseGesture gesture_;
+}
+@end
+
 @implementation MdContentView {
     platform::ContentView* content_;
     platform::App* app_;

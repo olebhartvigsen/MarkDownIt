@@ -19,7 +19,6 @@
 
 #include "app_mac.h"
 #include "caret.h"
-#include "mousegesture.h"
 #include "renderer_mac.h"
 #include "welcome_screen.h"
 #include "searchreplace.h"
@@ -298,11 +297,6 @@ private:
     float textDragDownX_ = 0.0f;
     float textDragDownY_ = 0.0f;
     uint32_t textDragTarget_ = UINT32_MAX;
-    // A press the view answered itself, the welcome screen or a modified
-    // click on a link, owns the rest of its mouse sequence: AppKit keeps
-    // sending the drag and the release here, and the document that the
-    // press opened must not read them as a selection.
-    MouseGesture gesture_;
     // The offset the last vertical step landed on. The caret at a soft
     // wrap is drawn on the lower of the two lines only when it came
     // there by Up or Down, and the step has to start from that line.
