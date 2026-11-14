@@ -25,6 +25,7 @@
 #include "welcome_screen.h"
 #include "outlinepane.h"
 #include "mousegesture.h"
+#include "commandstate.h"
 #include "searchreplace.h"
 #include "findbar.h"
 #include "textdrag.h"
@@ -109,6 +110,14 @@ public:
     // Windows shell's own: it repaints the ribbon, which is Win32
     // detail and never controller state.
     void InvalidateFormatButtons();
+    // The facts every ribbon button answers from (commandstate.h): the
+    // document half from the shared controller, the window half from
+    // here. One context, so the ribbon and the mac menu give one answer.
+    commands::Context CommandContext();
+    // Re-asks the ribbon for the enabled state of every command the
+    // table carries, so a new axis reaches every button at once instead
+    // of the handful a hand written list remembered.
+    void InvalidateCommandStates();
 
     // Marker layer (ribbon: Home tab, Markers group; Ctrl+Shift+H). A
     // marker annotates rendered text: it never touches the Markdown

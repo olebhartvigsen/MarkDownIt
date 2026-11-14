@@ -230,6 +230,19 @@ public:
     // True when the caret, or the anchor side of a selection, sits in
     // a table. This is the one rule for "in a table": Tab, paste,
     // insert and the ribbon all ask it.
+    // Whether the caret sits in a fenced or indented code block, or in a
+    // diagram: the place where markdown formatting has no meaning. The
+    // command gates read this, so a format command inside a fence stands
+    // down instead of injecting markers into source nobody rendered.
+    bool CaretInCodeBlock() const;
+
+    // Whether this document came from a standalone .mmd or .svg file. Its
+    // buffer is one synthetic fence around bare diagram source, so the
+    // markdown commands never apply, however the caret is placed.
+    bool InDiagramDocument() const {
+        return fileFormat_.isMmd || fileFormat_.isSvg;
+    }
+
     bool CaretInTable() const;
 
     // What the table commands can do at the caret. The ribbon greys

@@ -19,11 +19,35 @@ RIBBON = """<?xml ?>
 <Application>
   <Command Name="cmdTabHome"/>
   <Command Name="cmdGroupFormat"/>
-  <Command Name="cmdBold"/>
-  <Command Name="cmdItalic"/>
+  <Command Name="cmdBold" Symbol="IDC_CMD_BOLD" Id="10300"/>
+  <Command Name="cmdItalic" Symbol="IDC_CMD_ITALIC" Id="10301"/>
   <Command Name="cmdWidthMenu"/>
-  <Command Name="cmdWidthStandard"/>
+  <Command Name="cmdWidthStandard" Symbol="IDC_CMD_WIDTH_STD" Id="10601"/>
 </Application>
+"""
+
+# The command table: the ribbon name, the ribbon number and the mac
+# selector of every command the fixture tree holds.
+COMMANDS_H = """// command table fixture
+inline constexpr CommandSpec kCommands[] = {
+    {CommandId::Bold, "Bold", "cmdBold", 10300, "toggleBold:", true, NoWin,
+     Key("b")},
+    {CommandId::Italic, "Italic", "cmdItalic", 10301, "toggleItalic:", true,
+     NoWin, Key("i")},
+    {CommandId::WidthStandard, "Standard", "cmdWidthStandard", 10601,
+     "widthStandard:", false, NoWin, NoMac},
+    {CommandId::Settings, "Settings", nullptr, 0, "openSettings:", false,
+     NoWin, NoMac},
+};
+"""
+
+RIBBON_CPP = """// ribbon fixture
+commands::Enabled(spec->id, m_pApp->CommandContext())
+"""
+
+MAIN_MAC = """// mac menu fixture
+commands::FromDocument(app_->controller());
+commands::Enabled(spec->id, context);
 """
 
 TOOLBAR = ("// mac toolbar, carries a selector the menu also has\n"
@@ -56,7 +80,9 @@ LEDGER = """# Platform parity ledger
 """
 
 
-def make_tree(ribbon=RIBBON, menu=None, toolbar=None, ledger=LEDGER):
+def make_tree(ribbon=RIBBON, menu=None, toolbar=None, ledger=LEDGER,
+              commands_h=COMMANDS_H, ribbon_cpp=RIBBON_CPP,
+              main_mac=MAIN_MAC):
     from pathlib import Path
     root = tempfile.mkdtemp()
     if menu is None:
@@ -69,8 +95,11 @@ def make_tree(ribbon=RIBBON, menu=None, toolbar=None, ledger=LEDGER):
     (Path(root) / "src" / "macos").mkdir(parents=True)
     (Path(root) / "references").mkdir(parents=True)
     (Path(root) / "src" / "ribbon.xml").write_text(ribbon)
+    (Path(root) / "src" / "commands.h").write_text(commands_h)
+    (Path(root) / "src" / "ribbon.cpp").write_text(ribbon_cpp)
     (Path(root) / "src" / "macos" / "menu_mac.mm").write_text(menu)
     (Path(root) / "src" / "macos" / "toolbar_mac.mm").write_text(toolbar)
+    (Path(root) / "src" / "macos" / "main_mac.mm").write_text(main_mac)
     (Path(root) / "references" / "platform-parity.md").write_text(ledger)
     return root
 
@@ -140,6 +169,38 @@ class CommandCoverage(unittest.TestCase):
         rc, out = run_on(self.root)
         self.assertEqual(rc, 1)
         self.assertIn("openSettings is carried by menu or toolbar", out)
+
+    def test_ribbon_number_mismatch_fails(self):
+        # The table says 10300, the markup says 10302: the button would
+        # ask about a different command than the one it runs.
+        self.root = make_tree(
+            ribbon=RIBBON.replace('Id="10300"', 'Id="10302"'))
+        rc, out = run_on(self.root)
+        self.assertEqual(rc, 1)
+        self.assertIn("ask about a different command", out)
+
+    def test_ribbon_command_without_a_row_fails(self):
+        self.root = make_tree(
+            commands_h=COMMANDS_H.replace(
+                '    {CommandId::Italic, "Italic", "cmdItalic", 10301, '
+                '"toggleItalic:", true,\n     NoWin, Key("i")},\n', ''))
+        rc, out = run_on(self.root)
+        self.assertEqual(rc, 1)
+        self.assertIn("cmdItalic has no row in src/commands.h", out)
+
+    def test_ribbon_without_the_shared_state_fails(self):
+        self.root = make_tree(ribbon_cpp="// ribbon fixture, gate of its own\n")
+        rc, out = run_on(self.root)
+        self.assertEqual(rc, 1)
+        self.assertIn("src/ribbon.cpp does not read the shared command state",
+                      out)
+
+    def test_mac_menu_with_its_own_selector_list_fails(self):
+        self.root = make_tree(
+            main_mac=MAIN_MAC + "\n- (BOOL)actionChangesTheDocument:(SEL)a;\n")
+        rc, out = run_on(self.root)
+        self.assertEqual(rc, 1)
+        self.assertIn("keeps a mutating selector list of its own", out)
 
 
 if __name__ == "__main__":

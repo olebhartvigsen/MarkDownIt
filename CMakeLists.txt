@@ -323,6 +323,7 @@ if(BUILD_TESTS AND APPLE)
         tests/seam_conformance_test.cpp
         tests/layout_golden_test.cpp
         tests/command_table_test.cpp
+        tests/commandstate_test.cpp
         tests/paragraph_list_quote_test.cpp
         # The transcript replay of the inline formatting family
         # (family 3): reads tests/transcripts/inline_formatting from
@@ -447,6 +448,7 @@ elseif(BUILD_TESTS)
         tests/seam_conformance_test.cpp
         tests/layout_golden_test.cpp
         tests/command_table_test.cpp
+        tests/commandstate_test.cpp
         tests/paragraph_list_quote_test.cpp
         # The transcript replay of the inline formatting family
         # (family 3): reads tests/transcripts/inline_formatting from

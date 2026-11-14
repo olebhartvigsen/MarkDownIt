@@ -612,6 +612,12 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
     // to DefWindowProcW.
     if (const commands::CommandSpec* spec = commands::MatchWinAccelerator(
             static_cast<uint32_t>(vk), ctrl, shift)) {
+        // A command that cannot act takes no key press either: the
+        // keyboard asks the same question the ribbon does, so a fence
+        // keeps its source and a read-only page cannot be written to
+        // through a shortcut the menu would have greyed. The key is
+        // swallowed here, the way a handled command key is.
+        if (!commands::Enabled(spec->id, CommandContext())) return;
         switch (spec->id) {
             case commands::CommandId::Reload:
                 // OnReload (not Reload): prompts before discarding unsaved edits.
@@ -1089,6 +1095,9 @@ void AppWindow::LoadSampleDoc() {
     // Instead of showing a placeholder text, show the welcome screen
     // with recent files cards.
     welcome_mode_ = true;
+    // No document behind the screen, so every command that needs one
+    // stands down while it is up.
+    InvalidateCommandStates();
     // The welcome screen owns the whole content band; the outline has
     // no document to show.
     if (outline_.IsCreated() && outline_.IsVisible())
@@ -2476,7 +2485,10 @@ void AppWindow::Reload() {
     // A reload re-reads the file but keeps the document identity, so the
     // marker sidecar is re-loaded and re-resolved like a fresh open.
     LoadMarkersForDocument();
-    
+
+    // The file kind (.md, .mmd, .svg), the headings and the history all
+    // changed, so the whole ribbon re-asks what it can do.
+    InvalidateCommandStates();
     Repaint();
 }
 
@@ -3735,7 +3747,7 @@ std::wstring AppWindow::SaveDialog() {
     ofn.hwndOwner = hwnd_;
     ofn.lpstrFile = szFile;
     ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrFilter = L"Markdown (*.md)\0*.md\0Mermaid (*.mmd)\0*.mmd\0SVG (*.svg)\0*.svg\0All Files (*.*)\0*.*\0";
+    ofn.lpstrFilter = L"Markdown (*.md)\0*.md\0Mermaid (*.mmd;*.mermaid)\0*.mmd;*.mermaid\0SVG (*.svg)\0*.svg\0All Files (*.*)\0*.*\0";
     ofn.lpstrDefExt = L"md";
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
     if (file_path_.empty()) {
@@ -3880,32 +3892,16 @@ void AppWindow::SetEdit(bool on) {
             IDC_CMD_LINK, IDC_CMD_CLEARFORMAT,
             IDC_CMD_INDENT, IDC_CMD_OUTDENT
         };
-        static const UINT enableOnlyCmds[] = {
-            IDC_CMD_UNDO, IDC_CMD_REDO
-        };
-        // Table commands are gated on edit mode AND caret context, so the
-        // ribbon must re-ask for them whenever either changes.
-        static const UINT tableCmds[] = {
-            IDC_CMD_INSERT_TABLE, IDC_CMD_TABLE_TOOLS,
-            IDC_CMD_ADD_ROW, IDC_CMD_ADD_ROW_ABOVE, IDC_CMD_REMOVE_ROW,
-            IDC_CMD_ADD_COLUMN, IDC_CMD_ADD_COLUMN_LEFT,
-            IDC_CMD_REMOVE_COLUMN, IDC_CMD_REMOVE_TABLE,
-            IDC_CMD_ALIGN_LEFT, IDC_CMD_ALIGN_CENTER, IDC_CMD_ALIGN_RIGHT
-        };
         for (auto cmd : toggleCmds) {
             g_pRibbonFramework->InvalidateUICommand(cmd,
                 UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
             g_pRibbonFramework->InvalidateUICommand(cmd,
                 UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
         }
-        for (auto cmd : enableOnlyCmds) {
-            g_pRibbonFramework->InvalidateUICommand(cmd,
-                UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
-        }
-        for (auto cmd : tableCmds) {
-            g_pRibbonFramework->InvalidateUICommand(cmd,
-                UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
-        }
+        // Edit mode gates every mutating command, so the whole ribbon
+        // re-asks its enabled state; the file kind and the code block
+        // ride along in the same answer.
+        InvalidateCommandStates();
         // The marker toggle follows the caret: pressed whenever the
         // selection touches a marker. The BooleanValue query is keyed on
         // the selection, and this path runs on every selection change.
@@ -3923,29 +3919,41 @@ FormatState AppWindow::GetFormatState() const {
     return controller_.GetFormatState();
 }
 
+// The command state the ribbon reads: the document half comes from the
+// shared controller (mode, file kind, caret context, selection, history,
+// headings), the window half from this window. Sizing the document does
+// not matter here, only what a command could act on.
+commands::Context AppWindow::CommandContext() {
+    commands::Context ctx = commands::FromDocument(controller_);
+    ctx.welcome = welcome_mode_;
+    ctx.findHasQuery = find_bar_.state().HasQuery();
+    ctx.canZoomIn = CanZoomIn();
+    ctx.canZoomOut = CanZoomOut();
+    return ctx;
+}
+
+// Every command the table carries answers its enabled state from
+// CommandContext(), so one invalidation sweep keeps the whole ribbon in
+// step with the document, the mode and the file.
+void AppWindow::InvalidateCommandStates() {
+    if (!g_pRibbonFramework) return;
+    for (const commands::CommandSpec& spec : commands::kCommands) {
+        if (spec.ribbonId == 0) continue;
+        g_pRibbonFramework->InvalidateUICommand(spec.ribbonId,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
+    }
+}
+
 void AppWindow::InvalidateFormatButtons() {
     FormatState fs = GetFormatState();
     UpdateRibbonFormatState(fs);
     // Invalidate Undo/Redo enabled state so the buttons reflect whether
     // there is undo/redo history available.
     if (g_pRibbonFramework) {
-        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_UNDO,
-            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
-        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_REDO,
-            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
-        // Table commands are enabled per caret context, so a caret move
-        // into or out of a table must re-ask for their enabled state.
-        static const UINT tableCmds[] = {
-            IDC_CMD_INSERT_TABLE, IDC_CMD_TABLE_TOOLS,
-            IDC_CMD_ADD_ROW, IDC_CMD_ADD_ROW_ABOVE, IDC_CMD_REMOVE_ROW,
-            IDC_CMD_ADD_COLUMN, IDC_CMD_ADD_COLUMN_LEFT,
-            IDC_CMD_REMOVE_COLUMN, IDC_CMD_REMOVE_TABLE,
-            IDC_CMD_ALIGN_LEFT, IDC_CMD_ALIGN_CENTER, IDC_CMD_ALIGN_RIGHT
-        };
-        for (auto cmd : tableCmds) {
-            g_pRibbonFramework->InvalidateUICommand(cmd,
-                UI_INVALIDATIONS_PROPERTY, &UI_PKEY_Enabled);
-        }
+        // Undo/redo, the table commands, the clipboard and the format
+        // family all answer from the caret and the history, so a caret
+        // move re-asks the whole ribbon.
+        InvalidateCommandStates();
         // The marker toggle follows the caret: pressed whenever the
         // selection touches a marker. The BooleanValue query is keyed on
         // the selection, and this path runs on every selection change.
@@ -4256,6 +4264,9 @@ void AppWindow::RefreshFindResults(bool adoptCurrentMatch) {
     if (adoptCurrentMatch && state.HasQuery())
         state.AdoptMatchAt(sel_.active.offset);
     find_bar_.SyncFromState();
+    // A query arms Find Next, Find Previous and Replace; an empty field
+    // takes them away again.
+    InvalidateCommandStates();
     UpdateFindHighlight();
     TextMatch current{};
     if (state.CurrentMatch(&current))
@@ -4995,7 +5006,7 @@ void AppWindow::OpenFileDialog() {
     ofn.hwndOwner = hwnd_;
     ofn.lpstrFile = buf;
     ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrFilter = L"Markdown (*.md;*.markdown;*.mmd;*.svg)\0*.md;*.markdown;*.mmd;*.svg\0All Files\0*.*\0";
+    ofn.lpstrFilter = L"Markdown (*.md;*.markdown;*.mmd;*.mermaid;*.svg)\0*.md;*.markdown;*.mmd;*.mermaid;*.svg\0All Files\0*.*\0";
     ofn.nFilterIndex = 1;
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
     ofn.lpstrTitle = L"Open Markdown File";
@@ -5315,15 +5326,19 @@ static float CenterXDip(ID2D1RenderTarget* rt) {
 void AppWindow::ZoomIn() {
     ApplyZoom(zoom::Step(renderer_.GetZoom(), true),
               CenterYDip(rt_), CenterXDip(rt_));
+    // The button at the end of the range stands down (zoom guide).
+    InvalidateCommandStates();
 }
 
 void AppWindow::ZoomOut() {
     ApplyZoom(zoom::Step(renderer_.GetZoom(), false),
               CenterYDip(rt_), CenterXDip(rt_));
+    InvalidateCommandStates();
 }
 
 void AppWindow::ResetZoom() {
     ApplyZoom(renderer_.kDefaultZoom, CenterYDip(rt_), CenterXDip(rt_));
+    InvalidateCommandStates();
 }
 
 bool AppWindow::CanZoomIn() const {

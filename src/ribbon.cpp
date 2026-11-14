@@ -1,6 +1,7 @@
 #include "ribbon.h"
 #include "crash_trace.h"
 #include "app.h"
+#include "commandstate.h"
 #include <oleacc.h>
 #include <cwchar>
 #include <vector>
@@ -338,30 +339,6 @@ STDMETHODIMP CRibbonCommandHandler::QueryInterface(REFIID iid, void** ppv)
     return S_OK;
 }
 
-// The nine table commands. Shared by the enabled-state handler and by the
-// invalidation lists so a new table command cannot be wired into one and
-// forgotten in the other.
-static bool IsTableCommand(UINT nCmdID) {
-    switch (nCmdID) {
-    case IDC_CMD_INSERT_TABLE:
-    case IDC_CMD_TABLE_TOOLS:
-    case IDC_CMD_ADD_ROW:
-    case IDC_CMD_ADD_ROW_ABOVE:
-    case IDC_CMD_REMOVE_ROW:
-    case IDC_CMD_ADD_COLUMN:
-    case IDC_CMD_ADD_COLUMN_LEFT:
-    case IDC_CMD_REMOVE_COLUMN:
-    case IDC_CMD_REMOVE_TABLE:
-    case IDC_CMD_SPLIT_CELL:
-    case IDC_CMD_ALIGN_LEFT:
-    case IDC_CMD_ALIGN_CENTER:
-    case IDC_CMD_ALIGN_RIGHT:
-        return true;
-    default:
-        return false;
-    }
-}
-
 // Allocate a VT_LPWSTR value with CoTaskMemAlloc. The Ribbon framework frees
 // UI_PKEY_Label strings through PropVariantClear, which calls CoTaskMemFree;
 // SysAllocString-backed memory freed that way is an allocator mismatch with a
@@ -498,30 +475,6 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
     {
         diag::TraceFmt("UpdateProperty enabled branch cmd=%u", nCmdID);
 
-        // Zoom is available in both view and edit mode, so it must not go
-        // through the editing gate below. At either end of the range the
-        // button that cannot act is disabled, which the zoom guide asks
-        // for; a live-looking button that silently does nothing reads as a
-        // broken control.
-        if (m_pApp &&
-            (nCmdID == IDC_CMD_ZOOMIN || nCmdID == IDC_CMD_ZOOMOUT)) {
-            ppropvarNewValue->vt = VT_BOOL;
-            const bool on = (nCmdID == IDC_CMD_ZOOMIN)
-                ? m_pApp->CanZoomIn()
-                : m_pApp->CanZoomOut();
-            ppropvarNewValue->boolVal = on ? VARIANT_TRUE : VARIANT_FALSE;
-            return S_OK;
-        }
-
-        // A document with no headings has nothing to outline: the button
-        // stays in place but cannot be pressed (disable, never hide).
-        if (m_pApp && nCmdID == IDC_CMD_OUTLINE) {
-            ppropvarNewValue->vt = VT_BOOL;
-            ppropvarNewValue->boolVal =
-                m_pApp->AnswerOutlineEnabled() ? VARIANT_TRUE : VARIANT_FALSE;
-            return S_OK;
-        }
-
         // The File menu realizes its item views lazily at the first
         // open, so the startup Label invalidation (timer 6 in
         // InvalidateSettingsButtons) is dropped: no view exists to
@@ -577,87 +530,34 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
             }
         }
 
-        static const UINT fmtCmds[] = {
-            IDC_CMD_BOLD, IDC_CMD_ITALIC, IDC_CMD_CODE, IDC_CMD_STRIKE,
-            IDC_CMD_H1, IDC_CMD_H2, IDC_CMD_H3,
-            IDC_CMD_BULLETS, IDC_CMD_NUMBERING, IDC_CMD_QUOTE,
-            IDC_CMD_LINK, IDC_CMD_CLEARFORMAT,
-            IDC_CMD_INDENT, IDC_CMD_OUTDENT,
-            IDC_CMD_UNDO, IDC_CMD_REDO
-        };
-        for (auto cmd : fmtCmds) {
-            if (nCmdID == cmd) {
-                ppropvarNewValue->vt = VT_BOOL;
-                bool editing = (m_pApp && m_pApp->IsEditing());
-                if (cmd == IDC_CMD_UNDO)
-                    ppropvarNewValue->boolVal = (editing && m_pApp && m_pApp->CanUndo()) ? VARIANT_TRUE : VARIANT_FALSE;
-                else if (cmd == IDC_CMD_REDO)
-                    ppropvarNewValue->boolVal = (editing && m_pApp && m_pApp->CanRedo()) ? VARIANT_TRUE : VARIANT_FALSE;
-                else
-                    ppropvarNewValue->boolVal = editing ? VARIANT_TRUE : VARIANT_FALSE;
-                return S_OK;
-            }
+        // A dropdown is not a command: the Table Tools button is live
+        // while any command inside it can act, which is the same answer
+        // its first item gives (inside a table the caret can act).
+        if (m_pApp && nCmdID == IDC_CMD_TABLE_TOOLS) {
+            const bool on = commands::Enabled(
+                commands::CommandId::RemoveTable, m_pApp->CommandContext());
+            ppropvarNewValue->vt = VT_BOOL;
+            ppropvarNewValue->boolVal = on ? VARIANT_TRUE : VARIANT_FALSE;
+            return S_OK;
         }
 
-        // Table commands mutate the document, so they follow edit mode.
-        // Within edit mode they are gated on caret context, then narrowed
-        // further by what the command can actually do here: the header and
-        // delimiter rows are structural, and the last column cannot be
-        // removed. Without this the ribbon offers a live button that
-        // silently does nothing.
-        if (IsTableCommand(nCmdID) && nCmdID != IDC_CMD_INSERT_TABLE) {
-            // Table commands mutate the document, so outside edit mode
-            // they are disabled outright. Without this gate a table
-            // command in view mode fell through every branch below and
-            // returned E_NOTIMPL, which the framework reads as "use
-            // the default" and the button stayed live.
-            // Insert Table is excluded: it acts OUTSIDE a table (its
-            // own branch below enables it exactly there), while every
-            // other table command acts inside one.
-            if (!m_pApp || !m_pApp->IsEditing()) {
+        // Every command the table carries answers from the shared
+        // command state (commandstate.h): edit mode, the file kind
+        // (.md, .mmd and .svg), the code block the caret sits in, the
+        // selection, the history, the table it is in, the find query
+        // and the zoom range. One rule, so this ribbon and the mac
+        // menu bar cannot drift apart. Tabs, groups and the QAT carry
+        // no table row and keep the framework default.
+        if (m_pApp) {
+            const commands::CommandSpec* spec =
+                commands::FindByRibbonId(nCmdID);
+            if (spec) {
+                const bool on =
+                    commands::Enabled(spec->id, m_pApp->CommandContext());
                 ppropvarNewValue->vt = VT_BOOL;
-                ppropvarNewValue->boolVal = VARIANT_FALSE;
+                ppropvarNewValue->boolVal = on ? VARIANT_TRUE : VARIANT_FALSE;
                 return S_OK;
             }
-            if (!m_pApp->CaretInTable()) {
-                ppropvarNewValue->vt = VT_BOOL;
-                ppropvarNewValue->boolVal = VARIANT_FALSE;
-                return S_OK;
-            }
-            const TableCapabilities caps = m_pApp->CaretTableCapabilities();
-            bool on = true;
-            switch (nCmdID) {
-            case IDC_CMD_ADD_ROW:         on = caps.addRowBelow;   break;
-            case IDC_CMD_ADD_ROW_ABOVE:   on = caps.addRowAbove;   break;
-            case IDC_CMD_REMOVE_ROW:      on = caps.removeRow;     break;
-            case IDC_CMD_ADD_COLUMN:      on = caps.addColumnRight; break;
-            case IDC_CMD_ADD_COLUMN_LEFT: on = caps.addColumnLeft;  break;
-            case IDC_CMD_REMOVE_COLUMN:   on = caps.removeColumn;   break;
-            case IDC_CMD_REMOVE_TABLE:    on = true;                break;
-            case IDC_CMD_SPLIT_CELL:      on = caps.splitCell;      break;
-            // Alignment rewrites the delimiter row of any table the caret is
-            // in, so it is available wherever the caret is.
-            case IDC_CMD_ALIGN_LEFT:
-            case IDC_CMD_ALIGN_CENTER:
-            case IDC_CMD_ALIGN_RIGHT:     on = true;                break;
-            // The DropDownButton's own enabled state is derived by the
-            // framework from its children. Inside a table Delete Table is
-            // always available, so the menu always has at least one live
-            // item and the button itself stays enabled.
-            case IDC_CMD_TABLE_TOOLS:     on = true;                break;
-            default: break;
-            }
-            ppropvarNewValue->vt = VT_BOOL;
-            ppropvarNewValue->boolVal = on ? VARIANT_TRUE : VARIANT_FALSE;
-            return S_OK;
-        }
-        if (nCmdID == IDC_CMD_INSERT_TABLE) {
-            ppropvarNewValue->vt = VT_BOOL;
-            // Disabled inside a cell: a table may never contain a table.
-            const bool on = m_pApp && m_pApp->IsEditing() &&
-                            !m_pApp->CaretInTable();
-            ppropvarNewValue->boolVal = on ? VARIANT_TRUE : VARIANT_FALSE;
-            return S_OK;
         }
     }
 

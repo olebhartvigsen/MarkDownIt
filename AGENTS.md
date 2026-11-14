@@ -143,8 +143,15 @@ Rules that follow from this:
   save. A command ends by notifying the port, which re-parses, redraws
   and syncs its menu. The controller knows no window, renderer or dialog.
 - `src/commands.h` is the one command table: id, menu name, ribbon
-  command, mac selector, mutating flag and accelerators. The Windows
-  keyboard map and the mac menu keys read it.
+  command and its number, mac selector, mutating flag and accelerators.
+  The Windows keyboard map and the mac menu keys read it.
+- `src/commandstate.h` is the one answer to when a command can act:
+  `commands::Enabled` over a `Context` that holds the surface (welcome
+  screen or document), the mode, the file kind (.md, .mmd, .mermaid,
+  .svg), the code block the caret sits in, the selection, the history,
+  the table and the find query. The ribbon, the mac menu bar, the mac
+  toolbar and the mac format bar all read it. A shell never keeps a gate
+  of its own.
 - The ports keep native: dialogs, file watching, the recent list UI,
   the ribbon or menu wiring and the pickers.
 
@@ -175,9 +182,13 @@ Rules that follow from this:
 2. If it draws, add display list items and play them. If it measures,
    use the `TextEngine` seam. Do not call Direct2D, DirectWrite, Core
    Graphics or Core Text from shared code.
-3. If it is a command, add a row to `src/commands.h`, the ribbon command
-   in `src/ribbon.xml` and the mac selector in `menu_mac.mm`, and a row
-   in the command table of `references/platform-parity.md`.
+3. If it is a command, add a row to `src/commands.h` (with the ribbon
+   command number from `src/ribbon.xml`), the ribbon command in
+   `src/ribbon.xml` and the mac selector in `menu_mac.mm`, a row in the
+   command table of `references/platform-parity.md`, and its
+   requirements in `commands::RequirementsOf`
+   (`src/commandstate.cpp`). A command without a requirements row is
+   greyed everywhere and `tests/commandstate_test.cpp` fails on it.
 4. Write the test in `tests/` and register it in both test targets in
    `CMakeLists.txt` (Windows and macOS). Use the fake engine
    (`tests/fake_text_engine.h`) for layout tests, so both runners print
@@ -243,7 +254,7 @@ Open migration steps and the reasoning behind them are in
 | `layoutcache.*`, `textlayout.h` | per-block layout cache and the UTF-16 text layout seam |
 | `theme.h`, `markdown_style.h`, `blockspacing.h` | tokens, the three styles, block gaps |
 | `textbuffer.*`, `editcontroller.*`, `undostack.*`, `caret.h` | the edit surface |
-| `documentcontroller.*`, `platformservices.h`, `commands.h` | the shared command bodies and the command table |
+| `documentcontroller.*`, `platformservices.h`, `commands.h`, `commandstate.*` | the shared command bodies, the command table and when each command can act |
 | `formatting.*`, `autoformat.*`, `inputfilter.*`, `tableedit.*`, `navigation.*`, `markers.*`, `textdrag.*` | editing behavior |
 | `searchreplace.*`, `findstate.*`, `findbar_model.*`, `unicode_fold*`, `find_strings.h` | find and replace |
 | `outline.*` | heading list for the outline pane |
@@ -451,6 +462,7 @@ raw bytes on disk. Verify with raw byte inspection, not the display.
 | File | Covers |
 |------|--------|
 | platform-parity.md | the parity ledger: standing differences, command tables, test and source exceptions |
+| command-states.md | when each command can act: the welcome screen, view mode, the file kinds and the caret's code and table context |
 | batch4-controller-extraction.md | the shared document controller, family by family |
 | ribbon-menu-guidelines.md, macos-native-chrome.md | the Windows ribbon and the Mac chrome |
 | windows-standardtekstredigering-specifikation.md, word-processor-guidelines.md, word-processor-table-guidelines.md | text editing, caret and paragraph model, tables |

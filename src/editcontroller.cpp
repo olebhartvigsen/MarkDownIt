@@ -961,17 +961,7 @@ bool EditController::InsertSoftBreak(const Document& doc) {
     const Selection selectionBefore = *sel_;
     const uint32_t at = sel_->Empty() ? sel_->active.offset : sel_->Start();
     const uint32_t replacedLength = sel_->Empty() ? 0 : sel_->Length();
-    bool inCode = false;
-    for (const auto& node : doc.nodes) {
-        if (at < node.srcOffset || at > node.srcOffset + node.srcLength)
-            continue;
-        inCode = node.block == BlockKind::CodeBlock ||
-                 node.block == BlockKind::MermaidFlowchart ||
-                 node.block == BlockKind::MermaidPie ||
-                 node.block == BlockKind::MermaidSequence ||
-                 node.block == BlockKind::MermaidGantt;
-        break;
-    }
+    const bool inCode = OffsetInCodeLikeBlock(doc, buf_->Text(), at);
     // Markdown renders a lone newline as a space. Two preceding spaces make
     // this a rendered hard line break while retaining one logical paragraph.
     // Code fences retain their literal newlines without a Markdown marker.

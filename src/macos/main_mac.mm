@@ -30,6 +30,7 @@
 #include <sstream>
 
 #include "formatting.h"
+#include "commandstate.h"
 #include "commands.h"
 #import "format_bar_mac.h"
 #include "office/docx_export.h"
@@ -193,6 +194,14 @@ bool OpenExternalUrl(const std::string& url) {
 // be edited, gone while it is read.
 - (void)applyFormatBarVisible:(BOOL)editing;
 - (void)formatBarSync;
+// The facts every command answers from (commandstate.h): the document
+// half from the shared controller, the window half from here. The menu
+// bar, the toolbar and the format bar all read this one context.
+- (commands::Context)commandContext;
+// Whether the command behind an action can act now. AppKit's own items
+// (full screen, the window and help menus, the system's services) carry
+// no command row and keep their default.
+- (BOOL)canRunAction:(SEL)action context:(commands::Context)context;
 // The zoom landed somewhere, so the saved value follows.
 - (void)zoomDidChange:(float)factor;
 // The same, without the overlay: for a reset the app makes itself.
@@ -2380,8 +2389,28 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [menu addItem:clear];
 }
 
+- (commands::Context)commandContext {
+    commands::Context context = commands::FromDocument(app_->controller());
+    context.welcome = app_->WelcomeMode();
+    context.findHasQuery = app_->findBar().model().state().HasQuery();
+    // The zoom stops at both ends of its range, and the button that
+    // cannot step any further stands down (zoom guide).
+    context.canZoomIn = zoom::Step(zoom_, true) > zoom_ + 1e-4f;
+    context.canZoomOut = zoom::Step(zoom_, false) < zoom_ - 1e-4f;
+    return context;
+}
+
+- (BOOL)canRunAction:(SEL)action context:(commands::Context)context {
+    const commands::CommandSpec* spec = commands::FindBySelector(
+        [NSStringFromSelector(action) UTF8String]);
+    if (!spec) return YES;
+    return commands::Enabled(spec->id, context) ? YES : NO;
+}
+
 - (BOOL)validateMenuItem:(NSMenuItem*)item {
-    if ([item action] == @selector(toggleFullScreen:)) {
+    SEL action = [item action];
+    const commands::Context context = [self commandContext];
+    if (action == @selector(toggleFullScreen:)) {
         // The system's own wording: the same item enters and exits
         // full screen, so its title follows the window.
         [item setTitle:([window_ styleMask] & NSWindowStyleMaskFullScreen)
@@ -2389,82 +2418,65 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                            : @"Enter Full Screen"];
         return YES;
     }
-    if ([item action] == @selector(toggleTabBar:)) {
+    if (action == @selector(toggleTabBar:)) {
         NSWindowTabGroup* group = [window_ tabGroup];
         [item setTitle:((group && [group isTabBarVisible])
                             ? @"Hide Tab Bar"
                             : @"Show Tab Bar")];
-        return YES;
+        return [self canRunAction:action context:context];
     }
-    if ([item action] == @selector(shareDocument:)) {
-        return !app_->WelcomeMode();
-    }
-    if ([item action] == @selector(toggleMark:)) {
+    if (action == @selector(toggleMark:)) {
         // The marker is one toggle, so the menu shows the state the next
         // press will change: on when the selection touches a marker
         // (highlighting spec 4, 6 and 42).
         [item setState:(app_->SelectionHasMarker() ? NSControlStateValueOn
                                                    : NSControlStateValueOff)];
-        return !app_->WelcomeMode();
+        return [self canRunAction:action context:context];
     }
     // The inline format commands show pressed state from the one
     // shared format state query (family 3): the same answer the
     // Windows ribbon reads, with the pending typing format folded
     // into the empty caret case.
-    if ([item action] == @selector(toggleBold:)) {
+    if (action == @selector(toggleBold:)) {
         [item setState:(app_->FormatButtonOn("**") ? NSControlStateValueOn
                                                    : NSControlStateValueOff)];
-        return !app_->WelcomeMode();
+        return [self canRunAction:action context:context];
     }
-    if ([item action] == @selector(toggleItalic:)) {
+    if (action == @selector(toggleItalic:)) {
         [item setState:(app_->FormatButtonOn("*") ? NSControlStateValueOn
                                                   : NSControlStateValueOff)];
-        return !app_->WelcomeMode();
+        return [self canRunAction:action context:context];
     }
-    if ([item action] == @selector(toggleStrike:)) {
+    if (action == @selector(toggleStrike:)) {
         [item setState:(app_->FormatButtonOn("~~") ? NSControlStateValueOn
                                                    : NSControlStateValueOff)];
-        return !app_->WelcomeMode();
+        return [self canRunAction:action context:context];
     }
-    if ([item action] == @selector(toggleCode:)) {
+    if (action == @selector(toggleCode:)) {
         [item setState:(app_->FormatButtonOn("`") ? NSControlStateValueOn
                                                   : NSControlStateValueOff)];
-        return !app_->WelcomeMode();
+        return [self canRunAction:action context:context];
     }
-    if ([item action] == @selector(toggleOutline:)) {
+    if (action == @selector(toggleOutline:)) {
         // The pane is only on offer while the document has headings.
         [item setState:(outlineVisible_ ? NSControlStateValueOn
                                         : NSControlStateValueOff)];
-        return outlineHasHeadings_;
+        return [self canRunAction:action context:context];
     }
-    if ([item action] == @selector(editMode:)) {
+    if (action == @selector(editMode:)) {
         // A checked item shows which mode the document is in.
         [item setState:(app_->Editing() ? NSControlStateValueOn
                                         : NSControlStateValueOff)];
-        return YES;
+        return [self canRunAction:action context:context];
     }
-    // Every command that changes the document follows edit mode, the
-    // way the Windows ribbon greys its format commands in view mode.
-    if (!app_->Editing() && [self actionChangesTheDocument:[item action]]) {
-        return NO;
-    }
-    if ([item action] == @selector(insertTable:)) {
-        tableedit::TableLocation location;
-        return !app_->CaretTable(&location);
-    }
-    return YES;
+    // Every other command answers from the shared command state
+    // (commandstate.h): the mode, the file kind, the code block the
+    // caret sits in, the selection, the history, the table the caret is
+    // in and the find query. The Windows ribbon reads the same answer,
+    // so a greyed menu item and a greyed button cannot disagree.
+    return [self canRunAction:action context:context];
 }
 
-// The menu actions that change the document: the format, paragraph,
-// heading, table, undo and clipboard cut commands. Copy, Find, the
-// zoom, the view switches and the markers keep working in read mode.
-// The answer is the mutating flag of the command table (commands.h),
-// sourced from this very list united with the Windows edit-mode
-// gates, so the mac menu gate and the ribbon gate read one table.
-- (BOOL)actionChangesTheDocument:(SEL)action {
-    const char* name = [NSStringFromSelector(action) UTF8String];
-    return commands::MutatingSelector(name) ? YES : NO;
-}
 - (void)addRowAbove:(id)sender { (void)sender; [self OnAddTableRow:NO]; }
 - (void)addRowBelow:(id)sender { (void)sender; [self OnAddTableRow:YES]; }
 - (void)removeRow:(id)sender { (void)sender; [self OnRemoveTableRow]; }
@@ -2538,7 +2550,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // A standalone SVG is a page image, and the renderer draws it as
     // one, so it can be opened like a document.
     [panel setAllowedFileTypes:@[@"md", @"markdown", @"mdown", @"mkd",
-                                 @"svg"]];
+                                 @"mmd", @"mermaid", @"svg"]];
     if ([panel runModal] != NSModalResponseOK) return;
     [self OpenPath:[[panel URL] path].UTF8String];
 }
@@ -2956,13 +2968,27 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
 - (void)formatBarSync {
     if (!formatBar_) return;
-    const bool editing = app_->Editing() && !app_->WelcomeMode();
-    [formatBar_ setBarEnabled:editing ? YES : NO];
-    if (!editing) return;
-    tableedit::TableLocation location;
-    const bool inTable = app_->CaretTable(&location);
+    const commands::Context context = [self commandContext];
+    // The bar's controls are the markdown commands, so they follow the
+    // same answer the Format menu gives: greyed inside a fence, in a
+    // diagram document, and in view mode. The bar itself stays on
+    // screen while the page can be edited (disable, never hide), so a
+    // reader sees that the controls are there and stand down.
+    const BOOL markdown =
+        commands::Enabled(commands::CommandId::Bold, context) ? YES : NO;
+    [formatBar_ setBarEnabled:markdown];
+    // The table button is Insert Table: it stands down inside a table,
+    // where a second table may not go.
+    [formatBar_ setTableButtonEnabled:
+        (markdown &&
+         commands::Enabled(commands::CommandId::InsertTable, context))
+            ? YES
+            : NO];
+    // The style popup and the pressed marks follow the caret even while
+    // the controls cannot act: they describe the document, they do not
+    // decide what a press would do.
     [formatBar_ updateWithFormatState:app_->controller().GetFormatState()
-                              inTable:inTable ? YES : NO];
+                              inTable:context.inTable ? YES : NO];
 }
 
 - (void)OnFind {
@@ -3121,46 +3147,72 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [self OnToggleOutline];
 }
 
+// The command behind a toolbar item, by the identifier the toolbar gave
+// it. Null for an item with no command row (the sidebar toggle reads the
+// pane, not a document).
+static const commands::CommandSpec* ToolbarCommand(NSString* identifier) {
+    struct Row {
+        NSString* identifier;
+        commands::CommandId id;
+    };
+    static const Row rows[] = {
+        {@"MdRecent", commands::CommandId::ViewRecent},
+        {@"MdSave", commands::CommandId::Save},
+        {@"MdShare", commands::CommandId::Share},
+        {@"MdUndo", commands::CommandId::Undo},
+        {@"MdRedo", commands::CommandId::Redo},
+        {@"MdFind", commands::CommandId::Find},
+        {@"MdHighlight", commands::CommandId::Mark},
+        {@"MdEditMode", commands::CommandId::EditToggle},
+        {@"MdOutline", commands::CommandId::Outline},
+    };
+    for (const Row& row : rows) {
+        if ([identifier isEqualToString:row.identifier]) {
+            return commands::Find(row.id);
+        }
+    }
+    return nullptr;
+}
+
 // Re-reads the command states of the toolbar: the edit switch reads
 // Edit or Done, and the document commands grey out when there is
 // nothing for them to act on, the same edit-mode rule the menu bar
 // applies.
 - (void)toolbarSync {
+    const commands::Context context = [self commandContext];
     for (NSToolbarItem* item in [[window_ toolbar] items]) {
         NSString* identifier = [item itemIdentifier];
-        if ([identifier isEqualToString:@"MdEditMode"]) {
+        const commands::CommandSpec* spec = ToolbarCommand(identifier);
+        if (identifier && [identifier isEqualToString:@"MdEditMode"]) {
+            // The switch reads Edit or Done, and it stands down on the
+            // welcome screen, where there is nothing to edit.
             NSButton* button = (NSButton*)[item view];
             if ([button isKindOfClass:[NSButton class]]) {
                 [button setTitle:(app_->Editing() ? @"Done" : @"Edit")];
+                if (spec) {
+                    [button setEnabled:commands::Enabled(spec->id, context)
+                                          ? YES : NO];
+                }
             }
-        } else if ([identifier isEqualToString:@"MdRecent"]) {
-            // On the screen itself there is nothing to go back to.
-            [item setEnabled:!app_->WelcomeMode()];
-        } else if ([identifier isEqualToString:@"MdOutline"]) {
-            // A page without headings has nothing to list, so the
-            // command stands down with the pane.
-            [item setEnabled:outlineHasHeadings_];
-        } else if ([identifier isEqualToString:@"MdHighlight"]) {
+        } else if (identifier &&
+                   [identifier isEqualToString:@"MdHighlight"]) {
             // The marker item is a real toggle button, not a plain
             // action: its pressed state reports whether the selection
             // touches a marker, in view mode and in edit mode.
             NSButton* button = (NSButton*)[item view];
             if ([button isKindOfClass:[NSButton class]]) {
-                [button setEnabled:!app_->WelcomeMode()];
+                if (spec) {
+                    [button setEnabled:commands::Enabled(spec->id, context)
+                                          ? YES : NO];
+                }
                 [button setState:(app_->SelectionHasMarker()
                                        ? NSControlStateValueOn
                                        : NSControlStateValueOff)];
             }
-        } else if ([identifier isEqualToString:@"MdSave"] ||
-                   [identifier isEqualToString:@"MdFind"] ||
-                   [identifier isEqualToString:@"MdShare"]) {
-            [item setEnabled:!app_->WelcomeMode()];
-        } else if ([identifier isEqualToString:@"MdUndo"]) {
-            [item setEnabled:(!app_->WelcomeMode() &&
-                               app_->undo().CanUndo())];
-        } else if ([identifier isEqualToString:@"MdRedo"]) {
-            [item setEnabled:(!app_->WelcomeMode() &&
-                               app_->undo().CanRedo())];
+        } else if (spec) {
+            // Every other item answers from the shared command state,
+            // the same answer the menu bar and the format bar give.
+            [item setEnabled:commands::Enabled(spec->id, context) ? YES : NO];
         }
     }
     // The format bar answers the same two questions the toolbar does:
@@ -3174,8 +3226,6 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [self formatBarSync];
 }
 
-// Gives the pane the height its rows need, so the scroll view can
-// scroll it, and keeps the width of the scroll host (outline spec 16).
 - (void)outlineLayout {
     CGFloat height = outlinePane_->ContentHeight();
     const CGFloat visibleHeight = [outlineScroll_ contentSize].height;

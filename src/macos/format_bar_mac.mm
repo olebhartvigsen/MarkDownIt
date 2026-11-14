@@ -223,6 +223,10 @@ MdBarSegmented* BarSegments(NSArray<NSString*>* symbols,
     [clear_ setEnabled:enabled];
 }
 
+- (void)setTableButtonEnabled:(BOOL)enabled {
+    [table_ setEnabled:enabled];
+}
+
 - (void)updateWithFormatState:(const FormatState&)state inTable:(BOOL)inTable {
     const NSInteger level = (NSInteger)state.headingLevel;
     for (NSMenuItem* item in [style_ itemArray]) {

@@ -12,6 +12,15 @@ The ledger holds the mapping: references/platform-parity.md, table
 - a table row names a command or selector that does not exist, so the
   row is stale after a rename.
 
+It also holds the command state together. Every command has one
+requirements answer (src/commandstate.h), and the two shells that show
+commands read it: the ribbon (src/ribbon.cpp) and the mac menu bar,
+toolbar and format bar (src/macos/main_mac.mm). The check fails when a
+shell grows a list of its own again, when a ribbon command has no row in
+the command table, or when the ribbon command number in the table and
+the Id in ribbon.xml disagree, which would make a button ask about a
+different command than the one it runs.
+
 The ribbon also carries structural names: tabs, groups, the quick
 access toolbar and the split buttons. They mark up the chrome, they
 are not commands, and the check leaves them alone.
@@ -105,6 +114,52 @@ def main():
                 "no-mac table. Add the selector to the mac menu or "
                 "toolbar, or a row with the reason to "
                 "references/platform-parity.md." % c)
+
+    # The command state: one answer per command, read by both shells.
+    commands_h = read(os.path.join(root, "src", "commands.h"))
+    rows = re.findall(
+        r'\{CommandId::(\w+),\s*"([^"]*)",\s*(nullptr|"(cmd\w+)"),\s*(\d+),',
+        commands_h)
+    if not rows:
+        errors.append("src/commands.h carries no command rows. Fix the "
+                      "row pattern in this check or the table.")
+    table_by_name = {r[3]: (r[0], int(r[4])) for r in rows if r[2] != "nullptr"}
+    xml_ids = dict(re.findall(
+        r'Command Name="(cmd\w+)"\s+Symbol="\w+"\s+Id="(\d+)"', ribbon))
+    for name, (cmd_id, number) in sorted(table_by_name.items()):
+        if name not in xml_ids:
+            errors.append(
+                "%s names ribbon command %s, which ribbon.xml does not "
+                "carry. Fix the row or the table." % (cmd_id, name))
+        elif int(xml_ids[name]) != number:
+            errors.append(
+                "%s carries ribbon id %d, but ribbon.xml gives %s the id "
+                "%s. The ribbon would ask about a different command than "
+                "the one it runs." % (cmd_id, number, name, xml_ids[name]))
+    for c in command_count:
+        if c not in table_by_name:
+            errors.append(
+                "ribbon command %s has no row in src/commands.h, so no "
+                "command state answers for it and the button stays live "
+                "where it cannot act. Add the row." % c)
+    ribbon_cpp = read(os.path.join(root, "src", "ribbon.cpp"))
+    if "commands::Enabled" not in ribbon_cpp or \
+       "CommandContext" not in ribbon_cpp:
+        errors.append(
+            "src/ribbon.cpp does not read the shared command state. Every "
+            "button must ask commands::Enabled(spec->id, CommandContext()), "
+            "not a list of its own.")
+    main_mac = read(os.path.join(root, "src", "macos", "main_mac.mm"))
+    for needle in ("commands::FromDocument", "commands::Enabled"):
+        if needle not in main_mac:
+            errors.append(
+                "src/macos/main_mac.mm does not read the shared command "
+                "state (%s). The menu, the toolbar and the format bar must "
+                "ask the one answer." % needle)
+    if "actionChangesTheDocument" in main_mac:
+        errors.append(
+            "src/macos/main_mac.mm keeps a mutating selector list of its "
+            "own. The command state (src/commandstate.h) is the one gate.")
 
     # Stale rows on both sides.
     real = set(command_count)

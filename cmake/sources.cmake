@@ -33,6 +33,7 @@ set(MARKDOWNIT_CORE_SOURCES
     src/layoutcache.cpp
     src/editcontroller.cpp
     src/documentcontroller.cpp
+    src/commandstate.cpp
     src/documentfile.cpp
     src/navigation.cpp
     src/tableedit.cpp

@@ -88,6 +88,12 @@ struct CommandSpec {
     const char* name;
     // The ribbon.xml command name, null when Windows has no button.
     const char* ribbon;
+    // The ribbon command number the framework hands back in
+    // UpdateProperty, or 0 when Windows carries no button. It is the Id
+    // attribute of the ribbon.xml command, the number UICC turns into the
+    // IDC_CMD_ symbol, so the ribbon finds the row the table already
+    // holds instead of keeping a second command list.
+    uint16_t ribbonId;
     // The mac action selector with its colon, null when the mac
     // carries no item (the selector comes without the colon in
     // actionCompare helpers, both spellings resolve).
@@ -120,107 +126,108 @@ inline constexpr CommandSpec kCommands[] = {
     // File. New and Open answer from the early accelerators in
     // OnKeyDown, so their Windows keys stay there this wave (the look
     // of the mac menu comes from these rows).
-    {CommandId::New, "New", "cmdNew", "newDocument:", false, NoWin, Key("n")},
-    {CommandId::Open, "Open", "cmdOpen", "openDocument:", false, NoWin, Key("o")},
-    {CommandId::Reload, "Reload", "cmdReload", "reloadDocument:", false,
+    {CommandId::New, "New", "cmdNew", 10105, "newDocument:", false, NoWin, Key("n")},
+    {CommandId::Open, "Open", "cmdOpen", 10100, "openDocument:", false, NoWin, Key("o")},
+    {CommandId::Reload, "Reload", "cmdReload", 10101, "reloadDocument:", false,
      AnyMods(0x74 /* VK_F5 */), Key("r")},
-    {CommandId::Save, "Save", "cmdSave", "saveDocument:", false,
+    {CommandId::Save, "Save", "cmdSave", 10103, "saveDocument:", false,
      Ctrl(0x53 /* S */), Key("s")},
-    {CommandId::SaveAs, "Save As", "cmdSaveAs", "saveDocumentAs:", false,
+    {CommandId::SaveAs, "Save As", "cmdSaveAs", 10104, "saveDocumentAs:", false,
      CtrlShift(0x53 /* S */), Key("S")},
-    {CommandId::Close, "Close", nullptr, "closeDocument:", false,
+    {CommandId::Close, "Close", nullptr, 0, "closeDocument:", false,
      NoWin, Key("w")},
 
     // History and clipboard. Undo and redo change the document; cut
     // and paste do, copy and select all do not.
-    {CommandId::Undo, "Undo", "cmdUndo", "undo:", true,
+    {CommandId::Undo, "Undo", "cmdUndo", 10700, "undo:", true,
      Ctrl(0x5A /* Z */), Key("z")},
-    {CommandId::Redo, "Redo", "cmdRedo", "redo:", true,
+    {CommandId::Redo, "Redo", "cmdRedo", 10701, "redo:", true,
      CtrlShift(0x5A /* Z */), Key("Z")},
-    {CommandId::Cut, "Cut", nullptr, "cut:", true,
+    {CommandId::Cut, "Cut", nullptr, 0, "cut:", true,
      Ctrl(0x58 /* X */), Key("x")},
-    {CommandId::Copy, "Copy", nullptr, "copy:", false,
+    {CommandId::Copy, "Copy", nullptr, 0, "copy:", false,
      Ctrl(0x43 /* C */), Key("c")},
-    {CommandId::Paste, "Paste", nullptr, "paste:", true,
+    {CommandId::Paste, "Paste", nullptr, 0, "paste:", true,
      Ctrl(0x56 /* V */), Key("v")},
-    {CommandId::SelectAll, "Select All", nullptr, "selectAll:", false,
+    {CommandId::SelectAll, "Select All", nullptr, 0, "selectAll:", false,
      Ctrl(0x41 /* A */), Key("a")},
 
     // Inline format.
-    {CommandId::Bold, "Bold", "cmdBold", "toggleBold:", true,
+    {CommandId::Bold, "Bold", "cmdBold", 10300, "toggleBold:", true,
      Ctrl(0x42 /* B */), Key("b")},
-    {CommandId::Italic, "Italic", "cmdItalic", "toggleItalic:", true,
+    {CommandId::Italic, "Italic", "cmdItalic", 10301, "toggleItalic:", true,
      Ctrl(0x49 /* I */), Key("i")},
-    {CommandId::Strike, "Strikethrough", "cmdStrike", "toggleStrike:", true,
+    {CommandId::Strike, "Strikethrough", "cmdStrike", 10302, "toggleStrike:", true,
      CtrlShift(0x58 /* X */), NoMac},
-    {CommandId::Code, "Code", "cmdCode", "toggleCode:", true,
+    {CommandId::Code, "Code", "cmdCode", 10303, "toggleCode:", true,
      Ctrl(0xC0 /* VK_OEM_3, backtick */), NoMac},
-    {CommandId::Link, "Link", "cmdLink", "toggleLink:", true,
+    {CommandId::Link, "Link", "cmdLink", 10304, "toggleLink:", true,
      Ctrl(0x4B /* K */), Key("k")},
-    {CommandId::ClearFormat, "Clear Formatting", "cmdClearFormat",
+    {CommandId::ClearFormat, "Clear Formatting", "cmdClearFormat", 10305,
      "clearFormat:", true, NoWin, NoMac},
 
     // Blocks: headings and lists. Every level is a command of its own.
     // Windows carries levels 1 to 3 on the ribbon and reaches 4 to 6
     // through accelerators; the mac menu and format bar offer all six.
-    {CommandId::BodyText, "Body Text", nullptr, "setBodyText:", true,
+    {CommandId::BodyText, "Body Text", nullptr, 0, "setBodyText:", true,
      NoWin, NoMac},
-    {CommandId::Heading1, "Heading 1", "cmdHeading1", "setHeading1:", true,
+    {CommandId::Heading1, "Heading 1", "cmdHeading1", 10400, "setHeading1:", true,
      Ctrl(0x31 /* 1 */), Key("1")},
-    {CommandId::Heading2, "Heading 2", "cmdHeading2", "setHeading2:", true,
+    {CommandId::Heading2, "Heading 2", "cmdHeading2", 10401, "setHeading2:", true,
      Ctrl(0x32 /* 2 */), Key("2")},
-    {CommandId::Heading3, "Heading 3", "cmdHeading3", "setHeading3:", true,
+    {CommandId::Heading3, "Heading 3", "cmdHeading3", 10402, "setHeading3:", true,
      Ctrl(0x33 /* 3 */), Key("3")},
-    {CommandId::Heading4, "Heading 4", nullptr, "setHeading4:", true,
+    {CommandId::Heading4, "Heading 4", nullptr, 0, "setHeading4:", true,
      Ctrl(0x34 /* 4 */), NoMac},
-    {CommandId::Heading5, "Heading 5", nullptr, "setHeading5:", true,
+    {CommandId::Heading5, "Heading 5", nullptr, 0, "setHeading5:", true,
      Ctrl(0x35 /* 5 */), NoMac},
-    {CommandId::Heading6, "Heading 6", nullptr, "setHeading6:", true,
+    {CommandId::Heading6, "Heading 6", nullptr, 0, "setHeading6:", true,
      Ctrl(0x36 /* 6 */), NoMac},
     // The lists keep the Windows keys with Command in place of Control,
     // so a reader who knows one window knows the other; quote follows
     // the period key its Windows accelerator names.
-    {CommandId::Bullets, "Bulleted List", "cmdBullets", "toggleBullets:",
+    {CommandId::Bullets, "Bulleted List", "cmdBullets", 10403, "toggleBullets:",
      true, CtrlShift(0x38 /* 8 */), ShiftKey("8")},
-    {CommandId::Numbering, "Numbered List", "cmdNumbering",
+    {CommandId::Numbering, "Numbered List", "cmdNumbering", 10404,
      "toggleNumbering:", true, CtrlShift(0x37 /* 7 */), ShiftKey("7")},
-    {CommandId::Quote, "Quote", "cmdQuote", "toggleQuote:", true,
+    {CommandId::Quote, "Quote", "cmdQuote", 10405, "toggleQuote:", true,
      CtrlShift(0xBE /* VK_OEM_PERIOD */), ShiftKey(".")},
-    {CommandId::Indent, "Indent", "cmdIndent", "indentBlock:", true,
+    {CommandId::Indent, "Indent", "cmdIndent", 10406, "indentBlock:", true,
      NoWin, NoMac},
-    {CommandId::Outdent, "Outdent", "cmdOutdent", "outdentBlock:", true,
+    {CommandId::Outdent, "Outdent", "cmdOutdent", 10407, "outdentBlock:", true,
      NoWin, NoMac},
 
     // View.
-    {CommandId::EditToggle, "Edit Mode", "cmdEditToggle", "editMode:",
+    {CommandId::EditToggle, "Edit Mode", "cmdEditToggle", 10500, "editMode:",
      false, NoWin, NoMac},
-    {CommandId::SourceView, "Source View", "cmdViewSource",
+    {CommandId::SourceView, "Source View", "cmdViewSource", 10702,
      "toggleSourceView:", false, NoWin, NoMac},
-    {CommandId::Wrap, "Wrap Text", "cmdWrap", "toggleWrap:", false,
+    {CommandId::Wrap, "Wrap Text", "cmdWrap", 10200, "toggleWrap:", false,
      NoWin, NoMac},
-    {CommandId::Outline, "Outline", "cmdOutline", "toggleOutline:", false,
+    {CommandId::Outline, "Outline", "cmdOutline", 10606, "toggleOutline:", false,
      NoWin, Key("O")},
-    {CommandId::ZoomIn, "Zoom In", "cmdZoomIn", "zoomIn:", false,
+    {CommandId::ZoomIn, "Zoom In", "cmdZoomIn", 10201, "zoomIn:", false,
      NoWin, Key("+")},
-    {CommandId::ZoomOut, "Zoom Out", "cmdZoomOut", "zoomOut:", false,
+    {CommandId::ZoomOut, "Zoom Out", "cmdZoomOut", 10202, "zoomOut:", false,
      NoWin, Key("-")},
-    {CommandId::ZoomReset, "Actual Size", nullptr, "zoomReset:", false,
+    {CommandId::ZoomReset, "Actual Size", nullptr, 0, "zoomReset:", false,
      NoWin, Key("0")},
-    {CommandId::ViewRecent, "Recent Documents", nullptr, "showRecents:",
+    {CommandId::ViewRecent, "Recent Documents", "cmdRecent", 10106,
+     "showRecents:",
      false, NoWin, NoMac},
-    {CommandId::Share, "Share", nullptr, "shareDocument:", false,
+    {CommandId::Share, "Share", nullptr, 0, "shareDocument:", false,
      NoWin, NoMac},
-    {CommandId::TabBar, "Show Tab Bar", nullptr, "toggleTabBar:", false,
+    {CommandId::TabBar, "Show Tab Bar", nullptr, 0, "toggleTabBar:", false,
      NoWin, NoMac},
-    {CommandId::WidthMenu, "Reading Width", "cmdWidthMenu", nullptr, false,
+    {CommandId::WidthMenu, "Reading Width", "cmdWidthMenu", 10605, nullptr, false,
      NoWin, NoMac},
-    {CommandId::WidthStandard, "Standard", "cmdWidthStandard", nullptr,
+    {CommandId::WidthStandard, "Standard", "cmdWidthStandard", 10601, nullptr,
      false, NoWin, NoMac},
-    {CommandId::Width960, "960 px", "cmdWidth960", nullptr, false,
+    {CommandId::Width960, "960 px", "cmdWidth960", 10602, nullptr, false,
      NoWin, NoMac},
-    {CommandId::Width1600, "1600 px", "cmdWidth1600", nullptr, false,
+    {CommandId::Width1600, "1600 px", "cmdWidth1600", 10603, nullptr, false,
      NoWin, NoMac},
-    {CommandId::WidthFull, "Full Width", "cmdWidthFull", nullptr, false,
+    {CommandId::WidthFull, "Full Width", "cmdWidthFull", 10604, nullptr, false,
      NoWin, NoMac},
 
     // Find. Windows answers Ctrl+F and Ctrl+H from the early
@@ -228,62 +235,62 @@ inline constexpr CommandSpec kCommands[] = {
     // opens with Cmd+Option+F, because Cmd+H belongs to Hide (spec
     // AC-11); Find Previous needs the explicit Shift next to its
     // upper case G.
-    {CommandId::Find, "Find", "cmdFind", "findDocument:", false,
+    {CommandId::Find, "Find", "cmdFind", 10703, "findDocument:", false,
      NoWin, Key("f")},
-    {CommandId::FindNext, "Find Next", nullptr, "findNext:", false,
+    {CommandId::FindNext, "Find Next", nullptr, 0, "findNext:", false,
      NoWin, Key("g")},
-    {CommandId::FindPrevious, "Find Previous", nullptr, "findPrevious:",
+    {CommandId::FindPrevious, "Find Previous", nullptr, 0, "findPrevious:",
      false, NoWin, ShiftKey("G")},
-    {CommandId::Replace, "Replace", "cmdReplace", "replaceInDocument:",
+    {CommandId::Replace, "Replace", "cmdReplace", 10704, "replaceInDocument:",
      false, NoWin, OptKey("f")},
-    {CommandId::Mark, "Highlight", "cmdMark", "toggleMark:", false,
+    {CommandId::Mark, "Highlight", "cmdMark", 10900, "toggleMark:", false,
      NoWin, ShiftKey("h")},
 
     // Table. They act on the table the caret is in and do nothing
     // outside one, so they are all mutating.
-    {CommandId::InsertTable, "Insert Table", "cmdInsertTable",
+    {CommandId::InsertTable, "Insert Table", "cmdInsertTable", 10210,
      "insertTable:", true, NoWin, NoMac},
-    {CommandId::AddRow, "Add Row Below", "cmdAddRow", "addRowBelow:", true,
+    {CommandId::AddRow, "Add Row Below", "cmdAddRow", 10212, "addRowBelow:", true,
      NoWin, NoMac},
-    {CommandId::AddRowAbove, "Add Row Above", "cmdAddRowAbove",
+    {CommandId::AddRowAbove, "Add Row Above", "cmdAddRowAbove", 10217,
      "addRowAbove:", true, NoWin, NoMac},
-    {CommandId::RemoveRow, "Remove Row", "cmdRemoveRow", "removeRow:", true,
+    {CommandId::RemoveRow, "Remove Row", "cmdRemoveRow", 10213, "removeRow:", true,
      NoWin, NoMac},
-    {CommandId::AddColumn, "Add Column Right", "cmdAddColumn",
+    {CommandId::AddColumn, "Add Column Right", "cmdAddColumn", 10214,
      "addColumnRight:", true, NoWin, NoMac},
-    {CommandId::AddColumnLeft, "Add Column Left", "cmdAddColumnLeft",
+    {CommandId::AddColumnLeft, "Add Column Left", "cmdAddColumnLeft", 10218,
      "addColumnLeft:", true, NoWin, NoMac},
-    {CommandId::RemoveColumn, "Remove Column", "cmdRemoveColumn",
+    {CommandId::RemoveColumn, "Remove Column", "cmdRemoveColumn", 10215,
      "removeColumn:", true, NoWin, NoMac},
-    {CommandId::SplitCell, "Split Cell", "cmdSplitCell", "splitCell:",
+    {CommandId::SplitCell, "Split Cell", "cmdSplitCell", 10223, "splitCell:",
      true, NoWin, NoMac},
-    {CommandId::AlignLeft, "Align Left", "cmdAlignLeft", "alignLeft:",
+    {CommandId::AlignLeft, "Align Left", "cmdAlignLeft", 10220, "alignLeft:",
      true, NoWin, NoMac},
-    {CommandId::AlignCenter, "Align Center", "cmdAlignCenter",
+    {CommandId::AlignCenter, "Align Center", "cmdAlignCenter", 10221,
      "alignCenter:", true, NoWin, NoMac},
-    {CommandId::AlignRight, "Align Right", "cmdAlignRight", "alignRight:",
+    {CommandId::AlignRight, "Align Right", "cmdAlignRight", 10222, "alignRight:",
      true, NoWin, NoMac},
-    {CommandId::RemoveTable, "Delete Table", "cmdRemoveTable",
+    {CommandId::RemoveTable, "Delete Table", "cmdRemoveTable", 10216,
      "removeTable:", true, NoWin, NoMac},
 
     // Office.
-    {CommandId::ImportWord, "Import from Word", "cmdImportDocx",
+    {CommandId::ImportWord, "Import from Word", "cmdImportDocx", 10800,
      "importWord:", false, NoWin, NoMac},
-    {CommandId::ImportPdf, "Import from PDF", nullptr, "importPdf:",
+    {CommandId::ImportPdf, "Import from PDF", nullptr, 0, "importPdf:",
      false, NoWin, NoMac},
-    {CommandId::ExportWord, "Export as Word", "cmdExportDocx",
+    {CommandId::ExportWord, "Export as Word", "cmdExportDocx", 10801,
      "exportWord:", false, NoWin, NoMac},
-    {CommandId::ExportPdf, "Export as PDF", "cmdExportPdf", "exportPdf:",
+    {CommandId::ExportPdf, "Export as PDF", "cmdExportPdf", 10802, "exportPdf:",
      false, NoWin, NoMac},
 
     // App menu.
-    {CommandId::About, "About", "cmdAbout", "orderFrontStandardAboutPanel:",
+    {CommandId::About, "About", "cmdAbout", 10102, "orderFrontStandardAboutPanel:",
      false, NoWin, NoMac},
-    {CommandId::AssocMd, "Set as Default Reader", "cmdAssocMd",
+    {CommandId::AssocMd, "Set as Default Reader", "cmdAssocMd", 10600,
      "setAsDefaultReader:", false, NoWin, NoMac},
-    {CommandId::Settings, "Settings", nullptr, "openSettings:", false,
+    {CommandId::Settings, "Settings", nullptr, 0, "openSettings:", false,
      NoWin, Key(",")},
-    {CommandId::Help, "Help", nullptr, "showHelp:", false, NoWin, NoMac},
+    {CommandId::Help, "Help", nullptr, 0, "showHelp:", false, NoWin, NoMac},
 };
 
 // A second key for a command that already carries one. The Windows
@@ -332,6 +339,18 @@ inline const CommandSpec* FindBySelector(const char* selector) {
                 return &spec;
             }
         }
+    }
+    return nullptr;
+}
+
+// Resolves the number the ribbon framework hands back in UpdateProperty
+// to the row that carries it, so the ribbon button and the mac menu item
+// ask the same command state about the same command. Null for the
+// framework's own commands (tabs, groups, the QAT), which carry no row.
+inline const CommandSpec* FindByRibbonId(uint32_t ribbonId) {
+    if (ribbonId == 0) return nullptr;
+    for (const CommandSpec& spec : kCommands) {
+        if (spec.ribbonId == ribbonId) return &spec;
     }
     return nullptr;
 }

@@ -24,6 +24,11 @@ struct FormatState;
 // host when the document is not editable.
 - (void)setBarEnabled:(BOOL)enabled;
 
+// The table button inserts a new table, so it stands down on its own
+// while the caret is inside one: a table may never hold a table. The
+// rest of the bar keeps the answer setBarEnabled: gave it.
+- (void)setTableButtonEnabled:(BOOL)enabled;
+
 // Reports the caret's state: the paragraph style the popup names and
 // the marks the toggle segments show as pressed. inTable is the caret's
 // table context; the table button inserts wherever the caret is.

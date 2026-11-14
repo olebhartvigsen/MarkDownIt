@@ -93,7 +93,12 @@ std::string DecodeFileText(const std::string& raw,
                static_cast<unsigned char>(raw[1]) == 0xBB &&
                static_cast<unsigned char>(raw[2]) == 0xBF;
     std::string text = f.hasBom ? raw.substr(3) : raw;
-    f.isMmd = !pathUtf8.empty() && PathHasExtension(pathUtf8, ".mmd");
+    // Mermaid source travels as .mmd, the extension the CLI writes, and
+    // as .mermaid, the one the editor plugins write. Both are the same
+    // bare source, so both open as a diagram.
+    f.isMmd = !pathUtf8.empty() &&
+              (PathHasExtension(pathUtf8, ".mmd") ||
+               PathHasExtension(pathUtf8, ".mermaid"));
     f.isSvg = !pathUtf8.empty() && PathHasExtension(pathUtf8, ".svg");
     if (f.isMmd && !HasLangFence(text, "mermaid")) {
         text = WrapLangFence("mermaid", text);

@@ -185,6 +185,12 @@ Lessons from the File menu's width marker. They hold for any state shown inside 
 - The second tab is labeled Edit but its markup identifier is
   cmdTabInsert (Id 10002); the identifier predates the rename, so match
   on the label, not the name, when searching the markup.
+- Every button answers its enabled state from commands::Enabled over the
+  shared command context (src/commandstate.h), the same answer the mac
+  menu bar, toolbar and format bar read. The gate covers the welcome
+  screen, view mode, the file kind (.md, .mmd, .mermaid, .svg) and the
+  caret's code and table context, so a button that cannot act is greyed
+  rather than live. command-states.md holds the matrix.
 
 Check the picker with mouse and keyboard input, a narrow window, and more
 than one DPI setting. Check that Find occurs only once on the ribbon and

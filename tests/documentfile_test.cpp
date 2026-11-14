@@ -60,6 +60,18 @@ TEST(DocumentFile, MmdFileIsShownInsideAMermaidFence) {
     EXPECT_EQ(c.BytesForSaving(), std::string("graph TD\nA-->B\n"));
 }
 
+TEST(DocumentFile, MermaidFileWithTheLongerExtensionIsTheSame) {
+    // .mermaid is the extension the editor plugins write, .mmd the one
+    // the CLI writes. Both hold bare mermaid source, so both open as a
+    // diagram and save back as the source the file had.
+    DocumentController c;
+    c.LoadFile("graph TD\nA-->B\n", "flow.mermaid");
+    EXPECT_TRUE(c.fileFormat().isMmd);
+    EXPECT_EQ(c.buffer().Text(),
+              std::string("```mermaid\ngraph TD\nA-->B\n```\n"));
+    EXPECT_EQ(c.BytesForSaving(), std::string("graph TD\nA-->B\n"));
+}
+
 TEST(DocumentFile, ExtensionIsComparedInLowerCase) {
     DocumentController c;
     c.LoadFile("<svg/>\n", "DIAGRAM.SVG");

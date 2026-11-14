@@ -225,7 +225,15 @@ taken down), and tools/macos-smoke/launch_smoke.sh asserts both.
   shared rule and its mechanism are in word-processor-guidelines.md, and
   tools/macos-smoke presses a recent card, drags six points and requires
   that nothing was selected.
-- tools/check_mac_chrome.py enforces all of it in CI.
+- The menu bar, the toolbar and the format bar grey a command out from
+  one answer, commands::Enabled over the shared command context
+  (src/commandstate.h). validateMenuItem: carries no selector list of its
+  own, and the Windows ribbon reads the same answer, so the two windows
+  cannot disagree about whether a command can act. Which command is
+  available where is in command-states.md.
+- tools/check_mac_chrome.py enforces all of it in CI, and
+  tools/check_command_coverage.py fails when a shell grows a gate of its
+  own again.
 - The Windows window keeps its ribbon and the rules in
   ribbon-menu-guidelines.md; the two files describe different
   windows.

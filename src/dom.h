@@ -146,3 +146,77 @@ struct Document {
     std::vector<Node>  nodes;
     std::u32string     title;    // first H1 text, or empty
 };
+
+// The block kinds that hold source rather than prose: a fence, an
+// indented block, a diagram. Markdown formatting has no meaning inside
+// one.
+inline bool IsCodeLikeBlock(BlockKind kind) {
+    switch (kind) {
+    case BlockKind::CodeBlock:
+    case BlockKind::MermaidFlowchart:
+    case BlockKind::MermaidPie:
+    case BlockKind::MermaidSequence:
+    case BlockKind::MermaidGantt:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// The first byte of the line that holds the offset.
+inline uint32_t SourceLineStart(const std::string& text, uint32_t at) {
+    if (at > text.size()) at = static_cast<uint32_t>(text.size());
+    while (at > 0 && text[at - 1] != '\n') --at;
+    return at;
+}
+
+// The newline that ends the line that holds the offset, or the end of
+// the text.
+inline uint32_t SourceLineEnd(const std::string& text, uint32_t at) {
+    if (at > text.size()) at = static_cast<uint32_t>(text.size());
+    while (at < text.size() && text[at] != '\n') ++at;
+    return at;
+}
+
+// Whether the line that starts at the offset opens or closes a fence:
+// three backticks or three tildes, indented by at most three spaces.
+inline bool SourceLineIsFence(const std::string& text, uint32_t lineStart) {
+    uint32_t i = lineStart;
+    int indent = 0;
+    while (i < text.size() && text[i] == ' ' && indent < 4) {
+        ++i;
+        ++indent;
+    }
+    if (i + 2 >= text.size()) return false;
+    const char c = text[i];
+    return (c == '`' || c == '~') && text[i + 1] == c && text[i + 2] == c;
+}
+
+// Whether the offset sits in code: a fence, an indented block or a
+// diagram. The commands that apply markdown formatting stand down there,
+// and the keys keep their literal meaning (soft break, caret placement
+// and the command gates read this one answer).
+//
+// A fence's node covers the lines between its markers, not the marker
+// lines themselves, so the answer widens to those two lines when they
+// are there: a caret on the opening ``` sits in the block the same way
+// a caret in the middle of the code does.
+inline bool OffsetInCodeLikeBlock(const Document& doc, const std::string& text,
+                                  uint32_t at) {
+    for (const Node& node : doc.nodes) {
+        if (!IsCodeLikeBlock(node.block)) continue;
+        const uint32_t contentStart = node.srcOffset;
+        const uint32_t contentEnd = node.srcOffset + node.srcLength;
+        uint32_t start = SourceLineStart(text, contentStart);
+        uint32_t end = SourceLineEnd(text, contentEnd);
+        if (start > 0) {
+            const uint32_t previous = SourceLineStart(text, start - 1);
+            if (SourceLineIsFence(text, previous)) start = previous;
+        }
+        if (end < text.size() && SourceLineIsFence(text, end + 1)) {
+            end = SourceLineEnd(text, end + 1);
+        }
+        if (at >= start && at <= end) return true;
+    }
+    return false;
+}

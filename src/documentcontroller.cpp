@@ -573,6 +573,16 @@ void DocumentController::ReplaceAllText(const std::string& replaced) {
     NotifyDocumentChanged();
 }
 
+// Whether the caret sits in a code-like block: a fence, an indented block
+// or a diagram. The paragraph side of the question is the same helper the
+// soft break and the caret use, so every reader agrees where the code is.
+bool DocumentController::CaretInCodeBlock() const {
+    const std::string& text = buffer_.Text();
+    uint32_t caret = sel_.active.offset;
+    if (caret > text.size()) caret = static_cast<uint32_t>(text.size());
+    return OffsetInCodeLikeBlock(document_, text, caret);
+}
+
 // ---------------------------------------------------------------------
 // Family 5: tables.
 // ---------------------------------------------------------------------
