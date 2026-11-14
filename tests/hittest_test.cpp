@@ -95,6 +95,22 @@ TEST(HitTest, RightSideWhitespaceUsesOwningBlock) {
 }
 
 
+// A soft break is a newline in the source, so the space the layout draws
+// in its place maps back to that byte. A run md4c builds itself used to
+// arrive with offset zero, which put a hole in the rendered-to-source map
+// and sent a caret that stepped onto the break to the top of the document.
+TEST(HitTest, SoftBreakMapsToItsNewline) {
+    const std::string source = "one\ntwo\n";
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(source, doc));
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    const Node& node = doc.nodes[0];
+    ASSERT_EQ(node.children.size(), 3u);
+    EXPECT_EQ(node.children[1].srcOffset, 3u);
+    EXPECT_EQ(node.children[1].srcLength, 1u);
+    EXPECT_EQ(node.children[2].srcOffset, 4u);
+}
+
 TEST(HitTest, NormalizeParagraphEndPastInlineSyntax) {
     std::string source = "**bold** [go](https://example.com/a_(b))";
     LayoutCache cache;

@@ -872,3 +872,15 @@ Jeg ville afslutte implementeringen med disse krav:
 > Alle boundary cases skal være automatiserede tests, så ændringer i hit-testing eller DOM-rendering ikke genintroducerer fejlen.
 
 **Hvis jeg skulle debugge den konkrete fejl, ville jeg især kigge efter forskellen mellem `paragraph-end` og `next-paragraph-start`.** Det er meget typisk, at mouse-hit-testeren returnerer en DOM-position, der visuelt ser rigtig ud, men som efter normalisering bliver fortolket som starten på det næste block-element. Return bruger derefter den forkerte paragraph og skaber derfor et ekstra afsnit eller splitter det forkerte sted.
+
+---
+
+## 17. Lodret navigation holder kolonnen
+
+Up og Down flytter careten til den næste tegnede linje og beholder læserens kolonne. Tre regler følger af det:
+
+- Kolonnen klemmes ind i den linje, flyttet lander på. En listes tekst starter inde i markørgutteren, og et citat starter længere inde end brødteksten. En kolonne til venstre for linjen er stadig en position på linjen, ikke et tegn på at der ikke er nogen linje. Uden klemmet sprang ét tryk på Down hele listen over.
+- En position ved et blødt ombrud hører til den øverste af de to linjer, for det er der careten tegnes. Vælges den nederste, starter flyttet en linje for lavt, og så springes den linje over, careten stod på.
+- En kørsel som md4c selv bygger (et blødt linjeskift, et hårdt, et `<br>`, et NUL) har ingen bytes i kilden, men den har en plads: det byte teksten stopper ved. Mappes den til 0, falder careten til toppen af dokumentet, så snart den træder på linjeskiftet.
+
+Tests: `RendererMac.VerticalMoveEntersTheListBelow`, `RendererMac.VerticalMoveStepsThroughANestedListOneLineAtATime`, `RendererMac.SoftBreakKeepsTheCaretInItsBlock` og `HitTest.SoftBreakMapsToItsNewline`.

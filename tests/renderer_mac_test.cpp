@@ -1969,3 +1969,140 @@ TEST(RendererMac, SvgDrawsAnEllipticalArc) {
     // Dropping the arc left a sharp corner there instead.
     EXPECT_NEAR(furthest, 46.0f, 0.05f);
 }
+
+// A paragraph sits on the plain left margin; a list item's text starts
+// inside its marker gutter. A vertical step holds the reader's column
+// and takes the nearest position inside the line it lands on. Asking
+// the hit test for the paragraph's own column read "no line here" from
+// every indented line, so one Down arrow jumped clean over the list.
+TEST(RendererMac, VerticalMoveEntersTheListBelow) {
+    const std::string source =
+        "Before the list.\n"
+        "\n"
+        "- first item\n"
+        "- second item\n"
+        "\n"
+        "After the list.\n";
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(source, doc));
+
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    renderer.SetSourceText(&source);
+    renderer.Measure(doc, 640.0f);
+    renderer.Render(doc, 0.0f);
+
+    // The caret stands three characters into the paragraph, on a column
+    // the list's text never reaches.
+    const uint32_t caret = 3;
+    float x = 0.0f, y = 0.0f, width = 0.0f, height = 0.0f;
+    ASSERT_TRUE(renderer.OffsetToRect(caret, &x, &y, &width, &height));
+
+    // One step down is the blank line between the two blocks.
+    uint32_t blank = 0;
+    ASSERT_TRUE(renderer.VerticalNeighbour(caret, x, 1, &blank));
+    EXPECT_LT(blank, static_cast<uint32_t>(source.find("- first")));
+
+    // The next step has to reach the list's first item.
+    float bx = 0.0f, by = 0.0f, bw = 0.0f, bh = 0.0f;
+    ASSERT_TRUE(renderer.OffsetToRect(blank, &bx, &by, &bw, &bh));
+    uint32_t intoList = 0;
+    ASSERT_TRUE(renderer.VerticalNeighbour(blank, bx, 1, &intoList));
+    EXPECT_EQ(intoList, static_cast<uint32_t>(source.find("first item")));
+
+    // And the step back up returns to the blank line.
+    float ix = 0.0f, iy = 0.0f, iw = 0.0f, ih = 0.0f;
+    ASSERT_TRUE(renderer.OffsetToRect(intoList, &ix, &iy, &iw, &ih));
+    uint32_t back = 0;
+    ASSERT_TRUE(renderer.VerticalNeighbour(intoList, ix, -1, &back));
+    EXPECT_EQ(back, blank);
+}
+
+// The arrows walk the page one drawn line at a time, through a list's
+// own items, into a nested item and back out again. A step that skips a
+// line is a step the reader cannot take with the keyboard.
+TEST(RendererMac, VerticalMoveStepsThroughANestedListOneLineAtATime) {
+    const std::string source =
+        "Intro line.\n"
+        "\n"
+        "- parent item\n"
+        "  - child one\n"
+        "  - child two\n"
+        "- sibling item\n"
+        "\n"
+        "Tail line.\n";
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(source, doc));
+
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    renderer.SetSourceText(&source);
+    renderer.Measure(doc, 640.0f);
+    renderer.Render(doc, 0.0f);
+
+    uint32_t caret = 3;
+    float x = 0.0f, y = 0.0f, width = 0.0f, height = 0.0f;
+    ASSERT_TRUE(renderer.OffsetToRect(caret, &x, &y, &width, &height));
+    const float lineHeight = height > 0.0f ? height : 1.0f;
+
+    const uint32_t tail = static_cast<uint32_t>(source.find("Tail line"));
+    int steps = 0;
+    uint32_t lineToLine = 0;
+    while (steps < 40) {
+        uint32_t next = 0;
+        if (!renderer.VerticalNeighbour(caret, x, 1, &next)) break;
+        EXPECT_GT(next, caret);
+        float nx = 0.0f, ny = 0.0f, nw = 0.0f, nh = 0.0f;
+        ASSERT_TRUE(renderer.OffsetToRect(next, &nx, &ny, &nw, &nh));
+        EXPECT_GT(ny, y);
+        // One drawn line, never two: a skip shows up here first.
+        EXPECT_LT(ny - y, lineHeight * 1.6f);
+        caret = next;
+        y = ny;
+        ++steps;
+        if (next == tail) break;
+    }
+    EXPECT_GT(steps, 4);
+    EXPECT_GE(caret, tail);
+}
+
+// The space the layout draws where the source has a newline is a
+// position in the block. A run md4c builds itself used to arrive with
+// offset zero, so that space mapped to byte zero and the caret that
+// stepped onto it jumped to the top of the document.
+TEST(RendererMac, SoftBreakKeepsTheCaretInItsBlock) {
+    const std::string source = "> quote one\n> quote two\n";
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(source, doc));
+
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    renderer.SetSourceText(&source);
+    renderer.Measure(doc, 640.0f);
+    renderer.Render(doc, 0.0f);
+
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    const LaidOutBlock& block = renderer.blocks()[0];
+    ASSERT_TRUE(!block.visToSrc.empty());
+    ASSERT_TRUE(block.node != nullptr);
+    const uint32_t blockStart = block.node->srcOffset;
+    const uint32_t blockEnd = blockStart + block.node->srcLength;
+    for (uint32_t at : block.visToSrc) {
+        EXPECT_GE(at, blockStart);
+        EXPECT_LE(at, blockEnd);
+    }
+
+    // A click on the drawn space answers a caret inside the quote.
+    const float charW = kBodyEm * 0.5f;
+    const float midY = block.y + block.lines[0].height * 0.5f;
+    uint32_t offset = 0;
+    ASSERT_TRUE(renderer.PointToOffset(block.x + charW * 9.5f, midY, &offset));
+    EXPECT_GT(offset, 0u);
+    EXPECT_LT(offset, static_cast<uint32_t>(source.find("quote two")));
+}

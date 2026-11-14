@@ -2116,10 +2116,16 @@ bool MacRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
                                    uint32_t* outOffset) const {
     if (delta == 0 || !outOffset) return false;
 
-    // Every drawn line, in the order the page draws them.
+    // Every drawn line, in the order the page draws them, with the band
+    // its text fills. A vertical step keeps the column, and a column that
+    // falls outside the line (a paragraph's plain left margin, a list's
+    // deeper text column) has to land on the nearest position inside it
+    // instead of dropping the line.
     struct LineRef {
         float top;
         float height;
+        float left;
+        float right;
     };
     std::vector<LineRef> lines;
     const std::vector<TextRegion> regions = TextRegions();
@@ -2146,12 +2152,20 @@ bool MacRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
                 length += static_cast<uint32_t>(run.text.size());
             }
             const uint32_t lineEndVis = lineStartVis + length;
-            if (holdsCaret && vis >= lineStartVis && vis <= lineEndVis) {
+            // A position at a soft wrap belongs to the line it is drawn
+            // at the end of, which is the upper one: the same position
+            // opens the line below, and taking that one made the step
+            // start a line too low, so the arrow skipped the line it
+            // was standing on.
+            if (caretLine < 0 && holdsCaret && vis >= lineStartVis &&
+                vis <= lineEndVis) {
                 caretLine = static_cast<int>(lines.size());
             }
             LineRef ref;
             ref.top = top;
             ref.height = line.height;
+            ref.left = region.x;
+            ref.right = region.x + engine_->OffsetToRect(line, length).x;
             lines.push_back(ref);
             lineStartVis = lineEndVis;
             top += line.height;
@@ -2181,8 +2195,16 @@ bool MacRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
     for (int line = caretLine + delta; line >= 0 && line < lineCount;
          line += direction) {
         const LineRef& target = lines[static_cast<size_t>(line)];
+        // Hold the reader's column, but never hand the hit test an x the
+        // line cannot answer with: an indented line (a list item, a quote)
+        // starts well right of the margin a plain paragraph sits on, and
+        // an x left of it used to read as "no line here", which made the
+        // arrows jump over the whole list.
+        float hitX = desiredX;
+        if (hitX < target.left) hitX = target.left;
+        if (hitX > target.right) hitX = target.right;
         const uint32_t hit =
-            HitTestPoint(desiredX, target.top + target.height * 0.5f);
+            HitTestPoint(hitX, target.top + target.height * 0.5f);
         // A band that draws no glyphs, a spacer the layout keeps for
         // spacing alone, has no text position to answer with. Step past
         // it to the next line that does.

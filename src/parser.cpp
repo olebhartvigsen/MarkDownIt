@@ -1377,12 +1377,20 @@ int cb_text(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata)
     ib.code = code;
 ib.strike = strike;
 
-    // Set source offset for this inline span. A synthetic run has no place in
-    // the source, so leave the offsets at zero rather than recording the
-    // distance to md4c's static string.
+    // Set source offset for this inline span. A run md4c builds itself (a
+    // soft break, a hard break, a <br>, a NUL) does not point into the input,
+    // so `text - ctx->input` is the distance between two unrelated objects.
+    // It still has a place in the source: the byte just after the text the
+    // block has read so far, which is the newline the run stands for. A zero
+    // here put a hole in the rendered-to-source map, and a caret that stepped
+    // onto the break landed at the top of the document.
     if (ctx->input && textInInput) {
         ib.srcOffset = textOffset;
         ib.srcLength = static_cast<uint32_t>(size);
+    } else if (ctx->input) {
+        const NodeOffsetInfo& noi = ctx->nodeOffsets[idx];
+        ib.srcOffset = noi.hasText ? noi.lastTextEnd : node.srcOffset;
+        ib.srcLength = 1;
     }
 
     // Capture title: if we are inside the first H1, append to doc.title.
