@@ -245,6 +245,94 @@ TEST(InsertParagraphBreak, WrappedNestedItemContinuesAtItsOwnLevel) {
               "  - next nested\n- last");
 }
 
+// A quote is a container the same way a list is: a break inside it keeps
+// the quote markers, so the next line stays in the quote.
+TEST(InsertParagraphBreak, QuoteLineContinuesTheQuote) {
+    TextBuffer b;
+    const std::string src = "> a quoted line";
+    b.SetText(src);
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({static_cast<uint32_t>(src.size())});
+    EditController ec(&b, &s);
+    EXPECT_TRUE(ec.InsertParagraphBreak(doc));
+    EXPECT_EQ(b.Text(), "> a quoted line\n> ");
+    EXPECT_EQ(s.active.offset, static_cast<uint32_t>(src.size()) + 3u);
+}
+
+TEST(InsertParagraphBreak, NestedQuoteKeepsItsDepth) {
+    TextBuffer b;
+    const std::string src = "> > nested quote";
+    b.SetText(src);
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({static_cast<uint32_t>(src.size())});
+    EditController ec(&b, &s);
+    EXPECT_TRUE(ec.InsertParagraphBreak(doc));
+    EXPECT_EQ(b.Text(), "> > nested quote\n> > ");
+}
+
+TEST(InsertParagraphBreak, TheLastQuoteLineEndsTheQuote) {
+    TextBuffer b;
+    b.SetText("> a quoted line");
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({15});
+    EditController ec(&b, &s);
+    ASSERT_TRUE(ec.InsertParagraphBreak(doc));
+    ASSERT_EQ(b.Text(), "> a quoted line\n> ");
+    // The new line carries nothing but the markers, so the next break
+    // leaves the quote instead of adding another empty quote line.
+    doc = Document();
+    ParseMarkdown(b.Text(), doc);
+    ASSERT_TRUE(ec.InsertParagraphBreak(doc));
+    EXPECT_EQ(b.Text(), "> a quoted line\n");
+}
+
+TEST(InsertParagraphBreak, TaskItemContinuesUnchecked) {
+    TextBuffer b;
+    const std::string src = "- [x] done task";
+    b.SetText(src);
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({static_cast<uint32_t>(src.size())});
+    EditController ec(&b, &s);
+    EXPECT_TRUE(ec.InsertParagraphBreak(doc));
+    EXPECT_EQ(b.Text(), "- [x] done task\n- [ ] ");
+}
+
+TEST(InsertParagraphBreak, QuotedItemKeepsTheQuoteAndItsMarker) {
+    TextBuffer b;
+    const std::string src = "> - item one";
+    b.SetText(src);
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({static_cast<uint32_t>(src.size())});
+    EditController ec(&b, &s);
+    EXPECT_TRUE(ec.InsertParagraphBreak(doc));
+    EXPECT_EQ(b.Text(), "> - item one\n> - ");
+}
+
+// A later paragraph of an item is still that item's text, so a break in
+// it opens a new item of the same list, at the item's own indentation.
+TEST(InsertParagraphBreak, ASecondParagraphOpensANewItem) {
+    TextBuffer b;
+    const std::string src = "- one\n\n  two of the item";
+    b.SetText(src);
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({static_cast<uint32_t>(src.size())});
+    EditController ec(&b, &s);
+    EXPECT_TRUE(ec.InsertParagraphBreak(doc));
+    EXPECT_EQ(b.Text(), "- one\n\n  two of the item\n- ");
+}
+
 // A blank line inside an item is a paragraph separator. Return there adds
 // a line; it must not open a new item, which would swallow the paragraph
 // that follows it.

@@ -363,6 +363,11 @@ TEST(EmptyBulletBackspace, RemovesMarkerAndIndentationInOneUndoStep) {
         {"- \n- next", 2, "\n- next", 0},
         {"- parent\n  - ", 13, "- parent\n", 9},
         {"- parent\n  - \n- next", 13, "- parent\n\n- next", 9},
+        // An ordered item is no different: its marker is structural too,
+        // and one grapheme would leave "1." as text.
+        {"1. ", 3, "", 0},
+        {"1. first\n1. ", 12, "1. first\n", 9},
+        {"1) one\n1) ", 10, "1) one\n", 7},
     };
     for (const auto& c : cases) {
         TextBuffer b;
@@ -436,7 +441,6 @@ TEST(EmptyBulletBackspace, OrdinaryDeletionInCodeAndLiteralText) {
         {"    - ", 6, "    -"},
         {"\\- ", 3, "\\-"},
         {"- text", 6, "- tex"},
-        {"1. ", 3, "1."},
         {"plain - ", 8, "plain -"},
     };
     for (const auto& c : cases) {
@@ -450,6 +454,44 @@ TEST(EmptyBulletBackspace, OrdinaryDeletionInCodeAndLiteralText) {
         ASSERT_TRUE(ec.DeleteBackward(&doc));
         EXPECT_EQ(b.Text(), std::string(c.expected));
         EXPECT_EQ(s.active.offset, c.caret - 1);
+    }
+}
+
+// The marker is a prefix, not text: backspace at the item's content
+// start removes it whole, and the item's text stays as a paragraph.
+TEST(ListMarkerBackspace, RemovesTheMarkerOfANonEmptyItem) {
+    struct Case {
+        const char* source;
+        uint32_t caret;
+        const char* expected;
+        uint32_t expectedCaret;
+    };
+    const Case cases[] = {
+        {"- abc", 2, "abc", 0},
+        {"1. text", 3, "text", 0},
+        {"2. task", 3, "task", 0},
+        {"> - quoted item", 4, "> quoted item", 2},
+        {"- [ ] a task", 6, "a task", 0},
+        {"- [x] done", 6, "done", 0},
+        {"- abc\n- def", 8, "- abc\ndef", 6},
+        {"> - quoted", 4, "> quoted", 2},
+    };
+    for (const auto& c : cases) {
+        TextBuffer b;
+        b.SetText(c.source);
+        Document doc;
+        ASSERT_TRUE(ParseMarkdown(b.Text(), doc));
+        Selection s;
+        s.Collapse({c.caret});
+        UndoStack undo;
+        EditController ec(&b, &s);
+        ec.SetUndoStack(&undo);
+        ASSERT_TRUE(ec.DeleteBackward(&doc));
+        EXPECT_EQ(b.Text(), std::string(c.expected));
+        EXPECT_EQ(s.active.offset, c.expectedCaret);
+        // One structural step, undone in one go.
+        ASSERT_TRUE(ec.Undo());
+        EXPECT_EQ(b.Text(), std::string(c.source));
     }
 }
 

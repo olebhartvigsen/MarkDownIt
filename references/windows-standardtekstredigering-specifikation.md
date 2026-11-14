@@ -465,6 +465,15 @@ historik fra før kompositionen.
     Shift+Backspace følger her Backspace. Denne sidste regel er et projektvalg,
     ikke et krav om at kopiere alle Rich Edit-genveje for tovejs-input.
 
+En listemarkør er en strukturel præfiks, og caretet står efter den, ikke inde i
+den. Backspace præcis ved punktets indholdsstart fjerner derfor hele markøren i
+én post: indrykning, punkttegn eller tal og et eventuelt afkrydsningsfelt.
+Regel 3 gælder fortsat for al anden tekst, og inde i en kodeblok, en tabel og
+en tematisk linje er den samme tekst bogstavelig. Fjernes kun ét tegn, står
+`1.` tilbage som ren tekst, og linjen skifter betydning uden at læseren har
+bedt om det. Reglen er den samme i begge porte og er uddybet i
+`references/word-processor-guidelines.md` afsnit 18.
+
 ## Tastaturnavigation
 
 ### Fælles regler for navigation

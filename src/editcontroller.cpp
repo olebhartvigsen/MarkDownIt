@@ -146,58 +146,104 @@ static uint32_t LineStartAt(const std::string& text, uint32_t at) {
     return at;
 }
 
-// True when the source line that holds `at` continues the block whose
-// first line starts at `blockStart`: every line between them belongs to
-// the same block. A blank line, another list item, or the opening line of
-// a different block ends the run, so a later paragraph of a list item and
-// the lines outside it answer false.
-static bool LineContinuesBlock(const std::string& text, uint32_t blockStart,
-                               uint32_t at) {
-    uint32_t cursor = LineStartAt(text, at);
-    while (true) {
-        uint32_t lineEnd = cursor;
-        while (lineEnd < text.size() && text[lineEnd] != '\n') ++lineEnd;
-        if (cursor == blockStart) return true;
-        uint32_t i = cursor;
-        while (i < lineEnd && (text[i] == ' ' || text[i] == '\t')) ++i;
-        if (i >= lineEnd) return false;  // a blank line opens nothing
-        const char first = text[i];
-        if (first == '#' || first == '>' || first == '|' || first == '`') {
-            return false;
-        }
-        ListLineInfo marked;
-        if (GetListLineInfo(text, cursor, &marked)) return false;
-        if (cursor == 0) return false;
-        const uint32_t newline = cursor - 1;
-        uint32_t above = newline;
-        while (above > 0 && text[above - 1] != '\n') --above;
-        if (above < blockStart) return false;
-        cursor = above;
+// The start of a source line, read as the containers a new line has to
+// repeat to stay in the same block: the quote markers, and the list item
+// marker with its optional task checkbox.
+struct LinePrefix {
+    uint32_t lineStart = 0;
+    uint32_t lineEnd = 0;
+    uint32_t quoteEnd = 0;      // first byte after the quote markers
+    uint32_t markerStart = 0;   // first byte of the item marker
+    uint32_t contentStart = 0;  // first byte of the item's content
+    bool hasMarker = false;
+    bool hasCheckbox = false;
+    std::string quote;   // "> " once per level, normalized
+    std::string marker;  // indentation and marker, then one space: "- "
+};
+
+// Reads the quote markers and the list marker of the line that starts at
+// `lineStart`. The checkbox of a task item is not part of `marker`: a new
+// item of the same list starts unchecked, so the caller adds "[ ] ".
+static void ParseLinePrefix(const std::string& text, uint32_t lineStart,
+                            LinePrefix* out) {
+    if (!out) return;
+    *out = LinePrefix();
+    out->lineStart = lineStart;
+    if (lineStart > text.size()) lineStart = static_cast<uint32_t>(text.size());
+    uint32_t lineEnd = lineStart;
+    while (lineEnd < text.size() && text[lineEnd] != '\n') ++lineEnd;
+    out->lineEnd = lineEnd;
+
+    // The quote markers, however much space the source puts around them.
+    uint32_t i = lineStart;
+    for (;;) {
+        uint32_t j = i;
+        while (j < lineEnd && (text[j] == ' ' || text[j] == '\t')) ++j;
+        if (j >= lineEnd || text[j] != '>') break;
+        out->quote += "> ";
+        ++j;
+        if (j < lineEnd && text[j] == ' ') ++j;
+        i = j;
     }
+    out->quoteEnd = i;
+    out->contentStart = i;
+
+    // The list marker: the indentation, the bullet or the number, and the
+    // space markdown asks for after it.
+    uint32_t markerStart = i;
+    while (markerStart < lineEnd &&
+           (text[markerStart] == ' ' || text[markerStart] == '\t')) {
+        ++markerStart;
+    }
+    uint32_t markerEnd = markerStart;
+    if (markerStart < lineEnd &&
+        (text[markerStart] == '-' || text[markerStart] == '*' ||
+         text[markerStart] == '+')) {
+        markerEnd = markerStart + 1;
+    } else {
+        while (markerEnd < lineEnd &&
+               std::isdigit(static_cast<unsigned char>(text[markerEnd]))) {
+            ++markerEnd;
+        }
+        if (markerEnd == markerStart || markerEnd >= lineEnd ||
+            (text[markerEnd] != '.' && text[markerEnd] != ')')) {
+            return;  // the line starts no item
+        }
+        ++markerEnd;
+    }
+    if (markerEnd < lineEnd && text[markerEnd] != ' ' && text[markerEnd] != '\t') {
+        return;  // "-foo" is text, not an item
+    }
+    out->hasMarker = true;
+    out->markerStart = markerStart;
+    out->marker = text.substr(i, markerEnd - i) + " ";
+
+    uint32_t c = markerEnd;
+    while (c < lineEnd && (text[c] == ' ' || text[c] == '\t')) ++c;
+    if (c + 2 < lineEnd && text[c] == '[' && text[c + 2] == ']' &&
+        (text[c + 1] == ' ' || text[c + 1] == 'x' || text[c + 1] == 'X')) {
+        out->hasCheckbox = true;
+        c += 3;
+        if (c < lineEnd && text[c] == ' ') ++c;
+    }
+    out->contentStart = c;
 }
 
-static std::string ListContinuationPrefix(const std::string& text,
-                                           uint32_t at,
-                                           uint32_t itemStart) {
-    ListLineInfo line;
-    if (GetListLineInfo(text, at, &line) && !line.empty) {
-        // Keep the exact indentation, bullet character, ordered marker,
-        // and whitespace used by the current item. Ordered lists commonly
-        // use 1. for every source marker, so do not renumber here.
-        return "\n" + line.prefix;
+// True when the line carries nothing but its prefix.
+static bool LineIsBlankAfter(const std::string& text, const LinePrefix& prefix) {
+    for (uint32_t i = prefix.contentStart; i < prefix.lineEnd; ++i) {
+        if (text[i] != ' ' && text[i] != '\t' && text[i] != '\r') return false;
     }
-    // An item that is wrapped over several source lines carries its
-    // marker on the first one, and the caret can sit on a continuation
-    // line where there is none. The new item still belongs to the same
-    // marker, so the prefix comes from the item's own first line. Only a
-    // line that continues that same block inherits it: a blank line
-    // inside the item, or a later paragraph of it, opens no new item.
-    if (itemStart != UINT32_MAX && GetListLineInfo(text, itemStart, &line) &&
-        !line.prefix.empty() &&
-        LineContinuesBlock(text, line.lineStart, at)) {
-        return "\n" + line.prefix;
-    }
-    return {};
+    return true;
+}
+
+// True when the line after `lineEnd` opens another quote line, so a
+// break on the line before it still has a quote to stay in.
+static bool NextLineOpensAQuote(const std::string& text, uint32_t lineEnd) {
+    uint32_t i = lineEnd;
+    if (i < text.size() && text[i] == '\n') ++i;
+    while (i < text.size() && (text[i] == ' ' || text[i] == '\t')) ++i;
+    return i < text.size() && text[i] == '>';
 }
 
 static bool IsCombining(char32_t cp) {
@@ -551,22 +597,44 @@ bool EditController::DeleteBackward(const Document* doc) {
     if (!sel_->Empty()) { DeleteSelection(); return true; }
     const uint32_t at = sel_->active.offset;
 
-    // Empty bullets have a structural caret after their hidden marker.
-    // Require a parsed list node, so code and literal Markdown-like text
-    // keep the ordinary deletion rules. Remove the entire prefix at once,
-    // including indentation, without consuming the line ending.
-    ListLineInfo listLine;
-    if (doc && GetListLineInfo(buf_->Text(), at, &listLine) && listLine.empty) {
-        for (const auto& node : doc->nodes) {
-            if (node.block != BlockKind::List || node.ordered ||
-                node.srcOffset != listLine.lineStart ||
-                node.contentOffset != at || node.contentLength != 0 ||
-                !node.children.empty()) continue;
-            uint32_t end = listLine.lineEnd;
-            if (end > listLine.lineStart && buf_->Text()[end - 1] == '\r') --end;
-            RecordAndApply(listLine.lineStart, end - listLine.lineStart,
-                           "", EditType::Other);
-            return true;
+    // A list item's marker is a structural prefix and the caret sits
+    // after it, not inside it: backspace there removes the whole marker,
+    // indentation and task checkbox included, so the item's text stays as
+    // a paragraph. One grapheme would leave "1.item", which is no marker
+    // at all, and the line would silently change meaning.
+    if (doc) {
+        const std::string& lineText = buf_->Text();
+        const uint32_t lineStart = LineStartAt(lineText, at);
+        LinePrefix prefix;
+        ParseLinePrefix(lineText, lineStart, &prefix);
+        if (prefix.hasMarker && prefix.contentStart == at) {
+            // The same text is literal inside a code block, a table row
+            // and a thematic break, so those keep the ordinary rule.
+            bool literal = false;
+            for (const auto& node : doc->nodes) {
+                if (at < node.srcOffset ||
+                    at > node.srcOffset + node.srcLength) {
+                    continue;
+                }
+                if (node.block == BlockKind::CodeBlock ||
+                    node.block == BlockKind::Table ||
+                    node.block == BlockKind::ThematicBreak ||
+                    node.block == BlockKind::MermaidFlowchart ||
+                    node.block == BlockKind::MermaidPie ||
+                    node.block == BlockKind::MermaidSequence ||
+                    node.block == BlockKind::MermaidGantt) {
+                    literal = true;
+                    break;
+                }
+            }
+            // A quote around the item stays; only the item goes.
+            const uint32_t removeFrom = prefix.quote.empty()
+                ? lineStart : prefix.quoteEnd;
+            if (!literal && removeFrom < at) {
+                RecordAndApply(removeFrom, at - removeFrom, "",
+                               EditType::Other);
+                return true;
+            }
         }
     }
     if (at == 0) return false;
@@ -720,8 +788,12 @@ bool EditController::InsertParagraphBreak(const Document& doc) {
     BlockKind ctx = BlockKind::Paragraph;
     bool inList = false;
     bool inCode = false;
+    bool inQuote = false;
     bool emptyListItem = false;
     bool inTable = false;
+    // The first line of the quote around the caret, so a break inside it
+    // keeps the same quote markers even on a lazy continuation line.
+    uint32_t quoteStart = UINT32_MAX;
     // The innermost list item around the caret, so a wrapped item answers
     // with its own marker even when the caret is on a continuation line.
     uint32_t listItemStart = UINT32_MAX;
@@ -746,6 +818,10 @@ bool EditController::InsertParagraphBreak(const Document& doc) {
             n.block == BlockKind::MermaidSequence ||
             n.block == BlockKind::MermaidGantt) {
             inCode = true;
+        }
+        if (n.block == BlockKind::BlockQuote) {
+            inQuote = true;
+            quoteStart = n.srcOffset;
         }
         if (n.block == BlockKind::Table) {
             inTable = true;
@@ -803,24 +879,70 @@ bool EditController::InsertParagraphBreak(const Document& doc) {
         return true;
     }
 
+    const std::string& text = buf_->Text();
+    // The caret's own line says which container the break answers to,
+    // also where the parsed node starts on a later line, as a wrapped
+    // item or an empty quote line does.
+    const uint32_t caretLineStart = LineStartAt(text, at);
+    LinePrefix caretLine;
+    ParseLinePrefix(text, caretLineStart, &caretLine);
+    if (!caretLine.quote.empty()) inQuote = true;
+
     if (inList) {
-        if (emptyListItem && hasListLine) {
-            // Remove only the empty item's marker. Keep its line break so
-            // Enter exits the list into a blank paragraph.
-            RecordAndApply(listLine.lineStart,
-                           listLine.lineEnd - listLine.lineStart,
+        if (emptyListItem) {
+            // The item is empty, so the break ends the list: remove its
+            // marker, and its indentation, but keep the quote around it.
+            // The line break stays, so the caret sits in a blank line.
+            const uint32_t lineStart = hasListLine ? listLine.lineStart
+                                                   : LineStartAt(text, at);
+            LinePrefix emptyPrefix;
+            ParseLinePrefix(text, lineStart, &emptyPrefix);
+            const uint32_t removeFrom = emptyPrefix.quote.empty()
+                ? lineStart : emptyPrefix.quoteEnd;
+            RecordAndApply(removeFrom, emptyPrefix.lineEnd - removeFrom,
                            "", EditType::ParagraphBreak, &selectionBefore);
             return true;
         }
-        const std::string marker =
-            ListContinuationPrefix(buf_->Text(), at, listItemStart);
-        if (!marker.empty()) {
-            RecordAndApply(at, replacedLength, marker, EditType::ParagraphBreak,
-                           &selectionBefore);
+        // A blank line inside the item separates its paragraphs; it is
+        // not an item of its own, so it takes a plain line break. Any
+        // line that carries text continues the list, whether it is the
+        // item's own line, a wrapped one, or a later paragraph of it, and
+        // the marker comes from the item's line, not from the caret's.
+        const bool caretLineBlank = LineIsBlankAfter(text, caretLine);
+        const uint32_t itemLineStart = listItemStart == UINT32_MAX
+            ? caretLineStart : LineStartAt(text, listItemStart);
+        LinePrefix itemPrefix;
+        ParseLinePrefix(text, itemLineStart, &itemPrefix);
+        if (!caretLineBlank && itemPrefix.hasMarker) {
+            std::string prefix = "\n" + itemPrefix.quote + itemPrefix.marker;
+            if (itemPrefix.hasCheckbox) prefix += "[ ] ";
+            RecordAndApply(at, replacedLength, prefix,
+                           EditType::ParagraphBreak, &selectionBefore);
             return true;
         }
         RecordAndApply(at, replacedLength, "\n", EditType::ParagraphBreak,
                        &selectionBefore);
+        return true;
+    }
+
+    if (inQuote) {
+        // A quote line keeps its quote markers, so the new line stays in
+        // the quote. On the quote's own last line, which carries nothing
+        // but the markers, the break ends the quote instead, the way an
+        // empty item ends a list.
+        const bool lineBlank = LineIsBlankAfter(text, caretLine);
+        if (lineBlank && !NextLineOpensAQuote(text, caretLine.lineEnd)) {
+            RecordAndApply(caretLine.lineStart,
+                           caretLine.quoteEnd - caretLine.lineStart,
+                           "", EditType::ParagraphBreak, &selectionBefore);
+            return true;
+        }
+        const uint32_t blockLineStart = quoteStart == UINT32_MAX
+            ? caretLineStart : LineStartAt(text, quoteStart);
+        LinePrefix blockPrefix;
+        ParseLinePrefix(text, blockLineStart, &blockPrefix);
+        RecordAndApply(at, replacedLength, "\n" + blockPrefix.quote,
+                       EditType::ParagraphBreak, &selectionBefore);
         return true;
     }
 
