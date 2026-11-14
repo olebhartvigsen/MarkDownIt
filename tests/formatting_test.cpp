@@ -379,6 +379,76 @@ TEST(Formatting, OutdentLine) {
     EXPECT_EQ(s.active.offset, 3u);
 }
 
+// A list item is one block: Tab moves its marker line and its wrapped
+// continuation lines together. Moving only the caret's line would either
+// detach the continuation or turn it into a code block under the item.
+TEST(Formatting, IndentListMovesTheWholeItem) {
+    TextBuffer b;
+    b.SetText("- item one that wraps\n  onto a second line\n- item two");
+    Selection s;
+    s.Collapse({32});  // inside "second line"
+    IndentLine(&b, &s);
+    EXPECT_EQ(b.Text(),
+              "  - item one that wraps\n    onto a second line\n- item two");
+    // Two lines grew in front of the caret, so it moves with them.
+    EXPECT_EQ(s.active.offset, 36u);
+}
+
+TEST(Formatting, OutdentListMovesTheWholeItem) {
+    TextBuffer b;
+    b.SetText("- outer\n  - nested item wrapping\n    onto a line\n- last");
+    Selection s;
+    s.Collapse({44});  // inside "onto a line"
+    OutdentLine(&b, &s);
+    EXPECT_EQ(b.Text(),
+              "- outer\n- nested item wrapping\n  onto a line\n- last");
+}
+
+// An item already at the left margin has nowhere to go. Outdenting it
+// must not strip the indentation its continuation lines need.
+TEST(Formatting, OutdentListAtTheLeftMarginLeavesTheContinuation) {
+    TextBuffer b;
+    b.SetText("- item that wraps\n  onto a second line");
+    Selection s;
+    s.Collapse({30});
+    OutdentLine(&b, &s);
+    EXPECT_EQ(b.Text(), "- item that wraps\n  onto a second line");
+    EXPECT_EQ(s.active.offset, 30u);
+}
+
+// A wrapped paragraph that is not a list keeps line indentation, the rule
+// the text specification names for non-list lines.
+TEST(Formatting, IndentPlainParagraphStaysOnItsLine) {
+    TextBuffer b;
+    b.SetText("plain paragraph that wraps\nonto a second line");
+    Selection s;
+    s.Collapse({40});
+    IndentLine(&b, &s);
+    EXPECT_EQ(b.Text(), "plain paragraph that wraps\n  onto a second line");
+}
+
+// A block toggle marks the paragraph's first line, not the physical line
+// the caret sits on, and the caret stays where the reader left it.
+TEST(Formatting, ToggleUnorderedListMarksTheParagraphStart) {
+    TextBuffer b;
+    b.SetText("plain paragraph\nthat wraps onto a line");
+    Selection s;
+    s.Collapse({38});  // at the end of the wrapped paragraph
+    ToggleUnorderedList(&b, &s);
+    EXPECT_EQ(b.Text(), "- plain paragraph\nthat wraps onto a line");
+    EXPECT_EQ(s.active.offset, 40u);
+}
+
+TEST(Formatting, ToggleBlockquoteMarksTheParagraphStart) {
+    TextBuffer b;
+    b.SetText("plain paragraph\nthat wraps onto a line");
+    Selection s;
+    s.Collapse({20});
+    ToggleBlockquote(&b, &s);
+    EXPECT_EQ(b.Text(), "> plain paragraph\nthat wraps onto a line");
+    EXPECT_EQ(s.active.offset, 22u);
+}
+
 // ==========================================================================
 // Regression tests for block vs inline editor formatting (task t_5e803c90).
 //

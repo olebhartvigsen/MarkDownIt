@@ -908,16 +908,42 @@ static std::vector<uint32_t> LinesInRange(const std::string& text,
     return lines;
 }
 
+// Move a caret that sits at or after an edited line start by the net
+// length change of that line's prefix, never past the line start.
+static uint32_t ShiftCaret(uint32_t caret, uint32_t lineStart, int32_t delta) {
+    if (lineStart > caret) return caret;
+    const int64_t moved = static_cast<int64_t>(caret) + delta;
+    return static_cast<uint32_t>(moved < static_cast<int64_t>(lineStart)
+                                     ? static_cast<int64_t>(lineStart)
+                                     : moved);
+}
+
+// The first line of every paragraph the range covers. A wrapped
+// paragraph is one unit: its marker belongs on its first line, not on
+// the physical line the caret happens to sit on.
+static std::vector<uint32_t> ParagraphStartsInRange(const std::string& text,
+                                                    uint32_t start,
+                                                    uint32_t end) {
+    std::vector<uint32_t> starts;
+    for (uint32_t lineStart : LinesInRange(text, start, end)) {
+        const uint32_t paraStart = ParagraphStartOf(text, lineStart);
+        if (starts.empty() || starts.back() != paraStart) {
+            starts.push_back(paraStart);
+        }
+    }
+    if (starts.empty()) {
+        starts.push_back(ParagraphStartOf(text, start));
+    }
+    return starts;
+}
+
 void ToggleUnorderedList(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     const std::string& text = buf->Text();
 
     // Collect all lines in the selection range (or just the caret line).
-    std::vector<uint32_t> lineStarts;
-    if (sel->Empty()) {
-        lineStarts.push_back(LineStartOf(text, sel->active.offset));
-    } else {
-        lineStarts = LinesInRange(text, sel->Start(), sel->Start() + sel->Length());
-    }
+    std::vector<uint32_t> lineStarts = sel->Empty()
+        ? ParagraphStartsInRange(text, sel->active.offset, sel->active.offset)
+        : ParagraphStartsInRange(text, sel->Start(), sel->Start() + sel->Length());
 
     // Determine action from the FIRST line: if it's already a bullet, remove;
     // otherwise, add.
@@ -933,6 +959,7 @@ void ToggleUnorderedList(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     }
 
     Selection selBefore = *sel;
+    uint32_t caret = selBefore.Start();
     // Process lines in REVERSE order so earlier splices don't shift later offsets.
     for (int li = static_cast<int>(lineStarts.size()) - 1; li >= 0; --li) {
         uint32_t ls = lineStarts[li];
@@ -950,6 +977,7 @@ void ToggleUnorderedList(TextBuffer* buf, Selection* sel, UndoStack* undo) {
             if (hasBullet) {
                 std::string removed = prefix;
                 buf->Splice(ls, static_cast<uint32_t>(prefix.size()), "");
+                caret = ShiftCaret(caret, ls, -static_cast<int32_t>(removed.size()));
                 // Record undo as a separate entry per line.
                 Selection dummySel = *sel;
                 dummySel.Collapse({ls});
@@ -959,24 +987,23 @@ void ToggleUnorderedList(TextBuffer* buf, Selection* sel, UndoStack* undo) {
             // Add "- " prefix (replace existing indent prefix).
             std::string removed = prefix;
             buf->Splice(ls, static_cast<uint32_t>(prefix.size()), "- ");
+            caret = ShiftCaret(caret, ls,
+                               2 - static_cast<int32_t>(removed.size()));
             Selection dummySel = *sel;
             dummySel.Collapse({ls});
             RecordUndo(undo, ls, removed, "- ", selBefore, dummySel);
         }
     }
     // Collapse caret to start of selection.
-    sel->Collapse({selBefore.Start()});
+    sel->Collapse({caret});
 }
 
 void ToggleOrderedList(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     const std::string& text = buf->Text();
 
-    std::vector<uint32_t> lineStarts;
-    if (sel->Empty()) {
-        lineStarts.push_back(LineStartOf(text, sel->active.offset));
-    } else {
-        lineStarts = LinesInRange(text, sel->Start(), sel->Start() + sel->Length());
-    }
+    std::vector<uint32_t> lineStarts = sel->Empty()
+        ? ParagraphStartsInRange(text, sel->active.offset, sel->active.offset)
+        : ParagraphStartsInRange(text, sel->Start(), sel->Start() + sel->Length());
 
     // Determine action from the FIRST line.
     std::string firstLine = GetLine(text, lineStarts[0]);
@@ -994,6 +1021,7 @@ void ToggleOrderedList(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     }
 
     Selection selBefore = *sel;
+    uint32_t caret = selBefore.Start();
     int itemNumber = 1;
     // Number the lines first, then apply bottom-to-top. Forward order would
     // shift every later line start once an earlier splice changes length
@@ -1024,29 +1052,30 @@ void ToggleOrderedList(TextBuffer* buf, Selection* sel, UndoStack* undo) {
         if (numPrefix.empty()) {
             std::string removed = prefix;
             buf->Splice(ls, static_cast<uint32_t>(prefix.size()), "");
+            caret = ShiftCaret(caret, ls, -static_cast<int32_t>(removed.size()));
             Selection dummySel = *sel;
             dummySel.Collapse({ls});
             RecordUndo(undo, ls, removed, "", selBefore, dummySel);
         } else {
             std::string removed = prefix;
             buf->Splice(ls, static_cast<uint32_t>(prefix.size()), numPrefix);
+            caret = ShiftCaret(caret, ls,
+                               static_cast<int32_t>(numPrefix.size()) -
+                                   static_cast<int32_t>(removed.size()));
             Selection dummySel = *sel;
             dummySel.Collapse({ls});
             RecordUndo(undo, ls, removed, numPrefix, selBefore, dummySel);
         }
     }
-    sel->Collapse({selBefore.Start()});
+    sel->Collapse({caret});
 }
 
 void ToggleBlockquote(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     const std::string& text = buf->Text();
 
-    std::vector<uint32_t> lineStarts;
-    if (sel->Empty()) {
-        lineStarts.push_back(LineStartOf(text, sel->active.offset));
-    } else {
-        lineStarts = LinesInRange(text, sel->Start(), sel->Start() + sel->Length());
-    }
+    std::vector<uint32_t> lineStarts = sel->Empty()
+        ? ParagraphStartsInRange(text, sel->active.offset, sel->active.offset)
+        : ParagraphStartsInRange(text, sel->Start(), sel->Start() + sel->Length());
 
     // Determine action from the FIRST line.
     std::string firstLine = GetLine(text, lineStarts[0]);
@@ -1060,6 +1089,7 @@ void ToggleBlockquote(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     }
 
     Selection selBefore = *sel;
+    uint32_t caret = selBefore.Start();
     for (int li = static_cast<int>(lineStarts.size()) - 1; li >= 0; --li) {
         uint32_t ls = lineStarts[li];
         const std::string& cur = buf->Text();
@@ -1072,6 +1102,7 @@ void ToggleBlockquote(TextBuffer* buf, Selection* sel, UndoStack* undo) {
             if (i < prefix.size() && prefix[i] == '>') {
                 std::string removed = prefix;
                 buf->Splice(ls, static_cast<uint32_t>(prefix.size()), "");
+                caret = ShiftCaret(caret, ls, -static_cast<int32_t>(removed.size()));
                 Selection dummySel = *sel;
                 dummySel.Collapse({ls});
                 RecordUndo(undo, ls, removed, "", selBefore, dummySel);
@@ -1079,38 +1110,163 @@ void ToggleBlockquote(TextBuffer* buf, Selection* sel, UndoStack* undo) {
         } else {
             std::string removed = prefix;
             buf->Splice(ls, static_cast<uint32_t>(prefix.size()), "> ");
+            caret = ShiftCaret(caret, ls,
+                               2 - static_cast<int32_t>(removed.size()));
             Selection dummySel = *sel;
             dummySel.Collapse({ls});
             RecordUndo(undo, ls, removed, "> ", selBefore, dummySel);
         }
     }
-    sel->Collapse({selBefore.Start()});
+    sel->Collapse({caret});
 }
 
+// A line that opens a list item: spaces, then a bullet or an ordered
+// marker, then a space.
+static bool IsListMarkerLine(const std::string& text, uint32_t lineStart,
+                             uint32_t lineEnd) {
+    uint32_t i = lineStart;
+    while (i < lineEnd && (text[i] == ' ' || text[i] == '\t')) ++i;
+    if (i >= lineEnd) return false;
+    if ((text[i] == '-' || text[i] == '*' || text[i] == '+') && i + 1 < lineEnd &&
+        text[i + 1] == ' ') {
+        return true;
+    }
+    uint32_t digits = i;
+    while (digits < lineEnd && text[digits] >= '0' && text[digits] <= '9') ++digits;
+    return digits > i && digits + 1 < lineEnd &&
+        (text[digits] == '.' || text[digits] == ')') && text[digits + 1] == ' ';
+}
+
+static bool LineIsBlank(const std::string& text, uint32_t lineStart,
+                        uint32_t lineEnd) {
+    for (uint32_t i = lineStart; i < lineEnd; ++i) {
+        if (text[i] != ' ' && text[i] != '\t' && text[i] != '\r') return false;
+    }
+    return true;
+}
+
+// The marker line of the list item that holds `at`, or UINT32_MAX when
+// the caret is not on a list item. Walking up stops at the first marker
+// line, so a nested item answers with its own marker line, and at a blank
+// line, which leaves the list.
+static uint32_t ListItemStartOf(const std::string& text, uint32_t at) {
+    uint32_t cursor = LineStartOf(text, at);
+    while (true) {
+        const uint32_t lineEnd = LineEndOf(text, cursor);
+        if (IsListMarkerLine(text, cursor, lineEnd)) return cursor;
+        if (cursor == 0) return UINT32_MAX;
+        const uint32_t newline = cursor - 1;
+        uint32_t above = newline;
+        while (above > 0 && text[above - 1] != '\n') --above;
+        if (LineIsBlank(text, above, newline)) return UINT32_MAX;
+        cursor = above;
+    }
+}
+
+// Indent one block of lines by two spaces each, as a single splice, so
+// one undo step covers it and the caret keeps its place.
+static void IndentBlock(TextBuffer* buf, Selection* sel, UndoStack* undo,
+                        uint32_t blockStart, uint32_t blockEnd) {
+    if (blockEnd <= blockStart) return;
+    const std::string body = buf->Text().substr(blockStart, blockEnd - blockStart);
+    std::string indented;
+    indented.reserve(body.size() + 8);
+    uint32_t shift = 0;
+    size_t pos = 0;
+    while (true) {
+        indented += "  ";
+        if (blockStart + pos <= sel->active.offset) shift += 2;
+        const size_t lineEnd = body.find('\n', pos);
+        if (lineEnd == std::string::npos) {
+            indented.append(body, pos, std::string::npos);
+            break;
+        }
+        indented.append(body, pos, lineEnd - pos + 1);
+        pos = lineEnd + 1;
+        if (pos >= body.size()) break;
+    }
+    Selection selBefore = *sel;
+    buf->Splice(blockStart, static_cast<uint32_t>(body.size()), indented);
+    sel->Collapse({sel->active.offset + shift});
+    RecordUndo(undo, blockStart, body, indented, selBefore, *sel);
+}
+
+static void OutdentBlock(TextBuffer* buf, Selection* sel, UndoStack* undo,
+                         uint32_t blockStart, uint32_t blockEnd,
+                         size_t maxRemove) {
+    if (blockEnd <= blockStart) return;
+    const std::string body = buf->Text().substr(blockStart, blockEnd - blockStart);
+    std::string outdented;
+    outdented.reserve(body.size());
+    uint32_t caret = sel->active.offset;
+    bool removed = false;
+    size_t pos = 0;
+    while (true) {
+        size_t spaces = 0;
+        while (spaces < maxRemove && pos + spaces < body.size() &&
+               body[pos + spaces] == ' ') {
+            ++spaces;
+        }
+        if (spaces > 0) removed = true;
+        if (blockStart + pos < caret) {
+            const uint32_t available = caret - (blockStart + static_cast<uint32_t>(pos));
+            caret -= std::min<uint32_t>(available, static_cast<uint32_t>(spaces));
+        }
+        const size_t lineEnd = body.find('\n', pos);
+        const size_t stop = lineEnd == std::string::npos ? body.size() : lineEnd;
+        if (stop > pos + spaces) outdented.append(body, pos + spaces, stop - pos - spaces);
+        if (lineEnd == std::string::npos) break;
+        outdented += '\n';
+        pos = lineEnd + 1;
+        if (pos >= body.size()) break;
+    }
+    if (!removed) return;
+    Selection selBefore = *sel;
+    buf->Splice(blockStart, static_cast<uint32_t>(body.size()), outdented);
+    sel->Collapse({caret});
+    RecordUndo(undo, blockStart, body, outdented, selBefore, *sel);
+}
+
+// Tab outside a table and a code block indents the list item on a list
+// line, and the line itself elsewhere (text specification, rule 7). A
+// list item is one unit: its marker and its wrapped continuation lines
+// move together, or the item's text turns into a code block under it.
 void IndentLine(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     const std::string& text = buf->Text();
-    uint32_t lineStart = LineStartOf(text, sel->active.offset);
-    // Insert two spaces at the beginning of the line.
-    Selection selBefore = *sel;
-    buf->Splice(lineStart, 0, "  ");
-    sel->Collapse({sel->active.offset + 2});
-    RecordUndo(undo, lineStart, "", "  ", selBefore, *sel);
+    uint32_t blockStart = LineStartOf(text, sel->active.offset);
+    uint32_t blockEnd = LineEndOf(text, sel->active.offset);
+    if (!LineIsBlank(text, blockStart, blockEnd)) {
+        const uint32_t itemStart = ListItemStartOf(text, sel->active.offset);
+        if (itemStart != UINT32_MAX) {
+            blockStart = itemStart;
+            blockEnd = ParagraphEndOf(text, sel->active.offset);
+        }
+    }
+    IndentBlock(buf, sel, undo, blockStart, blockEnd);
 }
 
 void OutdentLine(TextBuffer* buf, Selection* sel, UndoStack* undo) {
     const std::string& text = buf->Text();
-    uint32_t lineStart = LineStartOf(text, sel->active.offset);
-    // Remove up to 2 leading spaces.
-    int removeCount = 0;
-    for (int i = 0; i < 2 && lineStart + i < text.size() && text[lineStart + i] == ' '; i++)
-        removeCount++;
-    if (removeCount > 0) {
-        Selection selBefore = *sel;
-        std::string removed = text.substr(lineStart, removeCount);
-        buf->Splice(lineStart, removeCount, "");
-        sel->Collapse({static_cast<uint32_t>(std::max(0, static_cast<int32_t>(sel->active.offset) - removeCount))});
-        RecordUndo(undo, lineStart, removed, "", selBefore, *sel);
+    uint32_t blockStart = LineStartOf(text, sel->active.offset);
+    uint32_t blockEnd = LineEndOf(text, sel->active.offset);
+    size_t maxRemove = 2;
+    if (!LineIsBlank(text, blockStart, blockEnd)) {
+        const uint32_t itemStart = ListItemStartOf(text, sel->active.offset);
+        if (itemStart != UINT32_MAX) {
+            // An item at the left margin has no level to leave, and
+            // stripping the indentation of its continuation lines would
+            // detach them from the item.
+            size_t indent = 0;
+            while (itemStart + indent < text.size() && text[itemStart + indent] == ' ') {
+                ++indent;
+            }
+            if (indent == 0) return;
+            maxRemove = std::min<size_t>(2, indent);
+            blockStart = itemStart;
+            blockEnd = ParagraphEndOf(text, sel->active.offset);
+        }
     }
+    OutdentBlock(buf, sel, undo, blockStart, blockEnd, maxRemove);
 }
 
 std::vector<InlineMarkerRun> CollectInlineMarkerRuns(

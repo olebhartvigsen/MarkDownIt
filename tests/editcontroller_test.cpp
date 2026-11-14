@@ -196,6 +196,71 @@ TEST(InsertParagraphBreak, EmptyListItemEndsList) {
                 || text == "- ");
 }
 
+// A list item wrapped over several source lines carries its marker on
+// the first one. Return on a continuation line must open a new item with
+// that marker, not end the list with a blank line.
+TEST(InsertParagraphBreak, WrappedItemContinuesItsOwnMarker) {
+    TextBuffer b;
+    const std::string src = "- item one that wraps\n  onto a second line\n- item two";
+    b.SetText(src);
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    const uint32_t at =
+        static_cast<uint32_t>(src.find("second line") + std::string("second line").size());
+    s.Collapse({at});
+    EditController ec(&b, &s);
+    EXPECT_TRUE(ec.InsertParagraphBreak(doc));
+    EXPECT_EQ(b.Text(),
+              "- item one that wraps\n  onto a second line\n- \n- item two");
+    EXPECT_EQ(s.active.offset, at + 3u);
+}
+
+TEST(InsertParagraphBreak, WrappedOrderedItemKeepsItsNumbering) {
+    TextBuffer b;
+    const std::string src = "1. first item wraps\n   onto a line\n2. second";
+    b.SetText(src);
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({static_cast<uint32_t>(src.find("onto a line") + 11)});
+    EditController ec(&b, &s);
+    EXPECT_TRUE(ec.InsertParagraphBreak(doc));
+    EXPECT_EQ(b.Text(), "1. first item wraps\n   onto a line\n1. \n2. second");
+}
+
+TEST(InsertParagraphBreak, WrappedNestedItemContinuesAtItsOwnLevel) {
+    TextBuffer b;
+    const std::string src =
+        "- outer\n  - nested item wrapping\n    onto a line\n  - next nested\n- last";
+    b.SetText(src);
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({static_cast<uint32_t>(src.find("onto a line") + 11)});
+    EditController ec(&b, &s);
+    EXPECT_TRUE(ec.InsertParagraphBreak(doc));
+    EXPECT_EQ(b.Text(),
+              "- outer\n  - nested item wrapping\n    onto a line\n  - \n"
+              "  - next nested\n- last");
+}
+
+// A blank line inside an item is a paragraph separator. Return there adds
+// a line; it must not open a new item, which would swallow the paragraph
+// that follows it.
+TEST(InsertParagraphBreak, BlankLineInsideAnItemAddsNoMarker) {
+    TextBuffer b;
+    const std::string src = "- first paragraph\n\n  second paragraph of the item";
+    b.SetText(src);
+    Document doc;
+    ParseMarkdown(b.Text(), doc);
+    Selection s;
+    s.Collapse({18});
+    EditController ec(&b, &s);
+    EXPECT_TRUE(ec.InsertParagraphBreak(doc));
+    EXPECT_EQ(b.Text(), "- first paragraph\n\n\n  second paragraph of the item");
+}
+
 TEST(EditController, DeleteWordBackwardAtCaret) {
     TextBuffer b;
     b.SetText("hello");

@@ -139,14 +139,65 @@ static bool GetListLineInfo(const std::string& text, uint32_t at,
     return true;
 }
 
+// The first byte of the line that holds `at`.
+static uint32_t LineStartAt(const std::string& text, uint32_t at) {
+    if (at > text.size()) at = static_cast<uint32_t>(text.size());
+    while (at > 0 && text[at - 1] != '\n') --at;
+    return at;
+}
+
+// True when the source line that holds `at` continues the block whose
+// first line starts at `blockStart`: every line between them belongs to
+// the same block. A blank line, another list item, or the opening line of
+// a different block ends the run, so a later paragraph of a list item and
+// the lines outside it answer false.
+static bool LineContinuesBlock(const std::string& text, uint32_t blockStart,
+                               uint32_t at) {
+    uint32_t cursor = LineStartAt(text, at);
+    while (true) {
+        uint32_t lineEnd = cursor;
+        while (lineEnd < text.size() && text[lineEnd] != '\n') ++lineEnd;
+        if (cursor == blockStart) return true;
+        uint32_t i = cursor;
+        while (i < lineEnd && (text[i] == ' ' || text[i] == '\t')) ++i;
+        if (i >= lineEnd) return false;  // a blank line opens nothing
+        const char first = text[i];
+        if (first == '#' || first == '>' || first == '|' || first == '`') {
+            return false;
+        }
+        ListLineInfo marked;
+        if (GetListLineInfo(text, cursor, &marked)) return false;
+        if (cursor == 0) return false;
+        const uint32_t newline = cursor - 1;
+        uint32_t above = newline;
+        while (above > 0 && text[above - 1] != '\n') --above;
+        if (above < blockStart) return false;
+        cursor = above;
+    }
+}
+
 static std::string ListContinuationPrefix(const std::string& text,
-                                           uint32_t at) {
+                                           uint32_t at,
+                                           uint32_t itemStart) {
     ListLineInfo line;
-    if (!GetListLineInfo(text, at, &line) || line.empty) return {};
-    // Keep the exact indentation, bullet character, ordered marker, and
-    // whitespace used by the current item. Ordered lists commonly use 1.
-    // for every source marker, so do not renumber the continuation here.
-    return "\n" + line.prefix;
+    if (GetListLineInfo(text, at, &line) && !line.empty) {
+        // Keep the exact indentation, bullet character, ordered marker,
+        // and whitespace used by the current item. Ordered lists commonly
+        // use 1. for every source marker, so do not renumber here.
+        return "\n" + line.prefix;
+    }
+    // An item that is wrapped over several source lines carries its
+    // marker on the first one, and the caret can sit on a continuation
+    // line where there is none. The new item still belongs to the same
+    // marker, so the prefix comes from the item's own first line. Only a
+    // line that continues that same block inherits it: a blank line
+    // inside the item, or a later paragraph of it, opens no new item.
+    if (itemStart != UINT32_MAX && GetListLineInfo(text, itemStart, &line) &&
+        !line.prefix.empty() &&
+        LineContinuesBlock(text, line.lineStart, at)) {
+        return "\n" + line.prefix;
+    }
+    return {};
 }
 
 static bool IsCombining(char32_t cp) {
@@ -671,29 +722,33 @@ bool EditController::InsertParagraphBreak(const Document& doc) {
     bool inCode = false;
     bool emptyListItem = false;
     bool inTable = false;
+    // The innermost list item around the caret, so a wrapped item answers
+    // with its own marker even when the caret is on a continuation line.
+    uint32_t listItemStart = UINT32_MAX;
 
     for (const auto& n : doc.nodes) {
-        if (at >= n.srcOffset && at <= n.srcOffset + n.srcLength) {
-            ctx = n.block;
-            if (n.block == BlockKind::List) {
-                inList = true;
-                bool hasContent = false;
-                for (const auto& ib : n.children) {
-                    if (!ib.text.empty()) { hasContent = true; break; }
-                }
-                emptyListItem = !hasContent;
+        if (at < n.srcOffset || at > n.srcOffset + n.srcLength) continue;
+        ctx = n.block;
+        if (n.block == BlockKind::List) {
+            // Nodes arrive in document order, so a later match is the
+            // inner item of a nested list.
+            inList = true;
+            listItemStart = n.srcOffset;
+            bool hasContent = false;
+            for (const auto& ib : n.children) {
+                if (!ib.text.empty()) { hasContent = true; break; }
             }
-            if (n.block == BlockKind::CodeBlock ||
-                n.block == BlockKind::MermaidFlowchart ||
-                n.block == BlockKind::MermaidPie ||
-                n.block == BlockKind::MermaidSequence ||
-                n.block == BlockKind::MermaidGantt) {
-                inCode = true;
-            }
-            if (n.block == BlockKind::Table) {
-                inTable = true;
-            }
-            break;
+            emptyListItem = !hasContent;
+        }
+        if (n.block == BlockKind::CodeBlock ||
+            n.block == BlockKind::MermaidFlowchart ||
+            n.block == BlockKind::MermaidPie ||
+            n.block == BlockKind::MermaidSequence ||
+            n.block == BlockKind::MermaidGantt) {
+            inCode = true;
+        }
+        if (n.block == BlockKind::Table) {
+            inTable = true;
         }
     }
 
@@ -757,7 +812,8 @@ bool EditController::InsertParagraphBreak(const Document& doc) {
                            "", EditType::ParagraphBreak, &selectionBefore);
             return true;
         }
-        const std::string marker = ListContinuationPrefix(buf_->Text(), at);
+        const std::string marker =
+            ListContinuationPrefix(buf_->Text(), at, listItemStart);
         if (!marker.empty()) {
             RecordAndApply(at, replacedLength, marker, EditType::ParagraphBreak,
                            &selectionBefore);

@@ -884,3 +884,15 @@ Up og Down flytter careten til den næste tegnede linje og beholder læserens ko
 - En kørsel som md4c selv bygger (et blødt linjeskift, et hårdt, et `<br>`, et NUL) har ingen bytes i kilden, men den har en plads: det byte teksten stopper ved. Mappes den til 0, falder careten til toppen af dokumentet, så snart den træder på linjeskiftet.
 
 Tests: `RendererMac.VerticalMoveEntersTheListBelow`, `RendererMac.VerticalMoveStepsThroughANestedListOneLineAtATime`, `RendererMac.SoftBreakKeepsTheCaretInItsBlock` og `HitTest.SoftBreakMapsToItsNewline`.
+
+## 18. En ombruet fortsættelseslinje hører til blokken
+
+En listepunkt-tekst kan være brudt over flere kildelinjer. Markøren står kun på den første, og resten er fortsættelseslinjer. Reglen er, at alt der handler om blokkens struktur læses fra blokken, ikke fra den linje careten tilfældigvis står på.
+
+- **Enter** fortsætter punktet med dets egen markør, også når careten står på en fortsættelseslinje, og i den indrykning punktet har. Markøren hentes fra punktets første linje, ikke fra den aktuelle linje, som ikke har nogen.
+- **Kun samme blok arver markøren.** En tom linje inde i punktet, eller et senere afsnit i det, åbner ikke et nyt punkt. Der indsættes et almindeligt linjeskift, så afsnittet ikke bliver slugt af et tomt punkt.
+- **Indrykning** flytter hele punktet, altså markørlinjen og fortsættelseslinjerne sammen, i én splice og dermed én undo-post. Flyttes kun den linje careten står på, mister punktet sin fortsættelse, og to ekstra mellemrum gør teksten til en kodeblok under punktet. Uden for lister gælder den almindelige linjeindrykning, som specifikationen foreskriver. Står punktet allerede på venstre margen, er Shift+Tab en no-op: der er ingen niveau at forlade, og fjernes fortsættelseslinjernes indrykning, falder de ud af punktet.
+- **Blok-toggles** (punktopdelt liste, nummereret liste, citat) sætter mærket på afsnittets første linje og lader careten blive, hvor læseren satte den. Sættes mærket på den fysiske linje under careten, splittes afsnittet i to.
+- **Formatering af tekst** (fed, kursiv, kode, gennemstregning) arbejder på markeringen og er derfor upåvirket af, hvor linjen er brudt.
+
+Tests: `InsertParagraphBreak.WrappedItemContinuesItsOwnMarker`, `InsertParagraphBreak.WrappedOrderedItemKeepsItsNumbering`, `InsertParagraphBreak.WrappedNestedItemContinuesAtItsOwnLevel`, `InsertParagraphBreak.BlankLineInsideAnItemAddsNoMarker`, `Formatting.IndentListMovesTheWholeItem`, `Formatting.OutdentListMovesTheWholeItem`, `Formatting.OutdentListAtTheLeftMarginLeavesTheContinuation`, `Formatting.IndentPlainParagraphStaysOnItsLine`, `Formatting.ToggleUnorderedListMarksTheParagraphStart` og `Formatting.ToggleBlockquoteMarksTheParagraphStart`.
