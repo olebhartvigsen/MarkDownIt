@@ -14,8 +14,9 @@ This check keeps the design from drifting back:
 - the ribbon strip is gone, classes and files;
 - the window carries no titlebar accessories;
 - the toolbar builds the deliberate item set, and only that set;
-- the toolbar draws system material: system symbols plus the one
-  template floppy for Save, and no colours of its own;
+- the toolbar draws system material and nothing else: every item is a
+  system symbol, no icon is drawn by hand, and the toolbar has no colours
+  of its own;
 - the format bar is built from the system's own controls, sends the
   command selectors the menu carries, and mixes in no colour of its
   own;
@@ -77,12 +78,17 @@ def main():
         fail("the toolbar identifiers are %s, want %s"
              % (identifiers, EXPECTED))
 
-    # The toolbar draws system material: system symbols and the
-    # template floppy, never a raster image.
+    # The toolbar draws system material and nothing else: every item is a
+    # system symbol, and no icon is drawn by hand. Save wears the checkmark
+    # the HIG's standard-icon table gives the action.
     if "imageWithSystemSymbolName" not in toolbar:
         fail("the toolbar draws no system symbols")
-    if "FloppySaveImage" not in toolbar:
-        fail("the Save item lost its template floppy")
+    for handmade in ("FloppySaveImage", "NSBezierPath", "drawingHandler"):
+        if handmade in toolbar:
+            fail("the toolbar draws an icon by hand (%s); use a system "
+                 "symbol, see references/macos-native-chrome.md" % handmade)
+    if 'imageWithSystemSymbolName:@"checkmark"' not in toolbar:
+        fail("the Save item is not the system checkmark")
     for pattern in (r"colorWith", r"0x[0-9A-Fa-f]"):
         if re.search(pattern, toolbar):
             fail("the toolbar mixes in its own colour (%s)" % pattern)
