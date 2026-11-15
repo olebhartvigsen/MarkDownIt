@@ -3743,6 +3743,32 @@ void AppWindow::QAAdvance() {
                 Repaint();
             }
         }
+    } else if (state == "csv-pinned") {
+        // Excel's frozen first row, the same picture the mac walk takes:
+        // a data file scrolled past its header so the band stands at the
+        // pane's top edge over the body. The state reads its own file, so
+        // it does not depend on what the shared state left behind.
+        std::wstring dir;
+        const size_t slash = file_path_.find_last_of(L"\\/");
+        if (slash != std::wstring::npos) {
+            dir = file_path_.substr(0, slash + 1);
+        }
+        const std::wstring path = dir + L"table-long.csv";
+        std::ifstream f(path.c_str(), std::ios::binary);
+        if (f.is_open()) {
+            std::stringstream ss;
+            ss << f.rdbuf();
+            LoadDocumentText(ss.str(), path);
+            scrollY_ = ClampScroll(260.0f);
+            StopScrollAnimation();
+            UpdateScrollInfo();
+            Repaint();
+        }
+        char line[160];
+        snprintf(line, sizeof(line),
+                 "qa csv-pinned: scroll=%.0f editing=%d",
+                 (double)scrollY_, editing_ ? 1 : 0);
+        QALogLine(line);
     } else if (state == "shared") {
         // The shared walk, one capture state per new visible feature
         // (plan, capture parity): the document controller and the

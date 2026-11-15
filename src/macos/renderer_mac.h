@@ -291,6 +291,11 @@ public:
     // around lists in the text.
     void SetEditing(bool on) { editing_ = on; }
 
+    // The height of the header band the last paint pinned at the viewport's
+    // top edge, zero when nothing was pinned. The QA walk traces it, so a
+    // capture run reports the band instead of only photographing it.
+    float PinnedHeaderHeightForQA() const { return qaPinnedHeaderHeight_; }
+
     void SetSearchMatches(const std::vector<TextMatch>* matches,
                           int currentIndex);
 
@@ -525,6 +530,8 @@ private:
     // Whether the text is wrapped.
     bool wrap_ = true;
     bool editing_ = true;
+    // Set by every paint, read by the QA walk (PinnedHeaderHeightForQA).
+    float qaPinnedHeaderHeight_ = 0.0f;
     // The width of the text column.
     int contentWidthMode_ = 0;
     // The image cache, which holds the images of the document.

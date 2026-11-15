@@ -1346,6 +1346,11 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     blinkTimer_ = nil;
 }
 
+// The header band the last paint pinned, for the QA walk's trace line.
+- (float)qaPinnedHeaderHeight {
+    return renderer_.PinnedHeaderHeightForQA();
+}
+
 // The QA walk parks the caret off and stops its blink: a still
 // capture must not depend on the blink phase, and the two platforms'
 // pictures are compared.

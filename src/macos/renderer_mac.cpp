@@ -965,6 +965,7 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
     // the viewport's top edge, so its buttons move with it. Rebuilt here
     // because this is where the scroll is known.
     tableFilterButtons_.clear();
+    qaPinnedHeaderHeight_ = 0.0f;
     for (const LaidOutBlock& block : blocks_) {
         if (!block.tableRecord) continue;
         float pinTop = 0.0f;
@@ -1087,6 +1088,7 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
                                       : 0.0f,
                     scrollOffset, &pinTop);
                 if (pinned && block.tableRecord) {
+                    qaPinnedHeaderHeight_ = block.tableRecord->headerHeight;
                     // The items are in the walk's coordinates: the column
                     // starts at originX_ and the band's own top is at
                     // block.y - padTop (the blocks carry the padTop, the walk

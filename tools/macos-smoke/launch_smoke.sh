@@ -133,7 +133,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-click,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,shared" "$BIN" "$DOC" &
+    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-click,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,shared,csv-pinned" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
@@ -142,7 +142,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     # a shared announcement that lands past the budget is a silently
     # missing capture on the mac side.
     while [ "$waited" -lt 420 ]; do
-        for name in doc wheel find edit format-bar outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap svg-drawio svg-drawio-100 zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc shared; do
+        for name in doc wheel find edit format-bar outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap svg-drawio svg-drawio-100 zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc shared csv-pinned; do
             case "$seen" in *" $name "*) continue ;; esac
             if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
                 sleep 0.6
@@ -192,6 +192,24 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         echo "launch smoke: the text follows a window that grows with" \
              "the pane closed ($GROW_BEFORE -> $GROW_AFTER)"
     fi
+    # The frozen first row: a long data file scrolled past its header has
+    # to stand that row at the pane's top edge. The picture shows it; the
+    # trace says how tall the band was, so a band that never appeared
+    # fails here instead of passing as a quiet frame.
+    CSV_HEADER=$(grep "qa csv-pinned:" "$LOG" 2>/dev/null \
+        | sed -n 's/.*header=\([0-9]*\).*/\1/p' | head -1)
+    if [ -z "$CSV_HEADER" ]; then
+        echo "launch smoke FAILED: the csv-pinned state reported no band"
+        grep "qa csv-pinned" "$LOG" 2>/dev/null | head -3
+        exit 1
+    fi
+    if [ "$CSV_HEADER" -le 0 ]; then
+        echo "launch smoke FAILED: nothing was pinned when a long data file" \
+             "was scrolled past its header (header=$CSV_HEADER)"
+        exit 1
+    fi
+    echo "launch smoke: the header of a long data file stays at the top" \
+         "(band=$CSV_HEADER pt)"
     # The zoom overlay: a level that names itself while it changes, and
     # nothing left of it once it has gone.
     ZOOM_PERCENT=$(grep -o "percent=[0-9]*" "$LOG" 2>/dev/null \

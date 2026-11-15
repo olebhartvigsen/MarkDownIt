@@ -1384,6 +1384,31 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         platform::TraceMac("qa zoom-reopen: before=%d after=%d showing=%d",
                       before, zoom::Percent(zoom_),
                       [zoomHud_ isShowing] ? 1 : 0);
+    } else if ([state isEqualToString:@"csv-pinned"]) {
+        // Excel's frozen first row: a data file scrolled past its header,
+        // so the picture shows the header standing at the pane's top edge
+        // with the body going under it. The state opens its own file, so
+        // it is robust wherever the walk lists it; the shared state
+        // before it leaves the document edited, and a walk has no hands
+        // for the discard prompt, so the edit is dropped first.
+        app_->MarkClean();
+        [window_ setDocumentEdited:NO];
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"table-long.csv"]
+                    UTF8String])];
+        }
+        [view_ syncFrameToContent];
+        [view_ scrollToDocumentPoint:NSMakePoint(0.0, 260.0)];
+        platform::TraceMac(
+            "qa csv-pinned: scroll=%.0f editing=%d header=%.0f",
+            (double)[[[view_ enclosingScrollView] contentView]
+                        bounds].origin.y,
+            app_->Editing() ? 1 : 0,
+            (double)[view_ qaPinnedHeaderHeight]);
+        [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"welcome"]) {
         // The screen without a document, reached the way the toolbar
         // reaches it. The walk has opened the fixture, so the recent

@@ -37,11 +37,14 @@ from PIL import Image
 # so a foot-anchored frame cannot line its first row up.
 # shared is the shared-walk state (plan, batch 5): both platforms type
 # a line, bold it, apply a heading and insert a table row through the
-# shared command paths, so its frame compares the shared result. A
+# shared command paths, so its frame compares the shared result.
+# csv-pinned is the frozen first row of a long data file: both platforms
+# scroll the same fixture past its header, so the band they draw at the
+# pane's edge is compared instead of taken on trust. A
 # state missing from either side's rects is skipped, not failed, so
 # artifacts from a walk that predates a state still compare cleanly.
 STATES = ["doc", "find", "edit", "outline", "source", "lower", "end",
-          "tail", "shared", "dark", "settings"]
+          "tail", "shared", "csv-pinned", "dark", "settings"]
 
 # Tolerances, calibrated on the fonts alone: the row gap differs by up
 # to 5 px inside a paragraph (the wrap difference moves band counts by
