@@ -48,6 +48,10 @@ struct LaidOutBlock {
     int level = 0;
     // The table rows, for a table.
     const Node* table = nullptr;
+    // The walk's own record of the table: the column split, the row heights,
+    // the filter buttons and the header band. Shared with the layout pass,
+    // which owns it, so the block keeps its share alive.
+    std::shared_ptr<layout::LaidTable> tableRecord;
     // The images of the block, drawn above its text.
     std::vector<std::string> images;
     // The height the images take above the text.

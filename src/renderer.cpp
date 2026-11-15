@@ -1480,9 +1480,9 @@ void Renderer::DrawFilterMarks(ID2D1RenderTarget* rt, const Node& n,
     for (size_t c = 0; c < columns; ++c) {
         const std::array<platform::Point, 6> points = layout::FilterGlyph(
             x + record.filterCenters[c].x, cy, m.tableFilterMark);
-        const platform::Color color = n.tableFilterActive[c]
-                                          ? pal.link
-                                          : pal.textMuted;
+        const ThemeColor& theme =
+            n.tableFilterActive[c] ? pal.link : pal.textMuted;
+        const platform::Color color{theme.r, theme.g, theme.b, theme.a};
         target.FillPolygon(std::vector<platform::Point>(points.begin(),
                                                         points.end()),
                            color);

@@ -786,6 +786,7 @@ void MacRenderer::AppendBlockFromLaid(const Document& doc,
     block.level = lb.level;
     block.x = originX_ + lb.x;
     block.y = metrics_.padTop + lb.y;
+    block.tableRecord = lb.table;
     block.width = lb.width;
     block.height = lb.height;
     block.lines = lb.lines;
@@ -965,13 +966,12 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
     // because this is where the scroll is known.
     tableFilterButtons_.clear();
     for (const LaidOutBlock& block : blocks_) {
-        if (!block.table) continue;
+        if (!block.tableRecord) continue;
         float pinTop = 0.0f;
         const bool pinned = layout::PinnedHeader(
-            block.y, block.height,
-            block.table ? block.table->headerHeight : 0.0f, scrollOffset,
-            &pinTop);
-        for (const Rect& rect : block.table->filterButtons) {
+            block.y, block.height, block.tableRecord->headerHeight,
+            scrollOffset, &pinTop);
+        for (const Rect& rect : block.tableRecord->filterButtons) {
             Rect hit = rect;
             hit.x += originX_;
             hit.y = pinned ? pinTop : rect.y + metrics_.padTop;
@@ -1083,12 +1083,13 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
                 float pinTop = 0.0f;
                 const bool pinned = layout::PinnedHeader(
                     block.y, block.height,
-                    block.table ? block.table->headerHeight : 0.0f,
+                    block.tableRecord ? block.tableRecord->headerHeight
+                                      : 0.0f,
                     scrollOffset, &pinTop);
-                if (pinned && block.table) {
+                if (pinned && block.tableRecord) {
                     TranslatedTarget pinnedBand(target_, 0.0f,
                                                 pinTop - block.y);
-                    display::Play(block.table->header, &pinnedBand,
+                    display::Play(block.tableRecord->header, &pinnedBand,
                                   [this](const display::Image& item) {
                                       return ImageHandleFor(item);
                                   });
