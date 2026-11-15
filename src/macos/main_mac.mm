@@ -1412,10 +1412,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         dispatch_after(
             dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
             dispatch_get_main_queue(), ^{
+                __typeof__(self) self_ = weakSelf;
                 MdContentView* view = weakView;
                 NSWindow* window = weakWindow;
-                AppMac* app = weakSelf ? weakSelf->app_ : nullptr;
-                if (!view || !window || !app) return;
+                if (!self_ || !view || !window) return;
                 [view setNeedsDisplay:YES];
                 [window display];
                 platform::TraceMac(
@@ -1423,9 +1423,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                     "nodes=%zu %s %s",
                     (double)[[[view enclosingScrollView] contentView]
                                 bounds].origin.y,
-                    app->Editing() ? 1 : 0,
+                    self_->app_->Editing() ? 1 : 0,
                     (double)[view qaPinnedHeaderHeight],
-                    app->GetDocument().nodes.size(),
+                    self_->app_->GetDocument().nodes.size(),
                     [[view qaPinnedProbe] UTF8String],
                     [[view qaBlockList] UTF8String]);
             });
