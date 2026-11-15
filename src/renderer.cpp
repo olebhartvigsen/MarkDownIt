@@ -2,6 +2,8 @@
 #include "blockspacing.h"
 #include "hash.h"
 
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <d2d1.h>
 #include <dwrite.h>
@@ -844,6 +846,20 @@ platform::BitmapHandle Renderer::ImageHandleFor(
     return nullptr;
 }
 
+// A pin decision, written where the QA walk reads: a state that quietly did
+// nothing and one that ran look the same in a picture, and this is the only
+// place the numbers exist.
+namespace {
+void QaPinTrace(const char* line) {
+    const char* path = std::getenv("MARKDOWNIT_QA_LOG");
+    if (!path || !*path) return;
+    if (FILE* log = std::fopen(path, "a")) {
+        std::fprintf(log, "%s\n", line);
+        std::fclose(log);
+    }
+}
+}  // namespace
+
 void Renderer::PaintSharedOverlays(
     ID2D1RenderTarget* rt, IDWriteFactory* dw, const Document& doc,
     const std::vector<const layout::LaidBlock*>& byNode,
@@ -980,6 +996,22 @@ void Renderer::PaintSharedOverlays(
                                       });
                         rt->SetTransform(saved);
                     }
+                    char pinLine[220];
+                    snprintf(pinLine, sizeof(pinLine),
+                             "qa pin: y=%.0f h=%.0f head=%.0f headtop=%.0f "
+                             "vtop=%.0f pinned=%d items=%zu scroll=%.0f e=%d",
+                             (double)b->y, (double)b->height,
+                             (double)b->table->headerHeight,
+                             (double)b->table->headerTop,
+                             (double)viewportTopLayout,
+                             layout::PinnedHeader(b->y, b->height,
+                                                  b->table->headerHeight,
+                                                  viewportTopLayout, nullptr)
+                                 ? 1
+                                 : 0,
+                             b->table->header.items.size(), (double)scrollY,
+                             editing_ ? 1 : 0);
+                    QaPinTrace(pinLine);
                 }
                 break;
             }
