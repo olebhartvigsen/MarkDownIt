@@ -3760,10 +3760,14 @@ void AppWindow::QAAdvance() {
             ss << f.rdbuf();
             LoadDocumentText(ss.str(), path);
             // The measure runs in the paint, so a scroll here would clamp
-            // against the height the previous document left behind: paint one
-            // frame, then ask for the scroll the picture is supposed to show.
-            InvalidateRect(hwnd_, nullptr, FALSE);
-            UpdateWindow(hwnd_);
+            // against the height the previous document left behind: measure
+            // the page that was just loaded, then ask for the scroll the
+            // picture is supposed to show.
+            if (renderer_inited_ && dw_factory_ && rt_) {
+                const D2D1_SIZE_F size = rt_->GetSize();
+                totalH_ = renderer_.Measure(dw_factory_, doc_, size.width,
+                                            0.0f);
+            }
             scrollY_ = ClampScroll(260.0f);
             StopScrollAnimation();
             UpdateScrollInfo();
