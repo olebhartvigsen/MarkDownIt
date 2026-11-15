@@ -1402,33 +1402,24 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         }
         [view_ syncFrameToContent];
         [view_ scrollToDocumentPoint:NSMakePoint(0.0, 260.0)];
-        // The programmatic scroll lands on a later run loop pass, and the
-        // frame that proves the pin is the one drawn after it: report from
-        // that pass, not from this one, or the numbers describe the frame
-        // from before the scroll.
-        __weak __typeof__(view_) weakView = view_;
-        __weak __typeof__(window_) weakWindow = window_;
-        __weak __typeof__(self) weakSelf = self;
-        dispatch_after(
-            dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
-            dispatch_get_main_queue(), ^{
-                __typeof__(self) self_ = weakSelf;
-                MdContentView* view = weakView;
-                NSWindow* window = weakWindow;
-                if (!self_ || !view || !window) return;
-                [view setNeedsDisplay:YES];
-                [window display];
-                platform::TraceMac(
-                    "qa csv-pinned: scroll=%.0f editing=%d band=%.0f "
-                    "nodes=%zu %s %s",
-                    (double)[[[view enclosingScrollView] contentView]
-                                bounds].origin.y,
-                    self_->app_->Editing() ? 1 : 0,
-                    (double)[view qaPinnedHeaderHeight],
-                    self_->app_->GetDocument().nodes.size(),
-                    [[view qaPinnedProbe] UTF8String],
-                    [[view qaBlockList] UTF8String]);
-            });
+        // A programmatic scroll lands on a later run loop pass, and the frame
+        // that proves the pin is the one drawn after it. Spin the loop until
+        // the scroll has landed, then draw and report: the walk photographs
+        // this state a moment later, so the picture has to hold the band
+        // already.
+        [[NSRunLoop currentRunLoop]
+            runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.4]];
+        [view_ setNeedsDisplay:YES];
+        [window_ display];
+        platform::TraceMac(
+            "qa csv-pinned: scroll=%.0f editing=%d band=%.0f nodes=%zu %s %s",
+            (double)[[[view_ enclosingScrollView] contentView]
+                        bounds].origin.y,
+            app_->Editing() ? 1 : 0,
+            (double)[view_ qaPinnedHeaderHeight],
+            app_->GetDocument().nodes.size(),
+            [[view_ qaPinnedProbe] UTF8String],
+            [[view_ qaBlockList] UTF8String]);
     } else if ([state isEqualToString:@"welcome"]) {
         // The screen without a document, reached the way the toolbar
         // reaches it. The walk has opened the fixture, so the recent

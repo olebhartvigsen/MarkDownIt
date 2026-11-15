@@ -131,4 +131,11 @@ if ($missing.Count -gt 0 -or -not $finished) {
 }
 
 Write-Host "windows smoke: captured $($seen.Count) states (exit $exitText)"
+
+# The walk log holds what each state reported (the pinned band's height among
+# them); the CI log is the only place a Windows-only difference can be read.
+if (Test-Path $log) {
+    Write-Host "walk log:"
+    Get-Content $log | ForEach-Object { Write-Host "  $_" }
+}
 exit 0
