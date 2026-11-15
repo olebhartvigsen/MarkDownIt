@@ -503,6 +503,24 @@ TEST(TableLayout, AProseTablePinsItsHeaderWithASurfaceOfItsOwn) {
         EXPECT_NEAR(surface->color.b, alt.b, 0.001f);
     }
 
+    // The band carries its own words: the copy a view replays at its edge is
+    // all a pinned header needs, so neither port has to paint the row a
+    // second time at a place it never measured (that second paint is what
+    // left the band blank on the mac).
+    std::string bandText;
+    bool sawText = false;
+    for (const display::Item& item2 : b.table->header.items) {
+        if (const auto* text = std::get_if<display::Text>(&item2)) {
+            sawText = true;
+            for (const platform::GlyphRun& run : text->line.runs) {
+                bandText += run.text;
+            }
+        }
+    }
+    EXPECT_TRUE(sawText);
+    EXPECT_TRUE(bandText.find("Kolonne 1") != std::string::npos);
+    EXPECT_TRUE(bandText.find("Kolonne 2") != std::string::npos);
+
     // And the row pins as soon as the table crosses the viewport's top edge.
     float pinTop = 0.0f;
     EXPECT_TRUE(layout::PinnedHeader(b.y, b.height, b.table->headerHeight,

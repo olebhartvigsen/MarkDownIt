@@ -1093,15 +1093,12 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     // the y axis already points down, which is the space the renderer
     // lays the document out in. Flipping the context again here turned
     // the whole document over.
-    // Where the viewport's top edge sits in the page: the pin compares a
-    // table's position against it, and the renderer otherwise draws the whole
-    // page and lets the scroll view translate it.
-    NSClipView* clip = [[self enclosingScrollView] contentView];
-    if (clip) {
-        content_->SetViewportTop(static_cast<float>(NSMinY([clip bounds])));
-    }
     platform::CoreGraphicsTarget target(context);
     content_->Draw(&target);
+    // The band a table keeps at the edge: the page is drawn whole, so this is
+    // the one pass that knows which part of it is on screen.
+    content_->DrawPinnedHeaders(&target,
+                                static_cast<float>(NSMinY([self visibleRect])));
     [self syncWelcomeToolTips];
 }
 

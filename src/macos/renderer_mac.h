@@ -291,11 +291,11 @@ public:
     // around lists in the text.
     void SetEditing(bool on) { editing_ = on; }
 
-    // The top of the visible part of the page, in document coordinates.
-    // The mac draws the whole page and lets the scroll view translate it, so
-    // the render offset is zero and this is the only number that says where
-    // the viewport's edge is: a header pin compares against it.
-    void SetViewportTop(float top) { viewportTop_ = top; }
+    // The band a table keeps at the viewport's top edge. The view calls it
+    // after the page, with the visible top in the page's coordinates: only
+    // the scroll view knows where its edge is, and the renderer draws the
+    // whole page.
+    void DrawPinnedHeaders(RenderTarget* target, float visibleTop);
 
     // The height of the header band the last paint pinned at the viewport's
     // top edge, zero when nothing was pinned. The QA walk traces it, so a
@@ -481,10 +481,7 @@ private:
     // glyphs above them. The stripe is opaque, so every washed row runs
     // again; the chips and the glyphs re-run with them because the
     // replayed text sits under the chips it needs a background for.
-    // pinTop, when set, is the document y of the viewport's top edge: the
-    // header row is drawn there instead of at its measured place.
-    void PaintTableOverlays(const LaidOutBlock& block, float scrollOffset,
-                            const float* pinTop = nullptr);
+    void PaintTableOverlays(const LaidOutBlock& block, float scrollOffset);
 
     // Draws the lines of a block, with their underlines and their
     // strike-throughs.
@@ -546,7 +543,6 @@ private:
     // Whether the text is wrapped.
     bool wrap_ = true;
     bool editing_ = true;
-    float viewportTop_ = 0.0f;
     // Set by every paint, read by the QA walk (PinnedHeaderHeightForQA and
     // PinnedProbeForQA).
     float qaPinnedHeaderHeight_ = 0.0f;

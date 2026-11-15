@@ -988,38 +988,6 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
     (void)doc;
     if (!target_) return;
 
-    // The filter buttons the next press can land on, in document coordinates
-    // and in the frame the reader is looking at: a pinned header row sits at
-    // the viewport's top edge, so its buttons move with it. Rebuilt here
-    // because this is where the scroll is known.
-    tableFilterButtons_.clear();
-    qaRenderCount_ += 1;
-    qaViewportTopSeen_ = viewportTop_;
-    qaPinnedHeaderHeight_ = 0.0f;
-    qaPinBlockY_ = -1.0f;
-    qaPinBlockHeight_ = 0.0f;
-    qaPinHeaderHeight_ = 0.0f;
-    qaPinTableBlocks_ = 0;
-    for (const LaidOutBlock& block : blocks_) {
-        if (!block.tableRecord) continue;
-        qaPinTableBlocks_ += 1;
-        if (qaPinBlockY_ < 0.0f) {
-            qaPinBlockY_ = block.y;
-            qaPinBlockHeight_ = block.height;
-            qaPinHeaderHeight_ = block.tableRecord->headerHeight;
-        }
-        float pinTop = 0.0f;
-        const bool pinned = !editing_ && layout::PinnedHeader(
-            block.y, block.height, block.tableRecord->headerHeight,
-            viewportTop_, &pinTop);
-        for (const Rect& rect : block.tableRecord->filterButtons) {
-            Rect hit = rect;
-            hit.x += originX_;
-            hit.y = pinned ? pinTop : rect.y + metrics_.padTop;
-            tableFilterButtons_.push_back(hit);
-        }
-    }
-
     // The global marker and search washes go under everything the
     // replay draws above them. A code card and a table row paint their
     // own opaque surface, which hides the washes, so their fills run
@@ -1117,31 +1085,11 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
             }
 
             case BlockKind::Table: {
-                // A table that crosses the viewport's top edge keeps its
-                // header there: the band's own items are replayed at the edge
-                // and the row's text is drawn at the same place, so the
-                // columns stay named while the body goes under them.
-                float pinTop = 0.0f;
-                const bool pinned = !editing_ && layout::PinnedHeader(
-                    block.y, block.height,
-                    block.tableRecord ? block.tableRecord->headerHeight
-                                      : 0.0f,
-                    viewportTop_, &pinTop);
-                if (pinned && block.tableRecord) {
-                    qaPinnedHeaderHeight_ = block.tableRecord->headerHeight;
-                    // The items are the walk's: x from the column's edge, y
-                    // from the table's own top. Doc y = item y + padTop, so
-                    // putting the band's top (block.y - padTop) at the
-                    // viewport's top is a translate of pinTop - block.y.
-                    TranslatedTarget pinnedBand(target_, originX_,
-                                                pinTop - block.y);
-                    display::Play(block.tableRecord->header, &pinnedBand,
-                                  [this](const display::Image& item) {
-                                      return ImageHandleFor(item);
-                                  });
-                }
-                PaintTableOverlays(block, scrollOffset,
-                                   pinned ? &pinTop : nullptr);
+                // The band a scrolled table pins is drawn by the view, which
+                // is the only place that knows where its viewport's edge is
+                // (DrawPinnedHeaders): the renderer lays the whole page out
+                // and lets the scroll view move it.
+                PaintTableOverlays(block, scrollOffset);
                 break;
             }
 
@@ -1446,8 +1394,7 @@ void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
 }
 
 void MacRenderer::PaintTableOverlays(const LaidOutBlock& block,
-                                     float scrollOffset,
-                                     const float* pinTop) {
+                                     float scrollOffset) {
     if (!target_ || !block.table) return;
     const Node& node = *block.table;
     const LaidOutBlock::TableLayout& layout = block.tableLayout;
@@ -1539,15 +1486,58 @@ void MacRenderer::PaintTableOverlays(const LaidOutBlock& block,
     float y = block.y - scrollOffset;
     for (size_t r = 0; r < rows; ++r) {
         const float rowH = layout.rowHeights[r];
-        // The pinned row is drawn at the edge below, not where it was
-        // measured: its own place is above the viewport already.
-        if (!(pinTop && r == 0)) {
-            paintRow(r, y, true);
-        }
+        paintRow(r, y, true);
         y += rowH;
     }
-    if (pinTop && rows > 0) {
-        paintRow(0, *pinTop - scrollOffset, false);
+}
+
+// The band a table keeps at the viewport's top edge while its body scrolls
+// under it. The view calls this after the page, with the visible top in the
+// page's own coordinates: the band's items are the walk's, so the copy is
+// replayed at that edge with one translate and nothing is re-measured. The
+// copy carries its surface, its hairlines, its funnels and its words, so a
+// pinned header needs no painter of its own and neither port can forget it.
+void MacRenderer::DrawPinnedHeaders(RenderTarget* target, float visibleTop) {
+    if (!target) return;
+    tableFilterButtons_.clear();
+    qaRenderCount_ += 1;
+    qaViewportTopSeen_ = visibleTop;
+    qaPinnedHeaderHeight_ = 0.0f;
+    qaPinBlockY_ = -1.0f;
+    qaPinBlockHeight_ = 0.0f;
+    qaPinHeaderHeight_ = 0.0f;
+    qaPinTableBlocks_ = 0;
+    const bool landOnEdge = !editing_;
+    for (const LaidOutBlock& block : blocks_) {
+        if (!block.tableRecord) continue;
+        qaPinTableBlocks_ += 1;
+        if (qaPinBlockY_ < 0.0f) {
+            qaPinBlockY_ = block.y;
+            qaPinBlockHeight_ = block.height;
+            qaPinHeaderHeight_ = block.tableRecord->headerHeight;
+        }
+        float pinTop = 0.0f;
+        const bool pinned =
+            landOnEdge && layout::PinnedHeader(
+                              block.y, block.height,
+                              block.tableRecord->headerHeight, visibleTop,
+                              &pinTop);
+        // The buttons the next press can land on, in the frame the reader is
+        // looking at: a pinned row sits at the edge, so its buttons move with
+        // it, and the copy already carries their marks.
+        for (const Rect& rect : block.tableRecord->filterButtons) {
+            Rect hit = rect;
+            hit.x += originX_;
+            hit.y = pinned ? pinTop : rect.y + metrics_.padTop;
+            tableFilterButtons_.push_back(hit);
+        }
+        if (!pinned) continue;
+        qaPinnedHeaderHeight_ = block.tableRecord->headerHeight;
+        TranslatedTarget band(target, originX_, pinTop - block.y);
+        display::Play(block.tableRecord->header, &band,
+                      [this](const display::Image& item) {
+                          return ImageHandleFor(item);
+                      });
     }
 }
 

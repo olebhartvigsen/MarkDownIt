@@ -960,38 +960,20 @@ void Renderer::PaintSharedOverlays(
                     if (!editing_ && layout::PinnedHeader(
                             b->y, b->height, b->table->headerHeight,
                             viewportTopLayout, &pinTopLayout)) {
-                        Node headerOnly = n;
-                        headerOnly.rows.assign(1, n.rows[0]);
-                        // The band is its own surface: the rows scroll under
-                        // it, so it is filled even when the style paints the
-                        // header in the page's paper (GitHub).
-                        ID2D1SolidColorBrush* bandBrush = nullptr;
-                        const Palette bandPalette = BasePalette();
-                        const platform::Color bandColor =
-                            layout::PinnedHeaderFill(m, bandPalette,
-                                                     n.tableMonospace);
-                        rt->CreateSolidColorBrush(
-                            D2D1::ColorF(bandColor.r, bandColor.g,
-                                         bandColor.b, bandColor.a),
-                            &bandBrush);
-                        // The overlays are drawn in the page's own space
-                        // (the transform is -scrollY), so the viewport's top
-                        // edge is at scrollY here, not at zero.
-                        const float bandY = scrollY;
-                        if (bandBrush) {
-                            rt->FillRectangle(
-                                D2D1::RectF(bandX, bandY,
-                                            bandX + bandW,
-                                            bandY + b->table->headerHeight),
-                                bandBrush);
-                            bandBrush->Release();
-                        }
-                        float ignoredHeight = 0.0f;
-                        DrawTable(rt, dw, headerOnly, bandX, bandY, bandW,
-                                  ignoredHeight, nullptr, scrollY,
-                                  std::vector<platform::Rect>{},
-                                  b->table.get());
-                        DrawFilterMarks(rt, n, *b->table, m, bandX, bandY);
+                        // The copy is the walk's own: the band's surface, its
+                        // hairlines, its funnels and its words. One replay
+                        // puts the whole band on the edge, and the table's
+                        // row painter is not asked to draw a row at a place
+                        // it was never measured for.
+                        platform::D2DTarget player(rt);
+                        rt->SetTransform(D2D1::Matrix3x2F::Translation(
+                            bandX - scrollX, -b->table->headerTop));
+                        display::Play(b->table->header, &player,
+                                      [this](const display::Image& item) {
+                                          return ImageHandleFor(item);
+                                      });
+                        rt->SetTransform(D2D1::Matrix3x2F::Translation(
+                            -scrollX, -scrollY));
                     }
                 }
                 break;

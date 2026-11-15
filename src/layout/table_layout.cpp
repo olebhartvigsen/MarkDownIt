@@ -357,6 +357,7 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
                                   !node.rows[0].cells.empty() &&
                                   node.rows[0].cells[0].isHeader;
     t.headerHeight = headerRowPresent ? t.rowHeights[0] : 0.0f;
+    t.headerTop = top;
     const auto emit = [&](const display::Item& item, bool intoHeader) {
         ctx.list->items.push_back(item);
         if (intoHeader && headerRowPresent) t.header.items.push_back(item);
@@ -434,6 +435,49 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
             display::FillRect{
                 platform::Rect{0.0f, top, in.contentWidth, t.headerHeight},
                 PinnedHeaderFill(m, *in.palette, node.tableMonospace)});
+
+        // The words go with the band. The page's cells are each port's own
+        // painter reading this same record, but the band is a copy a view
+        // replays at its top edge, so the text has to be in the list: the
+        // replay puts the words on the band and no port can forget them,
+        // which is what happened while the port was asked to paint the row a
+        // second time at a place it had never measured.
+        const TableRow& headerRow = node.rows[0];
+        for (size_t c = 0; c < t.cells[0].size() && c < headerRow.cells.size();
+             ++c) {
+            const LaidTableCell& cell = t.cells[0][c];
+            const ColumnAlign align = CellAlign(node, headerRow, c, m);
+            const float innerW = (c < t.colWs.size() ? t.colWs[c]
+                                                     : cell.width) -
+                                 2.0f * m.cellPadX;
+            float cellTextHeight = 0.0f;
+            for (const platform::TextLine& line : cell.lines) {
+                cellTextHeight += line.height;
+            }
+            float lineY = top + cell.y +
+                          (std::max)(m.cellPadY,
+                                     (t.rowHeights[0] - cellTextHeight) * 0.5f);
+            for (const platform::TextLine& line : cell.lines) {
+                float lineX = cell.x + m.cellPadX;
+                if (align == ColumnAlign::Center) {
+                    lineX += (innerW - line.width) * 0.5f;
+                } else if (align == ColumnAlign::Right) {
+                    lineX += innerW - line.width;
+                }
+                display::Text text;
+                text.x = lineX;
+                text.top = lineY;
+                text.line = line;
+                text.srcOffset = headerRow.cells[c].srcOffset;
+                text.srcLength = headerRow.cells[c].srcEnd >
+                                         headerRow.cells[c].srcOffset
+                                     ? headerRow.cells[c].srcEnd -
+                                           headerRow.cells[c].srcOffset
+                                     : 0;
+                t.header.items.push_back(text);
+                lineY += line.height;
+            }
+        }
     }
 
     if (!node.tableFilterActive.empty() && !t.rowHeights.empty()) {

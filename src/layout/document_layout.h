@@ -74,6 +74,10 @@ struct LaidTable {
     // replays this copy at its own top edge, so the band stays while the
     // body goes under it. Zero and empty for a table without a header row.
     float headerHeight = 0.0f;
+    // Where the band's own top sits in the walk's coordinates, which is the
+    // table block's y; a port that replays the copy at its viewport edge
+    // translates by this instead of re-reading the block.
+    float headerTop = 0.0f;
     display::DisplayList header;
 };
 
