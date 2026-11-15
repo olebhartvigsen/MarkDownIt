@@ -192,6 +192,10 @@ float ContentView::PinnedHeaderHeightForQA() const {
     return renderer_.PinnedHeaderHeightForQA();
 }
 
+std::string ContentView::PinnedProbeForQA() const {
+    return renderer_.PinnedProbeForQA();
+}
+
 void ContentView::SetEditing(bool on) {
     // The layout follows the mode: reading draws the blank line next
     // to a list as a thin strip, editing keeps its full line, so the
@@ -1353,6 +1357,12 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
 // The header band the last paint pinned, for the QA walk's trace line.
 - (float)qaPinnedHeaderHeight {
     return content_ ? content_->PinnedHeaderHeightForQA() : 0.0f;
+}
+
+- (NSString*)qaPinnedProbe {
+    const std::string line =
+        content_ ? content_->PinnedProbeForQA() : std::string("no content");
+    return [NSString stringWithUTF8String:line.c_str()];
 }
 
 // The QA walk parks the caret off and stops its blink: a still

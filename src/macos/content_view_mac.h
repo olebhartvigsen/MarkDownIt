@@ -280,6 +280,7 @@ public:
     // QA walk traces it, so a capture run reports the band instead of only
     // photographing it.
     float PinnedHeaderHeightForQA() const;
+    std::string PinnedProbeForQA() const;
 
 private:
     // The layout of the document, computed by the renderer.

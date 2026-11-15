@@ -206,6 +206,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     if [ "$CSV_HEADER" -le 0 ]; then
         echo "launch smoke FAILED: nothing was pinned when a long data file" \
              "was scrolled past its header (header=$CSV_HEADER)"
+        grep "qa csv-pinned" "$LOG" 2>/dev/null | head -3
         exit 1
     fi
     echo "launch smoke: the header of a long data file stays at the top" \

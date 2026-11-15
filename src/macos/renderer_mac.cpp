@@ -956,6 +956,17 @@ void MacRenderer::SetSearchMatches(const std::vector<TextMatch>* matches,
     searchCurrent_ = currentIndex;
 }
 
+std::string MacRenderer::PinnedProbeForQA() const {
+    char line[224];
+    std::snprintf(line, sizeof(line),
+                  "block=%.0f block-height=%.0f header=%.0f tables=%d "
+                  "pinned=%.0f editing=%d",
+                  (double)qaPinBlockY_, (double)qaPinBlockHeight_,
+                  (double)qaPinHeaderHeight_, qaPinTableBlocks_,
+                  (double)qaPinnedHeaderHeight_, editing_ ? 1 : 0);
+    return std::string(line);
+}
+
 void MacRenderer::Render(const Document& doc, float scrollOffset) {
     (void)doc;
     if (!target_) return;
@@ -966,8 +977,18 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
     // because this is where the scroll is known.
     tableFilterButtons_.clear();
     qaPinnedHeaderHeight_ = 0.0f;
+    qaPinBlockY_ = -1.0f;
+    qaPinBlockHeight_ = 0.0f;
+    qaPinHeaderHeight_ = 0.0f;
+    qaPinTableBlocks_ = 0;
     for (const LaidOutBlock& block : blocks_) {
         if (!block.tableRecord) continue;
+        qaPinTableBlocks_ += 1;
+        if (qaPinBlockY_ < 0.0f) {
+            qaPinBlockY_ = block.y;
+            qaPinBlockHeight_ = block.height;
+            qaPinHeaderHeight_ = block.tableRecord->headerHeight;
+        }
         float pinTop = 0.0f;
         const bool pinned = !editing_ && layout::PinnedHeader(
             block.y, block.height, block.tableRecord->headerHeight,

@@ -53,6 +53,9 @@ class ContentView;
 // The header band the last paint pinned, zero when nothing was: the QA
 // walk traces it so a capture run reports the band.
 - (float)qaPinnedHeaderHeight;
+// What the last paint knew about the first table on the page, for the
+// trace line that explains a band which did not appear.
+- (NSString*)qaPinnedProbe;
 
 // The caret moved: the blink restarts, the caret is scrolled into view
 // and the view redraws. The key handlers call it after every move, and

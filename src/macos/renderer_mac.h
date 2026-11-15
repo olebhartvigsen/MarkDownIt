@@ -296,6 +296,12 @@ public:
     // capture run reports the band instead of only photographing it.
     float PinnedHeaderHeightForQA() const { return qaPinnedHeaderHeight_; }
 
+    // What the last paint knew about the first table it met: where the
+    // block sits, how tall it is, the header row's height, how many table
+    // blocks the page has, and the mode. The QA walk traces this line, so a
+    // band that does not appear can be read instead of guessed at.
+    std::string PinnedProbeForQA() const;
+
     void SetSearchMatches(const std::vector<TextMatch>* matches,
                           int currentIndex);
 
@@ -530,8 +536,13 @@ private:
     // Whether the text is wrapped.
     bool wrap_ = true;
     bool editing_ = true;
-    // Set by every paint, read by the QA walk (PinnedHeaderHeightForQA).
+    // Set by every paint, read by the QA walk (PinnedHeaderHeightForQA and
+    // PinnedProbeForQA).
     float qaPinnedHeaderHeight_ = 0.0f;
+    float qaPinBlockY_ = -1.0f;
+    float qaPinBlockHeight_ = 0.0f;
+    float qaPinHeaderHeight_ = 0.0f;
+    int qaPinTableBlocks_ = 0;
     // The width of the text column.
     int contentWidthMode_ = 0;
     // The image cache, which holds the images of the document.

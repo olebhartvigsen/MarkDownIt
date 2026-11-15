@@ -1403,11 +1403,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [view_ syncFrameToContent];
         [view_ scrollToDocumentPoint:NSMakePoint(0.0, 260.0)];
         platform::TraceMac(
-            "qa csv-pinned: scroll=%.0f editing=%d header=%.0f",
+            "qa csv-pinned: scroll=%.0f editing=%d header=%.0f %s",
             (double)[[[view_ enclosingScrollView] contentView]
                         bounds].origin.y,
             app_->Editing() ? 1 : 0,
-            (double)[view_ qaPinnedHeaderHeight]);
+            (double)[view_ qaPinnedHeaderHeight],
+            [[view_ qaPinnedProbe] UTF8String]);
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"welcome"]) {
         // The screen without a document, reached the way the toolbar
