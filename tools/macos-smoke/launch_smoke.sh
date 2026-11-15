@@ -196,8 +196,14 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     # to stand that row at the pane's top edge. The picture shows it; the
     # trace says how tall the band was, so a band that never appeared
     # fails here instead of passing as a quiet frame.
-    CSV_HEADER=$(grep "qa csv-pinned:" "$LOG" 2>/dev/null \
-        | sed -n 's/.*qa csv-pinned: .* band=\([0-9]*\).*/\1/p' | head -1)
+    # The state reports from the frame after its scroll, so the line can
+    # arrive a second after the walk ends.
+    for _ in 1 2 3 4 5 6 7 8; do
+        CSV_HEADER=$(grep "qa csv-pinned:" "$LOG" 2>/dev/null \
+            | sed -n 's/.*qa csv-pinned: .* band=\([0-9]*\).*/\1/p' | head -1)
+        [ -n "$CSV_HEADER" ] && break
+        sleep 1
+    done
     if [ -z "$CSV_HEADER" ]; then
         echo "launch smoke FAILED: the csv-pinned state reported no band"
         grep "qa csv-pinned" "$LOG" 2>/dev/null | head -3
