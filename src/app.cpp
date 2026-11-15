@@ -3759,6 +3759,11 @@ void AppWindow::QAAdvance() {
             std::stringstream ss;
             ss << f.rdbuf();
             LoadDocumentText(ss.str(), path);
+            // The measure runs in the paint, so a scroll here would clamp
+            // against the height the previous document left behind: paint one
+            // frame, then ask for the scroll the picture is supposed to show.
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            UpdateWindow(hwnd_);
             scrollY_ = ClampScroll(260.0f);
             StopScrollAnimation();
             UpdateScrollInfo();
