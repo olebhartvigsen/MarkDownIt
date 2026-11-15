@@ -46,6 +46,8 @@ END
 // for a piece of text instead. Styles are literals because rc.exe runs
 // without the SDK headers here (see the version block above): WS_POPUP,
 // WS_CAPTION, WS_SYSMENU and DS_MODALFRAME, with an ES_AUTOHSCROLL field.
+// The buttons use the ids 1 and 2, because rc.exe cannot see IDOK and
+// IDCANCEL either; windows.h spells them the same way for the code.
 IDD_FILTER_PROMPT DIALOGEX 0, 0, 208, 60
 STYLE 0x80C80080
 CAPTION "Filter this column"
@@ -53,6 +55,6 @@ FONT 9, "Segoe UI"
 BEGIN
     LTEXT           "Keep the rows whose cell contains:", IDC_FILTER_LABEL, 8, 8, 192, 10
     EDITTEXT        IDC_FILTER_TEXT, 8, 22, 192, 14, 0x00000080
-    DEFPUSHBUTTON   "Filter", IDOK, 110, 42, 44, 14
-    PUSHBUTTON      "Cancel", IDCANCEL, 158, 42, 42, 14
+    DEFPUSHBUTTON   "Filter", 1, 110, 42, 44, 14
+    PUSHBUTTON      "Cancel", 2, 158, 42, 42, 14
 END
