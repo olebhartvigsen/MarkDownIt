@@ -1411,7 +1411,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             app_->GetDocument().nodes.size(),
             [[view_ qaPinnedProbe] UTF8String],
             [[view_ qaBlockList] UTF8String]);
+        // A scroll can be a blit of the old frame, and then the top edge is
+        // never repainted and the band never appears: ask for the whole frame
+        // and let it draw before the picture is taken.
         [view_ setNeedsDisplay:YES];
+        [view_ displayIfNeeded];
     } else if ([state isEqualToString:@"welcome"]) {
         // The screen without a document, reached the way the toolbar
         // reaches it. The walk has opened the fixture, so the recent

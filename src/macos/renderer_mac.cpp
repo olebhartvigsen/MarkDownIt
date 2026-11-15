@@ -960,8 +960,9 @@ void MacRenderer::SetSearchMatches(const std::vector<TextMatch>* matches,
 std::string MacRenderer::PinnedProbeForQA() const {
     char line[224];
     std::snprintf(line, sizeof(line),
-                  "block=%.0f block-height=%.0f header-height=%.0f tables=%d "
-                  "pinned-now=%.0f editing=%d",
+                  "paints=%d viewport=%.0f block=%.0f block-height=%.0f "
+                  "header-height=%.0f tables=%d pinned-now=%.0f editing=%d",
+                  qaRenderCount_, (double)qaViewportTopSeen_,
                   (double)qaPinBlockY_, (double)qaPinBlockHeight_,
                   (double)qaPinHeaderHeight_, qaPinTableBlocks_,
                   (double)qaPinnedHeaderHeight_, editing_ ? 1 : 0);
@@ -992,6 +993,8 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
     // the viewport's top edge, so its buttons move with it. Rebuilt here
     // because this is where the scroll is known.
     tableFilterButtons_.clear();
+    qaRenderCount_ += 1;
+    qaViewportTopSeen_ = viewportTop_;
     qaPinnedHeaderHeight_ = 0.0f;
     qaPinBlockY_ = -1.0f;
     qaPinBlockHeight_ = 0.0f;

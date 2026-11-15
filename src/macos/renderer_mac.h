@@ -550,6 +550,8 @@ private:
     // Set by every paint, read by the QA walk (PinnedHeaderHeightForQA and
     // PinnedProbeForQA).
     float qaPinnedHeaderHeight_ = 0.0f;
+    int qaRenderCount_ = 0;
+    float qaViewportTopSeen_ = -1.0f;
     float qaPinBlockY_ = -1.0f;
     float qaPinBlockHeight_ = 0.0f;
     float qaPinHeaderHeight_ = 0.0f;
