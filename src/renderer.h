@@ -414,6 +414,13 @@ private:
     // draw from the SvgDoc cache and the mermaid painters draw the
     // walk's measured band. Every band sits at the shared record's y,
     // so the frame never drifts from the walk that measured it.
+    // The funnel marks of a table's header band, at the band's own top edge.
+    // The replay draws them where the walk measured them; this draws the same
+    // six points on the pinned copy the reader sees above the scroll.
+    void DrawFilterMarks(ID2D1RenderTarget* rt, const Node& n,
+                         const layout::LaidTable& record,
+                         const LayoutMetrics& m, float x, float bandTop);
+
     void PaintSharedOverlays(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                              const Document& doc,
                              const std::vector<const layout::LaidBlock*>& byNode,

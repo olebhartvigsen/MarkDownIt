@@ -6,6 +6,7 @@
 #include <d2d1.h>
 #include <dwrite.h>
 #include <string>
+#include <array>
 #include <vector>
 #include <cmath>
 #include "colortext.h"
@@ -860,11 +861,22 @@ void Renderer::PaintSharedOverlays(
     // that lands on one. The walk speaks from the column's top left; the
     // click arrives in document coordinates, and the replay puts the list at
     // (originX, padTop + topOffset) minus the scroll, so the rects take that
-    // same origin here.
-    tableFilterButtons_ = layout::FilterButtons(shared);
-    for (platform::Rect& rect : tableFilterButtons_) {
-        rect.x += originX;
-        rect.y += m.padTop + topOffsetDip;
+    // same origin here. A table whose header is pinned to the viewport's top
+    // edge has its buttons there, because that is where the reader sees them.
+    const float viewportTopLayout = scrollY - (m.padTop + topOffsetDip);
+    tableFilterButtons_.clear();
+    for (const layout::LaidBlock& block : shared.blocks) {
+        if (!block.table) continue;
+        float pinTopLayout = 0.0f;
+        const bool pinned = layout::PinnedHeader(
+            block.y, block.height, block.table->headerHeight,
+            viewportTopLayout, &pinTopLayout);
+        for (const platform::Rect& rect : block.table->filterButtons) {
+            platform::Rect hit = rect;
+            hit.x += originX;
+            hit.y = pinned ? scrollY : rect.y + m.padTop + topOffsetDip;
+            tableFilterButtons_.push_back(hit);
+        }
     }
 
     for (size_t nodeIdx = 0; nodeIdx < doc.nodes.size(); ++nodeIdx) {
@@ -933,6 +945,28 @@ void Renderer::PaintSharedOverlays(
                 DrawTable(rt, dw, n, bandX, bandY, bandW, outH, sel,
                           scrollY, washRects,
                           b->table ? b->table.get() : nullptr);
+                // A table that crosses the viewport's top edge keeps its
+                // header there. The row is drawn again as its own one row
+                // document at the edge, which reuses the whole painter (the
+                // fill, the hairlines, the words) and adds the funnel marks
+                // the replay cannot carry up with it.
+                if (b->table) {
+                    float pinTopLayout = 0.0f;
+                    const float viewportTopLayout =
+                        scrollY - (m.padTop + topOffsetDip);
+                    if (layout::PinnedHeader(
+                            b->y, b->height, b->table->headerHeight,
+                            viewportTopLayout, &pinTopLayout)) {
+                        Node headerOnly = n;
+                        headerOnly.rows.assign(1, n.rows[0]);
+                        float ignoredHeight = 0.0f;
+                        DrawTable(rt, dw, headerOnly, bandX, 0.0f, bandW,
+                                  ignoredHeight, nullptr, scrollY,
+                                  std::vector<platform::Rect>{},
+                                  b->table.get());
+                        DrawFilterMarks(rt, n, *b->table, m, bandX, 0.0f);
+                    }
+                }
                 break;
             }
             case BlockKind::MermaidFlowchart: {
@@ -1432,6 +1466,27 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (bgBrush) bgBrush->Release();
     if (codeBrush) codeBrush->Release();
     outH = blockH;
+}
+
+void Renderer::DrawFilterMarks(ID2D1RenderTarget* rt, const Node& n,
+                               const layout::LaidTable& record,
+                               const LayoutMetrics& m, float x, float bandTop) {
+    if (!rt || record.filterCenters.empty()) return;
+    Palette pal = BasePalette();
+    platform::D2DTarget target(rt);
+    const float cy = bandTop + record.headerHeight * 0.5f;
+    const size_t columns = (std::min)(record.filterCenters.size(),
+                                      n.tableFilterActive.size());
+    for (size_t c = 0; c < columns; ++c) {
+        const std::array<platform::Point, 6> points = layout::FilterGlyph(
+            x + record.filterCenters[c].x, cy, m.tableFilterMark);
+        const platform::Color color = n.tableFilterActive[c]
+                                          ? pal.link
+                                          : pal.textMuted;
+        target.FillPolygon(std::vector<platform::Point>(points.begin(),
+                                                        points.end()),
+                           color);
+    }
 }
 
 void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,

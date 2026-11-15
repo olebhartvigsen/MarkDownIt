@@ -1,3 +1,5 @@
+#include <array>
+
 // The shared layout of a markdown table, plan Batch 3.2 step 6.
 // The two renderers measured a table up to three times: the height
 // walk, the per-cell geometry walk and the cell paint walk. This
@@ -204,6 +206,23 @@ float TableColumnW(const LaidTable& t, size_t column) {
     return t.colW;
 }
 
+std::array<platform::Point, 6> FilterGlyph(float cx, float cy, float mark) {
+    // A funnel: wide mouth, narrow stem, six points, built around the
+    // centre so a painter that redraws the band draws the same mark.
+    const float halfTop = mark * 0.5f;
+    const float halfStem = mark * 0.16f;
+    const float midY = cy - mark * 0.10f;
+    const float bottom = cy + mark * 0.55f;
+    return std::array<platform::Point, 6>{
+        platform::Point{cx - halfTop, cy - mark * 0.42f},
+        platform::Point{cx + halfTop, cy - mark * 0.42f},
+        platform::Point{cx + halfStem, midY},
+        platform::Point{cx + halfStem, bottom},
+        platform::Point{cx - halfStem, bottom},
+        platform::Point{cx - halfStem, midY},
+    };
+}
+
 LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
                            uint32_t nodeIndex, float* y) {
     const LayoutInput& in = *ctx.in;
@@ -316,10 +335,22 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
     // grid on its own rows; starting at 0 painted it over the heading
     // and the paragraphs above.
     const float top = *y;
+    // The header row's own items are emitted twice: once into the page and
+    // once into the band a scrolling view pins to its top edge. Both copies
+    // are in document coordinates, so the pin is a translate and nothing has
+    // to be re-measured when the reader scrolls.
+    const bool headerRowPresent = !t.rowHeights.empty() &&
+                                  !node.rows[0].cells.empty() &&
+                                  node.rows[0].cells[0].isHeader;
+    t.headerHeight = headerRowPresent ? t.rowHeights[0] : 0.0f;
+    const auto emit = [&](const display::Item& item, bool intoHeader) {
+        ctx.list->items.push_back(item);
+        if (intoHeader && headerRowPresent) t.header.items.push_back(item);
+    };
     const auto fill = [&](float fx, float fy, float fw, float fh,
-                          const platform::Color& color) {
-        ctx.list->items.push_back(
-            display::FillRect{platform::Rect{fx, fy, fw, fh}, color});
+                          const platform::Color& color, bool intoHeader) {
+        emit(display::FillRect{platform::Rect{fx, fy, fw, fh}, color},
+             intoHeader);
     };
     // The row washes, full width. GitHub: the header is the page's
     // own paper and every second body row carries the muted fill.
@@ -338,11 +369,12 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
             if (m.tableHeaderFill || dataTable)
                 fill(0.0f, rowTop, in.contentWidth, rowH,
                      ToColor(dataTable ? in.palette->tableRowAlt
-                                       : in.palette->tableHeaderBg));
+                                       : in.palette->tableHeaderBg),
+                     r == 0);
         } else if (!dataTable &&
                    (m.tableBodyFill || (m.tableZebra && r % 2 == 1))) {
             fill(0.0f, rowTop, in.contentWidth, rowH,
-                 ToColor(in.palette->tableRowAlt));
+                 ToColor(in.palette->tableRowAlt), false);
         }
         rowTop += rowH;
     }
@@ -355,12 +387,13 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
     for (size_t r = 0; r < t.rowHeights.size(); ++r) {
         const float rowH = t.rowHeights[r];
         if (r == 0 && m.tableVerticalLines)
-            fill(0.0f, rowTop, in.contentWidth, 1.0f, grid);
-        fill(0.0f, rowTop + rowH - 1.0f, in.contentWidth, 1.0f, grid);
+            fill(0.0f, rowTop, in.contentWidth, 1.0f, grid, true);
+        fill(0.0f, rowTop + rowH - 1.0f, in.contentWidth, 1.0f, grid,
+             r == 0);
         for (size_t c = 0; c <= t.columnCount && m.tableVerticalLines; ++c) {
             float gx = TableColumnX(t, c);
             if (c >= t.columnCount) gx = in.contentWidth - 1.0f;
-            fill(gx, rowTop, 1.0f, rowH, grid);
+            fill(gx, rowTop, 1.0f, rowH, grid, r == 0);
         }
         rowTop += rowH;
     }
@@ -390,28 +423,21 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
             const float right = TableColumnX(t, c) + t.colWs[c] - m.cellPadX;
             const float cx = right - mark * 0.5f;
             const float cy = top + t.rowHeights[0] * 0.5f;
-            // A funnel: wide mouth, narrow stem, six points.
-            const float halfTop = mark * 0.5f;
-            const float halfStem = mark * 0.16f;
-            const float midY = cy - mark * 0.10f;
-            const float bottom = cy + mark * 0.55f;
-            const platform::Point points[6] = {
-                {cx - halfTop, cy - mark * 0.42f},
-                {cx + halfTop, cy - mark * 0.42f},
-                {cx + halfStem, midY},
-                {cx + halfStem, bottom},
-                {cx - halfStem, bottom},
-                {cx - halfStem, midY},
-            };
+            const std::array<platform::Point, 6> points =
+                FilterGlyph(cx, cy, mark);
             display::FillPolygon funnel;
-            funnel.points.assign(points, points + 6);
+            funnel.points.assign(points.begin(), points.end());
             funnel.color = node.tableFilterActive[c] ? active : idle;
-            ctx.list->items.push_back(funnel);
-            // The whole gutter is the target, from the header's top to its
-            // bottom, so a reader does not have to hit the mark itself.
+            emit(funnel, true);
+            // The target runs the header row's whole height and reaches
+            // further in than the mark, so a reader does not have to hit
+            // seven points of ink.
+            const float hit = (std::max)(m.tableFilterHit,
+                                         m.tableFilterGutter);
             t.filterButtons[c] = platform::Rect{
-                TableColumnX(t, c) + t.colWs[c] - m.tableFilterGutter,
-                top, m.tableFilterGutter, t.rowHeights[0]};
+                TableColumnX(t, c) + t.colWs[c] - hit,
+                top, hit, t.rowHeights[0]};
+            t.filterCenters.push_back(platform::Point{cx, cy});
         }
     }
 
@@ -429,6 +455,17 @@ std::vector<platform::Rect> FilterButtons(const DocumentLayout& laid) {
         }
     }
     return buttons;
+}
+
+bool PinnedHeader(float blockTop, float blockHeight, float headerHeight,
+                  float viewportTop, float* top) {
+    if (headerHeight <= 0.0f) return false;
+    // The table has to cross the edge: a header still on screen is drawn
+    // where it was measured, and a table below the edge has nothing to pin.
+    if (blockTop >= viewportTop) return false;
+    if (blockTop + blockHeight <= viewportTop) return false;
+    if (top) *top = viewportTop;
+    return true;
 }
 
 bool FilterButtonAt(const std::vector<platform::Rect>& buttons, float docX,

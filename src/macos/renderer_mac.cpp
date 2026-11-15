@@ -537,17 +537,9 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
     };
     layout::DocumentLayout laid = layout::LayoutDocument(in);
     displayList_ = std::move(laid.list);
-    // The filter buttons of the frame's layout, kept for the click that lands
-    // on one. The walk speaks from the content column's top left; the click
-    // arrives in document coordinates, and both the replay and the block
-    // mapping put the column at (originX_, padTop). So the rects take that
-    // origin here, which is also the space PointToOffset answers in, and a
-    // scroll does not age them.
-    tableFilterButtons_ = layout::FilterButtons(laid);
-    for (platform::Rect& rect : tableFilterButtons_) {
-        rect.x += originX_;
-        rect.y += metrics_.padTop;
-    }
+    // The filter buttons the press can land on are placed at paint, where
+    // the scroll is known: a pinned header row sits at the viewport's top
+    // edge, so its buttons follow the scroll, not the walk.
 
     // The one Text item the modules build by hand is the list marker:
     // its line box borrows the measured first line, but the run in it
@@ -967,6 +959,26 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
     (void)doc;
     if (!target_) return;
 
+    // The filter buttons the next press can land on, in document coordinates
+    // and in the frame the reader is looking at: a pinned header row sits at
+    // the viewport's top edge, so its buttons move with it. Rebuilt here
+    // because this is where the scroll is known.
+    tableFilterButtons_.clear();
+    for (const LaidOutBlock& block : blocks_) {
+        if (!block.table) continue;
+        float pinTop = 0.0f;
+        const bool pinned = layout::PinnedHeader(
+            block.y, block.height,
+            block.table ? block.table->headerHeight : 0.0f, scrollOffset,
+            &pinTop);
+        for (const Rect& rect : block.table->filterButtons) {
+            Rect hit = rect;
+            hit.x += originX_;
+            hit.y = pinned ? pinTop : rect.y + metrics_.padTop;
+            tableFilterButtons_.push_back(hit);
+        }
+    }
+
     // The global marker and search washes go under everything the
     // replay draws above them. A code card and a table row paint their
     // own opaque surface, which hides the washes, so their fills run
@@ -1064,7 +1076,25 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
             }
 
             case BlockKind::Table: {
-                PaintTableOverlays(block, scrollOffset);
+                // A table that crosses the viewport's top edge keeps its
+                // header there: the band's own items are replayed at the edge
+                // and the row's text is drawn at the same place, so the
+                // columns stay named while the body goes under them.
+                float pinTop = 0.0f;
+                const bool pinned = layout::PinnedHeader(
+                    block.y, block.height,
+                    block.table ? block.table->headerHeight : 0.0f,
+                    scrollOffset, &pinTop);
+                if (pinned && block.table) {
+                    TranslatedTarget pinnedBand(target_, 0.0f,
+                                                pinTop - block.y);
+                    display::Play(block.table->header, &pinnedBand,
+                                  [this](const display::Image& item) {
+                                      return ImageHandleFor(item);
+                                  });
+                }
+                PaintTableOverlays(block, scrollOffset,
+                                   pinned ? &pinTop : nullptr);
                 break;
             }
 
@@ -1369,7 +1399,8 @@ void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
 }
 
 void MacRenderer::PaintTableOverlays(const LaidOutBlock& block,
-                                     float scrollOffset) {
+                                     float scrollOffset,
+                                     const float* pinTop) {
     if (!target_ || !block.table) return;
     const Node& node = *block.table;
     const LaidOutBlock::TableLayout& layout = block.tableLayout;
@@ -1380,14 +1411,22 @@ void MacRenderer::PaintTableOverlays(const LaidOutBlock& block,
     // again above it, row by row, with the glyphs drawn once more
     // above the chips, at the identical lines and positions, so the
     // re-run lands exactly on the replayed text.
-    float y = block.y - scrollOffset;
-    for (size_t r = 0; r < node.rows.size() && r < layout.rows.size(); ++r) {
+    //
+    // One row's paint is a call, so the pinned header row can be drawn
+    // again at the viewport's top edge with the same geometry: the
+    // replay put the band's fills and hairlines there, and this puts
+    // the words back on them.
+    const auto paintRow = [&](size_t r, float rowTopScreen,
+                              bool withHighlights) {
         const std::vector<LaidOutBlock::TableCellLayout>& cells =
             layout.rows[r];
         const float rowH = layout.rowHeights[r];
+        const float y = rowTopScreen;
 
-        PaintTableRowHighlights(block, r, y + scrollOffset, rowH,
-                                scrollOffset);
+        if (withHighlights) {
+            PaintTableRowHighlights(block, r, y + scrollOffset, rowH,
+                                    scrollOffset);
+        }
 
         for (size_t c = 0; c < cells.size(); ++c) {
             const float innerW = TableColumnW(layout, c) -
@@ -1447,7 +1486,21 @@ void MacRenderer::PaintTableOverlays(const LaidOutBlock& block,
                 target_->PopClip();
             }
         }
+    };
+
+    const size_t rows = (std::min)(node.rows.size(), layout.rows.size());
+    float y = block.y - scrollOffset;
+    for (size_t r = 0; r < rows; ++r) {
+        const float rowH = layout.rowHeights[r];
+        // The pinned row is drawn at the edge below, not where it was
+        // measured: its own place is above the viewport already.
+        if (!(pinTop && r == 0)) {
+            paintRow(r, y, true);
+        }
         y += rowH;
+    }
+    if (pinTop && rows > 0) {
+        paintRow(0, *pinTop - scrollOffset, false);
     }
 }
 

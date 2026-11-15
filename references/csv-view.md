@@ -74,11 +74,41 @@ row file pays a fifth of a second on every re-layout (zoom, resize). That
 is the price of the row cap as it stands, and the reason a much bigger cap
 waits for the visible-row painting.
 
+## The header stays
+
+A table can be longer than the window, and a column of figures with no names
+over it is a column of figures. So the header row is pinned: once it has
+scrolled above the viewport, while the table still covers the viewport's top
+edge, the row is drawn again at that edge, above the body that scrolls under
+it. The rule is one shared function, `layout::PinnedHeader`, which both ports
+call before they paint a table.
+
+Two things have to move for the band to stay: its own items and its words. The
+walk emits the header row's fill, hairlines and funnels twice, once into the
+page and once into `LaidTable::header`, both in document coordinates, so a port
+pins the band by replaying that copy at its top edge with no re-measure. The
+words come from the row's measured lines, which the painters already place per
+row, at the pinned row's own top. The press areas move with the band: a table
+whose header is pinned answers for its buttons at the viewport's edge, so a
+reader who scrolls can still filter.
+
+A pinned band covers the rows under it, so it is opaque: the header's fill is
+the band's own, and nothing shows through.
+
 ## The filter buttons
 
 Every column's header carries a funnel at its right edge, the way a
 spreadsheet does. A press on it opens that column's menu and never moves the
 caret: the button owns its press.
+
+The target is the header row's whole height and 28 points wide
+(`tableFilterHit`), which is wider than the mark and wider than the gutter the
+cell text keeps clear: seven points of ink is a hard thing to hit. The mark it
+draws stays seven points (`tableFilterMark`), so the header reads quietly
+while the target stays generous. `LaidTable::filterButtons` carries the
+rectangles and `filterCenters` the centre of each mark, so the press area and
+the six-point glyph cannot drift apart, and a painter that redraws the band
+above the scroll draws the same mark in the same place.
 
 The menu is the platform's own, built from one shared list
 (`csvdoc::FilterMenu`), so the two ports cannot offer different rows:

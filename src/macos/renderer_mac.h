@@ -456,7 +456,10 @@ private:
     // glyphs above them. The stripe is opaque, so every washed row runs
     // again; the chips and the glyphs re-run with them because the
     // replayed text sits under the chips it needs a background for.
-    void PaintTableOverlays(const LaidOutBlock& block, float scrollOffset);
+    // pinTop, when set, is the document y of the viewport's top edge: the
+    // header row is drawn there instead of at its measured place.
+    void PaintTableOverlays(const LaidOutBlock& block, float scrollOffset,
+                            const float* pinTop = nullptr);
 
     // Draws the lines of a block, with their underlines and their
     // strike-throughs.

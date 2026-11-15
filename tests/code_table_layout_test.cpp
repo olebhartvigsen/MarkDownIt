@@ -293,11 +293,18 @@ TEST(TableLayout, ADataTablePutsAFilterButtonOnEveryHeaderColumn) {
     ASSERT_EQ(b.table->filterButtons.size(), 2u);
     const platform::Rect& first = b.table->filterButtons[0];
     const platform::Rect& second = b.table->filterButtons[1];
-    NEAR(first.width, kM.tableFilterGutter);
+    // The target is wider than the gutter the text keeps clear: seven points
+    // of ink is a hard thing to hit, so the button reaches further in.
+    EXPECT_TRUE(first.width >= 24.0f);
+    NEAR(first.width, kM.tableFilterHit);
     NEAR(first.height, b.table->rowHeights[0]);
     NEAR(first.y, 40.0f);
     // The second button sits on the second column's right edge.
-    NEAR(second.x, b.table->colXs[1] + b.table->colWs[1] - kM.tableFilterGutter);
+    NEAR(second.x, b.table->colXs[1] + b.table->colWs[1] - kM.tableFilterHit);
+    // Each mark has a centre, so a painter that redraws the band draws the
+    // same funnel in the same place.
+    ASSERT_EQ(b.table->filterCenters.size(), 2u);
+    NEAR(b.table->filterCenters[0].y, 40.0f + b.table->rowHeights[0] * 0.5f);
 
     size_t column = 99;
     EXPECT_TRUE(layout::FilterButtonAt(b.table->filterButtons,
@@ -324,6 +331,44 @@ TEST(TableLayout, ADataTablePutsAFilterButtonOnEveryHeaderColumn) {
         ++funnels;
     }
     EXPECT_EQ(funnels, 2);
+
+    // The header band: the row's own items, in document coordinates, so a
+    // scrolling view can replay the band at its top edge. Nothing in it
+    // reaches outside the row.
+    EXPECT_TRUE(b.table->headerHeight > 0.0f);
+    NEAR(b.table->headerHeight, b.table->rowHeights[0]);
+    EXPECT_TRUE(b.table->header.items.size() >= 3u);
+    for (const display::Item& item : b.table->header.items) {
+        float top = 0.0f;
+        float bottom = 0.0f;
+        if (const auto* fill = std::get_if<display::FillRect>(&item)) {
+            top = fill->rect.y;
+            bottom = fill->rect.y + fill->rect.height;
+        } else if (const auto* poly =
+                       std::get_if<display::FillPolygon>(&item)) {
+            for (const platform::Point& point : poly->points) {
+                top = top == 0.0f ? point.y : (std::min)(top, point.y);
+                bottom = (std::max)(bottom, point.y);
+            }
+        } else {
+            continue;
+        }
+        EXPECT_TRUE(top >= 40.0f - 0.5f);
+        EXPECT_TRUE(bottom <= 40.0f + b.table->headerHeight + 0.5f);
+    }
+
+    // The pin rule: a table that crosses the viewport's top edge keeps its
+    // header there; one entirely below or above it pins nothing.
+    float pinTop = -1.0f;
+    EXPECT_TRUE(layout::PinnedHeader(b.y, b.height, b.table->headerHeight,
+                                     40.0f + 10.0f, &pinTop));
+    NEAR(pinTop, 50.0f);
+    EXPECT_FALSE(layout::PinnedHeader(b.y, b.height, b.table->headerHeight,
+                                      0.0f, &pinTop));
+    EXPECT_FALSE(layout::PinnedHeader(b.y, b.height, b.table->headerHeight,
+                                      b.y + b.height + 1.0f, &pinTop));
+    // A table with no header row pins nothing, whatever the scroll.
+    EXPECT_FALSE(layout::PinnedHeader(0.0f, 200.0f, 0.0f, 50.0f, &pinTop));
 
     // A prose table asks for no buttons: no gutter, no funnels.
     Node prose;

@@ -17,6 +17,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <array>
 #include <vector>
 
 namespace mermaid {
@@ -61,9 +62,19 @@ struct LaidTable {
     std::vector<float> rowHeights;
     std::vector<std::vector<LaidTableCell>> cells;
     // The hit area of each column's filter button, in document coordinates
-    // (the header row's whole right gutter, so the target is bigger than the
+    // (the header row's whole right end, so the target is bigger than the
     // mark). Empty when the table asks for no filter buttons.
     std::vector<platform::Rect> filterButtons;
+    // The centre of each column's funnel mark, the point the six points of
+    // the glyph are built around, so a painter that redraws the band (the pin
+    // above the scroll) draws the same mark in the same place.
+    std::vector<platform::Point> filterCenters;
+    // The header row's height, and the items that draw it (the row's fill,
+    // its hairlines, the funnels) in document coordinates. A scrolling view
+    // replays this copy at its own top edge, so the band stays while the
+    // body goes under it. Zero and empty for a table without a header row.
+    float headerHeight = 0.0f;
+    display::DisplayList header;
 };
 
 
@@ -191,6 +202,20 @@ std::vector<platform::Rect> FilterButtons(const DocumentLayout& laid);
 // point is not on one.
 bool FilterButtonAt(const std::vector<platform::Rect>& buttons, float docX,
                     float docY, size_t* column);
+
+// The six points of the funnel mark, built around its centre. One geometry
+// for the replay item and for a painter that redraws the band above the
+// scroll.
+std::array<platform::Point, 6> FilterGlyph(float cx, float cy, float mark);
+
+// The header a scrolling table pins to the viewport's top edge. A table whose
+// header row has scrolled above the viewport, while the table still covers it,
+// keeps that row on the edge, the way a spreadsheet does; when the table is
+// entirely below or entirely above the viewport, nothing is pinned. viewportTop
+// is the viewport's top edge in the same coordinates as the block (document
+// ones on the mac, the walk's own on Windows); *top receives that edge.
+bool PinnedHeader(float blockTop, float blockHeight, float headerHeight,
+                  float viewportTop, float* top);
 
 DocumentLayout LayoutDocument(const LayoutInput& in);
 

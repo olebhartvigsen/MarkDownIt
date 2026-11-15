@@ -143,6 +143,11 @@ struct LayoutMetrics {
     // same gutter whatever prose style the reader chose.
     float tableFilterGutter = 16.0f;
     float tableFilterMark = 7.0f;
+    // The width of the button's target at the header's right end. The mark is
+    // seven points, and a seven point mark is a hard thing to hit, so the
+    // target reaches further in than the gutter the text keeps clear. The
+    // target runs the header row's whole height.
+    float tableFilterHit = 28.0f;
 
     // Font sizes in points (pre-zoom, pre-DIP conversion).
     float bodyFontSize;
