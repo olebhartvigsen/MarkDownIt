@@ -1140,14 +1140,18 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
     [menu setAutoenablesItems:NO];
     for (size_t i = 0; i < items.size(); ++i) {
+        // A separator sits above the first value. It used to replace it,
+        // which dropped the most frequent value of every column from its own
+        // menu, so the row read as blank and the values started one late.
         if (items[i].separator) {
             [menu addItem:[NSMenuItem separatorItem]];
-            continue;
         }
         NSString* label = [NSString stringWithUTF8String:items[i].label.c_str()];
+        SEL action = items[i].prompt ? @selector(promptTableFilter:)
+                                     : @selector(pickTableFilter:);
         NSMenuItem* item =
             [[NSMenuItem alloc] initWithTitle:(label ? label : @"")
-                                      action:@selector(pickTableFilter:)
+                                      action:action
                                keyEquivalent:@""];
         [item setTarget:self];
         [item setTag:static_cast<NSInteger>(i)];
@@ -1156,6 +1160,36 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
         [menu addItem:item];
     }
     [menu popUpMenuPositioningItem:nil atLocation:point inView:self];
+}
+
+// The typed filter: a value has to equal the cell, this only has to be
+// found in it, which is the search box a spreadsheet's filter offers. It is
+// also the way past the menu's value limit.
+- (void)promptTableFilter:(NSMenuItem*)sender {
+    if (!app_) return;
+    const size_t column = filterMenuColumn_;
+    const size_t index = static_cast<size_t>([sender tag]);
+    std::string current;
+    const std::vector<csvdoc::FilterMenuItem> items =
+        app_->FilterMenuFor(column, 40);
+    if (index < items.size() && items[index].prompt) current = items[index].query;
+
+    NSAlert* alert = [[NSAlert alloc] init];
+    [alert setMessageText:@"Filter this column"];
+    [alert setInformativeText:@"Keep the rows whose cell contains this text."];
+    [alert addButtonWithTitle:@"Filter"];
+    [alert addButtonWithTitle:@"Cancel"];
+    NSTextField* field =
+        [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 260, 24)];
+    NSString* existing = [NSString stringWithUTF8String:current.c_str()];
+    [field setStringValue:(existing ? existing : @"")];
+    [alert setAccessoryView:field];
+    [alert.window setInitialFirstResponder:field];
+    if ([alert runModal] != NSAlertFirstButtonReturn) return;
+    NSString* typed = [field stringValue];
+    app_->ApplyTableFilterText(column,
+                               typed ? std::string([typed UTF8String])
+                                     : std::string());
 }
 
 - (void)pickTableFilter:(NSMenuItem*)sender {

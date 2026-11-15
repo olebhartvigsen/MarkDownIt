@@ -59,11 +59,14 @@ struct FilterMenuItem {
     bool exact = true;    // a value, not a typed query
     bool checked = false; // this value is the column's filter now
     bool clear = false;   // the row that clears the column
+    bool prompt = false;  // the row that asks for a typed query
     bool separator = false;  // a divider before this row
 };
 
-// The menu for one column: the row that clears it, then its values with the
-// active one ticked. At most `limit` values, since a menu is not a table.
+// The menu for one column: the row that clears it, the row that asks for a
+// typed query, then its values with the active one ticked. At most `limit`
+// values, since a menu is not a table; the typed row is the way past the
+// limit, and the way to ask for a part of a value.
 std::vector<FilterMenuItem> FilterMenu(const std::string& utf8Text,
                                        const std::string& pathUtf8,
                                        std::size_t column,

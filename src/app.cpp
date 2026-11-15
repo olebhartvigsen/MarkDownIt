@@ -155,6 +155,58 @@ static std::wstring ImeUtf8ToWide(const std::string& text) {
     return wide;
 }
 
+// The prompt a typed column filter asks with. The dialog template lives in
+// app.rc; this keeps the one field's text and whether the reader accepted it.
+namespace {
+
+struct FilterPromptState {
+    std::wstring text;
+    bool accepted = false;
+};
+
+INT_PTR CALLBACK FilterPromptProc(HWND dlg, UINT message, WPARAM wparam,
+                                  LPARAM lparam) {
+    if (message == WM_INITDIALOG) {
+        FilterPromptState* state =
+            reinterpret_cast<FilterPromptState*>(lparam);
+        SetWindowLongPtrW(dlg, GWLP_USERDATA,
+                          reinterpret_cast<LONG_PTR>(state));
+        HWND edit = GetDlgItem(dlg, IDC_FILTER_TEXT);
+        if (edit && state) {
+            SetWindowTextW(edit, state->text.c_str());
+            SendMessageW(edit, EM_SETSEL, 0, -1);
+            SetFocus(edit);
+        }
+        return FALSE;  // the focus is set here, not by the dialog manager
+    }
+    FilterPromptState* state = reinterpret_cast<FilterPromptState*>(
+        GetWindowLongPtrW(dlg, GWLP_USERDATA));
+    if (message != WM_COMMAND || !state) return FALSE;
+    switch (LOWORD(wparam)) {
+        case IDOK: {
+            HWND edit = GetDlgItem(dlg, IDC_FILTER_TEXT);
+            const int length = edit ? GetWindowTextLengthW(edit) : 0;
+            if (length > 0 && edit) {
+                state->text.assign(static_cast<size_t>(length), L'\0');
+                GetWindowTextW(edit, state->text.data(), length + 1);
+            } else {
+                state->text.clear();
+            }
+            state->accepted = true;
+            EndDialog(dlg, IDOK);
+            return TRUE;
+        }
+        case IDCANCEL:
+            EndDialog(dlg, IDCANCEL);
+            return TRUE;
+        default:
+            break;
+    }
+    return FALSE;
+}
+
+}  // namespace
+
 static std::string ImeWideToUtf8(const std::wstring& text) {
     if (text.empty()) return {};
     int needed = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
@@ -3987,9 +4039,9 @@ void AppWindow::ShowTableFilterMenu(std::size_t column) {
     // clicks away, and that means the filter stays as it is.
     for (std::size_t i = 0; i < items.size(); ++i) {
         const csvdoc::FilterMenuItem& item = items[i];
+        // A separator sits above the first value, it does not replace it.
         if (item.separator) {
             AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-            continue;
         }
         const std::wstring label = textenc::Utf8ToWide(item.label);
         AppendMenuW(menu, MF_STRING | (item.checked ? MF_CHECKED : 0),
@@ -4004,7 +4056,19 @@ void AppWindow::ShowTableFilterMenu(std::size_t column) {
     if (picked == 0 || picked > items.size()) return;
 
     const csvdoc::FilterMenuItem& item = items[picked - 1];
-    if (item.clear) {
+    if (item.prompt) {
+        // A typed filter: the rows whose cell contains the text. This is how
+        // a reader reaches a value the menu does not list, and how they ask
+        // for a part of one.
+        FilterPromptState prompt;
+        prompt.text = ImeUtf8ToWide(item.query);
+        const INT_PTR answered = DialogBoxParamW(
+            GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDD_FILTER_PROMPT),
+            hwnd_, FilterPromptProc, reinterpret_cast<LPARAM>(&prompt));
+        if (answered != IDOK || !prompt.accepted) return;
+        controller_.SetTableFilter(column, ImeWideToUtf8(prompt.text),
+                                   /*exact=*/false);
+    } else if (item.clear) {
         controller_.SetTableFilter(column, std::string());
     } else {
         controller_.SetTableFilter(column, item.query, item.exact);

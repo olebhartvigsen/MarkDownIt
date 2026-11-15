@@ -134,7 +134,22 @@ std::string FilterNotice(const csv::Table& table, std::size_t shownRows,
     const std::size_t shown =
         table.hasHeader && shownRows > 0 ? shownRows - 1 : shownRows;
     std::string text = "Showing " + Thousands(shown) + " of " +
-                       Thousands(total) + " rows.";
+                       Thousands(total) + " rows";
+    // A typed filter names itself, so the reader can see what narrowed the
+    // table without opening the menu again.
+    std::string typed;
+    for (const csvfilter::Filter& filter : filters.filters) {
+        if (filter.exact) continue;
+        if (!typed.empty()) {
+            typed.clear();
+            break;
+        }
+        typed = filter.query;
+    }
+    if (!typed.empty()) {
+        text += ", matching \"" + typed + "\"";
+    }
+    text += ".";
     if (shown == 0) {
         text += " No row matches every filter; clear one from its column "
                 "header to see the table again.";
@@ -250,11 +265,24 @@ std::vector<FilterMenuItem> FilterMenu(const std::string& utf8Text,
     menu.push_back(clear);
 
     const csvfilter::Filter* filter = filters.For(column);
+    // A value has to be equal to the cell, and the list stops at `limit`.
+    // This row is the way past both: it asks for a piece of text and keeps
+    // the rows that contain it, the way a spreadsheet's search box does.
+    FilterMenuItem typed;
+    typed.prompt = true;
+    typed.exact = false;
+    typed.checked = filter != nullptr && !filter->exact;
+    typed.query = typed.checked ? filter->query : std::string();
+    typed.label = typed.checked
+                      ? "Filtered by text: \"" + filter->query + "\""
+                      : std::string("Filter by text...");
+    menu.push_back(typed);
     const std::string foldedQuery =
         filter ? csvfilter::Fold(filter->query) : std::string();
     const std::vector<csvfilter::Value> values =
         ColumnValues(utf8Text, pathUtf8, column, limit);
-    for (const csvfilter::Value& value : values) {
+    for (std::size_t v = 0; v < values.size(); ++v) {
+        const csvfilter::Value& value = values[v];
         FilterMenuItem item;
         // A long value is cut for the menu only; the filter uses all of it.
         std::string label = value.text;
@@ -268,7 +296,9 @@ std::vector<FilterMenuItem> FilterMenu(const std::string& utf8Text,
         item.exact = true;
         item.checked = filter && filter->exact &&
                        csvfilter::Fold(value.text) == foldedQuery;
-        item.separator = menu.size() == 1;
+        // A divider above the first value, counted from the values and not
+        // from the menu, so the prompt row cannot push it away.
+        item.separator = v == 0;
         menu.push_back(item);
     }
     return menu;

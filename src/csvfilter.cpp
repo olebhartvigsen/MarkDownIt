@@ -134,7 +134,10 @@ std::string Fold(const std::string& text) {
 bool Matches(const std::string& cell, const std::string& foldedQuery,
              bool exact) {
     if (foldedQuery.empty()) return true;
-    const std::string folded = Fold(cell);
+    // The value list trims each cell, so the compare trims too: " Anholt" is
+    // the value "Anholt" on screen and in the menu, and a filter that keeps
+    // one and drops the other loses rows while its count says otherwise.
+    const std::string folded = Fold(Trim(cell));
     if (exact) return folded == foldedQuery;
     return folded.find(foldedQuery) != std::string::npos;
 }
@@ -175,9 +178,13 @@ std::vector<Value> Values(const csv::Table& table, std::size_t column,
         if (column >= table.rows[r].size()) continue;
         const std::string text = Trim(table.rows[r][column]);
         if (text.empty()) continue;
+        // The compare is case blind, so the list has to be too: two rows that
+        // differ only in case are one value, kept as it was first written.
+        // Otherwise the menu offers two entries that filter to the same rows.
+        const std::string key = Fold(text);
         bool found = false;
         for (Value& value : values) {
-            if (value.text == text) {
+            if (Fold(value.text) == key) {
                 ++value.count;
                 found = true;
                 break;

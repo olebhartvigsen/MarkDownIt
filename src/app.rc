@@ -40,3 +40,19 @@ BEGIN
 END
 
 #include "ribbonUI.rc2"
+
+// The typed column filter: a value in a filter menu has to equal the cell,
+// and the menu stops at forty values, so this one field is how a reader asks
+// for a piece of text instead. Styles are literals because rc.exe runs
+// without the SDK headers here (see the version block above): WS_POPUP,
+// WS_CAPTION, WS_SYSMENU and DS_MODALFRAME, with an ES_AUTOHSCROLL field.
+IDD_FILTER_PROMPT DIALOGEX 0, 0, 208, 60
+STYLE 0x80C80080
+CAPTION "Filter this column"
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT           "Keep the rows whose cell contains:", IDC_FILTER_LABEL, 8, 8, 192, 10
+    EDITTEXT        IDC_FILTER_TEXT, 8, 22, 192, 14, 0x00000080
+    DEFPUSHBUTTON   "Filter", IDOK, 110, 42, 44, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 158, 42, 42, 14
+END

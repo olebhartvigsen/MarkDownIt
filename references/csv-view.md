@@ -115,13 +115,27 @@ The menu is the platform's own, built from one shared list
 
 - **Show all rows in this column** clears the column. It is ticked when the
   column has no filter, so the menu always shows which state it is in.
+- **Filter by text** asks for a piece of text and keeps the rows whose cell
+  contains it, case aside. It is how a reader asks for a part of a value
+  (every row that mentions konfirmation) and how they reach a value the list
+  below leaves out. A column filtered that way says so in its own row, and
+  the line under the table names the text.
+- **The values**, under a divider. The divider marks the first value; it does
+  not stand in for it. It used to replace it on both ports, which dropped the
+  most frequent value of every column from its own menu: the row read as
+  blank, the values started one late, and the one value that carries most of
+  the table was the one value a reader could not pick.
 - **The column's distinct values**, most frequent first, with a count when a
   value appears more than once, and a tick on the one the column is filtered
   to. A numeric column lists its values in numeric order, not text order.
 - At most 40 values. A menu is not a table; a wider column is narrowed by
   picking the value that matters, not by scrolling a list of a thousand.
 
-A value picked from the menu must equal the cell, case aside. A query typed
+A value picked from the menu must equal the cell, case aside, with the cell
+trimmed the way the value list trims it. A cell written with a leading space
+is the same value on screen and in the menu, so it has to be the same row
+when it is picked: otherwise the menu counts two rows under one value and
+keeps one. A query typed
 by hand only has to be found in the cell (`csvfilter::Matches`), which is the
 same distinction Excel draws between ticking a value and typing in its
 search box. The typed path exists in the model and has no surface yet.

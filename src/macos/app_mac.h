@@ -175,6 +175,9 @@ public:
                                                       std::size_t limit) const;
     void ApplyTableFilter(std::size_t column, std::size_t itemIndex);
     bool InTableDocument() const { return controller_.InTableDocument(); }
+    // A filter typed by hand: the rows whose cell contains the text, case
+    // aside. The empty text clears the column.
+    void ApplyTableFilterText(std::size_t column, const std::string& query);
 
     // The table the caret is in, and where in it the caret is.
     bool CaretTable(tableedit::TableLocation* out) const;
