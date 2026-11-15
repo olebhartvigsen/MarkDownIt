@@ -463,3 +463,49 @@ TEST(TableLayout, FillsSitOnTheTablesOwnBlock) {
     }
     EXPECT_TRUE(fills > 0);
 }
+
+// A markdown table's header row is the page's own paper in the GitHub style,
+// so the band a scrolling view pins has to carry a surface of its own: without
+// one the rows scroll through the column names. The band's first item is that
+// surface, opaque and exactly as tall as the row.
+TEST(TableLayout, AProseTablePinsItsHeaderWithASurfaceOfItsOwn) {
+    Node n;
+    n.block = BlockKind::Table;
+    TableRow header;
+    header.cells.push_back(Cell(U"Kolonne 1", true, 0, 9));
+    header.cells.push_back(Cell(U"Kolonne 2", true, 10, 19));
+    TableRow body;
+    body.cells.push_back(Cell(U"a", false, 20, 21));
+    body.cells.push_back(Cell(U"b", false, 22, 23));
+    n.rows.push_back(header);
+    n.rows.push_back(body);
+
+    Rig rig(400.0f);
+    float y = 40.0f;
+    layout::LaidBlock b = layout::LayoutTableBlock(rig.ctx, n, 0, &y);
+    ASSERT_TRUE(b.table != nullptr);
+    EXPECT_TRUE(b.table->headerHeight > 0.0f);
+    ASSERT_TRUE(!b.table->header.items.empty());
+    const auto* surface =
+        std::get_if<display::FillRect>(&b.table->header.items[0]);
+    ASSERT_TRUE(surface != nullptr);
+    NEAR(surface->rect.y, 40.0f);
+    NEAR(surface->rect.height, b.table->headerHeight);
+    EXPECT_TRUE(surface->color.a > 0.99f);  // the body goes under it
+
+    // The surface is the header's own fill when the style paints one, and the
+    // muted row fill otherwise, so a pinned header still reads as a header.
+    if (!kM.tableHeaderFill) {
+        const platform::Color alt{kPal.tableRowAlt.r, kPal.tableRowAlt.g,
+                                    kPal.tableRowAlt.b, kPal.tableRowAlt.a};
+        EXPECT_NEAR(surface->color.r, alt.r, 0.001f);
+        EXPECT_NEAR(surface->color.g, alt.g, 0.001f);
+        EXPECT_NEAR(surface->color.b, alt.b, 0.001f);
+    }
+
+    // And the row pins as soon as the table crosses the viewport's top edge.
+    float pinTop = 0.0f;
+    EXPECT_TRUE(layout::PinnedHeader(b.y, b.height, b.table->headerHeight,
+                                     b.y + 1.0f, &pinTop));
+    NEAR(pinTop, b.y + 1.0f);
+}

@@ -206,6 +206,14 @@ float TableColumnW(const LaidTable& t, size_t column) {
     return t.colW;
 }
 
+platform::Color PinnedHeaderFill(const LayoutMetrics& metrics,
+                                 const Palette& palette, bool dataTable) {
+    if (dataTable || metrics.tableHeaderFill) {
+        return ToColor(dataTable ? palette.tableRowAlt : palette.tableHeaderBg);
+    }
+    return ToColor(palette.tableRowAlt);
+}
+
 std::array<platform::Point, 6> FilterGlyph(float cx, float cy, float mark) {
     // A funnel: wide mouth, narrow stem, six points, built around the
     // centre so a painter that redraws the band draws the same mark.
@@ -411,6 +419,17 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
     // drawn after the washes and the grid so it sits on both. A column the
     // reader has filtered takes the link color, so a filtered table says
     // which of its columns is doing the work.
+    // The pinned band's own surface, under everything else in the copy. The
+    // page keeps whatever the style does; the band has to be opaque because
+    // the body goes under it.
+    if (headerRowPresent) {
+        t.header.items.insert(
+            t.header.items.begin(),
+            display::FillRect{
+                platform::Rect{0.0f, top, in.contentWidth, t.headerHeight},
+                PinnedHeaderFill(m, *in.palette, node.tableMonospace)});
+    }
+
     if (!node.tableFilterActive.empty() && !t.rowHeights.empty()) {
         const size_t columns = (std::min)(t.columnCount,
                                           node.tableFilterActive.size());

@@ -208,6 +208,14 @@ bool FilterButtonAt(const std::vector<platform::Rect>& buttons, float docX,
 // scroll.
 std::array<platform::Point, 6> FilterGlyph(float cx, float cy, float mark);
 
+// The fill a pinned header band takes. The band is its own surface, because
+// the body scrolls under it, so it has to be opaque even when the style paints
+// the header row in the page's own paper and zebras the body instead (GitHub).
+// It takes the header's own fill when the style has one and the muted row fill
+// otherwise, so a pinned header still reads as a header.
+platform::Color PinnedHeaderFill(const LayoutMetrics& metrics,
+                                 const Palette& palette, bool dataTable);
+
 // The header a scrolling table pins to the viewport's top edge. A table whose
 // header row has scrolled above the viewport, while the table still covers it,
 // keeps that row on the edge, the way a spreadsheet does; when the table is

@@ -92,8 +92,21 @@ row, at the pinned row's own top. The press areas move with the band: a table
 whose header is pinned answers for its buttons at the viewport's edge, so a
 reader who scrolls can still filter.
 
-A pinned band covers the rows under it, so it is opaque: the header's fill is
-the band's own, and nothing shows through.
+A pinned band covers the rows under it, so it is opaque, and it carries its own
+surface even when the style paints the header row in the page's paper and
+zebras the body instead: `layout::PinnedHeaderFill` gives the header's own fill
+where a style has one and the muted row fill where it does not, so a pinned
+header still reads as a header.
+
+Every table pins, a markdown table in a document as much as a table file, and
+the pin belongs to reading: in edit mode the caret and the hit test answer for
+the row where it was measured, so a pinned band would put the words somewhere
+the caret is not, and the pin waits for view mode.
+
+Two things made the pin invisible when it was built: the mac replayed the band
+with the wrong origin, so its fills and hairlines sat a pad left and a scroll
+above the words that were pinned, and the band had no surface at all in a
+style that leaves the header on the paper.
 
 ## The filter buttons
 

@@ -868,7 +868,10 @@ void Renderer::PaintSharedOverlays(
     for (const layout::LaidBlock& block : shared.blocks) {
         if (!block.table) continue;
         float pinTopLayout = 0.0f;
-        const bool pinned = layout::PinnedHeader(
+        // Reading only: in edit mode the caret and the hit test point at
+        // where the row was measured, so a pinned band would put the words
+        // somewhere the caret is not.
+        const bool pinned = !editing_ && layout::PinnedHeader(
             block.y, block.height, block.table->headerHeight,
             viewportTopLayout, &pinTopLayout);
         for (const platform::Rect& rect : block.table->filterButtons) {
@@ -954,11 +957,31 @@ void Renderer::PaintSharedOverlays(
                     float pinTopLayout = 0.0f;
                     const float viewportTopLayout =
                         scrollY - (m.padTop + topOffsetDip);
-                    if (layout::PinnedHeader(
+                    if (!editing_ && layout::PinnedHeader(
                             b->y, b->height, b->table->headerHeight,
                             viewportTopLayout, &pinTopLayout)) {
                         Node headerOnly = n;
                         headerOnly.rows.assign(1, n.rows[0]);
+                        // The band is its own surface: the rows scroll under
+                        // it, so it is filled even when the style paints the
+                        // header in the page's paper (GitHub).
+                        ID2D1SolidColorBrush* bandBrush = nullptr;
+                        const Palette bandPalette = BasePalette();
+                        const platform::Color bandColor =
+                            layout::PinnedHeaderFill(m, bandPalette,
+                                                     n.tableMonospace);
+                        rt->CreateSolidColorBrush(
+                            D2D1::ColorF(bandColor.r, bandColor.g,
+                                         bandColor.b, bandColor.a),
+                            &bandBrush);
+                        if (bandBrush) {
+                            rt->FillRectangle(
+                                D2D1::RectF(bandX, 0.0f,
+                                            bandX + bandW,
+                                            b->table->headerHeight),
+                                bandBrush);
+                            bandBrush->Release();
+                        }
                         float ignoredHeight = 0.0f;
                         DrawTable(rt, dw, headerOnly, bandX, 0.0f, bandW,
                                   ignoredHeight, nullptr, scrollY,

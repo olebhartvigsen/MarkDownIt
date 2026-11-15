@@ -968,7 +968,7 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
     for (const LaidOutBlock& block : blocks_) {
         if (!block.tableRecord) continue;
         float pinTop = 0.0f;
-        const bool pinned = layout::PinnedHeader(
+        const bool pinned = !editing_ && layout::PinnedHeader(
             block.y, block.height, block.tableRecord->headerHeight,
             scrollOffset, &pinTop);
         for (const Rect& rect : block.tableRecord->filterButtons) {
@@ -1081,14 +1081,19 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
                 // and the row's text is drawn at the same place, so the
                 // columns stay named while the body goes under them.
                 float pinTop = 0.0f;
-                const bool pinned = layout::PinnedHeader(
+                const bool pinned = !editing_ && layout::PinnedHeader(
                     block.y, block.height,
                     block.tableRecord ? block.tableRecord->headerHeight
                                       : 0.0f,
                     scrollOffset, &pinTop);
                 if (pinned && block.tableRecord) {
-                    TranslatedTarget pinnedBand(target_, 0.0f,
-                                                pinTop - block.y);
+                    // The items are in the walk's coordinates: the column
+                    // starts at originX_ and the band's own top is at
+                    // block.y - padTop (the blocks carry the padTop, the walk
+                    // does not). Putting that top at the window's edge is the
+                    // whole of the pin.
+                    TranslatedTarget pinnedBand(target_, originX_,
+                                                metrics_.padTop - block.y);
                     display::Play(block.tableRecord->header, &pinnedBand,
                                   [this](const display::Image& item) {
                                       return ImageHandleFor(item);
