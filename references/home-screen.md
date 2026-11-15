@@ -58,6 +58,16 @@ item and the string the page draws. The command keeps its historical id
 place in the table and renaming one would touch every table that reads it for
 no gain the reader can see.
 
+## Leaving a document for Home
+
+Home is not an overlay over the open document: it is the page the app
+shows when there is no document, which is why the document commands are
+greyed there. Going home therefore leaves the document, and unsaved
+changes are asked about first with the same Save/Discard/Cancel question
+Open and Close ask. Cancel puts the document back on screen untouched.
+Discard does not hide the old text under the page: an untitled document
+takes its place, so a later Save cannot write the discarded text to disk.
+
 ## Tests
 
 `tests/welcome_screen_test.cpp` holds the screen: both actions exist with a

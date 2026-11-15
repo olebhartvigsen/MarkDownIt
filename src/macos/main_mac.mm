@@ -2239,11 +2239,29 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)newDocument:(id)sender { (void)sender; [self OnNewDocument]; }
 - (void)openDocument:(id)sender { (void)sender; [self OnOpen]; }
 // The way back to the recent documents, from the toolbar and from the
-// View menu. The open document stays where it is, so the list is a
-// step aside and not a close.
+// View menu. Home is the page with no document in it, so it leaves the
+// open document the way Open and Close do, and asks the same question
+// first: unsaved changes are saved, discarded or the trip is called off.
+// The Windows window has asked here since the list was a separate view
+// (ShowRecentDocuments); this side did not, so typing into a new
+// document and pressing Home dropped the text without a word.
 - (void)showRecents:(id)sender {
     (void)sender;
+    // Already home: there is no document to leave and nothing to ask.
+    if (!app_->WelcomeMode()) {
+        if (![self confirmDiscardChanges]) return;
+        // Nothing of the old page stays behind. An untitled document
+        // takes its place, the state the app starts in, so a later Save
+        // cannot put the discarded text back on the disk.
+        app_->NewDocument();
+        [self stopFileWatch];
+        [self setZoom:zoom::kDefaultZoom quietly:YES];
+        [self applyOutlineHeads];
+        [view_ setNeedsDisplay:YES];
+    }
     [self showWelcomeScreen];
+    // In welcome mode the title is the app's name, not "Untitled".
+    [self refreshWindowTitle:std::string()];
     // The screen takes the keyboard, so a card is a click away.
     [window_ makeFirstResponder:view_];
 }

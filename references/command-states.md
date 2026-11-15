@@ -51,6 +51,12 @@ commands away.
 |----------------|---------|-----------|----------------|------------------------|
 | New, Open, Import Word, Import PDF | yes | yes | yes | yes |
 | Home, Show Tab Bar, About, Settings, Help | yes | yes | yes | yes |
+
+Home stays live in both modes because it is the way back to the page with
+no document in it, and that page is where a document gets chosen. It is
+also the one live command that leaves the open document, so it asks the
+Save/Discard/Cancel question first whenever the text is not on disk yet,
+the same question Open and Close ask. Already home, it asks nothing.
 | Reload, Save As, Close, Share, Export | no | yes | yes | yes |
 | Save | no | no | yes | yes |
 | Undo, Redo | no | no | with history | with history |
