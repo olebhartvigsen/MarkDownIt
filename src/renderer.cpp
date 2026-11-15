@@ -974,20 +974,24 @@ void Renderer::PaintSharedOverlays(
                             D2D1::ColorF(bandColor.r, bandColor.g,
                                          bandColor.b, bandColor.a),
                             &bandBrush);
+                        // The overlays are drawn in the page's own space
+                        // (the transform is -scrollY), so the viewport's top
+                        // edge is at scrollY here, not at zero.
+                        const float bandY = scrollY;
                         if (bandBrush) {
                             rt->FillRectangle(
-                                D2D1::RectF(bandX, 0.0f,
+                                D2D1::RectF(bandX, bandY,
                                             bandX + bandW,
-                                            b->table->headerHeight),
+                                            bandY + b->table->headerHeight),
                                 bandBrush);
                             bandBrush->Release();
                         }
                         float ignoredHeight = 0.0f;
-                        DrawTable(rt, dw, headerOnly, bandX, 0.0f, bandW,
+                        DrawTable(rt, dw, headerOnly, bandX, bandY, bandW,
                                   ignoredHeight, nullptr, scrollY,
                                   std::vector<platform::Rect>{},
                                   b->table.get());
-                        DrawFilterMarks(rt, n, *b->table, m, bandX, 0.0f);
+                        DrawFilterMarks(rt, n, *b->table, m, bandX, bandY);
                     }
                 }
                 break;
