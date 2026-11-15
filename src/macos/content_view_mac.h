@@ -276,6 +276,11 @@ public:
     // full line, and the layout is rebuilt for the new mode.
     void SetEditing(bool on);
 
+    // The header band the last paint pinned, zero when nothing was. The
+    // QA walk traces it, so a capture run reports the band instead of only
+    // photographing it.
+    float PinnedHeaderHeightForQA() const;
+
 private:
     // The layout of the document, computed by the renderer.
     void Relayout();

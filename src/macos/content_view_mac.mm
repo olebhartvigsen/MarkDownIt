@@ -188,6 +188,10 @@ void ContentView::Invalidate() {
     // AppShell seam. On the mac side the NSView invalidates itself.
 }
 
+float ContentView::PinnedHeaderHeightForQA() const {
+    return renderer_.PinnedHeaderHeightForQA();
+}
+
 void ContentView::SetEditing(bool on) {
     // The layout follows the mode: reading draws the blank line next
     // to a list as a thin strip, editing keeps its full line, so the
@@ -1348,7 +1352,7 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
 
 // The header band the last paint pinned, for the QA walk's trace line.
 - (float)qaPinnedHeaderHeight {
-    return renderer_.PinnedHeaderHeightForQA();
+    return content_ ? content_->PinnedHeaderHeightForQA() : 0.0f;
 }
 
 // The QA walk parks the caret off and stops its blink: a still
