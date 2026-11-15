@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <utility>
 #include <variant>
 
@@ -1110,6 +1111,22 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
                     scrollOffset, &pinTop);
                 if (pinned && block.tableRecord) {
                     qaPinnedHeaderHeight_ = block.tableRecord->headerHeight;
+                    if (const char* qa = std::getenv("MARKDOWNIT_QA_BAND")) {
+                        if (*qa) {
+                            // Two probes, so a capture can say which space the
+                            // target draws in: the orange one sits at the top
+                            // of the visible space, the purple one at the
+                            // document's own scroll offset.
+                            target_->FillRect(
+                                platform::Rect{originX_ + 8.0f, 0.0f,
+                                               300.0f, 18.0f},
+                                platform::Color{1.0f, 0.55f, 0.0f, 1.0f});
+                            target_->FillRect(
+                                platform::Rect{originX_ + 8.0f, scrollOffset,
+                                               300.0f, 18.0f},
+                                platform::Color{0.55f, 0.0f, 1.0f, 1.0f});
+                        }
+                    }
                     // The items are in the walk's coordinates: the column
                     // starts at originX_ and the band's own top is at
                     // block.y - padTop (the blocks carry the padTop, the walk
