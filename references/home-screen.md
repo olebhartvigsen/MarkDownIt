@@ -7,26 +7,28 @@ picking up an old one are the two things it is for.
 
 ## What the page holds
 
-The page wears the site's shape: a dark hero band at the top over a light
+The page wears the site's shape: a dark band at the top over a light
 ground, the way the project page opens.
 
-On the band:
+**The band is one row.** The lockup sits at the left edge of the content
+column and the two actions at the right end of it, so the band reads as a
+masthead with its controls and not as a leaflet with a button under it.
 
-- **The lockup.** The mark is drawn from the icon's own geometry
-  (`docs/markdownit-icon.svg`, the same 256-unit box): the teal disc, the M
-  and the arrow down. It sits at the left edge of the content column, at
-  `kLockupTop` and `kMarkSize`, in the site's bright teal with the band's
-  navy for the letter, so it reads on the dark ground. The name is set
-  beside it, not under it: a masthead is one line high.
-- **The name**, `MarkDownIt`, beside the mark, on the mark's centre line.
-- **The line the site leads with**, "A word processor for Markdown files.",
-  under the name and from the name's left edge, in the announce bar's mint.
-- **Two actions** under the lockup, side by side, at the column's left edge:
+- **The mark.** Drawn from the icon's own geometry
+  (`docs/markdownit-icon.svg`, the same 256-unit box): the disc, the M and
+  the arrow down. On the band the disc is white and the M and the arrow are
+  the site's teal, the icon's two colours the other way round, which is what
+  reads on a dark ground.
+- **The name**, `MarkDownIt`, beside the mark, and **the line the site
+  leads with**, "A word processor for Markdown files.", under the name from
+  the name's left edge, in the announce bar's mint. The two lines and the
+  mark are one block, centred on the band.
+- **Two actions** at the band's right end:
   - **New document**, the quiet one: the site's outline button, a white
     hairline on the band and next to no fill.
-  - **Open document**, the solid one: the site's `.btn-solid`, bright teal
-    with the dark ink on it. Reading is what the app is for, so this is the
-    action the page points at.
+  - **Open document**, the solid one and the rightmost of the pair: the
+    site's `.btn-solid`, bright teal with the dark ink on it. Reading is
+    what the app is for, so this is the action the page points at.
 
 Under the band:
 
@@ -43,26 +45,41 @@ Under the band:
 
 Actions are buttons and files are cards. A new document has no preview, no
 name and no folder, so it would be a card of nothing in a grid of previews;
-the row under the lockup is where an action belongs.
+the band's row is where an action belongs.
 
 ## One content column
 
-Every element starts at the same left edge: the mark, the actions, the label
-and the first card. The column is the window width minus `kSideMargin` on
-each side, capped at `kContentMax` and centred, so a wide window keeps the
-column and lets the band and the ground run full width.
+Every element starts at the same left edge: the mark, the label and the
+first card, and the band's own row ends where the last card of a row ends.
+The column is the window width minus `kSideMargin` on each side, capped at
+`kContentMax` and centred, so a wide window keeps the column and lets the
+band and the ground run full width.
 
 The cards share the column out evenly: as many columns as fit at a `kCardW`
 minimum, then the width is divided, so the last card ends at the column's
 right edge. A card whose width changed is fitted again, because the preview
 wraps to the card it is drawn in and not to the one it had.
 
+The band has two cases, and `Layout` picks between them:
+
+- **One row** when the pair fits beside the lockup (`kInlineRowMin`, 520
+  points of column): the lockup left, the actions right, the band 84 points.
+- **Two rows** below that: the actions drop under the lockup at the left
+  edge and the band grows to 122. The 480 point window the mac window can
+  be narrowed to lands here.
+
+The tagline stands down on its own when the column is narrower than
+`kTaglineMin` (606), because under that it would run beneath the pair. The
+name then carries the row alone, and the row stays one row.
+
 The vertical rhythm is one number after another in `welcome_screen.cpp`:
-`kBandHeight` (126) for the masthead, `kLockupTop` (18) and `kMarkSize`
-(34) for the mark, `kButtonTop` (76) for the pair, `kLabelBaseline`
-(band + 34) for the label, and `WelcomeScreen::kGridTop` (176) for the
-first row of cards. Move one and the ones
-under it move with it; the tests probe the line where the cards start.
+`kBandHeight` (84, or `kBandHeightStacked`, 122), the row tops
+`kRowMarkTop` (25) and `kStackedMarkTop` (20) for the mark with
+`kMarkSize` (34), the baselines of the name and the tagline, `kRowButtonTop`
+(25) and `kStackedButtonTop` (66) for the pair, and `kLabelLift` (34) and
+`kGridLift` (50) for the label and the first row of cards, read from the
+band that was laid out. Move one and the ones under it move with it; the
+tests probe the line where the cards start.
 
 ## Why the band is a masthead and not a hero
 
@@ -79,8 +96,9 @@ follows:
   the actions and the recent items, and keep identity to a line. A start
   screen is read for the way back into a file, so the brand takes one
   strip (`kBandHeight`) and the files take everything under it. The first
-  version of this page used a 186 point hero and pushed the files off a
-  small window; 126 points is the masthead that leaves them the room.
+  version of this page used a 186 point hero, with the actions under the
+  brand, and pushed the files off a small window; one row of 84 points is
+  the masthead that leaves them the room.
 - **Documents are recognised by their content.** The developer apps list
   file names because a name is enough there. A markdown page is recognised
   by its first lines, so the files stay cards with a preview.
@@ -153,11 +171,12 @@ away (Save has nothing to act on from this page).
 ## Tests
 
 `tests/welcome_screen_test.cpp` holds the screen: the lockup puts the name
-beside the mark and the tagline under the name, the band is a dark strip
-across the full width with light ink on it, both actions sit at the column's
-left edge with New on the left, the gap between them belongs to neither, the
-grid hangs from the same edge and takes its columns from the width, the
-label sits at the grid's edge, and a press on a button is not a press on a
-card. The platform press paths are exercised by the macOS launch smoke
+beside the mark and the tagline under the name, the disc is white with the
+teal letter on it, the band is a dark strip across the full width with light
+ink on it, the pair sits at the band's right end with New on the left of
+Open and the gap between them belonging to neither, the band is one row on a
+wide window, gives up the tagline at 700 and stacks at 500, the grid hangs
+from the same left edge and takes its columns from the width, the label sits
+at the grid's edge, and a press on a button is not a press on a card. The platform press paths are exercised by the macOS launch smoke
 (`welcome-click` picks a card and checks nothing gets selected) and by hand
 on Windows.

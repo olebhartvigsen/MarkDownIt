@@ -91,10 +91,16 @@ public:
     // Layout has run with at least one card.
     float GridLeft() const { return gridLeft_; }
 
-    // Where the grid of cards starts: below the brand block, the two
-    // actions and the label that names the grid. The tests probe the
-    // screen at this line.
-    static constexpr float kGridTop = 176.0f;
+    // The band is one row when the pair fits beside the lockup, two when it
+    // does not. Both numbers come from Layout, and the grid hangs under
+    // whichever height the band has.
+    float BandHeight() const { return bandHeight_; }
+    float GridTop() const { return bandHeight_ + 50.0f; }
+    bool ShowsTagline() const { return taglineShown_; }
+    bool StacksHeader() const { return stacked_; }
+
+    // The wide-window case, for a caller that has not laid a screen out.
+    static constexpr float kGridTop = 134.0f;
 
     // Whether there are any cards.
     bool HasFiles() const { return !cards_.empty(); }
@@ -108,6 +114,17 @@ private:
     // Where the Open button sits, in points.
     Rect openButton_;
     Rect newButton_;
+
+    // The band, as Layout found it.
+    float bandHeight_ = 84.0f;
+    bool stacked_ = false;
+    bool taglineShown_ = true;
+    float markTop_ = 25.0f;
+    float wordmarkBaseline_ = 39.0f;
+    float taglineBaseline_ = 55.0f;
+    float nameX_ = 0.0f;
+
+    void DrawBrand(RenderTarget* target, TextEngine* engine) const;
     // Where the grid of cards starts, left edge.
     float gridLeft_ = 0.0f;
 };

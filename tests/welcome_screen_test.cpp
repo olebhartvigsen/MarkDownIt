@@ -335,8 +335,8 @@ TEST(WelcomeScreen, TheScreenOffersTheOpenButton) {
     const Rect button = screen.OpenButtonRect();
     EXPECT_GT(button.width, 0.0f);
     EXPECT_GT(button.height, 0.0f);
-    EXPECT_GT(button.y, 60.0f);
-    EXPECT_LT(button.y + button.height, 700.0f);
+    EXPECT_GT(button.y, 8.0f);
+    EXPECT_LT(button.y + button.height, screen.BandHeight());
     EXPECT_TRUE(screen.HitsOpenButton(button.x + button.width * 0.5f,
                                       button.y + button.height * 0.5f));
     EXPECT_FALSE(screen.HitsOpenButton(button.x - 6.0f, button.y - 6.0f));
@@ -375,19 +375,28 @@ TEST(WelcomeScreen, TheLockupPutsTheNameBesideTheMark) {
         if (square && fill.rect.width > 28.0f && fill.rect.width < 40.0f &&
             fill.rect.y < 30.0f) {
             sawDisc = true;
+            // The disc is white on the dark band, and the M and the arrow
+            // in it are the site's teal, so the mark keeps the icon's two
+            // colours the other way round.
+            EXPECT_NEAR(fill.color.r, 1.0f, 0.01f);
+            EXPECT_NEAR(fill.color.g, 1.0f, 0.01f);
+            EXPECT_NEAR(fill.color.b, 1.0f, 0.01f);
             // The icon's circle is inset in its 256-unit box, so the disc
             // starts a little inside the column's edge.
             EXPECT_GE(fill.rect.x, screen.GridLeft());
             EXPECT_LT(fill.rect.x - screen.GridLeft(), 2.0f);
             EXPECT_GT(name->x, fill.rect.x + fill.rect.width);
-            // The name sits on the mark's centre line, a little over half
-            // its size below the disc's top.
-            EXPECT_NEAR(name->y, fill.rect.y + fill.rect.height * 0.5f + 7.9f,
-                        2.0f);
+            // The lockup is one block: the name's caps start at the disc's
+            // top, so the two lines share the band's middle with the mark.
+            EXPECT_GT(name->y, fill.rect.y);
+            EXPECT_LT(name->y, fill.rect.y + fill.rect.height);
         }
     }
     EXPECT_TRUE(sawDisc);
-    EXPECT_EQ(target.polygons.size(), static_cast<size_t>(1));
+    ASSERT_EQ(target.polygons.size(), static_cast<size_t>(1));
+    EXPECT_GT(target.polygons[0].color.g, 0.30f);
+    EXPECT_LT(target.polygons[0].color.r, 0.15f);
+    EXPECT_LT(target.polygons[0].color.r, target.polygons[0].color.g);
 
     // The tagline hangs under the name, from the same left edge.
     EXPECT_GT(line->y, name->y + 8.0f);
@@ -407,10 +416,45 @@ TEST(WelcomeScreen, TheLockupPutsTheNameBesideTheMark) {
     EXPECT_GT(name->color.g, 0.9f);
     EXPECT_GT(name->color.b, 0.9f);
 
-    // The block sits on the band, the actions under it, the grid last.
-    EXPECT_LT(line->y, kCardTop);
-    EXPECT_GT(screen.NewButtonRect().y, line->y);
-    EXPECT_GT(kCardTop, screen.NewButtonRect().y + screen.NewButtonRect().height);
+    // The lockup and the actions are one row on the band, the pair to the
+    // right of the text, and the grid starts under the band.
+    EXPECT_LT(line->y, screen.BandHeight());
+    EXPECT_GT(screen.NewButtonRect().x, name->x + 150.0f);
+    EXPECT_LT(screen.NewButtonRect().y + screen.NewButtonRect().height,
+              screen.BandHeight());
+    EXPECT_GT(kCardTop, screen.BandHeight());
+}
+
+TEST(WelcomeScreen, TheBandKeepsOneRowAndGivesWayWhenThereIsNoRoom) {
+    // The band is one row while the pair fits beside the lockup. When the
+    // window is too narrow for that, the actions drop under the lockup and
+    // the band grows; when it is too narrow for the tagline to stand clear
+    // of the pair, the tagline stands down so the row stays whole.
+    WelcomeScreen screen;
+    screen.Layout(900.0f, 700.0f);
+    EXPECT_FALSE(screen.StacksHeader());
+    EXPECT_TRUE(screen.ShowsTagline());
+    EXPECT_NEAR(screen.BandHeight(), 84.0f, 0.01f);
+    EXPECT_NEAR(screen.GridTop(), 134.0f, 0.01f);
+
+    // A half-window: one row still, but the tagline has no room beside the
+    // pair, so the name carries the identity alone.
+    screen.Layout(700.0f, 700.0f);
+    EXPECT_FALSE(screen.StacksHeader());
+    EXPECT_FALSE(screen.ShowsTagline());
+    EXPECT_NEAR(screen.BandHeight(), 84.0f, 0.01f);
+    EXPECT_NEAR(screen.OpenButtonRect().x + screen.OpenButtonRect().width,
+                700.0f - 48.0f, 0.01f);
+
+    // A narrow window: the pair goes under the lockup and the band takes
+    // the second row, so the grid starts lower.
+    screen.Layout(500.0f, 700.0f);
+    EXPECT_TRUE(screen.StacksHeader());
+    EXPECT_TRUE(screen.ShowsTagline());
+    EXPECT_NEAR(screen.BandHeight(), 122.0f, 0.01f);
+    EXPECT_NEAR(screen.NewButtonRect().x, screen.GridLeft(), 0.01f);
+    EXPECT_GT(screen.NewButtonRect().y, screen.BandHeight() * 0.45f);
+    EXPECT_NEAR(screen.GridTop(), 172.0f, 0.01f);
 }
 
 TEST(WelcomeScreen, TheGridHangsFromTheColumnAndTakesItsColumnsFromTheWidth) {
@@ -429,7 +473,9 @@ TEST(WelcomeScreen, TheGridHangsFromTheColumnAndTakesItsColumnsFromTheWidth) {
     const Rect second = screen.CardRect(1);
     const Rect third = screen.CardRect(2);
     EXPECT_NEAR(first.x, screen.GridLeft(), 0.01f);
-    EXPECT_NEAR(screen.NewButtonRect().x, first.x, 0.01f);
+    // The band's right end and the grid's right edge are the same line.
+    const Rect open = screen.OpenButtonRect();
+    EXPECT_NEAR(open.x + open.width, second.x + second.width, 0.01f);
     EXPECT_NEAR(second.x, first.x + first.width + 24.0f, 0.01f);
     EXPECT_NEAR(second.y, first.y, 0.01f);
     EXPECT_GT(third.y, first.y + first.height);
@@ -469,9 +515,9 @@ TEST(WelcomeScreen, TheGridSaysItHoldsTheRecentFiles) {
 }
 
 TEST(WelcomeScreen, TheScreenOffersTheNewDocumentButton) {
-    // The two actions share the heading row. New sits to the left of
-    // Open, the pair is centered, and neither button answers for the
-    // other or for a card underneath.
+    // The two actions share the band's row with the lockup. The pair sits
+    // at the band's right end, New to the left of Open, and neither button
+    // answers for the other or for a card underneath.
     WelcomeScreen screen;
     screen.Layout(900.0f, 700.0f);
 
@@ -479,13 +525,15 @@ TEST(WelcomeScreen, TheScreenOffersTheNewDocumentButton) {
     const Rect open = screen.OpenButtonRect();
     EXPECT_GT(fresh.width, 0.0f);
     EXPECT_GT(fresh.height, 0.0f);
-    EXPECT_GT(fresh.y, 60.0f);
+    EXPECT_GT(fresh.y, 8.0f);
+    EXPECT_LT(fresh.y + fresh.height, screen.BandHeight());
     EXPECT_TRUE(screen.HitsNewButton(fresh.x + fresh.width * 0.5f,
                                      fresh.y + fresh.height * 0.5f));
     EXPECT_LT(fresh.x, open.x);
     EXPECT_NEAR(fresh.y, open.y, 0.01f);
-    // The pair starts at the left edge of the content column.
-    EXPECT_NEAR(fresh.x, screen.GridLeft(), 0.01f);
+    // The pair ends at the column's right edge, which is the grid's.
+    EXPECT_NEAR(open.x + open.width, 900.0f - 48.0f, 0.01f);
+    EXPECT_NEAR(fresh.x + fresh.width + 14.0f, open.x, 0.01f);
 
     // The gap between them belongs to neither.
     EXPECT_FALSE(screen.HitsNewButton(open.x - 6.0f, open.y + 4.0f));

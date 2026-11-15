@@ -49,31 +49,50 @@ const float kContentMax = 980.0f;
 // The band at the top borrows the site's hero, and the page under it is
 // the site's ground: a dark teal gradient over a soft mint page. The band
 // is a masthead and not a landing page. A start screen is read for the
-// work it gets you back to, so the brand takes one slim strip and the
-// recent files take the room under it (see references/home-screen.md).
-const float kBandHeight = 126.0f;
+// work it gets you back to, so the brand and the actions share one row and
+// the recent files take the room under it (references/home-screen.md).
+//
+// The row is the lockup on the left and the two actions on the right. When
+// the window is too narrow for both, the actions drop under the lockup and
+// the band grows to hold them; when it is too narrow for the tagline to
+// stand clear of the actions, the tagline stands down.
+const float kBandHeight = 84.0f;
+const float kBandHeightStacked = 122.0f;
+// Below this column width the pair does not fit beside the lockup.
+const float kInlineRowMin = 520.0f;
+// Below this one the tagline would run under the pair.
+const float kTaglineMin = 606.0f;
 
-// The lockup: the mark, then the name beside it, then the tagline under
-// the name. The mark is the icon's geometry, not a lookalike: a teal
-// disc, the white M and the arrow down, from the same 256-unit box the
-// SVG uses.
+// The lockup: the mark, then the name beside it, then the tagline under the
+// name. The mark is the icon's geometry, not a lookalike: a disc, the M and
+// the arrow down, from the same 256-unit box the SVG uses.
 const float kMarkSize = 34.0f;
-const float kLockupTop = 18.0f;
 const float kLockupGap = 12.0f;
 const float kWordmarkSize = 19.0f;
 const float kTaglineSize = 12.5f;
 
-// The two actions, side by side under the lockup.
+// The two actions, side by side on the band's right end.
 const float kButtonW = 158.0f;
 const float kButtonH = 34.0f;
-const float kButtonTop = 76.0f;
 const float kButtonGap = 14.0f;
 const float kButtonRadius = 9.0f;
+// The band's rows, one set per case: one row on a wide window, two on a
+// narrow one.
+const float kRowMarkTop = 25.0f;
+const float kRowWordmarkBaseline = 39.0f;
+const float kRowTaglineBaseline = 55.0f;
+const float kRowButtonTop = 25.0f;
+const float kStackedMarkTop = 20.0f;
+const float kStackedWordmarkBaseline = 34.0f;
+const float kStackedTaglineBaseline = 50.0f;
+const float kStackedButtonTop = 66.0f;
 
 // The label over the grid, and the grid itself. The grid starts at
 // kGridTop (the header names it, because the tests probe that line).
 const float kSectionLabelSize = 12.5f;
-const float kLabelBaseline = kBandHeight + 34.0f;
+// The label and the grid hang under the band, whichever height it has.
+const float kLabelLift = 34.0f;
+const float kGridLift = 50.0f;
 
 // The distance between two rows of the preview.
 const float kRowHeight = 16.0f;
@@ -117,8 +136,8 @@ const Color kAccent{0.059f, 0.463f, 0.431f, 1.000f};
 const Color kBrightTeal{0.078f, 0.722f, 0.651f, 1.0f};
 const Color kHint{0.357f, 0.420f, 0.478f, 1.000f};
 // The mark: the accent teal of the icon and the site, and the icon's white.
-const Color kMarkDisc = kBrightTeal;
-const Color kMarkInk = kBandTop;
+const Color kMarkDisc = Color{1.0f, 1.0f, 1.0f};
+const Color kMarkInk = kAccent;
 
 // The ellipsis that marks a string the card had to cut.
 const char kEllipsis[] = "\xE2\x80\xA6";
@@ -392,7 +411,8 @@ float ContentLeft(float viewW) {
 // teal the site keeps at the top of its content. The band covers the
 // part of it above kBandHeight, so the glow reads as light coming out
 // from under the band.
-void DrawPage(RenderTarget* target, float viewW, float viewH) {
+void DrawPage(RenderTarget* target, float viewW, float viewH,
+              float bandHeight) {
     Rect page;
     page.x = 0.0f;
     page.y = 0.0f;
@@ -405,7 +425,7 @@ void DrawPage(RenderTarget* target, float viewW, float viewH) {
         const float h = 330.0f - 34.0f * static_cast<float>(i);
         Rect glow;
         glow.x = (viewW - w) * 0.5f;
-        glow.y = kBandHeight - h * 0.62f;
+        glow.y = bandHeight - h * 0.62f;
         glow.width = w;
         glow.height = h;
         Color color = kAccent;
@@ -417,9 +437,9 @@ void DrawPage(RenderTarget* target, float viewW, float viewH) {
 // The band at the top: the site's hero, running from the navy at the top
 // to the deep teal at the bottom. The seam fills shapes and does not
 // interpolate a gradient, so the band is laid down in strips.
-void DrawBand(RenderTarget* target, float viewW) {
+void DrawBand(RenderTarget* target, float viewW, float bandHeight) {
     const int strips = 40;
-    const float step = kBandHeight / static_cast<float>(strips);
+    const float step = bandHeight / static_cast<float>(strips);
     for (int i = 0; i < strips; ++i) {
         const float t = static_cast<float>(i) / static_cast<float>(strips - 1);
         Color color;
@@ -479,31 +499,6 @@ void DrawMark(RenderTarget* target, float x, float y, float size) {
                                         Point{px(196.0f), py(148.0f)},
                                         Point{px(220.0f), py(122.0f)}};
     target->StrokePolygon(chevron, kMarkInk, 16.0f * s, false);
-}
-
-// The lockup at the top of the band: the mark, the name beside it, and
-// the line the site leads with under the name.
-void DrawBrand(RenderTarget* target, TextEngine* engine, float viewW) {
-    const float left = ContentLeft(viewW);
-    DrawMark(target, left, kLockupTop, kMarkSize);
-
-    const float nameX = left + kMarkSize + kLockupGap;
-    FontSpec name;
-    name.family = "Segoe UI";
-    name.size = kWordmarkSize;
-    name.bold = true;
-    const std::string wordmark = "MarkDownIt";
-    // The name sits on the mark's centre line.
-    const float nameBaseline =
-        kLockupTop + kMarkSize * 0.5f + kWordmarkSize * 0.36f;
-    target->DrawText(wordmark, name, nameX, nameBaseline, kBandText);
-
-    FontSpec line;
-    line.family = "Segoe UI";
-    line.size = kTaglineSize;
-    const std::string tagline = "A word processor for Markdown files.";
-    target->DrawText(tagline, line, nameX, kLockupTop + kMarkSize + 14.0f,
-                     kBandMint);
 }
 
 // Fits the strings of a card to its width, once.
@@ -570,6 +565,24 @@ void FitCard(TextEngine* engine, WelcomeCard* card, float maxWidth,
 
 }  // namespace
 
+void WelcomeScreen::DrawBrand(RenderTarget* target, TextEngine* engine) const {
+    DrawMark(target, nameX_ - kMarkSize - kLockupGap, markTop_, kMarkSize);
+
+    FontSpec name;
+    name.family = "Segoe UI";
+    name.size = kWordmarkSize;
+    name.bold = true;
+    target->DrawText("MarkDownIt", name, nameX_, wordmarkBaseline_, kBandText);
+
+    if (!taglineShown_) return;
+
+    FontSpec line;
+    line.family = "Segoe UI";
+    line.size = kTaglineSize;
+    target->DrawText("A word processor for Markdown files.", line, nameX_,
+                     taglineBaseline_, kBandMint);
+}
+
 void WelcomeScreen::SetRecentFiles(const std::vector<RecentFile>& files) {
     cards_.clear();
     for (const RecentFile& file : files) {
@@ -608,19 +621,39 @@ void WelcomeScreen::SetRecentFiles(const std::vector<RecentFile>& files) {
 }
 
 void WelcomeScreen::Layout(float viewW, float viewH) {
-    // The button belongs to the screen, so it is placed even when there
-    // is nothing to show beside it yet. The two actions start at the left
-    // edge of the content column, under the lockup: start a document, or
-    // open one. Reading is what the app is for, so Open is the solid one.
+    // The band is one row when the pair fits beside the lockup, and two
+    // when it does not: the lockup keeps the left edge either way, and the
+    // actions sit at the band's right end or under it.
     const float left = ContentLeft(viewW);
-    newButton_.x = left;
-    newButton_.y = kButtonTop;
+    const float contentW = ContentWidth(viewW);
+    stacked_ = contentW < kInlineRowMin;
+    taglineShown_ = stacked_ || contentW >= kTaglineMin;
+    bandHeight_ = stacked_ ? kBandHeightStacked : kBandHeight;
+
+    const float markTop = stacked_ ? kStackedMarkTop : kRowMarkTop;
+    markTop_ = markTop;
+    wordmarkBaseline_ =
+        stacked_ ? kStackedWordmarkBaseline : kRowWordmarkBaseline;
+    taglineBaseline_ = stacked_ ? kStackedTaglineBaseline : kRowTaglineBaseline;
+    nameX_ = left + kMarkSize + kLockupGap;
+
+    // The two actions: start a document, or open one. Reading is what the
+    // app is for, so Open is the solid one, and on one row it is the
+    // rightmost of the pair.
+    const float buttonTop = stacked_ ? kStackedButtonTop : kRowButtonTop;
     newButton_.width = kButtonW;
     newButton_.height = kButtonH;
-    openButton_.x = left + kButtonW + kButtonGap;
-    openButton_.y = kButtonTop;
+    newButton_.y = buttonTop;
     openButton_.width = kButtonW;
     openButton_.height = kButtonH;
+    openButton_.y = buttonTop;
+    if (stacked_) {
+        newButton_.x = left;
+        openButton_.x = left + kButtonW + kButtonGap;
+    } else {
+        openButton_.x = left + contentW - kButtonW;
+        newButton_.x = openButton_.x - kButtonGap - kButtonW;
+    }
     gridLeft_ = left;
 
     if (cards_.empty()) return;
@@ -629,7 +662,6 @@ void WelcomeScreen::Layout(float viewW, float viewH) {
     // grid hangs from its left edge, so the brand, the actions, the label
     // and the first card share one line down the page. The cards keep one
     // size, so two previews are read the same way.
-    const float contentW = ContentWidth(viewW);
     int columns = static_cast<int>((contentW + kCardGap) / (kCardW + kCardGap));
     if (columns < 1) columns = 1;
     const float cardW =
@@ -641,7 +673,7 @@ void WelcomeScreen::Layout(float viewW, float viewH) {
         const int row = static_cast<int>(i) / columns;
         cards_[i].rect.x = left + static_cast<float>(column) * (cardW + kCardGap);
         cards_[i].rect.y =
-            WelcomeScreen::kGridTop + static_cast<float>(row) * (kCardH + kCardGap);
+            GridTop() + static_cast<float>(row) * (kCardH + kCardGap);
         // A card whose width changed is fitted again: the preview wraps to
         // the card it is drawn in, not to the card it had.
         if (cards_[i].rect.width != cardW) cards_[i].fitted = false;
@@ -656,11 +688,11 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
                            bool openHovered, bool newHovered) {
     if (!target) return;
 
-    DrawPage(target, viewW, viewH);
-    DrawBand(target, viewW);
+    DrawPage(target, viewW, viewH, bandHeight_);
+    DrawBand(target, viewW, bandHeight_);
 
-    // The lockup on the band.
-    DrawBrand(target, engine, viewW);
+    // The lockup on the band, on the row Layout placed it.
+    DrawBrand(target, engine);
 
     // The quiet action: the site's outline button on the band, so the row
     // still reads as two answers with one of them in front.
@@ -709,7 +741,7 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         font.family = "Segoe UI";
         font.size = 14.0f;
         target->DrawText("Open or drag a .md file to get started.", font,
-                         ContentLeft(viewW), WelcomeScreen::kGridTop + 26.0f,
+                         ContentLeft(viewW), GridTop() + 26.0f,
                          kHint);
         return;
     }
@@ -721,7 +753,8 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         font.family = "Segoe UI";
         font.size = kSectionLabelSize;
         font.bold = true;
-        target->DrawText("Recent files", font, gridLeft_, kLabelBaseline,
+        target->DrawText("Recent files", font, gridLeft_,
+                         bandHeight_ + kLabelLift,
                          kFolder);
     }
 
