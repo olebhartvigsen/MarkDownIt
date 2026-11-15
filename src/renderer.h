@@ -224,6 +224,11 @@ private:
 
 public:
     void SetD2DDeviceContext5(ID2D1DeviceContext5* ctx) { d2d_ctx5_ = ctx; }
+    // The column whose filter button holds this document point, from the
+    // buttons of the layout the last paint drew.
+    bool TableFilterAt(float docX, float docY, size_t* column) const {
+        return layout::FilterButtonAt(tableFilterButtons_, docX, docY, column);
+    }
     void ClearSvgCache();
     svg::SvgDoc* GetSvgDoc(const Node& n, float availW);
 
@@ -409,12 +414,6 @@ private:
     // draw from the SvgDoc cache and the mermaid painters draw the
     // walk's measured band. Every band sits at the shared record's y,
     // so the frame never drifts from the walk that measured it.
-    // The column whose filter button holds this document point, from the
-    // buttons of the layout the last paint drew.
-    bool TableFilterAt(float docX, float docY, size_t* column) const {
-        return layout::FilterButtonAt(tableFilterButtons_, docX, docY, column);
-    }
-
     void PaintSharedOverlays(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                              const Document& doc,
                              const std::vector<const layout::LaidBlock*>& byNode,

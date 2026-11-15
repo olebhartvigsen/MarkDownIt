@@ -5,6 +5,7 @@
 #include <d2d1.h>
 #include <d2d1_3.h>
 #include <dwrite.h>
+#include <cstddef>
 #include <string>
 #include "dom.h"
 #include "renderer.h"

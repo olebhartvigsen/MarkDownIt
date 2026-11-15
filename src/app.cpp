@@ -3991,7 +3991,7 @@ void AppWindow::ShowTableFilterMenu(std::size_t column) {
             AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
             continue;
         }
-        const std::wstring label = Utf8ToWide(item.label);
+        const std::wstring label = textenc::Utf8ToWide(item.label);
         AppendMenuW(menu, MF_STRING | (item.checked ? MF_CHECKED : 0),
                     static_cast<UINT_PTR>(i + 1), label.c_str());
     }
