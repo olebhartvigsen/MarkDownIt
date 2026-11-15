@@ -857,8 +857,15 @@ void Renderer::PaintSharedOverlays(
     // through it, so the shapes answer the frame they will paint in.
     WalkTextEngine walkEngine(TextEngineForWalk(), zoom_);
     // The filter buttons of the layout this frame draws, kept for the click
-    // that lands on one. Document coordinates, so a scroll does not age them.
+    // that lands on one. The walk speaks from the column's top left; the
+    // click arrives in document coordinates, and the replay puts the list at
+    // (originX, padTop + topOffset) minus the scroll, so the rects take that
+    // same origin here.
     tableFilterButtons_ = layout::FilterButtons(shared);
+    for (platform::Rect& rect : tableFilterButtons_) {
+        rect.x += originX;
+        rect.y += m.padTop + topOffsetDip;
+    }
 
     for (size_t nodeIdx = 0; nodeIdx < doc.nodes.size(); ++nodeIdx) {
         const Node& n = doc.nodes[nodeIdx];

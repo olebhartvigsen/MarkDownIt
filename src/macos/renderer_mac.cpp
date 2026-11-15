@@ -538,8 +538,16 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
     layout::DocumentLayout laid = layout::LayoutDocument(in);
     displayList_ = std::move(laid.list);
     // The filter buttons of the frame's layout, kept for the click that lands
-    // on one. Document coordinates, so a scroll does not age them.
+    // on one. The walk speaks from the content column's top left; the click
+    // arrives in document coordinates, and both the replay and the block
+    // mapping put the column at (originX_, padTop). So the rects take that
+    // origin here, which is also the space PointToOffset answers in, and a
+    // scroll does not age them.
     tableFilterButtons_ = layout::FilterButtons(laid);
+    for (platform::Rect& rect : tableFilterButtons_) {
+        rect.x += originX_;
+        rect.y += metrics_.padTop;
+    }
 
     // The one Text item the modules build by hand is the list marker:
     // its line box borrows the measured first line, but the run in it
