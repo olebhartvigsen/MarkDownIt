@@ -208,12 +208,6 @@ float TableColumnW(const LaidTable& t, size_t column) {
 
 platform::Color PinnedHeaderFill(const LayoutMetrics& metrics,
                                  const Palette& palette, bool dataTable) {
-    // The QA walk dresses the band in a colour no theme uses, so a capture
-    // run can answer where it landed: the pinned band is otherwise nearly
-    // the paper's own colour and reads as nothing in a screenshot.
-    if (const char* qa = std::getenv("MARKDOWNIT_QA_BAND")) {
-        if (*qa) return platform::Color{0.10f, 0.75f, 0.55f, 1.0f};
-    }
     if (dataTable || metrics.tableHeaderFill) {
         return ToColor(dataTable ? palette.tableRowAlt : palette.tableHeaderBg);
     }

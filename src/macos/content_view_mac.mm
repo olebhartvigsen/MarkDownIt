@@ -316,6 +316,13 @@ void ContentView::Draw(RenderTarget* target) {
 
     renderer_.Render(app_->GetDocument(), 0.0f);
 
+    // The band a table keeps at the edge while its body scrolls under it.
+    // The page is drawn whole in document coordinates, so the one number the
+    // pass needs is where the viewport's top sits, which is the scroll offset
+    // this layer already holds: DrawPinnedHeaders replays the header's own
+    // copy there, above the page.
+    renderer_.DrawPinnedHeaders(target, scrollOffset_);
+
     // The caret goes on top of the text, but not over a selection:
     // the selection is the marker of where the next edit lands, and
     // read mode shows no caret at all.
@@ -1095,13 +1102,6 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     // the whole document over.
     platform::CoreGraphicsTarget target(context);
     content_->Draw(&target);
-    // The band a table keeps at the edge: the page is drawn whole, so this is
-    // the one pass that knows which part of it is on screen.
-    // The clip's own origin is the page's top on screen; the visible rect of
-    // a flipped document view is not, and answering with it pinned nothing.
-    NSClipView* clip = [[self enclosingScrollView] contentView];
-    content_->DrawPinnedHeaders(
-        &target, clip ? static_cast<float>(NSMinY([clip bounds])) : 0.0f);
     [self syncWelcomeToolTips];
 }
 

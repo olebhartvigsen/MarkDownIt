@@ -276,12 +276,6 @@ public:
     // full line, and the layout is rebuilt for the new mode.
     void SetEditing(bool on);
 
-    // The band a table keeps at the viewport's top edge. The view hands in
-    // the visible top in the page's coordinates, because only the scroll view
-    // knows where its edge is and the renderer draws the whole page.
-    void DrawPinnedHeaders(RenderTarget* target, float visibleTop) {
-        renderer_.DrawPinnedHeaders(target, visibleTop);
-    }
 
     // The header band the last paint pinned, zero when nothing was. The
     // QA walk traces it, so a capture run reports the band instead of only
