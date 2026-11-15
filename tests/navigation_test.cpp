@@ -111,3 +111,44 @@ TEST(Navigation, SlugifyAnchorFoldsHeadingsTheWindowsWay) {
               std::string("m\xc3\xa5nedens-oversigt"));
     EXPECT_EQ(SlugifyAnchor("..."), std::string(""));
 }
+
+// A second Shift+arrow steps again. The rule used to be spelled out in each
+// shell, and the mac's copy answered "nothing to do" whenever a selection was
+// already there: Shift+Right selected one letter and the next press moved
+// nothing, which is how it was found, in a table cell.
+TEST(Navigation, ASecondShiftArrowStepsAgain) {
+    Selection forward;
+    forward.anchor = {2};  // before the letter
+    forward.active = {3};  // after it
+    EXPECT_EQ(HorizontalTarget(forward, /*left=*/false, /*extend=*/true, 4), 4u);
+    EXPECT_EQ(HorizontalTarget(forward, /*left=*/true, /*extend=*/true, 2), 2u);
+
+    // Selecting backwards keeps the active end the left one, and it steps
+    // left from there.
+    Selection backward;
+    backward.anchor = {5};
+    backward.active = {3};
+    EXPECT_EQ(HorizontalTarget(backward, /*left=*/true, /*extend=*/true, 2), 2u);
+    EXPECT_EQ(HorizontalTarget(backward, /*left=*/false, /*extend=*/true, 4), 4u);
+
+    // A word step is the same question with a wider step.
+    EXPECT_EQ(HorizontalTarget(forward, false, true, 9), 9u);
+}
+
+// A plain arrow ends the selection at the edge it moves from, without
+// stepping past it.
+TEST(Navigation, APlainArrowEndsTheSelectionAtItsEdge) {
+    Selection selected;
+    selected.anchor = {2};
+    selected.active = {7};
+    EXPECT_EQ(HorizontalTarget(selected, /*left=*/true, /*extend=*/false, 1),
+              2u);
+    EXPECT_EQ(HorizontalTarget(selected, /*left=*/false, /*extend=*/false, 8),
+              7u);
+
+    Selection empty;
+    empty.anchor = {4};
+    empty.active = {4};
+    EXPECT_EQ(HorizontalTarget(empty, false, false, 5), 5u);
+    EXPECT_EQ(HorizontalTarget(empty, true, true, 3), 3u);
+}

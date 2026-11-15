@@ -2246,17 +2246,18 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     desiredX_ = -1.0f;
 
     const Selection& selection = app_->selection();
-    uint32_t target = selection.active.offset;
-    if (selection.Empty()) {
-        target = word ? (left ? content_->StepWord(target, true)
-                              : content_->StepWord(target, false))
-                      : (left ? content_->StepGrapheme(target, true)
-                              : content_->StepGrapheme(target, false));
-    } else if (!extend) {
-        // A move without the shift key collapses the selection to the
-        // edge it moves from.
-        target = left ? selection.Start() : selection.End();
-    }
+    // One step from the active end, and then the shared rule says whether the
+    // arrow takes it: with the shift key it does, even when a selection is
+    // already there, so two presses select two letters. A plain arrow ends
+    // the selection at the edge it moves from instead.
+    const uint32_t from = selection.active.offset;
+    const uint32_t stepped =
+        word ? (left ? content_->StepWord(from, true)
+                     : content_->StepWord(from, false))
+             : (left ? content_->StepGrapheme(from, true)
+                     : content_->StepGrapheme(from, false));
+    const uint32_t target =
+        HorizontalTarget(selection, left, extend, stepped);
     [self setCaret:target extend:extend];
     [self caretMoved];
 }

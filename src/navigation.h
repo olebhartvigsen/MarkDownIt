@@ -1,9 +1,19 @@
 #pragma once
+#include "caret.h"
 #include "layoutcache.h"
 #include "textbuffer.h"
 #include <cstdint>
 #include <cstddef>
 #include <string>
+
+// Where a horizontal arrow lands, given where one step from the active end
+// would land. The shift key extends a selection and a plain arrow ends it at
+// the edge it moves from; a selection that is already there must not stop the
+// next press from stepping. Both shells ask this, because spelling it out in
+// each of them is how the mac came to drop the step whenever a selection had
+// just been made: Shift+Right selected one letter and then moved nothing.
+uint32_t HorizontalTarget(const Selection& selection, bool left, bool extend,
+                          uint32_t stepped);
 
 // Move left by one grapheme cluster, skipping hidden markdown markers.
 // layoutCache gives access to u16ToSrc mapping to know which source

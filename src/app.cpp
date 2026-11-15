@@ -789,10 +789,11 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
 
     switch (vk) {
         case VK_LEFT: {
-            uint32_t newOffset = (!shift && !sel_.Empty())
-                ? sel_.Start()
-                : (ctrl ? MoveWordLeft(buffer_, sel_.active.offset)
-                        : MoveLeft(buffer_, sel_.active.offset, &layout_cache_));
+            const uint32_t stepped =
+                ctrl ? MoveWordLeft(buffer_, sel_.active.offset)
+                     : MoveLeft(buffer_, sel_.active.offset, &layout_cache_);
+            uint32_t newOffset =
+                HorizontalTarget(sel_, /*left=*/true, shift, stepped);
             // Cell boundary rule (plan 12): the caret may not leave its
             // cell with Left/Right; Tab owns structural cell movement.
             TableCellRef fromCell;
@@ -812,10 +813,11 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
             break;
         }
         case VK_RIGHT: {
-            uint32_t newOffset = (!shift && !sel_.Empty())
-                ? sel_.End()
-                : (ctrl ? MoveWordRight(buffer_, sel_.active.offset)
-                        : MoveRight(buffer_, sel_.active.offset, &layout_cache_));
+            const uint32_t stepped =
+                ctrl ? MoveWordRight(buffer_, sel_.active.offset)
+                     : MoveRight(buffer_, sel_.active.offset, &layout_cache_);
+            uint32_t newOffset =
+                HorizontalTarget(sel_, /*left=*/false, shift, stepped);
             // Cell boundary rule (plan 12): the caret may not leave its
             // cell with Left/Right; Tab owns structural cell movement.
             TableCellRef fromCell;

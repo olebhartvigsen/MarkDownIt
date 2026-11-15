@@ -236,6 +236,15 @@ static uint32_t skipMarkersLeft(const std::string& s, uint32_t offset,
     return offset;
 }
 
+uint32_t HorizontalTarget(const Selection& selection, bool left, bool extend,
+                          uint32_t stepped) {
+    if (extend) return stepped;
+    if (selection.Empty()) return stepped;
+    // A plain arrow ends the selection at the edge it moves from, without
+    // stepping past it: the caret lands where the reader can see it.
+    return left ? selection.Start() : selection.End();
+}
+
 uint32_t MoveLeft(const TextBuffer& buf, uint32_t offset,
                   const LayoutCache* layoutCache) {
     uint32_t prev = PrevGraphemeBoundary(buf.Text(), offset);

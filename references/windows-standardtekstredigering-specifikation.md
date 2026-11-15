@@ -129,6 +129,12 @@ standardgenveje får disse ækvivalenter:
    kører samme kommando som Cmd+C, Cmd+V og Cmd+X.
 4. Home og End går til dokumentets grænser på macOS, som AppKit gør i andre
    tekstfelter. Linjegrænsen nås med Cmd+Venstre og Cmd+Højre.
+5. Shift plus en navigationstast tager altid et skridt fra markeringens
+   aktive ende, også når der allerede er en markering: to tryk vælger to tegn.
+   En navigationstast uden Shift afslutter markeringen ved den kant den
+   flytter fra, uden at tage et skridt forbi den. Reglen ligger i delt kode
+   (`HorizontalTarget`), fordi begge skaller ellers skriver den hver for sig,
+   og den ene af dem glemte skridtet når en markering netop var lavet.
 
 ### Clipboard
 
