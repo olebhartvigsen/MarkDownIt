@@ -163,22 +163,18 @@ bool LooksNumeric(const std::string& cell) {
 }
 
 bool LooksLikeHeader(const std::vector<std::vector<std::string>>& rows) {
+    // A data file almost always names its columns, and a header that is
+    // missing costs the reader the name and the filter menu. So the first
+    // record is a header unless it cannot be one: fewer than two records,
+    // no text in it at all, or every filled cell a number (then it is a
+    // record like the rest). The strict guess this replaces asked for
+    // unique, filled, non-numeric cells and turned real headers down.
     if (rows.size() < 2) return false;
-    const std::vector<std::string>& first = rows[0];
-    if (first.empty()) return false;
-
-    std::vector<std::string> sorted;
-    sorted.reserve(first.size());
-    for (const std::string& cell : first) {
-        if (cell.empty()) return false;      // a blank name is not a name
-        if (LooksNumeric(cell)) return false;  // a row of numbers is data
-        sorted.push_back(cell);
+    for (const std::string& cell : rows[0]) {
+        if (cell.empty()) continue;
+        if (!LooksNumeric(cell)) return true;
     }
-    std::sort(sorted.begin(), sorted.end());
-    for (std::size_t i = 1; i < sorted.size(); ++i) {
-        if (sorted[i] == sorted[i - 1]) return false;  // a name twice
-    }
-    return true;
+    return false;
 }
 
 Table Parse(const std::string& utf8Text, char hint) {

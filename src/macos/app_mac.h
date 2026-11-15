@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "caret.h"
+#include "csvdocument.h"
 #include "documentcontroller.h"
 #include "dom.h"
 #include "editcontroller.h"
@@ -166,6 +167,14 @@ public:
     // Reparses the text into the document. Called after every edit, but
     // only when the edit could have changed the structure.
     void Reparse();
+
+    // The column menu of a table document, and what picking from it does.
+    // The list is shared code (csvdoc::FilterMenu); the shells only wrap it
+    // in their own menu.
+    std::vector<csvdoc::FilterMenuItem> FilterMenuFor(std::size_t column,
+                                                      std::size_t limit) const;
+    void ApplyTableFilter(std::size_t column, std::size_t itemIndex);
+    bool InTableDocument() const { return controller_.InTableDocument(); }
 
     // The table the caret is in, and where in it the caret is.
     bool CaretTable(tableedit::TableLocation* out) const;

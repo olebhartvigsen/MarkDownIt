@@ -21,6 +21,7 @@
 set(MARKDOWNIT_CORE_SOURCES
     src/parser.cpp
     src/csv.cpp
+    src/csvfilter.cpp
     src/csvdocument.cpp
     src/documentparse.cpp
     src/textbuffer.cpp

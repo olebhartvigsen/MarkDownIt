@@ -335,6 +335,7 @@ if(BUILD_TESTS AND APPLE)
         # line ends, the .mmd and .svg fence).
         tests/documentfile_test.cpp
         tests/csv_test.cpp
+        tests/csvfilter_test.cpp
         tests/csvdocument_test.cpp
         tests/code_table_layout_test.cpp
         tests/svg_mermaid_layout_test.cpp
@@ -463,6 +464,7 @@ elseif(BUILD_TESTS)
         # line ends, the .mmd and .svg fence).
         tests/documentfile_test.cpp
         tests/csv_test.cpp
+        tests/csvfilter_test.cpp
         tests/csvdocument_test.cpp
         tests/code_table_layout_test.cpp
         tests/svg_mermaid_layout_test.cpp

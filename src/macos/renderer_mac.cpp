@@ -537,6 +537,9 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
     };
     layout::DocumentLayout laid = layout::LayoutDocument(in);
     displayList_ = std::move(laid.list);
+    // The filter buttons of the frame's layout, kept for the click that lands
+    // on one. Document coordinates, so a scroll does not age them.
+    tableFilterButtons_ = layout::FilterButtons(laid);
 
     // The one Text item the modules build by hand is the list marker:
     // its line box borrows the measured first line, but the run in it

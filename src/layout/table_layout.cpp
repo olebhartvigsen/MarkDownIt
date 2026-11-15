@@ -239,7 +239,13 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
                               ToColor(in.palette->textPrimary), m,
                               node.tableMonospace);
             if (runs.empty()) runs = PlaceholderRuns(cell.isHeader, in);
-            const float token = WidestToken(runs, in);
+            // A header cell gives the filter button room at its right
+            // edge, so a long name wraps earlier instead of running under
+            // the mark.
+            const float gutter = cell.isHeader && !node.tableFilterActive.empty()
+                                     ? m.tableFilterGutter
+                                     : 0.0f;
+            const float token = WidestToken(runs, in) + gutter;
             if (token > minInner[c]) minInner[c] = token;
         }
     }
@@ -270,7 +276,11 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
                               ToColor(in.palette->textPrimary), m,
                               node.tableMonospace);
             if (runs.empty()) runs = PlaceholderRuns(cell.isHeader, in);
-            const float innerW = t.colWs[c] - 2.0f * m.cellPadX;
+            const float gutter = cell.isHeader && !node.tableFilterActive.empty()
+                                     ? m.tableFilterGutter
+                                     : 0.0f;
+            const float innerW =
+                t.colWs[c] - 2.0f * m.cellPadX - gutter;
             std::vector<platform::TextLine> lines =
                 in.engine->MeasureWrapped(
                     runs, innerW > 0.0f ? innerW : 1.0f, 0.0f);
@@ -320,11 +330,17 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
         const float rowH = t.rowHeights[r];
         const bool headerRow = !node.rows[r].cells.empty() &&
                                node.rows[r].cells[0].isHeader;
+        // A data table always marks its header: a column of figures with no
+        // header line reads as one long list, and the filter buttons need a
+        // row that looks like one. A prose table keeps its style's rule.
+        const bool dataTable = node.tableMonospace;
         if (headerRow) {
-            if (m.tableHeaderFill)
+            if (m.tableHeaderFill || dataTable)
                 fill(0.0f, rowTop, in.contentWidth, rowH,
-                     ToColor(in.palette->tableHeaderBg));
-        } else if (m.tableBodyFill || (m.tableZebra && r % 2 == 1)) {
+                     ToColor(dataTable ? in.palette->tableRowAlt
+                                       : in.palette->tableHeaderBg));
+        } else if (!dataTable &&
+                   (m.tableBodyFill || (m.tableZebra && r % 2 == 1))) {
             fill(0.0f, rowTop, in.contentWidth, rowH,
                  ToColor(in.palette->tableRowAlt));
         }
@@ -358,9 +374,74 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
     // breaks in cells with mixed fonts: the pieces landed inside
     // each other and the table read as glued. One painter, one
     // geometry, one place.
+    // The filter buttons: one funnel at each header column's right edge,
+    // drawn after the washes and the grid so it sits on both. A column the
+    // reader has filtered takes the link color, so a filtered table says
+    // which of its columns is doing the work.
+    if (!node.tableFilterActive.empty() && !t.rowHeights.empty()) {
+        const size_t columns = (std::min)(t.columnCount,
+                                          node.tableFilterActive.size());
+        const float mark = m.tableFilterMark;
+        const platform::Color idle = ToColor(in.palette->textMuted);
+        const platform::Color active = ToColor(in.palette->link);
+        t.filterButtons.assign(t.columnCount, platform::Rect{});
+        for (size_t c = 0; c < columns; ++c) {
+            if (c >= t.colWs.size()) break;
+            const float right = TableColumnX(t, c) + t.colWs[c] - m.cellPadX;
+            const float cx = right - mark * 0.5f;
+            const float cy = top + t.rowHeights[0] * 0.5f;
+            // A funnel: wide mouth, narrow stem, six points.
+            const float halfTop = mark * 0.5f;
+            const float halfStem = mark * 0.16f;
+            const float midY = cy - mark * 0.10f;
+            const float bottom = cy + mark * 0.55f;
+            const platform::Point points[6] = {
+                {cx - halfTop, cy - mark * 0.42f},
+                {cx + halfTop, cy - mark * 0.42f},
+                {cx + halfStem, midY},
+                {cx + halfStem, bottom},
+                {cx - halfStem, bottom},
+                {cx - halfStem, midY},
+            };
+            display::FillPolygon funnel;
+            funnel.points.assign(points, points + 6);
+            funnel.color = node.tableFilterActive[c] ? active : idle;
+            ctx.list->items.push_back(funnel);
+            // The whole gutter is the target, from the header's top to its
+            // bottom, so a reader does not have to hit the mark itself.
+            t.filterButtons[c] = platform::Rect{
+                TableColumnX(t, c) + t.colWs[c] - m.tableFilterGutter,
+                top, m.tableFilterGutter, t.rowHeights[0]};
+        }
+    }
+
     *y += total;
     block.y = *y - total;
     return block;
+}
+
+std::vector<platform::Rect> FilterButtons(const DocumentLayout& laid) {
+    std::vector<platform::Rect> buttons;
+    for (const LaidBlock& block : laid.blocks) {
+        if (!block.table) continue;
+        for (const platform::Rect& rect : block.table->filterButtons) {
+            buttons.push_back(rect);
+        }
+    }
+    return buttons;
+}
+
+bool FilterButtonAt(const std::vector<platform::Rect>& buttons, float docX,
+                    float docY, size_t* column) {
+    for (size_t c = 0; c < buttons.size(); ++c) {
+        const platform::Rect& r = buttons[c];
+        if (docX >= r.x && docX <= r.x + r.width && docY >= r.y &&
+            docY <= r.y + r.height) {
+            if (column) *column = c;
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace layout

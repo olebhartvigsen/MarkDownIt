@@ -60,7 +60,12 @@ struct LaidTable {
     std::vector<float> colXs;
     std::vector<float> rowHeights;
     std::vector<std::vector<LaidTableCell>> cells;
+    // The hit area of each column's filter button, in document coordinates
+    // (the header row's whole right gutter, so the target is bigger than the
+    // mark). Empty when the table asks for no filter buttons.
+    std::vector<platform::Rect> filterButtons;
 };
+
 
 // The column split of a table. minInner[c] is the widest
 // unbreakable token of column c, measured by the same engine that
@@ -177,6 +182,16 @@ LaidBlock LayoutMermaidBlock(const LayoutCtx& ctx, const Node& node,
 // The walk: gaps, dispatch to the per type layouts, the block records.
 // Today the walk owns the break and heading; the other kinds arrive
 // with their modules and get their case here, one per batch step.
+// The filter buttons of the document's tables, flattened: one rect per
+// column, in document coordinates, in the order the tables and their columns
+// appear. Empty when no table asks for buttons.
+std::vector<platform::Rect> FilterButtons(const DocumentLayout& laid);
+
+// The column whose filter button holds this document point. False when the
+// point is not on one.
+bool FilterButtonAt(const std::vector<platform::Rect>& buttons, float docX,
+                    float docY, size_t* column);
+
 DocumentLayout LayoutDocument(const LayoutInput& in);
 
 }  // namespace layout

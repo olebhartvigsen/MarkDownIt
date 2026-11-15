@@ -134,6 +134,9 @@ struct Node {
     // runs take the code face, so the columns line up whatever the glyphs
     // are. Set by src/csvdocument.cpp and read by the table layout.
     bool                       tableMonospace = false;
+    // One entry per column: the reader has a filter on it, so the header
+    // draws that column's filter button filled. Empty asks for no buttons.
+    std::vector<uint8_t>       tableFilterActive;
     // Parsed source and a provisional layout. The renderer replaces the layout
     // with a DirectWrite-measured cached snapshot when its text services exist.
     std::shared_ptr<mermaid::Flowchart> mermaid_flowchart;

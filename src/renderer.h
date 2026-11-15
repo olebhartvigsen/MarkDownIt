@@ -380,6 +380,9 @@ private:
     // The last Measure's answer, valid while the shared layout it walked
     // is the one still held (a new layout is a new pointer).
     std::shared_ptr<const layout::DocumentLayout> measureHold_;
+    // The filter buttons of the last painted shared layout: document
+    // coordinates, so a scroll does not age them.
+    std::vector<platform::Rect> tableFilterButtons_;
     float measureWidth_ = 0.0f;
     float measureTop_ = 0.0f;
     float measureWidest_ = 0.0f;
@@ -406,6 +409,12 @@ private:
     // draw from the SvgDoc cache and the mermaid painters draw the
     // walk's measured band. Every band sits at the shared record's y,
     // so the frame never drifts from the walk that measured it.
+    // The column whose filter button holds this document point, from the
+    // buttons of the layout the last paint drew.
+    bool TableFilterAt(float docX, float docY, size_t* column) const {
+        return layout::FilterButtonAt(tableFilterButtons_, docX, docY, column);
+    }
+
     void PaintSharedOverlays(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                              const Document& doc,
                              const std::vector<const layout::LaidBlock*>& byNode,

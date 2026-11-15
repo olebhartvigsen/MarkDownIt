@@ -74,6 +74,49 @@ row file pays a fifth of a second on every re-layout (zoom, resize). That
 is the price of the row cap as it stands, and the reason a much bigger cap
 waits for the visible-row painting.
 
+## The filter buttons
+
+Every column's header carries a funnel at its right edge, the way a
+spreadsheet does. A press on it opens that column's menu and never moves the
+caret: the button owns its press.
+
+The menu is the platform's own, built from one shared list
+(`csvdoc::FilterMenu`), so the two ports cannot offer different rows:
+
+- **Show all rows in this column** clears the column. It is ticked when the
+  column has no filter, so the menu always shows which state it is in.
+- **The column's distinct values**, most frequent first, with a count when a
+  value appears more than once, and a tick on the one the column is filtered
+  to. A numeric column lists its values in numeric order, not text order.
+- At most 40 values. A menu is not a table; a wider column is narrowed by
+  picking the value that matters, not by scrolling a list of a thousand.
+
+A value picked from the menu must equal the cell, case aside. A query typed
+by hand only has to be found in the cell (`csvfilter::Matches`), which is the
+same distinction Excel draws between ticking a value and typing in its
+search box. The typed path exists in the model and has no surface yet.
+
+Filtering happens **at the bridge**, not in the renderer: the visible rows
+become the table node, so the table layout, the display list and both
+painters are untouched, and a filtered table is laid out for the rows it
+shows. The funnel itself is a display list polygon, drawn by the same
+`display::Play` as everything else, and the hit rects come from the shared
+layout (`LaidTable::filterButtons`, `layout::FilterButtonAt`). A filtered
+column's funnel takes the link color, so a table says which of its columns
+is doing the work.
+
+The line under the table counts what the filters left: "Showing 2 of 4
+rows.", and when nothing matches it says so and says what to do about it.
+
+## The header
+
+A data table marks its header whatever prose style the reader chose: the
+header row takes the alternate fill, the body is not zebraed, and every
+header cell is drawn semibold with the fixed face. A prose table keeps its
+style's own rules. The header is also the default reading of the first
+record: it is a header unless it cannot be one (a single record, no text in
+it at all, or nothing but numbers).
+
 ## The fixed font
 
 A table document asks for the code face in every cell, header and body
@@ -116,9 +159,8 @@ editing another document leaves it in reading mode.
 
 ## Not built yet
 
-- **The per-column filters** (the header funnel, its hit rect, the mac
-  popover and the Windows popup, Select all and Clear, the filtered count).
-  The plan is `.hermes/plans/2026-11-15_160657-csv-support.md`, slice S4.
+- **A typed query in the menu.** The model has the contains match
+  (`csvfilter::Matches`), the menu offers values only.
 - **The visible-row painting** that makes a much higher row cap affordable,
   the header-row switch and the row number gutter (S5).
 - **Saving** a table. It waits for a quoting model that can tell `"a,b"`

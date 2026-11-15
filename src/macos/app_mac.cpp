@@ -584,11 +584,35 @@ void App::InsertPastedTable(const std::string& table,
     controller_.InsertPastedTable(table, firstCellCaret);
 }
 
+std::vector<csvdoc::FilterMenuItem> App::FilterMenuFor(std::size_t column,
+                                                       std::size_t limit) const {
+    if (!controller_.InTableDocument()) return {};
+    return csvdoc::FilterMenu(buffer_.Text(), filePath_, column,
+                              controller_.tableFilters(), limit);
+}
+
+void App::ApplyTableFilter(std::size_t column, std::size_t itemIndex) {
+    if (!controller_.InTableDocument()) return;
+    const std::vector<csvdoc::FilterMenuItem> items =
+        FilterMenuFor(column, 40);
+    if (itemIndex >= items.size()) return;
+    const csvdoc::FilterMenuItem& item = items[itemIndex];
+    if (item.clear) {
+        controller_.SetTableFilter(column, std::string());
+    } else {
+        controller_.SetTableFilter(column, item.query, item.exact);
+    }
+    // The filter changes the node list, so the document is parsed again and
+    // the page redraws from it.
+    Reparse();
+}
+
 void App::Reparse() {
     // The parse is the shared one. A parse failure leaves the previous
     // document in place, which is what the Windows build does too. The
     // user still sees their text.
-    if (!ParseDocument(buffer_.Text(), filePath_, document_)) {
+    if (!ParseDocument(buffer_.Text(), filePath_,
+                       controller_.tableFilters(), document_)) {
         return;
     }
     if (contentView_) contentView_->OnDocumentChanged();

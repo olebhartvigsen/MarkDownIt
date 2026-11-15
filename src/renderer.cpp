@@ -856,6 +856,9 @@ void Renderer::PaintSharedOverlays(
     // with: the wash rectangles below ask their geometry questions
     // through it, so the shapes answer the frame they will paint in.
     WalkTextEngine walkEngine(TextEngineForWalk(), zoom_);
+    // The filter buttons of the layout this frame draws, kept for the click
+    // that lands on one. Document coordinates, so a scroll does not age them.
+    tableFilterButtons_ = layout::FilterButtons(shared);
 
     for (size_t nodeIdx = 0; nodeIdx < doc.nodes.size(); ++nodeIdx) {
         const Node& n = doc.nodes[nodeIdx];

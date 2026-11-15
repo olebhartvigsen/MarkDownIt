@@ -9,10 +9,15 @@
 
 #include <string>
 
+#include "csvfilter.h"
 #include "dom.h"
 
 // Parse the buffer text of a document into the node list the renderer draws.
 // Returns false only when markdown parsing failed; the previous document then
 // stays on screen, the way both ports already handle it.
+bool ParseDocument(const std::string& utf8, const std::string& pathUtf8,
+                   const csvfilter::State& tableFilters, Document& out);
+
+// The same parse with no column filtered.
 bool ParseDocument(const std::string& utf8, const std::string& pathUtf8,
                    Document& out);

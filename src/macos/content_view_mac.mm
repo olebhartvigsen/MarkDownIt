@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "csvdocument.h"
 #include "content_nsview_mac.h"
 #include "layout/paragraph_layout.h"
 #include "navigation.h"
@@ -442,6 +443,10 @@ bool ContentView::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
     return moved;
 }
 
+bool ContentView::TableFilterAt(float x, float y, size_t* column) const {
+    return renderer_.TableFilterAt(x, y, column);
+}
+
 uint32_t ContentView::HitTestPoint(float x, float y) const {
     // The point arrives in document coordinates, because the scroll
     // view scrolls the whole view.
@@ -742,6 +747,9 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
 // the document it just opened must not read them as a selection.
 @interface MdContentView () {
     MouseGesture gesture_;
+    // The column whose filter menu is open, so the menu's action knows which
+    // column the picked row belongs to.
+    size_t filterMenuColumn_;
 }
 @end
 
@@ -1121,6 +1129,41 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     return nil;
 }
 
+// The column's filter menu, at the point the reader pressed. The list of
+// rows is shared code, the menu is the platform's own.
+- (void)showTableFilterMenuForColumn:(size_t)column atPoint:(NSPoint)point {
+    if (!app_) return;
+    const std::vector<csvdoc::FilterMenuItem> items =
+        app_->FilterMenuFor(column, 40);
+    if (items.empty()) return;
+    filterMenuColumn_ = column;
+    NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
+    [menu setAutoenablesItems:NO];
+    for (size_t i = 0; i < items.size(); ++i) {
+        if (items[i].separator) {
+            [menu addItem:[NSMenuItem separatorItem]];
+            continue;
+        }
+        NSString* label = [NSString stringWithUTF8String:items[i].label.c_str()];
+        NSMenuItem* item =
+            [[NSMenuItem alloc] initWithTitle:(label ? label : @"")
+                                      action:@selector(pickTableFilter:)
+                               keyEquivalent:@""];
+        [item setTarget:self];
+        [item setTag:static_cast<NSInteger>(i)];
+        [item setState:items[i].checked ? NSControlStateValueOn
+                                        : NSControlStateValueOff];
+        [menu addItem:item];
+    }
+    [menu popUpMenuPositioningItem:nil atLocation:point inView:self];
+}
+
+- (void)pickTableFilter:(NSMenuItem*)sender {
+    if (!app_) return;
+    app_->ApplyTableFilter(filterMenuColumn_,
+                           static_cast<size_t>([sender tag]));
+}
+
 - (void)mouseDown:(NSEvent*)event {
     if (!content_) return;
     const NSPoint point = [self convertPoint:[event locationInWindow]
@@ -1149,6 +1192,19 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
                                                  static_cast<float>(point.y));
         if (card >= 0) {
             app_->RequestOpenFile(content_->WelcomePathForCard(card));
+            gesture_.Consume();
+            return;
+        }
+    }
+
+    // A table document's header carries a filter button per column, and a
+    // press on one belongs to the button: it opens the column's menu where
+    // the reader pressed and never moves the caret.
+    if (app_ && app_->InTableDocument()) {
+        size_t column = 0;
+        if (content_->TableFilterAt(static_cast<float>(point.x),
+                                    static_cast<float>(point.y), &column)) {
+            [self showTableFilterMenuForColumn:column atPoint:point];
             gesture_.Consume();
             return;
         }

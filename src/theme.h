@@ -136,6 +136,13 @@ struct LayoutMetrics {
     // Table.
     float cellPadX;
     float cellPadY;
+    // The room a header cell gives the filter button at its right edge, and
+    // the size of the button's mark. A data table has a button per column, so
+    // the space comes out of the cell's text width, not out of the column.
+    // Defaults live here rather than in each style: a data table asks for the
+    // same gutter whatever prose style the reader chose.
+    float tableFilterGutter = 16.0f;
+    float tableFilterMark = 7.0f;
 
     // Font sizes in points (pre-zoom, pre-DIP conversion).
     float bodyFontSize;

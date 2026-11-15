@@ -175,6 +175,9 @@ public:
     // UINT32_MAX when the point is in the margin, where the Word-like
     // line selection takes over.
     uint32_t HitTestPoint(float x, float y) const;
+    // The column whose filter button holds this document point, from the
+    // buttons of the layout the last render built.
+    bool TableFilterAt(float x, float y, size_t* column) const;
 
     // The position on the line delta lines above (negative) or below
     // (positive) the caret, at the column nearest desiredX.

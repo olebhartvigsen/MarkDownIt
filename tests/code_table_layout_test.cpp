@@ -270,6 +270,77 @@ TEST(TableLayout, ADataTablePutsEveryCellInTheFixedFace) {
     EXPECT_FALSE(run.font.monospace);
 }
 
+TEST(TableLayout, ADataTablePutsAFilterButtonOnEveryHeaderColumn) {
+    // The header of a table document carries one funnel per column, and the
+    // button's hit area is the whole right gutter of that header cell.
+    Node n;
+    n.block = BlockKind::Table;
+    n.tableMonospace = true;
+    n.tableFilterActive = {0u, 1u};
+    TableRow header;
+    header.cells.push_back(Cell(U"name", true, 0, 4));
+    header.cells.push_back(Cell(U"price", true, 5, 10));
+    TableRow body;
+    body.cells.push_back(Cell(U"Ole", false, 11, 14));
+    body.cells.push_back(Cell(U"12.5", false, 15, 19));
+    n.rows.push_back(header);
+    n.rows.push_back(body);
+
+    Rig rig(400.0f);
+    float y = 40.0f;
+    layout::LaidBlock b = layout::LayoutTableBlock(rig.ctx, n, 0, &y);
+    ASSERT_TRUE(b.table != nullptr);
+    ASSERT_EQ(b.table->filterButtons.size(), 2u);
+    const platform::Rect& first = b.table->filterButtons[0];
+    const platform::Rect& second = b.table->filterButtons[1];
+    NEAR(first.width, kM.tableFilterGutter);
+    NEAR(first.height, b.table->rowHeights[0]);
+    NEAR(first.y, 40.0f);
+    // The second button sits on the second column's right edge.
+    NEAR(second.x, b.table->colXs[1] + b.table->colWs[1] - kM.tableFilterGutter);
+
+    size_t column = 99;
+    EXPECT_TRUE(layout::FilterButtonAt(b.table->filterButtons,
+                                       first.x + first.width * 0.5f,
+                                       first.y + 2.0f, &column));
+    EXPECT_EQ(column, static_cast<size_t>(0));
+    EXPECT_TRUE(layout::FilterButtonAt(b.table->filterButtons,
+                                       second.x + second.width * 0.5f,
+                                       second.y + 2.0f, &column));
+    EXPECT_EQ(column, static_cast<size_t>(1));
+    // The cell's text area is not the button, and neither is the body below.
+    EXPECT_FALSE(layout::FilterButtonAt(b.table->filterButtons, 5.0f,
+                                        first.y + 2.0f, &column));
+    EXPECT_FALSE(layout::FilterButtonAt(b.table->filterButtons,
+                                        first.x + 2.0f,
+                                        first.y + first.height + 5.0f, &column));
+
+    // One funnel per column, and the filtered column takes the link color.
+    int funnels = 0;
+    for (const display::Item& item : rig.list.items) {
+        if (!std::holds_alternative<display::FillPolygon>(item)) continue;
+        const display::FillPolygon& poly = std::get<display::FillPolygon>(item);
+        EXPECT_EQ(poly.points.size(), static_cast<size_t>(6));
+        ++funnels;
+    }
+    EXPECT_EQ(funnels, 2);
+
+    // A prose table asks for no buttons: no gutter, no funnels.
+    Node prose;
+    prose.block = BlockKind::Table;
+    prose.rows = n.rows;
+    Rig plain(400.0f);
+    float y2 = 40.0f;
+    layout::LaidBlock p = layout::LayoutTableBlock(plain.ctx, prose, 0, &y2);
+    ASSERT_TRUE(p.table != nullptr);
+    EXPECT_TRUE(p.table->filterButtons.empty());
+    int prose_funnels = 0;
+    for (const display::Item& item : plain.list.items) {
+        if (std::holds_alternative<display::FillPolygon>(item)) ++prose_funnels;
+    }
+    EXPECT_EQ(prose_funnels, 0);
+}
+
 TEST(TableLayout, DistributeTableColumnsMath) {
     // Words that fit the equal share keep the equal split.
     {

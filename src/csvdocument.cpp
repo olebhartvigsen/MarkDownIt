@@ -78,6 +78,15 @@ Node ParagraphOf(const std::string& utf8) {
     return node;
 }
 
+// The column count of the widest stored row.
+std::size_t ColumnCount(const csv::Table& table) {
+    std::size_t columns = 0;
+    for (const std::vector<std::string>& row : table.rows) {
+        columns = (std::max)(columns, row.size());
+    }
+    return columns;
+}
+
 }  // namespace
 
 bool IsCsvPath(const std::string& pathUtf8) {
@@ -116,8 +125,26 @@ std::string NoticeText(const csv::Table& table) {
     return text;
 }
 
+std::string FilterNotice(const csv::Table& table, std::size_t shownRows,
+                         const csvfilter::State& filters) {
+    if (!filters.Any()) return std::string();
+    const std::size_t total =
+        table.hasHeader ? (table.rows.empty() ? 0 : table.rows.size() - 1)
+                        : table.rows.size();
+    const std::size_t shown =
+        table.hasHeader && shownRows > 0 ? shownRows - 1 : shownRows;
+    std::string text = "Showing " + Thousands(shown) + " of " +
+                       Thousands(total) + " rows.";
+    if (shown == 0) {
+        text += " No row matches every filter; clear one from its column "
+                "header to see the table again.";
+    }
+    return text;
+}
+
 Document BuildDocument(const std::string& utf8Text,
-                       const std::string& pathUtf8) {
+                       const std::string& pathUtf8,
+                       const csvfilter::State& filters) {
     Document doc;
     const csv::Table table = csv::Parse(utf8Text, DelimiterHintForPath(pathUtf8));
 
@@ -130,6 +157,9 @@ Document BuildDocument(const std::string& utf8Text,
         return doc;
     }
 
+    const std::vector<std::size_t> visible =
+        csvfilter::VisibleRows(table, filters);
+
     Node node;
     node.block = BlockKind::Table;
     // A file of data is read in a fixed font, so a column of figures lines up
@@ -140,10 +170,16 @@ Document BuildDocument(const std::string& utf8Text,
     node.contentOffset = 0;
     node.contentLength = static_cast<uint32_t>(utf8Text.size());
 
-    const std::size_t columns = table.rows[0].size();
+    const std::size_t columns = ColumnCount(table);
     node.aligns.assign(columns, ColumnAlign::Left);
+    // One filter button per column, on the header row's cells. A column the
+    // reader has filtered says so, and the header draws its button filled.
+    node.tableFilterActive.assign(columns, false);
+    for (std::size_t c = 0; c < columns; ++c) {
+        node.tableFilterActive[c] = filters.Active(c);
+    }
 
-    for (std::size_t r = 0; r < table.rows.size(); ++r) {
+    for (const std::size_t r : visible) {
         TableRow row;
         const bool header = table.hasHeader && r == 0;
         row.cells.reserve(table.rows[r].size());
@@ -176,9 +212,66 @@ Document BuildDocument(const std::string& utf8Text,
 
     doc.nodes.push_back(std::move(node));
 
-    const std::string notice = NoticeText(table);
+    // Two lines can follow the table: what the caps left out of the file, and
+    // what the filters left out of the table. They are one paragraph.
+    std::string notice = NoticeText(table);
+    const std::string filtered = FilterNotice(table, visible.size(), filters);
+    if (!filtered.empty()) {
+        if (!notice.empty()) notice += " ";
+        notice += filtered;
+    }
     if (!notice.empty()) doc.nodes.push_back(ParagraphOf(notice));
     return doc;
+}
+
+Document BuildDocument(const std::string& utf8Text,
+                       const std::string& pathUtf8) {
+    return BuildDocument(utf8Text, pathUtf8, csvfilter::State{});
+}
+
+std::vector<csvfilter::Value> ColumnValues(const std::string& utf8Text,
+                                           const std::string& pathUtf8,
+                                           std::size_t column,
+                                           std::size_t limit) {
+    const csv::Table table = csv::Parse(utf8Text, DelimiterHintForPath(pathUtf8));
+    return csvfilter::Values(table, column, limit);
+}
+
+std::vector<FilterMenuItem> FilterMenu(const std::string& utf8Text,
+                                       const std::string& pathUtf8,
+                                       std::size_t column,
+                                       const csvfilter::State& filters,
+                                       std::size_t limit) {
+    std::vector<FilterMenuItem> menu;
+    FilterMenuItem clear;
+    clear.clear = true;
+    clear.label = "Show all rows in this column";
+    clear.checked = !filters.Active(column);
+    menu.push_back(clear);
+
+    const csvfilter::Filter* filter = filters.For(column);
+    const std::string foldedQuery =
+        filter ? csvfilter::Fold(filter->query) : std::string();
+    const std::vector<csvfilter::Value> values =
+        ColumnValues(utf8Text, pathUtf8, column, limit);
+    for (const csvfilter::Value& value : values) {
+        FilterMenuItem item;
+        // A long value is cut for the menu only; the filter uses all of it.
+        std::string label = value.text;
+        if (label.size() > 48) {
+            label.resize(45);
+            label += "...";
+        }
+        if (value.count > 1) label += " (" + std::to_string(value.count) + ")";
+        item.label = label;
+        item.query = value.text;
+        item.exact = true;
+        item.checked = filter && filter->exact &&
+                       csvfilter::Fold(value.text) == foldedQuery;
+        item.separator = menu.size() == 1;
+        menu.push_back(item);
+    }
+    return menu;
 }
 
 }  // namespace csvdoc

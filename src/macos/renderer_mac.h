@@ -179,6 +179,12 @@ public:
     // Draws the laid out document.
     void Render(const Document& doc, float scrollOffset);
 
+    // The column whose filter button holds this document point, from the
+    // buttons of the layout the last render built.
+    bool TableFilterAt(float docX, float docY, size_t* column) const {
+        return layout::FilterButtonAt(tableFilterButtons_, docX, docY, column);
+    }
+
     // The laid out blocks, which the content view uses for hit testing.
     const std::vector<LaidOutBlock>& blocks() const { return blocks_; }
 
@@ -492,6 +498,9 @@ private:
     // assigns every item to its block once by merging the item stream
     // with the ordered block records.
     std::vector<LaidOutBlock> blocks_;
+    // The filter buttons of the last rendered shared layout, in document
+    // coordinates.
+    std::vector<platform::Rect> tableFilterButtons_;
     display::DisplayList displayList_;
     std::vector<std::pair<size_t, size_t>> blockItemSpans_;
     float contentWidth_ = 0.0f;

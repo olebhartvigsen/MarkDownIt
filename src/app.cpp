@@ -7,6 +7,7 @@
 #include "resource.h"
 #include "ribbon.h"
 #include "fileassoc.h"
+#include "csvdocument.h"
 #include "documentparse.h"
 #include "parser.h"
 #include "navigation.h"
@@ -1198,7 +1199,8 @@ void AppWindow::OnReparseTimer() {
         return;
     }
     doc_ = Document{};
-    ParseDocument(buffer_.Text(), ImeWideToUtf8(file_path_), doc_);
+    ParseDocument(buffer_.Text(), ImeWideToUtf8(file_path_),
+                  controller_.tableFilters(), doc_);
     layout_cache_.Clear();
     renderer_.ClearSvgCache();
     UpdateScrollInfo();
@@ -1674,6 +1676,18 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     }
     last_click_time_ = now;
     last_click_y_ = y;
+
+    // A table document's header carries a filter button per column, and a
+    // click on one belongs to the button: it opens the column's menu and
+    // never moves the caret.
+    if (controller_.InTableDocument() && !source_view_) {
+        size_t filterColumn = 0;
+        if (renderer_.TableFilterAt(docX, docY, &filterColumn)) {
+            ShowTableFilterMenu(filterColumn);
+            gesture_.Consume();
+            return;
+        }
+    }
 
     // Link click handling: clicking a link opens it in both view and
     // edit mode. In edit mode, if the click is NOT on a link, the
@@ -2472,7 +2486,7 @@ void AppWindow::LoadDocumentText(const std::string& raw, const std::wstring& pat
     renderer_.SetStandaloneSvg(controller_.fileFormat().isSvg);
 
     doc_ = Document{};
-    ParseDocument(utf8, ImeWideToUtf8(path), doc_);
+    ParseDocument(utf8, ImeWideToUtf8(path), controller_.tableFilters(), doc_);
     file_path_ = path;
     // A table document is read, never written: it opens in reading mode
     // even when the window was editing the file before it.
@@ -2553,7 +2567,8 @@ void AppWindow::Reload() {
 
     float savedY = scrollY_;
     doc_ = Document{};
-    ParseDocument(utf8, ImeWideToUtf8(file_path_), doc_);
+    ParseDocument(utf8, ImeWideToUtf8(file_path_), controller_.tableFilters(),
+                  doc_);
     // The buffer pointer may have been reallocated; stale layouts, SVG
     // documents and decoded bitmaps are all bound to the old content.
     layout_cache_.Clear();
@@ -3957,6 +3972,46 @@ void AppWindow::OnClose() {
         // IDNO: discard, proceed to close
     }
     DestroyWindow(hwnd_);
+}
+
+void AppWindow::ShowTableFilterMenu(std::size_t column) {
+    if (!controller_.InTableDocument()) return;
+    const std::vector<csvdoc::FilterMenuItem> items = csvdoc::FilterMenu(
+        buffer_.Text(), ImeWideToUtf8(file_path_), column,
+        controller_.tableFilters(), 40);
+    if (items.empty()) return;
+
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return;
+    // Item ids start at one: TrackPopupMenu answers zero when the reader
+    // clicks away, and that means the filter stays as it is.
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        const csvdoc::FilterMenuItem& item = items[i];
+        if (item.separator) {
+            AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+            continue;
+        }
+        const std::wstring label = Utf8ToWide(item.label);
+        AppendMenuW(menu, MF_STRING | (item.checked ? MF_CHECKED : 0),
+                    static_cast<UINT_PTR>(i + 1), label.c_str());
+    }
+    POINT at{};
+    GetCursorPos(&at);
+    const UINT_PTR picked = TrackPopupMenu(
+        menu, TPM_RETURNCMD | TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RIGHTBUTTON,
+        at.x, at.y, 0, hwnd_, nullptr);
+    DestroyMenu(menu);
+    if (picked == 0 || picked > items.size()) return;
+
+    const csvdoc::FilterMenuItem& item = items[picked - 1];
+    if (item.clear) {
+        controller_.SetTableFilter(column, std::string());
+    } else {
+        controller_.SetTableFilter(column, item.query, item.exact);
+    }
+    // The filter changes the node list, so the document is parsed again and
+    // the page redraws from it.
+    OnReparseTimer();
 }
 
 void AppWindow::NewDocument() {

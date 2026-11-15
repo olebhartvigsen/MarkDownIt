@@ -192,6 +192,8 @@ public:
     void RedoAction();
     void ShowFindReplace(bool replaceMode);
     void NewDocument();
+    // The column's filter menu, opened from its button in the header row.
+    void ShowTableFilterMenu(std::size_t column);
     void ShowRecentDocuments();
 
     // Called by CRibbonApplication::OnViewChanged when ribbon height changes.

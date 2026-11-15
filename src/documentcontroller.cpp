@@ -881,6 +881,10 @@ void DocumentController::LoadFile(const std::string& raw,
     undo_.Clear();
     sel_.Collapse(CaretPos{0});
     pending_ = PendingFormatState{};
+    // Another file has other columns: no filter carries over. A reload of the
+    // same file keeps the reader's filters, because a reload is still the
+    // same table.
+    if (!fileFormat_.isTable) tableFilters_.ClearAll();
 }
 
 std::string DocumentController::BytesForSaving() const {

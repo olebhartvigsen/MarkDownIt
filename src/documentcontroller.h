@@ -44,6 +44,7 @@
 #include <string>
 
 #include "caret.h"
+#include "csvfilter.h"
 #include "documentfile.h"
 #include "dom.h"
 #include "editcontroller.h"
@@ -247,6 +248,16 @@ public:
     // edited, so every command that writes to the text stands down.
     bool InTableDocument() const { return fileFormat_.isTable; }
 
+    // The per-column filters of the open table document, and the two things a
+    // shell does with them. One set per file: loading another document starts
+    // from no filters, because the columns are not the same columns.
+    const csvfilter::State& tableFilters() const { return tableFilters_; }
+    void SetTableFilter(std::size_t column, const std::string& query,
+                        bool exact = false) {
+        tableFilters_.Set(column, query, exact);
+    }
+    void ClearTableFilters() { tableFilters_.ClearAll(); }
+
     bool CaretInTable() const;
 
     // What the table commands can do at the caret. The ribbon greys
@@ -321,6 +332,9 @@ private:
     PendingFormatState pending_;
     bool editing_ = false;
     FileFormat fileFormat_;
+    // The filters on the open table's columns. Empty for every other kind of
+    // document, and cleared when another file is loaded.
+    csvfilter::State tableFilters_;
     DocumentChangedHandler documentChanged_;
     SelectionChangedHandler selectionChanged_;
 

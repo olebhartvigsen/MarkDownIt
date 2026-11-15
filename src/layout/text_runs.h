@@ -102,6 +102,14 @@ inline ColumnAlign CellAlign(const Node& table, const TableRow& row,
                              size_t col, const LayoutMetrics& m) {
     ColumnAlign a = col < table.aligns.size() ? table.aligns[col]
                                               : ColumnAlign::Default;
+    // A header cell that carries a filter button keeps the left edge: the
+    // button owns the right one, and a right aligned name would run under
+    // it. The layout gives that cell a narrower text width for the same
+    // reason, so the two answers agree.
+    if (!table.tableFilterActive.empty() && col < row.cells.size() &&
+        row.cells[col].isHeader) {
+        return ColumnAlign::Left;
+    }
     if (a == ColumnAlign::Default && m.tableHeaderCenter &&
         col < row.cells.size() && row.cells[col].isHeader)
         a = ColumnAlign::Center;

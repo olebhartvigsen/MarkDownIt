@@ -116,16 +116,17 @@ TEST(Csv, ANumberIsPlainDigitsAndOnePoint) {
     EXPECT_FALSE(csv::LooksNumeric("abc"));
 }
 
-TEST(Csv, TheHeaderRowIsANameRowAndNotData) {
+TEST(Csv, TheHeaderRowIsTheDefaultAndNumbersAreNotOne) {
+    // A data file names its columns, so the first record is a header unless
+    // it cannot be one. The strict guess this replaced asked for unique,
+    // filled, non-numeric cells and turned real headers down.
     EXPECT_TRUE(csv::LooksLikeHeader({{"name", "city"}, {"Ole", "Aarhus"}}));
-    // A row of numbers is data, so there is no header.
+    EXPECT_TRUE(csv::LooksLikeHeader({{"a", "a"}, {"1", "2"}}));
+    EXPECT_TRUE(csv::LooksLikeHeader({{"name", ""}, {"1", "2"}}));
+    // A first record of nothing but numbers is a record like the rest.
     EXPECT_FALSE(csv::LooksLikeHeader({{"1", "2"}, {"3", "4"}}));
-    // A repeated name is data too.
-    EXPECT_FALSE(csv::LooksLikeHeader({{"a", "a"}, {"1", "2"}}));
-    // An empty name cell is not a name.
-    EXPECT_FALSE(csv::LooksLikeHeader({{"name", ""}, {"1", "2"}}));
-    // One record alone has nothing to name.
-    EXPECT_FALSE(csv::LooksLikeHeader({{"name", "city"}}));
+    EXPECT_FALSE(csv::LooksLikeHeader({{"name", "city"}}));  // no body at all
+    EXPECT_FALSE(csv::LooksLikeHeader({{"", ""}, {"", ""}}));
 }
 
 TEST(Csv, TheRowCapKeepsCounting) {
