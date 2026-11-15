@@ -291,6 +291,12 @@ public:
     // around lists in the text.
     void SetEditing(bool on) { editing_ = on; }
 
+    // The top of the visible part of the page, in document coordinates.
+    // The mac draws the whole page and lets the scroll view translate it, so
+    // the render offset is zero and this is the only number that says where
+    // the viewport's edge is: a header pin compares against it.
+    void SetViewportTop(float top) { viewportTop_ = top; }
+
     // The height of the header band the last paint pinned at the viewport's
     // top edge, zero when nothing was pinned. The QA walk traces it, so a
     // capture run reports the band instead of only photographing it.
@@ -536,6 +542,7 @@ private:
     // Whether the text is wrapped.
     bool wrap_ = true;
     bool editing_ = true;
+    float viewportTop_ = 0.0f;
     // Set by every paint, read by the QA walk (PinnedHeaderHeightForQA and
     // PinnedProbeForQA).
     float qaPinnedHeaderHeight_ = 0.0f;

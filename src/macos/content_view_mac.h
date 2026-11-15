@@ -276,6 +276,11 @@ public:
     // full line, and the layout is rebuilt for the new mode.
     void SetEditing(bool on);
 
+    // The top of the visible part of the page, in document coordinates: the
+    // mac draws the whole page and lets the scroll view translate it, so the
+    // pin needs this number to know where the viewport's edge is.
+    void SetViewportTop(float top) { renderer_.SetViewportTop(top); }
+
     // The header band the last paint pinned, zero when nothing was. The
     // QA walk traces it, so a capture run reports the band instead of only
     // photographing it.

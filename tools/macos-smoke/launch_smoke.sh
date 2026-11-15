@@ -197,7 +197,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     # trace says how tall the band was, so a band that never appeared
     # fails here instead of passing as a quiet frame.
     CSV_HEADER=$(grep "qa csv-pinned:" "$LOG" 2>/dev/null \
-        | sed -n 's/.*header=\([0-9]*\).*/\1/p' | head -1)
+        | sed -n 's/.*qa csv-pinned: .* band=\([0-9]*\).*/\1/p' | head -1)
     if [ -z "$CSV_HEADER" ]; then
         echo "launch smoke FAILED: the csv-pinned state reported no band"
         grep "qa csv-pinned" "$LOG" 2>/dev/null | head -3
@@ -205,7 +205,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     fi
     if [ "$CSV_HEADER" -le 0 ]; then
         echo "launch smoke FAILED: nothing was pinned when a long data file" \
-             "was scrolled past its header (header=$CSV_HEADER)"
+             "was scrolled past its header (band=$CSV_HEADER)"
         grep "qa csv-pinned" "$LOG" 2>/dev/null | head -3
         exit 1
     fi

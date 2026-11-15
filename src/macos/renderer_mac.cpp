@@ -960,8 +960,8 @@ void MacRenderer::SetSearchMatches(const std::vector<TextMatch>* matches,
 std::string MacRenderer::PinnedProbeForQA() const {
     char line[224];
     std::snprintf(line, sizeof(line),
-                  "block=%.0f block-height=%.0f header=%.0f tables=%d "
-                  "pinned=%.0f editing=%d",
+                  "block=%.0f block-height=%.0f header-height=%.0f tables=%d "
+                  "pinned-now=%.0f editing=%d",
                   (double)qaPinBlockY_, (double)qaPinBlockHeight_,
                   (double)qaPinHeaderHeight_, qaPinTableBlocks_,
                   (double)qaPinnedHeaderHeight_, editing_ ? 1 : 0);
@@ -993,7 +993,7 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
         float pinTop = 0.0f;
         const bool pinned = !editing_ && layout::PinnedHeader(
             block.y, block.height, block.tableRecord->headerHeight,
-            scrollOffset, &pinTop);
+            viewportTop_, &pinTop);
         for (const Rect& rect : block.tableRecord->filterButtons) {
             Rect hit = rect;
             hit.x += originX_;
@@ -1108,32 +1108,15 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
                     block.y, block.height,
                     block.tableRecord ? block.tableRecord->headerHeight
                                       : 0.0f,
-                    scrollOffset, &pinTop);
+                    viewportTop_, &pinTop);
                 if (pinned && block.tableRecord) {
                     qaPinnedHeaderHeight_ = block.tableRecord->headerHeight;
-                    if (const char* qa = std::getenv("MARKDOWNIT_QA_BAND")) {
-                        if (*qa) {
-                            // Two probes, so a capture can say which space the
-                            // target draws in: the orange one sits at the top
-                            // of the visible space, the purple one at the
-                            // document's own scroll offset.
-                            target_->FillRect(
-                                platform::Rect{originX_ + 8.0f, 0.0f,
-                                               300.0f, 18.0f},
-                                platform::Color{1.0f, 0.55f, 0.0f, 1.0f});
-                            target_->FillRect(
-                                platform::Rect{originX_ + 8.0f, scrollOffset,
-                                               300.0f, 18.0f},
-                                platform::Color{0.55f, 0.0f, 1.0f, 1.0f});
-                        }
-                    }
-                    // The items are in the walk's coordinates: the column
-                    // starts at originX_ and the band's own top is at
-                    // block.y - padTop (the blocks carry the padTop, the walk
-                    // does not). Putting that top at the window's edge is the
-                    // whole of the pin.
+                    // The items are the walk's: x from the column's edge, y
+                    // from the table's own top. Doc y = item y + padTop, so
+                    // putting the band's top (block.y - padTop) at the
+                    // viewport's top is a translate of pinTop - block.y.
                     TranslatedTarget pinnedBand(target_, originX_,
-                                                metrics_.padTop - block.y);
+                                                pinTop - block.y);
                     display::Play(block.tableRecord->header, &pinnedBand,
                                   [this](const display::Image& item) {
                                       return ImageHandleFor(item);

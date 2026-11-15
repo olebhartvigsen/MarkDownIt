@@ -42,6 +42,9 @@ $log = (Resolve-Path $OutDir).Path + "\walk.log"
 # must see the pristine page comes first.
 $states = @("doc", "find", "edit", "outline", "source", "lower", "end", "tail", "tail2", "shared",
             "csv-pinned")
+# The QA walk dresses a pinned table header in a colour no theme uses, so
+# the frozen row is visible in the artifact on both platforms.
+$env:MARKDOWNIT_QA_BAND = "1"
 $env:MARKDOWNIT_QA_STATES = ($states -join ",")
 $env:MARKDOWNIT_QA_LOG = $log
 
