@@ -1533,7 +1533,14 @@ void MacRenderer::DrawPinnedHeaders(RenderTarget* target, float visibleTop) {
         }
         if (!pinned) continue;
         qaPinnedHeaderHeight_ = block.tableRecord->headerHeight;
-        TranslatedTarget band(target, originX_, pinTop - block.y);
+        // The band's items are the walk's, measured from the header's own
+        // top; the target draws document coordinates. Putting that top at the
+        // viewport's edge is one translate of pinTop minus the header's walk
+        // top, which is not the block's document y: the block carries the
+        // page's padding on top of it, and using that number put the band one
+        // padding above the edge, out of sight.
+        TranslatedTarget band(target, originX_,
+                              pinTop - block.tableRecord->headerTop);
         display::Play(block.tableRecord->header, &band,
                       [this](const display::Image& item) {
                           return ImageHandleFor(item);
