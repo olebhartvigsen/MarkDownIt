@@ -20,6 +20,9 @@
 # usage: windows-app macos-core windows-tests macos-tests
 set(MARKDOWNIT_CORE_SOURCES
     src/parser.cpp
+    src/csv.cpp
+    src/csvdocument.cpp
+    src/documentparse.cpp
     src/textbuffer.cpp
     src/layout/break_heading_layout.cpp
     src/layout/text_runs.cpp

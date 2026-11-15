@@ -243,6 +243,10 @@ public:
         return fileFormat_.isMmd || fileFormat_.isSvg;
     }
 
+    // The document is a CSV or TSV table: read, filtered and copied, never
+    // edited, so every command that writes to the text stands down.
+    bool InTableDocument() const { return fileFormat_.isTable; }
+
     bool CaretInTable() const;
 
     // What the table commands can do at the caret. The ribbon greys

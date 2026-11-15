@@ -162,6 +162,7 @@ Rules that follow from this:
 | Area | Shared (write once) | Native (one per platform) |
 |------|---------------------|---------------------------|
 | Parsing | `parser.cpp`, `dom.h`, md4c | none |
+| CSV tables | `csv.*`, `csvdocument.*`, `documentparse.*`, the table layout and painters | the open dialog filter |
 | Layout | `src/layout/*`, `layoutcache.*`, `blockspacing.h`, `theme.h`, `markdown_style.h` | none |
 | Painting | display list and `display_player` | `D2DTarget` (Windows), the Core Graphics target (macOS), Mermaid and SVG painters |
 | Text | `TextEngine` seam, `textlayout.h` seam, `textlayout_generic.cpp` fallback | `DWriteEngine`, `textlayout_dwrite.cpp` / `text_engine_mac.*`, `textlayout_coretext.cpp` |
@@ -261,6 +262,7 @@ Open migration steps and the reasoning behind them are in
 | `searchreplace.*`, `findstate.*`, `findbar_model.*`, `unicode_fold*`, `find_strings.h` | find and replace |
 | `outline.*` | heading list for the outline pane |
 | `documentfile.*`, `clipboard.*`, `settings.*`, `textenc.h` | file decoding, clipboard logic, settings struct, text encoding |
+| `csv.*`, `csvdocument.*`, `documentparse.*` | the CSV reader, the CSV to table node bridge, and the one kind switch both ports parse through |
 | `filewatch_model.h` | when a change on disk means a reload, a question, or nothing |
 | `welcome_screen.*` | the home screen (a new document, an open one, the recent files), drawn through the seams |
 | `svgtext.*`, `svgtypes.h`, `src/macos/svg_mac.cpp` | the SVG reader shared by both ports |
@@ -476,6 +478,7 @@ raw bytes on disk. Verify with raw byte inspection, not the display.
 | mermaid-dagre-port.md, svg-diagram-rendering.md | the diagram engines |
 | outline-pane-view.md, find-replace.md, zoom-guidelines.md, cursor-blinking.md, highlighting-functionality.md, night-mode-reference.md | single features |
 | file-watch.md, home-screen.md | the open file watched for changes, and the page shown when none is open |
+| csv-view.md | a CSV file as a table document: the reader, the caps, the fixed font, read-only |
 
 ## Skills
 

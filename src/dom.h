@@ -130,6 +130,10 @@ struct Node {
     // Empty when the table declares no alignment anywhere, so a plain table
     // costs nothing.
     std::vector<ColumnAlign>   aligns;
+    // A table that holds data rather than prose: a CSV document. The cell
+    // runs take the code face, so the columns line up whatever the glyphs
+    // are. Set by src/csvdocument.cpp and read by the table layout.
+    bool                       tableMonospace = false;
     // Parsed source and a provisional layout. The renderer replaces the layout
     // with a DirectWrite-measured cached snapshot when its text services exist.
     std::shared_ptr<mermaid::Flowchart> mermaid_flowchart;

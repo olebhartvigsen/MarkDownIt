@@ -100,6 +100,12 @@ std::string DecodeFileText(const std::string& raw,
               (PathHasExtension(pathUtf8, ".mmd") ||
                PathHasExtension(pathUtf8, ".mermaid"));
     f.isSvg = !pathUtf8.empty() && PathHasExtension(pathUtf8, ".svg");
+    // A CSV or TSV file is read as a table and never edited, so its text
+    // stays exactly as it arrived: no fence, no decoding of its own.
+    f.isTable = !pathUtf8.empty() &&
+                (PathHasExtension(pathUtf8, ".csv") ||
+                 PathHasExtension(pathUtf8, ".tsv") ||
+                 PathHasExtension(pathUtf8, ".tab"));
     if (f.isMmd && !HasLangFence(text, "mermaid")) {
         text = WrapLangFence("mermaid", text);
         f.mmdWrapped = true;

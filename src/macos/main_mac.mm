@@ -2592,8 +2592,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [panel setCanChooseDirectories:NO];
     // A standalone SVG is a page image, and the renderer draws it as
     // one, so it can be opened like a document.
+    // A CSV or TSV file is a table document: the table view reads it.
     [panel setAllowedFileTypes:@[@"md", @"markdown", @"mdown", @"mkd",
-                                 @"mmd", @"mermaid", @"svg"]];
+                                 @"mmd", @"mermaid", @"svg", @"csv",
+                                 @"tsv", @"tab"]];
     if ([panel runModal] != NSModalResponseOK) return;
     [self OpenPath:[[panel URL] path].UTF8String];
 }

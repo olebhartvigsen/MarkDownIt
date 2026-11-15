@@ -50,6 +50,14 @@ const Requirements& RequirementsOf(CommandId id) {
     }();
     static const Requirements kAlways = Always();
     static const Requirements kDoc = Doc();
+    // A command that needs a document the app can write to. A CSV table is
+    // read only, and the mode switch for it has no second mode.
+    static const Requirements kWritable = [] {
+        Requirements r;
+        r.needsDocument = true;
+        r.needsWritable = true;
+        return r;
+    }();
     static const Requirements kEditing = Doc(true);
     static const Requirements kCopy = [] {
         Requirements r = Doc();
@@ -77,9 +85,23 @@ const Requirements& RequirementsOf(CommandId id) {
         r.outsideTable = true;
         return r;
     }();
+    // Find draws its match where the text is. A table document paints its
+    // own cells, so a match would land nowhere: the column filters are the
+    // search a table has.
+    static const Requirements kFind = [] {
+        Requirements r = Doc();
+        r.needsTextDocument = true;
+        return r;
+    }();
     static const Requirements kFindStep = [] {
         Requirements r = Doc();
         r.needsQuery = true;
+        r.needsTextDocument = true;
+        return r;
+    }();
+    static const Requirements kReplace = [] {
+        Requirements r = Doc(true);
+        r.needsTextDocument = true;
         return r;
     }();
     static const Requirements kMark = [] {
@@ -172,6 +194,7 @@ const Requirements& RequirementsOf(CommandId id) {
     // View. The edit switch and the source view need a document; the
     // outline needs headings in it; the zoom answers from its range.
     case CommandId::EditToggle:
+        return kWritable;
     case CommandId::SourceView:
     case CommandId::Wrap:
     case CommandId::WidthMenu:
@@ -195,7 +218,7 @@ const Requirements& RequirementsOf(CommandId id) {
     // and the other two need a document. The marker works in both
     // modes, a selection is enough (highlighting guide 4).
     case CommandId::Find:
-        return kDoc;
+        return kFind;
     case CommandId::FindNext:
     case CommandId::FindPrevious:
         return kFindStep;
@@ -204,7 +227,7 @@ const Requirements& RequirementsOf(CommandId id) {
         // edit mode whatever the query says. The two buttons inside the
         // bar follow the matches, and the bar greys its replace half
         // while the page is read (find guide 4).
-        return kEditing;
+        return kReplace;
     case CommandId::Mark:
         return kMark;
 
@@ -248,6 +271,14 @@ bool Enabled(CommandId id, const Context& ctx) {
     if (req.needsDocument && ctx.welcome) return false;
     if (req.needsEditing && (ctx.welcome || !ctx.editing)) return false;
     if (req.needsMarkdown && (ctx.diagram || ctx.inCode)) return false;
+    if (ctx.tableDocument) {
+        // A CSV table is read: no editing, no markdown, no table edits, and
+        // the mode switch has no second mode to switch to.
+        if (req.needsEditing || req.needsMarkdown || req.needsTextDocument)
+            return false;
+        if (req.needsWritable) return false;
+        if (req.table != TableNeed::None) return false;
+    }
     if (req.needsSelection && !ctx.hasSelection) return false;
     if (req.needsQuery && !ctx.findHasQuery) return false;
     if (req.needsUndo && !ctx.canUndo) return false;
@@ -292,6 +323,7 @@ Context FromDocument(DocumentController& controller) {
     ctx.welcome = false;
     ctx.editing = controller.IsEditing();
     ctx.diagram = controller.InDiagramDocument();
+    ctx.tableDocument = controller.InTableDocument();
     ctx.inCode = controller.CaretInCodeBlock();
     ctx.hasSelection = !controller.selection().Empty();
     ctx.canUndo = controller.undo().CanUndo();

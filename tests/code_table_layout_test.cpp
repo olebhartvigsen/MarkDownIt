@@ -222,6 +222,54 @@ TEST(CodeTableLayout, Fallbacks) {
 }
 
 
+TEST(TableLayout, ADataTablePutsEveryCellInTheFixedFace) {
+    // A CSV document asks for the code face in every cell, header and body
+    // alike, so a column of figures is read down one edge whatever the
+    // glyphs above it are.
+    Node n;
+    n.block = BlockKind::Table;
+    n.tableMonospace = true;
+    TableRow header;
+    header.cells.push_back(Cell(U"name", true, 0, 4));
+    header.cells.push_back(Cell(U"price", true, 5, 10));
+    TableRow body;
+    body.cells.push_back(Cell(U"Ole", false, 11, 14));
+    body.cells.push_back(Cell(U"12.5", false, 15, 19));
+    n.rows.push_back(header);
+    n.rows.push_back(body);
+
+    Rig rig(400.0f);
+    float y = 40.0f;
+    layout::LaidBlock b = layout::LayoutTableBlock(rig.ctx, n, 0, &y);
+    ASSERT_TRUE(b.table != nullptr);
+    ASSERT_EQ(b.table->cells.size(), 2u);
+    for (const std::vector<layout::LaidTableCell>& row : b.table->cells) {
+        for (const layout::LaidTableCell& cell : row) {
+            ASSERT_TRUE(!cell.lines.empty());
+            for (const platform::TextLine& line : cell.lines) {
+                for (const platform::GlyphRun& run : line.runs) {
+                    // The spec carries the size in DIP, the metric in points.
+                    NEAR(run.font.size, kM.codeFontSize * kPt);
+                    EXPECT_TRUE(run.font.monospace);
+                }
+            }
+        }
+    }
+
+    // The same table without the flag keeps the body face, which is what a
+    // markdown table already draws.
+    n.tableMonospace = false;
+    Rig prose(400.0f);
+    float y2 = 40.0f;
+    layout::LaidBlock plain = layout::LayoutTableBlock(prose.ctx, n, 0, &y2);
+    ASSERT_TRUE(plain.table != nullptr);
+    ASSERT_TRUE(!plain.table->cells[0][0].lines.empty());
+    const platform::GlyphRun& run = plain.table->cells[0][0].lines[0].runs[0];
+    // A header cell is semibold at the body size, not a code run.
+    NEAR(run.font.size, kM.bodyFontSize * kPt);
+    EXPECT_FALSE(run.font.monospace);
+}
+
 TEST(TableLayout, DistributeTableColumnsMath) {
     // Words that fit the equal share keep the equal split.
     {

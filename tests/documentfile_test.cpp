@@ -18,6 +18,27 @@ std::string RoundTrip(const std::string& raw, const std::string& path) {
     c.LoadFile(raw, path);
     return c.BytesForSaving();
 }
+// A CSV or TSV file keeps its bytes: the table view reads them, and no
+// fence is wrapped around them the way a diagram source gets one.
+TEST(DocumentFile, ATableFileIsMarkedAndLeftAlone) {
+    FileFormat format;
+    const std::string raw = "name,price\nOle,12.5\n";
+    EXPECT_EQ(DecodeFileText(raw, "data.csv", &format), raw);
+    EXPECT_TRUE(format.isTable);
+    EXPECT_FALSE(format.isMmd || format.isSvg);
+
+    FileFormat tsv;
+    EXPECT_TRUE(DecodeFileText("a\tb\n", "DATA.TSV", &tsv) == "a\tb\n");
+    EXPECT_TRUE(tsv.isTable);
+    FileFormat tab;
+    DecodeFileText("a\tb\n", "x.tab", &tab);
+    EXPECT_TRUE(tab.isTable);
+
+    FileFormat md;
+    DecodeFileText("# hi\n", "notes.md", &md);
+    EXPECT_FALSE(md.isTable);
+}
+
 }  // namespace
 
 TEST(DocumentFile, BomIsStrippedOnLoadAndPutBackOnSave) {

@@ -20,6 +20,8 @@ struct FileFormat {
     bool crlf = false;
     bool isMmd = false;
     bool isSvg = false;
+    // A CSV or TSV file: the table view reads it, and nothing is wrapped.
+    bool isTable = false;
     bool mmdWrapped = false;
     bool svgWrapped = false;
 };

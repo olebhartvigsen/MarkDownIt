@@ -334,6 +334,8 @@ if(BUILD_TESTS AND APPLE)
         # Family 6: what a file becomes in the editor and back (BOM,
         # line ends, the .mmd and .svg fence).
         tests/documentfile_test.cpp
+        tests/csv_test.cpp
+        tests/csvdocument_test.cpp
         tests/code_table_layout_test.cpp
         tests/svg_mermaid_layout_test.cpp
         tests/display_player_test.cpp
@@ -460,6 +462,8 @@ elseif(BUILD_TESTS)
         # Family 6: what a file becomes in the editor and back (BOM,
         # line ends, the .mmd and .svg fence).
         tests/documentfile_test.cpp
+        tests/csv_test.cpp
+        tests/csvdocument_test.cpp
         tests/code_table_layout_test.cpp
         tests/svg_mermaid_layout_test.cpp
         tests/display_player_test.cpp

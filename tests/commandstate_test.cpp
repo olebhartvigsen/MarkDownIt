@@ -91,6 +91,44 @@ const commands::CommandId kDiagramKeeps[] = {
     commands::CommandId::ZoomReset,
 };
 
+// A CSV table is read, filtered and copied. Every command that writes to
+// the text stands down, and so does the switch to the mode that would let it.
+TEST(CommandState, ATableDocumentRefusesWhatWouldWriteToIt) {
+    using commands::CommandId;
+    commands::Context ctx = Reading();
+    ctx.tableDocument = true;
+
+    EXPECT_FALSE(Enabled(CommandId::EditToggle, ctx));
+    EXPECT_FALSE(Enabled(CommandId::Bold, ctx));
+    EXPECT_FALSE(Enabled(CommandId::Heading1, ctx));
+    EXPECT_FALSE(Enabled(CommandId::InsertTable, ctx));
+    EXPECT_FALSE(Enabled(CommandId::AddRowAbove, ctx));
+    // A table has no headings, so there is no outline to show.
+    EXPECT_FALSE(Enabled(CommandId::Outline, ctx));
+
+    // Reading a table still works: it is what the document is for.
+    EXPECT_TRUE(Enabled(CommandId::ZoomIn, ctx));
+    // Not Find: its match has to be drawn in the text, and a table draws
+    // cells. The column filters are the search a table has.
+    EXPECT_FALSE(Enabled(CommandId::Find, ctx));
+    // The source view is a view, not a write: it shows the bytes the file
+    // holds, which is exactly what a reader of a table may want to check.
+    EXPECT_TRUE(Enabled(CommandId::SourceView, ctx));
+
+    commands::Context selected = ctx;
+    selected.hasSelection = true;
+    EXPECT_TRUE(Enabled(CommandId::Copy, selected));
+
+    // The same context with editing off and a table in the caret is not
+    // enough on its own: the kind is what refuses.
+    commands::Context markdown = Reading();
+    markdown.tableDocument = false;
+    markdown.editing = true;
+    markdown.inTable = true;
+    markdown.tableAddRowAbove = true;
+    EXPECT_TRUE(Enabled(CommandId::AddRowAbove, markdown));
+}
+
 }  // namespace
 
 TEST(CommandState, EveryCommandCarriesRequirements) {
@@ -121,20 +159,20 @@ TEST(CommandState, MutatingCommandsNeedEditMode) {
 
 TEST(CommandState, WelcomeScreenHoldsNoDocument) {
     commands::Context welcome;  // welcome = true, nothing else
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Save, welcome));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Reload, welcome));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Bold, welcome));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Find, welcome));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::ZoomIn, welcome));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::EditToggle, welcome));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Copy, welcome));
+    EXPECT_FALSE(Enabled(commands::CommandId::Save, welcome));
+    EXPECT_FALSE(Enabled(commands::CommandId::Reload, welcome));
+    EXPECT_FALSE(Enabled(commands::CommandId::Bold, welcome));
+    EXPECT_FALSE(Enabled(commands::CommandId::Find, welcome));
+    EXPECT_FALSE(Enabled(commands::CommandId::ZoomIn, welcome));
+    EXPECT_FALSE(Enabled(commands::CommandId::EditToggle, welcome));
+    EXPECT_FALSE(Enabled(commands::CommandId::Copy, welcome));
     // The screen itself is a place to go, and the app commands stay.
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::ViewRecent, welcome));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::New, welcome));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Open, welcome));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::ImportWord, welcome));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Settings, welcome));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Help, welcome));
+    EXPECT_TRUE(Enabled(commands::CommandId::ViewRecent, welcome));
+    EXPECT_TRUE(Enabled(commands::CommandId::New, welcome));
+    EXPECT_TRUE(Enabled(commands::CommandId::Open, welcome));
+    EXPECT_TRUE(Enabled(commands::CommandId::ImportWord, welcome));
+    EXPECT_TRUE(Enabled(commands::CommandId::Settings, welcome));
+    EXPECT_TRUE(Enabled(commands::CommandId::Help, welcome));
 }
 
 TEST(CommandState, ViewModeKeepsReadingAndCopying) {
@@ -142,60 +180,60 @@ TEST(CommandState, ViewModeKeepsReadingAndCopying) {
     ctx.hasSelection = true;
     ctx.canUndo = true;
     // Reading: find, copy, mark, zoom, the view switches, export.
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Copy, ctx));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Find, ctx));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Mark, ctx));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::ZoomIn, ctx));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::SourceView, ctx));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::ExportPdf, ctx));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::SaveAs, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Copy, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Find, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Mark, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::ZoomIn, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::SourceView, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::ExportPdf, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::SaveAs, ctx));
     // Writing: every mutation stands down, save included, because in
     // view mode nothing can have changed.
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Save, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Paste, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Cut, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Bold, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Undo, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Replace, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::InsertTable, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Save, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Paste, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Cut, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Bold, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Undo, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Replace, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::InsertTable, ctx));
 }
 
 TEST(CommandState, EditModeArmsTheFormatCommands) {
     commands::Context ctx = Editing();
     for (commands::CommandId id : kMarkdownCommands) {
         if (id == commands::CommandId::ClearFormat) continue;
-        EXPECT_TRUE(commands::Enabled(id, ctx));
+        EXPECT_TRUE(Enabled(id, ctx));
     }
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Save, ctx));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Paste, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Save, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Paste, ctx));
     // A selection is a precondition for these two, not the mode.
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::ClearFormat, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::ClearFormat, ctx));
     ctx.hasSelection = true;
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::ClearFormat, ctx));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Cut, ctx));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Copy, ctx));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Mark, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::ClearFormat, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Cut, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Copy, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Mark, ctx));
 }
 
 TEST(CommandState, CopyAndCutNeedASelection) {
     commands::Context ctx = Editing();
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Copy, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Cut, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Mark, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Copy, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Cut, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Mark, ctx));
     ctx.hasSelection = true;
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Copy, ctx));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Cut, ctx));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Mark, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Copy, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Cut, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Mark, ctx));
 }
 
 TEST(CommandState, UndoFollowsTheHistory) {
     commands::Context ctx = Editing();
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Undo, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Redo, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Undo, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Redo, ctx));
     ctx.canUndo = true;
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Undo, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Undo, ctx));
     ctx.canRedo = true;
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Redo, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Redo, ctx));
 }
 
 TEST(CommandState, DiagramDocumentTakesTheMarkdownCommands) {
@@ -205,14 +243,14 @@ TEST(CommandState, DiagramDocumentTakesTheMarkdownCommands) {
     commands::Context ctx = Diagram();
     ctx.hasSelection = true;
     for (commands::CommandId id : kMarkdownCommands) {
-        EXPECT_FALSE(commands::Enabled(id, ctx));
+        EXPECT_FALSE(Enabled(id, ctx));
     }
     for (commands::CommandId id : kDiagramKeeps) {
-        EXPECT_TRUE(commands::Enabled(id, ctx));
+        EXPECT_TRUE(Enabled(id, ctx));
     }
     // Editing the source text still works: the clipboard, the history
     // and replace are text operations, not markdown ones.
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Replace, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Replace, ctx));
 }
 
 TEST(CommandState, CodeBlockTakesTheMarkdownCommands) {
@@ -220,73 +258,73 @@ TEST(CommandState, CodeBlockTakesTheMarkdownCommands) {
     // no markdown around it to change.
     commands::Context ctx = Editing();
     ctx.inCode = true;
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Bold, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Heading1, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Bullets, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Quote, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Indent, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::InsertTable, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Bold, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Heading1, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Bullets, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Quote, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Indent, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::InsertTable, ctx));
     // Where each "not in code" gate must keep the other axes intact.
     ctx.inCode = false;
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Bold, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Bold, ctx));
 }
 
 TEST(CommandState, TableCommandsFollowTheCaret) {
     commands::Context ctx = Editing();
     // Outside a table only Insert Table acts, and inside one it stops.
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::InsertTable, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::AddRow, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::RemoveTable, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::InsertTable, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::AddRow, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::RemoveTable, ctx));
     ctx.inTable = true;
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::InsertTable, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::AddRow, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::InsertTable, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::AddRow, ctx));
     // A header row can take a row below it but cannot lose one, and the
     // last column cannot be removed.
     ctx.tableAddRowBelow = true;
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::AddRow, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::AddRowAbove, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::RemoveRow, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::RemoveColumn, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::AddRow, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::AddRowAbove, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::RemoveRow, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::RemoveColumn, ctx));
     // Alignment and Delete Table act anywhere in the table.
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::AlignLeft, ctx));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::AlignCenter, ctx));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::RemoveTable, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::AlignLeft, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::AlignCenter, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::RemoveTable, ctx));
 }
 
 TEST(CommandState, FindStepsNeedAQuery) {
     commands::Context ctx = Reading();
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::FindNext, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::FindPrevious, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::FindNext, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::FindPrevious, ctx));
     // Replace opens the bar where the query is typed, so it does not
     // wait for one; it waits for edit mode, which is where it can act.
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Replace, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Replace, ctx));
     ctx.editing = true;
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Replace, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::FindNext, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Replace, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::FindNext, ctx));
     ctx.findHasQuery = true;
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::FindNext, ctx));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::FindPrevious, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::FindNext, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::FindPrevious, ctx));
 }
 
 TEST(CommandState, ZoomStopsAtTheRange) {
     commands::Context ctx = Reading();
     ctx.canZoomIn = false;
     ctx.canZoomOut = true;
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::ZoomIn, ctx));
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::ZoomOut, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::ZoomIn, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::ZoomOut, ctx));
     ctx.canZoomIn = true;
     ctx.canZoomOut = false;
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::ZoomIn, ctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::ZoomOut, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::ZoomIn, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::ZoomOut, ctx));
     // Actual Size is always on offer with a document.
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::ZoomReset, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::ZoomReset, ctx));
 }
 
 TEST(CommandState, OutlineNeedsHeadings) {
     commands::Context ctx = Reading();
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Outline, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Outline, ctx));
     ctx.hasHeadings = true;
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Outline, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Outline, ctx));
 }
 
 TEST(CommandState, FromDocumentReadsTheController) {
@@ -305,13 +343,13 @@ TEST(CommandState, FromDocumentReadsTheController) {
     EXPECT_FALSE(ctx.inTable);
     EXPECT_FALSE(ctx.hasHeadings);
     EXPECT_FALSE(ctx.inCode);
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Bold, ctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Bold, ctx));
 
     // The caret moves into the fence.
     controller.selection().active.offset = 8;
     ctx = commands::FromDocument(controller);
     EXPECT_TRUE(ctx.inCode);
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Bold, ctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Bold, ctx));
 
     // A heading gives the outline something to list.
     DocumentController headed;
@@ -320,7 +358,7 @@ TEST(CommandState, FromDocumentReadsTheController) {
     headed.SetEditing(true);
     const commands::Context hctx = commands::FromDocument(headed);
     EXPECT_TRUE(hctx.hasHeadings);
-    EXPECT_TRUE(commands::Enabled(commands::CommandId::Outline, hctx));
+    EXPECT_TRUE(Enabled(commands::CommandId::Outline, hctx));
 
     // A standalone .mmd file arrives wrapped in its own fence, so the
     // whole buffer is a diagram whatever the caret does.
@@ -330,8 +368,8 @@ TEST(CommandState, FromDocumentReadsTheController) {
     diagram.SetEditing(true);
     const commands::Context dctx = commands::FromDocument(diagram);
     EXPECT_TRUE(dctx.diagram);
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Bold, dctx));
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Heading1, dctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Bold, dctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Heading1, dctx));
 
     // A standalone .svg file is the same shape.
     DocumentController svg;
@@ -340,5 +378,5 @@ TEST(CommandState, FromDocumentReadsTheController) {
     svg.SetEditing(true);
     const commands::Context sctx = commands::FromDocument(svg);
     EXPECT_TRUE(sctx.diagram);
-    EXPECT_FALSE(commands::Enabled(commands::CommandId::Bullets, sctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Bullets, sctx));
 }

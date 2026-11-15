@@ -7,6 +7,7 @@
 #include "resource.h"
 #include "ribbon.h"
 #include "fileassoc.h"
+#include "documentparse.h"
 #include "parser.h"
 #include "navigation.h"
 #include "tableedit.h"
@@ -1197,7 +1198,7 @@ void AppWindow::OnReparseTimer() {
         return;
     }
     doc_ = Document{};
-    ParseMarkdown(buffer_.Text(), doc_);
+    ParseDocument(buffer_.Text(), ImeWideToUtf8(file_path_), doc_);
     layout_cache_.Clear();
     renderer_.ClearSvgCache();
     UpdateScrollInfo();
@@ -2471,8 +2472,11 @@ void AppWindow::LoadDocumentText(const std::string& raw, const std::wstring& pat
     renderer_.SetStandaloneSvg(controller_.fileFormat().isSvg);
 
     doc_ = Document{};
-    ParseMarkdown(utf8, doc_);
+    ParseDocument(utf8, ImeWideToUtf8(path), doc_);
     file_path_ = path;
+    // A table document is read, never written: it opens in reading mode
+    // even when the window was editing the file before it.
+    if (controller_.fileFormat().isTable && editing_) SetEdit(false);
     ClearDirty();
     scrollY_ = 0.0f;
     StopScrollAnimation();
@@ -2549,7 +2553,7 @@ void AppWindow::Reload() {
 
     float savedY = scrollY_;
     doc_ = Document{};
-    ParseMarkdown(utf8, doc_);
+    ParseDocument(utf8, ImeWideToUtf8(file_path_), doc_);
     // The buffer pointer may have been reallocated; stale layouts, SVG
     // documents and decoded bitmaps are all bound to the old content.
     layout_cache_.Clear();
@@ -3882,7 +3886,7 @@ std::wstring AppWindow::SaveDialog() {
     ofn.hwndOwner = hwnd_;
     ofn.lpstrFile = szFile;
     ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrFilter = L"Markdown (*.md)\0*.md\0Mermaid (*.mmd;*.mermaid)\0*.mmd;*.mermaid\0SVG (*.svg)\0*.svg\0All Files (*.*)\0*.*\0";
+    ofn.lpstrFilter = L"Markdown (*.md)\0*.md\0Mermaid (*.mmd;*.mermaid)\0*.mmd;*.mermaid\0SVG (*.svg)\0*.svg\0CSV tables (*.csv;*.tsv)\0*.csv;*.tsv\0All Files (*.*)\0*.*\0";
     ofn.lpstrDefExt = L"md";
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
     if (file_path_.empty()) {
@@ -5144,7 +5148,7 @@ void AppWindow::OpenFileDialog() {
     ofn.hwndOwner = hwnd_;
     ofn.lpstrFile = buf;
     ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrFilter = L"Markdown (*.md;*.markdown;*.mmd;*.mermaid;*.svg)\0*.md;*.markdown;*.mmd;*.mermaid;*.svg\0All Files\0*.*\0";
+    ofn.lpstrFilter = L"Markdown (*.md;*.markdown;*.mmd;*.mermaid;*.svg)\0*.md;*.markdown;*.mmd;*.mermaid;*.svg\0CSV tables (*.csv;*.tsv)\0*.csv;*.tsv\0All Files\0*.*\0";
     ofn.nFilterIndex = 1;
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
     ofn.lpstrTitle = L"Open Markdown File";

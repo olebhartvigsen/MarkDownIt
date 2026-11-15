@@ -23,7 +23,8 @@ namespace {
 std::vector<platform::GlyphRun> BuildCellRuns(const TableCell& cell,
                                               bool bold,
                                               const platform::Color& color,
-                                              const LayoutMetrics& m) {
+                                              const LayoutMetrics& m,
+                                              bool monospace) {
     std::vector<platform::GlyphRun> runs;
     const std::u32string& text = cell.text;
     const size_t count = text.size();
@@ -65,10 +66,17 @@ std::vector<platform::GlyphRun> BuildCellRuns(const TableCell& cell,
         if (run.empty()) continue;
         platform::GlyphRun glyph;
         glyph.text = std::move(run);
-        const float size = code ? m.codeFontSize : m.bodyFontSize;
+        // A data table puts every cell in the fixed face, header and body
+        // alike, so a column of figures is read down one edge. A prose table
+        // keeps the body face and takes the code face only for code spans.
+        const float size =
+            (monospace || code) ? m.codeFontSize : m.bodyFontSize;
         const char* family =
-            strong ? kSemiboldBodyFont : (code ? kCodeFont : nullptr);
-        glyph.font = fontSpecific(size, code && strong, em, code, family);
+            monospace ? kCodeFont
+                      : (strong ? kSemiboldBodyFont
+                                : (code ? kCodeFont : nullptr));
+        glyph.font = fontSpecific(size, strong && (monospace || code), em,
+                                  monospace || code, family);
         glyph.r = color.r; glyph.g = color.g;
         glyph.b = color.b; glyph.a = color.a;
         glyph.underline = link && m.linkUnderline; glyph.strike = strike;
@@ -228,7 +236,8 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
             const TableCell& cell = row.cells[c];
             std::vector<platform::GlyphRun> runs =
                 BuildCellRuns(cell, cell.isHeader,
-                              ToColor(in.palette->textPrimary), m);
+                              ToColor(in.palette->textPrimary), m,
+                              node.tableMonospace);
             if (runs.empty()) runs = PlaceholderRuns(cell.isHeader, in);
             const float token = WidestToken(runs, in);
             if (token > minInner[c]) minInner[c] = token;
@@ -258,7 +267,8 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
             const TableCell& cell = row.cells[c];
             std::vector<platform::GlyphRun> runs =
                 BuildCellRuns(cell, cell.isHeader,
-                              ToColor(in.palette->textPrimary), m);
+                              ToColor(in.palette->textPrimary), m,
+                              node.tableMonospace);
             if (runs.empty()) runs = PlaceholderRuns(cell.isHeader, in);
             const float innerW = t.colWs[c] - 2.0f * m.cellPadX;
             std::vector<platform::TextLine> lines =

@@ -17,6 +17,7 @@
 #include "findbar_mac.h"
 #include "inputfilter.h"
 #include "navigation.h"
+#include "documentparse.h"
 #include "parser.h"
 #include "platform/seams.h"
 #include "platformservices.h"
@@ -587,7 +588,7 @@ void App::Reparse() {
     // The parse is the shared one. A parse failure leaves the previous
     // document in place, which is what the Windows build does too. The
     // user still sees their text.
-    if (!ParseMarkdown(buffer_.Text(), document_)) {
+    if (!ParseDocument(buffer_.Text(), filePath_, document_)) {
         return;
     }
     if (contentView_) contentView_->OnDocumentChanged();

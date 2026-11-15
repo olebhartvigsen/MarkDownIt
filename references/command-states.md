@@ -39,6 +39,15 @@ The file. Three kinds of document reach the editor.
 | Markdown (.md, .markdown, .mdown, .mkd) | the file | everything, except inside a code block |
 | Mermaid (.mmd, .mermaid) | the bare source, wrapped in a mermaid fence | text editing, find, the clipboard, save, zoom, no markdown formatting |
 | SVG (.svg) | the bare XML, wrapped in an svg fence | the same as Mermaid |
+| Table (.csv, .tsv, .tab) | the file, parsed into rows | reading, copy, zoom, source view, the filters. No editing, no markdown, no table edits, no Find |
+
+A table document is the one kind the app does not write. Its text is not
+a page, it is a file that another program owns, so every command that
+would change it stands down, and so does the switch to the mode that would
+let it. Find stands down too: a match is drawn where the text is, and a
+table paints its own cells, so the columns' filters are the search a table
+has. Source view stays on, because seeing the bytes the file holds is what
+a reader checking a table wants.
 
 Inside a markdown document the caret can also sit in a fenced code block,
 an indented code block or a diagram. That place has no markdown around it
@@ -52,11 +61,6 @@ commands away.
 | New, Open, Import Word, Import PDF | yes | yes | yes | yes |
 | Home, Show Tab Bar, About, Settings, Help | yes | yes | yes | yes |
 
-Home stays live in both modes because it is the way back to the page with
-no document in it, and that page is where a document gets chosen. It is
-also the one live command that leaves the open document, so it asks the
-Save/Discard/Cancel question first whenever the text is not on disk yet,
-the same question Open and Close ask. Already home, it asks nothing.
 | Reload, Save As, Close, Share, Export | no | yes | yes | yes |
 | Save | no | no | yes | yes |
 | Undo, Redo | no | no | with history | with history |
@@ -77,6 +81,12 @@ the same question Open and Close ask. Already home, it asks nothing.
 | Outline | no | with headings | with headings | with headings |
 | Zoom In, Zoom Out | no | inside the range | inside the range | inside the range |
 | Actual Size, Wrap, Width | no | yes | yes | yes |
+
+Home stays live in both modes because it is the way back to the page with
+no document in it, and that page is where a document gets chosen. It is
+also the one live command that leaves the open document, so it asks the
+Save/Discard/Cancel question first whenever the text is not on disk yet,
+the same question Open and Close ask. Already home, it asks nothing.
 
 Two rows deserve a note. Save As stays live in view mode because writing
 a copy does not touch the document that is open. The marker is not a

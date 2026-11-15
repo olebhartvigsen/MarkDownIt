@@ -58,6 +58,10 @@ struct Context {
     bool editing = false;
     // The document came from a standalone .mmd or .svg file.
     bool diagram = false;
+    // The document is a CSV or TSV table. It is read and filtered, not
+    // edited: the writing commands, the markdown formatting, the table
+    // edits and the mode switch all stand down.
+    bool tableDocument = false;
     // The caret sits in a code-like block: a fence, an indented block or
     // a diagram inside a markdown document.
     bool inCode = false;
@@ -92,6 +96,13 @@ struct Requirements {
     bool needsEditing = false;
     // Markdown formatting: refused in a diagram document and inside code.
     bool needsMarkdown = false;
+    // The command changes the text, so a read-only document has no place
+    // for it. needsEditing covers the mode; this one covers the kind.
+    bool needsWritable = false;
+    // The command finds text and draws the match where the text is. A table
+    // document paints its own cells, so a match would land nowhere: a table
+    // is searched with its column filters instead.
+    bool needsTextDocument = false;
     bool needsSelection = false;
     bool needsQuery = false;
     bool needsUndo = false;
