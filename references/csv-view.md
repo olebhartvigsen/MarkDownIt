@@ -55,6 +55,25 @@ partial table that pretends to be whole. The caps are constants in
 `src/csv.h`; the visible-range painting that would lift the row cap is the
 next slice of the plan.
 
+### What the caps cost
+
+Measured with the fake engine (`/opt/data/cache/scratch/probe_csv.cpp`,
+`-O2`), which charges the layout's own work and not a platform text
+stack's, so a real engine's open is higher:
+
+| Rows x columns | Parse | Layout |
+|----------------|-------|--------|
+| 1,000 x 12 | 1.6 ms | 10 ms |
+| 5,000 x 12 | 7.9 ms | 51 ms |
+| 20,000 x 12 | 27 ms | 201 ms |
+| 2,000 x 40 | 7.3 ms | 64 ms |
+| 5,000 x 40 | 19 ms | 160 ms |
+
+The layout is the cost: the table lays out every row up front, so a 20,000
+row file pays a fifth of a second on every re-layout (zoom, resize). That
+is the price of the row cap as it stands, and the reason a much bigger cap
+waits for the visible-row painting.
+
 ## The fixed font
 
 A table document asks for the code face in every cell, header and body
