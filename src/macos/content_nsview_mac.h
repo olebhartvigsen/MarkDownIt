@@ -56,6 +56,8 @@ class ContentView;
 // What the last paint knew about the first table on the page, for the
 // trace line that explains a band which did not appear.
 - (NSString*)qaPinnedProbe;
+// The blocks the last paint walked, kind:top:height each.
+- (NSString*)qaBlockList;
 
 // The caret moved: the blink restarts, the caret is scrolled into view
 // and the view redraws. The key handlers call it after every move, and

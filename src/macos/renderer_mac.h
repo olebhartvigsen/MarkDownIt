@@ -308,6 +308,10 @@ public:
     // band that does not appear can be read instead of guessed at.
     std::string PinnedProbeForQA() const;
 
+    // The blocks the last paint walked, as kind:top:height, so a capture run
+    // can tell a stale list from a page that really has two tables.
+    std::string BlocksForQA() const;
+
     void SetSearchMatches(const std::vector<TextMatch>* matches,
                           int currentIndex);
 

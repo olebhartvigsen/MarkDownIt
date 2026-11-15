@@ -1366,6 +1366,12 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     return content_ ? content_->PinnedHeaderHeightForQA() : 0.0f;
 }
 
+- (NSString*)qaBlockList {
+    const std::string line = content_ ? content_->BlocksForQA()
+                                      : std::string("no content");
+    return [NSString stringWithUTF8String:line.c_str()];
+}
+
 - (NSString*)qaPinnedProbe {
     const std::string line =
         content_ ? content_->PinnedProbeForQA() : std::string("no content");

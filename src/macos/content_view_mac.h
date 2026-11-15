@@ -286,6 +286,7 @@ public:
     // photographing it.
     float PinnedHeaderHeightForQA() const;
     std::string PinnedProbeForQA() const;
+    std::string BlocksForQA() const { return renderer_.BlocksForQA(); }
 
 private:
     // The layout of the document, computed by the renderer.

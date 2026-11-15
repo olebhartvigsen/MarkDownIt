@@ -968,6 +968,21 @@ std::string MacRenderer::PinnedProbeForQA() const {
     return std::string(line);
 }
 
+std::string MacRenderer::BlocksForQA() const {
+    std::string out;
+    char item[64];
+    for (size_t i = 0; i < blocks_.size() && i < 8; ++i) {
+        std::snprintf(item, sizeof(item), "%s%d:%.0f:%.0f", i ? " " : "",
+                      static_cast<int>(blocks_[i].kind),
+                      static_cast<double>(blocks_[i].y),
+                      static_cast<double>(blocks_[i].height));
+        out += item;
+    }
+    std::snprintf(item, sizeof(item), " n=%zu", blocks_.size());
+    out += item;
+    return out;
+}
+
 void MacRenderer::Render(const Document& doc, float scrollOffset) {
     (void)doc;
     if (!target_) return;
