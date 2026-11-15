@@ -3896,6 +3896,9 @@ void AppWindow::NewDocument() {
 }
 
 void AppWindow::ShowRecentDocuments() {
+    // The find bar belongs to a document, and this page has none: a
+    // search field over the recent files searches nothing.
+    if (find_bar_.IsVisible()) CloseFindBar();
     // Same guard as NewDocument: do not silently drop unsaved edits
     // just because the user wants to see the recents view.
     if (dirty_) {

@@ -2550,6 +2550,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // Shows the welcome screen, which takes the place of the document when
 // no file is open.
 - (void)showWelcomeScreen {
+    // The find bar belongs to a document, and this page has none: a
+    // search field over the recent files searches nothing.
+    app_->HideFind();
+    [self syncFindBarLayout:NO];
     // The overlay belongs to the page that was zoomed, so it goes with
     // the document rather than hanging over the recents page. Only on
     // the way in: this screen is shown again on every relayout while it

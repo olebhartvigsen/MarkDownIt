@@ -25,6 +25,8 @@ The block replaces the bare word `Home`, which named the page and told a
   first card so the two read as one column.
 - The recent files as cards under the actions, with their preview, name and
   folder. A card for an SVG shows the picture rather than the markup.
+- No find bar. The bar belongs to a document, so it stands down when this
+  page comes up: a search field over the recent files would search nothing.
 - With an empty list, a line of text in place of the cards. The two actions
   stay, so a reader who lands here with nothing still has both ways in.
 
