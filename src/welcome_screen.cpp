@@ -29,36 +29,51 @@ namespace {
 // The size of a card and the space around them.
 //
 // The numbers are the ones the Windows build uses.
+// A card never gets narrower than this; the grid takes as many columns as
+// the content column can hold and shares the width out evenly, so the last
+// card ends at the column's right edge.
 const float kCardW = 280.0f;
 const float kCardH = 180.0f;
 // The room inside a card, left and right.
 const float kPad = 16.0f;
-// The corner of a card.
-const float kCardRadius = 12.0f;
+// The corner of a card: the site's radius.
+const float kCardRadius = 14.0f;
 const float kCardGap = 24.0f;
-// The brand block. The screen opens with the app's own mark and name
-// and the line the site leads with, so a reader who lands here knows
-// what the window is for before reading a single file name. The mark is
-// the icon's geometry, not a lookalike: a teal disc, the white M and the
-// arrow down, drawn from the same 256-unit box the SVG uses.
-const float kMarkSize = 48.0f;
-const float kMarkTop = 32.0f;
-const float kWordmarkSize = 25.0f;
-const float kWordmarkBaseline = 108.0f;
-const float kTaglineSize = 13.5f;
-const float kTaglineBaseline = 129.0f;
-// The label over the grid, and the grid itself.
-const float kSectionLabelSize = 12.5f;
-const float kSectionLabelLift = 14.0f;
+// The page has one content column, and everything on the page starts at
+// its left edge: the brand block, the two actions, the label and the
+// first card of the grid. A window wider than the column keeps the
+// column centred and lets the ground run full width.
+const float kSideMargin = 48.0f;
+const float kContentMax = 980.0f;
 
-// The actions sit under the brand block, the grid of cards under them.
-const float kButtonW = 168.0f;
-const float kButtonH = 38.0f;
-const float kButtonTop = 152.0f;
-// The space between the two actions under the heading.
-const float kButtonGap = 16.0f;
-const float kButtonRadius = 10.0f;
-const float kSideMargin = 60.0f;
+// The band at the top borrows the site's hero, and the page under it is
+// the site's ground: a dark teal gradient over a soft mint page. The band
+// is a masthead and not a landing page. A start screen is read for the
+// work it gets you back to, so the brand takes one slim strip and the
+// recent files take the room under it (see references/home-screen.md).
+const float kBandHeight = 126.0f;
+
+// The lockup: the mark, then the name beside it, then the tagline under
+// the name. The mark is the icon's geometry, not a lookalike: a teal
+// disc, the white M and the arrow down, from the same 256-unit box the
+// SVG uses.
+const float kMarkSize = 34.0f;
+const float kLockupTop = 18.0f;
+const float kLockupGap = 12.0f;
+const float kWordmarkSize = 19.0f;
+const float kTaglineSize = 12.5f;
+
+// The two actions, side by side under the lockup.
+const float kButtonW = 158.0f;
+const float kButtonH = 34.0f;
+const float kButtonTop = 76.0f;
+const float kButtonGap = 14.0f;
+const float kButtonRadius = 9.0f;
+
+// The label over the grid, and the grid itself. The grid starts at
+// kGridTop (the header names it, because the tests probe that line).
+const float kSectionLabelSize = 12.5f;
+const float kLabelBaseline = kBandHeight + 34.0f;
 
 // The distance between two rows of the preview.
 const float kRowHeight = 16.0f;
@@ -71,26 +86,39 @@ const size_t kMaxSvgBytes = 8u * 1024u * 1024u;
 // The colors are the ones of the MarkDownIt site, a teal on cool white,
 // so the app and the site read as one product.
 //
-// The page is a soft wash: a faint mint at the top that fades to white,
-// with a glow of the teal behind the heading.
-const Color kBackgroundTop{0.906f, 0.949f, 0.941f, 1.000f};
-const Color kBackgroundBottom{0.984f, 0.992f, 0.992f, 1.000f};
+// The page is the site's ground: the soft mint under the hero, and the
+// site's white cards on it.
+const Color kPageBackground{0.957f, 0.973f, 0.969f, 1.000f};
 const Color kCardBackground{1.000f, 1.000f, 1.000f, 1.000f};
-const Color kCardBorder{0.043f, 0.118f, 0.133f, 0.090f};
-const Color kDivider{0.043f, 0.118f, 0.133f, 0.070f};
+const Color kCardBorder{0.886f, 0.910f, 0.910f, 1.000f};
+const Color kDivider{0.886f, 0.910f, 0.910f, 1.000f};
 const Color kShadow{0.043f, 0.118f, 0.133f, 1.000f};
-const Color kButtonText{1.000f, 1.000f, 1.000f, 1.000f};
-const Color kButtonPressed{0.043f, 0.369f, 0.341f, 1.000f};
-const Color kHoverBorder{0.078f, 0.722f, 0.651f, 1.000f};
-const Color kTitle{0.043f, 0.118f, 0.133f, 1.000f};
+// The band, from the site's hero: the navy at the top, the deep teal at
+// the bottom, with the mint of the announce bar for the quiet line.
+const Color kBandTop{0.043f, 0.118f, 0.133f, 1.000f};
+const Color kBandMid{0.071f, 0.227f, 0.204f, 1.000f};
+const Color kBandBottom{0.059f, 0.369f, 0.341f, 1.000f};
+const Color kBandText{1.000f, 1.000f, 1.000f, 1.000f};
+const Color kBandMint{0.851f, 0.949f, 0.933f, 1.000f};
+const Color kBandGhost{1.000f, 1.000f, 1.000f, 0.42f};
+const Color kBandGhostFill{1.000f, 1.000f, 1.000f, 0.06f};
+const Color kBandGhostHover{1.000f, 1.000f, 1.000f, 0.72f};
+const Color kBandGhostHoverFill{1.000f, 1.000f, 1.000f, 0.14f};
+// The one solid action is the site's solid button: bright teal with the
+// dark ink on it.
+const Color kSolidButton{0.078f, 0.722f, 0.651f, 1.000f};
+const Color kSolidButtonHover{0.051f, 0.580f, 0.533f, 1.000f};
+const Color kSolidInk{0.016f, 0.188f, 0.169f, 1.000f};
+// The ink of the page under the band.
+const Color kTitle{0.133f, 0.188f, 0.227f, 1.000f};
 const Color kPreview{0.357f, 0.420f, 0.478f, 1.000f};
 const Color kFolder{0.494f, 0.580f, 0.569f, 1.000f};
 const Color kAccent{0.059f, 0.463f, 0.431f, 1.000f};
 const Color kBrightTeal{0.078f, 0.722f, 0.651f, 1.0f};
-const Color kHint{0.494f, 0.580f, 0.569f, 1.000f};
+const Color kHint{0.357f, 0.420f, 0.478f, 1.000f};
 // The mark: the accent teal of the icon and the site, and the icon's white.
-const Color kMarkDisc = kAccent;
-const Color kMarkInk = kButtonText;
+const Color kMarkDisc = kBrightTeal;
+const Color kMarkInk = kBandTop;
 
 // The ellipsis that marks a string the card had to cut.
 const char kEllipsis[] = "\xE2\x80\xA6";
@@ -345,38 +373,74 @@ void DrawShadow(RenderTarget* target, const Rect& rect, float radius,
     }
 }
 
-// The wash behind the whole screen.
-void DrawBackground(RenderTarget* target, float viewW, float viewH) {
-    const int bands = 48;
-    const float step = viewH / static_cast<float>(bands);
-    for (int i = 0; i < bands; ++i) {
-        const float t = static_cast<float>(i) / static_cast<float>(bands - 1);
-        Color color;
-        color.r = kBackgroundTop.r + (kBackgroundBottom.r - kBackgroundTop.r) * t;
-        color.g = kBackgroundTop.g + (kBackgroundBottom.g - kBackgroundTop.g) * t;
-        color.b = kBackgroundTop.b + (kBackgroundBottom.b - kBackgroundTop.b) * t;
-        Rect band;
-        band.x = 0.0f;
-        band.y = static_cast<float>(i) * step;
-        // A little overlap keeps a seam from showing between two bands.
-        band.width = viewW;
-        band.height = step + 1.0f;
-        target->FillRect(band, color);
-    }
+// Where the content column starts and how wide it is. One column for the
+// whole page, so the brand, the actions, the label and the grid share a
+// left edge.
+float ContentWidth(float viewW) {
+    float w = viewW - 2.0f * kSideMargin;
+    if (w > kContentMax) w = kContentMax;
+    if (w < kCardW) w = kCardW;
+    return w;
+}
 
-    // A glow of the bright teal behind the heading, from wide and faint to
-    // narrow and a little stronger.
-    for (int i = 0; i < 6; ++i) {
-        const float w = viewW * (0.95f - 0.13f * static_cast<float>(i));
-        const float h = 300.0f - 38.0f * static_cast<float>(i);
+float ContentLeft(float viewW) {
+    const float left = (viewW - ContentWidth(viewW)) * 0.5f;
+    return left < 0.0f ? 0.0f : left;
+}
+
+// The ground under everything: the site's soft mint, with the pool of
+// teal the site keeps at the top of its content. The band covers the
+// part of it above kBandHeight, so the glow reads as light coming out
+// from under the band.
+void DrawPage(RenderTarget* target, float viewW, float viewH) {
+    Rect page;
+    page.x = 0.0f;
+    page.y = 0.0f;
+    page.width = viewW;
+    page.height = viewH;
+    target->FillRect(page, kPageBackground);
+
+    for (int i = 0; i < 8; ++i) {
+        const float w = viewW * (1.12f - 0.105f * static_cast<float>(i));
+        const float h = 330.0f - 34.0f * static_cast<float>(i);
         Rect glow;
         glow.x = (viewW - w) * 0.5f;
-        glow.y = -h * 0.55f;
+        glow.y = kBandHeight - h * 0.62f;
         glow.width = w;
         glow.height = h;
-        Color color = kBrightTeal;
-        color.a = 0.035f;
+        Color color = kAccent;
+        color.a = 0.030f;
         target->FillEllipse(glow, color);
+    }
+}
+
+// The band at the top: the site's hero, running from the navy at the top
+// to the deep teal at the bottom. The seam fills shapes and does not
+// interpolate a gradient, so the band is laid down in strips.
+void DrawBand(RenderTarget* target, float viewW) {
+    const int strips = 40;
+    const float step = kBandHeight / static_cast<float>(strips);
+    for (int i = 0; i < strips; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(strips - 1);
+        Color color;
+        if (t < 0.55f) {
+            const float k = t / 0.55f;
+            color.r = kBandTop.r + (kBandMid.r - kBandTop.r) * k;
+            color.g = kBandTop.g + (kBandMid.g - kBandTop.g) * k;
+            color.b = kBandTop.b + (kBandMid.b - kBandTop.b) * k;
+        } else {
+            const float k = (t - 0.55f) / 0.45f;
+            color.r = kBandMid.r + (kBandBottom.r - kBandMid.r) * k;
+            color.g = kBandMid.g + (kBandBottom.g - kBandMid.g) * k;
+            color.b = kBandMid.b + (kBandBottom.b - kBandMid.b) * k;
+        }
+        color.a = 1.0f;
+        Rect strip;
+        strip.x = 0.0f;
+        strip.y = static_cast<float>(i) * step;
+        strip.width = viewW;
+        strip.height = step + 1.0f;
+        target->FillRect(strip, color);
     }
 }
 
@@ -417,27 +481,29 @@ void DrawMark(RenderTarget* target, float x, float y, float size) {
     target->StrokePolygon(chevron, kMarkInk, 16.0f * s, false);
 }
 
-// The block at the top of the screen: the mark, the name, and the line
-// the site leads with, all centred.
+// The lockup at the top of the band: the mark, the name beside it, and
+// the line the site leads with under the name.
 void DrawBrand(RenderTarget* target, TextEngine* engine, float viewW) {
-    DrawMark(target, (viewW - kMarkSize) * 0.5f, kMarkTop, kMarkSize);
+    const float left = ContentLeft(viewW);
+    DrawMark(target, left, kLockupTop, kMarkSize);
 
+    const float nameX = left + kMarkSize + kLockupGap;
     FontSpec name;
     name.family = "Segoe UI";
     name.size = kWordmarkSize;
     name.bold = true;
     const std::string wordmark = "MarkDownIt";
-    target->DrawText(wordmark, name,
-                     (viewW - TextWidth(engine, wordmark, name)) * 0.5f,
-                     kWordmarkBaseline, kTitle);
+    // The name sits on the mark's centre line.
+    const float nameBaseline =
+        kLockupTop + kMarkSize * 0.5f + kWordmarkSize * 0.36f;
+    target->DrawText(wordmark, name, nameX, nameBaseline, kBandText);
 
     FontSpec line;
     line.family = "Segoe UI";
     line.size = kTaglineSize;
     const std::string tagline = "A word processor for Markdown files.";
-    target->DrawText(tagline, line,
-                     (viewW - TextWidth(engine, tagline, line)) * 0.5f,
-                     kTaglineBaseline, kPreview);
+    target->DrawText(tagline, line, nameX, kLockupTop + kMarkSize + 14.0f,
+                     kBandMint);
 }
 
 // Fits the strings of a card to its width, once.
@@ -543,44 +609,43 @@ void WelcomeScreen::SetRecentFiles(const std::vector<RecentFile>& files) {
 
 void WelcomeScreen::Layout(float viewW, float viewH) {
     // The button belongs to the screen, so it is placed even when there
-    // is nothing to show beside it yet.
-    // The two actions sit side by side, centered as a pair: start a
-    // document, or open one. Reading is what the app is for, so Open keeps
-    // the accent and New is the quiet one.
-    const float pairW = kButtonW * 2.0f + kButtonGap;
-    float pairX = (viewW - pairW) * 0.5f;
-    if (pairX < kSideMargin) pairX = kSideMargin;
-    newButton_.x = pairX;
+    // is nothing to show beside it yet. The two actions start at the left
+    // edge of the content column, under the lockup: start a document, or
+    // open one. Reading is what the app is for, so Open is the solid one.
+    const float left = ContentLeft(viewW);
+    newButton_.x = left;
     newButton_.y = kButtonTop;
     newButton_.width = kButtonW;
     newButton_.height = kButtonH;
-    openButton_.x = pairX + kButtonW + kButtonGap;
+    openButton_.x = left + kButtonW + kButtonGap;
     openButton_.y = kButtonTop;
     openButton_.width = kButtonW;
     openButton_.height = kButtonH;
+    gridLeft_ = left;
 
     if (cards_.empty()) return;
 
-    // The number of columns comes from the width of the window.
-    float available = viewW - 2.0f * kSideMargin;
-    if (available < kCardW) available = kCardW;
-    int columns = static_cast<int>(available / (kCardW + kCardGap));
+    // The number of columns comes from the width of the column, and the
+    // grid hangs from its left edge, so the brand, the actions, the label
+    // and the first card share one line down the page. The cards keep one
+    // size, so two previews are read the same way.
+    const float contentW = ContentWidth(viewW);
+    int columns = static_cast<int>((contentW + kCardGap) / (kCardW + kCardGap));
     if (columns < 1) columns = 1;
-
-    const float gridWidth =
-        static_cast<float>(columns) * kCardW +
-        static_cast<float>(columns - 1) * kCardGap;
-    float startX = (viewW - gridWidth) * 0.5f;
-    if (startX < kSideMargin) startX = kSideMargin;
-    gridLeft_ = startX;
+    const float cardW =
+        (contentW - static_cast<float>(columns - 1) * kCardGap) /
+        static_cast<float>(columns);
 
     for (size_t i = 0; i < cards_.size(); ++i) {
         const int column = static_cast<int>(i) % columns;
         const int row = static_cast<int>(i) / columns;
-        cards_[i].rect.x = startX + static_cast<float>(column) * (kCardW + kCardGap);
-        cards_[i].rect.y = WelcomeScreen::kGridTop +
-                           static_cast<float>(row) * (kCardH + kCardGap);
-        cards_[i].rect.width = kCardW;
+        cards_[i].rect.x = left + static_cast<float>(column) * (cardW + kCardGap);
+        cards_[i].rect.y =
+            WelcomeScreen::kGridTop + static_cast<float>(row) * (kCardH + kCardGap);
+        // A card whose width changed is fitted again: the preview wraps to
+        // the card it is drawn in, not to the card it had.
+        if (cards_[i].rect.width != cardW) cards_[i].fitted = false;
+        cards_[i].rect.width = cardW;
         cards_[i].rect.height = kCardH;
     }
     (void)viewH;
@@ -591,22 +656,21 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
                            bool openHovered, bool newHovered) {
     if (!target) return;
 
-    DrawBackground(target, viewW, viewH);
+    DrawPage(target, viewW, viewH);
+    DrawBand(target, viewW);
 
-    // The brand block. It stands where the bare word "Home" used to, a
-    // word that named the page and said nothing about the app behind it.
+    // The lockup on the band.
     DrawBrand(target, engine, viewW);
 
-    // The quiet action: a new document. It wears a card's white face and
-    // border, so the row reads as one place of two answers, and the
-    // heading keeps pointing at Open.
+    // The quiet action: the site's outline button on the band, so the row
+    // still reads as two answers with one of them in front.
     {
-        DrawShadow(target, newButton_, kButtonRadius,
-                   newHovered ? 1.0f : 0.0f, newHovered ? 0.35f : 0.20f);
-        target->FillRoundedRect(newButton_, kButtonRadius, kCardBackground);
+        target->FillRoundedRect(newButton_, kButtonRadius,
+                                newHovered ? kBandGhostHoverFill
+                                           : kBandGhostFill);
         target->StrokeRoundedRect(newButton_, kButtonRadius,
-                                  newHovered ? kHoverBorder : kCardBorder,
-                                  newHovered ? 1.5f : 1.0f);
+                                  newHovered ? kBandGhostHover : kBandGhost,
+                                  newHovered ? 1.5f : 1.2f);
 
         FontSpec font;
         font.family = "Segoe UI";
@@ -616,18 +680,16 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         const float width = TextWidth(engine, label, font);
         target->DrawText(label, font,
                          newButton_.x + (newButton_.width - width) * 0.5f,
-                         newButton_.y + 24.0f, kTitle);
+                         newButton_.y + 22.0f, kBandText);
     }
 
-    // The button that opens a document. It is the one prominent action of
-    // the screen, so it carries the accent color and a soft shadow, and a
-    // reader who lands here with nothing in the list still has a way in,
+    // The button that opens a document: the site's solid button, bright
+    // teal with the dark ink on it, the one prominent action of the page.
+    // A reader who lands here with nothing in the list still has a way in,
     // so it is drawn before the empty case returns.
     {
-        DrawShadow(target, openButton_, kButtonRadius,
-                   openHovered ? 2.0f : 0.0f, openHovered ? 0.55f : 0.40f);
         target->FillRoundedRect(openButton_, kButtonRadius,
-                                openHovered ? kButtonPressed : kAccent);
+                                openHovered ? kSolidButtonHover : kSolidButton);
 
         FontSpec font;
         font.family = "Segoe UI";
@@ -637,17 +699,17 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         const float width = TextWidth(engine, label, font);
         target->DrawText(label, font,
                          openButton_.x + (openButton_.width - width) * 0.5f,
-                         openButton_.y + 24.0f, kButtonText);
+                         openButton_.y + 22.0f, kSolidInk);
     }
 
-    // Without any files there is a hint instead of the cards.
+    // Without any files there is a hint under the label line, at the left
+    // edge of the column, instead of the cards.
     if (cards_.empty()) {
         FontSpec font;
         font.family = "Segoe UI";
-        font.size = 15.0f;
-        const std::string hint = "Open or drag a .md file to get started.";
-        const float width = TextWidth(engine, hint, font);
-        target->DrawText(hint, font, (viewW - width) * 0.5f, viewH * 0.5f,
+        font.size = 14.0f;
+        target->DrawText("Open or drag a .md file to get started.", font,
+                         ContentLeft(viewW), WelcomeScreen::kGridTop + 26.0f,
                          kHint);
         return;
     }
@@ -659,8 +721,8 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         font.family = "Segoe UI";
         font.size = kSectionLabelSize;
         font.bold = true;
-        target->DrawText("Recent files", font, gridLeft_,
-                         WelcomeScreen::kGridTop - kSectionLabelLift, kFolder);
+        target->DrawText("Recent files", font, gridLeft_, kLabelBaseline,
+                         kFolder);
     }
 
     for (size_t i = 0; i < cards_.size(); ++i) {
@@ -676,7 +738,7 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
                    hovered ? 0.20f : 0.12f);
         target->FillRoundedRect(rect, kCardRadius, kCardBackground);
         target->StrokeRoundedRect(rect, kCardRadius,
-                                  hovered ? kHoverBorder : kCardBorder,
+                                  hovered ? kBrightTeal : kCardBorder,
                                   hovered ? 1.5f : 1.0f);
 
         // The text of the card, fitted to the width of it.

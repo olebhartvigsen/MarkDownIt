@@ -87,6 +87,7 @@ public:
         FontSpec font;
         float x = 0.0f;
         float y = 0.0f;
+        Color color;
     };
     struct FillCall {
         Rect rect;
@@ -127,8 +128,7 @@ public:
     }
     void DrawText(const std::string& utf8, const FontSpec& font, float x,
                    float baselineY, const Color& color) override {
-        (void)color;
-        texts.push_back(TextCall{utf8, font, x, baselineY});
+        texts.push_back(TextCall{utf8, font, x, baselineY, color});
     }
     void DrawBitmap(platform::BitmapHandle image, const Rect& rect) override {
         (void)image;
@@ -183,7 +183,9 @@ public:
 
 // The width of the column of text inside a card, and the top of the
 // first one.
-const float kCardTextWidth = 280.0f - 32.0f;
+float CardTextWidth(const WelcomeScreen& screen) {
+    return screen.CardRect(0).width - 32.0f;
+}
 const float kCardTop = WelcomeScreen::kGridTop;
 
 std::wstring Widen(const std::string& text) {
@@ -220,7 +222,7 @@ TEST(WelcomeScreen, WrapsALongLineOfThePreview) {
 
     // Every row fits the card, and the rows walk down it in order.
     for (const RecordingTarget::TextCall& row : rows) {
-        EXPECT_LE(engine.Width(row.text, row.font), kCardTextWidth);
+        EXPECT_LE(engine.Width(row.text, row.font), CardTextWidth(screen));
     }
     for (size_t i = 1; i < rows.size(); ++i) {
         EXPECT_GT(rows[i].y, rows[i - 1].y);
@@ -246,7 +248,7 @@ TEST(WelcomeScreen, SplitsAWordWiderThanTheCard) {
     // One unbroken word still has to come out in rows that fit.
     EXPECT_GE(rows.size(), static_cast<size_t>(2));
     for (const RecordingTarget::TextCall& row : rows) {
-        EXPECT_LE(engine.Width(row.text, row.font), kCardTextWidth);
+        EXPECT_LE(engine.Width(row.text, row.font), CardTextWidth(screen));
     }
 }
 
@@ -274,9 +276,9 @@ TEST(WelcomeScreen, CutsALongNameAndFolderInsideTheCard) {
     const RecordingTarget::TextCall& title = cardTexts[0];
     const RecordingTarget::TextCall& folder = cardTexts[1];
     EXPECT_TRUE(EndsWithEllipsis(title.text));
-    EXPECT_LE(engine.Width(title.text, title.font), kCardTextWidth);
+    EXPECT_LE(engine.Width(title.text, title.font), CardTextWidth(screen));
     EXPECT_TRUE(EndsWithEllipsis(folder.text));
-    EXPECT_LE(engine.Width(folder.text, folder.font), kCardTextWidth);
+    EXPECT_LE(engine.Width(folder.text, folder.font), CardTextWidth(screen));
 }
 
 TEST(WelcomeScreen, ShowsADiagramAsAPicture) {
@@ -344,10 +346,9 @@ TEST(WelcomeScreen, TheScreenOffersTheOpenButton) {
     EXPECT_EQ(screen.HitTest(button.x + 4.0f, button.y + 4.0f), -1);
 }
 
-TEST(WelcomeScreen, TheScreenOpensWithTheMarkAndTheName) {
-    // The page opens with the app's own mark, its name and the line the
-    // site leads with, instead of a bare word that named the page and
-    // said nothing about what the app is for.
+TEST(WelcomeScreen, TheLockupPutsTheNameBesideTheMark) {
+    // The page opens on the site's dark band with the app's mark, its name
+    // beside the mark and the line the site leads with under the name.
     WelcomeScreen screen;
     screen.Layout(900.0f, 700.0f);
 
@@ -365,30 +366,80 @@ TEST(WelcomeScreen, TheScreenOpensWithTheMarkAndTheName) {
     ASSERT_TRUE(line != nullptr);
     EXPECT_TRUE(name->font.bold);
     EXPECT_GT(name->font.size, line->font.size);
-    // Both lines are centred in the page.
-    EXPECT_NEAR(name->x + engine.Width(name->text, name->font) * 0.5f, 450.0f,
-                1.0f);
-    EXPECT_NEAR(line->x + engine.Width(line->text, line->font) * 0.5f, 450.0f,
-                1.0f);
-    EXPECT_GT(line->y, name->y);
 
-    // The mark is a disc above the name, and the letter on it is a filled
-    // polygon, so the icon is drawn and not just the words.
+    // The mark is a disc at the column's left edge, the size of the
+    // lockup, and the name starts to the right of it on its centre line.
     bool sawDisc = false;
     for (const RecordingTarget::FillCall& fill : target.fills) {
         const bool square = fill.rect.width == fill.rect.height;
-        if (square && fill.rect.width > 30.0f && fill.rect.width < 50.0f &&
-            fill.rect.y + fill.rect.height <= name->y) {
+        if (square && fill.rect.width > 28.0f && fill.rect.width < 40.0f &&
+            fill.rect.y < 30.0f) {
             sawDisc = true;
+            // The icon's circle is inset in its 256-unit box, so the disc
+            // starts a little inside the column's edge.
+            EXPECT_GE(fill.rect.x, screen.GridLeft());
+            EXPECT_LT(fill.rect.x - screen.GridLeft(), 2.0f);
+            EXPECT_GT(name->x, fill.rect.x + fill.rect.width);
+            // The name sits on the mark's centre line, a little over half
+            // its size below the disc's top.
+            EXPECT_NEAR(name->y, fill.rect.y + fill.rect.height * 0.5f + 7.9f,
+                        2.0f);
         }
     }
     EXPECT_TRUE(sawDisc);
     EXPECT_EQ(target.polygons.size(), static_cast<size_t>(1));
 
-    // The block sits at the top, the actions under it, the grid last.
-    EXPECT_LT(name->y, kCardTop);
+    // The tagline hangs under the name, from the same left edge.
+    EXPECT_GT(line->y, name->y + 8.0f);
+    EXPECT_NEAR(line->x, name->x, 0.01f);
+
+    // The band is the site's dark ground, full width at the top, and both
+    // lines are light on it.
+    bool sawBand = false;
+    for (const RecordingTarget::FillCall& fill : target.fills) {
+        if (fill.rect.width == 900.0f && fill.rect.y == 0.0f &&
+            fill.color.r < 0.10f && fill.color.g < 0.40f) {
+            sawBand = true;
+        }
+    }
+    EXPECT_TRUE(sawBand);
+    EXPECT_GT(name->color.r, 0.9f);
+    EXPECT_GT(name->color.g, 0.9f);
+    EXPECT_GT(name->color.b, 0.9f);
+
+    // The block sits on the band, the actions under it, the grid last.
+    EXPECT_LT(line->y, kCardTop);
     EXPECT_GT(screen.NewButtonRect().y, line->y);
     EXPECT_GT(kCardTop, screen.NewButtonRect().y + screen.NewButtonRect().height);
+}
+
+TEST(WelcomeScreen, TheGridHangsFromTheColumnAndTakesItsColumnsFromTheWidth) {
+    // One left edge for the whole page: the brand, the buttons, the label
+    // and the first card. The number of columns follows the column width.
+    WelcomeScreen screen;
+    std::vector<RecentFile> files(4);
+    files[0].path = Widen("/documents/one.md");
+    files[1].path = Widen("/documents/two.md");
+    files[2].path = Widen("/documents/three.md");
+    files[3].path = Widen("/documents/four.md");
+    screen.SetRecentFiles(files);
+
+    screen.Layout(900.0f, 700.0f);
+    const Rect first = screen.CardRect(0);
+    const Rect second = screen.CardRect(1);
+    const Rect third = screen.CardRect(2);
+    EXPECT_NEAR(first.x, screen.GridLeft(), 0.01f);
+    EXPECT_NEAR(screen.NewButtonRect().x, first.x, 0.01f);
+    EXPECT_NEAR(second.x, first.x + first.width + 24.0f, 0.01f);
+    EXPECT_NEAR(second.y, first.y, 0.01f);
+    EXPECT_GT(third.y, first.y + first.height);
+
+    // A wider window fits one more card in a row, and the column stays
+    // whole and centred.
+    screen.Layout(1400.0f, 700.0f);
+    EXPECT_GT(screen.CardRect(2).y, screen.CardRect(1).y - 0.5f);
+    EXPECT_NEAR(screen.CardRect(2).y, screen.CardRect(0).y, 0.01f);
+    EXPECT_LT(screen.CardRect(0).x, 240.0f);
 }
 
 TEST(WelcomeScreen, TheGridSaysItHoldsTheRecentFiles) {
@@ -433,7 +484,8 @@ TEST(WelcomeScreen, TheScreenOffersTheNewDocumentButton) {
                                      fresh.y + fresh.height * 0.5f));
     EXPECT_LT(fresh.x, open.x);
     EXPECT_NEAR(fresh.y, open.y, 0.01f);
-    EXPECT_NEAR((fresh.x + open.x + open.width) * 0.5f, 450.0f, 1.0f);
+    // The pair starts at the left edge of the content column.
+    EXPECT_NEAR(fresh.x, screen.GridLeft(), 0.01f);
 
     // The gap between them belongs to neither.
     EXPECT_FALSE(screen.HitsNewButton(open.x - 6.0f, open.y + 4.0f));

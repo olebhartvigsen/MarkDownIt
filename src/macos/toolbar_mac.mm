@@ -217,7 +217,7 @@ static NSString* const kIdOutline = @"MdOutline";
     (void)flag;
     if ([itemIdentifier isEqualToString:kIdRecent]) {
         return [self itemWithIdentifier:kIdRecent
-                                 symbol:@"clock.arrow.circlepath"
+                                 symbol:@"house"
                                   label:@"Home"
                                     tip:@"Start a new document or open a recent one"
                                  action:@selector(showRecents:)];

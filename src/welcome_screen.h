@@ -94,7 +94,7 @@ public:
     // Where the grid of cards starts: below the brand block, the two
     // actions and the label that names the grid. The tests probe the
     // screen at this line.
-    static constexpr float kGridTop = 222.0f;
+    static constexpr float kGridTop = 176.0f;
 
     // Whether there are any cards.
     bool HasFiles() const { return !cards_.empty(); }

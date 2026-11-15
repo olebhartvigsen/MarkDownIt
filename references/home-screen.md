@@ -7,38 +7,97 @@ picking up an old one are the two things it is for.
 
 ## What the page holds
 
-- A brand block at the top, centered:
-  - **The mark**, drawn from the icon's own geometry (`docs/markdownit-icon.svg`,
-    the same 256-unit box): the teal disc, the white M and the arrow down.
-    It is the accent teal, so the mark and the primary action are one colour.
-  - **The name**, `MarkDownIt`.
-  - **The line the site leads with**, "A word processor for Markdown files."
+The page wears the site's shape: a dark hero band at the top over a light
+ground, the way the project page opens.
 
-The block replaces the bare word `Home`, which named the page and told a
-  reader nothing about the app behind it.
-- Two actions under it, side by side and centered as a pair:
-  - **New document**, the quiet one: a card's white face and border, so the
-    two read as one row of answers.
-  - **Open document**, the accent one with the soft shadow. Reading is what
-    the app is for, so Open is the action the page points at.
-- A label over the grid, `Recent files`, written from the left edge of the
-  first card so the two read as one column.
-- The recent files as cards under the actions, with their preview, name and
-  folder. A card for an SVG shows the picture rather than the markup.
+On the band:
+
+- **The lockup.** The mark is drawn from the icon's own geometry
+  (`docs/markdownit-icon.svg`, the same 256-unit box): the teal disc, the M
+  and the arrow down. It sits at the left edge of the content column, at
+  `kLockupTop` and `kMarkSize`, in the site's bright teal with the band's
+  navy for the letter, so it reads on the dark ground. The name is set
+  beside it, not under it: a masthead is one line high.
+- **The name**, `MarkDownIt`, beside the mark, on the mark's centre line.
+- **The line the site leads with**, "A word processor for Markdown files.",
+  under the name and from the name's left edge, in the announce bar's mint.
+- **Two actions** under the lockup, side by side, at the column's left edge:
+  - **New document**, the quiet one: the site's outline button, a white
+    hairline on the band and next to no fill.
+  - **Open document**, the solid one: the site's `.btn-solid`, bright teal
+    with the dark ink on it. Reading is what the app is for, so this is the
+    action the page points at.
+
+Under the band:
+
+- A label, `Recent files`, at the grid's left edge, so label and cards read
+  as one column.
+- The recent files as cards: white on the mint ground, with the site's
+  radius and hairline, their preview, name and folder. A card for an SVG
+  shows the picture rather than the markup.
 - No find bar. The bar belongs to a document, so it stands down when this
   page comes up: a search field over the recent files would search nothing.
-- With an empty list, a line of text in place of the cards. The two actions
-  stay, so a reader who lands here with nothing still has both ways in.
-
-The vertical rhythm is one number after another, in `welcome_screen.cpp`:
-the mark sits at `kMarkTop` and is `kMarkSize` tall, the name and the tagline
-have a baseline each, the pair of actions starts at `kButtonTop`, and the
-grid at `WelcomeScreen::kGridTop`. Move one and the ones under it move with
-it; the tests probe the line where the cards start.
+- With an empty list, a line of text in place of the cards, at the column's
+  left edge. The two actions stay, so a reader who lands here with nothing
+  still has both ways in.
 
 Actions are buttons and files are cards. A new document has no preview, no
 name and no folder, so it would be a card of nothing in a grid of previews;
-the row under the heading is where an action belongs.
+the row under the lockup is where an action belongs.
+
+## One content column
+
+Every element starts at the same left edge: the mark, the actions, the label
+and the first card. The column is the window width minus `kSideMargin` on
+each side, capped at `kContentMax` and centred, so a wide window keeps the
+column and lets the band and the ground run full width.
+
+The cards share the column out evenly: as many columns as fit at a `kCardW`
+minimum, then the width is divided, so the last card ends at the column's
+right edge. A card whose width changed is fitted again, because the preview
+wraps to the card it is drawn in and not to the one it had.
+
+The vertical rhythm is one number after another in `welcome_screen.cpp`:
+`kBandHeight` (126) for the masthead, `kLockupTop` (18) and `kMarkSize`
+(34) for the mark, `kButtonTop` (76) for the pair, `kLabelBaseline`
+(band + 34) for the label, and `WelcomeScreen::kGridTop` (176) for the
+first row of cards. Move one and the ones
+under it move with it; the tests probe the line where the cards start.
+
+## Why the band is a masthead and not a hero
+
+The site opens on the same gradient, from the navy `#0B1E22` to the deep
+teal `#0F5E57`, with its content on the soft mint `#F4F8F7` and white cards
+with a `#E2E8E8` hairline. Carrying the band into the app makes the window
+and the page it comes from read as one product, and it gives the mark a dark
+ground to sit on.
+
+What the start screens of other document apps do, and what this page
+follows:
+
+- **The work comes first.** VS Code, Xcode and GitHub Desktop open with
+  the actions and the recent items, and keep identity to a line. A start
+  screen is read for the way back into a file, so the brand takes one
+  strip (`kBandHeight`) and the files take everything under it. The first
+  version of this page used a 186 point hero and pushed the files off a
+  small window; 126 points is the masthead that leaves them the room.
+- **Documents are recognised by their content.** The developer apps list
+  file names because a name is enough there. A markdown page is recognised
+  by its first lines, so the files stay cards with a preview.
+- **An empty state is a block with a next step.** The guidance from
+  NN/g, Carbon and PatternFly agrees: say what is missing, give the action
+  that fills it, and align it with the rest of the page instead of
+  centring a polite sentence in the middle. The hint under the label does
+  that, and the two actions above it are the next step.
+- **One left edge.** Carbon asks for empty-state elements to be aligned as
+  a block; the same rule holds for a page that is not empty. The brand,
+  the actions, the label and the grid all start at `ContentLeft`, and a
+  centred stack of three things was what made the first version feel like
+  a leaflet.
+
+The render seam fills shapes and does not interpolate a gradient, so the
+band is laid down in strips and the pool of teal under it in overlapping
+ellipses. Neither is a texture or an image; both scale with the window.
 
 ## One screen for both ports
 
@@ -71,7 +130,10 @@ the watch (see `file-watch.md`).
 ## The name
 
 The labels say Home: the ribbon button, the View menu item, the mac toolbar
-item and the string the page draws. The command keeps its historical id
+item and the string the page draws. On the mac the toolbar item wears the
+`house` symbol and the View menu item the same image, so the way back to
+the page reads the same in both places; the Windows ribbon carries labels
+and no images, for every command. The command keeps its historical id
 (`CommandId::ViewRecent`, selector `showRecents:`), because the ids name a
 place in the table and renaming one would touch every table that reads it for
 no gain the reader can see.
@@ -90,8 +152,12 @@ away (Save has nothing to act on from this page).
 
 ## Tests
 
-`tests/welcome_screen_test.cpp` holds the screen: both actions exist with a
-size, the pair is centered with New on the left, the gap between them belongs
-to neither, and a press on either is not a press on a card. The platform
-press paths are exercised by the macOS launch smoke (`welcome-click` picks a
-card and checks nothing gets selected) and by hand on Windows.
+`tests/welcome_screen_test.cpp` holds the screen: the lockup puts the name
+beside the mark and the tagline under the name, the band is a dark strip
+across the full width with light ink on it, both actions sit at the column's
+left edge with New on the left, the gap between them belongs to neither, the
+grid hangs from the same edge and takes its columns from the width, the
+label sits at the grid's edge, and a press on a button is not a press on a
+card. The platform press paths are exercised by the macOS launch smoke
+(`welcome-click` picks a card and checks nothing gets selected) and by hand
+on Windows.

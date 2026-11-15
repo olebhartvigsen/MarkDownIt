@@ -240,6 +240,14 @@ NSMenu* BuildMainMenu() {
              {"Home", @selector(showRecents:)},
              {"Show Tab Bar", @selector(toggleTabBar:)},
              {"Wrap Text", @selector(toggleWrap:)}});
+        // The Home item wears the house the toolbar wears, so the way back
+        // to the page reads the same in both places.
+        NSMenuItem* homeItem = [viewMenu itemWithTitle:@"Home"];
+        if (homeItem) {
+            NSImage* house = [NSImage imageWithSystemSymbolName:@"house"
+                                       accessibilityDescription:@"Home"];
+            if (house) [homeItem setImage:house];
+        }
         [viewMenu addItem:[NSMenuItem separatorItem]];
         // Full screen is a View command on the mac, with the system's
         // own key: Control, Command, F. It is AppKit's own item, so it
