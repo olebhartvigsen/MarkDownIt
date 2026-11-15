@@ -2247,21 +2247,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // document and pressing Home dropped the text without a word.
 - (void)showRecents:(id)sender {
     (void)sender;
-    // Already home: there is no document to leave and nothing to ask.
-    if (!app_->WelcomeMode()) {
-        if (![self confirmDiscardChanges]) return;
-        // Nothing of the old page stays behind. An untitled document
-        // takes its place, the state the app starts in, so a later Save
-        // cannot put the discarded text back on the disk.
-        app_->NewDocument();
-        [self stopFileWatch];
-        [self setZoom:zoom::kDefaultZoom quietly:YES];
-        [self applyOutlineHeads];
-        [view_ setNeedsDisplay:YES];
-    }
+    // Already home: there is nothing to leave and nothing to ask.
+    if (!app_->WelcomeMode() && ![self confirmDiscardChanges]) return;
     [self showWelcomeScreen];
-    // In welcome mode the title is the app's name, not "Untitled".
-    [self refreshWindowTitle:std::string()];
     // The screen takes the keyboard, so a card is a click away.
     [window_ makeFirstResponder:view_];
 }

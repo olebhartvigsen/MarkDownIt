@@ -65,8 +65,10 @@ shows when there is no document, which is why the document commands are
 greyed there. Going home therefore leaves the document, and unsaved
 changes are asked about first with the same Save/Discard/Cancel question
 Open and Close ask. Cancel puts the document back on screen untouched.
-Discard does not hide the old text under the page: an untitled document
-takes its place, so a later Save cannot write the discarded text to disk.
+The document itself stays loaded behind the page, the way it did before
+the question existed, so the walk back through the recent files does not
+have to reload it and a later Save cannot reach text the writer threw
+away (Save has nothing to act on from this page).
 
 ## Tests
 
