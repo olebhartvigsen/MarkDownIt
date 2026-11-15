@@ -168,7 +168,7 @@ Rules that follow from this:
 | Editing | `DocumentController`, `editcontroller`, `undostack`, `formatting`, `autoformat`, `tableedit`, `navigation`, `inputfilter`, `textbuffer`, `searchreplace`, `findstate`, `markers`, `outline`, `commands.h` | keyboard and mouse event translation |
 | Find | `FindBarModel` (`findbar_model.*`) | `findbar.cpp` / `findbar_mac.mm` |
 | Outline | heading collection (`outline.*`) | `outlinepane.cpp` / `outline_pane_mac.*`, `outline_nsview_mac.*` |
-| Home screen | `welcome_screen.*`, drawn through the seams | the shell hands in its target and engine and answers the presses |
+| Home screen | `welcome_screen.*` (the mark, the name, the two actions, the recent files), drawn through the seams | the shell hands in its target and engine and answers the presses |
 | Diagrams | `mermaid.*`, `mermaidlayout.*`, `diagramcache.*`, `src/mermaid/*`, `svgtext`, SVG reader `src/macos/svg_mac.cpp` | measure and paint adapters |
 | Office | `src/office/*` (docx and PDF import and export) | file dialogs |
 | Settings | `AppSettings`, recent-file logic in `settings.cpp` | `settings_win.cpp` (registry) / `settings_mac.cpp` (JSON) |

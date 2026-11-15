@@ -7,16 +7,32 @@ picking up an old one are the two things it is for.
 
 ## What the page holds
 
-- A heading, `Home`.
+- A brand block at the top, centered:
+  - **The mark**, drawn from the icon's own geometry (`docs/markdownit-icon.svg`,
+    the same 256-unit box): the teal disc, the white M and the arrow down.
+    It is the accent teal, so the mark and the primary action are one colour.
+  - **The name**, `MarkDownIt`.
+  - **The line the site leads with**, "A word processor for Markdown files."
+
+The block replaces the bare word `Home`, which named the page and told a
+  reader nothing about the app behind it.
 - Two actions under it, side by side and centered as a pair:
   - **New document**, the quiet one: a card's white face and border, so the
     two read as one row of answers.
   - **Open document**, the accent one with the soft shadow. Reading is what
     the app is for, so Open is the action the page points at.
+- A label over the grid, `Recent files`, written from the left edge of the
+  first card so the two read as one column.
 - The recent files as cards under the actions, with their preview, name and
   folder. A card for an SVG shows the picture rather than the markup.
 - With an empty list, a line of text in place of the cards. The two actions
   stay, so a reader who lands here with nothing still has both ways in.
+
+The vertical rhythm is one number after another, in `welcome_screen.cpp`:
+the mark sits at `kMarkTop` and is `kMarkSize` tall, the name and the tagline
+have a baseline each, the pair of actions starts at `kButtonTop`, and the
+grid at `WelcomeScreen::kGridTop`. Move one and the ones under it move with
+it; the tests probe the line where the cards start.
 
 Actions are buttons and files are cards. A new document has no preview, no
 name and no folder, so it would be a card of nothing in a grid of previews;

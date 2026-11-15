@@ -143,10 +143,15 @@ public:
         (void)color;
         (void)lineWidth;
     }
+    struct PolygonCall {
+        std::vector<platform::Point> points;
+        Color color;
+    };
+    std::vector<PolygonCall> polygons;
+
     void FillPolygon(const std::vector<platform::Point>& points,
                       const Color& color) override {
-        (void)points;
-        (void)color;
+        polygons.push_back(PolygonCall{points, color});
     }
     void StrokePolygon(const std::vector<platform::Point>& points,
                         const Color& color, float lineWidth,
@@ -337,6 +342,79 @@ TEST(WelcomeScreen, TheScreenOffersTheOpenButton) {
                                        button.y + 4.0f));
     // No card lies under the button.
     EXPECT_EQ(screen.HitTest(button.x + 4.0f, button.y + 4.0f), -1);
+}
+
+TEST(WelcomeScreen, TheScreenOpensWithTheMarkAndTheName) {
+    // The page opens with the app's own mark, its name and the line the
+    // site leads with, instead of a bare word that named the page and
+    // said nothing about what the app is for.
+    WelcomeScreen screen;
+    screen.Layout(900.0f, 700.0f);
+
+    GridEngine engine;
+    RecordingTarget target;
+    screen.Render(&target, &engine, 900.0f, 700.0f, -1, false);
+
+    const RecordingTarget::TextCall* name = nullptr;
+    const RecordingTarget::TextCall* line = nullptr;
+    for (const RecordingTarget::TextCall& call : target.texts) {
+        if (call.text == "MarkDownIt") name = &call;
+        if (call.text == "A word processor for Markdown files.") line = &call;
+    }
+    ASSERT_TRUE(name != nullptr);
+    ASSERT_TRUE(line != nullptr);
+    EXPECT_TRUE(name->font.bold);
+    EXPECT_GT(name->font.size, line->font.size);
+    // Both lines are centred in the page.
+    EXPECT_NEAR(name->x + engine.Width(name->text, name->font) * 0.5f, 450.0f,
+                1.0f);
+    EXPECT_NEAR(line->x + engine.Width(line->text, line->font) * 0.5f, 450.0f,
+                1.0f);
+    EXPECT_GT(line->y, name->y);
+
+    // The mark is a disc above the name, and the letter on it is a filled
+    // polygon, so the icon is drawn and not just the words.
+    bool sawDisc = false;
+    for (const RecordingTarget::FillCall& fill : target.fills) {
+        const bool square = fill.rect.width == fill.rect.height;
+        if (square && fill.rect.width > 30.0f && fill.rect.width < 50.0f &&
+            fill.rect.y + fill.rect.height <= name->y) {
+            sawDisc = true;
+        }
+    }
+    EXPECT_TRUE(sawDisc);
+    EXPECT_EQ(target.polygons.size(), static_cast<size_t>(1));
+
+    // The block sits at the top, the actions under it, the grid last.
+    EXPECT_LT(name->y, kCardTop);
+    EXPECT_GT(screen.NewButtonRect().y, line->y);
+    EXPECT_GT(kCardTop, screen.NewButtonRect().y + screen.NewButtonRect().height);
+}
+
+TEST(WelcomeScreen, TheGridSaysItHoldsTheRecentFiles) {
+    // The cards are the recent files, and the page says so above the
+    // first one, from the left edge of the grid.
+    WelcomeScreen screen;
+    std::vector<RecentFile> files(2);
+    files[0].path = Widen("/documents/one.md");
+    files[1].path = Widen("/documents/two.md");
+    screen.SetRecentFiles(files);
+    screen.Layout(900.0f, 700.0f);
+
+    GridEngine engine;
+    RecordingTarget target;
+    screen.Render(&target, &engine, 900.0f, 700.0f, -1, false);
+
+    const RecordingTarget::TextCall* label = nullptr;
+    for (const RecordingTarget::TextCall& call : target.texts) {
+        if (call.text == "Recent files") label = &call;
+    }
+    ASSERT_TRUE(label != nullptr);
+    EXPECT_NEAR(label->x, screen.GridLeft(), 0.01f);
+    EXPECT_NEAR(label->x, screen.CardRect(0).x, 0.01f);
+    EXPECT_LT(label->y, screen.CardRect(0).y);
+    EXPECT_GT(label->y,
+              screen.NewButtonRect().y + screen.NewButtonRect().height);
 }
 
 TEST(WelcomeScreen, TheScreenOffersTheNewDocumentButton) {

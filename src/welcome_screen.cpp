@@ -36,11 +36,25 @@ const float kPad = 16.0f;
 // The corner of a card.
 const float kCardRadius = 12.0f;
 const float kCardGap = 24.0f;
-// The heading, the button under it, and the top of the grid of cards.
-const float kHeadingBaseline = 60.0f;
+// The brand block. The screen opens with the app's own mark and name
+// and the line the site leads with, so a reader who lands here knows
+// what the window is for before reading a single file name. The mark is
+// the icon's geometry, not a lookalike: a teal disc, the white M and the
+// arrow down, drawn from the same 256-unit box the SVG uses.
+const float kMarkSize = 48.0f;
+const float kMarkTop = 32.0f;
+const float kWordmarkSize = 25.0f;
+const float kWordmarkBaseline = 108.0f;
+const float kTaglineSize = 13.5f;
+const float kTaglineBaseline = 129.0f;
+// The label over the grid, and the grid itself.
+const float kSectionLabelSize = 12.5f;
+const float kSectionLabelLift = 14.0f;
+
+// The actions sit under the brand block, the grid of cards under them.
 const float kButtonW = 168.0f;
 const float kButtonH = 38.0f;
-const float kButtonTop = 84.0f;
+const float kButtonTop = 152.0f;
 // The space between the two actions under the heading.
 const float kButtonGap = 16.0f;
 const float kButtonRadius = 10.0f;
@@ -74,6 +88,9 @@ const Color kFolder{0.494f, 0.580f, 0.569f, 1.000f};
 const Color kAccent{0.059f, 0.463f, 0.431f, 1.000f};
 const Color kBrightTeal{0.078f, 0.722f, 0.651f, 1.0f};
 const Color kHint{0.494f, 0.580f, 0.569f, 1.000f};
+// The mark: the accent teal of the icon and the site, and the icon's white.
+const Color kMarkDisc = kAccent;
+const Color kMarkInk = kButtonText;
 
 // The ellipsis that marks a string the card had to cut.
 const char kEllipsis[] = "\xE2\x80\xA6";
@@ -363,6 +380,66 @@ void DrawBackground(RenderTarget* target, float viewW, float viewH) {
     }
 }
 
+// The app mark, from the icon the site and the window carry: a teal
+// disc, the white M and the arrow down beside it. The numbers are the
+// icon's own 256-unit box, scaled here, so the page draws the real mark
+// and not an approximation of it.
+void DrawMark(RenderTarget* target, float x, float y, float size) {
+    const float s = size / 256.0f;
+    const auto px = [x, s](float v) { return x + v * s; };
+    const auto py = [y, s](float v) { return y + v * s; };
+
+    // The disc: the icon's circle is 240 of its 256 units wide.
+    Rect disc;
+    disc.x = px(8.0f);
+    disc.y = py(8.0f);
+    disc.width = 240.0f * s;
+    disc.height = 240.0f * s;
+    target->FillEllipse(disc, kMarkDisc);
+
+    // The M, as the icon's path walks it: five down strokes and the two
+    // valleys between them.
+    const float letter[24] = {52.0f, 178.0f, 52.0f,  78.0f,  76.0f,  78.0f,
+                              104.0f, 120.0f, 132.0f, 78.0f,  156.0f, 78.0f,
+                              156.0f, 178.0f, 130.0f, 178.0f, 130.0f, 120.0f,
+                              104.0f, 156.0f, 78.0f,  120.0f, 78.0f,  178.0f};
+    std::vector<Point> m;
+    m.reserve(12);
+    for (int i = 0; i < 24; i += 2) m.push_back(Point{px(letter[i]), py(letter[i + 1])});
+    target->FillPolygon(m, kMarkInk);
+
+    // The arrow down: the shaft, then the chevron on its tip.
+    target->StrokeLine(px(196.0f), py(86.0f), px(196.0f), py(144.0f),
+                       kMarkInk, 16.0f * s);
+    const std::vector<Point> chevron = {Point{px(172.0f), py(122.0f)},
+                                        Point{px(196.0f), py(148.0f)},
+                                        Point{px(220.0f), py(122.0f)}};
+    target->StrokePolygon(chevron, kMarkInk, 16.0f * s, false);
+}
+
+// The block at the top of the screen: the mark, the name, and the line
+// the site leads with, all centred.
+void DrawBrand(RenderTarget* target, TextEngine* engine, float viewW) {
+    DrawMark(target, (viewW - kMarkSize) * 0.5f, kMarkTop, kMarkSize);
+
+    FontSpec name;
+    name.family = "Segoe UI";
+    name.size = kWordmarkSize;
+    name.bold = true;
+    const std::string wordmark = "MarkDownIt";
+    target->DrawText(wordmark, name,
+                     (viewW - TextWidth(engine, wordmark, name)) * 0.5f,
+                     kWordmarkBaseline, kTitle);
+
+    FontSpec line;
+    line.family = "Segoe UI";
+    line.size = kTaglineSize;
+    const std::string tagline = "A word processor for Markdown files.";
+    target->DrawText(tagline, line,
+                     (viewW - TextWidth(engine, tagline, line)) * 0.5f,
+                     kTaglineBaseline, kPreview);
+}
+
 // Fits the strings of a card to its width, once.
 //
 // The card width and the fonts are fixed, so a wrap never changes and
@@ -495,6 +572,7 @@ void WelcomeScreen::Layout(float viewW, float viewH) {
         static_cast<float>(columns - 1) * kCardGap;
     float startX = (viewW - gridWidth) * 0.5f;
     if (startX < kSideMargin) startX = kSideMargin;
+    gridLeft_ = startX;
 
     for (size_t i = 0; i < cards_.size(); ++i) {
         const int column = static_cast<int>(i) % columns;
@@ -515,17 +593,9 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
 
     DrawBackground(target, viewW, viewH);
 
-    // The heading.
-    {
-        FontSpec font;
-        font.family = "Segoe UI";
-        font.size = 28.0f;
-        font.bold = true;
-        const std::string heading = "Home";
-        const float width = TextWidth(engine, heading, font);
-        target->DrawText(heading, font, (viewW - width) * 0.5f,
-                         kHeadingBaseline, kTitle);
-    }
+    // The brand block. It stands where the bare word "Home" used to, a
+    // word that named the page and said nothing about the app behind it.
+    DrawBrand(target, engine, viewW);
 
     // The quiet action: a new document. It wears a card's white face and
     // border, so the row reads as one place of two answers, and the
@@ -580,6 +650,17 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         target->DrawText(hint, font, (viewW - width) * 0.5f, viewH * 0.5f,
                          kHint);
         return;
+    }
+
+    // The label over the grid. It is written from the left edge of the
+    // first card, so the two read as one column.
+    {
+        FontSpec font;
+        font.family = "Segoe UI";
+        font.size = kSectionLabelSize;
+        font.bold = true;
+        target->DrawText("Recent files", font, gridLeft_,
+                         WelcomeScreen::kGridTop - kSectionLabelLift, kFolder);
     }
 
     for (size_t i = 0; i < cards_.size(); ++i) {
