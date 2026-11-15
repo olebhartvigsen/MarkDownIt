@@ -59,9 +59,9 @@ const float kContentMax = 980.0f;
 const float kBandHeight = 84.0f;
 const float kBandHeightStacked = 122.0f;
 // Below this column width the pair does not fit beside the lockup.
-const float kInlineRowMin = 520.0f;
+const float kInlineRowMin = 340.0f;
 // Below this one the tagline would run under the pair.
-const float kTaglineMin = 606.0f;
+const float kTaglineMin = 380.0f;
 
 // The lockup: the mark, then the name beside it, then the tagline under the
 // name. The mark is the icon's geometry, not a lookalike: a disc, the M and
@@ -71,8 +71,10 @@ const float kLockupGap = 12.0f;
 const float kWordmarkSize = 19.0f;
 const float kTaglineSize = 12.5f;
 
-// The two actions, side by side on the band's right end.
-const float kButtonW = 158.0f;
+// The two actions, side by side on the band's right end. They carry a
+// standard glyph and no words: New is the add sign, Open is a folder, and
+// the words live in the tooltip each shell shows.
+const float kButtonW = 34.0f;
 const float kButtonH = 34.0f;
 const float kButtonGap = 14.0f;
 const float kButtonRadius = 9.0f;
@@ -565,6 +567,34 @@ void FitCard(TextEngine* engine, WelcomeCard* card, float maxWidth,
 
 }  // namespace
 
+namespace {
+
+// The add sign in the New button: two strokes, square to each other.
+void DrawPlusMark(RenderTarget* target, const Rect& button, const Color& color) {
+    const float cx = button.x + button.width * 0.5f;
+    const float cy = button.y + button.height * 0.5f;
+    const float arm = 6.0f;
+    target->StrokeLine(cx - arm, cy, cx + arm, cy, color, 2.0f);
+    target->StrokeLine(cx, cy - arm, cx, cy + arm, color, 2.0f);
+}
+
+// The folder in the Open button: one outline with the tab on its left.
+void DrawFolderMark(RenderTarget* target, const Rect& button,
+                    const Color& color) {
+    const float x = button.x + button.width * 0.5f;
+    const float y = button.y + button.height * 0.5f;
+    const std::vector<Point> folder = {Point{x - 9.0f, y - 4.0f},
+                                       Point{x - 9.0f, y + 7.0f},
+                                       Point{x + 9.0f, y + 7.0f},
+                                       Point{x + 9.0f, y - 4.0f},
+                                       Point{x - 1.0f, y - 4.0f},
+                                       Point{x - 3.0f, y - 7.0f},
+                                       Point{x - 9.0f, y - 7.0f}};
+    target->StrokePolygon(folder, color, 1.7f, true);
+}
+
+}  // namespace
+
 void WelcomeScreen::DrawBrand(RenderTarget* target, TextEngine* engine) const {
     DrawMark(target, nameX_ - kMarkSize - kLockupGap, markTop_, kMarkSize);
 
@@ -702,17 +732,9 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
                                            : kBandGhostFill);
         target->StrokeRoundedRect(newButton_, kButtonRadius,
                                   newHovered ? kBandGhostHover : kBandGhost,
-                                  newHovered ? 1.5f : 1.2f);
+                                  newHovered ? 1.6f : 1.2f);
 
-        FontSpec font;
-        font.family = "Segoe UI";
-        font.size = 14.0f;
-        font.bold = true;
-        const std::string label = "New document";
-        const float width = TextWidth(engine, label, font);
-        target->DrawText(label, font,
-                         newButton_.x + (newButton_.width - width) * 0.5f,
-                         newButton_.y + 22.0f, kBandText);
+        DrawPlusMark(target, newButton_, kBandText);
     }
 
     // The button that opens a document: the site's solid button, bright
@@ -723,15 +745,7 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         target->FillRoundedRect(openButton_, kButtonRadius,
                                 openHovered ? kSolidButtonHover : kSolidButton);
 
-        FontSpec font;
-        font.family = "Segoe UI";
-        font.size = 14.0f;
-        font.bold = true;
-        const std::string label = "Open document";
-        const float width = TextWidth(engine, label, font);
-        target->DrawText(label, font,
-                         openButton_.x + (openButton_.width - width) * 0.5f,
-                         openButton_.y + 22.0f, kSolidInk);
+        DrawFolderMark(target, openButton_, kSolidInk);
     }
 
     // Without any files there is a hint under the label line, at the left

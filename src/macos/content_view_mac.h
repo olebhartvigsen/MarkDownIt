@@ -57,6 +57,12 @@ public:
     bool OpenButtonHovered() const { return openHover_; }
     void SetOpenButtonHovered(bool hovered) { openHover_ = hovered; }
 
+    // Where the two actions of the welcome screen sit, in view points, so
+    // the view can hang a tooltip on each of them. The band carries a glyph
+    // and no words, so the tooltip is what names the action.
+    Rect WelcomeNewRect();
+    Rect WelcomeOpenRect();
+
     // The button on the welcome screen that starts a new document.
     bool WelcomeNewAt(float x, float y) const;
     bool NewButtonHovered() const { return newHover_; }

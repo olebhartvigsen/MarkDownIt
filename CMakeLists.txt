@@ -261,6 +261,7 @@ target_link_libraries(MarkDownIt PRIVATE
     oleacc
     shell32
     shlwapi
+    comctl32
     windowscodecs
     winhttp
     comdlg32

@@ -117,14 +117,16 @@ public:
         (void)color;
         (void)lineWidth;
     }
+    struct LineCall {
+        float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
+        Color color;
+        float width = 0.0f;
+    };
+    std::vector<LineCall> lines;
+
     void StrokeLine(float x0, float y0, float x1, float y1,
                      const Color& color, float lineWidth) override {
-        (void)x0;
-        (void)y0;
-        (void)x1;
-        (void)y1;
-        (void)color;
-        (void)lineWidth;
+        lines.push_back(LineCall{x0, y0, x1, y1, color, lineWidth});
     }
     void DrawText(const std::string& utf8, const FontSpec& font, float x,
                    float baselineY, const Color& color) override {
@@ -153,13 +155,18 @@ public:
                       const Color& color) override {
         polygons.push_back(PolygonCall{points, color});
     }
+    struct OutlineCall {
+        std::vector<platform::Point> points;
+        float width = 0.0f;
+    };
+    std::vector<OutlineCall> outlines;
+
     void StrokePolygon(const std::vector<platform::Point>& points,
                         const Color& color, float lineWidth,
                         bool closed) override {
-        (void)points;
         (void)color;
-        (void)lineWidth;
         (void)closed;
+        outlines.push_back(OutlineCall{points, lineWidth});
     }
     void FillPieSlice(const Rect& rect, float startAngle, float endAngle,
                        const Color& color) override {
@@ -372,8 +379,10 @@ TEST(WelcomeScreen, TheLockupPutsTheNameBesideTheMark) {
     bool sawDisc = false;
     for (const RecordingTarget::FillCall& fill : target.fills) {
         const bool square = fill.rect.width == fill.rect.height;
+        // The lockup's mark, in the left part of the band: the buttons are
+        // squares too, and they are at the right end.
         if (square && fill.rect.width > 28.0f && fill.rect.width < 40.0f &&
-            fill.rect.y < 30.0f) {
+            fill.rect.y < 30.0f && fill.rect.x < 200.0f) {
             sawDisc = true;
             // The disc is white on the dark band, and the M and the arrow
             // in it are the site's teal, so the mark keeps the icon's two
@@ -425,6 +434,68 @@ TEST(WelcomeScreen, TheLockupPutsTheNameBesideTheMark) {
     EXPECT_GT(kCardTop, screen.BandHeight());
 }
 
+TEST(WelcomeScreen, TheActionsWearAGlyphAndNoWords) {
+    // New is the add sign and Open is a folder, drawn from primitives so
+    // both ports draw the same marks; the words live in the tooltip, which
+    // is the shell's to show. Nothing is set inside the two squares.
+    WelcomeScreen screen;
+    screen.Layout(900.0f, 700.0f);
+
+    GridEngine engine;
+    RecordingTarget target;
+    screen.Render(&target, &engine, 900.0f, 700.0f, -1, false);
+
+    const Rect fresh = screen.NewButtonRect();
+    const Rect open = screen.OpenButtonRect();
+    EXPECT_NEAR(fresh.width, fresh.height, 0.01f);
+    EXPECT_NEAR(open.width, open.height, 0.01f);
+
+    // The add sign: two strokes inside the outline square, square to each
+    // other, one flat and one upright.
+    int plusStrokes = 0;
+    for (const RecordingTarget::LineCall& line : target.lines) {
+        const bool inside = line.x0 >= fresh.x && line.x0 <= fresh.x + fresh.width &&
+                            line.y0 >= fresh.y && line.y0 <= fresh.y + fresh.height &&
+                            line.x1 >= fresh.x && line.x1 <= fresh.x + fresh.width &&
+                            line.y1 >= fresh.y && line.y1 <= fresh.y + fresh.height;
+        if (!inside) continue;
+        const bool flat = line.y0 == line.y1;
+        const bool upright = line.x0 == line.x1;
+        if (flat || upright) ++plusStrokes;
+    }
+    EXPECT_EQ(plusStrokes, 2);
+
+    // The folder: an outline with seven corners, inside the solid button.
+    const std::vector<platform::Point>* folder = nullptr;
+    for (const RecordingTarget::OutlineCall& outline : target.outlines) {
+        float minX = outline.points[0].x, maxX = minX;
+        float minY = outline.points[0].y, maxY = minY;
+        for (const platform::Point& point : outline.points) {
+            if (point.x < minX) minX = point.x;
+            if (point.x > maxX) maxX = point.x;
+            if (point.y < minY) minY = point.y;
+            if (point.y > maxY) maxY = point.y;
+        }
+        if (minX >= open.x - 0.5f && maxX <= open.x + open.width + 0.5f) {
+            folder = &outline.points;
+            EXPECT_GE(maxY - minY, 8.0f);
+            EXPECT_GE(maxX - minX, 12.0f);
+        }
+    }
+    ASSERT_TRUE(folder != nullptr);
+    EXPECT_GE(folder->size(), static_cast<size_t>(7));
+
+    // No words inside either square.
+    for (const RecordingTarget::TextCall& call : target.texts) {
+        const bool inNew = call.x >= fresh.x && call.x <= fresh.x + fresh.width &&
+                           call.y >= fresh.y && call.y <= fresh.y + fresh.height;
+        const bool inOpen = call.x >= open.x && call.x <= open.x + open.width &&
+                            call.y >= open.y && call.y <= open.y + open.height;
+        EXPECT_FALSE(inNew);
+        EXPECT_FALSE(inOpen);
+    }
+}
+
 TEST(WelcomeScreen, TheBandKeepsOneRowAndGivesWayWhenThereIsNoRoom) {
     // The band is one row while the pair fits beside the lockup. When the
     // window is too narrow for that, the actions drop under the lockup and
@@ -437,18 +508,24 @@ TEST(WelcomeScreen, TheBandKeepsOneRowAndGivesWayWhenThereIsNoRoom) {
     EXPECT_NEAR(screen.BandHeight(), 84.0f, 0.01f);
     EXPECT_NEAR(screen.GridTop(), 134.0f, 0.01f);
 
-    // A half-window: one row still, but the tagline has no room beside the
-    // pair, so the name carries the identity alone.
+    // A half-window keeps the row whole and the tagline with it.
     screen.Layout(700.0f, 700.0f);
     EXPECT_FALSE(screen.StacksHeader());
-    EXPECT_FALSE(screen.ShowsTagline());
+    EXPECT_TRUE(screen.ShowsTagline());
     EXPECT_NEAR(screen.BandHeight(), 84.0f, 0.01f);
     EXPECT_NEAR(screen.OpenButtonRect().x + screen.OpenButtonRect().width,
                 700.0f - 48.0f, 0.01f);
 
+    // Narrower still: the row holds, but the tagline would run under the
+    // pair, so it stands down and the name carries the row.
+    screen.Layout(440.0f, 700.0f);
+    EXPECT_FALSE(screen.StacksHeader());
+    EXPECT_FALSE(screen.ShowsTagline());
+    EXPECT_NEAR(screen.BandHeight(), 84.0f, 0.01f);
+
     // A narrow window: the pair goes under the lockup and the band takes
     // the second row, so the grid starts lower.
-    screen.Layout(500.0f, 700.0f);
+    screen.Layout(420.0f, 700.0f);
     EXPECT_TRUE(screen.StacksHeader());
     EXPECT_TRUE(screen.ShowsTagline());
     EXPECT_NEAR(screen.BandHeight(), 122.0f, 0.01f);

@@ -21,8 +21,8 @@ A standard toolbar (NSToolbar) in the title bar, nine items:
 
 | Item | Symbol | Action | Also reachable |
 | --- | --- | --- | --- |
-| Recent | clock.arrow.circlepath | showRecents: | View menu |
-| Save | template floppy | saveDocument: | File menu, Cmd+S |
+| Home | house | showRecents: | View menu |
+| Save | checkmark | saveDocument: | File menu, Cmd+S |
 | Share | square.and.arrow.up | shareDocument: | File menu |
 | Undo | arrow.uturn.backward | undo: | Edit menu, Cmd+Z |
 | Redo | arrow.uturn.forward | redo: | Edit menu, Shift+Cmd+Z |
@@ -59,12 +59,13 @@ View menu carries Show Tab Bar or Hide Tab Bar, and the shell remembers
 the user's choice, so a single document can hide the bar without losing
 the document. The bar is AppKit's own; the app draws no tab strip.
 
-Most symbols are drawn by AppKit through imageWithSystemSymbolName:, so
-the toolbar follows the system appearance, the user's accent colour,
-increased contrast and localisation without any colour of our own.
-Save is the exception: SF Symbols has no classic diskette, so it is a
-small template outline drawn in the same ink and tinted by the system.
-The toolbar allows customization and saves the user's set.
+Every symbol is drawn by AppKit through imageWithSystemSymbolName:, so the
+toolbar follows the system appearance, the user's accent colour, increased
+contrast and localisation without any colour of our own, and no icon is
+drawn by hand. Save wears `checkmark`, the symbol the HIG's standard-icon
+table gives the action; it replaces a hand-drawn diskette that read as a
+dark blob at 18 points. The toolbar allows customization and saves the
+user's set.
 
 ## The format bar belongs to the page
 

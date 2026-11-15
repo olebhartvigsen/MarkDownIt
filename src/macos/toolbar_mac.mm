@@ -17,51 +17,6 @@
 
 #import "toolbar_mac.h"
 
-// The classic save diskette. Template images take the toolbar's tint,
-// so the outline follows the system appearance like the symbols do.
-static NSImage* FloppySaveImage(void) {
-    NSImage* image = [NSImage
-        imageWithSize:NSMakeSize(18.0, 18.0)
-              flipped:YES
-       drawingHandler:^BOOL(NSRect rect) {
-        const CGFloat s = rect.size.width / 24.0;
-        [NSColor.blackColor setFill];
-
-        // The solid case, with the top-right corner clipped the way a
-        // 3.5-inch diskette is. The shutter and the hub are holes in
-        // the silhouette, not extra ink, so the shape stays readable
-        // at toolbar size.
-        NSBezierPath* plate = [NSBezierPath bezierPath];
-        [plate moveToPoint:NSMakePoint(4.0 * s, 4.0 * s)];
-        [plate lineToPoint:NSMakePoint(16.0 * s, 4.0 * s)];
-        [plate lineToPoint:NSMakePoint(20.0 * s, 8.0 * s)];
-        [plate lineToPoint:NSMakePoint(20.0 * s, 19.0 * s)];
-        [plate lineToPoint:NSMakePoint(18.0 * s, 21.0 * s)];
-        [plate lineToPoint:NSMakePoint(6.0 * s, 21.0 * s)];
-        [plate lineToPoint:NSMakePoint(4.0 * s, 19.0 * s)];
-        [plate closePath];
-        [plate appendBezierPath:[NSBezierPath
-            bezierPathWithRect:NSMakeRect(8.0 * s, 4.0 * s,
-                                          8.0 * s, 4.0 * s)]];
-        [plate appendBezierPath:[NSBezierPath
-            bezierPathWithOvalInRect:NSMakeRect(9.0 * s, 11.0 * s,
-                                                6.0 * s, 6.0 * s)]];
-        [plate setWindingRule:NSEvenOddWindingRule];
-        [plate fill];
-
-        // The slot in the shutter and the spindle in the hub.
-        [[NSBezierPath bezierPathWithRect:NSMakeRect(10.0 * s, 5.0 * s,
-                                                     4.0 * s, 1.5 * s)] fill];
-        [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(11.0 * s,
-                                                          13.0 * s,
-                                                          2.0 * s,
-                                                          2.0 * s)] fill];
-        return YES;
-    }];
-    [image setTemplate:YES];
-    return image;
-}
-
 static NSString* const kIdRecent = @"MdRecent";
 static NSString* const kIdSave = @"MdSave";
 static NSString* const kIdShare = @"MdShare";
@@ -149,12 +104,14 @@ static NSString* const kIdOutline = @"MdOutline";
     return item;
 }
 
-// Save gets the classic diskette, not the download-into-a-tray
-// symbol: the two actions read too much alike in this app.
+// Save wears the checkmark the HIG lists for the action, from the system
+// set. The diskette was drawn by hand and read as a dark blob at 18 points
+// next to the other symbols.
 - (NSToolbarItem*)saveItem {
     NSToolbarItem* item =
         [[NSToolbarItem alloc] initWithItemIdentifier:kIdSave];
-    NSImage* image = FloppySaveImage();
+    NSImage* image = [NSImage imageWithSystemSymbolName:@"checkmark"
+                               accessibilityDescription:@"Save"];
     if (image) [item setImage:image];
     [item setBordered:YES];
     [item setLabel:@"Save"];

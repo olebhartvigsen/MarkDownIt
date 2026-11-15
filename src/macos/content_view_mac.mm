@@ -258,6 +258,16 @@ bool ContentView::WelcomeNewAt(float x, float y) const {
     return welcome_.HitsNewButton(x, y);
 }
 
+Rect ContentView::WelcomeNewRect() {
+    welcome_.Layout(width_, height_);
+    return welcome_.NewButtonRect();
+}
+
+Rect ContentView::WelcomeOpenRect() {
+    welcome_.Layout(width_, height_);
+    return welcome_.OpenButtonRect();
+}
+
 std::string ContentView::WelcomePathForCard(int index) const {
     return welcome_.GetPath(index);
 }
@@ -740,6 +750,11 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     platform::App* app_;
     // The timer that blinks the caret.
     NSTimer* blinkTimer_;
+    // The two rects the welcome screen's actions had when their tooltips
+    // were last registered, so a redraw only re-registers them on a change.
+    NSRect welcomeNewTipRect_;
+    NSRect welcomeOpenTipRect_;
+    BOOL welcomeTipsSet_;
     // The area that tells the view the mouse moved over it.
     NSTrackingArea* trackingArea_;
     // The x the vertical moves aim for, in document coordinates. A
@@ -1064,6 +1079,46 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     // the whole document over.
     platform::CoreGraphicsTarget target(context);
     content_->Draw(&target);
+    [self syncWelcomeToolTips];
+}
+
+// The band's two actions carry a glyph and no words, so each one names
+// itself in a tooltip. The rects follow the window, and the tooltips are
+// registered again only when one of them moved.
+- (void)syncWelcomeToolTips {
+    if (!content_) return;
+    NSRect fresh = NSZeroRect;
+    NSRect open = NSZeroRect;
+    if (app_ && app_->WelcomeMode()) {
+        const platform::Rect f = content_->WelcomeNewRect();
+        const platform::Rect o = content_->WelcomeOpenRect();
+        fresh = NSMakeRect(f.x, f.y, f.width, f.height);
+        open = NSMakeRect(o.x, o.y, o.width, o.height);
+    }
+    const BOOL wanted = fresh.size.width > 0.0f && fresh.size.height > 0.0f;
+    if (welcomeTipsSet_ == wanted && NSEqualRects(fresh, welcomeNewTipRect_) &&
+        NSEqualRects(open, welcomeOpenTipRect_)) {
+        return;
+    }
+    [self removeAllToolTips];
+    welcomeTipsSet_ = wanted;
+    welcomeNewTipRect_ = fresh;
+    welcomeOpenTipRect_ = open;
+    if (!wanted) return;
+    [self addToolTipRect:fresh owner:self userData:(void*)1];
+    [self addToolTipRect:open owner:self userData:(void*)2];
+}
+
+- (NSString*)view:(NSView*)view
+    stringForToolTip:(id)tag
+               point:(NSPoint)point
+            userData:(void*)data {
+    (void)view;
+    (void)tag;
+    (void)point;
+    if (data == (void*)1) return @"New document";
+    if (data == (void*)2) return @"Open document";
+    return nil;
 }
 
 - (void)mouseDown:(NSEvent*)event {

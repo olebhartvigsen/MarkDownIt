@@ -356,6 +356,13 @@ private:
     int            welcome_hover_ = -1;
     bool           welcome_open_hover_ = false;
     bool           welcome_new_hover_ = false;
+    // The two actions on the band carry a glyph and no words, so a tooltip
+    // names each of them; its rects follow the layout and the DPI.
+    HWND           welcome_tips_ = nullptr;
+    RECT           welcome_new_tip_rect_ = {};
+    RECT           welcome_open_tip_rect_ = {};
+    bool           welcome_tips_added_ = false;
+    void UpdateWelcomeTips();
     OutlinePane    outline_;
     std::vector<OutlineItem> outline_items_;
 

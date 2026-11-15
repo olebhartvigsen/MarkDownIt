@@ -23,12 +23,19 @@ masthead with its controls and not as a leaflet with a button under it.
   leads with**, "A word processor for Markdown files.", under the name from
   the name's left edge, in the announce bar's mint. The two lines and the
   mark are one block, centred on the band.
-- **Two actions** at the band's right end:
+- **Two actions** at the band's right end, each a 34 point square with a
+  glyph and no words, so the row stays a masthead:
   - **New document**, the quiet one: the site's outline button, a white
-    hairline on the band and next to no fill.
+    hairline on the band and next to no fill, holding the add sign.
   - **Open document**, the solid one and the rightmost of the pair: the
-    site's `.btn-solid`, bright teal with the dark ink on it. Reading is
-    what the app is for, so this is the action the page points at.
+    site's `.btn-solid`, bright teal with the dark ink on it, holding a
+    folder. Reading is what the app is for, so this is the action the page
+    points at.
+
+  The two glyphs are drawn from primitives, so both ports draw the same
+  marks; because a glyph alone has to name itself, each shell hangs a
+  tooltip on its rect (`NSToolTipOwner` on the mac, a `TOOLTIPS_CLASS`
+  control on Windows), and the words live there.
 
 Under the band:
 
@@ -62,14 +69,14 @@ wraps to the card it is drawn in and not to the one it had.
 
 The band has two cases, and `Layout` picks between them:
 
-- **One row** when the pair fits beside the lockup (`kInlineRowMin`, 520
+- **One row** when the pair fits beside the lockup (`kInlineRowMin`, 340
   points of column): the lockup left, the actions right, the band 84 points.
 - **Two rows** below that: the actions drop under the lockup at the left
   edge and the band grows to 122. The 480 point window the mac window can
   be narrowed to lands here.
 
 The tagline stands down on its own when the column is narrower than
-`kTaglineMin` (606), because under that it would run beneath the pair. The
+`kTaglineMin` (380), because under that it would run beneath the pair. The
 name then carries the row alone, and the row stays one row.
 
 The vertical rhythm is one number after another in `welcome_screen.cpp`:

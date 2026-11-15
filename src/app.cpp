@@ -16,6 +16,7 @@
 #include "office/docx_export.h"
 #include "office/pdf_export.h"
 #include <commdlg.h>
+#include <commctrl.h>
 #include <windowsx.h>
 
 #include <windows.h>
@@ -1869,7 +1870,73 @@ void AppWindow::OnLButtonDblClk(HWND hwnd, int x, int y) {
     Repaint();
 }
 
+// The band's two actions carry a glyph and no words, so each one names
+// itself in a tooltip: one tool per action, on the content window, in its
+// pixels. The control is told again only when a rect moved.
+void AppWindow::UpdateWelcomeTips() {
+    if (!welcome_tips_ || !hwnd_content_) return;
+    if (!welcome_mode_) {
+        if (welcome_tips_added_) {
+            SendMessageW(welcome_tips_, TTM_POP, 0, 0);
+        }
+        return;
+    }
+
+    const float scale = static_cast<float>(dpi_) / 96.0f;
+    const platform::Rect fresh = welcome_.NewButtonRect();
+    const platform::Rect open = welcome_.OpenButtonRect();
+    RECT freshPx = {};
+    freshPx.left = static_cast<LONG>(fresh.x * scale);
+    freshPx.top = static_cast<LONG>(fresh.y * scale);
+    freshPx.right = static_cast<LONG>((fresh.x + fresh.width) * scale);
+    freshPx.bottom = static_cast<LONG>((fresh.y + fresh.height) * scale);
+    RECT openPx = {};
+    openPx.left = static_cast<LONG>(open.x * scale);
+    openPx.top = static_cast<LONG>(open.y * scale);
+    openPx.right = static_cast<LONG>((open.x + open.width) * scale);
+    openPx.bottom = static_cast<LONG>((open.y + open.height) * scale);
+
+    if (welcome_tips_added_ &&
+        EqualRect(&freshPx, &welcome_new_tip_rect_) &&
+        EqualRect(&openPx, &welcome_open_tip_rect_)) {
+        return;
+    }
+    welcome_new_tip_rect_ = freshPx;
+    welcome_open_tip_rect_ = openPx;
+
+    TOOLINFOW info = {};
+    info.cbSize = sizeof(info);
+    info.hwnd = hwnd_content_;
+    info.uFlags = TTF_SUBCLASS;
+    if (!welcome_tips_added_) {
+        info.uId = 1;
+        info.rect = freshPx;
+        info.lpszText = const_cast<LPWSTR>(L"New document");
+        SendMessageW(welcome_tips_, TTM_ADDTOOLW, 0,
+                     reinterpret_cast<LPARAM>(&info));
+        info.uId = 2;
+        info.rect = openPx;
+        info.lpszText = const_cast<LPWSTR>(L"Open document");
+        SendMessageW(welcome_tips_, TTM_ADDTOOLW, 0,
+                     reinterpret_cast<LPARAM>(&info));
+        welcome_tips_added_ = true;
+        return;
+    }
+    info.uId = 1;
+    info.rect = freshPx;
+    SendMessageW(welcome_tips_, TTM_NEWTOOLRECTW, 0,
+                 reinterpret_cast<LPARAM>(&info));
+    info.uId = 2;
+    info.rect = openPx;
+    SendMessageW(welcome_tips_, TTM_NEWTOOLRECTW, 0,
+                 reinterpret_cast<LPARAM>(&info));
+}
+
 void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
+    // A tooltip left over from the page is popped when a document took its
+    // place; in the page's own mode this only re-registers a moved rect.
+    UpdateWelcomeTips();
+
     // Welcome screen: track hover for card highlight.
     if (welcome_mode_) {
         D2D1_SIZE_F sz = rt_ ? rt_->GetSize() : D2D1::SizeF(800, 600);
@@ -2622,6 +2689,19 @@ void AppWindow::OnCreate(HWND hwnd) {
         return;
     }
 
+    // The welcome screen's two actions carry a glyph and no words, so a
+    // tooltip names each of them. It is told where they are as the band is
+    // laid out (UpdateWelcomeTips).
+    welcome_tips_ = CreateWindowExW(
+        0, TOOLTIPS_CLASSW, nullptr,
+        WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+        hwnd_content_, nullptr, hinst_, nullptr);
+    if (welcome_tips_) {
+        SetWindowPos(welcome_tips_, HWND_TOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+
     // Create D2D render target on the child window.
     RECT rc;
     GetClientRect(hwnd_content_, &rc);
@@ -3359,6 +3439,7 @@ void AppWindow::OnContentPaint(HWND hwnd) {
         D2D1_SIZE_F size = rt_->GetSize();
         rt_->Clear(D2D1::ColorF(D2D1::ColorF::White));
         welcome_.Layout(size.width, size.height);
+        UpdateWelcomeTips();
         {
             platform::D2DTarget target(rt_, dw_factory_);
             welcome_.Render(&target, &welcome_engine_, size.width,
