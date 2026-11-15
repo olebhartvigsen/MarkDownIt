@@ -1097,8 +1097,11 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     content_->Draw(&target);
     // The band a table keeps at the edge: the page is drawn whole, so this is
     // the one pass that knows which part of it is on screen.
-    content_->DrawPinnedHeaders(&target,
-                                static_cast<float>(NSMinY([self visibleRect])));
+    // The clip's own origin is the page's top on screen; the visible rect of
+    // a flipped document view is not, and answering with it pinned nothing.
+    NSClipView* clip = [[self enclosingScrollView] contentView];
+    content_->DrawPinnedHeaders(
+        &target, clip ? static_cast<float>(NSMinY([clip bounds])) : 0.0f);
     [self syncWelcomeToolTips];
 }
 

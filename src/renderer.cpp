@@ -966,14 +966,19 @@ void Renderer::PaintSharedOverlays(
                         // row painter is not asked to draw a row at a place
                         // it was never measured for.
                         platform::D2DTarget player(rt);
+                        D2D1_MATRIX_3X2_F saved = {};
+                        rt->GetTransform(&saved);
+                        // The band's items are the walk's: x from the table's
+                        // own left edge, y from its top. The frame's own
+                        // translation is kept for the column and dropped for
+                        // the row, which lands at the viewport's edge.
                         rt->SetTransform(D2D1::Matrix3x2F::Translation(
-                            bandX - scrollX, -b->table->headerTop));
+                            bandX + saved._31, -b->table->headerTop));
                         display::Play(b->table->header, &player,
                                       [this](const display::Image& item) {
                                           return ImageHandleFor(item);
                                       });
-                        rt->SetTransform(D2D1::Matrix3x2F::Translation(
-                            -scrollX, -scrollY));
+                        rt->SetTransform(saved);
                     }
                 }
                 break;

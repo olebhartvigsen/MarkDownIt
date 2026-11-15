@@ -1415,7 +1415,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // never repainted and the band never appears: ask for the whole frame
         // and let it draw before the picture is taken.
         [view_ setNeedsDisplay:YES];
-        [view_ displayIfNeeded];
+        [window_ display];
     } else if ([state isEqualToString:@"welcome"]) {
         // The screen without a document, reached the way the toolbar
         // reaches it. The walk has opened the fixture, so the recent
