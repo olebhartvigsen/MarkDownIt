@@ -114,6 +114,10 @@ private:
     // Where the Open button sits, in points.
     Rect openButton_;
     Rect newButton_;
+    // The small names under the two squares. Part of the button for a press;
+    // drawn centred on the square.
+    Rect openLabel_;
+    Rect newLabel_;
 
     // The band, as Layout found it.
     float bandHeight_ = 84.0f;

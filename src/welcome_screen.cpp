@@ -89,6 +89,12 @@ const float kStackedWordmarkBaseline = 34.0f;
 const float kStackedTaglineBaseline = 50.0f;
 const float kStackedButtonTop = 66.0f;
 
+// The small name under each action button. The mark says what kind of action
+// it is, the word says which one; the band still reads as one row because the
+// label sits under the square, not beside it.
+const float kButtonLabelSize = 10.5f;
+const float kButtonLabelGap = 3.0f;
+
 // The label over the grid, and the grid itself. The grid starts at
 // kGridTop (the header names it, because the tests probe that line).
 const float kSectionLabelSize = 12.5f;
@@ -684,6 +690,16 @@ void WelcomeScreen::Layout(float viewW, float viewH) {
         openButton_.x = left + contentW - kButtonW;
         newButton_.x = openButton_.x - kButtonGap - kButtonW;
     }
+    // The small names under the two squares, centred on them at draw time.
+    const float labelTop = buttonTop + kButtonH + kButtonLabelGap;
+    newLabel_.x = newButton_.x;
+    newLabel_.y = labelTop;
+    newLabel_.width = kButtonW;
+    newLabel_.height = kButtonLabelSize + 2.0f;
+    openLabel_.x = openButton_.x;
+    openLabel_.y = labelTop;
+    openLabel_.width = kButtonW;
+    openLabel_.height = kButtonLabelSize + 2.0f;
     gridLeft_ = left;
 
     if (cards_.empty()) return;
@@ -736,6 +752,15 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
 
         DrawPlusMark(target, newButton_, kBandText);
     }
+    {
+        FontSpec label;
+        label.family = "Segoe UI";
+        label.size = kButtonLabelSize;
+        const float width = TextWidth(engine, "New", label);
+        target->DrawText("New", label,
+                         newLabel_.x + (newLabel_.width - width) * 0.5f,
+                         newLabel_.y + kButtonLabelSize, kBandMint);
+    }
 
     // The button that opens a document: the site's solid button, bright
     // teal with the dark ink on it, the one prominent action of the page.
@@ -746,6 +771,15 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
                                 openHovered ? kSolidButtonHover : kSolidButton);
 
         DrawFolderMark(target, openButton_, kSolidInk);
+    }
+    {
+        FontSpec label;
+        label.family = "Segoe UI";
+        label.size = kButtonLabelSize;
+        const float width = TextWidth(engine, "Open", label);
+        target->DrawText("Open", label,
+                         openLabel_.x + (openLabel_.width - width) * 0.5f,
+                         openLabel_.y + kButtonLabelSize, kBandMint);
     }
 
     // Without any files there is a hint under the label line, at the left
@@ -839,16 +873,26 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
     }
 }
 
+namespace {
+
+// Whether a point is on a rect.
+bool Inside(const Rect& rect, float x, float y) {
+    return rect.width > 0.0f && x >= rect.x && x <= rect.x + rect.width &&
+           y >= rect.y && y <= rect.y + rect.height;
+}
+
+}  // namespace
+
 bool WelcomeScreen::HitsNewButton(float x, float y) const {
     if (newButton_.width <= 0.0f) return false;
-    return x >= newButton_.x && x <= newButton_.x + newButton_.width &&
-           y >= newButton_.y && y <= newButton_.y + newButton_.height;
+    // The word under the square is part of the button: a reader who aims at
+    // "New" means the button, not the band.
+    return Inside(newButton_, x, y) || Inside(newLabel_, x, y);
 }
 
 bool WelcomeScreen::HitsOpenButton(float x, float y) const {
     if (openButton_.width <= 0.0f) return false;
-    return x >= openButton_.x && x <= openButton_.x + openButton_.width &&
-           y >= openButton_.y && y <= openButton_.y + openButton_.height;
+    return Inside(openButton_, x, y) || Inside(openLabel_, x, y);
 }
 
 int WelcomeScreen::HitTest(float x, float y) const {

@@ -208,6 +208,74 @@ bool EndsWithEllipsis(const std::string& text) {
 
 }  // namespace
 
+// The two actions carry their names, small and centred under the square, and
+// the name is part of the button a press can land on.
+TEST(Welcome, TheTwoActionsCarryTheirNames) {
+    WelcomeScreen screen;
+    GridEngine engine;
+    RecordingTarget target;
+    screen.Layout(900.0f, 700.0f);
+    screen.Render(&target, &engine, 900.0f, 700.0f, -1, false, false);
+
+    const auto find = [&target](const std::string& text)
+        -> const RecordingTarget::TextCall* {
+        for (const RecordingTarget::TextCall& call : target.texts) {
+            if (call.text == text) return &call;
+        }
+        return nullptr;
+    };
+    const RecordingTarget::TextCall* newLabel = find("New");
+    const RecordingTarget::TextCall* openLabel = find("Open");
+    ASSERT_TRUE(newLabel != nullptr);
+    ASSERT_TRUE(openLabel != nullptr);
+
+    // Small, and below its square rather than on it.
+    EXPECT_NEAR(newLabel->font.size, 10.5f, 0.001f);
+    EXPECT_NEAR(openLabel->font.size, 10.5f, 0.001f);
+    const Rect newRect = screen.NewButtonRect();
+    const Rect openRect = screen.OpenButtonRect();
+    EXPECT_TRUE(newLabel->y > newRect.y + newRect.height);
+    EXPECT_TRUE(openLabel->y > openRect.y + openRect.height);
+    // One baseline for the pair, so the two names read as one row.
+    EXPECT_NEAR(newLabel->y, openLabel->y, 0.001f);
+
+    // Centred on its square, measured by the same engine the screen used.
+    const float newWidth = engine.Width("New", newLabel->font);
+    const float openWidth = engine.Width("Open", openLabel->font);
+    EXPECT_NEAR(newLabel->x + newWidth * 0.5f,
+                newRect.x + newRect.width * 0.5f, 0.001f);
+    EXPECT_NEAR(openLabel->x + openWidth * 0.5f,
+                openRect.x + openRect.width * 0.5f, 0.001f);
+
+    // The word is part of the button: a press on it hits the button, and the
+    // band beside it does not.
+    EXPECT_TRUE(screen.HitsNewButton(newLabel->x + newWidth * 0.5f,
+                                     newLabel->y - 3.0f));
+    EXPECT_TRUE(screen.HitsOpenButton(openLabel->x + openWidth * 0.5f,
+                                      openLabel->y - 3.0f));
+    EXPECT_FALSE(screen.HitsNewButton(newRect.x - 20.0f, newLabel->y - 3.0f));
+    EXPECT_FALSE(screen.HitsOpenButton(openRect.x + openRect.width + 30.0f,
+                                       openLabel->y - 3.0f));
+
+    // The narrow window stacks the pair, and the names follow it.
+    RecordingTarget narrowTarget;
+    screen.Layout(480.0f, 640.0f);
+    screen.Render(&narrowTarget, &engine, 480.0f, 640.0f, -1, false, false);
+    const RecordingTarget::TextCall* narrowNew = nullptr;
+    const RecordingTarget::TextCall* narrowOpen = nullptr;
+    for (const RecordingTarget::TextCall& call : narrowTarget.texts) {
+        if (call.text == "New") narrowNew = &call;
+        if (call.text == "Open") narrowOpen = &call;
+    }
+    ASSERT_TRUE(narrowNew != nullptr);
+    ASSERT_TRUE(narrowOpen != nullptr);
+    const Rect narrowNewRect = screen.NewButtonRect();
+    const Rect narrowOpenRect = screen.OpenButtonRect();
+    EXPECT_TRUE(narrowNew->y > narrowNewRect.y + narrowNewRect.height);
+    EXPECT_TRUE(narrowNew->y > narrowOpenRect.y + narrowOpenRect.height);
+    EXPECT_NEAR(narrowNew->y, narrowOpen->y, 0.001f);
+}
+
 TEST(WelcomeScreen, WrapsALongLineOfThePreview) {
     WelcomeScreen screen;
     std::vector<RecentFile> files(1);

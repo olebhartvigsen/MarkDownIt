@@ -33,9 +33,13 @@ masthead with its controls and not as a leaflet with a button under it.
     points at.
 
   The two glyphs are drawn from primitives, so both ports draw the same
-  marks; because a glyph alone has to name itself, each shell hangs a
-  tooltip on its rect (`NSToolTipOwner` on the mac, a `TOOLTIPS_CLASS`
-  control on Windows), and the words live there.
+  marks. Under each square sits its name, `New` and `Open`, at 10.5 points in
+  the band's mint, centred on the square and drawn by the shared page, so both
+  ports write the same word in the same place. The name is part of the button:
+  `HitsNewButton` and `HitsOpenButton` answer for the square and its word, so a
+  press on the word opens what the word says. Each shell also hangs a tooltip
+  on the rect (`NSToolTipOwner` on the mac, a `TOOLTIPS_CLASS` control on
+  Windows), which is where a longer sentence can live.
 
 Under the band:
 
@@ -83,7 +87,8 @@ The vertical rhythm is one number after another in `welcome_screen.cpp`:
 `kBandHeight` (84, or `kBandHeightStacked`, 122), the row tops
 `kRowMarkTop` (25) and `kStackedMarkTop` (20) for the mark with
 `kMarkSize` (34), the baselines of the name and the tagline, `kRowButtonTop`
-(25) and `kStackedButtonTop` (66) for the pair, and `kLabelLift` (34) and
+(25) and `kStackedButtonTop` (66) for the pair, `kButtonLabelSize` (10.5) and
+`kButtonLabelGap` (3) for the names under them, and `kLabelLift` (34) and
 `kGridLift` (50) for the label and the first row of cards, read from the
 band that was laid out. Move one and the ones under it move with it; the
 tests probe the line where the cards start.
