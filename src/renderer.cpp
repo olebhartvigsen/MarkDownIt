@@ -1484,7 +1484,7 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // other fence draws exactly as it always did.
     D2D1_POINT_2F origin = D2D1::Point2F(x + m.codePad, y + m.codePad);
     if (n.lang == "json" && layout) {
-        const std::string code = Utf32ToUtf8(raw);
+        const std::string code = layout::Utf32ToUtf8(raw);
         ID2D1SolidColorBrush* keyBrush = nullptr;
         ID2D1SolidColorBrush* stringBrush = nullptr;
         ID2D1SolidColorBrush* numberBrush = nullptr;
