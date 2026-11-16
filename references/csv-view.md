@@ -83,12 +83,21 @@ edge, the row is drawn again at that edge, above the body that scrolls under
 it. The rule is one shared function, `layout::PinnedHeader`, which both ports
 call before they paint a table.
 
-Two things have to move for the band to stay: its own items and its words. The
-walk emits the header row's fill, hairlines and funnels twice, once into the
-page and once into `LaidTable::header`, both in document coordinates, so a port
-pins the band by replaying that copy at its top edge with no re-measure. The
-words come from the row's measured lines, which the painters already place per
-row, at the pinned row's own top. The press areas move with the band: a table
+The whole band travels: its surface, its hairlines, its funnels and its words.
+The walk emits the header row twice, once into the page and once into
+`LaidTable::header`, and the copy carries text items as well as shapes, so a
+port pins the band by replaying that list at its top edge with no re-measure and
+no second painter. A port that replays the shapes and then asks its table
+painter to draw the row again at the edge draws nothing: the painter works from
+the row's measured place, which is not where the band is.
+
+The copy is in the walk's coordinates and `LaidTable::headerTop` is where its
+own top sits in them, so the translate is `edge - headerTop`. Subtracting the
+block's document y instead is one page padding too much, and the band lands just
+above the viewport, invisible. On the mac the pass runs inside the page's own
+draw, with the scroll offset the layer keeps for hit testing: the renderer draws
+the page whole in document coordinates and the view is the only place that knows
+which part of it is on screen. The press areas move with the band too: a table
 whose header is pinned answers for its buttons at the viewport's edge, so a
 reader who scrolls can still filter.
 

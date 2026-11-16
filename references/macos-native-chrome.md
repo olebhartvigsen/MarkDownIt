@@ -232,6 +232,20 @@ taken down), and tools/macos-smoke/launch_smoke.sh asserts both.
   own, and the Windows ribbon reads the same answer, so the two windows
   cannot disagree about whether a command can act. Which command is
   available where is in command-states.md.
+- Every command item names its command and this delegate as its target
+  (adoptCommandItems:, once the bar is installed). A nil target is resolved
+  through the responder chain, and AppKit answers undo: and redo: with the
+  window, which keeps an undo manager of its own: an empty one. The item
+  then carries the right key, validates, reads as enabled and does nothing,
+  while the toolbar button beside it works, because a toolbar item has
+  always named its host. The standard editing commands forward to a focused
+  text view first, so the find bar and the source view keep their own undo
+  manager and pasteboard (text spec AC-01).
+- A menu item's enabled state is only refreshed when the menu is opened, so
+  a key equivalent is matched against whatever state the item carried from
+  the last validation. toolbarSync revalidates the whole bar on every state
+  change; without that, a command greyed at launch stays dead for its
+  shortcut until someone opens its menu.
 - tools/check_mac_chrome.py enforces all of it in CI, and
   tools/check_command_coverage.py fails when a shell grows a gate of its
   own again.
