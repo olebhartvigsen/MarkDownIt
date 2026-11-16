@@ -267,8 +267,11 @@ struct Palette {
     ThemeColor calloutLabel[4];
     // JSON fence syntax colours (a .json file's read-only view, and any
     // ```json fence): object keys, string values, numbers, and the
-    // true/false/null literals. Punctuation and whitespace keep
-    // textPrimary, the same ink every other code fence uses.
+    // true/false/null literals. Each kind gets its own vivid hue so a
+    // key and its value read apart at a glance: blue keys, green
+    // string values, orange numbers, red literals. Punctuation and
+    // whitespace keep textPrimary, the same ink every other code
+    // fence uses.
     ThemeColor jsonKey;
     ThemeColor jsonString;
     ThemeColor jsonNumber;
@@ -545,12 +548,13 @@ inline Palette GitHubPalette() {
     p.findCurrentMatchBg = MakeColor(0xFFE08A);
     p.markerBg = MakeColor(0xFFD54A);
     p.markerLine = MakeColor(0xB8860B);
-    // GitHub's own syntax colours for a JSON fence: the blue string/key
-    // tone, the same blue for numbers (GitHub does not split them), and
-    // the red literal used for keywords.
-    p.jsonKey = MakeColor(0x0550AE);
-    p.jsonString = MakeColor(0x0A3069);
-    p.jsonNumber = MakeColor(0x0550AE);
+    // Vivid, clearly separated JSON fence colours, from GitHub's own
+    // semantic hues: blue object keys, green string values, orange
+    // numbers and red true/false/null literals, so a key and its
+    // value (and a string from a number) read apart at a glance.
+    p.jsonKey = MakeColor(0x0969DA);
+    p.jsonString = MakeColor(0x1A7F37);
+    p.jsonNumber = MakeColor(0xB35900);
     p.jsonLiteral = MakeColor(0xCF222E);
     return p;
 }

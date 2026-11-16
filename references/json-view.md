@@ -42,7 +42,10 @@ one a user wrote by hand) is tokenized by `json::Tokenize` and drawn as
 several coloured runs instead of the one plain-ink run every other fence
 gets (`src/layout/code_layout.cpp`). Four palette tokens carry the
 colours (`Palette::jsonKey`, `jsonString`, `jsonNumber`, `jsonLiteral`
-in `src/theme.h`); punctuation and whitespace keep `textPrimary`, the
+in `src/theme.h`), each a vivid, clearly separated hue: blue object
+keys, green string values, orange numbers, red `true`/`false`/`null`
+literals, so a key and its value (and a string from a number) read
+apart at a glance; punctuation and whitespace keep `textPrimary`, the
 same ink the block's border and every other fence already use. The
 split only changes which colour rides each run: wrapping, line breaking
 and the font stay exactly what `LayoutCodeBlock` already did, and every
