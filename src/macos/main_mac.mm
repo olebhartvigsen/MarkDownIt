@@ -1079,11 +1079,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         }
         [self qaScrollToHeading:3 drop:24.0f];
     } else if ([state isEqualToString:@"cmd-z"]) {
-        // Command-Z through the window's own dispatch. The walk types a line
-        // into the page and then presses the shortcut the way a keyboard
-        // sends it, so the menu's key equivalent, the target it resolves to
-        // and the stack the undo lands on are all exercised in one frame. A
-        // menu item that carries the right key but never fires fails here.
+        // Command-Z through three routes, because they are not the same code:
+        // NSApp's dispatch (what the run loop does with a real press), the
+        // menu's own key equivalent match, and the window's dispatch. The walk
+        // types a line before each, so a route that does nothing shows as a
+        // buffer that kept its words.
         [window_ makeKeyAndOrderFront:nil];
         [window_ makeFirstResponder:view_];
         NSString* dir = [[window_ representedFilename]
@@ -1102,35 +1102,53 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         const uint32_t typedAt =
             static_cast<uint32_t>(at == std::string::npos ? 0 : at + 7);
         app_->SetSelection(typedAt, typedAt);
-        const size_t before = app_->buffer().Text().size();
-        [view_ insertText:@"zzz"];
-        const size_t typed = app_->buffer().Text().size();
+
         NSString* z = @"z";
-        NSEvent* press = [NSEvent keyEventWithType:NSEventTypeKeyDown
-                                          location:NSZeroPoint
-                                     modifierFlags:NSEventModifierFlagCommand
-                                         timestamp:0
-                                      windowNumber:[window_ windowNumber]
-                                           context:nil
-                                        characters:z
-                       charactersIgnoringModifiers:z
-                                         isARepeat:NO
-                                           keyCode:6];
-        [window_ sendEvent:press];
-        const size_t after = app_->buffer().Text().size();
+        NSEvent* cmdZ = [NSEvent keyEventWithType:NSEventTypeKeyDown
+                                         location:NSZeroPoint
+                                    modifierFlags:NSEventModifierFlagCommand
+                                        timestamp:0
+                                     windowNumber:[window_ windowNumber]
+                                          context:nil
+                                       characters:z
+                      charactersIgnoringModifiers:z
+                                        isARepeat:NO
+                                          keyCode:6];
+
+        const size_t before = app_->buffer().Text().size();
+        [view_ insertText:@"aaa"];
+        const size_t t1 = app_->buffer().Text().size();
+        [NSApp sendEvent:cmdZ];
+        const size_t a1 = app_->buffer().Text().size();
+
+        app_->SetCaret(static_cast<uint32_t>(t1 - 3));
+        [view_ insertText:@"bbb"];
+        const size_t t2 = app_->buffer().Text().size();
+        [[NSApp mainMenu] performKeyEquivalent:cmdZ];
+        const size_t a2 = app_->buffer().Text().size();
+
+        app_->SetCaret(static_cast<uint32_t>(t2 - 3));
+        [view_ insertText:@"ccc"];
+        const size_t t3 = app_->buffer().Text().size();
+        [window_ sendEvent:cmdZ];
+        const size_t a3 = app_->buffer().Text().size();
+
         NSMenuItem* undoItem = [[[[NSApp mainMenu] itemWithTitle:@"Edit"]
             submenu] itemWithTitle:@"Undo"];
         const bool hasTarget =
             [NSApp targetForAction:@selector(undo:) to:nil from:nil] != nil;
         platform::TraceMac(
-            "qa cmd-z: before=%zu typed=%zu after=%zu key=%s mask=%lu "
-            "enabled=%d target=%d editing=%d",
-            before, typed, after,
+            "qa cmd-z: before=%zu t1=%zu a1=%zu t2=%zu a2=%zu t3=%zu "
+            "a3=%zu key=%s mask=%lu enabled=%d valid=%d canUndo=%d "
+            "target=%d editing=%d",
+            before, t1, a1, t2, a2, t3, a3,
             undoItem ? [[undoItem keyEquivalent] UTF8String] : "(none)",
             undoItem ? (unsigned long)[undoItem keyEquivalentModifierMask]
                      : 0UL,
             undoItem ? ([undoItem isEnabled] ? 1 : 0) : -1,
-            hasTarget ? 1 : 0, app_->Editing() ? 1 : 0);
+            undoItem ? ([self validateMenuItem:undoItem] ? 1 : 0) : -1,
+            app_->undo().CanUndo() ? 1 : 0, hasTarget ? 1 : 0,
+            app_->Editing() ? 1 : 0);
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"welcome-scrolled"]) {
         // The reader scrolls a page sideways, then asks for the recents

@@ -213,22 +213,27 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     # menu item with the right key that never fires leaves the text longer.
     CMDZ=""
     for _ in 1 2 3 4 5 6 7 8; do
-        CMDZ=$(grep "qa cmd-z:" "$LOG" 2>/dev/null \
-            | sed -n 's/.*typed=\([0-9]*\) after=\([0-9]*\).*/\1 \2/p' \
-            | head -1)
+        CMDZ=$(grep "qa cmd-z:" "$LOG" 2>/dev/null | head -1)
         [ -n "$CMDZ" ] && break
         sleep 1
     done
-    TYPED=$(echo "$CMDZ" | cut -d' ' -f1)
-    AFTER=$(echo "$CMDZ" | cut -d' ' -f2)
-    if [ -z "$TYPED" ]; then
+    if [ -z "$CMDZ" ]; then
         echo "launch smoke FAILED: the cmd-z state reported nothing"
-        grep "qa cmd-z" "$LOG" 2>/dev/null | head -3
         exit 1
     fi
-    if [ "$AFTER" -ge "$TYPED" ]; then
+    # t1/a1 the app's own dispatch, t2/a2 the menu's key match, t3/a3 the
+    # window's. Command-Z has to undo the line through at least one of the
+    # menu routes, or the shortcut is not wired at all.
+    field() { echo "$CMDZ" | sed -n "s/.* $1=\([0-9]*\).*/\1/p" | head -1; }
+    T1=$(field t1); A1=$(field a1); T2=$(field t2); A2=$(field a2)
+    if [ -z "$T1" ] || [ -z "$T2" ]; then
+        echo "launch smoke FAILED: the cmd-z report is unreadable"
+        echo "  $CMDZ"
+        exit 1
+    fi
+    if [ "$A1" -ge "$T1" ] && [ "$A2" -ge "$T2" ]; then
         echo "launch smoke FAILED: Command-Z did not undo the typed line"
-        grep "qa cmd-z" "$LOG" 2>/dev/null | head -3
+        echo "  $CMDZ"
         exit 1
     fi
     if [ "$CSV_HEADER" -le 0 ]; then
