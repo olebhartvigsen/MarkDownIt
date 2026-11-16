@@ -36,6 +36,7 @@ package-lock.json
 
 # MSIX icon generator intermediates and local installer build output
 out-4x/
+out-4x-doc/
 installer/output/
 installer/obj/
 *.msix
