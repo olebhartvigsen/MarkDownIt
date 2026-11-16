@@ -133,7 +133,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-click,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,shared,csv-pinned" "$BIN" "$DOC" &
+    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-click,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,shared,csv-pinned,cmd-z" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
@@ -142,7 +142,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     # a shared announcement that lands past the budget is a silently
     # missing capture on the mac side.
     while [ "$waited" -lt 420 ]; do
-        for name in doc wheel find edit format-bar outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap svg-drawio svg-drawio-100 zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc shared csv-pinned; do
+        for name in doc wheel find edit format-bar outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap svg-drawio svg-drawio-100 zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc shared csv-pinned cmd-z; do
             case "$seen" in *" $name "*) continue ;; esac
             if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
                 sleep 0.6
@@ -207,6 +207,28 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     if [ -z "$CSV_HEADER" ]; then
         echo "launch smoke FAILED: the csv-pinned state reported no band"
         grep "qa csv-pinned" "$LOG" 2>/dev/null | head -3
+        exit 1
+    fi
+    # Command-Z has to undo the line the state typed through the window: a
+    # menu item with the right key that never fires leaves the text longer.
+    CMDZ=""
+    for _ in 1 2 3 4 5 6 7 8; do
+        CMDZ=$(grep "qa cmd-z:" "$LOG" 2>/dev/null \
+            | sed -n 's/.*typed=\([0-9]*\) after=\([0-9]*\).*/\1 \2/p' \
+            | head -1)
+        [ -n "$CMDZ" ] && break
+        sleep 1
+    done
+    TYPED=$(echo "$CMDZ" | cut -d' ' -f1)
+    AFTER=$(echo "$CMDZ" | cut -d' ' -f2)
+    if [ -z "$TYPED" ]; then
+        echo "launch smoke FAILED: the cmd-z state reported nothing"
+        grep "qa cmd-z" "$LOG" 2>/dev/null | head -3
+        exit 1
+    fi
+    if [ "$AFTER" -ge "$TYPED" ]; then
+        echo "launch smoke FAILED: Command-Z did not undo the typed line"
+        grep "qa cmd-z" "$LOG" 2>/dev/null | head -3
         exit 1
     fi
     if [ "$CSV_HEADER" -le 0 ]; then

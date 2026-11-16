@@ -1078,6 +1078,60 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             platform::TraceMac("qa shared: showcase anchors missing");
         }
         [self qaScrollToHeading:3 drop:24.0f];
+    } else if ([state isEqualToString:@"cmd-z"]) {
+        // Command-Z through the window's own dispatch. The walk types a line
+        // into the page and then presses the shortcut the way a keyboard
+        // sends it, so the menu's key equivalent, the target it resolves to
+        // and the stack the undo lands on are all exercised in one frame. A
+        // menu item that carries the right key but never fires fails here.
+        [window_ makeKeyAndOrderFront:nil];
+        [window_ makeFirstResponder:view_];
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            app_->MarkClean();
+            [window_ setDocumentEdited:NO];
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"layout-showcase.md"]
+                    UTF8String])];
+        }
+        if (sourceView_) [self OnToggleSourceView];
+        if (!app_->Editing()) [self OnToggleEditMode];
+        const std::string text(app_->buffer().Text());
+        const size_t at = text.find("One document with every");
+        const uint32_t typedAt =
+            static_cast<uint32_t>(at == std::string::npos ? 0 : at + 7);
+        app_->SetSelection(typedAt, typedAt);
+        const size_t before = app_->buffer().Text().size();
+        [view_ insertText:@"zzz"];
+        const size_t typed = app_->buffer().Text().size();
+        NSString* z = @"z";
+        NSEvent* press = [NSEvent keyEventWithType:NSEventTypeKeyDown
+                                          location:NSZeroPoint
+                                     modifierFlags:NSEventModifierFlagCommand
+                                         timestamp:0
+                                      windowNumber:[window_ windowNumber]
+                                           context:nil
+                                        characters:z
+                       charactersIgnoringModifiers:z
+                                         isARepeat:NO
+                                           keyCode:6];
+        [window_ sendEvent:press];
+        const size_t after = app_->buffer().Text().size();
+        NSMenuItem* undoItem = [[[[NSApp mainMenu] itemWithTitle:@"Edit"]
+            submenu] itemWithTitle:@"Undo"];
+        const bool hasTarget =
+            [NSApp targetForAction:@selector(undo:) to:nil from:nil] != nil;
+        platform::TraceMac(
+            "qa cmd-z: before=%zu typed=%zu after=%zu key=%s mask=%lu "
+            "enabled=%d target=%d editing=%d",
+            before, typed, after,
+            undoItem ? [[undoItem keyEquivalent] UTF8String] : "(none)",
+            undoItem ? (unsigned long)[undoItem keyEquivalentModifierMask]
+                     : 0UL,
+            undoItem ? ([undoItem isEnabled] ? 1 : 0) : -1,
+            hasTarget ? 1 : 0, app_->Editing() ? 1 : 0);
+        [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"welcome-scrolled"]) {
         // The reader scrolls a page sideways, then asks for the recents
         // page. It has to fit the window and start at its own origin.
