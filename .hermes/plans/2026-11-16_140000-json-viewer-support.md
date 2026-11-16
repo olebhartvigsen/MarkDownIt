@@ -135,7 +135,14 @@ the existing code-span/code-block path, so Task 4-6 do not guess.
 **Verification:** a one-line note added to this plan's Task 4 saying
 either "no language-specific highlighting exists; a `json` fence renders
 in the same monospace block every other fence does" or "a highlighter
-table exists at `<file>`; add a `json` row there."
+table exists at `<file>`; add a `json` row there.
+
+**Done (2026-11-16):** no `colortext.*` or any per-language highlight
+table exists anywhere in the codebase (searched for `"mermaid"`, `"cpp"`,
+`"json"` as fence languages in `src/parser.cpp`, `src/layout/`, the
+renderers; only `n.lang == "mermaid"` for diagram routing, no coloring).
+A `json` fence renders as a plain monospace code block, same as every
+other unrecognized fence language. Task 4 needs no code change.
 
 ### Task 2: Write the JSON reader (`src/json.*`)
 
@@ -415,6 +422,15 @@ needs more care than the existing silent takeover of `.mmd`/`.svg`).
 MSVC, no Xcode locally, per the Sandbox gotcha in AGENTS.md), so the
 checker is the real gate and manual Explorer/Finder verification happens
 on the CI-built artifact per the usual build-swap-verify loop.
+
+**Done (2026-11-16):** `.json` added to `src/fileassoc.cpp`'s `kExts`
+(the same registration/unregister/restore-previous-default path `.mmd`
+and `.svg` already go through, no new code needed). Added a
+`JSON Document` entry to `installer/macos/Info.plist`'s
+`CFBundleDocumentTypes` with `LSHandlerRank` `Alternate` and
+`LSItemContentTypes` `public.json`, mirroring the existing SVG entry.
+`tools/check_alignment.sh` stays green with no new ledger row needed
+(same native-registration convention every other extension uses).
 
 ### Task 9: Write `references/json-view.md`
 
