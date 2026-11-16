@@ -1,4 +1,5 @@
 #include "imagehelper.h"
+#include "imagepath.h"
 
 #include <windows.h>
 #include <wincodec.h>
@@ -198,7 +199,7 @@ static ID2D1Bitmap* BitmapFromBytes(ID2D1RenderTarget* rt,
 }
 
 ID2D1Bitmap* ImageHelper::LoadBitmapFromUrl(ID2D1RenderTarget* rt,
-    const std::string& url8, float maxWidth) {
+    const std::string& url8, float maxWidth, const std::string& baseDir) {
     if (!rt || url8.empty()) return nullptr;
 
     // A picture embedded in the document as a data: URI is decoded from
@@ -218,15 +219,21 @@ ID2D1Bitmap* ImageHelper::LoadBitmapFromUrl(ID2D1RenderTarget* rt,
         return bmp;
     }
 
+    // A relative local path (the common case: an image shipped next to
+    // the .md file) resolves against the document's own directory, not
+    // the process's working directory. A remote URL or an already
+    // absolute path is returned unchanged.
+    const std::string resolved8 = imagepath::Resolve(baseDir, url8);
+
     // Convert UTF-8 to UTF-16 for Win32 APIs.
-    if (url8.size() > 4096) return nullptr;
+    if (resolved8.size() > 4096) return nullptr;
     std::wstring url;
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, url8.c_str(),
-        static_cast<int>(url8.size()), nullptr, 0);
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, resolved8.c_str(),
+        static_cast<int>(resolved8.size()), nullptr, 0);
     if (wlen > 0) {
         url.resize(wlen);
-        MultiByteToWideChar(CP_UTF8, 0, url8.c_str(),
-            static_cast<int>(url8.size()), &url[0], wlen);
+        MultiByteToWideChar(CP_UTF8, 0, resolved8.c_str(),
+            static_cast<int>(resolved8.size()), &url[0], wlen);
     }
 
     // Check if it's an HTTP(S) URL.
@@ -278,7 +285,8 @@ ID2D1Bitmap* ImageHelper::LoadBitmapFromUrl(ID2D1RenderTarget* rt,
     return bitmap;
 }
 
-bool ImageHelper::LoadImageSize(const std::string& url8, float* w, float* h) {
+bool ImageHelper::LoadImageSize(const std::string& url8, float* w, float* h,
+    const std::string& baseDir) {
     if (w) *w = 0.0f;
     if (h) *h = 0.0f;
     if (url8.empty()) return false;
@@ -323,13 +331,18 @@ bool ImageHelper::LoadImageSize(const std::string& url8, float* w, float* h) {
     // fills the size in once it has the bytes.
     if (lower.find("http://") == 0 || lower.find("https://") == 0) return false;
 
+    // A relative local path resolves against the document's own
+    // directory, not the process's working directory.
+    const std::string resolved8 = imagepath::Resolve(baseDir, url8);
+    if (resolved8.size() > 4096) return false;
+
     std::wstring path;
-    const int wlen = MultiByteToWideChar(CP_UTF8, 0, url8.c_str(),
-        static_cast<int>(url8.size()), nullptr, 0);
+    const int wlen = MultiByteToWideChar(CP_UTF8, 0, resolved8.c_str(),
+        static_cast<int>(resolved8.size()), nullptr, 0);
     if (wlen <= 0) return false;
     path.resize(wlen);
-    MultiByteToWideChar(CP_UTF8, 0, url8.c_str(),
-        static_cast<int>(url8.size()), &path[0], wlen);
+    MultiByteToWideChar(CP_UTF8, 0, resolved8.c_str(),
+        static_cast<int>(resolved8.size()), &path[0], wlen);
 
     IWICImagingFactory* wicFactory = nullptr;
     HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr,
@@ -360,7 +373,8 @@ bool ImageHelper::LoadImageSize(const std::string& url8, float* w, float* h) {
     return ok;
 }
 
-std::string ImageHelper::LoadSvgText(const std::string& url8) {
+std::string ImageHelper::LoadSvgText(const std::string& url8,
+    const std::string& baseDir) {
     if (url8.empty()) return {};
 
     // Check if HTTP(S) URL.
@@ -390,14 +404,18 @@ std::string ImageHelper::LoadSvgText(const std::string& url8) {
         return out;
     }
 
+    // A relative local path resolves against the document's own
+    // directory, not the process's working directory.
+    const std::string resolved8 = imagepath::Resolve(baseDir, url8);
+
     // Local file path: convert to wide and read.
     std::wstring path;
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, url8.c_str(),
-        static_cast<int>(url8.size()), nullptr, 0);
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, resolved8.c_str(),
+        static_cast<int>(resolved8.size()), nullptr, 0);
     if (wlen > 0) {
         path.resize(wlen);
-        MultiByteToWideChar(CP_UTF8, 0, url8.c_str(),
-            static_cast<int>(url8.size()), &path[0], wlen);
+        MultiByteToWideChar(CP_UTF8, 0, resolved8.c_str(),
+            static_cast<int>(resolved8.size()), &path[0], wlen);
     }
 
     HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ,

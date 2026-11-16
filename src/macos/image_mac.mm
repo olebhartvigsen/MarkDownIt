@@ -13,6 +13,8 @@
 
 #include "image_mac.h"
 
+#include "imagepath.h"
+
 #include <cctype>
 #include <cstdio>
 #include <mutex>
@@ -208,8 +210,11 @@ BitmapHandle ImageCache::Get(const std::string& source) {
         return nullptr;
     }
 
-    // A local file is read the first time it is asked for.
-    const std::string data = ReadLocalFile(source);
+    // A local file is read the first time it is asked for. A relative
+    // path resolves against the document's own directory, not the
+    // process's working directory; the cache still keys by the
+    // unresolved `source`, the same URL the Windows cache keys by.
+    const std::string data = ReadLocalFile(imagepath::Resolve(baseDir_, source));
     if (!entry) {
         auto owner = std::make_unique<Entry>();
         owner->source = source;

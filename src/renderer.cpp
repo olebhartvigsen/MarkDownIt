@@ -1084,7 +1084,7 @@ void Renderer::PaintSharedOverlays(
             }
         }
         if (!svgTried) {
-            svgText = ImageHelper::LoadSvgText(img->url);
+            svgText = ImageHelper::LoadSvgText(img->url, baseDir_);
             if (img_cache_.size() >= 128) {
                 if (img_cache_.front().bmp)
                     img_cache_.front().bmp->Release();
@@ -2397,7 +2397,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     }
                 }
                 if (!svgTried) {
-                    svgText = ImageHelper::LoadSvgText(ib.url);
+                    svgText = ImageHelper::LoadSvgText(ib.url, baseDir_);
                     if (img_cache_.size() >= 128) {
                         if (img_cache_.front().bmp)
                             img_cache_.front().bmp->Release();
@@ -2431,7 +2431,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 }
                 if (!bmp && !alreadyTried) {
                     bmp = ImageHelper::LoadBitmapFromUrl(
-                        rt, ib.url, columnDrawW);
+                        rt, ib.url, columnDrawW, baseDir_);
                     if (img_cache_.size() >= 128) {
                         if (img_cache_.front().bmp)
                             img_cache_.front().bmp->Release();
@@ -3162,10 +3162,10 @@ bool Renderer::InlineImageSize(const std::string& url, float* w, float* h) {
         (lower.size() > 4 && lower.substr(lower.size() - 4) == ".svg") ||
         (lower.find("data:image/svg+xml") == 0);
     if (isSvg) {
-        const std::string text = ImageHelper::LoadSvgText(url);
+        const std::string text = ImageHelper::LoadSvgText(url, baseDir_);
         if (!text.empty()) known = svg::ReadSize(text, &iw, &ih);
     } else {
-        known = ImageHelper::LoadImageSize(url, &iw, &ih);
+        known = ImageHelper::LoadImageSize(url, &iw, &ih, baseDir_);
     }
     if (img_size_cache_.size() >= 128) {
         img_size_cache_.erase(img_size_cache_.begin());

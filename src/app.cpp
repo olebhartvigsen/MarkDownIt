@@ -1,5 +1,6 @@
 #include "app.h"
 #include "json.h"
+#include "imagepath.h"
 #include "textenc.h"
 #include "windows/render_target_win.h"
 #include "commands.h"
@@ -2543,6 +2544,9 @@ void AppWindow::LoadDocumentText(const std::string& raw, const std::wstring& pat
     doc_ = Document{};
     ParseDocument(utf8, ImeWideToUtf8(path), controller_.tableFilters(), doc_);
     file_path_ = path;
+    // A relative image or SVG path in this document resolves against
+    // the directory that holds it, not the process's working directory.
+    renderer_.SetBaseDir(imagepath::DirectoryOf(ImeWideToUtf8(path)));
     // A table document is read, never written: it opens in reading mode
     // even when the window was editing the file before it.
     if (controller_.fileFormat().isTable && editing_) SetEdit(false);
@@ -3978,6 +3982,7 @@ bool AppWindow::SaveAs() {
     std::wstring path = SaveDialog();
     if (path.empty()) return false;
     file_path_ = path;
+    renderer_.SetBaseDir(imagepath::DirectoryOf(ImeWideToUtf8(path)));
     UpdateTitleBar();
     bool ok = DoSave(path);
     if (ok) watcher_.Start(hwnd_, file_path_);

@@ -8,6 +8,7 @@
 // only place in the mac layer that talks to Core Graphics directly.
 
 #include "content_view_mac.h"
+#include "imagepath.h"
 #include "mousegesture.h"
 #include "system_theme_mac.h"
 
@@ -177,6 +178,11 @@ void ContentView::OnDocumentChanged() {
     // The document may have changed from a markdown file to a
     // standalone SVG file, or the other way round.
     renderer_.SetStandaloneSvg(app_ && app_->IsStandaloneSvg());
+    // A relative image or SVG path in this document resolves against
+    // the directory that holds it, not the process's working
+    // directory. Shared with the Windows port via imagepath.h.
+    renderer_.SetImageBaseDir(
+        app_ ? imagepath::DirectoryOf(app_->filePath()) : std::string());
 
     Relayout();
     Invalidate();

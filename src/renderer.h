@@ -140,6 +140,13 @@ public:
 
     // Set pointer to the source text for offset calculations.
     void SetSourceText(const std::string* src) { srcText_ = src; }
+
+    // The directory holding the open .md file, so a relative image or
+    // SVG path resolves next to the document instead of against the
+    // process's working directory. Empty for a new, unsaved document,
+    // in which case a relative path is used exactly as written (the
+    // behavior before this existed).
+    void SetBaseDir(const std::string& dir) { baseDir_ = dir; }
     const std::string* SourceText() const { return srcText_; }
     // Draw the document. scrollY is the vertical offset in DIPs.
     // widthDip is the client width in DIPs.
@@ -198,6 +205,8 @@ private:
     ID2D1Factory* d2d_factory_ = nullptr;
     IDWriteFactory* dw_factory_ = nullptr;  // for text measurement in layout
     const std::string* srcText_ = nullptr;  // source text for offset calc
+    // The open .md file's own directory; see SetBaseDir.
+    std::string baseDir_;
     // Search results to highlight. Borrowed, not owned: the find state owns
     // the vector and outlives the paint that reads it. Null means no
     // highlighting at all, which keeps the empty case free of work.

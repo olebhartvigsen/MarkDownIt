@@ -65,6 +65,13 @@ public:
     // as it sees the image, so the fetch begins before the first paint.
     void Prefetch(const std::string& source);
 
+    // The directory holding the open .md file, so a relative image
+    // path resolves next to the document instead of against the
+    // process's working directory. See imagepath.h, shared with the
+    // Windows loader. Empty for a new, unsaved document, in which case
+    // a relative path is used exactly as written.
+    void SetBaseDir(const std::string& dir) { baseDir_ = dir; }
+
 private:
     // The entry the cache keeps for one source.
     struct Entry;
@@ -74,6 +81,9 @@ private:
 
     // The cached entries.
     std::vector<std::unique_ptr<Entry>> entries_;
+
+    // See SetBaseDir.
+    std::string baseDir_;
 };
 
 }  // namespace platform

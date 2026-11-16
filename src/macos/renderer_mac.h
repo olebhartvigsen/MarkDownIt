@@ -162,6 +162,9 @@ public:
     // owns the string.
     void SetSourceText(const std::string* text) { sourceText_ = text; }
 
+    // The directory holding the open .md file; see ImageCache::SetBaseDir.
+    void SetImageBaseDir(const std::string& dir) { images_.SetBaseDir(dir); }
+
     // Draw the raw source text instead of the document: the source
     // view the find guide's view-modes clause needs (guide 4).
     // Every byte is on screen in this mode, so the caret, the

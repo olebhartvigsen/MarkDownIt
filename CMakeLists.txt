@@ -355,6 +355,7 @@ if(BUILD_TESTS AND APPLE)
         tests/dom_mermaid_test.cpp
         tests/mermaid_cache_test.cpp
         tests/theme_test.cpp
+        tests/imagepath_test.cpp
         tests/markdown_style_test.cpp
         tests/perf_harness.cpp
         tests/test_main.cpp
@@ -490,6 +491,7 @@ elseif(BUILD_TESTS)
         tests/dom_mermaid_test.cpp
         tests/mermaid_cache_test.cpp
         tests/theme_test.cpp
+        tests/imagepath_test.cpp
         tests/markdown_style_test.cpp
         tests/perf_harness.cpp
         tests/test_main.cpp
