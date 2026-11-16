@@ -14,6 +14,7 @@
 #include "colortext.h"
 #include "crash_trace.h"
 #include "imagehelper.h"
+#include "json.h"
 #include "svgtext.h"
 #include "layout/text_runs.h"
 #include "layout/selection_rects.h"
@@ -1343,6 +1344,10 @@ std::u16string Renderer::ToUtf16(const std::u32string& s32) {
     return out;
 }
 
+// A UTF-8 to UTF-16 conversion for the json token slices below; the
+// definition lives with the source view code further down the file.
+static std::u16string Utf8ToUtf16(const std::string& s);
+
 void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                               const Node& n, float x, float y,
                               float width, float& outH,
@@ -1470,9 +1475,52 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
     }
 
-    // Draw text.
+    // Draw text. A ```json fence also carries its token colours here:
+    // this painter re-runs after the display-list replay, so the
+    // replay's coloured runs (LayoutCodeBlock) would otherwise lie
+    // under the card fill and the single-ink glyph pass below. The
+    // one DWrite layout stays the caret cache's, the token ranges just
+    // dress its drawing effects; punct keeps the ink brush. Every
+    // other fence draws exactly as it always did.
     D2D1_POINT_2F origin = D2D1::Point2F(x + m.codePad, y + m.codePad);
-    rt->DrawTextLayout(origin, layout, codeBrush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+    if (n.lang == "json" && layout) {
+        const std::string code = Utf32ToUtf8(raw);
+        ID2D1SolidColorBrush* keyBrush = nullptr;
+        ID2D1SolidColorBrush* stringBrush = nullptr;
+        ID2D1SolidColorBrush* numberBrush = nullptr;
+        ID2D1SolidColorBrush* literalBrush = nullptr;
+        rt->CreateSolidColorBrush(pal.jsonKey, &keyBrush);
+        rt->CreateSolidColorBrush(pal.jsonString, &stringBrush);
+        rt->CreateSolidColorBrush(pal.jsonNumber, &numberBrush);
+        rt->CreateSolidColorBrush(pal.jsonLiteral, &literalBrush);
+        UINT32 u16Cursor = 0;
+        for (const json::Token& tok : json::Tokenize(code)) {
+            const std::u16string piece =
+                Utf8ToUtf16(code.substr(tok.offset, tok.length));
+            if (piece.empty()) continue;
+            const DWRITE_TEXT_RANGE range = {u16Cursor,
+                                             static_cast<UINT32>(piece.size())};
+            ID2D1SolidColorBrush* brush = codeBrush;
+            switch (tok.kind) {
+                case json::TokenKind::Key: brush = keyBrush; break;
+                case json::TokenKind::String: brush = stringBrush; break;
+                case json::TokenKind::Number: brush = numberBrush; break;
+                case json::TokenKind::Literal: brush = literalBrush; break;
+                case json::TokenKind::Punct: break;
+            }
+            if (brush) layout->SetDrawingEffect(brush, range);
+            u16Cursor += static_cast<UINT32>(piece.size());
+        }
+        rt->DrawTextLayout(origin, layout, codeBrush,
+                           D2D1_DRAW_TEXT_OPTIONS_CLIP);
+        if (keyBrush) keyBrush->Release();
+        if (stringBrush) stringBrush->Release();
+        if (numberBrush) numberBrush->Release();
+        if (literalBrush) literalBrush->Release();
+    } else {
+        rt->DrawTextLayout(origin, layout, codeBrush,
+                           D2D1_DRAW_TEXT_OPTIONS_CLIP);
+    }
 
     if (cache_) {
         // Build u16ToSrc mapping for the code block.
