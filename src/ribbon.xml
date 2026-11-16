@@ -769,6 +769,23 @@
         <Image Source="icons/save_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
+    <Command Name="cmdOpenInJsonEditor" Symbol="IDC_CMD_OPEN_JSON_EDITOR" Id="10803">
+      <Command.LabelTitle>
+        <String>Open in JSON Editor Online</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Open in JSON Editor Online</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Copy this document to the clipboard and open jsoneditoronline.org</String>
+      </Command.TooltipDescription>
+      <Command.LargeImages>
+        <Image Source="icons/link_32.png" MinDPI="96"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/link_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
     <Command Name="cmdGroupMarkers" Symbol="IDC_GROUP_MARKERS" Id="10080">
       <Command.LabelTitle>
         <String>Highlight</String>
@@ -808,6 +825,7 @@
             <Button CommandName="cmdImportDocx" />
             <Button CommandName="cmdExportDocx" />
             <Button CommandName="cmdExportPdf" />
+            <Button CommandName="cmdOpenInJsonEditor" />
           </MenuGroup>
           <MenuGroup Class="StandardItems">
             <Button CommandName="cmdAbout" />

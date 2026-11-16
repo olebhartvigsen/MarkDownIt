@@ -248,6 +248,19 @@ public:
     // edited, so every command that writes to the text stands down.
     bool InTableDocument() const { return fileFormat_.isTable; }
 
+    // The document came from a standalone .json file: a pretty-printed
+    // fence shown read-only, the same stance InTableDocument takes for
+    // CSV (see references/json-view.md).
+    bool InJsonDocument() const { return fileFormat_.isJson; }
+
+    // The text the "Open in JSON Editor Online" command copies to the
+    // clipboard: the pretty-printed body, with the synthetic fence
+    // taken off, not the raw bytes on disk (those may be minified).
+    std::string JsonEditorPayload() const {
+        if (!fileFormat_.isJson) return std::string();
+        return UnwrapLangFence("json", buffer_.Text());
+    }
+
     // The per-column filters of the open table document, and the two things a
     // shell does with them. One set per file: loading another document starts
     // from no filters, because the columns are not the same columns.

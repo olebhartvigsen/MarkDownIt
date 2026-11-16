@@ -64,4 +64,17 @@ std::string PrettyPrint(const Value& root);
 // touched.
 std::string Compact(const Value& root);
 
+// Past this many bytes, pasting the text into a browser tab is clearly
+// past comfortable paste size: no limit jsoneditoronline.org itself
+// documents, just a judgment call worth a confirmation before the
+// clipboard write (plan: json-viewer-support, Task 7).
+constexpr std::size_t kClipboardWarnBytes = 2 * 1024 * 1024;  // 2 MiB
+
+// Whether the "Open in JSON Editor Online" hand-off should confirm
+// before copying this many bytes to the clipboard. A pure function, so
+// it answers the same on both ports with no dialog of its own.
+inline bool ShouldWarnBeforeJsonEditorCopy(std::size_t bytes) {
+    return bytes > kClipboardWarnBytes;
+}
+
 }  // namespace json

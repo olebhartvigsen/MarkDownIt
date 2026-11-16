@@ -57,6 +57,7 @@ ribbon command needs a row here or a row in the next section.
 | cmdHeading2 | setHeading2 |
 | cmdHeading3 | setHeading3 |
 | cmdImportDocx | importWord |
+| cmdOpenInJsonEditor | openInJsonEditor |
 | cmdIndent | indentBlock |
 | cmdInsertTable | insertTable |
 | cmdItalic | toggleItalic |

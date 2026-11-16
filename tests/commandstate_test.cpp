@@ -380,3 +380,33 @@ TEST(CommandState, FromDocumentReadsTheController) {
     EXPECT_TRUE(sctx.diagram);
     EXPECT_FALSE(Enabled(commands::CommandId::Bullets, sctx));
 }
+
+// A .json file is read-only like a table document, and
+// OpenInJsonEditor is the one command that needs it.
+TEST(CommandState, JsonDocumentIsReadOnlyAndEnablesTheEditorHandoff) {
+    using commands::CommandId;
+    commands::Context ctx = Reading();
+    ctx.jsonDocument = true;
+
+    EXPECT_FALSE(Enabled(CommandId::EditToggle, ctx));
+    EXPECT_FALSE(Enabled(CommandId::Bold, ctx));
+    EXPECT_FALSE(Enabled(CommandId::InsertTable, ctx));
+    EXPECT_TRUE(Enabled(CommandId::SourceView, ctx));
+    EXPECT_TRUE(Enabled(CommandId::OpenInJsonEditor, ctx));
+
+    commands::Context notJson = Reading();
+    EXPECT_FALSE(Enabled(CommandId::OpenInJsonEditor, notJson));
+
+    commands::Context welcome;
+    EXPECT_FALSE(Enabled(CommandId::OpenInJsonEditor, welcome));
+}
+
+TEST(CommandState, FromDocumentReadsJsonFileKind) {
+    DocumentController json;
+    json.LoadFile("{\"a\":1}", "e.json");
+    ParseMarkdown(json.buffer().Text(), json.document());
+    const commands::Context jctx = commands::FromDocument(json);
+    EXPECT_TRUE(jctx.jsonDocument);
+    EXPECT_TRUE(Enabled(commands::CommandId::OpenInJsonEditor, jctx));
+    EXPECT_FALSE(Enabled(commands::CommandId::Bold, jctx));
+}

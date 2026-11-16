@@ -479,6 +479,7 @@ raw bytes on disk. Verify with raw byte inspection, not the display.
 | outline-pane-view.md, find-replace.md, zoom-guidelines.md, cursor-blinking.md, highlighting-functionality.md, night-mode-reference.md | single features |
 | file-watch.md, home-screen.md | the open file watched for changes, and the page shown when none is open |
 | csv-view.md | a CSV file as a table document: the reader, the caps, the fixed font, read-only |
+| json-view.md | a .json file as a pretty-printed, read-only fence, and the JSON Editor Online hand-off |
 
 ## Skills
 

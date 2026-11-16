@@ -92,6 +92,7 @@ public:
     void ImportWordDocx();
     void ExportWordDocx();
     void ExportPdf();
+    void OpenInJsonEditor();
     bool IsDirty() const { return dirty_; }
     void SetEdit(bool on);
     bool IsEditing() const { return editing_; }

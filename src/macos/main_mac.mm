@@ -27,6 +27,8 @@
 #include "system_theme_mac.h"
 #include "navigation.h"
 #include "pdf_ocr_mac.h"
+#include "clipboard_mac.h"
+#include "json.h"
 #include <sstream>
 
 #include "formatting.h"
@@ -190,6 +192,7 @@ bool OpenExternalUrl(const std::string& url) {
 - (void)importPdf:(id)sender;
 - (void)exportWord:(id)sender;
 - (void)exportPdf:(id)sender;
+- (void)openInJsonEditor:(id)sender;
 - (void)undo:(id)sender;
 - (void)redo:(id)sender;
 - (void)cut:(id)sender;
@@ -2453,6 +2456,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)importPdf:(id)sender { (void)sender; [self OnImportPdf]; }
 - (void)exportWord:(id)sender { (void)sender; [self OnExportWord]; }
 - (void)exportPdf:(id)sender { (void)sender; [self OnExportPdf]; }
+- (void)openInJsonEditor:(id)sender { (void)sender; [self OnOpenInJsonEditor]; }
 - (void)findDocument:(id)sender { (void)sender; [self OnFind]; }
 - (void)replaceInDocument:(id)sender { (void)sender; [self OnReplace]; }
 // The Edit menu sends the standard selectors, so a focused text field
@@ -2995,6 +2999,31 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
 - (void)OnExportPdf {
     [self exportOfficeDocument:true];
+}
+
+// Copy the current .json document to the clipboard as pretty-printed
+// text, then open jsoneditoronline.org in the default browser. The
+// command only acts when commandstate.h's needsJson gate is already
+// on (a .json document), the same contract the Windows build follows.
+- (void)OnOpenInJsonEditor {
+    const std::string payload = app_->controller().JsonEditorPayload();
+    if (payload.empty()) return;
+
+    if (json::ShouldWarnBeforeJsonEditorCopy(payload.size())) {
+        NSAlert* alert = [[NSAlert alloc] init];
+        alert.messageText = @"Open in JSON Editor Online";
+        alert.informativeText =
+            @"This document is large. Copying it to the clipboard and "
+            @"opening jsoneditoronline.org may be slow in the browser.\n\n"
+            @"Continue anyway?";
+        [alert addButtonWithTitle:@"Continue"];
+        [alert addButtonWithTitle:@"Cancel"];
+        if ([alert runModal] != NSAlertFirstButtonReturn) return;
+    }
+
+    platform::Clipboard clipboard;
+    clipboard.SetText(payload);
+    platform::OpenExternalUrl("https://jsoneditoronline.org/");
 }
 
 // Writes the document as a Word file or as a PDF. The whole document

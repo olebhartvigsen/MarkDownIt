@@ -62,6 +62,11 @@ struct Context {
     // edited: the writing commands, the markdown formatting, the table
     // edits and the mode switch all stand down.
     bool tableDocument = false;
+    // The document came from a standalone .json file: a pretty-printed,
+    // read-only view the same way a table document is, plus it is the
+    // only document kind the "Open in JSON Editor Online" command acts
+    // on.
+    bool jsonDocument = false;
     // The caret sits in a code-like block: a fence, an indented block or
     // a diagram inside a markdown document.
     bool inCode = false;
@@ -115,6 +120,9 @@ struct Requirements {
     // end of the range stands down (zoom guide).
     bool zoomIn = false;
     bool zoomOut = false;
+    // The command only acts on an open .json document (the "Open in
+    // JSON Editor Online" hand-off).
+    bool needsJson = false;
 };
 
 // The requirements of one command. Total over the command table, with

@@ -118,3 +118,15 @@ TEST(Json, PrettyPrintIsTwoSpaceIndented) {
     std::string pretty = json::PrettyPrint(r.root);
     EXPECT_EQ(pretty, std::string("{\n  \"a\": 1\n}\n"));
 }
+
+TEST(Json, CompactStripsWhitespaceAndKeepsKeyOrder) {
+    auto r = json::Parse("{\n  \"b\": 1,\n  \"a\": [1, 2]\n}\n");
+    EXPECT_TRUE(r.ok);
+    EXPECT_EQ(json::Compact(r.root), std::string("{\"b\":1,\"a\":[1,2]}"));
+}
+
+TEST(Json, ClipboardWarnThreshold) {
+    EXPECT_FALSE(json::ShouldWarnBeforeJsonEditorCopy(json::kClipboardWarnBytes));
+    EXPECT_TRUE(json::ShouldWarnBeforeJsonEditorCopy(json::kClipboardWarnBytes + 1));
+    EXPECT_FALSE(json::ShouldWarnBeforeJsonEditorCopy(0));
+}

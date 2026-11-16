@@ -118,6 +118,11 @@ const Requirements& RequirementsOf(CommandId id) {
     static const Requirements kZoomOut = Zoom(false);
     static const Requirements kBold = Markdown();
     static const Requirements kClearFormat = Markdown(true);
+    static const Requirements kJsonEditor = [] {
+        Requirements r = Doc();
+        r.needsJson = true;
+        return r;
+    }();
     // One entry per TableNeed, in declaration order, so the table rows
     // below can name the need and return the requirements behind it.
     static const Requirements kTables[] = {
@@ -149,6 +154,9 @@ const Requirements& RequirementsOf(CommandId id) {
         return kDoc;
     case CommandId::Save:
         return kEditing;
+
+    case CommandId::OpenInJsonEditor:
+        return kJsonEditor;
 
     // History and clipboard. Undo and redo need history on top of the
     // mode; copy needs a selection in either mode, cut needs both.
@@ -271,9 +279,11 @@ bool Enabled(CommandId id, const Context& ctx) {
     if (req.needsDocument && ctx.welcome) return false;
     if (req.needsEditing && (ctx.welcome || !ctx.editing)) return false;
     if (req.needsMarkdown && (ctx.diagram || ctx.inCode)) return false;
-    if (ctx.tableDocument) {
-        // A CSV table is read: no editing, no markdown, no table edits, and
-        // the mode switch has no second mode to switch to.
+    if (req.needsJson && !ctx.jsonDocument) return false;
+    if (ctx.tableDocument || ctx.jsonDocument) {
+        // A CSV table is read, and a .json file is viewed the same way:
+        // no editing, no markdown, no table edits, and the mode switch
+        // has no second mode to switch to.
         if (req.needsEditing || req.needsMarkdown || req.needsTextDocument)
             return false;
         if (req.needsWritable) return false;
@@ -324,6 +334,7 @@ Context FromDocument(DocumentController& controller) {
     ctx.editing = controller.IsEditing();
     ctx.diagram = controller.InDiagramDocument();
     ctx.tableDocument = controller.InTableDocument();
+    ctx.jsonDocument = controller.InJsonDocument();
     ctx.inCode = controller.CaretInCodeBlock();
     ctx.hasSelection = !controller.selection().Empty();
     ctx.canUndo = controller.undo().CanUndo();

@@ -624,6 +624,7 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_IMPORT_DOCX: m_pApp->ImportWordDocx(); break;
     case IDC_CMD_EXPORT_DOCX: m_pApp->ExportWordDocx(); break;
     case IDC_CMD_EXPORT_PDF:  m_pApp->ExportPdf();      break;
+    case IDC_CMD_OPEN_JSON_EDITOR: m_pApp->OpenInJsonEditor(); break;
     case IDC_CMD_WRAP:    m_pApp->ToggleWrap();        break;
     case IDC_CMD_OUTLINE: m_pApp->ToggleOutline();     break;
     case IDC_CMD_MARK:

@@ -138,6 +138,17 @@ TEST(DocumentFile, MalformedJsonFallsBackToRawBytesInTheFence) {
     EXPECT_EQ(c.buffer().Text(), std::string("```json\n") + raw + "\n```\n");
 }
 
+TEST(DocumentFile, JsonEditorPayloadIsThePrettyBodyWithoutTheFence) {
+    DocumentController c;
+    c.LoadFile("{\"a\":1,\"b\":[2,3]}", "data.json");
+    EXPECT_EQ(c.JsonEditorPayload(),
+              std::string("{\n  \"a\": 1,\n  \"b\": [\n    2,\n    3\n  ]\n}\n"));
+
+    DocumentController md;
+    md.LoadFile("# hi\n", "notes.md");
+    EXPECT_EQ(md.JsonEditorPayload(), std::string());
+}
+
 TEST(DocumentFile, UserFencedJsonFileKeepsItsFence) {
     const std::string raw = "```json\n{\"a\":1}\n```\n";
     DocumentController c;

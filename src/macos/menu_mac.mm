@@ -195,6 +195,8 @@ NSMenu* BuildMainMenu() {
              {"Export as Word\u2026", @selector(exportWord:)},
              {"Export as PDF\u2026", @selector(exportPdf:)}});
         AddSubmenu(fileMenu, "Office", officeMenu);
+        CommandItem(fileMenu, "Open in JSON Editor Online\u2026",
+                    @selector(openInJsonEditor:));
         AddTopLevel(mainMenu, "File", fileMenu);
     }
 

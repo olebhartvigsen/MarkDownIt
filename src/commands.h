@@ -58,6 +58,8 @@ enum class CommandId : uint8_t {
     ImportWord, ImportPdf, ExportWord, ExportPdf,
     // App menu.
     About, AssocMd, Settings, Help,
+    // JSON viewer hand-off.
+    OpenInJsonEditor,
 };
 
 // A Windows keyboard accelerator: the virtual key code plus what the
@@ -282,6 +284,12 @@ inline constexpr CommandSpec kCommands[] = {
      "exportWord:", false, NoWin, NoMac},
     {CommandId::ExportPdf, "Export as PDF", "cmdExportPdf", 10802, "exportPdf:",
      false, NoWin, NoMac},
+
+    // JSON viewer hand-off. Visible and enabled only on a .json
+    // document (commandstate's needsJson gate); it does not touch the
+    // document, so it carries no accelerator and no mutating flag.
+    {CommandId::OpenInJsonEditor, "Open in JSON Editor Online",
+     "cmdOpenInJsonEditor", 10803, "openInJsonEditor:", false, NoWin, NoMac},
 
     // App menu.
     {CommandId::About, "About", "cmdAbout", 10102, "orderFrontStandardAboutPanel:",

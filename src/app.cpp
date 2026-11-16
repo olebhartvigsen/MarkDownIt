@@ -1,4 +1,5 @@
 #include "app.h"
+#include "json.h"
 #include "textenc.h"
 #include "windows/render_target_win.h"
 #include "commands.h"
@@ -5538,6 +5539,30 @@ void AppWindow::ExportPdf() {
     MessageBoxW(hwnd_, OfficeUtf8ToWide(office::ExportDoneText(
                     WideToUtf8(path), made.pageCount, made.report)).c_str(),
                 caption, MB_ICONINFORMATION);
+}
+
+// Copy the current .json document to the clipboard as pretty-printed
+// text, then open jsoneditoronline.org in the default browser: the
+// command only acts when commandstate.h's needsJson gate is already
+// on (a .json document), so it needs no further welcome-mode or
+// empty-document check of its own.
+void AppWindow::OpenInJsonEditor() {
+    const std::string payload = controller_.JsonEditorPayload();
+    if (payload.empty()) return;
+
+    if (json::ShouldWarnBeforeJsonEditorCopy(payload.size())) {
+        const int result = MessageBoxW(hwnd_,
+            L"This document is large. Copying it to the clipboard and "
+            L"opening jsoneditoronline.org may be slow in the browser.\n\n"
+            L"Continue anyway?",
+            L"MarkDownIt - Open in JSON Editor Online",
+            MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
+        if (result != IDYES) return;
+    }
+
+    ClipboardCopy(hwnd_, payload);
+    ShellExecuteW(hwnd_, L"open", L"https://jsoneditoronline.org/",
+                  nullptr, nullptr, SW_SHOWNORMAL);
 }
 
 // Apply a new zoom factor with a stable anchor: the document point
