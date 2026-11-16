@@ -610,6 +610,7 @@ if(BUILD_TESTS)
         src/layout/svg_mermaid_layout.cpp
         src/layout/display_player.cpp
         src/svgtext.cpp
+        src/json.cpp
         ${MARKDOWNIT_MERMAID_SOURCES}
     )
     target_include_directories(MarkDownIt.layout-parity PRIVATE src tests)
