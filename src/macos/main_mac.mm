@@ -214,6 +214,9 @@ bool OpenExternalUrl(const std::string& url) {
 // (full screen, the window and help menus, the system's services) carry
 // no command row and keep their default.
 - (BOOL)canRunAction:(SEL)action context:(commands::Context)context;
+// Revalidates every command item in the menu bar against the one command
+// state, so a shortcut never waits for someone to open its menu.
+- (void)refreshCommandMenu:(NSMenu*)menu context:(commands::Context)context;
 // The zoom landed somewhere, so the saved value follows.
 - (void)zoomDidChange:(float)factor;
 // The same, without the overlay: for a reset the app makes itself.
@@ -2546,6 +2549,25 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     return commands::Enabled(spec->id, context) ? YES : NO;
 }
 
+// AppKit validates a menu when it is opened, and a key equivalent is matched
+// against the state the item carried from the last validation. Undo was greyed
+// when the menu was built, before anything had been typed, and Command-Z stayed
+// dead afterwards: the toolbar button beside it worked because a toolbar item
+// is not gated that way. Every command item is revalidated here instead, on the
+// same context the toolbar reads, so the two cannot disagree.
+- (void)refreshCommandMenu:(NSMenu*)menu context:(commands::Context)context {
+    if (!menu) return;
+    for (NSMenuItem* item in [menu itemArray]) {
+        if (NSMenu* sub = [item submenu]) {
+            [self refreshCommandMenu:sub context:context];
+            continue;
+        }
+        SEL action = [item action];
+        if (!action || [item isSeparatorItem] || [item isHidden]) continue;
+        [item setEnabled:[self canRunAction:action context:context]];
+    }
+}
+
 - (BOOL)validateMenuItem:(NSMenuItem*)item {
     SEL action = [item action];
     const commands::Context context = [self commandContext];
@@ -3446,6 +3468,10 @@ static const commands::CommandSpec* ToolbarCommand(NSString* identifier) {
 // applies.
 - (void)toolbarSync {
     const commands::Context context = [self commandContext];
+    // The menu bar wears the same answers: a command that a keystroke can
+    // reach has to be enabled before the keystroke arrives, not when the menu
+    // is opened.
+    [self refreshCommandMenu:[NSApp mainMenu] context:context];
     for (NSToolbarItem* item in [[window_ toolbar] items]) {
         NSString* identifier = [item itemIdentifier];
         const commands::CommandSpec* spec = ToolbarCommand(identifier);

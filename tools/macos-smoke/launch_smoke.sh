@@ -231,6 +231,13 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         echo "  $CMDZ"
         exit 1
     fi
+    ENABLED=$(echo "$CMDZ" | sed -n 's/.* enabled=\([0-9-]*\).*/\1/p' | head -1)
+    if [ "$ENABLED" != "1" ]; then
+        echo "launch smoke FAILED: the Undo menu item was not enabled when" \
+             "Command-Z arrived"
+        echo "  $CMDZ"
+        exit 1
+    fi
     if [ "$A1" -ge "$T1" ] && [ "$A2" -ge "$T2" ]; then
         echo "launch smoke FAILED: Command-Z did not undo the typed line"
         echo "  $CMDZ"
