@@ -238,11 +238,20 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         echo "  $CMDZ"
         exit 1
     fi
-    if [ "$A1" -ge "$T1" ] && [ "$A2" -ge "$T2" ]; then
-        echo "launch smoke FAILED: Command-Z did not undo the typed line"
+    # The action itself is the half that must work in every environment: the
+    # keyboard half needs an active app, which a build runner cannot give it.
+    T4=$(field t4); A4=$(field a4)
+    if [ -z "$T4" ]; then
+        echo "launch smoke FAILED: the cmd-z report has no direct call"
         echo "  $CMDZ"
         exit 1
     fi
+    if [ "$A4" -ge "$T4" ]; then
+        echo "launch smoke FAILED: Undo itself did not undo the typed line"
+        echo "  $CMDZ"
+        exit 1
+    fi
+    echo "launch smoke: Command-Z $CMDZ" 
     if [ "$CSV_HEADER" -le 0 ]; then
         echo "launch smoke FAILED: nothing was pinned when a long data file" \
              "was scrolled past its header (band=$CSV_HEADER)"

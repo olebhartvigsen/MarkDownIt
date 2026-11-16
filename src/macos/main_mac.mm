@@ -1127,8 +1127,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         app_->SetCaret(static_cast<uint32_t>(t1 - 3));
         [view_ insertText:@"bbb"];
         const size_t t2 = app_->buffer().Text().size();
-        [[NSApp mainMenu] performKeyEquivalent:cmdZ];
+        const BOOL menuTook = [[NSApp mainMenu] performKeyEquivalent:cmdZ];
         const size_t a2 = app_->buffer().Text().size();
+        (void)menuTook;
 
         app_->SetCaret(static_cast<uint32_t>(t2 - 3));
         [view_ insertText:@"ccc"];
@@ -1136,21 +1137,36 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [window_ sendEvent:cmdZ];
         const size_t a3 = app_->buffer().Text().size();
 
+        // A fourth line, undone by the action itself: the command body and
+        // the keyboard path are different halves of the same shortcut, and
+        // one of them answering while the other stays quiet says which half.
+        app_->SetCaret(static_cast<uint32_t>(t3 - 3));
+        [view_ insertText:@"ddd"];
+        const size_t t4 = app_->buffer().Text().size();
+        [self undo:nil];
+        const size_t a4 = app_->buffer().Text().size();
+
         NSMenuItem* undoItem = [[[[NSApp mainMenu] itemWithTitle:@"Edit"]
             submenu] itemWithTitle:@"Undo"];
         const bool hasTarget =
             [NSApp targetForAction:@selector(undo:) to:nil from:nil] != nil;
+        NSResponder* target = [NSApp targetForAction:@selector(undo:)
+                                                   to:nil
+                                                 from:nil];
         platform::TraceMac(
             "qa cmd-z: before=%zu t1=%zu a1=%zu t2=%zu a2=%zu t3=%zu "
-            "a3=%zu key=%s mask=%lu enabled=%d valid=%d canUndo=%d "
-            "target=%d editing=%d",
-            before, t1, a1, t2, a2, t3, a3,
+            "a3=%zu t4=%zu a4=%zu key=%s mask=%lu enabled=%d valid=%d "
+            "canUndo=%d target=%d targetClass=%s active=%d keywin=%d "
+            "editing=%d",
+            before, t1, a1, t2, a2, t3, a3, t4, a4,
             undoItem ? [[undoItem keyEquivalent] UTF8String] : "(none)",
             undoItem ? (unsigned long)[undoItem keyEquivalentModifierMask]
                      : 0UL,
             undoItem ? ([undoItem isEnabled] ? 1 : 0) : -1,
             undoItem ? ([self validateMenuItem:undoItem] ? 1 : 0) : -1,
             app_->undo().CanUndo() ? 1 : 0, hasTarget ? 1 : 0,
+            target ? [[[target class] description] UTF8String] : "(none)",
+            [NSApp isActive] ? 1 : 0, [window_ isKeyWindow] ? 1 : 0,
             app_->Editing() ? 1 : 0);
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"welcome-scrolled"]) {
