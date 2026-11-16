@@ -47,7 +47,7 @@
       <Extensions>
         <!-- Let the packaged app open .md files from Explorer and the Store. -->
         <uap3:Extension Category="windows.fileTypeAssociation">
-          <uap3:FileTypeAssociation Name="markdownit.md">
+          <uap3:FileTypeAssociation Name="markdownit.md" Logo="assets\DocLogo44.png">
             <uap:SupportedFileTypes>
               <uap:FileType>.md</uap:FileType>
             </uap:SupportedFileTypes>

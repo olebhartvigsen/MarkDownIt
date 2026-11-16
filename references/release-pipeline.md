@@ -147,6 +147,28 @@ via resvg; `finalize.py` downscales with LANCZOS and writes the final set:
 Wide310x150, and SplashScreen. The unplated flavors are byte-identical to
 the plain assets because the artwork already has a transparent background.
 
+The `DocLogo44*.png` set is separate: it is the `Logo` the
+`.md` file type association in `AppxManifest.xml` points at, so Explorer
+shows the document icon (`assets/icons/doc-markdown.svg`) for a `.md`
+file instead of the app's own tile icon. Without that `Logo` attribute,
+Windows falls back to `Square44x44Logo`, the app icon, for every
+associated file type. Regenerate it the same way:
+
+```bash
+cd tools/msix-icons
+node render-doc.mjs
+python3 finalize_doc.py
+```
+
+The MSI and the plain .exe install do not go through this file: the
+Windows build's two icon resources (`IDI_APPICON=1`, `IDI_DOCICON=2` in
+`src/app.rc`/`src/resource.h`) already give `.md` its own icon via the
+registry `DefaultIcon` value `"<exe path>,-2"`
+(`src/fileassoc.cpp::RegisterMdAssociation`). If a rebuilt exe still
+shows the old or the wrong icon for `.md` files, that is Windows' icon
+cache, not the association: `ie4uinit.exe -ClearIconCache`, or sign out
+and back in, forces Explorer to re-read it.
+
 ## Pitfalls carried over from the FanFolder pipeline
 
 - Keep the runners pinned to `windows-2022`. `windows-latest` moved to
