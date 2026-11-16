@@ -217,6 +217,11 @@ bool OpenExternalUrl(const std::string& url) {
 // Revalidates every command item in the menu bar against the one command
 // state, so a shortcut never waits for someone to open its menu.
 - (void)refreshCommandMenu:(NSMenu*)menu context:(commands::Context)context;
+// Points every command item at this delegate: the responder chain resolves
+// undo: to the window, whose own undo manager is empty.
+- (void)adoptCommandItems:(NSMenu*)menu;
+// The standard editing commands a focused text field owns first.
+- (BOOL)forwardToTextEditor:(SEL)action;
 // The zoom landed somewhere, so the saved value follows.
 - (void)zoomDidChange:(float)factor;
 // The same, without the overlay: for a reset the app makes itself.
@@ -687,6 +692,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // chain, which ends at this delegate.
     NSMenu* menu = platform::BuildMainMenu();
     [NSApp setMainMenu:menu];
+    [self adoptCommandItems:menu];
     [NSApp activateIgnoringOtherApps:YES];
 
     // A file on the command line opens straight away.
@@ -2470,10 +2476,26 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     }
     [self OnRedo];
 }
-- (void)cut:(id)sender { (void)sender; [self OnCut]; }
-- (void)copy:(id)sender { (void)sender; [self OnCopy]; }
-- (void)paste:(id)sender { (void)sender; [self OnPaste]; }
-- (void)selectAll:(id)sender { (void)sender; [self OnSelectAll]; }
+- (void)cut:(id)sender {
+    (void)sender;
+    if ([self forwardToTextEditor:@selector(cut:)]) return;
+    [self OnCut];
+}
+- (void)copy:(id)sender {
+    (void)sender;
+    if ([self forwardToTextEditor:@selector(copy:)]) return;
+    [self OnCopy];
+}
+- (void)paste:(id)sender {
+    (void)sender;
+    if ([self forwardToTextEditor:@selector(paste:)]) return;
+    [self OnPaste];
+}
+- (void)selectAll:(id)sender {
+    (void)sender;
+    if ([self forwardToTextEditor:@selector(selectAll:)]) return;
+    [self OnSelectAll];
+}
 - (void)zoomIn:(id)sender { (void)sender; [self OnZoomIn]; }
 - (void)zoomOut:(id)sender { (void)sender; [self OnZoomOut]; }
 - (void)zoomReset:(id)sender { (void)sender; [self OnZoomReset]; }
@@ -2582,6 +2604,40 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         if (!action || [item isSeparatorItem] || [item isHidden]) continue;
         [item setEnabled:[self canRunAction:action context:context]];
     }
+}
+
+// The menu items name their command, and the command's target is this
+// delegate. A nil target would be resolved through the responder chain, which
+// answers undo: with the window: the window has an undo manager of its own, it
+// is empty, and the shortcut does nothing while the toolbar button beside it
+// works (the toolbar has always set its host as the target).
+- (void)adoptCommandItems:(NSMenu*)menu {
+    if (!menu) return;
+    for (NSMenuItem* item in [menu itemArray]) {
+        if (NSMenu* sub = [item submenu]) {
+            [self adoptCommandItems:sub];
+            continue;
+        }
+        SEL action = [item action];
+        if (!action) continue;
+        if (commands::FindBySelector(
+                [NSStringFromSelector(action) UTF8String])) {
+            [item setTarget:self];
+        }
+    }
+}
+
+// The find bar and the source view are text fields with their own undo
+// manager and pasteboard, and they keep the standard editing commands first
+// (text spec AC-01).
+- (BOOL)forwardToTextEditor:(SEL)action {
+    NSResponder* first = [window_ firstResponder];
+    if ([first isKindOfClass:[NSTextView class]] &&
+        [first respondsToSelector:action]) {
+        [first performSelector:action withObject:nil];
+        return YES;
+    }
+    return NO;
 }
 
 - (BOOL)validateMenuItem:(NSMenuItem*)item {

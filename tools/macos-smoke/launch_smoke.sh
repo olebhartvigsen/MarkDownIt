@@ -251,6 +251,13 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         echo "  $CMDZ"
         exit 1
     fi
+    # And the key itself has to reach it: the app is active and the window is
+    # key in this walk, which is the state the reader presses Command-Z in.
+    if [ "$A1" -ge "$T1" ]; then
+        echo "launch smoke FAILED: Command-Z did not reach the Undo command"
+        echo "  $CMDZ"
+        exit 1
+    fi
     echo "launch smoke: Command-Z $CMDZ" 
     if [ "$CSV_HEADER" -le 0 ]; then
         echo "launch smoke FAILED: nothing was pinned when a long data file" \
