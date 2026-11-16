@@ -23,6 +23,7 @@ set(MARKDOWNIT_CORE_SOURCES
     src/csv.cpp
     src/csvfilter.cpp
     src/csvdocument.cpp
+    src/json.cpp
     src/documentparse.cpp
     src/textbuffer.cpp
     src/layout/break_heading_layout.cpp

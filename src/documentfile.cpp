@@ -3,6 +3,8 @@
 #include <cctype>
 #include <cstring>
 
+#include "json.h"
+
 bool PathHasExtension(const std::string& path, const char* ext) {
     const size_t n = std::strlen(ext);
     if (path.size() < n) return false;
@@ -100,6 +102,10 @@ std::string DecodeFileText(const std::string& raw,
               (PathHasExtension(pathUtf8, ".mmd") ||
                PathHasExtension(pathUtf8, ".mermaid"));
     f.isSvg = !pathUtf8.empty() && PathHasExtension(pathUtf8, ".svg");
+    // A standalone .json file reads as bare data, the way .mmd and .svg
+    // read as bare source: a synthetic fence lets the normal pipeline
+    // draw it, with no new renderer.
+    f.isJson = !pathUtf8.empty() && PathHasExtension(pathUtf8, ".json");
     // A CSV or TSV file is read as a table and never edited, so its text
     // stays exactly as it arrived: no fence, no decoding of its own.
     f.isTable = !pathUtf8.empty() &&
@@ -114,6 +120,16 @@ std::string DecodeFileText(const std::string& raw,
         text = WrapLangFence("svg", text);
         f.svgWrapped = true;
     }
+    if (f.isJson && !HasLangFence(text, "json")) {
+        // Pretty-print before wrapping: a minified file should not
+        // render as one unreadable line in the fence. A parse failure
+        // falls back to the raw bytes, so a syntax error is shown, not
+        // hidden behind a blank page.
+        json::ParseResult parsed = json::Parse(text);
+        std::string body = parsed.ok ? json::PrettyPrint(parsed.root) : text;
+        text = WrapLangFence("json", body);
+        f.jsonWrapped = true;
+    }
     f.crlf = text.find("\r\n") != std::string::npos;
     if (format) *format = f;
     return text;
@@ -126,6 +142,14 @@ std::string EncodeFileText(const std::string& text, const FileFormat& format) {
     }
     if (format.isSvg && format.svgWrapped) {
         content = UnwrapLangFence("svg", content);
+    }
+    if (format.isJson && format.jsonWrapped) {
+        content = UnwrapLangFence("json", content);
+        // The buffer holds the pretty-printed body; a file the user
+        // never edited should round-trip to its original compact bytes
+        // rather than being rewritten in the viewer's own shape.
+        json::ParseResult parsed = json::Parse(content);
+        if (parsed.ok) content = json::Compact(parsed.root);
     }
     std::string out;
     if (format.hasBom) out += "\xEF\xBB\xBF";

@@ -119,6 +119,34 @@ TEST(DocumentFile, SvgFenceInAMarkdownFileIsCodeNotAPicture) {
     EXPECT_EQ(c.BytesForSaving(), raw);
 }
 
+TEST(DocumentFile, JsonFileIsPrettyPrintedInsideAJsonFence) {
+    DocumentController c;
+    c.LoadFile("{\"a\":1,\"b\":[2,3]}", "data.json");
+    EXPECT_TRUE(c.fileFormat().isJson);
+    EXPECT_TRUE(c.fileFormat().jsonWrapped);
+    EXPECT_EQ(c.buffer().Text(),
+              std::string("```json\n{\n  \"a\": 1,\n  \"b\": [\n    2,\n"
+                           "    3\n  ]\n}\n```\n"));
+    EXPECT_EQ(c.BytesForSaving(), std::string("{\"a\":1,\"b\":[2,3]}"));
+}
+
+TEST(DocumentFile, MalformedJsonFallsBackToRawBytesInTheFence) {
+    DocumentController c;
+    const std::string raw = "{\"a\":}";
+    c.LoadFile(raw, "broken.json");
+    EXPECT_TRUE(c.fileFormat().isJson);
+    EXPECT_EQ(c.buffer().Text(), std::string("```json\n") + raw + "\n```\n");
+}
+
+TEST(DocumentFile, UserFencedJsonFileKeepsItsFence) {
+    const std::string raw = "```json\n{\"a\":1}\n```\n";
+    DocumentController c;
+    c.LoadFile(raw, "data.json");
+    EXPECT_FALSE(c.fileFormat().jsonWrapped);
+    EXPECT_EQ(c.buffer().Text(), raw);
+    EXPECT_EQ(c.BytesForSaving(), raw);
+}
+
 TEST(DocumentFile, ImportedTextWithNoPathIsNeverFenced) {
     DocumentController c;
     c.LoadFile("graph TD\n", "");

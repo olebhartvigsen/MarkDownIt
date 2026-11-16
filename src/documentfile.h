@@ -20,10 +20,14 @@ struct FileFormat {
     bool crlf = false;
     bool isMmd = false;
     bool isSvg = false;
+    // A standalone .json file: shown pretty-printed inside a synthetic
+    // fence, read only, the same way a .mmd or .svg file is bare source.
+    bool isJson = false;
     // A CSV or TSV file: the table view reads it, and nothing is wrapped.
     bool isTable = false;
     bool mmdWrapped = false;
     bool svgWrapped = false;
+    bool jsonWrapped = false;
 };
 
 // Whether the path ends in the extension, compared in lower case.

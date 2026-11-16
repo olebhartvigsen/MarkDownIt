@@ -337,6 +337,7 @@ if(BUILD_TESTS AND APPLE)
         tests/csv_test.cpp
         tests/csvfilter_test.cpp
         tests/csvdocument_test.cpp
+        tests/json_test.cpp
         tests/code_table_layout_test.cpp
         tests/svg_mermaid_layout_test.cpp
         tests/display_player_test.cpp
@@ -466,6 +467,7 @@ elseif(BUILD_TESTS)
         tests/csv_test.cpp
         tests/csvfilter_test.cpp
         tests/csvdocument_test.cpp
+        tests/json_test.cpp
         tests/code_table_layout_test.cpp
         tests/svg_mermaid_layout_test.cpp
         tests/display_player_test.cpp
