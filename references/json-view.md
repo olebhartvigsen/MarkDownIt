@@ -7,10 +7,13 @@ syntax-highlighted document, the same stance `.csv` takes
 ## Reading
 
 `src/json.h` / `src/json.cpp` holds a small RFC 8259 parser (`json::Parse`),
-a two-space `json::PrettyPrint`, and a `json::Compact` re-serializer with no
-limits beyond `kMaxDepth = 64` and `kMaxBytes = 8 MiB`. No comments, no
-trailing commas, no unquoted keys: a strict parser, because this is a
-viewer for well-formed data, not a lenient one for hand-edited config.
+a two-space `json::PrettyPrint`, a `json::Compact` re-serializer with no
+limits beyond `kMaxDepth = 64` and `kMaxBytes = 8 MiB`, and `json::Tokenize`,
+a second pass over already-printed text that splits it into coloured spans
+(key, string, number, true/false/null literal, or punctuation). No
+comments, no trailing commas, no unquoted keys: a strict parser, because
+this is a viewer for well-formed data, not a lenient one for hand-edited
+config.
 
 `src/documentfile.cpp` detects a `.json` extension, pretty-prints the
 parsed tree and wraps it in a synthetic fence, the same pattern `.mmd` and
@@ -31,6 +34,21 @@ in a `json` fence by hand keeps that fence untouched (`jsonWrapped`).
 On save, an untouched buffer round-trips to its original compact form
 (`json::Compact`), not the pretty-printed view: the file on disk is not
 rewritten just because the viewer opened it.
+
+## Syntax colour
+
+A ```` ```json ```` fence (the synthetic one a `.json` file opens into, or
+one a user wrote by hand) is tokenized by `json::Tokenize` and drawn as
+several coloured runs instead of the one plain-ink run every other fence
+gets (`src/layout/code_layout.cpp`). Four palette tokens carry the
+colours (`Palette::jsonKey`, `jsonString`, `jsonNumber`, `jsonLiteral`
+in `src/theme.h`); punctuation and whitespace keep `textPrimary`, the
+same ink the block's border and every other fence already use. The
+split only changes which colour rides each run: wrapping, line breaking
+and the font stay exactly what `LayoutCodeBlock` already did, and every
+byte of the fence's text is still covered by exactly one run, in order,
+so a non-json fence (including a `.csv` table's own code paths) is
+untouched.
 
 ## Read-only
 

@@ -5,6 +5,7 @@
 #include "gtest_lite.h"
 
 #include <string>
+#include <vector>
 
 TEST(Json, ParsesAllSixKinds) {
     auto r = json::Parse(
@@ -129,4 +130,44 @@ TEST(Json, ClipboardWarnThreshold) {
     EXPECT_FALSE(json::ShouldWarnBeforeJsonEditorCopy(json::kClipboardWarnBytes));
     EXPECT_TRUE(json::ShouldWarnBeforeJsonEditorCopy(json::kClipboardWarnBytes + 1));
     EXPECT_FALSE(json::ShouldWarnBeforeJsonEditorCopy(0));
+}
+
+TEST(Json, TokenizeCoversEveryByteInOrderWithNoGap) {
+    auto r = json::Parse(
+        "{\"a\":1,\"b\":\"x\",\"c\":true,\"d\":null,\"e\":[1,2.5,-3]}");
+    EXPECT_TRUE(r.ok);
+    const std::string pretty = json::PrettyPrint(r.root);
+    std::vector<json::Token> toks = json::Tokenize(pretty);
+    std::size_t cursor = 0;
+    std::string rebuilt;
+    for (const json::Token& t : toks) {
+        EXPECT_EQ(t.offset, cursor);
+        rebuilt += pretty.substr(t.offset, t.length);
+        cursor += t.length;
+    }
+    EXPECT_EQ(cursor, pretty.size());
+    EXPECT_EQ(rebuilt, pretty);
+}
+
+TEST(Json, TokenizeColorsKeysStringsNumbersAndLiteralsDistinctly) {
+    auto r = json::Parse("{\"k\":\"v\",\"n\":1,\"b\":true,\"z\":null}");
+    EXPECT_TRUE(r.ok);
+    const std::string pretty = json::PrettyPrint(r.root);
+    std::vector<json::Token> toks = json::Tokenize(pretty);
+    bool sawKey = false, sawString = false, sawNumber = false,
+         sawLiteral = false;
+    for (const json::Token& t : toks) {
+        std::string text = pretty.substr(t.offset, t.length);
+        if (t.kind == json::TokenKind::Key && text == "\"k\"") sawKey = true;
+        if (t.kind == json::TokenKind::String && text == "\"v\"")
+            sawString = true;
+        if (t.kind == json::TokenKind::Number && text == "1") sawNumber = true;
+        if (t.kind == json::TokenKind::Literal &&
+            (text == "true" || text == "null"))
+            sawLiteral = true;
+    }
+    EXPECT_TRUE(sawKey);
+    EXPECT_TRUE(sawString);
+    EXPECT_TRUE(sawNumber);
+    EXPECT_TRUE(sawLiteral);
 }

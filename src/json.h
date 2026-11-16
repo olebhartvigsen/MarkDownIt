@@ -77,4 +77,26 @@ inline bool ShouldWarnBeforeJsonEditorCopy(std::size_t bytes) {
     return bytes > kClipboardWarnBytes;
 }
 
+// A single coloured span in a pretty-printed JSON fence. Offsets and
+// lengths are byte ranges into the exact text that was tokenized, and
+// every byte of that text is covered by exactly one span (whitespace
+// and punctuation get TokenKind::Punct), so a caller can rebuild the
+// original text by concatenating span.length bytes at span.offset in
+// order with no gap and no overlap.
+enum class TokenKind { Punct, Key, String, Number, Literal };
+
+struct Token {
+    std::size_t offset = 0;
+    std::size_t length = 0;
+    TokenKind kind = TokenKind::Punct;
+};
+
+// Tokenizes already-valid JSON text (typically json::PrettyPrint's own
+// output) into coloured spans for the viewer, so it can draw a key in
+// one colour, a string value in another, and so on. This is a second,
+// much simpler pass over text Parse already accepted, not a validator:
+// fed anything else, it still partitions the bytes (falling back to
+// Punct for whatever it does not recognize) and never throws.
+std::vector<Token> Tokenize(const std::string& text);
+
 }  // namespace json

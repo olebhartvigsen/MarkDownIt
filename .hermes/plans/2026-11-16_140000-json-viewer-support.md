@@ -138,11 +138,15 @@ in the same monospace block every other fence does" or "a highlighter
 table exists at `<file>`; add a `json` row there.
 
 **Done (2026-11-16):** no `colortext.*` or any per-language highlight
-table exists anywhere in the codebase (searched for `"mermaid"`, `"cpp"`,
-`"json"` as fence languages in `src/parser.cpp`, `src/layout/`, the
-renderers; only `n.lang == "mermaid"` for diagram routing, no coloring).
-A `json` fence renders as a plain monospace code block, same as every
-other unrecognized fence language. Task 4 needs no code change.
+table existed anywhere in the codebase when this was first checked. A
+plain gray fence was a real gap the user flagged after using the
+feature, so a real tokenizer was added: `json::Tokenize` (`src/json.*`)
+splits a pretty-printed JSON fence into coloured spans (key, string,
+number, true/false/null literal, punctuation), and `src/layout/code_layout.cpp`
+draws one `GlyphRun` per span instead of the single plain-ink run every
+other fence still gets, for a `node.lang == "json"` block only. Four
+new palette tokens (`jsonKey`, `jsonString`, `jsonNumber`, `jsonLiteral`
+in `src/theme.h`) carry the colours; punctuation keeps `textPrimary`.
 
 ### Task 2: Write the JSON reader (`src/json.*`)
 

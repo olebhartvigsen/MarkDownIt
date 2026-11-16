@@ -472,4 +472,92 @@ std::string Compact(const Value& root) {
     return out;
 }
 
+std::vector<Token> Tokenize(const std::string& text) {
+    std::vector<Token> tokens;
+    std::size_t i = 0;
+    const std::size_t n = text.size();
+    while (i < n) {
+        char c = text[i];
+
+        // Whitespace and structural punctuation: one span per run of
+        // whitespace, and one span per single punctuation byte, both
+        // drawn as Punct (the code fence's own ink colour).
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+            std::size_t start = i;
+            while (i < n && (text[i] == ' ' || text[i] == '\t' ||
+                              text[i] == '\n' || text[i] == '\r')) {
+                i++;
+            }
+            tokens.push_back({start, i - start, TokenKind::Punct});
+            continue;
+        }
+
+        if (c == '"') {
+            // A string literal. Whether it colours as a Key or a
+            // String depends on what follows the closing quote: skip
+            // any run of whitespace after it and look for ':'.
+            std::size_t start = i;
+            std::size_t j = i + 1;
+            bool escaped = false;
+            while (j < n) {
+                char d = text[j];
+                if (escaped) {
+                    escaped = false;
+                } else if (d == '\\') {
+                    escaped = true;
+                } else if (d == '"') {
+                    j++;
+                    break;
+                }
+                j++;
+            }
+            std::size_t k = j;
+            while (k < n && (text[k] == ' ' || text[k] == '\t' ||
+                              text[k] == '\n' || text[k] == '\r')) {
+                k++;
+            }
+            const bool isKey = k < n && text[k] == ':';
+            tokens.push_back(
+                {start, j - start, isKey ? TokenKind::Key : TokenKind::String});
+            i = j;
+            continue;
+        }
+
+        if (c == '-' || (c >= '0' && c <= '9')) {
+            std::size_t start = i;
+            i++;
+            while (i < n &&
+                   ((text[i] >= '0' && text[i] <= '9') || text[i] == '.' ||
+                    text[i] == 'e' || text[i] == 'E' || text[i] == '+' ||
+                    text[i] == '-')) {
+                i++;
+            }
+            tokens.push_back({start, i - start, TokenKind::Number});
+            continue;
+        }
+
+        if (text.compare(i, 4, "true") == 0) {
+            tokens.push_back({i, 4, TokenKind::Literal});
+            i += 4;
+            continue;
+        }
+        if (text.compare(i, 5, "false") == 0) {
+            tokens.push_back({i, 5, TokenKind::Literal});
+            i += 5;
+            continue;
+        }
+        if (text.compare(i, 4, "null") == 0) {
+            tokens.push_back({i, 4, TokenKind::Literal});
+            i += 4;
+            continue;
+        }
+
+        // Anything else (braces, brackets, comma, colon, or a stray
+        // byte in malformed input): one Punct span per byte.
+        tokens.push_back({i, 1, TokenKind::Punct});
+        i++;
+    }
+    return tokens;
+}
+
 }  // namespace json
