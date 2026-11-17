@@ -653,11 +653,22 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
         bool isCut = (ctrl && !shift && vk == 0x58); // Ctrl+X
         bool isPaste = (ctrl && !shift && vk == 0x56); // Ctrl+V
         bool isSelectAll = (ctrl && vk == 0x41); // Ctrl+A
+        // A command the shared state says can act keeps its key here too:
+        // Ctrl+P must print the page being read, and the table that names the
+        // key is the same table that answers when the command can run. An
+        // editing command still waits, because its requirements ask for the
+        // mode this gate is standing in for.
+        bool isCommandKey = false;
+        if (const commands::CommandSpec* spec = commands::MatchWinAccelerator(
+                static_cast<uint32_t>(vk), ctrl, shift)) {
+            isCommandKey = commands::Enabled(spec->id, CommandContext());
+        }
         // Shift extends navigation (selection) but nothing else: Shift with
         // any non-navigation key (Backspace, Tab, letter combos) would
         // otherwise fall through to the edit handlers below and mutate the
         // buffer while in view mode.
-        if (!isNavigation && !isCopy && !isCut && !isPaste && !isSelectAll)
+        if (!isNavigation && !isCopy && !isCut && !isPaste &&
+            !isSelectAll && !isCommandKey)
             return;
     }
 

@@ -18,7 +18,7 @@
 
 #include "layout/print_pages.h"
 
-class Document;
+struct Document;
 
 namespace platform {
 class MacRenderer;

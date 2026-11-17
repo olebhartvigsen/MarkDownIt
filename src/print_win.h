@@ -2,7 +2,7 @@
 // Direct2D DC render target. Plan: .hermes/plans/2026-11-15_204703-printing.md
 //
 // The page model and the cut are shared (src/layout/print_pages.h). What is
-// Windows' own is the panel (PrintDlgEx), the printer DC, and the mapping
+// Windows' own is the panel (PrintDlg), the printer DC, and the mapping
 // from seam units onto the printable area: the target carries the printer's
 // dpi, so one seam unit is one DIP on paper and no scale factor is needed.
 //
@@ -13,22 +13,11 @@
 #ifndef MARKDOWNIT_SRC_PRINT_WIN_H_
 #define MARKDOWNIT_SRC_PRINT_WIN_H_
 
-// The print panel is an old dialog, but the SDK only declares it when the
-// target version says so, and the project defines no WINVER. Naming it here,
-// before any SDK header is read, keeps the declaration visible in the one
-// translation unit that asks for it.
-#ifndef WINVER
-#define WINVER 0x0601
-#endif
-#ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0601
-#endif
-
 #include <windows.h>
 
 #include <string>
 
-class Document;
+struct Document;
 class Renderer;
 
 namespace print_win {

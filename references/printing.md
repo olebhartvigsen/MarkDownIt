@@ -94,8 +94,8 @@ fixture makes more than one page and that the PDF carries them.
 
 ## The panel
 
-Windows opens `PrintDlgExW` and prints into an `ID2D1DCRenderTarget` bound to
-the printer's DC. The target carries the printer's dpi, so one seam unit is
+Windows opens the classic print panel (`PrintDlg`) and prints into an
+`ID2D1DCRenderTarget` bound to the printer's DC. The target carries the printer's dpi, so one seam unit is
 one DIP on paper and the drawing code has no scale factor of its own. Text is
 grayscale antialiased: subpixel text relies on the display's stripes and
 prints as coloured fringes.

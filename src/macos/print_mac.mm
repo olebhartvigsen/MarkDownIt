@@ -170,11 +170,14 @@ bool PrintDocument(NSWindow* window, platform::MacRenderer& renderer,
         NSString* job = [NSString stringWithUTF8String:title.c_str()];
         if (job) [operation setJobTitle:job];
     }
-    const BOOL ran = [operation runOperationModalForWindow:window
-                                                  delegate:nil
-                                            didRunSelector:nullptr
-                                               contextInfo:nullptr];
-    return ran == YES;
+    // AppKit reports the outcome through a delegate callback, and the app has
+    // nothing to undo on cancelling: the panel is the only question printing
+    // asks, and a closed one is not an error.
+    [operation runOperationModalForWindow:window
+                                 delegate:nil
+                           didRunSelector:nullptr
+                              contextInfo:nullptr];
+    return true;
 }
 
 bool WritePdf(const std::string& path, platform::MacRenderer& renderer,

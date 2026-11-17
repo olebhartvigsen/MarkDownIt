@@ -132,23 +132,26 @@ bool PrintToDC(HDC dc, Renderer& renderer, const Document& document,
 
 bool PrintDocument(HWND owner, Renderer& renderer, const Document& document,
                    const std::wstring& title) {
-    PRINTDLGEXW panel = {};
+    // The classic panel: every SDK declares it, and the extended one's page
+    // range is not read anyway, because printing is a whole document
+    // operation here (references/printing.md).
+    PRINTDLGW panel = {};
     panel.lStructSize = sizeof(panel);
     panel.hwndOwner = owner;
     panel.Flags = PD_RETURNDC | PD_NOSELECTION | PD_NOPAGENUMS |
                   PD_USEDEVMODECOPIESANDCOLLATE;
     panel.nCopies = 1;
-    panel.nStartPage = START_PAGE_GENERAL;
-    panel.dwResultAction = 0;
+    panel.hDevMode = nullptr;
+    panel.hDevNames = nullptr;
 
-    const HRESULT shown = PrintDlgExW(&panel);
     bool printed = false;
-    if (SUCCEEDED(shown) && panel.dwResultAction == PD_RESULT_PRINT &&
-        panel.hDC) {
+    if (PrintDlgW(&panel) && panel.hDC) {
         printed = PrintToDC(panel.hDC, renderer, document, title);
         // The panel handed the DC over; the print job has ended above.
         DeleteDC(panel.hDC);
     }
+    // A cancelled panel leaves these null and sets no extended error, which
+    // is why the return value alone decides.
     if (panel.hDevMode) GlobalFree(panel.hDevMode);
     if (panel.hDevNames) GlobalFree(panel.hDevNames);
     return printed;
