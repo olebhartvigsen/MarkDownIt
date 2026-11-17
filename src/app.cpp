@@ -34,6 +34,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <memory>
 #include <cstdio>
 #include <cmath>
 #include <algorithm>

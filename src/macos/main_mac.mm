@@ -11,6 +11,7 @@
 #include <fstream>
 #include <memory>
 #include <string>
+#include <vector>
 
 #import <AppKit/AppKit.h>
 #import <CoreServices/CoreServices.h>
@@ -22,6 +23,7 @@
 #include "outline_nsview_mac.h"
 #include "outline_pane_mac.h"
 #include "print_mac.h"
+#include "renderer_mac.h"
 #include "layout/print_pages.h"
 #include "content_view_mac.h"
 #include "outline.h"
@@ -1528,7 +1530,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // the Windows walk reports, and, when the walk names a file, the
         // pages as a PDF anyone can look at.
         layout::PrintPage page;
-        MacRenderer& renderer = [view_ MutableRenderer];
+        MacRenderer& renderer = content_->MutableRenderer();
         std::shared_ptr<const layout::DocumentLayout> laid =
             renderer.PrintLayout(app_->GetDocument(), page.ContentWidth());
         const std::vector<layout::PrintBand> bands =
@@ -2469,7 +2471,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     const size_t slash = title.find_last_of("/\\");
     if (slash != std::string::npos) title = title.substr(slash + 1);
     if (title.empty()) title = "MarkDownIt";
-    print_mac::PrintDocument(window_, [view_ MutableRenderer],
+    print_mac::PrintDocument(window_, content_->MutableRenderer(),
                              app_->GetDocument(), title);
 }
 - (void)shareDocument:(id)sender {
