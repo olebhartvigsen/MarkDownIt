@@ -15,7 +15,7 @@ ICON_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "src/icons")
 GLYPHS = [
-    "find", "replace", "new", "history",
+    "find", "replace", "new", "history", "print",
     "table", "table-add-row", "table-add-row-above", "table-remove-row",
     "table-add-column", "table-add-column-left", "table-remove-column",
     "table-remove",

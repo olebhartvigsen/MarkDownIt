@@ -19,6 +19,8 @@
 #include "office/docx_import.h"
 #include "office/docx_export.h"
 #include "office/pdf_export.h"
+#include "print_win.h"
+#include "layout/print_pages.h"
 #include <commdlg.h>
 #include <commctrl.h>
 #include <windowsx.h>
@@ -733,6 +735,9 @@ void AppWindow::OnKeyDown(HWND hwnd, WPARAM vk, LPARAM lp) {
                 break;
             case commands::CommandId::SaveAs:
                 SaveAs();
+                break;
+            case commands::CommandId::Print:
+                Print();
                 break;
             case commands::CommandId::Save:
                 Save();
@@ -3783,6 +3788,37 @@ void AppWindow::QAAdvance() {
                  "qa csv-pinned: scroll=%.0f editing=%d",
                  (double)scrollY_, editing_ ? 1 : 0);
         QALogLine(line);
+    } else if (state == "print-pages") {
+        // Pagination without a printer, the same numbers the mac walk
+        // reports: the fixed A4 page, the shared layout at the width the
+        // page leaves for text, the cut, and the item count of the first two
+        // pages. The printer's own paper differs from this one; the model and
+        // the cut do not.
+        layout::PrintPage page;
+        std::shared_ptr<const layout::DocumentLayout> laid;
+        if (renderer_inited_ && dw_factory_) {
+            laid = renderer_.PrintLayout(doc_, page.ContentWidth());
+        }
+        const std::vector<layout::PrintBand> bands =
+            laid ? layout::PaginateDocument(*laid, page)
+                 : std::vector<layout::PrintBand>();
+        size_t items1 = 0;
+        size_t items2 = 0;
+        if (laid && !bands.empty()) {
+            items1 = layout::SliceForBand(laid->list, bands[0]).items.size();
+            if (bands.size() > 1) {
+                items2 =
+                    layout::SliceForBand(laid->list, bands[1]).items.size();
+            }
+        }
+        char line[200];
+        snprintf(line, sizeof(line),
+                 "qa print-pages: pages=%d items1=%zu items2=%zu top2=%.1f "
+                 "width=%.1f height=%.1f wrote=0",
+                 (int)bands.size(), items1, items2,
+                 bands.size() > 1 ? (double)bands[1].top : 0.0,
+                 (double)page.ContentWidth(), (double)page.ContentHeight());
+        QALogLine(line);
     } else if (state == "shared") {
         // The shared walk, one capture state per new visible feature
         // (plan, capture parity): the document controller and the
@@ -3987,6 +4023,20 @@ bool AppWindow::SaveAs() {
     bool ok = DoSave(path);
     if (ok) watcher_.Start(hwnd_, file_path_);
     return ok;
+}
+
+// File > Print. The page model and the cut are shared
+// (src/layout/print_pages.h); print_win owns the panel, the printer DC and
+// the mapping from seam units onto paper. Cancelling the panel is not an
+// error, and printing never changes the document or the view.
+void AppWindow::Print() {
+    std::wstring title = L"MarkDownIt";
+    if (!file_path_.empty()) {
+        const size_t slash = file_path_.find_last_of(L"\\/");
+        title = (slash == std::wstring::npos) ? file_path_
+                                              : file_path_.substr(slash + 1);
+    }
+    print_win::PrintDocument(hwnd_, renderer_, doc_, title);
 }
 
 std::wstring AppWindow::SaveDialog() {

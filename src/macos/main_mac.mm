@@ -21,6 +21,8 @@
 #include "content_nsview_mac.h"
 #include "outline_nsview_mac.h"
 #include "outline_pane_mac.h"
+#include "print_mac.h"
+#include "layout/print_pages.h"
 #include "content_view_mac.h"
 #include "outline.h"
 #import "settings_window_mac.h"
@@ -186,6 +188,7 @@ bool OpenExternalUrl(const std::string& url) {
 - (void)findDocument:(id)sender;
 - (void)replaceInDocument:(id)sender;
 - (void)saveDocument:(id)sender;
+- (void)printDocument:(id)sender;
 - (void)saveDocumentAs:(id)sender;
 - (void)closeDocument:(id)sender;
 - (void)importWord:(id)sender;
@@ -1520,6 +1523,42 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             app_->GetDocument().nodes.size(),
             [[view_ qaPinnedProbe] UTF8String],
             [[view_ qaBlockList] UTF8String]);
+    } else if ([state isEqualToString:@"print-pages"]) {
+        // Pagination without a printer: the fixed A4 page, the same numbers
+        // the Windows walk reports, and, when the walk names a file, the
+        // pages as a PDF anyone can look at.
+        layout::PrintPage page;
+        MacRenderer& renderer = [view_ MutableRenderer];
+        std::shared_ptr<const layout::DocumentLayout> laid =
+            renderer.PrintLayout(app_->GetDocument(), page.ContentWidth());
+        const std::vector<layout::PrintBand> bands =
+            laid ? layout::PaginateDocument(*laid, page)
+                 : std::vector<layout::PrintBand>();
+        size_t items1 = 0;
+        size_t items2 = 0;
+        if (laid && !bands.empty()) {
+            items1 = layout::SliceForBand(laid->list, bands[0]).items.size();
+            if (bands.size() > 1) {
+                items2 = layout::SliceForBand(laid->list, bands[1]).items.size();
+            }
+        }
+        int wrote = 0;
+        const char* pdfPath = getenv("MARKDOWNIT_QA_PDF");
+        if (pdfPath && *pdfPath) {
+            int written = 0;
+            wrote = print_mac::WritePdf(pdfPath, renderer,
+                                        app_->GetDocument(), page, &written) &&
+                            written == (int)bands.size()
+                        ? 1
+                        : 0;
+        }
+        platform::TraceMac(
+            "qa print-pages: pages=%d items1=%zu items2=%zu top2=%.1f "
+            "width=%.1f height=%.1f wrote=%d",
+            (int)bands.size(), items1, items2,
+            bands.size() > 1 ? (double)bands[1].top : 0.0,
+            (double)page.ContentWidth(), (double)page.ContentHeight(), wrote);
+        [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"welcome"]) {
         // The screen without a document, reached the way the toolbar
         // reaches it. The walk has opened the fixture, so the recent
@@ -2421,6 +2460,18 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 }
 - (void)saveDocument:(id)sender { (void)sender; [self OnSave]; }
 - (void)saveDocumentAs:(id)sender { (void)sender; [self OnSaveAs]; }
+// File > Print. The page model and the cut are shared
+// (src/layout/print_pages.h); print_mac owns the panel and Core Graphics.
+- (void)printDocument:(id)sender {
+    (void)sender;
+    if (!app_ || app_->WelcomeMode()) return;
+    std::string title = app_->filePath();
+    const size_t slash = title.find_last_of("/\\");
+    if (slash != std::string::npos) title = title.substr(slash + 1);
+    if (title.empty()) title = "MarkDownIt";
+    print_mac::PrintDocument(window_, [view_ MutableRenderer],
+                             app_->GetDocument(), title);
+}
 - (void)shareDocument:(id)sender {
     (void)sender;
     if (!app_ || app_->WelcomeMode()) return;

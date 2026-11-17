@@ -36,7 +36,7 @@ namespace commands {
 
 enum class CommandId : uint8_t {
     // File.
-    New, Open, Reload, Save, SaveAs, Close,
+    New, Open, Reload, Save, SaveAs, Print, Close,
     // History and clipboard.
     Undo, Redo, Cut, Copy, Paste, SelectAll,
     // Inline format.
@@ -136,6 +136,11 @@ inline constexpr CommandSpec kCommands[] = {
      Ctrl(0x53 /* S */), Key("s")},
     {CommandId::SaveAs, "Save As", "cmdSaveAs", 10104, "saveDocumentAs:", false,
      CtrlShift(0x53 /* S */), Key("S")},
+    // Print is a file command, so it rides the ApplicationMenu's File
+    // group (ribbon-menu-guidelines: file commands are never duplicated on
+    // the ribbon proper). The page it prints is the shared one.
+    {CommandId::Print, "Print", "cmdPrint", 10107, "printDocument:", false,
+     Ctrl(0x50 /* P */), Key("p")},
     {CommandId::Close, "Close", nullptr, 0, "closeDocument:", false,
      NoWin, Key("w")},
 

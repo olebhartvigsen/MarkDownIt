@@ -61,7 +61,7 @@ commands away.
 | New, Open, Import Word, Import PDF | yes | yes | yes | yes |
 | Home, Show Tab Bar, About, Settings, Help | yes | yes | yes | yes |
 
-| Reload, Save As, Close, Share, Export | no | yes | yes | yes |
+| Reload, Save As, Print, Close, Share, Export | no | yes | yes | yes |
 | Save | no | no | yes | yes |
 | Undo, Redo | no | no | with history | with history |
 | Paste | no | no | yes | yes |

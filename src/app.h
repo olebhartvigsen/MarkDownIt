@@ -88,6 +88,8 @@ public:
     void ShowAbout();
     bool Save();
     bool SaveAs();
+    // File > Print: the shared page model, the Windows panel and DC.
+    void Print();
     // Word / PDF interop (ribbon: Home tab, Office group).
     void ImportWordDocx();
     void ExportWordDocx();

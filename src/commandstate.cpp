@@ -147,6 +147,10 @@ const Requirements& RequirementsOf(CommandId id) {
         return kAlways;
     case CommandId::Reload:
     case CommandId::SaveAs:
+    // Printing needs a document and nothing else: a CSV table and a .json
+    // file print as the pages they are, and reading mode prints as happily
+    // as edit mode does.
+    case CommandId::Print:
     case CommandId::Close:
     case CommandId::Share:
     case CommandId::ExportWord:

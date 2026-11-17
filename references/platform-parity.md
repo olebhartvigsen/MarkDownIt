@@ -26,6 +26,7 @@ and why. Three checkers read this file:
 | Legacy Mermaid entry points (`src/mermaid.cpp`, `mermaidlayout.cpp`, `diagramcache.cpp`) | Windows tests only | not built | Kept while `mermaid_legacy_test.cpp` moves to the shared engine. |
 | Content width cap (`LayoutMetrics::maxContentWidth`) | applied | not applied | By design: `theme.h` says the mac renderer follows the pane width. The width commands below expose the modes on Windows only. |
 | Mermaid painters | `renderer_pie.cpp`, `renderer_sequence.cpp` | `mermaid_painter_mac.cpp` | Each side paints the shared layout with its own API. |
+| Printing | `src/print_win.cpp`: `PrintDlgExW` into an `ID2D1DCRenderTarget` | `src/macos/print_mac.mm`: an `NSPrintOperation` over a page view, plus a PDF writer | The panel, the printer DC and the page view are platform chrome. The page model, the cut and the slice are shared in `src/layout/print_pages.*` (`printing.md`). The PDF writer exists on the mac only, because the QA walk needs a file to check. |
 
 ## Commands: ribbon to mac menu
 
@@ -71,6 +72,7 @@ ribbon command needs a row here or a row in the next section.
 | cmdQuote | toggleQuote |
 | cmdRecent | showRecents |
 | cmdRedo | redo |
+| cmdPrint | printDocument |
 | cmdReload | reloadDocument |
 | cmdRemoveColumn | removeColumn |
 | cmdRemoveRow | removeRow |

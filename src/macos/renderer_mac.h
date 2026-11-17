@@ -183,6 +183,14 @@ public:
     // Lays the document out at the given width. Returns the total height.
     float Measure(const Document& doc, float widthDip);
 
+    // The layout of a whole document for one printed page, at 100% and in
+    // reading mode, across the width the page leaves for text. It runs the
+    // one shared walk and leaves the frame's own layout alone (the display
+    // list, the blocks, the content width and the needs-layout flag are not
+    // touched), so printing never changes what the window shows.
+    std::shared_ptr<const layout::DocumentLayout> PrintLayout(
+        const Document& doc, float contentWidthSeam);
+
     // Draws the laid out document.
     void Render(const Document& doc, float scrollOffset);
 

@@ -187,6 +187,20 @@ public:
                            float scrollX = 0.0f,
                            const Selection* sel = nullptr);
     // Measure the source view height without drawing.
+    // The metrics of one printed page: the reading view's own at 100%, with
+    // no column cap, because the paper decides how wide the text is. Printing
+    // never inherits the window's zoom, its width setting or its edits mode:
+    // paper is paper, and the same document prints the same on both ports.
+    LayoutMetrics PrintMetrics() const;
+
+    // The layout of a whole document for a printed page, at the width the
+    // page leaves for text. It goes through the one shared walk, so the page
+    // is the reading view's rendering of the same document, not a screenshot.
+    // It runs outside the frame cache, and never fills it: a print must not
+    // change what the window is showing.
+    std::shared_ptr<const layout::DocumentLayout> PrintLayout(
+        const Document& document, float contentWidthSeam);
+
     float MeasureSourceView(IDWriteFactory* dw, const std::string& src,
                             float widthDip, float topOffsetDip);
 
@@ -332,6 +346,14 @@ private:
         const Document& doc,
         IDWriteFactory* dw, const LayoutMetrics& metrics,
         const Palette* palette, float contentWidth, const Selection* sel);
+    // The same walk with the inputs the caller names, so the print path can
+    // lay a page out at 100% in reading mode while the window keeps its own
+    // zoom and mode. RunSharedLayoutPass hands the window's own in.
+    std::shared_ptr<const layout::DocumentLayout> BuildSharedLayout(
+        const Document& doc,
+        IDWriteFactory* dw, const LayoutMetrics& metrics,
+        const Palette* palette, float contentWidth, const Selection* sel,
+        float zoom, bool editing);
 
     // The walk of a whole document is the dominant cost of a frame, and a
     // scroll frame asks the very question the previous frame answered. The

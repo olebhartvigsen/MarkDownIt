@@ -704,19 +704,28 @@ std::shared_ptr<const layout::DocumentLayout> Renderer::RunSharedLayoutPass(
     const LayoutMetrics& metrics,
     const Palette* palette, float contentWidth,
     const Selection* sel) {
+    return BuildSharedLayout(doc, dw, metrics, palette, contentWidth, sel,
+                             zoom_, editing_);
+}
+
+std::shared_ptr<const layout::DocumentLayout> Renderer::BuildSharedLayout(
+    const Document& doc, IDWriteFactory* dw,
+    const LayoutMetrics& metrics,
+    const Palette* palette, float contentWidth,
+    const Selection* sel, float zoom, bool editing) {
     // The walk measures through the adapter, never the raw engine:
     // the adapter owns the zoom and the word splitting (the same two
     // duties the mac renderer hands its ZoomEngine; see WalkTextEngine
     // at the top of this file). The engine itself is the renderer's
     // own, or the test replacement SetWalkEngineForTesting installed.
-    WalkTextEngine engine(TextEngineForWalk(), zoom_);
+    WalkTextEngine engine(TextEngineForWalk(), zoom);
     layout::LayoutInput in;
     in.doc = &doc;
     in.metrics = &metrics;
     in.palette = palette;
     in.contentWidth = contentWidth;
-    in.zoom = zoom_;
-    in.editing = editing_;
+    in.zoom = zoom;
+    in.editing = editing;
     in.engine = &engine;
     // The image size answers, the same seam the mac renderer fills:
     // a "svg:" url questions a fence picture, a raster url questions
@@ -743,7 +752,7 @@ std::shared_ptr<const layout::DocumentLayout> Renderer::RunSharedLayoutPass(
     // replay draws the rest of the document at, the mac pass's own
     // fixup applied to both callers so the list it hands out stays
     // coherent.
-    if (zoom_ != 1.0f) {
+    if (zoom != 1.0f) {
         bool insideMarkerClip = false;
         for (display::Item& item : out.list.items) {
             if (std::holds_alternative<display::PushClip>(item)) {
@@ -755,7 +764,7 @@ std::shared_ptr<const layout::DocumentLayout> Renderer::RunSharedLayoutPass(
                 if (insideMarkerClip && text->srcLength == 0 &&
                     text->line.width == 0.0f) {
                     for (platform::GlyphRun& run : text->line.runs) {
-                        run.font.size *= zoom_;
+                        run.font.size *= zoom;
                     }
                 }
             }
@@ -763,6 +772,25 @@ std::shared_ptr<const layout::DocumentLayout> Renderer::RunSharedLayoutPass(
     }
 
     return std::make_shared<const layout::DocumentLayout>(std::move(out));
+}
+
+LayoutMetrics Renderer::PrintMetrics() const {
+    // The reading view's own sizes at 100%, and no column cap: the page's
+    // content width is the walk's contentWidth, and a cap here would print a
+    // narrow column centred on a wide sheet.
+    LayoutMetrics m = ScaleMetrics(BaseMetrics(), 1.0f);
+    m.maxContentWidth = 100000.0f;
+    return m;
+}
+
+std::shared_ptr<const layout::DocumentLayout> Renderer::PrintLayout(
+    const Document& document, float contentWidthSeam) {
+    const LayoutMetrics metrics = PrintMetrics();
+    // The light palette, whatever the window is wearing: paper is white, and
+    // a dark theme printed onto it would be unreadable.
+    const Palette palette = BasePalette();
+    return BuildSharedLayout(document, dw_factory_, metrics, &palette,
+                             contentWidthSeam, nullptr, 1.0f, false);
 }
 
 layout::ImageSize Renderer::ImageSizeForUrl(const Document& doc,

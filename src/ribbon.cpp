@@ -621,6 +621,7 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_RELOAD:  m_pApp->Reload();            break;
     case IDC_CMD_SAVE:    m_pApp->Save();              break;
     case IDC_CMD_SAVEAS:  m_pApp->SaveAs();            break;
+    case IDC_CMD_PRINT:   m_pApp->Print();             break;
     case IDC_CMD_IMPORT_DOCX: m_pApp->ImportWordDocx(); break;
     case IDC_CMD_EXPORT_DOCX: m_pApp->ExportWordDocx(); break;
     case IDC_CMD_EXPORT_PDF:  m_pApp->ExportPdf();      break;

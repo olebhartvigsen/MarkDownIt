@@ -472,6 +472,7 @@ raw bytes on disk. Verify with raw byte inspection, not the display.
 | ribbon-menu-guidelines.md, macos-native-chrome.md | the Windows ribbon and the Mac chrome |
 | windows-standardtekstredigering-specifikation.md, word-processor-guidelines.md, word-processor-table-guidelines.md | text editing, caret and paragraph model, tables |
 | office-import-export-spec.md | docx and PDF import and export |
+| printing.md | File > Print: the page, the cut, the drivers, and what does not print |
 | apple-wiki-style-guide.md, wikipedia-markdown-style.md, github-markdown-style.md | the three styles (`MARKDOWNIT_STYLE`) |
 | macos-port-status.md, macos-build-pipeline.md, macos-qa.md | the Mac port and its pipeline |
 | release-pipeline.md | MSI, MSIX and the Store |

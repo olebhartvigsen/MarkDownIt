@@ -182,6 +182,7 @@ add_executable(MarkDownIt WIN32
     src/findbar.cpp
     src/outlinepane.cpp
     src/fileassoc.cpp
+    src/print_win.cpp
     src/welcome_screen.cpp
     src/svgdoc.cpp
 )
@@ -690,6 +691,8 @@ if(APPLE)
         src/macos/image_mac.mm
         src/macos/image_draw_mac.mm
         src/macos/findbar_mac.mm
+        src/macos/print_mac.mm
+        src/macos/print_mac.h
         src/macos/toolbar_mac.mm
         src/macos/table_picker_mac.mm
         ${MARKDOWNIT_SVG_SHARED_SOURCES}

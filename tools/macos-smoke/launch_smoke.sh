@@ -133,7 +133,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-click,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,shared,csv-pinned,cmd-z" "$BIN" "$DOC" &
+    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_PDF="$QA_DIR/print-pages.pdf" MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-click,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,print-pages,shared,csv-pinned,cmd-z" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
@@ -142,7 +142,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     # a shared announcement that lands past the budget is a silently
     # missing capture on the mac side.
     while [ "$waited" -lt 420 ]; do
-        for name in doc wheel find edit format-bar outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap svg-drawio svg-drawio-100 zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc shared csv-pinned cmd-z; do
+        for name in doc wheel find edit format-bar outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap svg-drawio svg-drawio-100 zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc print-pages shared csv-pinned cmd-z; do
             case "$seen" in *" $name "*) continue ;; esac
             if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
                 sleep 0.6
@@ -209,6 +209,37 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         grep "qa csv-pinned" "$LOG" 2>/dev/null | head -3
         exit 1
     fi
+    # Pagination: the walk prints the fixture's pages into a PDF and reports
+    # the numbers, so a page model that never cut, or a PDF that lost a page,
+    # fails here instead of passing as a quiet frame.
+    PAGES=""
+    for _ in 1 2 3 4 5 6 7 8; do
+        PAGES=$(grep "qa print-pages:" "$LOG" 2>/dev/null \
+            | sed -n 's/.*qa print-pages: pages=\([0-9]*\).*/\1/p' | head -1)
+        [ -n "$PAGES" ] && break
+        sleep 1
+    done
+    PRINT_LINE=$(grep "qa print-pages:" "$LOG" 2>/dev/null | head -1)
+    if [ -z "$PAGES" ]; then
+        echo "launch smoke FAILED: the print-pages state reported no page count"
+        exit 1
+    fi
+    if [ "$PAGES" -lt 2 ]; then
+        echo "launch smoke FAILED: the showcase document paginated into $PAGES page(s)"
+        echo "$PRINT_LINE"
+        exit 1
+    fi
+    if [ ! -s "$QA_DIR/print-pages.pdf" ]; then
+        echo "launch smoke FAILED: the print-pages state wrote no PDF"
+        echo "$PRINT_LINE"
+        exit 1
+    fi
+    case "$PRINT_LINE" in
+        *"wrote=1"*) ;;
+        *) echo "launch smoke FAILED: the PDF and the page count disagree"; echo "$PRINT_LINE"; exit 1 ;;
+    esac
+    echo "launch smoke: the document paginates into $PAGES pages, and the PDF carries them"
+
     # Command-Z has to undo the line the state typed through the window: a
     # menu item with the right key that never fires leaves the text longer.
     CMDZ=""

@@ -97,6 +97,24 @@
         <Image Source="icons/save_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
+    <Command Name="cmdPrint" Symbol="IDC_CMD_PRINT" Id="10107">
+      <Command.LabelTitle>
+        <String>Print</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Print</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Print the document, one page per sheet (Ctrl+P)</String>
+      </Command.TooltipDescription>
+      <Command.LargeImages>
+        <Image Source="icons/print_32.png" MinDPI="96"/>
+        <Image Source="icons/print_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/print_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
     <Command Name="cmdSaveAs" Symbol="IDC_CMD_SAVEAS" Id="10104">
       <Command.LabelTitle>
         <String>Save As</String>
@@ -820,6 +838,7 @@
             <Button CommandName="cmdReload" />
             <Button CommandName="cmdSave" />
             <Button CommandName="cmdSaveAs" />
+            <Button CommandName="cmdPrint" />
           </MenuGroup>
           <MenuGroup CommandName="cmdGroupOffice" Class="StandardItems">
             <Button CommandName="cmdImportDocx" />

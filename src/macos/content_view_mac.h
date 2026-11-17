@@ -153,6 +153,10 @@ public:
 
     // The renderer, which holds the laid out blocks.
     const MacRenderer& renderer() const { return renderer_; }
+    // The same renderer for a caller that asks it for a layout of its own,
+    // outside the frame's: printing paginates a page and must not touch the
+    // layout the window is showing.
+    MacRenderer& MutableRenderer() { return renderer_; }
 
     // The accessibility map (table spec 47): the tables of the current
     // layout with their rows, cells and the header row, in view

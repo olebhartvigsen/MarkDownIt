@@ -671,6 +671,35 @@ void MacRenderer::SetContentWidthMode(int mode) {
     metrics_ = ComputeMetrics();
 }
 
+// A page's layout, taken outside the frame's own: the walk runs at 100% in
+// reading mode, with the page's width and the light palette, and none of the
+// frame's state is written. Printing a dark window onto white paper would be
+// unreadable, and a page at the window's zoom would not be a page.
+std::shared_ptr<const layout::DocumentLayout> MacRenderer::PrintLayout(
+    const Document& doc, float contentWidthSeam) {
+    LayoutMetrics metrics = ScaleMetrics(baseMetrics_, 1.0f);
+    metrics.maxContentWidth = 100000.0f;
+    const Palette printPalette = BasePalette();
+
+    ZoomEngine layoutEngine(engine_, 1.0f);
+    layout::LayoutInput in;
+    in.doc = &doc;
+    in.metrics = &metrics;
+    in.palette = &printPalette;
+    in.contentWidth = contentWidthSeam;
+    in.zoom = 1.0f;
+    in.editing = false;
+    in.engine = engine_ ? &layoutEngine : nullptr;
+    in.imageSize = [this, &doc](const std::string& url) {
+        return ImageSizeForUrl(doc, url);
+    };
+    in.flowchartRelaid = [this](const Node& n) {
+        return FlowRelaidFor(n);
+    };
+    return std::make_shared<const layout::DocumentLayout>(
+        layout::LayoutDocument(in));
+}
+
 LayoutMetrics MacRenderer::ComputeMetrics() const {
     LayoutMetrics m = ScaleMetrics(baseMetrics_, zoom_);
     // The mac pane stretches to the window and has no width mode. Leave

@@ -183,6 +183,7 @@ NSMenu* BuildMainMenu() {
         CommandItem(fileMenu, "Close", @selector(closeDocument:));
         CommandItem(fileMenu, "Save", @selector(saveDocument:));
         CommandItem(fileMenu, "Save As\u2026", @selector(saveDocumentAs:));
+        CommandItem(fileMenu, "Print\u2026", @selector(printDocument:));
         CommandItem(fileMenu, "Share\u2026", @selector(shareDocument:));
         [fileMenu addItem:[NSMenuItem separatorItem]];
 
