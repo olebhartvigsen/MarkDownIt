@@ -168,3 +168,122 @@ TEST(DisplayPlayer, GoldenHandmade) {
         EXPECT_EQ(skipped.calls, spliced);
     }
 }
+
+// ItemBounds -----------------------------------------------------------
+//
+// Pagination cuts the page by these rectangles, so every alternative of the
+// item variant is asked for its bounds here. A new item type has to add its
+// overload or the visitor in display_player.cpp stops compiling, and this
+// test is the second half of that guard: it pins what the numbers mean.
+
+TEST(DisplayPlayer, ItemBoundsOfEveryAlternative) {
+    using display::ItemBounds;
+
+    display::FillRect fill;
+    fill.rect = Rect{10.0f, 20.0f, 30.0f, 40.0f};
+    Rect r = ItemBounds(fill);
+    EXPECT_EQ(r.x, 10.0f);
+    EXPECT_EQ(r.y, 20.0f);
+    EXPECT_EQ(r.width, 30.0f);
+    EXPECT_EQ(r.height, 40.0f);
+
+    display::FillRoundedRect card;
+    card.rect = Rect{1.0f, 2.0f, 3.0f, 4.0f};
+    card.radius = 5.0f;
+    r = ItemBounds(card);
+    EXPECT_EQ(r.height, 4.0f);
+
+    display::FillRoundedRectSides pills;
+    pills.rect = Rect{2.0f, 3.0f, 4.0f, 5.0f};
+    r = ItemBounds(pills);
+    EXPECT_EQ(r.width, 4.0f);
+
+    // A stroke's bounds are the path it strokes, never the pen's width: the
+    // page cut decides by where an item is, not by how wide its pen is.
+    display::StrokeRect stroke;
+    stroke.rect = Rect{10.0f, 10.0f, 10.0f, 10.0f};
+    stroke.lineWidth = 4.0f;
+    r = ItemBounds(stroke);
+    EXPECT_EQ(r.x, 10.0f);
+    EXPECT_EQ(r.width, 10.0f);
+
+    display::StrokeRoundedRect rounded;
+    rounded.rect = Rect{10.0f, 10.0f, 10.0f, 10.0f};
+    rounded.lineWidth = 2.0f;
+    r = ItemBounds(rounded);
+    EXPECT_EQ(r.y, 10.0f);
+
+    // A rule is a hairline: its bounds have no height at all, which is what
+    // puts it on the page its own y is on and on no other.
+    display::StrokeLine rule;
+    rule.x0 = 100.0f;
+    rule.x1 = 20.0f;  // right to left, so the minimum is not the first point
+    rule.y0 = rule.y1 = 50.0f;
+    rule.lineWidth = 2.0f;
+    r = ItemBounds(rule);
+    EXPECT_EQ(r.x, 20.0f);
+    EXPECT_EQ(r.width, 80.0f);
+    EXPECT_EQ(r.y, 50.0f);
+    EXPECT_EQ(r.height, 0.0f);
+
+    // A polygon whose points are not in reading order: the bounds are the
+    // extremes, not the first and the last point.
+    display::StrokePolygon route;
+    route.lineWidth = 0.0f;
+    route.points = {Point{50.0f, 10.0f}, Point{10.0f, 60.0f},
+                    Point{30.0f, 20.0f}};
+    r = ItemBounds(route);
+    EXPECT_EQ(r.x, 10.0f);
+    EXPECT_EQ(r.y, 10.0f);
+    EXPECT_EQ(r.width, 40.0f);
+    EXPECT_EQ(r.height, 50.0f);
+
+    display::FillEllipse ellipse;
+    ellipse.rect = Rect{5.0f, 5.0f, 15.0f, 25.0f};
+    r = ItemBounds(ellipse);
+    EXPECT_EQ(r.height, 25.0f);
+
+    display::StrokeEllipse ring;
+    ring.rect = Rect{5.0f, 5.0f, 15.0f, 25.0f};
+    ring.lineWidth = 6.0f;
+    r = ItemBounds(ring);
+    EXPECT_EQ(r.x, 5.0f);
+
+    display::FillPolygon arrow;
+    arrow.points = {Point{0.0f, 0.0f}, Point{8.0f, 4.0f}, Point{0.0f, 8.0f}};
+    r = ItemBounds(arrow);
+    EXPECT_EQ(r.width, 8.0f);
+    EXPECT_EQ(r.height, 8.0f);
+
+    display::PieSlice slice;
+    slice.bounds = Rect{0.0f, 0.0f, 100.0f, 100.0f};
+    r = ItemBounds(slice);
+    EXPECT_EQ(r.width, 100.0f);
+
+    // A text line with no width is legal (the fake engine can answer one),
+    // and its bounds are honest about it.
+    display::Text text;
+    text.x = 12.0f;
+    text.top = 34.0f;
+    text.line.width = 0.0f;
+    text.line.height = 16.0f;
+    r = ItemBounds(text);
+    EXPECT_EQ(r.x, 12.0f);
+    EXPECT_EQ(r.width, 0.0f);
+    EXPECT_EQ(r.height, 16.0f);
+
+    display::Image picture;
+    picture.rect = Rect{3.0f, 4.0f, 50.0f, 60.0f};
+    r = ItemBounds(picture);
+    EXPECT_EQ(r.height, 60.0f);
+
+    // A clip reports its rect, and a pop has none: slicing keeps both
+    // whatever the rect says.
+    display::PushClip push;
+    push.rect = Rect{0.0f, 500.0f, 100.0f, 100.0f};
+    r = ItemBounds(push);
+    EXPECT_EQ(r.y, 500.0f);
+    r = ItemBounds(display::PopClip{});
+    EXPECT_EQ(r.width, 0.0f);
+    EXPECT_EQ(r.height, 0.0f);
+}

@@ -7,7 +7,9 @@
 
 #include "layout/display_player.h"
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 #include <variant>
 
 namespace display {
@@ -163,7 +165,72 @@ void PlayAll(const DisplayList& list, platform::RenderTarget* target,
     }
 }
 
+// Bounds ---------------------------------------------------------------
+//
+// One overload per alternative, and no generic fallback: an item type that
+// is added to the variant stops compiling here, which is the guard that keeps
+// pagination from dropping a new kind of drawing off the page.
+//
+// The bounds are the shape's own geometry, not grown by the stroke width.
+// The cut decides by where an item is, not by how wide its pen is: a table
+// rule drawn exactly on a page's last line belongs to the next page, and
+// growing a hairline by half its width on both sides would put a half line at
+// the foot of one page and the other half at the head of the next.
+
+Rect BoundsOf(const FillRect& v) { return v.rect; }
+Rect BoundsOf(const FillRoundedRect& v) { return v.rect; }
+Rect BoundsOf(const FillRoundedRectSides& v) { return v.rect; }
+Rect BoundsOf(const StrokeRect& v) { return v.rect; }
+Rect BoundsOf(const StrokeRoundedRect& v) { return v.rect; }
+Rect BoundsOf(const StrokeLine& v) {
+    Rect r;
+    r.x = (std::min)(v.x0, v.x1);
+    r.y = (std::min)(v.y0, v.y1);
+    r.width = std::fabs(v.x1 - v.x0);
+    r.height = std::fabs(v.y1 - v.y0);
+    return r;
+}
+Rect BoundsOf(const StrokePolygon& v) {
+    if (v.points.empty()) return Rect{};
+    Rect r;
+    r.x = r.y = std::numeric_limits<float>::max();
+    float right = -std::numeric_limits<float>::max();
+    float bottom = -std::numeric_limits<float>::max();
+    for (const Point& p : v.points) {
+        r.x = (std::min)(r.x, p.x);
+        r.y = (std::min)(r.y, p.y);
+        right = (std::max)(right, p.x);
+        bottom = (std::max)(bottom, p.y);
+    }
+    r.width = right - r.x;
+    r.height = bottom - r.y;
+    return r;
+}
+Rect BoundsOf(const FillEllipse& v) { return v.rect; }
+Rect BoundsOf(const StrokeEllipse& v) { return v.rect; }
+Rect BoundsOf(const FillPolygon& v) {
+    StrokePolygon route;
+    route.points = v.points;
+    return BoundsOf(route);
+}
+Rect BoundsOf(const PieSlice& v) { return v.bounds; }
+Rect BoundsOf(const Text& v) {
+    Rect r;
+    r.x = v.x;
+    r.y = v.top;
+    r.width = v.line.width;
+    r.height = v.line.height;
+    return r;
+}
+Rect BoundsOf(const Image& v) { return v.rect; }
+Rect BoundsOf(const PushClip& v) { return v.rect; }
+Rect BoundsOf(const PopClip&) { return Rect{}; }
+
 }  // namespace
+
+Rect ItemBounds(const Item& item) {
+    return std::visit([](const auto& v) { return BoundsOf(v); }, item);
+}
 
 void Play(const DisplayList& list, platform::RenderTarget* target) {
     PlayAll(list, target, nullptr);

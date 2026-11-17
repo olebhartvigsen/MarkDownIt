@@ -198,6 +198,14 @@ struct DisplayList {
     float height = 0.0f;
 };
 
+// The smallest rectangle that holds the item, in layout coordinates. Text
+// uses the laid out line's own width and height, a stroke its rect grown by
+// half its line width, and a clip its own rect. The definition visits every
+// alternative, so a new item type does not compile until its bounds exist:
+// pagination cuts the page by these rectangles, and a type with no bounds
+// would silently print nothing.
+Rect ItemBounds(const Item& item);
+
 }  // namespace display
 
 #endif  // MARKDOWNIT_SRC_LAYOUT_DISPLAYLIST_H_
