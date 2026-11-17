@@ -51,14 +51,14 @@ void PaintPage(CGContextRef cg, const layout::PrintPage& page,
 // document for the paper the panel chose, and draws the band of the page the
 // operation asks for.
 @interface MdPrintView : NSView {
-    MacRenderer* renderer_;
+    platform::MacRenderer* renderer_;
     const Document* document_;
     layout::PrintPage page_;
     std::shared_ptr<const layout::DocumentLayout> laid_;
     std::vector<layout::PrintBand> bands_;
 }
 
-- (instancetype)initWithRenderer:(MacRenderer*)renderer
+- (instancetype)initWithRenderer:(platform::MacRenderer*)renderer
                         document:(const Document*)document;
 // Lays the document out for the imageable area of the sheet the panel chose.
 - (void)prepareForPaper:(NSSize)paperPoints;
@@ -67,7 +67,7 @@ void PaintPage(CGContextRef cg, const layout::PrintPage& page,
 
 @implementation MdPrintView
 
-- (instancetype)initWithRenderer:(MacRenderer*)renderer
+- (instancetype)initWithRenderer:(platform::MacRenderer*)renderer
                         document:(const Document*)document {
     self = [super initWithFrame:NSMakeRect(0.0, 0.0, 612.0, 792.0)];
     if (self) {
@@ -146,7 +146,7 @@ void PaintPage(CGContextRef cg, const layout::PrintPage& page,
 
 namespace print_mac {
 
-bool PrintDocument(NSWindow* window, MacRenderer& renderer,
+bool PrintDocument(NSWindow* window, platform::MacRenderer& renderer,
                    const Document& document, const std::string& title) {
     if (!window) return false;
     MdPrintView* view = [[MdPrintView alloc] initWithRenderer:&renderer
@@ -177,7 +177,7 @@ bool PrintDocument(NSWindow* window, MacRenderer& renderer,
     return ran == YES;
 }
 
-bool WritePdf(const std::string& path, MacRenderer& renderer,
+bool WritePdf(const std::string& path, platform::MacRenderer& renderer,
               const Document& document, const layout::PrintPage& page,
               int* pageCount) {
     if (pageCount) *pageCount = 0;

@@ -11,10 +11,13 @@
 #include <memory>
 #include <vector>
 
+// renderer.h before any header that reads the seam, and never
+// platform/seams.h by hand: windows.h leaves a DrawText macro behind, and
+// renderer.h undefines it before the seam is read, so the render target's
+// override matches the seam it overrides.
+#include "renderer.h"
 #include "layout/display_player.h"
 #include "layout/print_pages.h"
-#include "platform/seams.h"
-#include "renderer.h"
 #include "windows/render_target_win.h"
 
 namespace print_win {

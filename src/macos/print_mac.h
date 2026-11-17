@@ -19,7 +19,10 @@
 #include "layout/print_pages.h"
 
 class Document;
+
+namespace platform {
 class MacRenderer;
+}  // namespace platform
 
 namespace print_mac {
 
@@ -28,13 +31,13 @@ namespace print_mac {
 // sheet's imageable area edge to edge and the page model keeps its own
 // margin, so no second scale factor ever enters the drawing. Returns false
 // when the user cancels.
-bool PrintDocument(NSWindow* window, MacRenderer& renderer,
+bool PrintDocument(NSWindow* window, platform::MacRenderer& renderer,
                    const Document& document, const std::string& title);
 
 // Writes the same pages to a PDF file, and reports how many pages it wrote.
 // The QA capture uses it, and it is also the one honest way to look at the
 // pagination of a document without a printer.
-bool WritePdf(const std::string& path, MacRenderer& renderer,
+bool WritePdf(const std::string& path, platform::MacRenderer& renderer,
               const Document& document, const layout::PrintPage& page,
               int* pageCount);
 

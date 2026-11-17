@@ -13,6 +13,17 @@
 #ifndef MARKDOWNIT_SRC_PRINT_WIN_H_
 #define MARKDOWNIT_SRC_PRINT_WIN_H_
 
+// The print panel is an old dialog, but the SDK only declares it when the
+// target version says so, and the project defines no WINVER. Naming it here,
+// before any SDK header is read, keeps the declaration visible in the one
+// translation unit that asks for it.
+#ifndef WINVER
+#define WINVER 0x0601
+#endif
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0601
+#endif
+
 #include <windows.h>
 
 #include <string>

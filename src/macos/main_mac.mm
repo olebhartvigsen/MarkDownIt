@@ -1530,7 +1530,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // the Windows walk reports, and, when the walk names a file, the
         // pages as a PDF anyone can look at.
         layout::PrintPage page;
-        MacRenderer& renderer = content_->MutableRenderer();
+        platform::MacRenderer& renderer = content_->MutableRenderer();
         std::shared_ptr<const layout::DocumentLayout> laid =
             renderer.PrintLayout(app_->GetDocument(), page.ContentWidth());
         const std::vector<layout::PrintBand> bands =
