@@ -435,6 +435,7 @@ jobs:
             build-mac/qa/*.png
             build-mac/qa/rects.txt
             build-mac/qa/*.log
+            build-mac/qa/*.pdf
           if-no-files-found: ignore
 
       - name: Upload app bundle

@@ -415,6 +415,18 @@ Store submission is involved; its pitfalls (windows-2022 pinning,
 Identity-scoped sed, app.rc bump before tag) are easy to rediscover the
 hard way.
 
+## Build gotcha: the `DrawText` macro
+
+`windows.h` defines `DrawText` as a macro. A Windows translation unit that
+includes `platform/seams.h` (directly or through a layout header) before
+`renderer.h` reads the seam with the macro still in place, so the seam's
+`DrawText` becomes `DrawTextW` while `D2DTarget` declares `DrawText`, the
+override no longer matches, and the class turns abstract with a misleading
+"C2259 cannot instantiate abstract class" at every use. Include `renderer.h`
+before any header that reads the seam, and never include
+`src/platform/seams.h` by hand on Windows. The same trap hides Direct2D 1.3's
+interfaces if a translation unit defines a low `WINVER` before `windows.h`.
+
 ## Sandbox gotcha
 
 The output layer once stripped angle brackets from file content display and
