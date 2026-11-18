@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "cg_target_mac.h"
+#include "crash_trace_mac.h"
 #include "layout/display_player.h"
 #include "renderer_mac.h"
 
