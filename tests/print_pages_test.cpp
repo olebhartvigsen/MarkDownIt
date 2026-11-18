@@ -230,6 +230,36 @@ TEST(PrintPages, AnItemOnTheCutLineIsOnExactlyOnePage) {
     EXPECT_EQ(second.items.size(), size_t(2));
 }
 
+// A heading with its section on the next sheet is an orphan: the reader meets
+// a title and nothing under it. The cut moves up so the two travel together.
+TEST(PrintPages, AHeadingIsNotLeftAloneAtTheBottom) {
+    layout::LaidBlock heading = Block(800.0f, 60.0f);
+    heading.kind = BlockKind::Heading;
+    // The block after the heading fits a page but not the room left, so the
+    // widow rule would close the page right after the heading.
+    const std::vector<layout::PrintBand> bands =
+        Cut({Block(0.0f, 760.0f), heading, Block(880.0f, 400.0f)});
+    EXPECT_TRUE(bands.size() >= 2);
+    if (bands.size() < 2) return;
+    // The first page ends where the heading begins, not after it.
+    NEAR(bands[0].bottom, 800.0f);
+    // And the second page starts with it.
+    NEAR(bands[1].top, 800.0f);
+}
+
+// A heading that is the page's first block is not moved: that page would be
+// empty and the walk would never leave it.
+TEST(PrintPages, AHeadingThatStartsAPageStaysOnIt) {
+    layout::LaidBlock heading = Block(0.0f, 60.0f);
+    heading.kind = BlockKind::Heading;
+    const std::vector<layout::PrintBand> bands =
+        Cut({heading, Block(60.0f, 1500.0f)});
+    EXPECT_TRUE(!bands.empty());
+    if (bands.empty()) return;
+    NEAR(bands[0].top, 0.0f);
+    NEAR(bands[0].bottom, kH);
+}
+
 // A page is its band, at the page's margin. The placement takes the band's
 // own distance from the document's top back out, which is what makes the
 // second page show the second page's lines instead of the beginning of the

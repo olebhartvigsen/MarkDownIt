@@ -35,6 +35,31 @@ float ContentBottom(const std::vector<LaidBlock>& blocks) {
     return bottom;
 }
 
+// A heading is never the last thing on a page: its section starts on the next
+// sheet, so the reader meets a title with nothing under it. The cut moves up
+// to the heading and the two travel together. A heading that is the page's
+// first block stays where it is, or the page would be empty and the walk would
+// not move; a trailing heading with nothing after it also stays.
+float KeepHeadingWithNext(const std::vector<LaidBlock>& blocks, float top,
+                          float bottom) {
+    bool hasNext = false;
+    for (const LaidBlock& b : blocks) {
+        if (b.y >= bottom) {
+            hasNext = true;
+            break;
+        }
+    }
+    if (!hasNext) return bottom;
+    const LaidBlock* last = nullptr;
+    for (const LaidBlock& b : blocks) {
+        if (b.y >= bottom) break;
+        last = &b;
+    }
+    if (!last || last->kind != BlockKind::Heading) return bottom;
+    if (last->y <= top + 0.001f) return bottom;
+    return last->y;
+}
+
 void FillBlockRange(const std::vector<LaidBlock>& blocks, PrintBand* band) {
     band->firstBlock = blocks.size();
     band->lastBlock = blocks.size();
@@ -90,10 +115,11 @@ std::vector<PrintBand> PaginateDocument(const DocumentLayout& laid,
             // the page that is closing.
             PrintBand band;
             band.top = top;
-            band.bottom = (std::max)(pageBottom, b.y);
+            band.bottom = KeepHeadingWithNext(
+                blocks, top, (std::max)(pageBottom, b.y));
             FillBlockRange(blocks, &band);
             bands.push_back(band);
-            top = (std::max)(pageBottom, b.y);
+            top = band.bottom;
             continue;
         }
 
@@ -107,10 +133,10 @@ std::vector<PrintBand> PaginateDocument(const DocumentLayout& laid,
             // the block would have begun.
             PrintBand band;
             band.top = top;
-            band.bottom = b.y;
+            band.bottom = KeepHeadingWithNext(blocks, top, b.y);
             FillBlockRange(blocks, &band);
             bands.push_back(band);
-            top = b.y;
+            top = band.bottom;
             continue;
         }
 

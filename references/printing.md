@@ -94,6 +94,11 @@ fixture makes more than one page and that the PDF carries them.
 
 ## The panel
 
+A heading is never the last block on a page: its section would start on the
+next sheet, so the cut moves up and the title travels with the block it
+introduces. A heading that is a page's first block stays, or the page would be
+empty.
+
 A table is the one block whose words are not in the page list: the window
 paints its cells from the table's own record, because selection and find marks
 sit between those lines. `layout::PageItems` therefore appends the record's
