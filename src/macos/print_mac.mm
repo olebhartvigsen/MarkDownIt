@@ -53,13 +53,18 @@ void PaintPage(CGContextRef cg, const layout::PrintPage& page,
 @interface MdPrintView : NSView {
     platform::MacRenderer* renderer_;
     const Document* document_;
+    // The operation's print info, which the panel writes the chosen paper
+    // into. A view has no printInfo of its own, and asking the operation is
+    // only possible while it is the current one.
+    NSPrintInfo* info_;
     layout::PrintPage page_;
     std::shared_ptr<const layout::DocumentLayout> laid_;
     std::vector<layout::PrintBand> bands_;
 }
 
 - (instancetype)initWithRenderer:(platform::MacRenderer*)renderer
-                        document:(const Document*)document;
+                        document:(const Document*)document
+                       printInfo:(NSPrintInfo*)info;
 // Lays the document out for the imageable area of the sheet the panel chose.
 - (void)prepareForPaper:(NSSize)paperPoints;
 
@@ -109,11 +114,13 @@ static MdPrintPanelDriver* g_panelDriver = nil;
 @implementation MdPrintView
 
 - (instancetype)initWithRenderer:(platform::MacRenderer*)renderer
-                        document:(const Document*)document {
+                        document:(const Document*)document
+                       printInfo:(NSPrintInfo*)info {
     self = [super initWithFrame:NSMakeRect(0.0, 0.0, 612.0, 792.0)];
     if (self) {
         renderer_ = renderer;
         document_ = document;
+        info_ = info;
         // A4 until the panel says otherwise, the same default page the
         // Windows driver builds from the printer's own paper.
         page_ = layout::PrintPage();
@@ -152,7 +159,7 @@ static MdPrintPanelDriver* g_panelDriver = nil;
 - (BOOL)knowsPageRange:(NSRangePointer)range {
     // The panel has been dismissed by the time this is asked, so the paper
     // size is the one the user picked.
-    NSRect imageable = [[self printInfo] imageablePageBounds];
+    NSRect imageable = [info_ imageablePageBounds];
     [self prepareForPaper:imageable.size];
     range->location = 1;
     range->length = bands_.empty() ? 1 : bands_.size();
@@ -190,11 +197,13 @@ namespace print_mac {
 bool PrintDocument(NSWindow* window, platform::MacRenderer& renderer,
                    const Document& document, const std::string& title) {
     if (!window) return false;
-    MdPrintView* view = [[MdPrintView alloc] initWithRenderer:&renderer
-                                                     document:&document];
     // A copy of the shared info, so the panel's own settings start from the
-    // system defaults and the app never writes into them.
+    // system defaults and the app never writes into them. The view reads the
+    // sheet's paper from this same object.
     NSPrintInfo* info = [[NSPrintInfo sharedPrintInfo] copy];
+    MdPrintView* view = [[MdPrintView alloc] initWithRenderer:&renderer
+                                                     document:&document
+                                                    printInfo:info];
     // The page model owns the margin on paper, so the view fills the sheet's
     // imageable area and AppKit adds nothing of its own.
     [info setLeftMargin:0.0];
