@@ -34,6 +34,23 @@ namespace print_mac {
 bool PrintDocument(NSWindow* window, platform::MacRenderer& renderer,
                    const Document& document, const std::string& title);
 
+// What a written print job turned out to contain: the pages the pagination
+// produced, and how much of the first three pages carries ink. A page that
+// comes back blank here is blank on paper, because the printer's own path
+// produced this file.
+struct PrintFileReport {
+    int pages = 0;
+    int ink[3] = {0, 0, 0};
+};
+
+// Runs the printer's own path and writes the result to a file instead of a
+// printer: AppKit asks the view for its pages and cuts them the way it cuts a
+// real job. The QA walk uses it, and it is the one honest way to look at the
+// pagination without paper.
+bool PrintToFile(const std::string& path, platform::MacRenderer& renderer,
+                 const Document& document, const std::string& title,
+                 PrintFileReport* report);
+
 // Writes the same pages to a PDF file, and reports how many pages it wrote.
 // The QA capture uses it, and it is also the one honest way to look at the
 // pagination of a document without a printer.

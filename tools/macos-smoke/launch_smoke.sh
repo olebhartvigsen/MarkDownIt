@@ -133,7 +133,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_PDF="$QA_DIR/print-pages.pdf" MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-click,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,print-pages,shared,csv-pinned,cmd-z,print-panel" "$BIN" "$DOC" &
+    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_PDF="$QA_DIR/print-pages.pdf" MARKDOWNIT_QA_PRINT_PDF="$QA_DIR/print-ink.pdf" MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-click,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,print-pages,print-file,shared,csv-pinned,cmd-z,print-panel" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
@@ -142,7 +142,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     # a shared announcement that lands past the budget is a silently
     # missing capture on the mac side.
     while [ "$waited" -lt 420 ]; do
-        for name in doc wheel find edit format-bar outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap svg-drawio svg-drawio-100 zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc print-pages shared csv-pinned cmd-z print-panel; do
+        for name in doc wheel find edit format-bar outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap svg-drawio svg-drawio-100 zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc print-pages print-file shared csv-pinned cmd-z print-panel; do
             case "$seen" in *" $name "*) continue ;; esac
             if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
                 sleep 0.6
@@ -234,6 +234,36 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         echo "$PRINT_LINE"
         exit 1
     fi
+
+    # The printer's own pagination. AppKit cuts the pages and asks the view to
+    # draw each one, and the ink on page 2 is the answer to the only question
+    # a printed document raises: does anything land on the pages after the
+    # first? A page drawn at the wrong origin comes back empty.
+    INKFILE=""
+    for _ in $(seq 1 90); do
+        INKFILE=$(grep "qa print-file:" "$LOG" 2>/dev/null | head -1)
+        [ -n "$INKFILE" ] && break
+        sleep 1
+    done
+    if [ -z "$INKFILE" ]; then
+        echo "launch smoke FAILED: the print-file state reported nothing"
+        exit 1
+    fi
+    FILPAGES=$(echo "$INKFILE" | sed -n 's/.*pages=\([0-9-]*\).*/\1/p')
+    FILINK2=$(echo "$INKFILE" | sed -n 's/.*ink2=\([0-9-]*\).*/\1/p')
+    if [ -z "$FILPAGES" ] || [ "$FILPAGES" -lt 3 ]; then
+        echo "launch smoke FAILED: the print job wrote too few pages: $INKFILE"
+        exit 1
+    fi
+    if [ -z "$FILINK2" ] || [ "$FILINK2" -lt 500 ]; then
+        echo "launch smoke FAILED: page 2 of the print job is blank: $INKFILE"
+        exit 1
+    fi
+    if [ ! -s "$QA_DIR/print-ink.pdf" ]; then
+        echo "launch smoke FAILED: the print job wrote no file"
+        exit 1
+    fi
+    echo "launch smoke: every printed page carries its own content"
 
     # The panel itself. A command that prints and puts no panel on screen
     # looks like nothing happened, which is the bug this state exists for: the

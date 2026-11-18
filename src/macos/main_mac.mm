@@ -1561,6 +1561,24 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             bands.size() > 1 ? (double)bands[1].top : 0.0,
             (double)page.ContentWidth(), (double)page.ContentHeight(), wrote);
         [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"print-file"]) {
+        // The printer's own pagination, written to a file and weighed: AppKit
+        // cuts the pages exactly as it would for paper, so a page that comes
+        // out blank here is blank on the printer too. The ink counts are what
+        // a page looks like, not what the layout thinks it holds.
+        print_mac::PrintFileReport report;
+        const char* path = getenv("MARKDOWNIT_QA_PRINT_PDF");
+        bool wrote = false;
+        if (path && *path) {
+            wrote = print_mac::PrintToFile(path, content_->MutableRenderer(),
+                                           app_->GetDocument(), "MarkDownIt",
+                                           &report);
+        }
+        platform::TraceMac(
+            "qa print-file: pages=%d ink1=%d ink2=%d ink3=%d wrote=%d",
+            report.pages, report.ink[0], report.ink[1], report.ink[2],
+            wrote ? 1 : 0);
+        [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"print-panel"]) {
         // The panel the Print command puts on screen, for the camera. A panel
         // that never appears is exactly the bug a trace cannot show, so the

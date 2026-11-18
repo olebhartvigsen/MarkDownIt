@@ -24,23 +24,57 @@ constexpr CGFloat kSeamToPoints = 72.0 / 96.0;
 // top left corner and y grows downward) and clipped to the page, which is the
 // space the layout and the display list are already in.
 void PaintPage(CGContextRef cg, const layout::PrintPage& page,
-               const display::DisplayList& slice) {
+               const display::DisplayList& slice, CGFloat originY = 0.0) {
     const CGFloat pageW = page.width * kSeamToPoints;
     const CGFloat pageH = page.height * kSeamToPoints;
     CGContextSaveGState(cg);
     // The paper, edge to edge: printers do not all lay a white sheet down for
-    // a page that draws nothing, and a dark window must not print dark.
-    CGContextClipToRect(cg, CGRectMake(0.0, 0.0, pageW, pageH));
+    // a page that draws nothing, and a dark window must not print dark. It is
+    // laid where this page sits, because that is where AppKit clips it.
+    CGContextClipToRect(cg, CGRectMake(0.0, originY, pageW, pageH));
     CGContextSetRGBFillColor(cg, 1.0, 1.0, 1.0, 1.0);
-    CGContextFillRect(cg, CGRectMake(0.0, 0.0, pageW, pageH));
+    CGContextFillRect(cg, CGRectMake(0.0, originY, pageW, pageH));
     // The page's margin, then seam units: after this the display list's own
     // coordinates land on paper at 1/96 inch, which is what 100% means.
     CGContextTranslateCTM(cg, page.margin * kSeamToPoints,
-                          page.margin * kSeamToPoints);
+                          originY + page.margin * kSeamToPoints);
     CGContextScaleCTM(cg, kSeamToPoints, kSeamToPoints);
     platform::CoreGraphicsTarget target(cg);
     display::Play(slice, &target);
     CGContextRestoreGState(cg);
+}
+
+// How much of a written page carries ink, counted on a thumbnail of it. A
+// count, not a picture: it answers the only question worth asking about a
+// page, which is whether anything landed on it.
+int InkOnPage(CGPDFDocumentRef pdf, size_t pageNumber) {
+    CGPDFPageRef page = CGPDFDocumentGetPage(pdf, pageNumber);
+    if (!page) return -1;
+    const size_t w = 160;
+    const size_t h = 227;
+    std::vector<unsigned char> pixels(w * h * 4, 255);
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGContextRef ctx = CGBitmapContextCreate(pixels.data(), w, h, 8, w * 4,
+                                             space,
+                                             kCGImageAlphaPremultipliedLast);
+    CGColorSpaceRelease(space);
+    if (!ctx) return -1;
+    CGContextSetRGBFillColor(ctx, 1.0, 1.0, 1.0, 1.0);
+    CGContextFillRect(ctx, CGRectMake(0.0, 0.0, (CGFloat)w, (CGFloat)h));
+    const CGRect box = CGPDFPageGetBoxRect(page, kCGPDFMediaBox);
+    if (box.size.width > 0.0 && box.size.height > 0.0) {
+        CGContextScaleCTM(ctx, (CGFloat)w / box.size.width,
+                          (CGFloat)h / box.size.height);
+        CGContextDrawPDFPage(ctx, page);
+    }
+    CGContextRelease(ctx);
+    int inked = 0;
+    for (size_t i = 0; i + 2 < pixels.size(); i += 4) {
+        if (pixels[i] < 248 || pixels[i + 1] < 248 || pixels[i + 2] < 248) {
+            ++inked;
+        }
+    }
+    return inked;
 }
 
 }  // namespace
@@ -181,13 +215,13 @@ static MdPrintPanelDriver* g_panelDriver = nil;
     if (index >= (NSInteger)bands_.size()) {
         index = (NSInteger)bands_.size() - 1;
     }
-    CGContextSaveGState(cg);
-    // The view's origin is the document's, so the page's slot is moved to the
-    // origin and the slice is drawn in its own page coordinates.
-    CGContextTranslateCTM(cg, 0.0, -(CGFloat)index * pageH);
+    // The view's origin is the document's and AppKit clips the page where it
+    // sits in the view, so the slice is drawn at the page's own slot. Moving
+    // the page to the origin instead drew it above the clip, which left every
+    // page after the first blank.
     print_mac::PaintPage(cg, page_,
-                         layout::SliceForBand(laid_->list, bands_[(size_t)index]));
-    CGContextRestoreGState(cg);
+                         layout::SliceForBand(laid_->list, bands_[(size_t)index]),
+                         (CGFloat)index * pageH);
 }
 
 @end
@@ -242,6 +276,56 @@ bool PrintDocument(NSWindow* window, platform::MacRenderer& renderer,
                  didEndSelector:@selector(panelDidEnd:returnCode:contextInfo:)
                     contextInfo:nullptr];
     return true;
+}
+
+bool PrintToFile(const std::string& path, platform::MacRenderer& renderer,
+                 const Document& document, const std::string& title,
+                 PrintFileReport* report) {
+    if (report) *report = PrintFileReport();
+    if (path.empty()) return false;
+    NSString* file = [NSString stringWithUTF8String:path.c_str()];
+    if (!file) return false;
+    NSPrintInfo* info = [[NSPrintInfo sharedPrintInfo] copy];
+    [info setLeftMargin:0.0];
+    [info setRightMargin:0.0];
+    [info setTopMargin:0.0];
+    [info setBottomMargin:0.0];
+    [info setHorizontallyCentered:NO];
+    [info setVerticallyCentered:NO];
+    NSMutableDictionary* settings = [info dictionary];
+    [settings setObject:NSPrintSaveJob forKey:NSPrintJobDisposition];
+    [settings setObject:[NSURL fileURLWithPath:file]
+                 forKey:NSPrintJobSavingURL];
+    MdPrintView* view = [[MdPrintView alloc] initWithRenderer:&renderer
+                                                     document:&document
+                                                    printInfo:info];
+    NSPrintOperation* operation =
+        [NSPrintOperation printOperationWithView:view printInfo:info];
+    [operation setShowsPrintPanel:NO];
+    [operation setShowsProgressPanel:NO];
+    if (!title.empty()) {
+        NSString* job = [NSString stringWithUTF8String:title.c_str()];
+        if (job) [operation setJobTitle:job];
+    }
+    // This is the printer's own path: AppKit asks the view for its page range,
+    // cuts each page and calls drawRect for it, so a page that comes out blank
+    // here is blank on paper too.
+    const BOOL ran = [operation runOperation];
+    CFURLRef url = CFURLCreateWithFileSystemPath(
+        nullptr, (__bridge CFStringRef)file, kCFURLPOSIXPathStyle, false);
+    if (!url) return ran == YES;
+    CGPDFDocumentRef pdf = CGPDFDocumentCreateWithURL(url);
+    CFRelease(url);
+    if (!pdf) return ran == YES;
+    const int pages = (int)CGPDFDocumentGetNumberOfPages(pdf);
+    if (report) {
+        report->pages = pages;
+        for (int i = 0; i < 3 && i < pages; ++i) {
+            report->ink[i] = InkOnPage(pdf, (size_t)i + 1);
+        }
+    }
+    CGPDFDocumentRelease(pdf);
+    return ran == YES;
 }
 
 bool WritePdf(const std::string& path, platform::MacRenderer& renderer,
