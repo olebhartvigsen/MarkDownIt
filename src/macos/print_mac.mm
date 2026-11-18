@@ -65,6 +65,47 @@ void PaintPage(CGContextRef cg, const layout::PrintPage& page,
 
 @end
 
+@class MdPrintPanelDriver;
+
+// The sheet's delegate is not retained by AppKit, and printing outlives the
+// call that starts it, so the driver is held here until the panel has ended.
+static MdPrintPanelDriver* g_panelDriver = nil;
+
+// The panel's delegate. The operation is held here for as long as the sheet is
+// up, so the settings the reader chooses land in the operation that prints,
+// and the printing happens when the panel says so. The panel is shown by hand
+// (see PrintDocument), so AppKit never runs it and nobody else would.
+@interface MdPrintPanelDriver : NSObject {
+@public
+    NSPrintOperation* operation_;
+}
+- (void)panelDidEnd:(NSPrintPanel*)panel
+         returnCode:(NSInteger)code
+        contextInfo:(void*)info;
+@end
+
+@implementation MdPrintPanelDriver
+
+- (void)panelDidEnd:(NSPrintPanel*)panel
+         returnCode:(NSInteger)code
+        contextInfo:(void*)info {
+    (void)panel;
+    (void)info;
+    // The anchor below is the only thing holding this object, so the local
+    // strong reference keeps it alive to the end of the method.
+    __strong MdPrintPanelDriver* keepAlive = self;
+    (void)keepAlive;
+    NSPrintOperation* operation = operation_;
+    operation_ = nil;
+    g_panelDriver = nil;
+    // A cancelled panel is not an error: the reader said no, and there is
+    // nothing to undo.
+    if (!operation || code == NSModalResponseCancel) return;
+    [operation runOperation];
+}
+
+@end
+
 @implementation MdPrintView
 
 - (instancetype)initWithRenderer:(platform::MacRenderer*)renderer
@@ -164,19 +205,29 @@ bool PrintDocument(NSWindow* window, platform::MacRenderer& renderer,
     [info setVerticallyCentered:NO];
     NSPrintOperation* operation =
         [NSPrintOperation printOperationWithView:view printInfo:info];
-    [operation setShowsPrintPanel:YES];
+    // The operation never asks for itself: the sheet below is the panel, and
+    // it writes its answers into this same printInfo. Asking twice would
+    // print the second answer.
+    [operation setShowsPrintPanel:NO];
     [operation setShowsProgressPanel:YES];
     if (!title.empty()) {
         NSString* job = [NSString stringWithUTF8String:title.c_str()];
         if (job) [operation setJobTitle:job];
     }
-    // AppKit reports the outcome through a delegate callback, and the app has
-    // nothing to undo on cancelling: the panel is the only question printing
-    // asks, and a closed one is not an error.
-    [operation runOperationModalForWindow:window
-                                 delegate:nil
-                           didRunSelector:nullptr
-                              contextInfo:nullptr];
+    // The panel is shown by hand as a sheet. The operation's own run needed a
+    // delegate and a selector to report to, and with neither AppKit showed
+    // nothing at all: the reader pressed Print and no panel came up.
+    MdPrintPanelDriver* driver = [[MdPrintPanelDriver alloc] init];
+    driver->operation_ = operation;
+    // The sheet does not own its delegate, and printing outlives this call,
+    // so the driver is held here until the panel has ended.
+    g_panelDriver = driver;
+    [[operation printPanel]
+        beginSheetWithPrintInfo:info
+                 modalForWindow:window
+                       delegate:driver
+                 didEndSelector:@selector(panelDidEnd:returnCode:contextInfo:)
+                    contextInfo:nullptr];
     return true;
 }
 

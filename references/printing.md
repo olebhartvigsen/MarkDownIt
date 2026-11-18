@@ -94,6 +94,11 @@ fixture makes more than one page and that the PDF carries them.
 
 ## The panel
 
+macOS shows the print panel itself, as a sheet on the window, and runs the
+operation with its own panel switched off once the sheet returns Print. The
+operation's own `runOperationModalForWindow:` needed a delegate and a selector
+to report to, and with neither AppKit put nothing on the screen at all.
+
 Windows opens the classic print panel (`PrintDlg`) and prints into an
 `ID2D1DCRenderTarget` bound to the printer's DC. The target carries the printer's dpi, so one seam unit is
 one DIP on paper and the drawing code has no scale factor of its own. Text is

@@ -133,7 +133,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_PDF="$QA_DIR/print-pages.pdf" MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-click,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,print-pages,shared,csv-pinned,cmd-z" "$BIN" "$DOC" &
+    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_PDF="$QA_DIR/print-pages.pdf" MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-click,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,print-pages,shared,csv-pinned,cmd-z,print-panel" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
@@ -142,7 +142,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     # a shared announcement that lands past the budget is a silently
     # missing capture on the mac side.
     while [ "$waited" -lt 420 ]; do
-        for name in doc wheel find edit format-bar outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap svg-drawio svg-drawio-100 zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc print-pages shared csv-pinned cmd-z; do
+        for name in doc wheel find edit format-bar outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap svg-drawio svg-drawio-100 zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc print-pages shared csv-pinned cmd-z print-panel; do
             case "$seen" in *" $name "*) continue ;; esac
             if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
                 sleep 0.6
@@ -234,6 +234,38 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
         echo "$PRINT_LINE"
         exit 1
     fi
+
+    # The panel itself. A command that prints and puts no panel on screen
+    # looks like nothing happened, which is the bug this state exists for: the
+    # walk photographs the sheet and the trace says who answers the action.
+    PANEL=""
+    for _ in $(seq 1 90); do
+        PANEL=$(grep "qa print-panel:" "$LOG" 2>/dev/null | head -1)
+        [ -n "$PANEL" ] && break
+        sleep 1
+    done
+    if [ -z "$PANEL" ]; then
+        echo "launch smoke FAILED: the print-panel state reported nothing"
+        exit 1
+    fi
+    case "$PANEL" in
+        *"item=1 enabled=1"*) ;;
+        *)
+            echo "launch smoke FAILED: the Print item does not answer: $PANEL"
+            exit 1
+            ;;
+    esac
+    case "$PANEL" in
+        *"target=(none)"*)
+            echo "launch smoke FAILED: nothing in the responder chain prints: $PANEL"
+            exit 1
+            ;;
+    esac
+    if [ ! -s "$QA_DIR/print-panel.png" ]; then
+        echo "launch smoke FAILED: the print panel was never photographed"
+        exit 1
+    fi
+    echo "launch smoke: the print command puts its panel on screen"
     case "$PRINT_LINE" in
         *"wrote=1"*) ;;
         *) echo "launch smoke FAILED: the PDF and the page count disagree"; echo "$PRINT_LINE"; exit 1 ;;

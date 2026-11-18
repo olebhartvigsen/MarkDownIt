@@ -1561,6 +1561,37 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             bands.size() > 1 ? (double)bands[1].top : 0.0,
             (double)page.ContentWidth(), (double)page.ContentHeight(), wrote);
         [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"print-panel"]) {
+        // The panel the Print command puts on screen, for the camera. A panel
+        // that never appears is exactly the bug a trace cannot show, so the
+        // state reports who answers the action and then asks for the panel;
+        // it takes the sheet down again before the walk moves on, because the
+        // walk would otherwise end underneath it.
+        NSMenuItem* printItem = nil;
+        NSMenu* file = [[[NSApp mainMenu] itemWithTitle:@"File"] submenu];
+        for (NSMenuItem* candidate in [file itemArray]) {
+            if ([candidate action] == @selector(printDocument:)) {
+                printItem = candidate;
+            }
+        }
+        id target = [NSApp targetForAction:@selector(printDocument:)
+                                        to:nil
+                                      from:nil];
+        platform::TraceMac(
+            "qa print-panel: item=%d enabled=%d target=%s active=%d",
+            printItem ? 1 : 0,
+            printItem ? ([printItem isEnabled] ? 1 : 0) : -1,
+            target ? [[[target class] description] UTF8String] : "(none)",
+            [NSApp isActive] ? 1 : 0);
+        [self printDocument:nil];
+        dispatch_after(
+            dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4 * NSEC_PER_SEC)),
+            dispatch_get_main_queue(), ^{
+                NSWindow* sheet = [window_ attachedSheet];
+                if (sheet) {
+                    [window_ endSheet:sheet returnCode:NSModalResponseCancel];
+                }
+            });
     } else if ([state isEqualToString:@"welcome"]) {
         // The screen without a document, reached the way the toolbar
         // reaches it. The walk has opened the fixture, so the recent
