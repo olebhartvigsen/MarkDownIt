@@ -24,6 +24,7 @@ constexpr CGFloat kSeamToPoints = 72.0 / 96.0;
 // top left corner and y grows downward) and clipped to the page, which is the
 // space the layout and the display list are already in.
 void PaintPage(CGContextRef cg, const layout::PrintPage& page,
+               const layout::PagePlacement& place,
                const display::DisplayList& slice, CGFloat originY = 0.0) {
     const CGFloat pageW = page.width * kSeamToPoints;
     const CGFloat pageH = page.height * kSeamToPoints;
@@ -34,10 +35,11 @@ void PaintPage(CGContextRef cg, const layout::PrintPage& page,
     CGContextClipToRect(cg, CGRectMake(0.0, originY, pageW, pageH));
     CGContextSetRGBFillColor(cg, 1.0, 1.0, 1.0, 1.0);
     CGContextFillRect(cg, CGRectMake(0.0, originY, pageW, pageH));
-    // The page's margin, then seam units: after this the display list's own
-    // coordinates land on paper at 1/96 inch, which is what 100% means.
-    CGContextTranslateCTM(cg, page.margin * kSeamToPoints,
-                          originY + page.margin * kSeamToPoints);
+    // The page's margin with the band's own offset taken back out, then seam
+    // units: after this the display list's document coordinates land on this
+    // page at 1/96 inch, which is what 100% means.
+    CGContextTranslateCTM(cg, place.x * kSeamToPoints,
+                          originY + place.y * kSeamToPoints);
     CGContextScaleCTM(cg, kSeamToPoints, kSeamToPoints);
     platform::CoreGraphicsTarget target(cg);
     display::Play(slice, &target);
@@ -236,7 +238,9 @@ static MdPrintPanelDriver* g_panelDriver = nil;
     }
     // The view's origin is the document's, so the page is drawn at its own
     // slot and the transform AppKit set up carries it onto the sheet.
-    print_mac::PaintPage(cg, page_, slice, (CGFloat)index * pageH);
+    print_mac::PaintPage(cg, page_,
+                         layout::PlacementForBand(page_, bands_[(size_t)index]),
+                         slice, (CGFloat)index * pageH);
 }
 
 @end
@@ -371,7 +375,8 @@ bool WritePdf(const std::string& path, platform::MacRenderer& renderer,
         CGContextSaveGState(pdf);
         CGContextTranslateCTM(pdf, 0.0, media.size.height);
         CGContextScaleCTM(pdf, 1.0, -1.0);
-        PaintPage(pdf, page, layout::SliceForBand(laid->list, bands[i]));
+        PaintPage(pdf, page, layout::PlacementForBand(page, bands[i]),
+                  layout::SliceForBand(laid->list, bands[i]));
         CGContextRestoreGState(pdf);
         CGPDFContextEndPage(pdf);
     }

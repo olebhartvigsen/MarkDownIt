@@ -110,8 +110,9 @@ bool PrintToDC(HDC dc, Renderer& renderer, const Document& document,
         // The margin is the page's own; the target's dpi turns the rest into
         // paper. Clear is in device space, so it fills the sheet with white
         // whatever the transform says.
-        target->SetTransform(
-            D2D1::Matrix3x2F::Translation(page.margin, page.margin));
+        const layout::PagePlacement place =
+            layout::PlacementForBand(page, bands[i]);
+        target->SetTransform(D2D1::Matrix3x2F::Translation(place.x, place.y));
         target->Clear(D2D1::ColorF(D2D1::ColorF::White));
         platform::D2DTarget seam(target);
         display::Play(layout::SliceForBand(laid->list, bands[i]), &seam);

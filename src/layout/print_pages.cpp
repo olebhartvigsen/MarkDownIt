@@ -143,6 +143,13 @@ std::vector<PrintBand> PaginateDocument(const DocumentLayout& laid,
     return bands;
 }
 
+PagePlacement PlacementForBand(const PrintPage& page, const PrintBand& band) {
+    PagePlacement place;
+    place.x = page.margin;
+    place.y = page.margin - band.top;
+    return place;
+}
+
 display::DisplayList SliceForBand(const display::DisplayList& list,
                                   const PrintBand& band) {
     display::DisplayList out;

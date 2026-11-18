@@ -94,6 +94,11 @@ fixture makes more than one page and that the PDF carries them.
 
 ## The panel
 
+A slice keeps document coordinates, and `layout::PlacementForBand` is the one
+rule for turning them into a page: the page's margin, with the band's own
+distance from the document's top taken back out. Both painters apply it, so a
+page the two ports print is the same page.
+
 macOS shows the print panel itself, as a sheet on the window, and runs the
 operation with its own panel switched off once the sheet returns Print. The
 operation's own `runOperationModalForWindow:` needed a delegate and a selector

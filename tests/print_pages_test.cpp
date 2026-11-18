@@ -229,3 +229,35 @@ TEST(PrintPages, AnItemOnTheCutLineIsOnExactlyOnePage) {
     EXPECT_EQ(first.items.size(), size_t(0));
     EXPECT_EQ(second.items.size(), size_t(2));
 }
+
+// A page is its band, at the page's margin. The placement takes the band's
+// own distance from the document's top back out, which is what makes the
+// second page show the second page's lines instead of the beginning of the
+// document again: a slice keeps document coordinates.
+TEST(PrintPages, PlacementPutsTheBandOnItsPage) {
+    const layout::PrintPage page;
+    const std::vector<layout::PrintBand> bands =
+        Cut({Block(0.0f, 900.0f), Block(1000.0f, 900.0f)});
+    EXPECT_EQ(bands.size(), size_t(2));
+
+    const layout::PagePlacement first = layout::PlacementForBand(page, bands[0]);
+    NEAR(first.x, page.margin);
+    NEAR(first.y, page.margin);
+
+    const layout::PagePlacement second =
+        layout::PlacementForBand(page, bands[1]);
+    NEAR(second.y, page.margin - bands[1].top);
+    EXPECT_TRUE(second.y < first.y);
+
+    // And the arithmetic lands the band's own item inside the page: its top
+    // below the margin and its bottom above the paper's edge.
+    display::DisplayList list;
+    list.width = 200.0f;
+    list.height = 1900.0f;
+    list.items.push_back(Box(1500.0f, 40.0f));
+    const display::DisplayList slice = layout::SliceForBand(list, bands[1]);
+    EXPECT_EQ(slice.items.size(), size_t(1));
+    const float onPage = display::ItemBounds(slice.items[0]).y + second.y;
+    EXPECT_TRUE(onPage >= page.margin - 0.001f);
+    EXPECT_TRUE(onPage + 40.0f <= page.height - page.margin + 0.001f);
+}

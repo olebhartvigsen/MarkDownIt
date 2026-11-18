@@ -39,6 +39,17 @@ struct PrintBand {
     size_t lastBlock = 0;   // one past the last block the band touches
 };
 
+// Where a band's content sits on its page, in seam units: the page's own
+// margin, with the band's distance from the document's top taken back out.
+// A slice keeps document coordinates, so a painter applies this placement and
+// then plays the slice. That is the whole rule, in one place, for both ports.
+struct PagePlacement {
+    float x = 0.0f;
+    float y = 0.0f;
+};
+
+PagePlacement PlacementForBand(const PrintPage& page, const PrintBand& band);
+
 // Cuts the laid out document into bands of ContentHeight(). A block that
 // fits a page but not the room left on this one starts the next page. A
 // block taller than a page is cut, and continues above the next band.
