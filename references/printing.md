@@ -94,6 +94,12 @@ fixture makes more than one page and that the PDF carries them.
 
 ## The panel
 
+A table is the one block whose words are not in the page list: the window
+paints its cells from the table's own record, because selection and find marks
+sit between those lines. `layout::PageItems` therefore appends the record's
+copy (`LaidTable::cellsText`) for every table the band touches, so a page
+replay draws the table instead of a grid of empty boxes.
+
 A slice keeps document coordinates, and `layout::PlacementForBand` is the one
 rule for turning them into a page: the page's margin, with the band's own
 distance from the document's top taken back out. Both painters apply it, so a

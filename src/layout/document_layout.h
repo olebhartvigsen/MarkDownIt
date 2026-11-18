@@ -69,6 +69,14 @@ struct LaidTable {
     // the glyph are built around, so a painter that redraws the band (the pin
     // above the scroll) draws the same mark in the same place.
     std::vector<platform::Point> filterCenters;
+    // The words of every cell, in document coordinates and clipped to the
+    // cell's own box, in one list. The window's overlay painters draw these
+    // lines from the same record (selection and find marks sit between them),
+    // so the list is not part of the page; it is the copy a page replay reads,
+    // because the display list carries the table's washes and hairlines but
+    // not its words, and a printed table without them is a grid of empty
+    // boxes.
+    display::DisplayList cellsText;
     // The header row's height, and the items that draw it (the row's fill,
     // its hairlines, the funnels) in document coordinates. A scrolling view
     // replays this copy at its own top edge, so the band stays while the

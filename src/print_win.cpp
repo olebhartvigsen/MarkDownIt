@@ -115,7 +115,7 @@ bool PrintToDC(HDC dc, Renderer& renderer, const Document& document,
         target->SetTransform(D2D1::Matrix3x2F::Translation(place.x, place.y));
         target->Clear(D2D1::ColorF(D2D1::ColorF::White));
         platform::D2DTarget seam(target);
-        display::Play(layout::SliceForBand(laid->list, bands[i]), &seam);
+        display::Play(layout::PageItems(*laid, bands[i]), &seam);
         if (FAILED(target->EndDraw())) {
             ok = false;
         }

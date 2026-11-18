@@ -474,6 +474,54 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
         }
     }
 
+    // Every cell's words, in document coordinates, clipped to the cell's own
+    // box: the copy a page replay reads. The lines are the ones the row was
+    // measured into, so a page and the window cannot disagree about a break.
+    for (size_t r = 0; r < t.cells.size() && r < node.rows.size(); ++r) {
+        const TableRow& row = node.rows[r];
+        const float rowH = t.rowHeights[r];
+        for (size_t c = 0; c < t.cells[r].size() && c < row.cells.size(); ++c) {
+            const LaidTableCell& cell = t.cells[r][c];
+            const float innerW = (c < t.colWs.size() ? t.colWs[c]
+                                                     : cell.width) -
+                                 2.0f * m.cellPadX;
+            const float innerH = rowH - 2.0f * m.cellPadY;
+            if (!(innerW > 0.0f) || !(innerH > 0.0f)) continue;
+            const ColumnAlign align = CellAlign(node, row, c, m);
+            float cellTextHeight = 0.0f;
+            for (const platform::TextLine& line : cell.lines) {
+                cellTextHeight += line.height;
+            }
+            float lineY = top + cell.y +
+                          (std::max)(m.cellPadY,
+                                     (rowH - cellTextHeight) * 0.5f);
+            t.cellsText.items.push_back(
+                display::PushClip{platform::Rect{cell.x + m.cellPadX,
+                                                 top + cell.y + m.cellPadY,
+                                                 innerW, innerH}});
+            for (const platform::TextLine& line : cell.lines) {
+                float lineX = cell.x + m.cellPadX;
+                if (align == ColumnAlign::Center) {
+                    lineX += (innerW - line.width) * 0.5f;
+                } else if (align == ColumnAlign::Right) {
+                    lineX += innerW - line.width;
+                }
+                display::Text text;
+                text.x = lineX;
+                text.top = lineY;
+                text.line = line;
+                text.srcOffset = row.cells[c].srcOffset;
+                text.srcLength = row.cells[c].srcEnd > row.cells[c].srcOffset
+                                     ? row.cells[c].srcEnd -
+                                           row.cells[c].srcOffset
+                                     : 0;
+                t.cellsText.items.push_back(std::move(text));
+                lineY += line.height;
+            }
+            t.cellsText.items.push_back(display::PopClip{});
+        }
+    }
+
     if (!node.tableFilterActive.empty() && !t.rowHeights.empty()) {
         const size_t columns = (std::min)(t.columnCount,
                                           node.tableFilterActive.size());

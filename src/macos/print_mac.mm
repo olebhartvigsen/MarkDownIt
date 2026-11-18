@@ -211,7 +211,7 @@ static MdPrintPanelDriver* g_panelDriver = nil;
         index = (NSInteger)bands_.size() - 1;
     }
     const display::DisplayList slice =
-        layout::SliceForBand(laid_->list, bands_[(size_t)index]);
+        layout::PageItems(*laid_, bands_[(size_t)index]);
     // What AppKit actually asks for, while the walk asks: the rect it clips,
     // the index that becomes of it, and the transform it set up. Guessing at
     // this is how a page ends up blank.
@@ -367,7 +367,7 @@ bool WritePdf(const std::string& path, platform::MacRenderer& renderer,
         CGContextTranslateCTM(pdf, 0.0, media.size.height);
         CGContextScaleCTM(pdf, 1.0, -1.0);
         PaintPage(pdf, page, layout::PlacementForBand(page, bands[i]),
-                  layout::SliceForBand(laid->list, bands[i]));
+                  layout::PageItems(*laid, bands[i]));
         CGContextRestoreGState(pdf);
         CGPDFContextEndPage(pdf);
     }

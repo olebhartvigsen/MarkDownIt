@@ -261,3 +261,61 @@ TEST(PrintPages, PlacementPutsTheBandOnItsPage) {
     EXPECT_TRUE(onPage >= page.margin - 0.001f);
     EXPECT_TRUE(onPage + 40.0f <= page.height - page.margin + 0.001f);
 }
+
+// A table's words are not in the page list: the window paints them from the
+// table's own record, with selection and find marks between the lines. A page
+// replay has no window, so the page brings the record's copy with it; without
+// it a printed table is a grid of empty boxes, which is exactly what a reader
+// of this document saw.
+TEST(PrintPages, APageCarriesItsTablesWords) {
+    Document doc;
+    ParseMarkdown(
+        "Intro line.\n\n"
+        "| Column one | Column two |\n"
+        "|---|---|\n"
+        "| A cell with words | Another cell |\n"
+        "| Second row | More words |\n",
+        doc);
+
+    fake::FakeTextEngine engine;
+    layout::LayoutInput in;
+    in.doc = &doc;
+    in.metrics = &kM;
+    in.palette = &kPal;
+    in.contentWidth = kW;
+    in.zoom = 1.0f;
+    in.editing = false;
+    in.engine = &engine;
+    const layout::DocumentLayout laid = layout::LayoutDocument(in);
+
+    const layout::LaidBlock* table = nullptr;
+    for (const layout::LaidBlock& b : laid.blocks) {
+        if (b.table) table = &b;
+    }
+    EXPECT_TRUE(table != nullptr);
+    if (!table) return;
+
+    // The record holds one clipped run of lines per cell.
+    size_t texts = 0;
+    size_t pushes = 0;
+    size_t pops = 0;
+    for (const display::Item& item : table->table->cellsText.items) {
+        if (std::holds_alternative<display::Text>(item)) ++texts;
+        if (std::holds_alternative<display::PushClip>(item)) ++pushes;
+        if (std::holds_alternative<display::PopClip>(item)) ++pops;
+    }
+    EXPECT_TRUE(texts >= 4);
+    EXPECT_EQ(pushes, pops);
+    EXPECT_EQ(pushes, size_t(6));  // two header cells and four body cells
+
+    // And the page's own items carry them, so a replay draws the table.
+    const auto bands = layout::PaginateDocument(laid, layout::PrintPage());
+    EXPECT_TRUE(!bands.empty());
+    if (bands.empty()) return;
+    const display::DisplayList page = layout::PageItems(laid, bands[0]);
+    size_t pageTexts = 0;
+    for (const display::Item& item : page.items) {
+        if (std::holds_alternative<display::Text>(item)) ++pageTexts;
+    }
+    EXPECT_TRUE(pageTexts >= texts);
+}

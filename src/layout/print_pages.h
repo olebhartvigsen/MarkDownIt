@@ -50,6 +50,14 @@ struct PagePlacement {
 
 PagePlacement PlacementForBand(const PrintPage& page, const PrintBand& band);
 
+// The items one page draws: the band's slice of the page list, plus the words
+// of every table the band touches. The display list carries a table's washes
+// and hairlines but not its cell text, because the window paints that from the
+// table's own record; a page replay has no window, so the record's copy comes
+// with it. Clips are kept in pairs, as everywhere.
+display::DisplayList PageItems(const DocumentLayout& laid,
+                               const PrintBand& band);
+
 // Cuts the laid out document into bands of ContentHeight(). A block that
 // fits a page but not the room left on this one starts the next page. A
 // block taller than a page is cut, and continues above the next band.

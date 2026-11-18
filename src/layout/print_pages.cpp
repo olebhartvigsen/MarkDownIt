@@ -143,6 +143,23 @@ std::vector<PrintBand> PaginateDocument(const DocumentLayout& laid,
     return bands;
 }
 
+display::DisplayList PageItems(const DocumentLayout& laid,
+                               const PrintBand& band) {
+    display::DisplayList out = SliceForBand(laid.list, band);
+    for (const LaidBlock& block : laid.blocks) {
+        if (!block.table) continue;
+        // A table that touches the band brings its words; the paper clip cuts
+        // them where the page ends, the same way it cuts a paragraph's line.
+        if (block.y >= band.bottom || block.y + block.height <= band.top) {
+            continue;
+        }
+        if (block.table->cellsText.items.empty()) continue;
+        out.items.insert(out.items.end(), block.table->cellsText.items.begin(),
+                         block.table->cellsText.items.end());
+    }
+    return out;
+}
+
 PagePlacement PlacementForBand(const PrintPage& page, const PrintBand& band) {
     PagePlacement place;
     place.x = page.margin;
