@@ -197,6 +197,10 @@ namespace print_mac {
 bool PrintDocument(NSWindow* window, platform::MacRenderer& renderer,
                    const Document& document, const std::string& title) {
     if (!window) return false;
+    // One panel at a time: beginning a second sheet on a window that already
+    // has one is an AppKit exception, and Command-P pressed twice is not a
+    // reason to abort the app.
+    if ([window attachedSheet] != nil || g_panelDriver != nil) return false;
     // A copy of the shared info, so the panel's own settings start from the
     // system defaults and the app never writes into them. The view reads the
     // sheet's paper from this same object.
