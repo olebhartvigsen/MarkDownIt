@@ -29,8 +29,9 @@ namespace print_mac {
 // Opens the system print panel for the window and prints the document, one
 // band per page. The panel's paper decides the page; the view fills the
 // sheet's imageable area edge to edge and the page model keeps its own
-// margin, so no second scale factor ever enters the drawing. Returns false
-// when the user cancels.
+// margin, so no second scale factor ever enters the drawing. The operation
+// owns the panel, so a printer, a Save as PDF destination and a cancel all go
+// through AppKit. Returns false when a panel is already up.
 bool PrintDocument(NSWindow* window, platform::MacRenderer& renderer,
                    const Document& document, const std::string& title);
 

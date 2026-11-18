@@ -99,10 +99,11 @@ rule for turning them into a page: the page's margin, with the band's own
 distance from the document's top taken back out. Both painters apply it, so a
 page the two ports print is the same page.
 
-macOS shows the print panel itself, as a sheet on the window, and runs the
-operation with its own panel switched off once the sheet returns Print. The
-operation's own `runOperationModalForWindow:` needed a delegate and a selector
-to report to, and with neither AppKit put nothing on the screen at all.
+macOS lets the operation own its panel, shown as a sheet on the window: choosing
+a printer, choosing Save as PDF and cancelling are AppKit's business, and the
+pages go wherever the reader points them. The run needs a delegate and a
+selector to report to; asked to run with neither, AppKit put nothing on the
+screen at all.
 
 Windows opens the classic print panel (`PrintDlg`) and prints into an
 `ID2D1DCRenderTarget` bound to the printer's DC. The target carries the printer's dpi, so one seam unit is

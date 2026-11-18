@@ -113,37 +113,29 @@ int InkOnPage(CGPDFDocumentRef pdf, size_t pageNumber) {
 // call that starts it, so the driver is held here until the panel has ended.
 static MdPrintPanelDriver* g_panelDriver = nil;
 
-// The panel's delegate. The operation is held here for as long as the sheet is
-// up, so the settings the reader chooses land in the operation that prints,
-// and the printing happens when the panel says so. The panel is shown by hand
-// (see PrintDocument), so AppKit never runs it and nobody else would.
-@interface MdPrintPanelDriver : NSObject {
-@public
-    NSPrintOperation* operation_;
-}
-- (void)panelDidEnd:(NSPrintPanel*)panel
-         returnCode:(NSInteger)code
-        contextInfo:(void*)info;
+// Where the operation reports that its sheet is done. The run does the whole
+// job: the panel, the printer, a Save as PDF destination and a cancel are all
+// AppKit's, so nothing here has to carry the reader's answers from one object
+// to another.
+@interface MdPrintPanelDriver : NSObject
+- (void)printOperationDidRun:(NSPrintOperation*)operation
+                     success:(BOOL)success
+                 contextInfo:(void*)info;
 @end
 
 @implementation MdPrintPanelDriver
 
-- (void)panelDidEnd:(NSPrintPanel*)panel
-         returnCode:(NSInteger)code
-        contextInfo:(void*)info {
-    (void)panel;
+- (void)printOperationDidRun:(NSPrintOperation*)operation
+                     success:(BOOL)success
+                 contextInfo:(void*)info {
+    (void)operation;
+    (void)success;
     (void)info;
-    // The anchor below is the only thing holding this object, so the local
-    // strong reference keeps it alive to the end of the method.
+    // The anchor is the only thing holding this object, so the local strong
+    // reference keeps it alive to the end of the method.
     __strong MdPrintPanelDriver* keepAlive = self;
     (void)keepAlive;
-    NSPrintOperation* operation = operation_;
-    operation_ = nil;
     g_panelDriver = nil;
-    // A cancelled panel is not an error: the reader said no, and there is
-    // nothing to undo.
-    if (!operation || code == NSModalResponseCancel) return;
-    [operation runOperation];
 }
 
 @end
@@ -272,29 +264,27 @@ bool PrintDocument(NSWindow* window, platform::MacRenderer& renderer,
     [info setVerticallyCentered:NO];
     NSPrintOperation* operation =
         [NSPrintOperation printOperationWithView:view printInfo:info];
-    // The operation never asks for itself: the sheet below is the panel, and
-    // it writes its answers into this same printInfo. Asking twice would
-    // print the second answer.
-    [operation setShowsPrintPanel:NO];
+    // The operation owns the panel: choosing a printer, choosing Save as PDF
+    // and cancelling all land in AppKit's hands, and the pages go wherever the
+    // reader pointed them.
+    [operation setShowsPrintPanel:YES];
     [operation setShowsProgressPanel:YES];
     if (!title.empty()) {
         NSString* job = [NSString stringWithUTF8String:title.c_str()];
         if (job) [operation setJobTitle:job];
     }
-    // The panel is shown by hand as a sheet. The operation's own run needed a
-    // delegate and a selector to report to, and with neither AppKit showed
-    // nothing at all: the reader pressed Print and no panel came up.
+    // The sheet does not own its delegate, and the run outlives this call, so
+    // the driver is held here until the operation has reported back. Asked to
+    // run with no delegate and no selector, AppKit put nothing on screen at
+    // all: the reader pressed Print and no panel came up.
     MdPrintPanelDriver* driver = [[MdPrintPanelDriver alloc] init];
-    driver->operation_ = operation;
-    // The sheet does not own its delegate, and printing outlives this call,
-    // so the driver is held here until the panel has ended.
     g_panelDriver = driver;
-    [[operation printPanel]
-        beginSheetWithPrintInfo:info
-                 modalForWindow:window
-                       delegate:driver
-                 didEndSelector:@selector(panelDidEnd:returnCode:contextInfo:)
-                    contextInfo:nullptr];
+    [operation
+        runOperationModalForWindow:window
+                          delegate:driver
+                    didRunSelector:
+                        @selector(printOperationDidRun:success:contextInfo:)
+                       contextInfo:nullptr];
     return true;
 }
 

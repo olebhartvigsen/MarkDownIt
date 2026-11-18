@@ -1601,7 +1601,13 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             printItem ? ([printItem isEnabled] ? 1 : 0) : -1,
             target ? [[[target class] description] UTF8String] : "(none)",
             [NSApp isActive] ? 1 : 0);
-        [self printDocument:nil];
+        // The command answers with a sheet and the call that starts it does
+        // not return until the sheet does, so it is started from the next turn
+        // of the run loop: the walk has to return for the camera to see it,
+        // and the sheet is taken down before the walk moves on.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self printDocument:nil];
+        });
         dispatch_after(
             dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4 * NSEC_PER_SEC)),
             dispatch_get_main_queue(), ^{
