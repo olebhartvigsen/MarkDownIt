@@ -133,7 +133,7 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_PDF="$QA_DIR/print-pages.pdf" MARKDOWNIT_QA_PRINT_PDF="$QA_DIR/print-ink.pdf" MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-click,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,print-pages,print-file,shared,csv-pinned,cmd-z,print-panel" "$BIN" "$DOC" &
+    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_PDF="$QA_DIR/print-pages.pdf" MARKDOWNIT_QA_PRINT_PDF="$QA_DIR/print-ink.pdf" MARKDOWNIT_QA_TRACE_PRINT=1 MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-click,welcome-scrolled,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,print-pages,print-file,shared,csv-pinned,cmd-z,print-panel" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0

@@ -215,13 +215,28 @@ static MdPrintPanelDriver* g_panelDriver = nil;
     if (index >= (NSInteger)bands_.size()) {
         index = (NSInteger)bands_.size() - 1;
     }
-    // The view's origin is the document's and AppKit clips the page where it
-    // sits in the view, so the slice is drawn at the page's own slot. Moving
-    // the page to the origin instead drew it above the clip, which left every
-    // page after the first blank.
-    print_mac::PaintPage(cg, page_,
-                         layout::SliceForBand(laid_->list, bands_[(size_t)index]),
-                         (CGFloat)index * pageH);
+    const display::DisplayList slice =
+        layout::SliceForBand(laid_->list, bands_[(size_t)index]);
+    // What AppKit actually asks for, while the walk asks: the rect it clips,
+    // the index that becomes of it, and the transform it set up. Guessing at
+    // this is how a page ends up blank.
+    if (const char* dbg = getenv("MARKDOWNIT_QA_TRACE_PRINT")) {
+        if (dbg[0]) {
+            const CGAffineTransform m = CGContextGetCTM(cg);
+            platform::TraceMac(
+                "qa print draw: dirty=%.1f,%.1f,%.1f,%.1f index=%d bands=%zu "
+                "items=%zu ctm=%.3f,%.3f,%.3f,%.3f,%.1f,%.1f "
+                "bounds=%.1f,%.1f",
+                (double)NSMinX(dirtyRect), (double)NSMinY(dirtyRect),
+                (double)NSWidth(dirtyRect), (double)NSHeight(dirtyRect),
+                (int)index, bands_.size(), slice.items.size(), m.a, m.b, m.c,
+                m.d, m.tx, m.ty, (double)NSWidth([self bounds]),
+                (double)NSHeight([self bounds]));
+        }
+    }
+    // The view's origin is the document's, so the page is drawn at its own
+    // slot and the transform AppKit set up carries it onto the sheet.
+    print_mac::PaintPage(cg, page_, slice, (CGFloat)index * pageH);
 }
 
 @end
