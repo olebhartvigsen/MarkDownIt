@@ -37,6 +37,7 @@
 #include "print_winrt.h"
 
 #include "print_contract_abi.h"
+#include "windows/render_target_win.h"
 
 #include <d2d1_1.h>
 #include <d2d1_1helper.h>
@@ -532,12 +533,15 @@ HRESULT PrintSourceWin::PrintPages(
 
     // The pipeline rasterizes whatever it cannot pass through as
     // vectors at this resolution; the description carries the printer's
-    // own, and a sane default stands in when it does not.
+    // own, and a sane default stands in when it does not. The enum
+    // members are set as their zero values (the default font subsetting,
+    // the simple color space), spelled through the types: this SDK names
+    // the members only through its helpers.
     D2D1_PRINT_CONTROL_PROPERTIES props = {};
     props.rasterDPI = rasterDpi > 0 ? static_cast<FLOAT>(rasterDpi)
                                     : 150.0f;
-    props.fontSubset = D2D1_PRINT_FONT_SUBSET_DEFAULT;
-    props.colorSpace = D2D1_COLOR_SPACE_SIMPLE;
+    props.fontSubset = static_cast<D2D1_PRINT_FONT_SUBSET_MODE>(0);
+    props.colorSpace = static_cast<D2D1_COLOR_SPACE>(0);
 
     ComPtr<IWICImagingFactory> wic;
     HRESULT hr = CoCreateInstance(
@@ -632,6 +636,12 @@ bool ModernPrintEnabled() {
 bool RegisterWindow(HWND window) {
     if (!ModernPrintEnabled() || window == nullptr) return false;
     try {
+        // The activation below needs an apartment. Most app threads have
+        // one by the time they get here, but this runs from WM_CREATE,
+        // before anything else in the window touches COM, so the single
+        // threaded apartment is asked for explicitly. S_FALSE just says
+        // it was already there.
+        winrt::init_apartment(winrt::apartment_type::single_threaded);
         std::lock_guard<std::mutex> lock(g_state);
         if (g_registration.live) return g_registration.window == window;
 
@@ -733,7 +743,7 @@ bool RegisterWindow(HWND window) {
         });
 
         g_registration.window = window;
-        g_registration.interop = interop;
+        g_registration.interop = interop.get();
         g_registration.manager = manager;
         g_registration.live = true;
         return true;
