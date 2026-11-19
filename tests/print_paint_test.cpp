@@ -8,6 +8,14 @@
 #include "layout/display_player.h"
 #include "layout/print_pages.h"
 
+// The house DrawText gotcha: print_pages.h reaches theme.h, whose guarded
+// Windows block pulls windows.h in, and its DrawText macro would rename a
+// later FakeTarget::DrawText to DrawTextW and break the override. The
+// seam is read above, in the includes; the macro goes before the recorder.
+#ifdef DrawText
+#undef DrawText
+#endif
+
 #include <cstdarg>
 #include <cstdio>
 #include <string>
