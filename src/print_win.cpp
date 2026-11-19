@@ -34,7 +34,6 @@
 // renderer.h undefines it before the seam is read, so the render target's
 // override matches the seam it overrides.
 #include "renderer.h"
-#include "layout/display_player.h"
 #include "layout/print_pages.h"
 #include "windows/render_target_win.h"
 
@@ -54,19 +53,22 @@ float SeamFromPixels(float pixels, int dpi) {
     return pixels * 96.0f / static_cast<float>(dpi);
 }
 
-// The printable area in seam units, with the margin the page keeps. The
-// unprintable edge of the sheet stays outside the layout, so no glyph is laid
-// where the printer cannot reach it, and the margin shrinks on a small sheet
+// The printable area in seam units, with the margin the page keeps. A
+// plain DC reports the printable rectangle as its whole page and no
+// sheet beyond it, so the description passes the rectangle twice and
+// the shared builder applies the margin rule: the unprintable edge of
+// the sheet stays outside the layout, so no glyph is laid where the
+// printer cannot reach it, and the margin shrinks on a small sheet
 // instead of eating the whole page.
 layout::PrintPage PageFromDC(HDC dc) {
     const int dpiX = GetDeviceCaps(dc, LOGPIXELSX);
     const int dpiY = GetDeviceCaps(dc, LOGPIXELSY);
-    layout::PrintPage page;
-    page.width = SeamFromPixels(static_cast<float>(GetDeviceCaps(dc, HORZRES)), dpiX);
-    page.height = SeamFromPixels(static_cast<float>(GetDeviceCaps(dc, VERTRES)), dpiY);
-    const float smallest = (std::min)(page.width, page.height);
-    page.margin = (std::min)(75.6f, (std::max)(0.0f, smallest * 0.15f));
-    return page;
+    const float width =
+        SeamFromPixels(static_cast<float>(GetDeviceCaps(dc, HORZRES)), dpiX);
+    const float height =
+        SeamFromPixels(static_cast<float>(GetDeviceCaps(dc, VERTRES)), dpiY);
+    return layout::PrintPageFromDescription(width, height, 0.0f, 0.0f,
+                                            width, height);
 }
 
 // One document through one printer DC. The page model, the cut and the
@@ -165,19 +167,16 @@ bool PrintToDC(HDC dc, Renderer& renderer, IDWriteFactory* dwrite,
             break;
         }
         target->BeginDraw();
-        // The margin is the page's own; the printer's resolution is the
-        // scale, so a seam unit is perSeam device pixels, which is 1/96 inch
-        // on paper. Clear is in device space, so it fills the sheet with
+        // The printer's resolution is the scale, so a seam unit is perSeam
+        // device pixels, which is 1/96 inch on paper. The page's margin is
+        // not here: the shared painter places the band, one rule for every
+        // medium. Clear is in device space, so it fills the sheet with
         // white whatever the transform says.
-        const layout::PagePlacement place =
-            layout::PlacementForBand(page, bands[i]);
-        target->SetTransform(
-            D2D1::Matrix3x2F::Scale(perSeamX, perSeamY) *
-            D2D1::Matrix3x2F::Translation(place.x, place.y));
+        target->SetTransform(D2D1::Matrix3x2F::Scale(perSeamX, perSeamY));
         target->Clear(D2D1::ColorF(D2D1::ColorF::White));
         // The factory with it, or the text formats have no faces to draw.
         platform::D2DTarget seam(target, dwrite);
-        display::Play(layout::PageItems(*laid, bands[i]), &seam);
+        layout::PaintBandPage(seam, *laid, page, bands, i);
         hr = target->EndDraw();
         if (FAILED(hr)) {
             ok = false;

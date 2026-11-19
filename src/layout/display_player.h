@@ -28,6 +28,16 @@ void Play(const DisplayList& list, platform::RenderTarget* target);
 void Play(const DisplayList& list, platform::RenderTarget* target,
           const ImageResolver& imageResolver);
 
+// Plays the list with every item's geometry shifted by (dx, dy) before
+// it reaches the target. This is the print page placement living in the
+// player: the DC driver, the DXGI preview, the command lists and the pdfio
+// writer all draw moved items instead of each target shifting its own way,
+// so the one rule (layout::PlacementForBand) has one executor. The shift
+// is exact addition; nothing is scaled, clipped or resolved differently,
+// and a (0, 0) origin is the plain Play above.
+void PlayWithOrigin(const DisplayList& list, platform::RenderTarget* target,
+                    float dx, float dy);
+
 }  // namespace display
 
 #endif  // MARKDOWNIT_SRC_LAYOUT_DISPLAY_PLAYER_H_

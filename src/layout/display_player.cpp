@@ -122,8 +122,8 @@ void PlayRoute(platform::RenderTarget* target, const StrokePolygon& item) {
 // The single replay switch. Every alternative in list order, each one
 // with the seam calls it stands for; the resolver hook is the only
 // state the walk keeps besides the target itself.
-void PlayAll(const DisplayList& list, platform::RenderTarget* target,
-             const ImageResolver* resolver) {
+void PlayItems(const DisplayList& list, platform::RenderTarget* target,
+               const ImageResolver* resolver) {
     for (const Item& item : list.items) {
         if (const auto* v = std::get_if<FillRect>(&item))
             target->FillRect(v->rect, v->color);
@@ -163,6 +163,75 @@ void PlayAll(const DisplayList& list, platform::RenderTarget* target,
         else if (std::holds_alternative<PopClip>(item))
             target->PopClip();
     }
+}
+
+// Translation of one alternative. One overload per item, no generic
+// fallback, for the same reason ItemBounds has none: a new kind of
+// drawing stops compiling until its place on paper is decided here.
+void Translate(FillRect& v, float dx, float dy) {
+    v.rect.x += dx; v.rect.y += dy;
+}
+void Translate(FillRoundedRect& v, float dx, float dy) {
+    v.rect.x += dx; v.rect.y += dy;
+}
+void Translate(FillRoundedRectSides& v, float dx, float dy) {
+    v.rect.x += dx; v.rect.y += dy;
+}
+void Translate(StrokeRect& v, float dx, float dy) {
+    v.rect.x += dx; v.rect.y += dy;
+}
+void Translate(StrokeRoundedRect& v, float dx, float dy) {
+    v.rect.x += dx; v.rect.y += dy;
+}
+void Translate(StrokeLine& v, float dx, float dy) {
+    v.x0 += dx; v.y0 += dy; v.x1 += dx; v.y1 += dy;
+}
+void Translate(StrokePolygon& v, float dx, float dy) {
+    for (Point& p : v.points) { p.x += dx; p.y += dy; }
+}
+void Translate(FillEllipse& v, float dx, float dy) {
+    v.rect.x += dx; v.rect.y += dy;
+}
+void Translate(StrokeEllipse& v, float dx, float dy) {
+    v.rect.x += dx; v.rect.y += dy;
+}
+void Translate(FillPolygon& v, float dx, float dy) {
+    for (Point& p : v.points) { p.x += dx; p.y += dy; }
+}
+void Translate(PieSlice& v, float dx, float dy) {
+    v.bounds.x += dx; v.bounds.y += dy;
+}
+void Translate(Text& v, float dx, float dy) {
+    v.x += dx; v.top += dy;
+}
+void Translate(Image& v, float dx, float dy) {
+    v.rect.x += dx; v.rect.y += dy;
+}
+void Translate(PushClip& v, float dx, float dy) {
+    v.rect.x += dx; v.rect.y += dy;
+}
+void Translate(PopClip&, float, float) {}
+
+// Whole-list translation, for the print placement. The unshifted walk is
+// untouched above; a shifted play copies once and replays, which costs
+// one page's worth of items, the same class of work PageItems already
+// spends on its slice.
+void PlayAll(const DisplayList& list, platform::RenderTarget* target,
+             const ImageResolver* resolver, float dx, float dy) {
+    if (dx == 0.0f && dy == 0.0f) {
+        PlayItems(list, target, resolver);
+        return;
+    }
+    DisplayList moved;
+    moved.width = list.width;
+    moved.height = list.height;
+    moved.items.reserve(list.items.size());
+    for (const Item& item : list.items) {
+        Item one = item;
+        std::visit([&](auto& v) { Translate(v, dx, dy); }, one);
+        moved.items.push_back(std::move(one));
+    }
+    PlayItems(moved, target, resolver);
 }
 
 // Bounds ---------------------------------------------------------------
@@ -233,12 +302,17 @@ Rect ItemBounds(const Item& item) {
 }
 
 void Play(const DisplayList& list, platform::RenderTarget* target) {
-    PlayAll(list, target, nullptr);
+    PlayAll(list, target, nullptr, 0.0f, 0.0f);
 }
 
 void Play(const DisplayList& list, platform::RenderTarget* target,
           const ImageResolver& imageResolver) {
-    PlayAll(list, target, &imageResolver);
+    PlayAll(list, target, &imageResolver, 0.0f, 0.0f);
+}
+
+void PlayWithOrigin(const DisplayList& list, platform::RenderTarget* target,
+                    float dx, float dy) {
+    PlayAll(list, target, nullptr, dx, dy);
 }
 
 }  // namespace display

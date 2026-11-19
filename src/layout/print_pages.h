@@ -70,6 +70,31 @@ std::vector<PrintBand> PaginateDocument(const DocumentLayout& laid,
 display::DisplayList SliceForBand(const display::DisplayList& list,
                                   const PrintBand& band);
 
+// Paints one band as one page onto any seam target: the band's items,
+// placed by PlacementForBand and drawn by the shared player. The DC
+// driver, the DXGI preview and the command lists come here, so the
+// placement rule has one executor across the float pipelines. The pdfio
+// writer is the one medium outside: its stream coordinates are
+// golden-backed %.6f bytes, and a float round-trip of the placement
+// moves the sixth decimal, so that target adds PlacementForBand in
+// double inside its own MapX/MapY and keeps its bytes as they are.
+void PaintBandPage(platform::RenderTarget& target,
+                   const DocumentLayout& laid, const PrintPage& page,
+                   const std::vector<PrintBand>& bands, size_t index);
+
+// The page from a print panel's description: the sheet's own size, and
+// the imageable rectangle the printer can actually reach, both in seam
+// units, measured from the sheet's top left. The margin keeps the
+// unprintable strip outside the layout: the widest of the four edges
+// around the imageable area decides it, and where the sheet has room the
+// 2-cm rule stands, shrinking on a small sheet as the paper allows. A
+// driver that reports no strip at all passes the sheet twice and gets
+// the DC path's own margin rule, the same inset today's builds draw.
+PrintPage PrintPageFromDescription(float sheetWidth, float sheetHeight,
+                                   float imageableX, float imageableY,
+                                   float imageableWidth,
+                                   float imageableHeight);
+
 }  // namespace layout
 
 #endif  // MARKDOWNIT_SRC_LAYOUT_PRINT_PAGES_H_

@@ -342,6 +342,7 @@ if(BUILD_TESTS AND APPLE)
         tests/code_table_layout_test.cpp
         tests/svg_mermaid_layout_test.cpp
         tests/display_player_test.cpp
+        tests/print_paint_test.cpp
         tests/print_pages_test.cpp
         tests/print_pdf_test.cpp
         tests/mermaid_model_test.cpp
@@ -475,6 +476,7 @@ elseif(BUILD_TESTS)
         tests/code_table_layout_test.cpp
         tests/svg_mermaid_layout_test.cpp
         tests/display_player_test.cpp
+        tests/print_paint_test.cpp
         tests/print_pages_test.cpp
         tests/print_pdf_test.cpp
         # The Windows renderer test (batch 5.3): the selection wash

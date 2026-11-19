@@ -17,6 +17,8 @@
 
 #include "layout/print_pages.h"
 
+#include "layout/display_player.h"
+
 #include <algorithm>
 #include <limits>
 #include <variant>
@@ -220,6 +222,40 @@ display::DisplayList SliceForBand(const display::DisplayList& list,
         if (inside) out.items.push_back(item);
     }
     return out;
+}
+
+void PaintBandPage(platform::RenderTarget& target,
+                   const DocumentLayout& laid, const PrintPage& page,
+                   const std::vector<PrintBand>& bands, size_t index) {
+    const PagePlacement place = PlacementForBand(page, bands[index]);
+    display::PlayWithOrigin(PageItems(laid, bands[index]), &target,
+                           place.x, place.y);
+}
+
+PrintPage PrintPageFromDescription(float sheetWidth, float sheetHeight,
+                                   float imageableX, float imageableY,
+                                   float imageableWidth,
+                                   float imageableHeight) {
+    PrintPage page;
+    page.width = sheetWidth;
+    page.height = sheetHeight;
+    // The strip around the imageable area, each side of it. The widest
+    // side is the least margin that keeps the layout inside the rectangle
+    // the printer can reach, whatever the tray or the driver did.
+    const float left = imageableX;
+    const float top = imageableY;
+    const float right = sheetWidth - imageableX - imageableWidth;
+    const float bottom = sheetHeight - imageableY - imageableHeight;
+    float edge = (std::max)((std::max)(left, top),
+                           (std::max)(right, bottom));
+    edge = (std::max)(edge, 0.0f);
+    // The 2-cm inset the DC path draws, shrinking on a small sheet. A
+    // sheet with no reported strip keeps exactly that rule, and a sheet
+    // whose unprintable edge is wider takes the edge instead.
+    const float smallest = (std::min)(sheetWidth, sheetHeight);
+    const float inset = (std::min)(75.6f, (std::max)(0.0f, smallest * 0.15f));
+    page.margin = (std::max)(edge, inset);
+    return page;
 }
 
 }  // namespace layout
