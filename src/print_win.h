@@ -25,9 +25,13 @@ namespace print_win {
 // Opens the print panel for the window, lays the document out for the paper
 // the user picked, and prints one page per band. Returns false when the panel
 // is cancelled, when the printer cannot be opened, or when a page fails to
-// draw; cancelling is not an error and says nothing to the user.
+// draw; cancelling is not an error and says nothing to the user, and the
+// message stays empty. A drawn job that failed leaves the reason in message
+// (UTF-8) for the caller's MessageBox, because a print that dies quietly
+// reads as "this app cannot print".
 bool PrintDocument(HWND owner, Renderer& renderer, const Document& document,
-                   const std::wstring& title);
+                   const std::wstring& title,
+                   std::string* message = nullptr);
 
 }  // namespace print_win
 

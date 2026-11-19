@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include "office_model.h"
 
@@ -31,5 +32,12 @@ struct PdfExportOptions {
 bool PdfExport(const DocModel& doc, const PdfExportOptions& opt,
                std::string& out_bytes, CompatReport& report, std::string& error,
                int* page_count = nullptr);
+
+// Clean UTF-8 text to the WinAnsi (CP1252) set the base-14 fonts show,
+// dropping what they cannot render and counting the losses instead of
+// writing a silent '?'. The print writer (src/print_pdf.cpp) writes the
+// same base-14 fonts, so the one conversion lives here, with the fonts
+// it belongs to, rather than twice.
+std::string CleanWinAnsiText(const std::string& text, size_t& dropped);
 
 }  // namespace office

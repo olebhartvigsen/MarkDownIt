@@ -37,6 +37,7 @@ set(MARKDOWNIT_CORE_SOURCES
     src/layout/svg_mermaid_layout.cpp
     src/layout/display_player.cpp
     src/layout/print_pages.cpp
+    src/print_pdf.cpp
     src/layoutcache.cpp
     src/editcontroller.cpp
     src/documentcontroller.cpp

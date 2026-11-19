@@ -44,6 +44,10 @@ $states = @("doc", "find", "edit", "outline", "source", "lower", "end", "tail", 
             "print-pages", "shared", "csv-pinned")
 $env:MARKDOWNIT_QA_STATES = ($states -join ",")
 $env:MARKDOWNIT_QA_LOG = $log
+# The print-pages state writes the document's print pages as a PDF here,
+# the same file the mac smoke writes, so the shared writer is exercised on
+# both runners and the assertions below hold the pages it made.
+$env:MARKDOWNIT_QA_PDF = (Resolve-Path $OutDir).Path + "\print-pages.pdf"
 
 # The app opens the document it was given on the command line.
 $exePath = (Resolve-Path $Exe).Path
@@ -128,6 +132,34 @@ if ($missing.Count -gt 0 -or -not $finished) {
 }
 
 Write-Host "windows smoke: captured $($seen.Count) states (exit $exitText)"
+
+# Pagination: the print-pages state wrote the print PDF through the shared
+# writer. More than one page and a file with bytes are what the mac smoke
+# asserts on the same fixture; a writer that dies quietly fails here
+# instead of passing as a missing file.
+if (Test-Path $log) {
+    $printLine = Get-Content $log | Where-Object {
+        $_ -match "^qa print-pages:"
+    } | Select-Object -First 1
+    $printPages = if ($printLine) {
+        ([regex]"pages=(\d+)").Match($printLine).Groups[1].Value
+    } else { "" }
+    if (-not $printPages) {
+        Write-Host "windows smoke FAILED: the print-pages state reported no page count"
+        exit 1
+    }
+    if ([int]$printPages -lt 2) {
+        Write-Host "windows smoke FAILED: the showcase document paginated into $printPages page(s)"
+        Write-Host $printLine
+        exit 1
+    }
+    if (-not (Test-Path $env:MARKDOWNIT_QA_PDF) -or
+        -not ((Get-Item $env:MARKDOWNIT_QA_PDF).Length -gt 0)) {
+        Write-Host "windows smoke FAILED: the print-pages state wrote no PDF"
+        Write-Host $printLine
+        exit 1
+    }
+}
 
 # The walk log holds what each state reported (the pinned band's height among
 # them); the CI log is the only place a Windows-only difference can be read.

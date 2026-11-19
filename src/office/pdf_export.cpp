@@ -1036,6 +1036,12 @@ void AddWarning(CompatReport& report, const std::string& feature, const std::str
 
 }  // namespace
 
+// Exposed for the print writer (src/print_pdf.cpp): the same text cleaning
+// every pdfio writer needs, in one place. See pdf_export.h.
+std::string CleanWinAnsiText(const std::string& text, size_t& dropped) {
+    return CleanText(text, dropped);
+}
+
 bool PdfExport(const DocModel& doc, const PdfExportOptions& opt, std::string& out_bytes,
                CompatReport& report, std::string& error, int* page_count) {
     out_bytes.clear();

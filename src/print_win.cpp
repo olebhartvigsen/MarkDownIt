@@ -1,5 +1,20 @@
 // Printing on Windows: the panel, the printer DC, and one band per page.
 // Plan: .hermes/plans/2026-11-15_204703-printing.md
+//
+// The print dialog a PDF needs is not this one: the panel lists the
+// installed printers, and Microsoft Print to PDF is one of them, but that
+// route depends on a GDI driver actually drawing the pages. The reliable
+// PDF on Windows is the preview window's Save as PDF, which writes the
+// same bands through the shared pdfio writer (src/print_pdf.cpp). This
+// job stays the general printer path.
+//
+// Three hard rules here:
+// - SOFTWARE rendering, never DEFAULT: a printer DC has no hardware path,
+//   and the plan's risk 2 names a driver that refuses the other kind.
+// - BindDC per page, after StartPage: a driver may reset its DC between
+//   pages, and each page binds the same full page rectangle.
+// - Every failure is spoken: a job that dies quietly looks exactly like
+//   "cannot print", to the reader and to us. The caller shows the message.
 
 #include "print_win.h"
 
@@ -23,6 +38,13 @@
 namespace print_win {
 namespace {
 
+std::string HresultText(const char* what, HRESULT code) {
+    char buf[160];
+    snprintf(buf, sizeof(buf), "%s (0x%08lX)", what,
+             static_cast<unsigned long>(code));
+    return std::string(buf);
+}
+
 // Seam units per device pixel at the printer's own resolution.
 float SeamFromPixels(float pixels, int dpi) {
     if (dpi <= 0) return pixels;
@@ -44,51 +66,59 @@ layout::PrintPage PageFromDC(HDC dc) {
     return page;
 }
 
-// One document through one printer DC. The page model, the cut and the slice
-// are the shared ones; this function owns the job, the pages and the target.
+// One document through one printer DC. The page model, the cut and the
+// slice are the shared ones; this function owns the job, the pages and the
+// target, and it says why it failed instead of returning quietly.
 bool PrintToDC(HDC dc, Renderer& renderer, const Document& document,
-               const std::wstring& title) {
+               const std::wstring& title, std::string* message) {
+    auto fail = [message](std::string text) {
+        if (message != nullptr) *message = std::move(text);
+        return false;
+    };
+
     const layout::PrintPage page = PageFromDC(dc);
     if (!(page.ContentWidth() > 0.0f) || !(page.ContentHeight() > 0.0f)) {
-        return false;
+        return fail("the printer reported a paper size with no printable area");
     }
 
     std::shared_ptr<const layout::DocumentLayout> laid =
         renderer.PrintLayout(document, page.ContentWidth());
-    if (!laid) return false;
+    if (!laid) {
+        return fail("the document could not be laid out for the printer's paper");
+    }
     const std::vector<layout::PrintBand> bands =
         layout::PaginateDocument(*laid, page);
-    if (bands.empty()) return false;
+    if (bands.empty()) {
+        return fail("the document produced no pages for this paper");
+    }
 
     // The paper's own resolution, so a seam unit lands on paper at 1/96 inch
     // without a scale in the drawing code (the target's dpi does the work).
     const int dpiX = GetDeviceCaps(dc, LOGPIXELSX);
     const int dpiY = GetDeviceCaps(dc, LOGPIXELSY);
+    RECT area = {0, 0, GetDeviceCaps(dc, HORZRES), GetDeviceCaps(dc, VERTRES)};
 
     ID2D1Factory* factory = nullptr;
-    if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &factory)) ||
-        !factory) {
-        return false;
+    HRESULT hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &factory);
+    if (FAILED(hr) || !factory) {
+        return fail(HresultText("Direct2D could not start", hr));
     }
 
-    RECT area = {0, 0, GetDeviceCaps(dc, HORZRES), GetDeviceCaps(dc, VERTRES)};
+    // Software on purpose: a printer DC has no hardware path, and DEFAULT
+    // picks one on machines where it costs a driver round trip that a spool
+    // can refuse. The plan's risk 2 lives here.
     D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
-        D2D1_RENDER_TARGET_TYPE_DEFAULT,
+        D2D1_RENDER_TARGET_TYPE_SOFTWARE,
         D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
                           D2D1_ALPHA_MODE_IGNORE),
         static_cast<float>(dpiX), static_cast<float>(dpiY),
         D2D1_RENDER_TARGET_USAGE_NONE, D2D1_FEATURE_LEVEL_DEFAULT);
     ID2D1DCRenderTarget* target = nullptr;
-    const HRESULT created = factory->CreateDCRenderTarget(&props, &target);
-    if (FAILED(created) || !target) {
+    hr = factory->CreateDCRenderTarget(&props, &target);
+    if (FAILED(hr) || !target) {
         factory->Release();
-        return false;
-    }
-    const HRESULT bound = target->BindDC(dc, &area);
-    if (FAILED(bound)) {
-        target->Release();
-        factory->Release();
-        return false;
+        return fail(HresultText("the printer would not take a drawing surface",
+                                 hr));
     }
     target->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
     // Grayscale, never ClearType: subpixel text relies on the display's own
@@ -101,9 +131,25 @@ bool PrintToDC(HDC dc, Renderer& renderer, const Document& document,
     info.lpszDocName = jobName.c_str();
 
     bool ok = StartDocW(dc, &info) > 0;
+    if (!ok) {
+        target->Release();
+        factory->Release();
+        return fail("the printer refused the job (the queue may be paused, "
+                    "or the driver rejected the document)");
+    }
+
     for (size_t i = 0; ok && i < bands.size(); ++i) {
         if (StartPage(dc) <= 0) {
             ok = false;
+            fail("the printer stopped accepting pages");
+            break;
+        }
+        // Bind inside the page: a driver is free to reset its DC between
+        // pages, and every page binds the same whole sheet rectangle.
+        hr = target->BindDC(dc, &area);
+        if (FAILED(hr)) {
+            ok = false;
+            fail(HresultText("the printer's page could not be bound", hr));
             break;
         }
         target->BeginDraw();
@@ -116,12 +162,22 @@ bool PrintToDC(HDC dc, Renderer& renderer, const Document& document,
         target->Clear(D2D1::ColorF(D2D1::ColorF::White));
         platform::D2DTarget seam(target);
         display::Play(layout::PageItems(*laid, bands[i]), &seam);
-        if (FAILED(target->EndDraw())) {
+        hr = target->EndDraw();
+        if (FAILED(hr)) {
             ok = false;
+            fail(HresultText("a page could not be drawn on this printer", hr));
+            break;
         }
-        if (EndPage(dc) <= 0) ok = false;
+        if (EndPage(dc) <= 0) {
+            ok = false;
+            fail("the printer rejected a finished page");
+            break;
+        }
     }
-    if (ok && EndDoc(dc) <= 0) ok = false;
+    if (ok && EndDoc(dc) <= 0) {
+        ok = false;
+        fail("the printer ended the job with an error");
+    }
     if (!ok) AbortDoc(dc);
 
     target->Release();
@@ -132,7 +188,7 @@ bool PrintToDC(HDC dc, Renderer& renderer, const Document& document,
 }  // namespace
 
 bool PrintDocument(HWND owner, Renderer& renderer, const Document& document,
-                   const std::wstring& title) {
+                   const std::wstring& title, std::string* message) {
     // The classic panel: every SDK declares it, and the extended one's page
     // range is not read anyway, because printing is a whole document
     // operation here (references/printing.md).
@@ -147,7 +203,7 @@ bool PrintDocument(HWND owner, Renderer& renderer, const Document& document,
 
     bool printed = false;
     if (PrintDlgW(&panel) && panel.hDC) {
-        printed = PrintToDC(panel.hDC, renderer, document, title);
+        printed = PrintToDC(panel.hDC, renderer, document, title, message);
         // The panel handed the DC over; the print job has ended above.
         DeleteDC(panel.hDC);
     }

@@ -13,8 +13,10 @@ second renderer.
 | Bounds of a drawing | `display::ItemBounds` (`src/layout/display_player.cpp`) | the rectangle one display list item occupies, for the cut |
 | The layout of a page | `Renderer::PrintLayout` (Windows), `MacRenderer::PrintLayout` (macOS) | the shared walk at 100% in reading mode, outside the frame's cache |
 | The painter | `display::Play` | the same player the window uses, on a different target |
-| The Windows driver | `src/print_win.*` | the panel, the printer DC, one page per band |
-| The mac driver | `src/macos/print_mac.*` | the print panel over a view, and the PDF writer |
+| The Windows driver | `src/print_win.*` | the classic panel, the printer DC, one page per band |
+| The Windows preview | `src/print_preview_win.*` | the native window Ctrl+P opens: the bands at the A4 page, Print, Save as PDF |
+| The print-path PDF | `src/print_pdf.*` | the bands written as a PDF, shared by both ports |
+| The mac driver | `src/macos/print_mac.*` | the print panel over a view |
 
 Nothing above the drivers knows what a printer is. Both ports hand the same
 `DocumentLayout` and the same `PrintBand` list to the same player.
@@ -87,10 +89,11 @@ qa print-pages: pages=3 items1=57 items2=54 top2=971.3 width=642.5 height=971.3 
 ```
 
 Both ports report the same numbers for the same file, because the page, the
-margin and the cut are shared. On the mac, `MARKDOWNIT_QA_PDF` names a file
-and the same pages are written to it as a PDF, so the pagination can be
-looked at without a printer. The launch smoke asserts that the showcase
-fixture makes more than one page and that the PDF carries them.
+margin and the cut are shared. `MARKDOWNIT_QA_PDF` names a file on either
+port and the same pages are written to it as a PDF: the mac through
+`CGPDFContext`, Windows through the shared pdfio writer. The mac launch
+smoke and the Windows capture smoke both assert that the showcase fixture
+makes more than one page and that the file carries them.
 
 ## The panel
 
@@ -116,11 +119,30 @@ pages go wherever the reader points them. The run needs a delegate and a
 selector to report to; asked to run with neither, AppKit put nothing on the
 screen at all.
 
-Windows opens the classic print panel (`PrintDlg`) and prints into an
-`ID2D1DCRenderTarget` bound to the printer's DC. The target carries the printer's dpi, so one seam unit is
-one DIP on paper and the drawing code has no scale factor of its own. Text is
+Windows opens a preview first (`src/print_preview_win.cpp`): the same bands
+at the default A4 page, one page under the next, a Print button, a Save as
+PDF button and a Close. Print opens the classic print panel (`PrintDlg`) and
+prints into an `ID2D1DCRenderTarget` bound to the printer's DC. The target
+carries the printer's dpi, so one seam unit is one DIP on paper and the
+drawing code has no scale factor of its own. The target is a SOFTWARE
+target, because a printer DC has no hardware path. It binds inside every
+`StartPage`, because a driver may reset its DC between pages. Text is
 grayscale antialiased: subpixel text relies on the display's stripes and
-prints as coloured fringes.
+prints as coloured fringes. A job that cannot start, draw or finish is said
+out loud, because a print that dies quietly reads as "this app cannot
+print".
+
+Save as PDF writes the preview's own bands through the shared pdfio writer
+(`src/print_pdf.cpp`), not the office export's re-rendered markdown: the
+file is the pages the preview showed, page for page. Base 14 fonts, no
+embedding, one page per band, the same paper layout. Glyphs the fonts
+cannot show are dropped and counted (the WinAnsi limit), and the save notes
+say how many, instead of a reader wondering where a letter went.
+
+One difference is honest: the preview shows the default A4 page, and the
+classic panel offers the printer's own paper, so a sheet can carry a
+different cut than the preview showed. The mac panel previews the paper it
+is about to use; AppKit can, and the classic panel cannot.
 
 The mac opens an `NSPrintOperation` over a view that answers one page per
 band, so AppKit owns the panel, the preview and the progress. The same page
@@ -141,3 +163,8 @@ no change to the document.
   alternative and no generic fallback, so a new item type stops compiling
   until its bounds exist. That is the guard against a page silently losing a
   kind of drawing.
+- `tests/print_pdf_test.cpp` holds the writer: one page per band read back
+  through pdfio itself, stable bytes once the file's own stamps are taken
+  out, Danish inside the fonts' WinAnsi range, an emoji outside it counted
+  as dropped, the table words the page list carries, and a white sheet
+  whatever theme the window is wearing.
