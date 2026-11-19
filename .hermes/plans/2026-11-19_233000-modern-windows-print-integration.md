@@ -439,3 +439,19 @@ top.
   and treats the other ends as silence; a connection-point sink would
   add plumbing with no observable gain. Revisit only if a printer
   reports errors the task event does not carry.
+- **Task 9, the docs:** printing.md rewritten for the two Windows paths
+  (contract first, classic fallback behind `MARKDOWNIT_NO_MODERN_PRINT`
+  or a contract that cannot open), the pieces table carries the painter
+  and the description, and the parity ledger's printing row states the
+  new shape: both ports preview now, in their own dialog; the
+  fallback prints without one.
+- **Task 10, CI and install:** the contract milestone went in as
+  **494b6ba**, took three mechanical Windows build errors (missing
+  `windows/render_target_win.h` include, enum member spellings this SDK
+  only names through helpers, a winrt/WRL com_ptr assignment mismatch),
+  fixed in **9bc049b**: run **44633739360**, 12/12 green, the first
+  Windows build of the whole contract. Exe installed by build-swap-verify
+  (MD5 6ad644cff7e5d1b9ca65190f9228c6ba, PE32+ GUI x86-64, backup
+  `MarkDownIt.exe.bak-2026-11-19-9bc049b-pre`). What remains of the
+  acceptance is on the user's machine: Ctrl+P with a fed preview pane,
+  a paper print, and a Microsoft Print to PDF pass.
