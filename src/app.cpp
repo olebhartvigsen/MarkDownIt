@@ -4069,6 +4069,13 @@ bool AppWindow::SaveAs() {
 // error, and printing never changes the document or the view. A print job
 // that fails with a reason puts it on screen: a job that dies quietly
 // reads as "this app cannot print".
+//
+// The office helpers below (OfficeUtf8ToWide, WriteExportBytes) live beside
+// the export handlers; they are declared here because Print comes first in
+// the file and the compiler reads top to bottom.
+static std::wstring OfficeUtf8ToWide(const std::string& text);
+static bool WriteExportBytes(const std::wstring& path,
+                            const std::string& bytes);
 void AppWindow::Print() {
     std::wstring title = L"MarkDownIt";
     if (!file_path_.empty()) {
@@ -4080,8 +4087,8 @@ void AppWindow::Print() {
         hwnd_, renderer_, dw_factory_, renderer_inited_ && dw_factory_ != nullptr, doc_, title);
     if (choice == print_preview::Action::Print) {
         std::string message;
-        if (!print_win::PrintDocument(hwnd_, renderer_, doc_, title,
-                                      &message) &&
+        if (!print_win::PrintDocument(hwnd_, renderer_, dw_factory_, doc_,
+                                      title, &message) &&
             !message.empty()) {
             MessageBoxW(hwnd_, OfficeUtf8ToWide(message).c_str(),
                         L"MarkDownIt - Udskrift", MB_ICONWARNING);

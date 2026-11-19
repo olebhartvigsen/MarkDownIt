@@ -90,8 +90,10 @@ public:
 
         RECT work = {};
         SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
-        const int width = std::max(520, (work.right - work.left) * 3 / 4);
-        const int height = std::max(400, (work.bottom - work.top) * 3 / 4);
+        const int width = std::max(520, static_cast<int>(
+            (work.right - work.left) * 3 / 4));
+        const int height = std::max(400, static_cast<int>(
+            (work.bottom - work.top) * 3 / 4));
         const int x = work.left + ((work.right - work.left) - width) / 2;
         const int y = work.top + ((work.bottom - work.top) - height) / 3;
 

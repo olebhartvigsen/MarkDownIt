@@ -59,15 +59,15 @@ std::string TempPath() {
 // stream per page, so the assertions hold what a reader will see rather
 // than the compressed bytes on disk.
 std::vector<std::string> ReadPages(const std::string& bytes,
-                                   const char* path) {
+                                   const std::string& path) {
     std::vector<std::string> pages;
-    FILE* file = fopen(path, "wb");
+    FILE* file = fopen(path.c_str(), "wb");
     if (file == nullptr) return pages;
     fwrite(bytes.data(), 1, bytes.size(), file);
     fclose(file);
 
-    pdfio_file_t* pdf = pdfioFileOpen(path, nullptr, nullptr, nullptr,
-                                      nullptr);
+    pdfio_file_t* pdf = pdfioFileOpen(path.c_str(), nullptr, nullptr,
+                                      nullptr, nullptr);
     if (pdf == nullptr) return pages;
     const size_t count = pdfioFileGetNumPages(pdf);
     for (size_t i = 0; i < count; ++i) {
@@ -89,7 +89,7 @@ std::vector<std::string> ReadPages(const std::string& bytes,
         pages.push_back(content);
     }
     pdfioFileClose(pdf);
-    remove(path);
+    remove(path.c_str());
     return pages;
 }
 
@@ -159,7 +159,10 @@ TEST(PrintPdf, OnePagePerBandReadableByPdfio) {
     EXPECT_TRUE(bands.size() > 1);
     if (bands.size() < 2) return;
 
-    const char* path = TempPath().c_str();
+    // The path is held in a string for as long as ReadPages uses it: a
+    // temporary's c_str() would dangle, and the allocator on the mac
+    // poisoned it before the file could even be opened.
+    const std::string path = TempPath();
     print_pdf::WriteReport report;
     const std::string bytes =
         print_pdf::WriteBytes(laid, layout::PrintPage(), bands, &report);
@@ -201,7 +204,10 @@ TEST(PrintPdf, DanishTextSurvivesTheFontEncoding) {
     const layout::DocumentLayout laid = LayOut(source.c_str());
     const std::vector<layout::PrintBand> bands =
         layout::PaginateDocument(laid, layout::PrintPage());
-    const char* path = TempPath().c_str();
+    // The path is held in a string for as long as ReadPages uses it: a
+    // temporary's c_str() would dangle, and the allocator on the mac
+    // poisoned it before the file could even be opened.
+    const std::string path = TempPath();
     print_pdf::WriteReport report;
     const std::string bytes =
         print_pdf::WriteBytes(laid, layout::PrintPage(), bands, &report);
@@ -240,7 +246,10 @@ TEST(PrintPdf, ATablesWordsAreOnThePage) {
         "| Second row | More words |\n");
     const std::vector<layout::PrintBand> bands =
         layout::PaginateDocument(laid, layout::PrintPage());
-    const char* path = TempPath().c_str();
+    // The path is held in a string for as long as ReadPages uses it: a
+    // temporary's c_str() would dangle, and the allocator on the mac
+    // poisoned it before the file could even be opened.
+    const std::string path = TempPath();
     print_pdf::WriteReport report;
     const std::string bytes =
         print_pdf::WriteBytes(laid, layout::PrintPage(), bands, &report);
@@ -261,7 +270,10 @@ TEST(PrintPdf, EverySheetIsLaidWhiteFirst) {
     const layout::DocumentLayout laid = LayOut("One dark screen, one white sheet.\n");
     const std::vector<layout::PrintBand> bands =
         layout::PaginateDocument(laid, layout::PrintPage());
-    const char* path = TempPath().c_str();
+    // The path is held in a string for as long as ReadPages uses it: a
+    // temporary's c_str() would dangle, and the allocator on the mac
+    // poisoned it before the file could even be opened.
+    const std::string path = TempPath();
     print_pdf::WriteReport report;
     const std::string bytes =
         print_pdf::WriteBytes(laid, layout::PrintPage(), bands, &report);

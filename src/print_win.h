@@ -19,6 +19,7 @@
 
 struct Document;
 class Renderer;
+struct IDWriteFactory;
 
 namespace print_win {
 
@@ -29,8 +30,8 @@ namespace print_win {
 // message stays empty. A drawn job that failed leaves the reason in message
 // (UTF-8) for the caller's MessageBox, because a print that dies quietly
 // reads as "this app cannot print".
-bool PrintDocument(HWND owner, Renderer& renderer, const Document& document,
-                   const std::wstring& title,
+bool PrintDocument(HWND owner, Renderer& renderer, IDWriteFactory* dwrite,
+                   const Document& document, const std::wstring& title,
                    std::string* message = nullptr);
 
 }  // namespace print_win

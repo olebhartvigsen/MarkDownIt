@@ -19,6 +19,14 @@
 #include <string>
 #include <vector>
 
+// theme.h hands the Windows build a <d2d1.h>, and windows.h leaves a
+// DrawText macro behind, which would rename this file's seam method to
+// DrawTextW and leave the subclass abstract (C3668/C2259). The macro
+// brings nothing this file uses, so it goes away before the class below.
+#ifdef DrawText
+#undef DrawText
+#endif
+
 namespace print_pdf {
 namespace {
 

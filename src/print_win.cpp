@@ -69,8 +69,9 @@ layout::PrintPage PageFromDC(HDC dc) {
 // One document through one printer DC. The page model, the cut and the
 // slice are the shared ones; this function owns the job, the pages and the
 // target, and it says why it failed instead of returning quietly.
-bool PrintToDC(HDC dc, Renderer& renderer, const Document& document,
-               const std::wstring& title, std::string* message) {
+bool PrintToDC(HDC dc, Renderer& renderer, IDWriteFactory* dwrite,
+               const Document& document, const std::wstring& title,
+               std::string* message) {
     auto fail = [message](std::string text) {
         if (message != nullptr) *message = std::move(text);
         return false;
@@ -160,7 +161,8 @@ bool PrintToDC(HDC dc, Renderer& renderer, const Document& document,
             layout::PlacementForBand(page, bands[i]);
         target->SetTransform(D2D1::Matrix3x2F::Translation(place.x, place.y));
         target->Clear(D2D1::ColorF(D2D1::ColorF::White));
-        platform::D2DTarget seam(target);
+        // The factory with it, or the text formats have no faces to draw.
+        platform::D2DTarget seam(target, dwrite);
         display::Play(layout::PageItems(*laid, bands[i]), &seam);
         hr = target->EndDraw();
         if (FAILED(hr)) {
@@ -187,8 +189,9 @@ bool PrintToDC(HDC dc, Renderer& renderer, const Document& document,
 
 }  // namespace
 
-bool PrintDocument(HWND owner, Renderer& renderer, const Document& document,
-                   const std::wstring& title, std::string* message) {
+bool PrintDocument(HWND owner, Renderer& renderer, IDWriteFactory* dwrite,
+                   const Document& document, const std::wstring& title,
+                   std::string* message) {
     // The classic panel: every SDK declares it, and the extended one's page
     // range is not read anyway, because printing is a whole document
     // operation here (references/printing.md).
@@ -203,7 +206,8 @@ bool PrintDocument(HWND owner, Renderer& renderer, const Document& document,
 
     bool printed = false;
     if (PrintDlgW(&panel) && panel.hDC) {
-        printed = PrintToDC(panel.hDC, renderer, document, title, message);
+        printed = PrintToDC(panel.hDC, renderer, dwrite, document, title,
+                            message);
         // The panel handed the DC over; the print job has ended above.
         DeleteDC(panel.hDC);
     }
