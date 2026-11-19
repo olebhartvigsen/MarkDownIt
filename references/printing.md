@@ -123,10 +123,12 @@ Windows opens a preview first (`src/print_preview_win.cpp`): the same bands
 at the default A4 page, one page under the next, a Print button, a Save as
 PDF button and a Close. Print opens the classic print panel (`PrintDlg`) and
 prints into an `ID2D1DCRenderTarget` bound to the printer's DC. The target
-carries the printer's dpi, so one seam unit is one DIP on paper and the
-drawing code has no scale factor of its own. The target is a SOFTWARE
-target, because a printer DC has no hardware path. It binds inside every
-`StartPage`, because a driver may reset its DC between pages. Text is
+itself runs at the documented default of 96, where one DIP is one device
+pixel, and the printer's own resolution is a scale in the transform: a
+seam unit becomes `LOGPIXELSX / 96` device pixels, which is 1/96 inch on
+paper. The DPI is a transform and not a property of the target because
+some drivers size the target's internal bitmap by the property and hand
+back pages a multiple too large, fonts first. Text is
 grayscale antialiased: subpixel text relies on the display's stripes and
 prints as coloured fringes. A job that cannot start, draw or finish is said
 out loud, because a print that dies quietly reads as "this app cannot

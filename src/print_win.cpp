@@ -13,6 +13,9 @@
 //   and the plan's risk 2 names a driver that refuses the other kind.
 // - BindDC per page, after StartPage: a driver may reset its DC between
 //   pages, and each page binds the same full page rectangle.
+// - The target is 96 dpi and the printer's own resolution is a scale in
+//   the transform: a DC target's DPI property makes some drivers size the
+//   bitmap by it and hand back pages a multiple too large, fonts first.
 // - Every failure is spoken: a job that dies quietly looks exactly like
 //   "cannot print", to the reader and to us. The caller shows the message.
 
@@ -93,10 +96,16 @@ bool PrintToDC(HDC dc, Renderer& renderer, IDWriteFactory* dwrite,
         return fail("the document produced no pages for this paper");
     }
 
-    // The paper's own resolution, so a seam unit lands on paper at 1/96 inch
-    // without a scale in the drawing code (the target's dpi does the work).
+    // The paper's own resolution, as the scale the target draws through.
+    // The target itself stays at 96, the documented default where one DIP is
+    // one device pixel: a DC target's own DPI property fights the BindDC
+    // rectangle on some drivers and hands back pages a multiple too large
+    // (the "fonts are far too big" print), so the printer's dpi goes into
+    // the drawing, never into the target.
     const int dpiX = GetDeviceCaps(dc, LOGPIXELSX);
     const int dpiY = GetDeviceCaps(dc, LOGPIXELSY);
+    const float perSeamX = dpiX > 0 ? dpiX / 96.0f : 1.0f;
+    const float perSeamY = dpiY > 0 ? dpiY / 96.0f : 1.0f;
     RECT area = {0, 0, GetDeviceCaps(dc, HORZRES), GetDeviceCaps(dc, VERTRES)};
 
     ID2D1Factory* factory = nullptr;
@@ -107,12 +116,14 @@ bool PrintToDC(HDC dc, Renderer& renderer, IDWriteFactory* dwrite,
 
     // Software on purpose: a printer DC has no hardware path, and DEFAULT
     // picks one on machines where it costs a driver round trip that a spool
-    // can refuse. The plan's risk 2 lives here.
+    // can refuse. The plan's risk 2 lives here. The DPI stays 96 on both
+    // axes; see the comment above for why the printer's own resolution is
+    // a transform, not a property.
     D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
         D2D1_RENDER_TARGET_TYPE_SOFTWARE,
         D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
                           D2D1_ALPHA_MODE_IGNORE),
-        static_cast<float>(dpiX), static_cast<float>(dpiY),
+        96.0f, 96.0f,
         D2D1_RENDER_TARGET_USAGE_NONE, D2D1_FEATURE_LEVEL_DEFAULT);
     ID2D1DCRenderTarget* target = nullptr;
     hr = factory->CreateDCRenderTarget(&props, &target);
@@ -154,12 +165,15 @@ bool PrintToDC(HDC dc, Renderer& renderer, IDWriteFactory* dwrite,
             break;
         }
         target->BeginDraw();
-        // The margin is the page's own; the target's dpi turns the rest into
-        // paper. Clear is in device space, so it fills the sheet with white
-        // whatever the transform says.
+        // The margin is the page's own; the printer's resolution is the
+        // scale, so a seam unit is perSeam device pixels, which is 1/96 inch
+        // on paper. Clear is in device space, so it fills the sheet with
+        // white whatever the transform says.
         const layout::PagePlacement place =
             layout::PlacementForBand(page, bands[i]);
-        target->SetTransform(D2D1::Matrix3x2F::Translation(place.x, place.y));
+        target->SetTransform(
+            D2D1::Matrix3x2F::Scale(perSeamX, perSeamY) *
+            D2D1::Matrix3x2F::Translation(place.x, place.y));
         target->Clear(D2D1::ColorF(D2D1::ColorF::White));
         // The factory with it, or the text formats have no faces to draw.
         platform::D2DTarget seam(target, dwrite);

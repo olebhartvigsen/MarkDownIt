@@ -3,8 +3,11 @@
 //
 // The page model and the cut are shared (src/layout/print_pages.h). What is
 // Windows' own is the panel (PrintDlg), the printer DC, and the mapping
-// from seam units onto the printable area: the target carries the printer's
-// dpi, so one seam unit is one DIP on paper and no scale factor is needed.
+// from seam units onto the printable area: the printer's dpi is the scale in
+// the target's transform, and the target stays at the documented default of
+// 96, where one DIP is one device pixel. A DC target with the printer's
+// dpi as a property can come back a multiple too large on some drivers,
+// which is a page of far too big fonts and nothing else wrong.
 //
 // Known gaps, recorded in the plan rather than hidden here: a Mermaid diagram
 // and an SVG fence print as empty bands, an inline image is not resolved onto
