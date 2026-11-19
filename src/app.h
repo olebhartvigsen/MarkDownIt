@@ -88,13 +88,11 @@ public:
     void ShowAbout();
     bool Save();
     bool SaveAs();
-    // File > Print: the preview window over the shared page model, then
-    // the Windows panel and DC, or the print-path PDF the preview saves.
+    // File > Print: the classic Windows panel and printer DC over the
+    // shared page model (src/layout/print_pages.h, src/print_win.cpp).
+    // The interim preview window was removed again 2026-11-19: the flow
+    // is the standard Ctrl+P, straight to the panel.
     void Print();
-    // The preview's Save as PDF: the same bands the pages show, written
-    // through the shared pdfio writer (src/print_pdf.cpp). Not the office
-    // export: the file is what the print preview prints, page for page.
-    void SavePrintPdf();
     // Word / PDF interop (ribbon: Home tab, Office group).
     void ImportWordDocx();
     void ExportWordDocx();

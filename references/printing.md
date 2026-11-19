@@ -13,9 +13,8 @@ second renderer.
 | Bounds of a drawing | `display::ItemBounds` (`src/layout/display_player.cpp`) | the rectangle one display list item occupies, for the cut |
 | The layout of a page | `Renderer::PrintLayout` (Windows), `MacRenderer::PrintLayout` (macOS) | the shared walk at 100% in reading mode, outside the frame's cache |
 | The painter | `display::Play` | the same player the window uses, on a different target |
-| The Windows driver | `src/print_win.*` | the classic panel, the printer DC, one page per band |
-| The Windows preview | `src/print_preview_win.*` | the native window Ctrl+P opens: the bands at the A4 page, Print, Save as PDF |
-| The print-path PDF | `src/print_pdf.*` | the bands written as a PDF, shared by both ports |
+| The Windows driver | `src/print_win.*` | the classic panel Ctrl+P opens directly, the printer DC, one page per band |
+| The print-path PDF | `src/print_pdf.*` | the bands written as a PDF: shared writer, exercised by the QA walk and its test |
 | The mac driver | `src/macos/print_mac.*` | the print panel over a view |
 
 Nothing above the drivers knows what a printer is. Both ports hand the same
@@ -119,10 +118,12 @@ pages go wherever the reader points them. The run needs a delegate and a
 selector to report to; asked to run with neither, AppKit put nothing on the
 screen at all.
 
-Windows opens a preview first (`src/print_preview_win.cpp`): the same bands
-at the default A4 page, one page under the next, a Print button, a Save as
-PDF button and a Close. Print opens the classic print panel (`PrintDlg`) and
-prints into an `ID2D1DCRenderTarget` bound to the printer's DC. The target
+Windows sends Ctrl+P straight to the classic print panel (`PrintDlg`,
+`src/print_win.cpp`), the flow Windows itself ships in its own apps. There
+is no preview window in front of it: an interim one was built and taken out
+again with the 2026-11-19 decision, because the standard flow is what the
+reader expects. The job prints into an `ID2D1DCRenderTarget` bound to the
+printer's DC. The target
 itself runs at the documented default of 96, where one DIP is one device
 pixel, and the printer's own resolution is a scale in the transform: a
 seam unit becomes `LOGPIXELSX / 96` device pixels, which is 1/96 inch on
@@ -134,17 +135,22 @@ prints as coloured fringes. A job that cannot start, draw or finish is said
 out loud, because a print that dies quietly reads as "this app cannot
 print".
 
-Save as PDF writes the preview's own bands through the shared pdfio writer
-(`src/print_pdf.cpp`), not the office export's re-rendered markdown: the
-file is the pages the preview showed, page for page. Base 14 fonts, no
-embedding, one page per band, the same paper layout. Glyphs the fonts
-cannot show are dropped and counted (the WinAnsi limit), and the save notes
-say how many, instead of a reader wondering where a letter went.
+The print-path writer (`src/print_pdf.cpp`) still writes the bands as a
+PDF, page for page, in the page's own paper layout: base 14 fonts, no
+embedding, one page per band. Glyphs the fonts cannot show are dropped and
+counted (the WinAnsi limit), and the writer says how many, instead of a
+reader wondering where a letter went. The QA walk and
+`tests/print_pdf_test.cpp` hold it on both runners. A reader reaches a PDF
+of the pages on Windows through the panel's Microsoft Print to PDF
+printer, and the ribbon's Export as PDF (the office re-render of the
+markdown) stays as it was. The mac keeps the panel's Save as PDF, which
+AppKit renders.
 
-One difference is honest: the preview shows the default A4 page, and the
-classic panel offers the printer's own paper, so a sheet can carry a
-different cut than the preview showed. The mac panel previews the paper it
-is about to use; AppKit can, and the classic panel cannot.
+One difference is ledgered: the mac panel previews the paper it is about to
+use, and Windows prints straight from the classic panel with no preview at
+all (2026-11-19 decision). The page the QA walk reports is the default A4;
+the sheet the printer takes is its own paper, so a print can carry a
+different cut than the QA numbers said.
 
 The mac opens an `NSPrintOperation` over a view that answers one page per
 band, so AppKit owns the panel, the preview and the progress. The same page

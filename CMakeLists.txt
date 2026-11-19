@@ -183,7 +183,6 @@ add_executable(MarkDownIt WIN32
     src/outlinepane.cpp
     src/fileassoc.cpp
     src/print_win.cpp
-    src/print_preview_win.cpp
     src/welcome_screen.cpp
     src/svgdoc.cpp
 )

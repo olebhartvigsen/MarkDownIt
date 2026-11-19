@@ -20,7 +20,6 @@
 #include "office/docx_export.h"
 #include "office/pdf_export.h"
 #include "print_win.h"
-#include "print_preview_win.h"
 #include "layout/print_pages.h"
 #include "print_pdf.h"
 #include <commdlg.h>
@@ -3829,9 +3828,9 @@ void AppWindow::QAAdvance() {
         const char* pdfPath = getenv("MARKDOWNIT_QA_PDF");
         if (pdfPath != nullptr && *pdfPath != '\0' && laid &&
             !bands.empty()) {
-            // The same PDF the preview saves: the bands themselves through
-            // the shared writer, page for page. The mac walk writes its file
-            // with AppKit; the numbers that follow stay the same either way.
+            // The print bands themselves through the shared writer, page
+            // for page. The mac walk writes its file with AppKit; the
+            // numbers that follow stay the same either way.
             print_pdf::WriteReport report;
             const std::string bytes =
                 print_pdf::WriteBytes(*laid, page, bands, &report);
@@ -4061,21 +4060,20 @@ bool AppWindow::SaveAs() {
     return ok;
 }
 
-// File > Print. The preview comes first (the mac panel shows its pages the
-// same way), and its buttons decide what happens next: the classic panel
-// through print_win, or the print-path PDF. The page model and the cut are
-// shared (src/layout/print_pages.h); print_win owns the printer DC and the
-// mapping onto paper, print_pdf owns the file. Cancelling either is not an
-// error, and printing never changes the document or the view. A print job
-// that fails with a reason puts it on screen: a job that dies quietly
-// reads as "this app cannot print".
+// File > Print. The classic Windows flow: Ctrl+P opens the print panel
+// directly, with nothing in front of it (2026-11-19: the interim preview
+// window was removed again by decision; the mac panel shows its pages,
+// which stays a ledgered difference). The page model and the cut are
+// shared (src/layout/print_pages.h); print_win owns the panel, the
+// printer DC and the mapping onto paper, print_pdf the QA file.
+// Cancelling is not an error, and printing never changes the document
+// or the view. A print job that fails with a reason puts it on screen:
+// a job that dies quietly reads as "this app cannot print".
 //
-// The office helpers below (OfficeUtf8ToWide, WriteExportBytes) live beside
-// the export handlers; they are declared here because Print comes first in
-// the file and the compiler reads top to bottom.
+// The office helper below (OfficeUtf8ToWide) lives beside the export
+// handlers; it is declared here because Print comes first in the file
+// and the compiler reads top to bottom.
 static std::wstring OfficeUtf8ToWide(const std::string& text);
-static bool WriteExportBytes(const std::wstring& path,
-                            const std::string& bytes);
 void AppWindow::Print() {
     std::wstring title = L"MarkDownIt";
     if (!file_path_.empty()) {
@@ -4083,81 +4081,13 @@ void AppWindow::Print() {
         title = (slash == std::wstring::npos) ? file_path_
                                               : file_path_.substr(slash + 1);
     }
-    const print_preview::Action choice = print_preview::ShowPreview(
-        hwnd_, renderer_, dw_factory_, renderer_inited_ && dw_factory_ != nullptr, doc_, title);
-    if (choice == print_preview::Action::Print) {
-        std::string message;
-        if (!print_win::PrintDocument(hwnd_, renderer_, dw_factory_, doc_,
-                                      title, &message) &&
-            !message.empty()) {
-            MessageBoxW(hwnd_, OfficeUtf8ToWide(message).c_str(),
-                        L"MarkDownIt - Udskrift", MB_ICONWARNING);
-        }
-    } else if (choice == print_preview::Action::SavePdf) {
-        SavePrintPdf();
+    std::string message;
+    if (!print_win::PrintDocument(hwnd_, renderer_, dw_factory_, doc_,
+                                  title, &message) &&
+        !message.empty()) {
+        MessageBoxW(hwnd_, OfficeUtf8ToWide(message).c_str(),
+                    L"MarkDownIt - Udskrift", MB_ICONWARNING);
     }
-}
-
-// The preview's Save as PDF: the bands the preview showed, written with the
-// shared pdfio writer. The office export re-renders the markdown; this file
-// is the pages themselves, page for page, so the preview is the truth.
-void AppWindow::SavePrintPdf() {
-    const wchar_t* const caption = L"MarkDownIt - Udskriv PDF";
-
-    if (welcome_mode_) {
-        MessageBoxW(hwnd_, L"No document is open. Open a markdown file first.",
-                    caption, MB_ICONWARNING);
-        return;
-    }
-
-    layout::PrintPage page;
-    std::shared_ptr<const layout::DocumentLayout> laid;
-    if (renderer_inited_ && dw_factory_) {
-        laid = renderer_.PrintLayout(doc_, page.ContentWidth());
-    }
-    const std::vector<layout::PrintBand> bands =
-        laid ? layout::PaginateDocument(*laid, page)
-             : std::vector<layout::PrintBand>();
-    if (!laid || bands.empty()) {
-        MessageBoxW(hwnd_, L"The document is empty. Nothing to print.",
-                    caption, MB_ICONWARNING);
-        return;
-    }
-
-    print_pdf::WriteReport report;
-    const std::string bytes =
-        print_pdf::WriteBytes(*laid, page, bands, &report);
-    if (bytes.empty() ||
-        report.pages != static_cast<int>(bands.size())) {
-        MessageBoxW(hwnd_, L"Could not write the PDF. The pages were not saved.",
-                    caption, MB_ICONWARNING);
-        return;
-    }
-
-    // Same contract as the office exports: the dialog names the target.
-    const std::wstring path = ExportSaveDialog(
-        L"PDF documents (*.pdf)\0*.pdf\0All Files\0*.*\0", L"pdf",
-        ExportDefaultName(L".pdf"));
-    if (path.empty()) return;  // cancelled
-
-    if (!WriteExportBytes(path, bytes)) {
-        MessageBoxW(hwnd_, L"Could not write the file. The export was not saved.",
-                    caption, MB_ICONWARNING);
-        return;
-    }
-
-    // The base fonts carry WinAnsi; a warning says what did not make it,
-    // instead of a reader wondering where a letter went.
-    wchar_t done[160];
-    if (report.droppedGlyphs > 0) {
-        swprintf(done, 160,
-                 L"Saved %d pages as PDF.\n\n%zu characters the base fonts "
-                 L"cannot show were dropped.",
-                 report.pages, report.droppedGlyphs);
-    } else {
-        swprintf(done, 160, L"Saved %d pages as PDF.", report.pages);
-    }
-    MessageBoxW(hwnd_, done, caption, MB_ICONINFORMATION);
 }
 
 std::wstring AppWindow::SaveDialog() {
