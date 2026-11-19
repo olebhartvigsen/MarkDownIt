@@ -20,6 +20,7 @@
 #include "office/docx_export.h"
 #include "office/pdf_export.h"
 #include "print_win.h"
+#include "print_winrt.h"
 #include "layout/print_pages.h"
 #include "print_pdf.h"
 #include <commdlg.h>
@@ -2742,6 +2743,12 @@ void AppWindow::OnDropFiles(HWND hwnd, HDROP hDrop) {
 void AppWindow::OnCreate(HWND hwnd) {
     hwnd_ = hwnd;
 
+    // The modern print contract for this window, if the machine has the
+    // stack for it: one registration per window for the process, the
+    // dialog itself is opened by Print. A false here is not an error;
+    // Ctrl+P falls back to the classic panel.
+    print_winrt::RegisterWindow(hwnd);
+
     // Load settings FIRST; LoadSampleDoc (below) needs recentFiles.
     settings_ = LoadSettings();
 
@@ -4060,15 +4067,17 @@ bool AppWindow::SaveAs() {
     return ok;
 }
 
-// File > Print. The classic Windows flow: Ctrl+P opens the print panel
-// directly, with nothing in front of it (2026-11-19: the interim preview
-// window was removed again by decision; the mac panel shows its pages,
-// which stays a ledgered difference). The page model and the cut are
-// shared (src/layout/print_pages.h); print_win owns the panel, the
-// printer DC and the mapping onto paper, print_pdf the QA file.
-// Cancelling is not an error, and printing never changes the document
-// or the view. A print job that fails with a reason puts it on screen:
-// a job that dies quietly reads as "this app cannot print".
+// File > Print. The modern flow first: Ctrl+P opens the system print
+// dialog through the Windows.Graphics.Printing contract (print_winrt),
+// with the panel's own preview pane fed page by page from the shared
+// page model, the shared cut and the shared band painter. When the
+// contract is not usable, MARKDOWNIT_NO_MODERN_PRINT is set or the
+// dialog cannot open, the classic panel below stands in: the same page
+// model and the same cut, one path through the printer DC. The mac panel
+// shows its own pages inside AppKit; that stays the ledgered difference
+// of the ports. Cancelling is not an error, and printing never changes
+// the document or the view. A print job that fails with a reason puts it
+// on screen: a job that dies quietly reads as "this app cannot print".
 //
 // The office helper below (OfficeUtf8ToWide) lives beside the export
 // handlers; it is declared here because Print comes first in the file
@@ -4080,6 +4089,34 @@ void AppWindow::Print() {
         const size_t slash = file_path_.find_last_of(L"\\/");
         title = (slash == std::wstring::npos) ? file_path_
                                               : file_path_.substr(slash + 1);
+    }
+    if (print_winrt::ModernPrintEnabled()) {
+        // The builder answers the contract's paginate requests on this
+        // thread, inside this window's message loop: the description
+        // from the dialog becomes a shared PrintPage, the page's width
+        // walks the printer layout, the cut gives the bands.
+        print_winrt::DialogInputs inputs;
+        inputs.title = title;
+        inputs.build = [this](print_winrt::PageBuild* pb) {
+            pb->page = layout::PrintPageFromDescription(
+                pb->sheetWidth, pb->sheetHeight, pb->imageableX,
+                pb->imageableY, pb->imageableW, pb->imageableH);
+            if (!(pb->page.ContentWidth() > 0.0f) ||
+                !(pb->page.ContentHeight() > 0.0f)) {
+                pb->ok = false;
+                return;
+            }
+            auto laid =
+                renderer_.PrintLayout(doc_, pb->page.ContentWidth());
+            if (!laid) {
+                pb->ok = false;
+                return;
+            }
+            pb->bands = layout::PaginateDocument(*laid, pb->page);
+            pb->laid = std::move(laid);
+            pb->ok = !pb->bands.empty();
+        };
+        if (print_winrt::ShowPrintDialog(hwnd_, inputs)) return;
     }
     std::string message;
     if (!print_win::PrintDocument(hwnd_, renderer_, dw_factory_, doc_,
@@ -6207,6 +6244,11 @@ void AppWindow::InvalidateSettingsButtons() {
 // Does NOT handle WM_PAINT (validated by DefWindowProc, ribbon paints NC).
 //
 LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    // The print contract's build message arrives here from its own
+    // thread: answer on this thread, inside this loop, so every layout
+    // walk stays where the renderer lives. A registered message, so no
+    // WM_ range can collide with it.
+    if (print_winrt::HandleWindowMessage(hwnd, msg, wp, lp)) return 0;
     switch (msg) {
         case WM_CREATE:    OnCreate(hwnd);   return 0;
         case WM_DROPFILES: OnDropFiles(hwnd, (HDROP)wp); return 0;

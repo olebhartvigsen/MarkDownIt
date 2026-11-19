@@ -407,3 +407,35 @@ top.
 - **Tests:** new `tests/print_paint_test.cpp`, registered in both test
   targets; local portable build green (215 checks, 24 suites: player
   goldens, page cut, the new suite). `tools/check_alignment.sh` green.
+- **Task 5, the ABI header:** `src/print_contract_abi.h`. The three
+  contract interfaces declared IUnknown-style with the reference's GUIDs
+  (`dedc0c30...`, `a96bb1db...`, `0b31cc62...`), the DXGI preview target
+  with the Win8.1 IID and the Win8.0 fallback pair from Chromium, and
+  `IPrintDocumentPackageTarget` left to the SDK's `documenttarget.h`.
+  `JOB_PAGE_APPLICATION_DEFINED` and `PageCountType` follow the docs.
+- **Task 6, the source class:** `src/print_winrt.{h,cpp}`,
+  `PrintSourceWin` (classic COM identity over the three interfaces plus
+  `IInspectable` and `IAgileObject`) with the DXGI preview path (D3D11
+  hardware with WARP fallback, one texture per page, `DrawPage` at 96)
+  and the final job (`ID2D1PrintControl`, one command list and one
+  `AddPage` per band, `ERROR_PRINT_CANCELLED` swallowed). DEV note:
+  threading settled differently than planned, and better: no layout or
+  engine is created on the pipeline thread at all. Every build request
+  is messaged to the window (`HandleWindowMessage` answers inside the
+  app's message loop through `SendMessageTimeoutW`), so the one
+  existing print build (renderer's `PrintLayout` plus
+  `PaginateDocument`) serves both paths, documents with the dialog open
+  print their latest text, and no second layout code path exists.
+- **Task 7, the wiring:** app.cpp registers the window in `OnCreate`,
+  the WndProc answers the build message, and `Print()` opens the modern
+  dialog with a builder that walks `PrintPageFromDescription` ->
+  `renderer_.PrintLayout` -> `PaginateDocument`; anything the contract
+  path cannot do falls through to the classic `PrintDocument`, as does
+  `MARKDOWNIT_NO_MODERN_PRINT=1`.
+- **Task 8, deviation:** the `IPrintDocumentPackageStatusEvent` sink was
+  not wired. The task's own goal (errors spoken, cancel silent, the
+  user's window greyed while a job runs) is already carried by the
+  `PrintTask.Completed` event, which reports Failed with a message box
+  and treats the other ends as silence; a connection-point sink would
+  add plumbing with no observable gain. Revisit only if a printer
+  reports errors the task event does not carry.

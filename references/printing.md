@@ -10,15 +10,24 @@ second renderer.
 | Piece | Where | What it owns |
 |---|---|---|
 | The page and the cut | `src/layout/print_pages.*` | the paper, `PrintBand`, `PaginateDocument`, `SliceForBand` |
+| The page from a panel's description | `layout::PrintPageFromDescription` (`src/layout/print_pages.*`) | the sheet, the imageable rectangle, the margin that keeps the unprintable strip outside the layout |
+| The band painter | `layout::PaintBandPage` (`src/layout/print_pages.*`), `display::PlayWithOrigin` (`src/layout/display_player.*`) | the band's placement and the page's items, played through the shared player onto any target |
 | Bounds of a drawing | `display::ItemBounds` (`src/layout/display_player.cpp`) | the rectangle one display list item occupies, for the cut |
 | The layout of a page | `Renderer::PrintLayout` (Windows), `MacRenderer::PrintLayout` (macOS) | the shared walk at 100% in reading mode, outside the frame's cache |
-| The painter | `display::Play` | the same player the window uses, on a different target |
-| The Windows driver | `src/print_win.*` | the classic panel Ctrl+P opens directly, the printer DC, one page per band |
+| The Windows driver | `src/print_win.*` | the classic panel and the printer DC, one page per band, the fallback of the modern path |
+| The modern print contract | `src/print_winrt.*`, `src/print_contract_abi.h` | the Windows.Graphics.Printing contract: the dialog's preview pane fed page by page, and the final job as command lists |
 | The print-path PDF | `src/print_pdf.*` | the bands written as a PDF: shared writer, exercised by the QA walk and its test |
 | The mac driver | `src/macos/print_mac.*` | the print panel over a view |
 
 Nothing above the drivers knows what a printer is. Both ports hand the same
-`DocumentLayout` and the same `PrintBand` list to the same player.
+`DocumentLayout` and the same `PrintBand` list to the same painter:
+`layout::PaintBandPage` places the band by `PlacementForBand` and plays the
+page's items, and the mix of media that come to it (the printer DC's target,
+the preview surface, the print command lists) all draw the same page. The
+one medium outside it is the pdfio writer, whose stream coordinates are
+golden-backed at six decimal places; a float round-trip of the placement
+would move them, so that target adds the same placement rule in double
+inside its own `MapX`/`MapY`.
 
 ## The page
 
@@ -118,12 +127,29 @@ pages go wherever the reader points them. The run needs a delegate and a
 selector to report to; asked to run with neither, AppKit put nothing on the
 screen at all.
 
-Windows sends Ctrl+P straight to the classic print panel (`PrintDlg`,
-`src/print_win.cpp`), the flow Windows itself ships in its own apps. There
-is no preview window in front of it: an interim one was built and taken out
-again with the 2026-11-19 decision, because the standard flow is what the
-reader expects. The job prints into an `ID2D1DCRenderTarget` bound to the
-printer's DC. The target
+Windows takes the modern route first: Ctrl+P opens the system print dialog
+through the Windows.Graphics.Printing contract (`src/print_winrt.cpp`), with
+the dialog's own preview pane fed page by page. The contract's calls arrive
+on the print pipeline's thread, and no layout happens there: every build
+request is messaged to the window, answered inside its own message loop by
+the same walk the classic panel uses, and the finished page comes back as
+read-only shared state. The preview is one D3D11 texture per page, drawn
+through the shared band painter and handed to the dialog as a DXGI surface
+at 96 dpi, so a seam unit is one pixel of the preview. The final job sends
+the same pages as Direct2D command lists through `ID2D1PrintControl`, one
+`AddPage` per band, and the preview and the paper agree because both are
+the same bands. The paper follows the dialog: every change of printer,
+paper or orientation triggers a new Paginate, the sheet is rebuilt through
+`PrintPageFromDescription`, and the preview shows the chosen paper instead
+of a default one. The status of the job reaches the app through the
+task's Completed event: a failed job is said out loud, and a cancelled one
+is silence. Setting `MARKDOWNIT_NO_MODERN_PRINT=1` asks for the second
+path, which is also the automatic fallback whenever the contract cannot be
+reached.
+
+The second path is the classic one (`PrintDlg`, `src/print_win.cpp`), the
+flow Windows itself ships in its own apps: the classic panel, the job
+printed into an `ID2D1DCRenderTarget` bound to the printer's DC. The target
 itself runs at the documented default of 96, where one DIP is one device
 pixel, and the printer's own resolution is a scale in the transform: a
 seam unit becomes `LOGPIXELSX / 96` device pixels, which is 1/96 inch on
@@ -134,6 +160,11 @@ grayscale antialiased: subpixel text relies on the display's stripes and
 prints as coloured fringes. A job that cannot start, draw or finish is said
 out loud, because a print that dies quietly reads as "this app cannot
 print".
+
+An interim standalone preview window was built and taken out again with
+the 2026-11-19 decision: the standard flow is what the reader expects, and
+with the contract the preview lives where it belongs, inside the dialog
+the system owns.
 
 The print-path writer (`src/print_pdf.cpp`) still writes the bands as a
 PDF, page for page, in the page's own paper layout: base 14 fonts, no
@@ -146,11 +177,14 @@ printer, and the ribbon's Export as PDF (the office re-render of the
 markdown) stays as it was. The mac keeps the panel's Save as PDF, which
 AppKit renders.
 
-One difference is ledgered: the mac panel previews the paper it is about to
-use, and Windows prints straight from the classic panel with no preview at
-all (2026-11-19 decision). The page the QA walk reports is the default A4;
-the sheet the printer takes is its own paper, so a print can carry a
-different cut than the QA numbers said.
+One difference is ledgered: the previews live in different places, the mac
+inside AppKit's own panel, Windows inside the system print dialog through
+the contract, and both feed their pane from the same shared bands. The
+preview follows the paper the dialog chose, so the pages the reader sees
+are the pages that print. The classic fallback prints straight from its
+panel with no preview, and there the old A4 note still applies: the page
+the QA walk reports is the default A4, the sheet the printer takes is its
+own paper.
 
 The mac opens an `NSPrintOperation` over a view that answers one page per
 band, so AppKit owns the panel, the preview and the progress. The same page
@@ -166,6 +200,12 @@ no change to the document.
   a page that fills exactly, a widow, a block taller than the page, thirty
   real paragraphs through the shared walk, the clip pairs, and the item on
   the cut line.
+- `tests/print_paint_test.cpp` holds the painter and the description: the
+  player's origin shift (a zero origin is the plain play, a real shift moves
+  every geometry exactly), the band painter's placement (its calls match
+  playing the band's items through `PlacementForBand` by hand, band after
+  band), and the page a description builds (the A4 rule, a small sheet, the
+  widest edge, and the content that stays inside the imageable area).
 - `tests/display_player_test.cpp` asserts the bounds of every alternative of
   the display list item variant. `ItemBounds` has one overload per
   alternative and no generic fallback, so a new item type stops compiling

@@ -183,6 +183,7 @@ add_executable(MarkDownIt WIN32
     src/outlinepane.cpp
     src/fileassoc.cpp
     src/print_win.cpp
+    src/print_winrt.cpp
     src/welcome_screen.cpp
     src/svgdoc.cpp
 )
@@ -266,6 +267,12 @@ target_link_libraries(MarkDownIt PRIVATE
     windowscodecs
     winhttp
     comdlg32
+    # The modern print contract: the D3D11 preview surfaces, DXGI, and
+    # the OS loader for the C++/WinRT headers (an OS component, nothing
+    # new ships with the exe).
+    d3d11
+    dxgi
+    windowsapp
     ${UIRIBBON_LINK_LIB}
     ${PROPSYS_LINK_LIB}
 )
