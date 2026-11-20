@@ -518,6 +518,26 @@ inline LayoutMetrics ScaleMetrics(const LayoutMetrics& base, float zoom) {
     return m;
 }
 
+// The sizes a printed page wants.
+//
+// Paper is not a window. The reading view's sizes are tuned for a screen at
+// arm's length: a 12 pt body and a 24 pt H1, which on A4 at a 2 cm margin set
+// a line of about seventy-five characters and shout the headings. Five sixths
+// of every size, with the spacing that belongs to it, reads like a document
+// and carries about a fifth more text per page. The page's own width is the
+// walk's contentWidth, so no column cap applies.
+inline LayoutMetrics PaperMetrics(const LayoutMetrics& base) {
+    const float kPaperScale = 5.0f / 6.0f;
+    LayoutMetrics m = ScaleMetrics(base, kPaperScale);
+    m.bodyFontSize = base.bodyFontSize * kPaperScale;
+    m.codeFontSize = base.codeFontSize * kPaperScale;
+    for (int level = 1; level <= 6; ++level) {
+        m.headingSizes[level] = base.headingSizes[level] * kPaperScale;
+    }
+    m.maxContentWidth = 100000.0f;
+    return m;
+}
+
 inline Palette GitHubPalette() {
     Palette p = {};
     // GitHub's current markdown palette (light): the default ink, the

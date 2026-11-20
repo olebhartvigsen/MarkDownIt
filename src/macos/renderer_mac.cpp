@@ -677,8 +677,7 @@ void MacRenderer::SetContentWidthMode(int mode) {
 // unreadable, and a page at the window's zoom would not be a page.
 std::shared_ptr<const layout::DocumentLayout> MacRenderer::PrintLayout(
     const Document& doc, float contentWidthSeam) {
-    LayoutMetrics metrics = ScaleMetrics(baseMetrics_, 1.0f);
-    metrics.maxContentWidth = 100000.0f;
+    const LayoutMetrics metrics = PaperMetrics(baseMetrics_);
     const Palette printPalette = BasePalette();
 
     ZoomEngine layoutEngine(engine_, 1.0f);

@@ -775,12 +775,10 @@ std::shared_ptr<const layout::DocumentLayout> Renderer::BuildSharedLayout(
 }
 
 LayoutMetrics Renderer::PrintMetrics() const {
-    // The reading view's own sizes at 100%, and no column cap: the page's
-    // content width is the walk's contentWidth, and a cap here would print a
-    // narrow column centred on a wide sheet.
-    LayoutMetrics m = ScaleMetrics(BaseMetrics(), 1.0f);
-    m.maxContentWidth = 100000.0f;
-    return m;
+    // The paper sizes, from the one shared rule: the reading view's sizes are
+    // too large for a sheet, and a page scaled down from them would still set
+    // an airy column.
+    return PaperMetrics(BaseMetrics());
 }
 
 std::shared_ptr<const layout::DocumentLayout> Renderer::PrintLayout(

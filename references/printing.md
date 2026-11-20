@@ -1,9 +1,9 @@
 # Printing
 
 File ▸ Print (⌘P on the mac, Ctrl+P on Windows) prints the open document,
-one page per sheet. The page is the reading view's rendering of the same
-document at 100%, cut into sheets. It is not a screenshot, and it is not a
-second renderer.
+one page per sheet. The page is the same shared layout as the reading view,
+cut into sheets, with the type set smaller for paper. It is not a screenshot,
+and it is not a second renderer.
 
 ## The pieces
 
@@ -13,7 +13,7 @@ second renderer.
 | The page from a panel's description | `layout::PrintPageFromDescription` (`src/layout/print_pages.*`) | the sheet, the imageable rectangle, the margin that keeps the unprintable strip outside the layout |
 | The band painter | `layout::PaintBandPage` (`src/layout/print_pages.*`), `display::PlayWithOrigin` (`src/layout/display_player.*`) | the band's placement and the page's items, played through the shared player onto any target |
 | Bounds of a drawing | `display::ItemBounds` (`src/layout/display_player.cpp`) | the rectangle one display list item occupies, for the cut |
-| The layout of a page | `Renderer::PrintLayout` (Windows), `MacRenderer::PrintLayout` (macOS) | the shared walk at 100% in reading mode, outside the frame's cache |
+| The layout of a page | `Renderer::PrintLayout` (Windows), `MacRenderer::PrintLayout` (macOS) | the shared walk with `PaperMetrics`, outside the frame's cache |
 | The Windows driver | `src/print_win.*` | the classic panel and the printer DC, one page per band, the fallback of the modern path |
 | The modern print contract | `src/print_winrt.*`, `src/print_contract_abi.h` | the Windows.Graphics.Printing contract: the dialog's preview pane fed page by page, and the final job as command lists |
 | The print-path PDF | `src/print_pdf.*` | the bands written as a PDF: shared writer, exercised by the QA walk and its test |
@@ -33,8 +33,11 @@ inside its own `MapX`/`MapY`.
 
 Geometry is seam units (1/96 inch) everywhere, the unit the layout, the theme
 and both render targets already speak. The platform converts the panel's
-points once, at the boundary, and never again. A body line of 16 seam units
-is 12 pt on paper, which is what the reading view at 100% means.
+points once, at the boundary, and never again: a seam unit is 1/96 inch on
+paper whatever the printer's dpi. `PaperMetrics` shrinks the reading view's
+point sizes to five sixths, with the spacing that belongs to them, because a
+screen's 12 pt body reads as 12.8 pt on an A4 sheet and fills it too fast. The
+light palette is used whatever the window wears.
 
 `PrintPage` defaults to A4: 793.7 × 1122.5 seam units, a 2 cm margin (75.6).
 The margin shrinks on a small sheet instead of eating the page. Windows
@@ -68,9 +71,10 @@ draw a table's rule.
 ## What is on the page, and what is not
 
 On the page: headings, paragraphs, lists, quotes, code cards, tables, rules,
-every spacing the theme owns. The layout is the reading view's, so the page
-matches what the window shows at 100%. The light palette is used whatever the
-window is wearing: paper is white.
+every spacing the theme owns. The layout is the reading view's, so line
+breaks and block order are the same; only the type and its spacing are scaled
+down for paper. The light palette is used whatever the window is wearing:
+paper is white.
 
 Not on the page, in this version:
 

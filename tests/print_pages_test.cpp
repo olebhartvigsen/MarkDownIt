@@ -349,3 +349,23 @@ TEST(PrintPages, APageCarriesItsTablesWords) {
     }
     EXPECT_TRUE(pageTexts >= texts);
 }
+
+// Paper is not a window: a page sets smaller type than the reading view, and
+// it sets the spacing that belongs to that type, or the column reads airy.
+TEST(PrintPages, PaperSetsSmallerTypeThanTheReadingView) {
+    const LayoutMetrics screen = ScaleMetrics(BaseMetrics(), 1.0f);
+    const LayoutMetrics paper = PaperMetrics(BaseMetrics());
+    NEAR(paper.bodyFontSize, screen.bodyFontSize * 5.0f / 6.0f);
+    EXPECT_TRUE(paper.bodyFontSize < screen.bodyFontSize);
+    NEAR(paper.codeFontSize, screen.codeFontSize * 5.0f / 6.0f);
+    for (int level = 1; level <= 6; ++level) {
+        NEAR(paper.headingSizes[level],
+             screen.headingSizes[level] * 5.0f / 6.0f);
+    }
+    // The spacing shrinks with it, so a page is not a small column with large
+    // gaps.
+    NEAR(paper.paraGap, screen.paraGap * 5.0f / 6.0f);
+    EXPECT_TRUE(paper.paraGap < screen.paraGap);
+    // And the page's width is the walk's, not a reading cap.
+    EXPECT_TRUE(paper.maxContentWidth > 10000.0f);
+}

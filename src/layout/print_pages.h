@@ -3,8 +3,9 @@
 //
 // The geometry is seam units (1/96 inch) throughout, the unit the layout,
 // the theme and both render targets speak. A platform converts the print
-// panel's points once, at the boundary, and never again: a body line of 16
-// seam units is 12 pt on paper, which is what the reading view at 100% means.
+// panel's points once, at the boundary, and never again: a seam unit is
+// 1/96 inch on paper whatever the sheet's dpi. `PaperMetrics` sets the type
+// below the reading view's sizes, because those are tuned for a screen.
 //
 // The cut is a pure function of the laid out blocks, so it is testable
 // without a printer, and the same answer drives both ports.
