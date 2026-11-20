@@ -449,9 +449,22 @@ top.
   **494b6ba**, took three mechanical Windows build errors (missing
   `windows/render_target_win.h` include, enum member spellings this SDK
   only names through helpers, a winrt/WRL com_ptr assignment mismatch),
-  fixed in **9bc049b**: run **44633739360**, 12/12 green, the first
+  fixed in **9bc049b**: run **44633739360**,  12/12 green, the first
   Windows build of the whole contract. Exe installed by build-swap-verify
   (MD5 6ad644cff7e5d1b9ca65190f9228c6ba, PE32+ GUI x86-64, backup
   `MarkDownIt.exe.bak-2026-11-19-9bc049b-pre`). What remains of the
   acceptance is on the user's machine: Ctrl+P with a fed preview pane,
   a paper print, and a Microsoft Print to PDF pass.
+- **Preview scale fix (7801e24):** the first user test showed text about
+  2-3x too large, clipped at the right edge of the preview page. The
+  screenshot measurements matched the paper margin drawn at 1:1 into a
+  smaller box: MakePage hands the PANE's page box in DIPs, not the
+  paper's size, and DrawPage needs the dpi the surface was generated at
+  (Chromium's metro print driver, `print_document_source.cc`, is the
+  working reference: surface = box x displayDpi/96 px, context at that
+  dpi, a uniform 1/scale transform from the paper into the box). The
+  preview now takes the window's display dpi, scales the bands into the
+  box, and DrawPage reports that dpi; Paginate calls InvalidatePreview
+  on paper changes, and the job pass resets the context to 96 and
+  identity in case a preview pass left state behind. CI run on
+  7801e24: green, exe staged as `MarkDownIt.exe.new-7801e24`.
