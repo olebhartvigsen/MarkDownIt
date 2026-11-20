@@ -53,6 +53,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <mutex>
 #include <utility>
 
@@ -231,11 +232,15 @@ private:
     // own; this one is created once per source and never shared.
     HRESULT EnsureDevices();
 
-    // The preview surface, rebuilt when the page size changes.
-    HRESULT EnsurePreviewSurface(UINT width, UINT height);
+    // The preview surface, rebuilt when the requested size changes. The
+    // dialog asks for the page box it wants to show, in DIPs, that is NOT
+    // the paper's size; the surface is that box at the display's own dpi.
+    HRESULT EnsurePreviewSurface(UINT width, UINT height, float dpi);
 
-    // One page into the surface, then handed to the dialog.
-    HRESULT RenderPreview(uint32_t jobPage);
+    // One page into the surface, then handed to the dialog. boxW/boxH
+    // are the sizes MakePage asked for: the paper's bands are scaled to
+    // fit them, the same fit the dialog itself would apply.
+    HRESULT RenderPreview(uint32_t jobPage, float boxW, float boxH);
 
     // The final job: the pages as command lists through the print
     // control.
@@ -263,6 +268,7 @@ private:
     ComPtr<ID2D1Bitmap1> previewBitmap_;
     UINT surfaceWidth_ = 0;
     UINT surfaceHeight_ = 0;
+    float surfaceDpi_ = 0.0f;
 
     Snapshot snapshot_;
     bool devicesFailed_ = false;
@@ -320,9 +326,10 @@ HRESULT PrintSourceWin::EnsureDevices() {
     return S_OK;
 }
 
-HRESULT PrintSourceWin::EnsurePreviewSurface(UINT width, UINT height) {
+HRESULT PrintSourceWin::EnsurePreviewSurface(UINT width, UINT height,
+                                             float dpi) {
     if (previewBitmap_ != nullptr && surfaceWidth_ == width &&
-        surfaceHeight_ == height) {
+        surfaceHeight_ == height && surfaceDpi_ == dpi) {
         return S_OK;
     }
     texture_.Reset();
@@ -330,6 +337,7 @@ HRESULT PrintSourceWin::EnsurePreviewSurface(UINT width, UINT height) {
     previewBitmap_.Reset();
     surfaceWidth_ = 0;
     surfaceHeight_ = 0;
+    surfaceDpi_ = 0.0f;
 
     D3D11_TEXTURE2D_DESC desc = {};
     desc.Width = width;
@@ -348,23 +356,31 @@ HRESULT PrintSourceWin::EnsurePreviewSurface(UINT width, UINT height) {
     hr = texture_.As(&surface_);
     if (FAILED(hr)) return hr;
 
+    // The context carries the display's dpi, so a DIP in the paint below
+    // is the same DIP the dialog's pane is showing.
+    d2dContext_->SetDpi(dpi, dpi);
     D2D1_BITMAP_PROPERTIES1 props = {};
     props.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
     props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
-    props.dpiX = 96.0f;
-    props.dpiY = 96.0f;
+    props.dpiX = dpi;
+    props.dpiY = dpi;
     props.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET;
     hr = d2dContext_->CreateBitmapFromDxgiSurface(
         surface_.Get(), &props, previewBitmap_.ReleaseAndGetAddressOf());
     if (FAILED(hr)) return hr;
     surfaceWidth_ = width;
     surfaceHeight_ = height;
+    surfaceDpi_ = dpi;
     return S_OK;
 }
 
-HRESULT PrintSourceWin::RenderPreview(uint32_t jobPage) {
+HRESULT PrintSourceWin::RenderPreview(uint32_t jobPage, float boxW,
+                                      float boxH) {
     // One page through the shared band painter onto the surface's
-    // bitmap, the same placement the DC driver and the final pages use.
+    // bitmap: the paper's bands, shrunk into the box the pane asked
+    // for. The context transform is the only scale in the picture, the
+    // mechanism the classic DC path uses for its printer resolution;
+    // the display list never carries a transform of its own.
     std::shared_ptr<const layout::DocumentLayout> laid;
     layout::PrintPage page;
     std::vector<layout::PrintBand> bands;
@@ -377,6 +393,15 @@ HRESULT PrintSourceWin::RenderPreview(uint32_t jobPage) {
     if (!laid || jobPage > bands.size()) return E_FAIL;
 
     d2dContext_->SetTarget(previewBitmap_.Get());
+    // Uniform shrink, the smaller of the two fits: a box that somehow
+    // departs from the paper's shape letterboxes rather than stretches
+    // the text. The dialog's own box keeps the paper's aspect, so the
+    // two factors are the same in practice.
+    const float kx = boxW / page.width;
+    const float ky = boxH / page.height;
+    const float k = kx < ky ? kx : ky;
+    d2dContext_->SetTransform(
+        D2D1::Matrix3x2F::Scale(k, k));
     d2dContext_->BeginDraw();
     d2dContext_->Clear(D2D1::ColorF(D2D1::ColorF::White));
     {
@@ -386,6 +411,7 @@ HRESULT PrintSourceWin::RenderPreview(uint32_t jobPage) {
     }
     HRESULT hr = d2dContext_->EndDraw();
     d2dContext_->SetTarget(nullptr);
+    d2dContext_->SetTransform(D2D1::Matrix3x2F::Identity());
     return hr;
 }
 
@@ -433,6 +459,9 @@ IFACEMETHODIMP PrintSourceWin::Paginate(uint32_t jobPage,
                            : 0;
     if (preview_ != nullptr) {
         preview_->SetJobPageCount(print_contract::kFinalPageCount, pages);
+        // The paper changed: what the pane holds is stale, and the count
+        // above is the promise it refetches pages against.
+        preview_->InvalidatePreview();
     }
     return S_OK;
 }
@@ -465,19 +494,32 @@ IFACEMETHODIMP PrintSourceWin::MakePage(uint32_t desiredJobPage,
     }
 
     if (FAILED(EnsureDevices())) return E_FAIL;
-    // The surface the dialog shows, one page as one texture: the sizes
-    // arrive in DIPs, the dpi told to DrawPage is 96, so one seam unit
-    // is one pixel.
-    const UINT w = static_cast<UINT>(
-        std::max(1, static_cast<int>(width + 0.5f)));
-    const UINT h = static_cast<UINT>(
-        std::max(1, static_cast<int>(height + 0.5f)));
-    if (FAILED(EnsurePreviewSurface(w, h))) return E_FAIL;
 
-    HRESULT hr = RenderPreview(desiredJobPage);
+    // The dpi the pane shows at, the window's own display dpi; the value
+    // DrawPage is told, and the scale of the surface's pixels.
+    UINT dpi = GetDpiForWindow(window_);
+    if (dpi == 0) {
+        const HDC dc = GetDC(window_);
+        dpi = dc ? static_cast<UINT>(GetDeviceCaps(dc, LOGPIXELSX)) : 96;
+        if (dc) ReleaseDC(window_, dc);
+    }
+    if (dpi == 0) dpi = 96;
+    const float fdpi = static_cast<float>(dpi);
+
+    // The surface is the box MakePage asked for, at that dpi: the box is
+    // the pane's page image, NOT the paper, so its pixels are box DIPs
+    // times dpi over 96. The bands are drawn at the paper's own scale
+    // and shrink into the box inside RenderPreview.
+    const UINT w = static_cast<UINT>(
+        std::ceil(std::max(1.0f, width) * fdpi / 96.0f));
+    const UINT h = static_cast<UINT>(
+        std::ceil(std::max(1.0f, height) * fdpi / 96.0f));
+    if (FAILED(EnsurePreviewSurface(w, h, fdpi))) return E_FAIL;
+
+    HRESULT hr = RenderPreview(desiredJobPage, width, height);
     if (FAILED(hr)) return hr;
-    return preview_->DrawPage(desiredJobPage, surface_.Get(), 96.0f,
-                              96.0f);
+    return preview_->DrawPage(desiredJobPage, surface_.Get(), fdpi,
+                              fdpi);
 }
 
 IFACEMETHODIMP PrintSourceWin::MakeDocument(
@@ -530,6 +572,12 @@ HRESULT PrintSourceWin::PrintPages(
         bands = snapshot_.bands;
     }
     if (!laid || bands.empty()) return E_FAIL;
+
+    // A preview pass may have left a dpi and a scale on the shared
+    // context; the job's command lists are drawn at the paper's own
+    // 96-based units and no transform.
+    d2dContext_->SetDpi(96.0f, 96.0f);
+    d2dContext_->SetTransform(D2D1::Matrix3x2F::Identity());
 
     // The pipeline rasterizes whatever it cannot pass through as
     // vectors at this resolution; the description carries the printer's
