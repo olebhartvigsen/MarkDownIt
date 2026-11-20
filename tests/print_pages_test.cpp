@@ -358,14 +358,34 @@ TEST(PrintPages, PaperSetsSmallerTypeThanTheReadingView) {
     NEAR(paper.bodyFontSize, screen.bodyFontSize * 5.0f / 6.0f);
     EXPECT_TRUE(paper.bodyFontSize < screen.bodyFontSize);
     NEAR(paper.codeFontSize, screen.codeFontSize * 5.0f / 6.0f);
-    for (int level = 1; level <= 6; ++level) {
-        NEAR(paper.headingSizes[level],
-             screen.headingSizes[level] * 5.0f / 6.0f);
-    }
     // The spacing shrinks with it, so a page is not a small column with large
     // gaps.
     NEAR(paper.paraGap, screen.paraGap * 5.0f / 6.0f);
     EXPECT_TRUE(paper.paraGap < screen.paraGap);
     // And the page's width is the walk's, not a reading cap.
     EXPECT_TRUE(paper.maxContentWidth > 10000.0f);
+}
+
+// A title must not be a screen title on paper. The cap is relative to the
+// paper body, so a style with large headings is tamed while a compact style
+// keeps its own numbers.
+TEST(PrintPages, PaperHeadingsKeepAReadableHierarchy) {
+    const float caps[7] = {0.0f, 1.8f, 1.45f, 1.2f, 1.1f, 1.0f, 1.0f};
+    for (const LayoutMetrics base : {GitHubMetrics(), WikipediaMetrics(),
+                                     AppleMetrics()}) {
+        const LayoutMetrics paper = PaperMetrics(base);
+        for (int level = 1; level <= 6; ++level) {
+            EXPECT_TRUE(paper.headingSizes[level] <=
+                        paper.bodyFontSize * caps[level] + 0.001f);
+            EXPECT_TRUE(paper.headingSizes[level] >=
+                        (std::min)(base.headingSizes[level] * 5.0f / 6.0f,
+                                   paper.bodyFontSize * caps[level]) - 0.001f);
+        }
+        EXPECT_TRUE(paper.headingSizes[1] > paper.headingSizes[2]);
+        EXPECT_TRUE(paper.headingSizes[2] > paper.headingSizes[3]);
+    }
+    const LayoutMetrics apple = PaperMetrics(AppleMetrics());
+    EXPECT_TRUE(apple.headingSizes[1] < 20.0f);
+    EXPECT_TRUE(apple.headingSizes[2] < 16.0f);
+    NEAR(apple.headingSizes[1], apple.bodyFontSize * 1.8f);
 }

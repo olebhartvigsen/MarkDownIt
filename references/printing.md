@@ -35,9 +35,11 @@ Geometry is seam units (1/96 inch) everywhere, the unit the layout, the theme
 and both render targets already speak. The platform converts the panel's
 points once, at the boundary, and never again: a seam unit is 1/96 inch on
 paper whatever the printer's dpi. `PaperMetrics` shrinks the reading view's
-point sizes to five sixths, with the spacing that belongs to them, because a
-screen's 12 pt body reads as 12.8 pt on an A4 sheet and fills it too fast. The
-light palette is used whatever the window wears.
+body and spacing to five sixths, because a screen's 12 pt body reads as 12.8
+pt on an A4 sheet and fills it too fast. Headings get a second rule: after the
+scale, H1 through H6 are capped at 1.8, 1.45, 1.2, 1.1, 1.0 and 1.0 times the
+paper body. Without the cap the Apple style still printed a 25 pt title over
+a 10.6 pt body. The light palette is used whatever the window wears.
 
 `PrintPage` defaults to A4: 793.7 × 1122.5 seam units, a 2 cm margin (75.6).
 The margin shrinks on a small sheet instead of eating the page. Windows

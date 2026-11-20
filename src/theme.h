@@ -523,16 +523,25 @@ inline LayoutMetrics ScaleMetrics(const LayoutMetrics& base, float zoom) {
 // Paper is not a window. The reading view's sizes are tuned for a screen at
 // arm's length: a 12 pt body and a 24 pt H1, which on A4 at a 2 cm margin set
 // a line of about seventy-five characters and shout the headings. Five sixths
-// of every size, with the spacing that belongs to it, reads like a document
-// and carries about a fifth more text per page. The page's own width is the
+// of the body and spacing sizes, with the spacing that belongs to it, reads
+// like a document and carries about a fifth more text per page.
+//
+// A flat scale is not enough for the headings. The Apple style sets a 30 pt
+// H1 and a 21 pt H2, which still shout after the scale: a 25 pt title over a
+// 10.6 pt body is a screen title on paper. Each paper heading is capped at a
+// fixed multiple of the paper body, so the hierarchy stays readable and the
+// smaller styles keep the sizes they already had. The page's own width is the
 // walk's contentWidth, so no column cap applies.
 inline LayoutMetrics PaperMetrics(const LayoutMetrics& base) {
     const float kPaperScale = 5.0f / 6.0f;
+    // H1 through H6, relative to the paper body.
+    const float kHeadingCap[7] = {0.0f, 1.8f, 1.45f, 1.2f, 1.1f, 1.0f, 1.0f};
     LayoutMetrics m = ScaleMetrics(base, kPaperScale);
     m.bodyFontSize = base.bodyFontSize * kPaperScale;
     m.codeFontSize = base.codeFontSize * kPaperScale;
     for (int level = 1; level <= 6; ++level) {
-        m.headingSizes[level] = base.headingSizes[level] * kPaperScale;
+        m.headingSizes[level] = (std::min)(base.headingSizes[level] * kPaperScale,
+                                          m.bodyFontSize * kHeadingCap[level]);
     }
     m.maxContentWidth = 100000.0f;
     return m;
