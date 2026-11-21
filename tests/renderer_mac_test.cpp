@@ -428,14 +428,15 @@ TEST(RendererMac, FollowsTheWindowWidth) {
 
 TEST(RendererMac, KeepsTheGitHubTypeScale) {
     // The measured GitHub values, in DIP at the default zoom. The
-    // body is 16px at 1.5, code is 85% of it at 1.45, and the six
-    // headings follow the 2 / 1.5 / 1.25 / 1 / .875 / .85 em scale.
+    // body is 16px at 1.5, code is 85% of it at 1.45. The theme caps
+    // every heading against that body, so the first three come down
+    // from the raw 2 / 1.5 / 1.25 em scale to 28.8 / 23.2 / 19.2 DIP.
     const LayoutMetrics m = BaseMetrics();
     EXPECT_NEAR(m.bodyFontSize * kPtToDip, 16.0f, 0.01f);
     EXPECT_NEAR(m.codeFontSize * kPtToDip, 13.6f, 0.01f);
-    EXPECT_NEAR(m.headingSizes[1] * kPtToDip, 32.0f, 0.01f);
-    EXPECT_NEAR(m.headingSizes[2] * kPtToDip, 24.0f, 0.01f);
-    EXPECT_NEAR(m.headingSizes[3] * kPtToDip, 20.0f, 0.01f);
+    EXPECT_NEAR(m.headingSizes[1] * kPtToDip, 28.8f, 0.01f);
+    EXPECT_NEAR(m.headingSizes[2] * kPtToDip, 23.2f, 0.01f);
+    EXPECT_NEAR(m.headingSizes[3] * kPtToDip, 19.2f, 0.01f);
     EXPECT_NEAR(m.headingSizes[4] * kPtToDip, 16.0f, 0.01f);
     EXPECT_NEAR(m.headingSizes[5] * kPtToDip, 14.0f, 0.01f);
     EXPECT_NEAR(m.headingSizes[6] * kPtToDip, 13.6f, 0.01f);

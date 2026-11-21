@@ -26,6 +26,11 @@ cascade. At 96 DPI, 13.6px is 10.2pt.
 | H5 | .875em / 1.25 | 14 / 17.5 | `headingSizes[5] = 10.5pt` |
 | H6 | .85em / 1.25 | 13.6 / 17 | `headingSizes[6] = 10.2pt` |
 
+The theme caps every heading against the body, so the first three render
+at 21.6, 17.4 and 14.4 pt rather than the browser's raw em values. The
+cap is 1.8, 1.45, 1.2, 1.1, 1.0 and 1.0 times the 12 pt body, and the
+printed page uses the same ratios.
+
 Both renderers set the line box to `lineHeight` times the font size and centre
 the glyphs in it with half leading. Windows uses
 `DWRITE_LINE_SPACING_METHOD_UNIFORM`; the mac applies the same arithmetic over

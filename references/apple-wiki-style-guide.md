@@ -86,6 +86,10 @@ quote, so the same file reads well in all three.
 | Ink, muted ink | 1d1d1f, 6e6e73 |
 | Link | 0066cc, no underline |
 | Hairlines | d2d2d7 |
+
+The app caps headings against its 12.75 pt body at 1.8, 1.45, 1.2, 1.1,
+1.0 and 1.0 times, so the 40 px title renders at 30.6 px and the 28 px
+H2 at 24.65 px. Paper uses the same ratios at a smaller body.
 | Soft surface | f5f5f7 |
 | Code card | 8 px radius, 1 px border e5e5ea |
 | Box | 10 px radius, 16 px side and 12 px vertical padding |

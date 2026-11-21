@@ -58,6 +58,10 @@ the 2px radius match the profile or stay in the known differences.
 | Paragraph gap | 0.5em | `p` |
 | Link | 3366cc, no underline | `a` |
 | List | 1.6em indent, 0.1em between items | `ul`, `li` |
+
+The app caps headings against the body at 1.8, 1.45, 1.2, 1.1, 1.0 and
+1.0 times, so the Vector 1.5em H2 renders at 1.45em. Paper uses the
+same ratios at a smaller body.
 | Quote | 4px bar eaecf0, 32px padding, body ink | `blockquote` |
 | Code block | f8f9fa, 1px border eaecf0, 1em padding | `pre` |
 | Table | grid a2a9b1, header eaecf0, bold and centered, body f8f9fa | `.wikitable` |

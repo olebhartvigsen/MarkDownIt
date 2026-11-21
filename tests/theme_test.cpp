@@ -82,3 +82,29 @@ TEST(Theme, MarkerGlyphsCycleByDepth) {
     std::u16string b = ListMarker16(3);
     EXPECT_EQ(a, b);
 }
+
+// The reading view and the page read the same hierarchy. The ratio between a
+// heading and its body is one rule in theme.h, applied by both BaseMetrics and
+// PaperMetrics, so a style with a large screen title cannot print one either.
+TEST(Theme, ScreenHeadingsKeepThePaperRatio) {
+    const float caps[7] = {0.0f, 1.8f, 1.45f, 1.2f, 1.1f, 1.0f, 1.0f};
+    for (MarkdownStyle style : {MarkdownStyle::GitHub, MarkdownStyle::Wikipedia,
+                                MarkdownStyle::Apple}) {
+        const LayoutMetrics screen = BaseMetrics(style);
+        const LayoutMetrics paper = PaperMetrics(screen);
+        for (int level = 1; level <= 6; ++level) {
+            EXPECT_TRUE(screen.headingSizes[level] <=
+                        screen.bodyFontSize * caps[level] + 0.001f);
+            EXPECT_TRUE(paper.headingSizes[level] <=
+                        paper.bodyFontSize * caps[level] + 0.001f);
+            // The ratio is kept, not the absolute size: the page is smaller.
+            EXPECT_NEAR(paper.headingSizes[level] / paper.bodyFontSize,
+                        screen.headingSizes[level] / screen.bodyFontSize,
+                        0.001f);
+        }
+    }
+    // The Apple title the user asked to see smaller, on both surfaces.
+    EXPECT_TRUE(BaseMetrics(MarkdownStyle::Apple).headingSizes[1] < 23.0f);
+    EXPECT_TRUE(PaperMetrics(BaseMetrics(MarkdownStyle::Apple)).headingSizes[1]
+                < 20.0f);
+}

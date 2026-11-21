@@ -476,12 +476,28 @@ inline LayoutMetrics AppleMetrics() {
     return m;
 }
 
-inline LayoutMetrics BaseMetrics(MarkdownStyle style = ActiveMarkdownStyle()) {
-    switch (style) {
-        case MarkdownStyle::Wikipedia: return WikipediaMetrics();
-        case MarkdownStyle::Apple: return AppleMetrics();
-        default: return GitHubMetrics();
+// Heading sizes relative to the body, on the screen and on paper alike. A
+// screen style with a large title reads the same way on a sheet, so the cap
+// belongs to the theme rather than to the print path.
+inline void CapHeadingsToBody(LayoutMetrics& m) {
+    // H1 through H6.
+    static const float kHeadingBodyRatio[7] =
+        {0.0f, 1.8f, 1.45f, 1.2f, 1.1f, 1.0f, 1.0f};
+    for (int level = 1; level <= 6; ++level) {
+        m.headingSizes[level] = (std::min)(
+            m.headingSizes[level], m.bodyFontSize * kHeadingBodyRatio[level]);
     }
+}
+
+inline LayoutMetrics BaseMetrics(MarkdownStyle style = ActiveMarkdownStyle()) {
+    LayoutMetrics m;
+    switch (style) {
+        case MarkdownStyle::Wikipedia: m = WikipediaMetrics(); break;
+        case MarkdownStyle::Apple: m = AppleMetrics(); break;
+        default: m = GitHubMetrics(); break;
+    }
+    CapHeadingsToBody(m);
+    return m;
 }
 
 inline LayoutMetrics ScaleMetrics(const LayoutMetrics& base, float zoom) {
@@ -526,23 +542,19 @@ inline LayoutMetrics ScaleMetrics(const LayoutMetrics& base, float zoom) {
 // of the body and spacing sizes, with the spacing that belongs to it, reads
 // like a document and carries about a fifth more text per page.
 //
-// A flat scale is not enough for the headings. The Apple style sets a 30 pt
-// H1 and a 21 pt H2, which still shout after the scale: a 25 pt title over a
-// 10.6 pt body is a screen title on paper. Each paper heading is capped at a
-// fixed multiple of the paper body, so the hierarchy stays readable and the
-// smaller styles keep the sizes they already had. The page's own width is the
+// A flat scale is not enough on its own. The screen's own cap keeps the
+// hierarchy readable there; applying the same rule to the scaled body puts
+// the paper's headings in the same proportion. The page's own width is the
 // walk's contentWidth, so no column cap applies.
 inline LayoutMetrics PaperMetrics(const LayoutMetrics& base) {
     const float kPaperScale = 5.0f / 6.0f;
-    // H1 through H6, relative to the paper body.
-    const float kHeadingCap[7] = {0.0f, 1.8f, 1.45f, 1.2f, 1.1f, 1.0f, 1.0f};
     LayoutMetrics m = ScaleMetrics(base, kPaperScale);
     m.bodyFontSize = base.bodyFontSize * kPaperScale;
     m.codeFontSize = base.codeFontSize * kPaperScale;
     for (int level = 1; level <= 6; ++level) {
-        m.headingSizes[level] = (std::min)(base.headingSizes[level] * kPaperScale,
-                                          m.bodyFontSize * kHeadingCap[level]);
+        m.headingSizes[level] = base.headingSizes[level] * kPaperScale;
     }
+    CapHeadingsToBody(m);
     m.maxContentWidth = 100000.0f;
     return m;
 }

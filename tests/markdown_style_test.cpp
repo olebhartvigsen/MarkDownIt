@@ -40,7 +40,9 @@ TEST(MarkdownStyle, DefaultIsApple) {
 TEST(MarkdownStyle, GitHubProfileIsUnchanged) {
     const LayoutMetrics m = BaseMetrics(MarkdownStyle::GitHub);
     EXPECT_NEAR(m.bodyFontSize, 12.0f, 0.001f);
-    EXPECT_NEAR(m.headingSizes[1], 24.0f, 0.001f);
+    // The theme's 2em title is capped at 1.8 times the body, on the
+    // screen and on paper alike.
+    EXPECT_NEAR(m.headingSizes[1], 21.6f, 0.001f);
     EXPECT_NEAR(m.thematicBreakThickness, 4.0f, 0.001f);
     EXPECT_TRUE(m.linkUnderline);
     EXPECT_TRUE(m.tableZebra);
@@ -54,10 +56,12 @@ TEST(MarkdownStyle, GitHubProfileIsUnchanged) {
 TEST(MarkdownStyle, WikipediaProfileFollowsVector) {
     const LayoutMetrics m = BaseMetrics(MarkdownStyle::Wikipedia);
     // 14 px body at line-height 1.6; h1 1.8em, h2 1.5em, h3 1.2em.
+    // The heading caps bring the 1.5em H2 down to 1.45, the only one
+    // of the three the shared hierarchy tightens.
     EXPECT_NEAR(m.bodyFontSize * 96.0f / 72.0f, 14.0f, 0.001f);
     EXPECT_NEAR(m.bodyLineHeight, 1.6f, 0.001f);
     EXPECT_NEAR(m.headingSizes[1] / m.bodyFontSize, 1.8f, 0.001f);
-    EXPECT_NEAR(m.headingSizes[2] / m.bodyFontSize, 1.5f, 0.001f);
+    EXPECT_NEAR(m.headingSizes[2] / m.bodyFontSize, 1.45f, 0.001f);
     EXPECT_NEAR(m.headingSizes[3] / m.bodyFontSize, 1.2f, 0.001f);
     EXPECT_NEAR(m.headingSizes[4], m.bodyFontSize, 0.001f);
     // Serif regular for h1 and h2, bold sans for h3 to h6.
@@ -271,8 +275,10 @@ TEST(MarkdownStyle, WikipediaTableHeaderIsMarkedBeyondColour) {
 TEST(AppleStyle, ProfileFollowsTheDocCScale) {
     const LayoutMetrics m = BaseMetrics(MarkdownStyle::Apple);
     EXPECT_NEAR(m.bodyFontSize * 96.0f / 72.0f, 17.0f, 0.001f);
-    EXPECT_NEAR(m.headingSizes[1] * 96.0f / 72.0f, 40.0f, 0.001f);
-    EXPECT_NEAR(m.headingSizes[2] * 96.0f / 72.0f, 28.0f, 0.001f);
+    // DocC's 40px title and 28px H2 are capped at 1.8 and 1.45 times
+    // the 17px body, which is the same hierarchy paper uses.
+    EXPECT_NEAR(m.headingSizes[1] * 96.0f / 72.0f, 30.6f, 0.001f);
+    EXPECT_NEAR(m.headingSizes[2] * 96.0f / 72.0f, 24.65f, 0.001f);
     EXPECT_NEAR(m.bodyLineHeight, 1.47f, 0.001f);
     // A strict descending scale, so the hierarchy reads at a glance.
     for (int i = 1; i < 5; ++i)
