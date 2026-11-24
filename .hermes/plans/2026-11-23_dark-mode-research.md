@@ -282,6 +282,28 @@ P4 is done, after the follow-up pass:
   pair's worth of duplicated hex. Pie slices keep mermaid's own palette, as a
   pie's identity is its colours; the ring, labels and legend follow the page.
 
+The CI verdict, run 45358359215 on f229f7c: green on every job, both builds,
+both test suites, the Office and Mermaid oracles, and all six parity gates.
+The dark pair compares at 5.14% ink on macOS against 4.24% on Windows, with
+the same 5 px first-row offset the doc state already carries, which is a WARN
+inside the font tolerance rather than a failure.
+
+Five defects surfaced while getting there, four of them real product bugs
+rather than capture scaffolding:
+
+- The frame cache key carried document, width, zoom and caret but not the
+  appearance, so a theme switch replayed the light display list on Windows.
+- `PlanForSwitch` asserted that no relayout was needed. Colours are baked
+  into the display list, so that was false by construction.
+- `AppearanceFor(nil)` read `NSApp.effectiveAppearance`, so a window-level
+  appearance gave a dark frame around a light page. This one affected users
+  who pin Dark while the OS is Light, not just the QA walk.
+- The mac `dark` state photographed the welcome screen, and later, once it
+  reopened a file, a standalone `wide-diagram.svg` the walk had opened
+  earlier. It now reopens the document the process was launched with.
+- The two capture jobs uploaded artifacts whose names differed by one letter,
+  so a retried job could hand the comparator the wrong platform's pixels.
+
 P5, verification, is done as far as this machine allows: the two new suites
 build and pass under g++, the parity runners build, and
 `tools/check_alignment.sh` passes (sources, ledger, commands, shared guards).
