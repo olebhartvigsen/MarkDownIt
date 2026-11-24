@@ -14,6 +14,7 @@
 #include <vector>
 
 #import <AppKit/AppKit.h>
+#import <QuartzCore/QuartzCore.h>
 #import <CoreServices/CoreServices.h>
 #import <Foundation/Foundation.h>
 #include <dispatch/dispatch.h>
@@ -1912,6 +1913,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [window_ displayIfNeeded];
         [view_ displayIfNeeded];
         [view_ display];
+        // The view is layer-backed, and a display pass only marks the
+        // layer: the window server still has the old pixels until the
+        // transaction commits, which is after the screenshot.
+        [CATransaction flush];
     }
 }
 

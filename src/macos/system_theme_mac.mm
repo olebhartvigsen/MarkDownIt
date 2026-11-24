@@ -54,7 +54,17 @@ Palette SystemPalette() {
 }
 
 theme::Appearance AppearanceFor(NSAppearance* appearance) {
-    NSAppearanceName best = [(appearance ? appearance : NSApp.effectiveAppearance)
+    // Nil means "the appearance this code is drawing in", which is the
+    // current drawing appearance, not the application's. A window can
+    // carry an appearance of its own (the QA walk's dark state does), and
+    // reading NSApp.effectiveAppearance ignored it, so the frame went
+    // dark while the page kept the light palette.
+    NSAppearance* wanted = appearance ? appearance : nil;
+    if (!wanted) {
+        wanted = [NSAppearance currentDrawingAppearance];
+    }
+    if (!wanted) wanted = NSApp.effectiveAppearance;
+    NSAppearanceName best = [wanted
         bestMatchFromAppearancesWithNames:@[
             NSAppearanceNameAqua, NSAppearanceNameDarkAqua
         ]];
