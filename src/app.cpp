@@ -3922,9 +3922,16 @@ void AppWindow::QAAdvance() {
         QALogLine(line);
     } else if (state == "dark") {
         // The dark appearance, the twin of the mac walk's "dark" state.
-        // The capture is caret-free and the theme is forced, so the
-        // picture never depends on the runner's own setting.
+        // The mac state returns to the top of the page and out of source
+        // view first, so this does the same: the two pictures have to
+        // show the same place, or the comparison fails on the scroll
+        // position rather than on the appearance.
+        if (source_view_) ToggleSourceView();
+        scrollY_ = 0.0f;
+        StopScrollAnimation();
+        UpdateScrollInfo();
         SetThemeMode(theme::ThemeMode::Dark);
+        ForceRepaintNow();
         char line[120];
         snprintf(line, sizeof(line), "qa dark: appearance=%d page=%.3f",
                  static_cast<int>(appearance_),
