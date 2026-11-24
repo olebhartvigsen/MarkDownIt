@@ -42,9 +42,10 @@ std::vector<LinkBox> CollectLinks(const std::string& xml);
 const LinkBox* LinkAt(const std::vector<LinkBox>& links, float u, float v);
 
 // Whether the app may hand this URL to the system browser. Only the
-// schemes a document should be able to open: http, https and mailto.
-// Everything else (javascript:, data:, file:, a bare relative path) is
-// refused, because a diagram is untrusted input.
+// schemes a document should be able to open: https and mailto. Plain
+// http is refused along with javascript:, data:, file: and bare
+// relative paths, because a diagram is untrusted input and an
+// unencrypted target cannot be told from a tampered one.
 bool IsOpenableUrl(const std::string& href);
 
 }  // namespace svg

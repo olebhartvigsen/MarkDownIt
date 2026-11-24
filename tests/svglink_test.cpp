@@ -90,9 +90,12 @@ TEST(SvgLinks, HitTestPrefersTheLastDrawnBox) {
 
 TEST(SvgLinks, OnlyWebAndMailSchemesAreOpenable) {
     EXPECT_TRUE(svg::IsOpenableUrl("https://example.com"));
-    EXPECT_TRUE(svg::IsOpenableUrl("http://example.com"));
     EXPECT_TRUE(svg::IsOpenableUrl("HTTPS://EXAMPLE.COM"));
     EXPECT_TRUE(svg::IsOpenableUrl("mailto:someone@example.com"));
+    // Unencrypted links are refused: a reader cannot tell a plain-http
+    // target from a rewritten one.
+    EXPECT_FALSE(svg::IsOpenableUrl("http://example.com"));
+    EXPECT_FALSE(svg::IsOpenableUrl("HTTP://EXAMPLE.COM"));
     // A diagram is untrusted input: nothing else reaches the shell.
     EXPECT_FALSE(svg::IsOpenableUrl("javascript:alert(1)"));
     EXPECT_FALSE(svg::IsOpenableUrl("data:text/html,<script>"));

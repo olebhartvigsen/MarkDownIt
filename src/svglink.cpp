@@ -281,7 +281,10 @@ bool IsOpenableUrl(const std::string& href) {
         scheme.push_back(static_cast<char>(
             std::tolower(static_cast<unsigned char>(c))));
     }
-    return scheme == "http" || scheme == "https" || scheme == "mailto";
+    // Only encrypted web links and mail. A diagram can be written by
+    // anyone, and a plain-http target is one a reader cannot tell apart
+    // from a secure one once the browser has it.
+    return scheme == "https" || scheme == "mailto";
 }
 
 }  // namespace svg
