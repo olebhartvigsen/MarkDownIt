@@ -1,6 +1,7 @@
 // Swimlanes: parser unit + golden lane-box gate.
 #include "gtest_lite.h"
 #include "../src/mermaid/parse.h"
+#include "../src/mermaid/elk_profile.h"
 #include "../src/mermaid/layout.h"
 #include "mermaid/golden_loader.h"
 
@@ -108,5 +109,38 @@ TEST(MermaidSwimlanes, LaneBoxesMatchOracle_11) {
         // rely on the (not-yet-perfect) LR positioner. Compare only the
         // relative offset (right lane sits to the right of left lane).
         (void)lb.x; (void)lb.y; (void)g.x; (void)g.y;
+    }
+}
+
+// Two lanes whose nodes sit one rank apart must not overlap: the padding
+// is clamped to the clear space between them. This is the defect a
+// screenshot showed as two boxes crossing over the Router->API gap.
+TEST(MermaidSwimlanes, LaneBoxesDoNotOverlap) {
+    const char* names[] = {"10-swimlanes-simple", "11-swimlanes-cross"};
+    for (const char* name : names) {
+        const std::string path =
+            std::string("tests/mermaid/fixtures/") + name + ".mmd";
+        std::ifstream f(path);
+        std::stringstream ss;
+        ss << f.rdbuf();
+        mermaid::LayoutParams p = mermaid::ElkParams();
+        p.margin = 12.0;
+        const mermaid::LaidOutFlowchart out =
+            mermaid::LayoutFlowchart(mermaid::ParseFlowchart(ss.str()), p);
+        for (size_t i = 0; i < out.lanes.size(); ++i) {
+            for (size_t j = i + 1; j < out.lanes.size(); ++j) {
+                const auto& a = out.lanes[i];
+                const auto& b = out.lanes[j];
+                const float ax2 = a.x + a.width, ay2 = a.y + a.height;
+                const float bx2 = b.x + b.width, by2 = b.y + b.height;
+                const bool separate = ax2 <= b.x + 0.01f || bx2 <= a.x + 0.01f ||
+                                      ay2 <= b.y + 0.01f || by2 <= a.y + 0.01f;
+                if (!separate) {
+                    std::fprintf(stderr, "[%s] lanes %s and %s overlap\n", name,
+                                 a.id.c_str(), b.id.c_str());
+                }
+                EXPECT_TRUE(separate);
+            }
+        }
     }
 }

@@ -72,13 +72,42 @@ std::vector<LaneBox> ComputeLaneBoxes(const Flowchart& flow,
             any = true;
         }
         if (!any) continue;
+        // The padding is a preference, not a right: two lanes whose
+        // nodes sit one rank apart have only the rank gap between them,
+        // and 20 points of padding on each side would make the boxes
+        // overlap in the space between. Each side is therefore clamped
+        // to half the clear distance to the nearest node outside this
+        // lane, which keeps the box around its own nodes and off its
+        // neighbour's.
+        const auto clear = [](float gap) {
+            const float half = gap * 0.5f - 0.5f;
+            if (half < 3.0f) return 3.0f;
+            return half < kLanePadding ? half : kLanePadding;
+        };
+        float padLeft = kLanePadding, padRight = kLanePadding;
+        float padTop = kLanePadding, padBottom = kLanePadding;
+        for (const auto& ln : laid) {
+            if (ln.is_dummy) continue;
+            const float l = ln.x - ln.width * 0.5f;
+            const float r = ln.x + ln.width * 0.5f;
+            const float t = ln.y - ln.height * 0.5f;
+            const float b = ln.y + ln.height * 0.5f;
+            const bool inside = l >= minx - 0.01f && r <= maxx + 0.01f &&
+                                t >= miny - 0.01f && b <= maxy + 0.01f;
+            if (inside) continue;
+            if (r <= minx) padLeft = std::min(padLeft, clear(minx - r));
+            if (l >= maxx) padRight = std::min(padRight, clear(l - maxx));
+            if (b <= miny) padTop = std::min(padTop, clear(miny - b));
+            if (t >= maxy) padBottom = std::min(padBottom, clear(t - maxy));
+        }
+
         LaneBox box;
         box.id = sg.id;
         box.title = sg.title;
-        box.x = minx - kLanePadding;
-        box.y = miny - kLanePadding - kLaneTitleBand;
-        box.width = (maxx - minx) + 2.0f * kLanePadding;
-        box.height = (maxy - miny) + 2.0f * kLanePadding + kLaneTitleBand;
+        box.x = minx - padLeft;
+        box.y = miny - padTop - kLaneTitleBand;
+        box.width = (maxx - minx) + padLeft + padRight;
+        box.height = (maxy - miny) + padTop + padBottom + kLaneTitleBand;
         out.push_back(box);
     }
     return out;
