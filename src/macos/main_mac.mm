@@ -1904,6 +1904,14 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
         [self toolbarSync];
         [view_ setNeedsDisplay:YES];
+        // The screenshot is taken as soon as the state announces itself,
+        // and an appearance change redraws on the next display pass. Work
+        // the layout and the pixels through now, or the capture keeps the
+        // frame from before the switch.
+        [view_ layoutSubtreeIfNeeded];
+        [window_ displayIfNeeded];
+        [view_ displayIfNeeded];
+        [view_ display];
     }
 }
 

@@ -429,7 +429,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MarkDownIt-window-capture
+          name: MarkDownIt-macos-capture
           path: |
             build-mac/window.png
             build-mac/qa/*.png
@@ -579,7 +579,7 @@ jobs:
       - name: Download the mac captures
         uses: actions/download-artifact@v4
         with:
-          name: MarkDownIt-window-capture
+          name: MarkDownIt-macos-capture
           path: captures/macos
 
       - name: Download the Windows captures
