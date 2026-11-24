@@ -2892,6 +2892,17 @@ void AppWindow::OnCreate(HWND hwnd) {
     page_palette_ = PaletteFor(ActiveMarkdownStyle(), appearance_);
     renderer_.SetTheme(page_palette_);
     welcome_.SetPalette(platform::WelcomePaletteFor(appearance_));
+    // The outline pane is part of the window, not the page, but a dark
+    // page beside a grey pane reads as two documents side by side. In
+    // dark the pane takes the page colour; in light it keeps the warm
+    // chrome it has always had.
+    {
+        outline_.ApplyChromePalette(
+            SidePanePaletteFor(appearance_, ActiveMarkdownStyle()));
+        if (outline_.IsCreated()) {
+            InvalidateRect(outline_.Handle(), nullptr, TRUE);
+        }
+    }
     ApplyPreferredAppMode(theme_mode_);
 
     // Zoom is a global view setting, not per-document state: restore
@@ -6036,6 +6047,16 @@ void AppWindow::ApplyAppearance() {
     // The home screen is branded, not token-based, so it takes its own
     // record from the same appearance.
     welcome_.SetPalette(platform::WelcomePaletteFor(appearance_));
+    // The every-switch path: the outline pane follows the page, which in
+    // dark means the page colour rather than the chrome palette's warm
+    // grey.
+    {
+        outline_.ApplyChromePalette(
+            SidePanePaletteFor(appearance_, ActiveMarkdownStyle()));
+        if (outline_.IsCreated()) {
+            InvalidateRect(outline_.Handle(), nullptr, TRUE);
+        }
+    }
     // SVG scenes cache the branch they were read with.
     renderer_.ClearSvgCache();
     ApplyNativeTheme();

@@ -65,7 +65,11 @@ OutlinePane::~OutlinePane() {
 void OutlinePane::InitColors() {
     // The warm neutrals of the shared chrome palette, the one the mac
     // build draws its pane from too, so the two keep the same look.
-    const ChromePalette c = BaseChromePalette();
+    ApplyChromePalette(palette_);
+}
+
+void OutlinePane::ApplyChromePalette(const ChromePalette& c) {
+    palette_ = c;
     const auto color = [](const ThemeColor& v) {
         return D2D1::ColorF(v.r, v.g, v.b, v.a);
     };

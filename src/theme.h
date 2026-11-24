@@ -986,3 +986,16 @@ inline ChromePalette DarkChromePalette() {
 inline ChromePalette ChromePaletteFor(theme::Appearance appearance) {
     return theme::IsDark(appearance) ? DarkChromePalette() : BaseChromePalette();
 }
+
+// The chrome palette for the surfaces that sit beside the page, which is
+// the outline pane. In dark the pane is not a grey panel next to a black
+// page: it takes the page colour, so the two read as one surface. In
+// light it keeps the warm chrome it has always had.
+inline ChromePalette SidePanePaletteFor(theme::Appearance appearance,
+                                        MarkdownStyle style) {
+    ChromePalette c = ChromePaletteFor(appearance);
+    if (theme::IsDark(appearance)) {
+        c.paneBg = PaletteFor(style, appearance).pageBg;
+    }
+    return c;
+}

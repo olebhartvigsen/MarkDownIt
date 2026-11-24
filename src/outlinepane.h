@@ -205,6 +205,9 @@ private:
     int dpi_ = 96;
 
     // Colors (light theme, pane-local; see CreateFonts note in .cpp).
+    // The palette last applied, so a re-created pane comes back in
+    // the appearance the window is in rather than in light.
+    ChromePalette palette_ = BaseChromePalette();
     D2D1_COLOR_F colBg_ = {};
     D2D1_COLOR_F colSep_ = {};
     D2D1_COLOR_F colText_ = {};
@@ -214,6 +217,11 @@ private:
     D2D1_COLOR_F colHoverBg_ = {};
     D2D1_COLOR_F colArrow_ = {};
     void InitColors();
+    // Recolour the pane for the appearance the window is in. The
+    // owner passes the chrome palette, with the page colour in paneBg
+    // when the canvas is dark, so the pane and the page read as one
+    // surface instead of a grey panel beside a black one.
+    void ApplyChromePalette(const ChromePalette& palette);
 
     std::function<void(uint32_t offset)> navigate_;
     std::function<void()> focusCycle_;

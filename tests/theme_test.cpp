@@ -108,3 +108,30 @@ TEST(Theme, ScreenHeadingsKeepThePaperRatio) {
     EXPECT_TRUE(PaperMetrics(BaseMetrics(MarkdownStyle::Apple)).headingSizes[1]
                 < 20.0f);
 }
+
+// The outline pane sits beside the page. In dark a grey pane next to a
+// black page reads as two documents, so the pane takes the page colour.
+TEST(Theme, DarkSidePaneTakesThePageColour) {
+    const MarkdownStyle styles[] = {MarkdownStyle::GitHub, MarkdownStyle::Apple,
+                                    MarkdownStyle::Wikipedia};
+    for (MarkdownStyle style : styles) {
+        const Palette page = PaletteFor(style, theme::Appearance::Dark);
+        const ChromePalette pane =
+            SidePanePaletteFor(theme::Appearance::Dark, style);
+        EXPECT_NEAR(pane.paneBg.r, page.pageBg.r, 0.001f);
+        EXPECT_NEAR(pane.paneBg.g, page.pageBg.g, 0.001f);
+        EXPECT_NEAR(pane.paneBg.b, page.pageBg.b, 0.001f);
+        // Opaque: the pane must cover the sidebar material behind it.
+        EXPECT_NEAR(pane.paneBg.a, 1.0f, 0.001f);
+    }
+}
+
+// In light nothing changes: the warm chrome grey stays.
+TEST(Theme, LightSidePaneKeepsTheChromeColour) {
+    const ChromePalette chrome = ChromePaletteFor(theme::Appearance::Light);
+    const ChromePalette pane =
+        SidePanePaletteFor(theme::Appearance::Light, MarkdownStyle::GitHub);
+    EXPECT_NEAR(pane.paneBg.r, chrome.paneBg.r, 0.001f);
+    EXPECT_NEAR(pane.paneBg.g, chrome.paneBg.g, 0.001f);
+    EXPECT_NEAR(pane.paneBg.b, chrome.paneBg.b, 0.001f);
+}

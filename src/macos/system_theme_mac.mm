@@ -12,6 +12,7 @@
 #import <AppKit/AppKit.h>
 
 #include "system_theme_mac.h"
+#include "theme.h"
 
 namespace platform {
 namespace {
@@ -108,8 +109,17 @@ ChromePalette SidebarPaletteForAppearance(NSAppearance* appearance) {
         resolve();
     }
     // The material below the pane is the backdrop; the pane itself
-    // stays clear.
+    // stays clear. That is right in light, where the sidebar material is
+    // the familiar grey, and wrong in dark, where it sits beside a black
+    // page as a light grey slab. In dark the pane takes the page colour,
+    // so the outline and the document read as one surface.
     c.paneBg = ThemeColor{0.0f, 0.0f, 0.0f, 0.0f};
+    const bool dark =
+        appearance != nil &&
+        [[appearance name] isEqualToString:NSAppearanceNameDarkAqua];
+    if (dark) {
+        c.paneBg = DarkPalette().pageBg;
+    }
     c.paneText = text;
     c.paneTextMuted = muted;
     c.paneActiveBg = activeBg;
