@@ -2397,11 +2397,56 @@ std::string AdaptForDark(const std::string& xml, uint32_t paperRgb,
     return out;
 }
 
+namespace {
+
+// Gives every <text> without a colour of its own the page's ink.
+//
+// Diagram exporters write the label colour on a <g> or in a stylesheet
+// and leave the <text> bare, so the reader inherits it, or falls back to
+// black when it does not implement inheritance. On a dark page that is
+// black text on a near-black card: the label is there and cannot be
+// read. An explicit fill on the element settles it either way, and a
+// presentation attribute loses to a class rule, so a stylesheet that
+// does say what it wants still wins.
+std::string InkBareText(const std::string& xml, uint32_t inkRgb) {
+    const Rgb ink = HexRgb(inkRgb);
+    const std::string attribute = " fill=\"" + ToCss(ink) + "\"";
+    std::string out;
+    out.reserve(xml.size() + 64);
+    size_t at = 0;
+    while (at < xml.size()) {
+        const size_t tag = xml.find("<text", at);
+        if (tag == std::string::npos) {
+            out.append(xml, at, std::string::npos);
+            break;
+        }
+        // "<textPath" is a different element and inherits from its
+        // parent <text>, which this pass already covers.
+        const bool text_path = xml.compare(tag, 9, "<textPath") == 0;
+        const size_t tag_end = xml.find('>', tag);
+        if (tag_end == std::string::npos) {
+            out.append(xml, at, std::string::npos);
+            break;
+        }
+        out.append(xml, at, tag - at);
+        const std::string open = xml.substr(tag, tag_end - tag);
+        out += open;
+        const bool has_fill = open.find("fill=") != std::string::npos ||
+                              open.find("fill:") != std::string::npos ||
+                              open.find("fill =") != std::string::npos;
+        if (!text_path && !has_fill) out += attribute;
+        at = tag_end;
+    }
+    return out;
+}
+
+}  // namespace
+
 std::string PrepareSvgForAppearance(const std::string& xml, bool dark,
                                     uint32_t paperRgb, uint32_t inkRgb) {
     const std::string resolved = ResolveLightDark(xml, dark);
     if (!dark) return resolved;
-    return AdaptForDark(resolved, paperRgb, inkRgb);
+    return InkBareText(AdaptForDark(resolved, paperRgb, inkRgb), inkRgb);
 }
 
 }  // namespace svg

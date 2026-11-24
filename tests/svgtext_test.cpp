@@ -1209,3 +1209,45 @@ TEST(SvgText, LightModeIsUntouched) {
     // The dark branch is black, and black becomes the ink, not the paper.
     EXPECT_TRUE(dark.find("#e6edf3") != std::string::npos);
 }
+
+// Labels are the part a diagram reader notices first, and they are the
+// part exporters most often leave bare: the colour sits on a <g> or in a
+// stylesheet, so the <text> has none and the reader paints black.
+TEST(SvgText, GivesBareTextTheInk) {
+    const std::string xml =
+        "<svg><text x='10' y='20'>Start</text>"
+        "<text x='10' y='40' fill-opacity='0.6'>Faded</text></svg>";
+    const std::string dark =
+        svg::PrepareSvgForAppearance(xml, true, 0x0d1117, 0xe6edf3);
+    size_t labels = 0;
+    for (size_t at = dark.find("<text"); at != std::string::npos;
+         at = dark.find("<text", at + 1)) {
+        const std::string tag = dark.substr(at, dark.find('>', at) - at);
+        EXPECT_TRUE(tag.find("fill=\"#e6edf3\"") != std::string::npos);
+        ++labels;
+    }
+    EXPECT_EQ(labels, 2u);
+}
+
+TEST(SvgText, KeepsAnExplicitTextColour) {
+    // A label with its own colour is remapped, not replaced: the ink
+    // default must not overwrite the value the document chose.
+    const std::string xml = "<text fill='#ff0000'>Error</text>";
+    const std::string dark =
+        svg::PrepareSvgForAppearance(xml, true, 0x0d1117, 0xe6edf3);
+    EXPECT_TRUE(dark.find("fill=\"#e6edf3\"") == std::string::npos);
+    EXPECT_TRUE(dark.find("#e6edf3") == std::string::npos);
+}
+
+TEST(SvgText, LeavesTextPathAlone) {
+    // A <textPath> inherits from its parent <text>, which already got
+    // the ink; adding a second attribute would only confuse the reader.
+    const std::string xml = "<text><textPath href='#p'>along</textPath></text>";
+    const std::string dark =
+        svg::PrepareSvgForAppearance(xml, true, 0x0d1117, 0xe6edf3);
+    const size_t path = dark.find("<textPath");
+    ASSERT_TRUE(path != std::string::npos);
+    const std::string tag =
+        dark.substr(path, dark.find('>', path) - path);
+    EXPECT_TRUE(tag.find("fill=") == std::string::npos);
+}

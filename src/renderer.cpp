@@ -3298,6 +3298,14 @@ svg::SvgDoc* Renderer::GetSvgDoc(const Node& n, float availW) {
     SvgCacheEntry entry;
     entry.srcOffset = n.srcOffset;
     entry.rawHash = rawHash;
+    // The picture path is the one a standalone .svg file takes, and it
+    // needs the same two rewrites as every other SVG load: resolve
+    // light-dark(), then recolour the diagram for the page it lands on.
+    // The cache is cleared on a theme switch, so a doc parsed here never
+    // outlives the appearance it was read in.
+    utf8 = svg::PrepareSvgForAppearance(utf8, palette_.dark,
+                                        Rgb24(palette_.pageBg),
+                                        Rgb24(palette_.textPrimary));
     bool loaded = entry.doc.Load(d2d_ctx5_, utf8);
     diag::TraceFmt("SVGLOAD off=%u bytes=%zu ok=%d w=%.1f h=%.1f",
                    n.srcOffset, utf8.size(), loaded ? 1 : 0,
