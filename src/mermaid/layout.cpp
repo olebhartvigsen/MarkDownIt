@@ -149,6 +149,93 @@ static void ApplyRankdir(LayoutGraph& g, Dir dir) {
     }
 }
 
+namespace {
+
+// Lanes are laid out as if they were ordinary nodes, so two subgraphs one
+// rank apart are separated by the rank gap alone (20 points with the ELK
+// profile). A lane box needs its padding on both sides, so the boxes then
+// have to either overlap or be shrunk, and both look wrong: the drawing
+// should reserve the room.
+//
+// This pass runs after the coordinates and before the routing, so the
+// edges are routed to where the nodes end up. A lane that would come
+// closer than `kLaneGap` to the previous one pushes everything from its
+// own start onwards, which keeps the relative order and the dummy chains
+// between lanes where they belong.
+void SeparateLanes(LayoutGraph& g, const Flowchart& flow) {
+    if (flow.subgraphs.size() < 2) return;
+
+    // Which axis the lanes run along, taken from the drawing rather than
+    // from the header: a left-to-right chart spreads along x, a top-down
+    // one along y, and the wider of the two is the axis to separate on.
+    double minx = 1e30, maxx = -1e30, miny = 1e30, maxy = -1e30;
+    for (const LayoutNode& n : g.nodes) {
+        minx = std::min(minx, static_cast<double>(n.x));
+        maxx = std::max(maxx, static_cast<double>(n.x));
+        miny = std::min(miny, static_cast<double>(n.y));
+        maxy = std::max(maxy, static_cast<double>(n.y));
+    }
+    const bool sideways = (maxx - minx) >= (maxy - miny);
+    const double kLaneGap = 2.0 * 20.0 + 10.0;  // two pads and a margin
+
+    // Real nodes keep the order of flow.nodes; dummies are interleaved in
+    // the graph only, so map by counting the real ones.
+    std::vector<int> graphIndexOfFlowNode(flow.nodes.size(), -1);
+    size_t flowIdx = 0;
+    for (size_t i = 0; i < g.nodes.size() && flowIdx < flow.nodes.size(); ++i) {
+        if (g.nodes[i].is_dummy) continue;
+        graphIndexOfFlowNode[flowIdx++] = static_cast<int>(i);
+    }
+    if (flowIdx != flow.nodes.size()) return;  // unexpected shape; leave it
+
+    struct Span {
+        double lo = 0.0, hi = 0.0, shift = 0.0;
+    };
+    std::vector<Span> spans;
+    for (const auto& sg : flow.subgraphs) {
+        std::vector<size_t> members;
+        for (int ni : sg.node_indices) {
+            if (ni >= 0 && ni < static_cast<int>(graphIndexOfFlowNode.size()) &&
+                graphIndexOfFlowNode[ni] >= 0) {
+                members.push_back(static_cast<size_t>(graphIndexOfFlowNode[ni]));
+            }
+        }
+        if (members.empty()) continue;
+        double lo = 1e30, hi = -1e30;
+        for (size_t mi : members) {
+            const LayoutNode& n = g.nodes[mi];
+            const double c = sideways ? n.x : n.y;
+            const double half = sideways ? n.width * 0.5 : n.height * 0.5;
+            lo = std::min(lo, c - half);
+            hi = std::max(hi, c + half);
+        }
+        spans.push_back({lo, hi, 0.0});
+    }
+    if (spans.size() < 2) return;
+
+    std::sort(spans.begin(), spans.end(),
+              [](const Span& a, const Span& b) { return a.lo < b.lo; });
+
+    double cursor = -1e30;
+    for (size_t i = 0; i < spans.size(); ++i) {
+        const double lo = spans[i].lo + spans[i].shift;
+        if (cursor > -1e29 && lo < cursor + kLaneGap) {
+            const double delta = cursor + kLaneGap - lo;
+            const double threshold = lo - 0.5;
+            for (LayoutNode& n : g.nodes) {
+                const double c = sideways ? n.x : n.y;
+                if (c < threshold) continue;
+                if (sideways) n.x = static_cast<float>(n.x + delta);
+                else n.y = static_cast<float>(n.y + delta);
+            }
+            for (size_t k = i; k < spans.size(); ++k) spans[k].shift += delta;
+        }
+        cursor = std::max(cursor, spans[i].hi + spans[i].shift);
+    }
+}
+
+}  // namespace
+
 LaidOutFlowchart FinalizeFlowchartLayout(const Flowchart& flow,
                                           LayoutGraph g,
                                           const LayoutParams& p) {
@@ -168,6 +255,7 @@ LaidOutFlowchart FinalizeFlowchartLayout(const Flowchart& flow,
     Normalize(g);
     Order(g);
     AssignCoordinates(g, p);
+    SeparateLanes(g, flow);
     RouteEdges(g, p);
     Denormalize(g);
     ApplyRankdir(g, flow.dir);
@@ -210,6 +298,7 @@ LaidOutFlowchart FinalizeFlowchartLayout(const Flowchart& flow,
     }
     return out;
 }
+
 
 LaidOutFlowchart LayoutFlowchart(const Flowchart& flow, const LayoutParams& p) {
     return FinalizeFlowchartLayout(flow, FlowchartToLayoutGraph(flow), p);
