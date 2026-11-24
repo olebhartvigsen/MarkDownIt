@@ -134,10 +134,13 @@ void Renderer::DrawMermaidStateBlock(ID2D1RenderTarget* rt,
     }
 
     // Transition labels sit on the line, at the position the layout
-    // gave them.
+    // gave them. That position is the label's top-left corner, so the
+    // centre the painter wants is half its box further on: drawn at the
+    // corner, every label sat half its width to the left of its line.
     for (const auto& label : ls.labels) {
-        DrawStateText(dw, rt, body_fmt_, label.text, X(label.x), Y(label.y),
-                      scale, ink);
+        DrawStateText(dw, rt, body_fmt_, label.text,
+                      X(label.x + label.w * 0.5),
+                      Y(label.y + label.h * 0.5), scale, ink);
     }
 
     fill->Release();

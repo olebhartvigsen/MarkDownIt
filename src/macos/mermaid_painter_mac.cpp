@@ -1089,8 +1089,11 @@ void PaintState(TextEngine* engine, RenderTarget* target,
                      ink);
     }
 
+    // The layout gives the label's top-left corner; the painter centres
+    // its text, so the centre is half the box further on.
     for (const auto& label : laid.labels) {
-        DrawCentered(target, engine, label.text, font, X(label.x), Y(label.y),
+        DrawCentered(target, engine, label.text, font,
+                     X(label.x + label.w * 0.5), Y(label.y + label.h * 0.5),
                      ink);
     }
 }
