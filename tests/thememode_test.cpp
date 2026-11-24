@@ -86,7 +86,10 @@ TEST(ThemeMode, SwitchNeverTouchesTheDocument) {
     for (theme::Appearance from : both) {
         for (theme::Appearance to : both) {
             const theme::SwitchPlan plan = theme::PlanForSwitch(from, to);
-            EXPECT_FALSE(plan.relayout);
+            // The display list bakes colours in, so a real switch lays
+            // the document out again. It still never reparses and never
+            // touches the document itself.
+            EXPECT_EQ(plan.relayout, from != to);
             EXPECT_FALSE(plan.reparse);
             EXPECT_FALSE(plan.touchesDocument);
             EXPECT_EQ(plan.repaint, from != to);

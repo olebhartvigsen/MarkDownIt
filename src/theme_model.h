@@ -7,11 +7,14 @@
 // cannot drift on the question, and a test can answer it without a
 // window.
 //
-// A switch is a repaint and nothing else. The palette decides colours,
-// never geometry: no block moves, no line rewraps, no text is reparsed,
-// and the caret and scroll position stay where they were. That is the
-// "presentation layer" rule from references/night-mode-reference.md,
-// written down where the shells read it.
+// A switch repaints and lays the same document out again. The palette
+// decides colours, never geometry: no block moves, no line rewraps and no
+// text is reparsed, so the caret and the scroll position stay where they
+// were. The relayout is not optional, because the display list bakes the
+// palette's colours into its items at layout time; replaying the previous
+// list paints the previous appearance. That is still the "presentation
+// layer" rule from references/night-mode-reference.md: the document is
+// read again, not changed.
 
 #include "thememode.h"
 
@@ -20,8 +23,9 @@ namespace theme {
 struct SwitchPlan {
     // The window must be repainted with the new palette.
     bool repaint = true;
-    // The document must be laid out again. False: colours do not move
-    // glyphs, so a relayout would only cost time and risk a caret jump.
+    // The document must be laid out again, because the display list
+    // carries the palette's colours. Geometry is identical, so the caret
+    // does not move.
     bool relayout = false;
     // The buffer must be parsed again. False for the same reason.
     bool reparse = false;
@@ -34,6 +38,7 @@ struct SwitchPlan {
 inline SwitchPlan PlanForSwitch(Appearance from, Appearance to) {
     SwitchPlan plan;
     plan.repaint = (from != to);
+    plan.relayout = (from != to);
     return plan;
 }
 

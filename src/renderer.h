@@ -384,13 +384,18 @@ private:
         int widthMode = 0;
         size_t pictures = 0;
         uint32_t caret = 0xffffffffu;
+        // The appearance the layout was built in. Colours are baked into
+        // the display list at layout time, so a light layout replayed on
+        // the dark page is a white page: without this field a theme
+        // switch hands back the previous layout.
+        bool dark = false;
         bool operator==(const LayoutCacheKey& o) const {
             return doc == o.doc && fingerprint == o.fingerprint &&
                    contentWidth == o.contentWidth && zoom == o.zoom &&
                    editing == o.editing && wrap == o.wrap &&
                    standaloneSvg == o.standaloneSvg &&
                    widthMode == o.widthMode && pictures == o.pictures &&
-                   caret == o.caret;
+                   caret == o.caret && dark == o.dark;
         }
     };
     struct LayoutCacheSlot {

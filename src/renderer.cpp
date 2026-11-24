@@ -682,6 +682,7 @@ std::shared_ptr<const layout::DocumentLayout> Renderer::SharedLayoutPass(
     key.widthMode = contentWidthMode_;
     key.pictures = svg_cache_.size() + img_cache_.size() + img_size_cache_.size();
     key.caret = sel ? sel->active.offset : 0xffffffffu;
+    key.dark = palette && palette->dark;
     if (!(layoutReuse_ && slot.layout && slot.key == key)) {
         slot.layout = RunSharedLayoutPass(doc, dw, metrics, palette,
                                           contentWidth, sel);
