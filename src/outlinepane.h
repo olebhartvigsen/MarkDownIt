@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "outline.h"
+#include "theme.h"
 
 // Outline pane: the heading navigation tree, docked on the left side of
 // the content window as a child HWND.
@@ -89,6 +90,12 @@ public:
     // offset so edited rows keep their folded state (same policy as
     // the markers sidecar). An empty list shows the empty state.
     void SetItems(const std::vector<OutlineItem>& items);
+
+    // Recolour the pane for the appearance the window is in. The owner
+    // passes the chrome palette, with the page colour in paneBg when the
+    // canvas is dark, so the pane and the page read as one surface
+    // instead of a grey panel beside a black one.
+    void ApplyChromePalette(const ChromePalette& palette);
 
     // Active heading (the section the caret is in). index is an index
     // into items, -1 clears. One-way sync from the owner.
@@ -217,11 +224,6 @@ private:
     D2D1_COLOR_F colHoverBg_ = {};
     D2D1_COLOR_F colArrow_ = {};
     void InitColors();
-    // Recolour the pane for the appearance the window is in. The
-    // owner passes the chrome palette, with the page colour in paneBg
-    // when the canvas is dark, so the pane and the page read as one
-    // surface instead of a grey panel beside a black one.
-    void ApplyChromePalette(const ChromePalette& palette);
 
     std::function<void(uint32_t offset)> navigate_;
     std::function<void()> focusCycle_;
