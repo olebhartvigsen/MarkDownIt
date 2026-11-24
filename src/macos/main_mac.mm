@@ -1886,6 +1886,13 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         [view_ setNeedsDisplay:YES];
     } else if ([state isEqualToString:@"dark"]) {
         if (sourceView_) [self OnToggleSourceView];
+        // The walk reaches this state from the welcome screen
+        // (welcome-scrolled ran just before), and the picture is meant to
+        // show the page's head. Reopen the fixture first, or the capture
+        // is the welcome page in a dark window and pairs with nothing.
+        if (app_->WelcomeMode() && !app_->filePath().empty()) {
+            [self OpenPath:app_->filePath()];
+        }
         // The top of the page in the dark appearance, so the picture
         // shows the page's head the way the doc state does. The size
         // comes back first: the narrow and wide states resize the
