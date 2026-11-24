@@ -224,6 +224,9 @@ const Requirements& RequirementsOf(CommandId id) {
         return kZoomOut;
     case CommandId::ViewRecent:
     case CommandId::TabBar:
+        // The appearance is available on every surface: an empty page on
+        // the welcome screen is exactly where a glare hurts most.
+    case CommandId::Theme:
         return kAlways;
 
     // Find. The two steps need a query; replace also needs edit mode

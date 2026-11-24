@@ -204,6 +204,13 @@ public:
     float MeasureSourceView(IDWriteFactory* dw, const std::string& src,
                             float widthDip, float topOffsetDip);
 
+    // The colours the window is drawn in. The shell resolves the
+    // appearance and hands the matching palette in; the renderer never
+    // asks the OS and never builds a palette of its own, so measure and
+    // paint cannot disagree about a colour.
+    void SetTheme(const Palette& palette) { palette_ = palette; }
+    const Palette& ThemePalette() const { return palette_; }
+
 private:
     IDWriteTextFormat* body_fmt_ = nullptr;
     IDWriteTextFormat* num_fmt_ = nullptr;     // seq autonumber (12px)
@@ -235,6 +242,10 @@ private:
     // format pointer: formats are re-created on zoom change, so the
     // pointer acts as the cache key and a miss refills it.
     std::map<const void*, float> lineHeightCache_;
+    // The palette the frame is painted in. Light until the shell says
+    // otherwise, which is what every existing caller expects.
+    Palette palette_ = BasePalette();
+
     // The test replacement of the walk's engine, SetWalkEngineForTesting
     // above. Null in every production build.
     platform::TextEngine* walkEngineForTesting_ = nullptr;

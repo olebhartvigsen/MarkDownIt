@@ -1115,3 +1115,32 @@ TEST(SvgText, EmptySwitchBranchHidesTheFallback) {
     auto runs = svg::ExtractTextRuns(xml);
     EXPECT_EQ(runs.size(), 0u);
 }
+
+// The light-dark() resolver: one branch per appearance, chosen before
+// either platform's SVG reader sees the document.
+TEST(SvgText, ResolvesLightDarkToTheBranchThePageShows) {
+    const std::string xml =
+        "<rect style=\"fill: light-dark(#ffffff, #1c1c1e);\"/>";
+    const std::string light = svg::ResolveLightDark(xml, false);
+    const std::string dark = svg::ResolveLightDark(xml, true);
+    EXPECT_TRUE(light.find("#ffffff") != std::string::npos);
+    EXPECT_TRUE(light.find("light-dark") == std::string::npos);
+    EXPECT_TRUE(dark.find("#1c1c1e") != std::string::npos);
+    EXPECT_TRUE(dark.find("#ffffff") == std::string::npos);
+}
+
+TEST(SvgText, LeavesDocumentsWithoutLightDarkAlone) {
+    const std::string xml = "<svg><rect fill=\"#ff0000\"/></svg>";
+    EXPECT_TRUE(svg::ResolveLightDark(xml, true) == xml);
+}
+
+TEST(SvgText, KeepsArgumentsWithCommasAndNesting) {
+    // Both branches hold commas inside their functions, and the dark
+    // branch may itself be a light-dark() in a nested document.
+    const std::string xml =
+        "fill: light-dark(rgb(255, 255, 255), rgba(0, 0, 0, 0.5))";
+    const std::string dark = svg::ResolveLightDark(xml, true);
+    EXPECT_TRUE(dark == "fill: rgba(0, 0, 0, 0.5)");
+    const std::string light = svg::ResolveLightDark(xml, false);
+    EXPECT_TRUE(light == "fill: rgb(255, 255, 255)");
+}

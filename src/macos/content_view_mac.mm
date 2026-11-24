@@ -51,7 +51,8 @@ ContentView::ContentView(App* app)
     // expects it.
     renderer_.SetDiagramTextEngine(std::make_unique<CoreTextEngine>());
     renderer_.SetTextEngine(engine_.get());
-    renderer_.SetTheme(BaseMetrics(), platform::SystemPalette());
+    palette_ = platform::SystemPalette();
+    renderer_.SetTheme(BaseMetrics(), palette_);
     renderer_.SetStandaloneSvg(app_ && app_->IsStandaloneSvg());
     // The renderer reads the source when it normalizes a caret past a
     // marker, the same pointer the Windows cache holds.
@@ -213,7 +214,8 @@ void ContentView::SetEditing(bool on) {
 }
 
 void ContentView::RefreshTheme() {
-    renderer_.SetTheme(BaseMetrics(), platform::SystemPalette());
+    palette_ = platform::SystemPalette();
+    renderer_.SetTheme(BaseMetrics(), palette_);
     // The laid-out runs carry the palette's colours inside them, so the
     // document is laid out again. Without that a palette switch kept
     // the previous appearance baked into the text: dark mode drew the
@@ -609,7 +611,7 @@ Color ContentView::SelectionColor() const {
     // appearance: the system's selected-content colour at the weight
     // the fixed blue carried, its alpha light so the text under it
     // stays readable.
-    const ThemeColor c = platform::SystemPalette().selectionBg;
+    const ThemeColor c = palette_.selectionBg;
     Color color;
     color.r = c.r;
     color.g = c.g;
@@ -622,7 +624,7 @@ Color ContentView::CaretColor() const {
     // The caret follows the label colour, so it stays visible in
     // both appearances: a fixed near-black bar disappeared over the
     // dark paper.
-    const ThemeColor c = platform::SystemPalette().textPrimary;
+    const ThemeColor c = palette_.caretInk;
     Color color;
     color.r = c.r;
     color.g = c.g;
@@ -1093,14 +1095,14 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     CGContextRef context = [[NSGraphicsContext currentContext] CGContext];
     if (!context) return;
 
-    // A fixed-colour style (Wikipedia) is drawn on white paper in both
-    // appearances, the way the Windows build clears its target: its ink
-    // is dark and would vanish on the Dark Mode paper. The GitHub style
-    // follows the system paper and paints none.
-    if (ActiveMarkdownStyle() != MarkdownStyle::GitHub) {
-        CGContextSetRGBFillColor(context, 1.0, 1.0, 1.0, 1.0);
-        CGContextFillRect(context, NSRectToCGRect(dirtyRect));
-    }
+    // The page is painted from the palette, for every style. It used to
+    // be white for the fixed-colour styles, which is what stopped dark
+    // mode at the chrome under the default Apple style: dark ink on a
+    // white page inside a dark window. Now the paper and the ink travel
+    // together, and the paper is the palette's own value.
+    const ThemeColor paper = content_->ThemePalette().pageBg;
+    CGContextSetRGBFillColor(context, paper.r, paper.g, paper.b, 1.0);
+    CGContextFillRect(context, NSRectToCGRect(dirtyRect));
 
     // The view is flipped, so the origin is already at the top left and
     // the y axis already points down, which is the space the renderer

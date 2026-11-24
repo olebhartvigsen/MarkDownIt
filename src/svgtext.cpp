@@ -438,6 +438,99 @@ static std::string CssDecl(const std::string& style, const std::string& name) {
     return std::string();
 }
 
+namespace {
+
+// The end of a CSS argument list, starting at the '(' of light-dark(.
+// Returns the index of the matching ')' and the index of the top level
+// comma, or npos for the comma when there is none.
+void SplitArgs(const std::string& text, size_t open, size_t* close,
+               size_t* comma) {
+    int depth = 0;
+    *comma = std::string::npos;
+    for (size_t i = open + 1; i < text.size(); ++i) {
+        const char c = text[i];
+        if (c == '(') {
+            ++depth;
+        } else if (c == ')') {
+            if (depth == 0) {
+                *close = i;
+                return;
+            }
+            --depth;
+        } else if (c == ',' && depth == 0 && *comma == std::string::npos) {
+            *comma = i;
+        }
+    }
+    *close = std::string::npos;
+}
+
+}  // namespace
+
+std::string ResolveLightDark(const std::string& xml, bool dark) {
+    if (xml.find("light-dark") == std::string::npos) return xml;
+    const std::string name = "light-dark";
+    std::string out;
+    out.reserve(xml.size());
+    size_t at = 0;
+    // A bounded number of passes: light-dark() may nest once inside its
+    // own arguments, and each pass resolves the outermost form.
+    for (int pass = 0; pass < 8; ++pass) {
+        out.clear();
+        bool replaced = false;
+        at = 0;
+        while (at < xml.size()) {
+            const size_t hit = xml.find(name, at);
+            if (hit == std::string::npos) {
+                out.append(xml, at, std::string::npos);
+                break;
+            }
+            size_t open = hit + name.size();
+            while (open < xml.size() &&
+                   (xml[open] == ' ' || xml[open] == '\t')) {
+                ++open;
+            }
+            if (open >= xml.size() || xml[open] != '(') {
+                out.append(xml, at, open - at);
+                at = open;
+                continue;
+            }
+            size_t close = std::string::npos;
+            size_t comma = std::string::npos;
+            SplitArgs(xml, open, &close, &comma);
+            if (close == std::string::npos || comma == std::string::npos) {
+                out.append(xml, at, close == std::string::npos
+                                        ? std::string::npos
+                                        : close + 1 - at);
+                if (close == std::string::npos) break;
+                at = close + 1;
+                continue;
+            }
+            // The branches are trimmed: CSS allows the space after the
+            // comma, and carrying it into the output leaves a double
+            // space that reads as a mistake in the document.
+            auto trimmed = [](std::string v) {
+                const size_t b = v.find_first_not_of(" \t\r\n");
+                const size_t e = v.find_last_not_of(" \t\r\n");
+                if (b == std::string::npos) return std::string();
+                return v.substr(b, e - b + 1);
+            };
+            const std::string light =
+                trimmed(xml.substr(open + 1, comma - open - 1));
+            const std::string dark_value =
+                trimmed(xml.substr(comma + 1, close - comma - 1));
+            out.append(xml, at, hit - at);
+            out += dark ? dark_value : light;
+            replaced = true;
+            at = close + 1;
+        }
+        if (!replaced) return out;
+        if (out.find("light-dark") == std::string::npos) return out;
+        // Another form remains: run the pass again on the result.
+        return ResolveLightDark(out, dark);
+    }
+    return out;
+}
+
 // A CSS colour, with light-dark() resolved to its light value, which is
 // what a light page shows.
 static std::string CssColor(const std::string& value) {

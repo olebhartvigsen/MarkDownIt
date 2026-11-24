@@ -46,7 +46,7 @@ enum class CommandId : uint8_t {
     Bullets, Numbering, Quote, Indent, Outdent,
     // View.
     EditToggle, SourceView, Wrap, Outline,
-    ZoomIn, ZoomOut, ZoomReset, ViewRecent, Share, TabBar, WidthMenu,
+    ZoomIn, ZoomOut, ZoomReset, ViewRecent, Share, TabBar, WidthMenu, Theme,
     WidthStandard, Width960, Width1600, WidthFull,
     // Find.
     Find, FindNext, FindPrevious, Replace, Mark,
@@ -213,6 +213,11 @@ inline constexpr CommandSpec kCommands[] = {
      NoWin, NoMac},
     {CommandId::Outline, "Outline", "cmdOutline", 10606, "toggleOutline:", false,
      NoWin, Key("O")},
+    // The appearance toggle. A toggle has two states, so it moves between
+    // Light and Dark; System is a settings choice, not a third stop. On
+    // Windows the ribbon button carries it, on macOS the View menu item.
+    {CommandId::Theme, "Dark Mode", "cmdTheme", 10607, "toggleTheme:", false,
+     CtrlShift(0x44 /* D */), ShiftKey("D")},
     {CommandId::ZoomIn, "Zoom In", "cmdZoomIn", 10201, "zoomIn:", false,
      NoWin, Key("+")},
     {CommandId::ZoomOut, "Zoom Out", "cmdZoomOut", 10202, "zoomOut:", false,

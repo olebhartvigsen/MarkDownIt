@@ -9,6 +9,8 @@
 // document out the same way. Only the drawing calls differ.
 
 #include "renderer_mac.h"
+
+#include "svgtext.h"
 #include "hash.h"
 #include "layout/display_player.h"
 #include "layout/selection_rects.h"
@@ -727,9 +729,13 @@ const SvgDoc* MacRenderer::GetSvgDoc(const Node& node) {
     }
 
     SvgDoc doc;
+    // The reader has no appearance of its own: light-dark() is resolved
+    // to the branch the page shows before the XML reaches it, the same
+    // rule the Windows renderer applies before Direct2D sees the file.
+    const std::string resolvedText = svg::ResolveLightDark(svgText, palette_.dark);
     // A fenced block keeps its text in raw, the way the Windows draw
     // reads it; the inline children are empty for a fence.
-    if (!doc.Load(Utf32ToUtf8(node.raw))) return nullptr;
+    if (!doc.Load(resolvedText)) return nullptr;
     // A reader who opens a hundred documents should not keep a hundred
     // drawings alive.
     if (svgDocs_.size() >= 32) svgDocs_.clear();

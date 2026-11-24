@@ -41,15 +41,9 @@ constexpr uint32_t kPieColors[] = {
 constexpr size_t kPieColorCount = sizeof(kPieColors) / sizeof(kPieColors[0]);
 
 // The sequence palette, matching the mermaid sequence default theme.
-constexpr uint32_t kSeqActorFill = 0xEAEAEA;
-constexpr uint32_t kSeqActorStroke = 0x666666;
-constexpr uint32_t kSeqNoteFill = 0xFFF5AD;
-constexpr uint32_t kSeqNoteStroke = 0xAAAA33;
-constexpr uint32_t kSeqInk = 0x333333;
-constexpr uint32_t kSeqLifeline = 0x666666;
-constexpr uint32_t kSeqLoopFill = 0xEDEDED;
-constexpr uint32_t kSeqActivationFill = 0xF4F4F4;
-constexpr uint32_t kSeqActivationStroke = 0x666666;
+// The sequence diagram takes its colours from the palette's diagram
+// tokens (theme.h), so it follows the appearance the way the flowchart
+// does. The light values there are the ones this file used to hold.
 
 // The height of an actor box, in mermaid's own units.
 constexpr float kActorBoxHeight = 65.0f;
@@ -302,11 +296,11 @@ void PaintFlowchart(TextEngine* engine, RenderTarget* target,
     const float ox = originX;
     const float oy = originY + padding;
 
-    const Color ink = ToColor(palette.mermaidText);
+    const Color ink = ToColor(palette.mermaidEdge);
     const Color nodeFill = ToColor(palette.mermaidNodeFill);
     const Color nodeBorder = ToColor(palette.mermaidNodeBorder);
-    const Color laneFill = Rgb(0xF5F5F5);
-    const Color laneBorder = Rgb(0x999999);
+    const Color laneFill = ToColor(palette.mermaidClusterBg);
+    const Color laneBorder = ToColor(palette.mermaidClusterBorder);
     const Color laneTitle = ToColor(palette.textPrimary);
     const Color white = Rgb(0xFFFFFF);
 
@@ -494,7 +488,7 @@ void PaintPie(TextEngine* engine, RenderTarget* target,
     const float ox = originX;
     const float oy = originY + padding;
 
-    const Color black = Rgb(0x000000);
+    const Color black = ToColor(palette.textPrimary);
     const Color ink = Rgb(0x333333);
 
     const float centreX = ox + static_cast<float>(laid.cx * scale);
@@ -670,20 +664,20 @@ void PaintSequence(TextEngine* engine, RenderTarget* target,
     auto X = [&](double v) { return ox + static_cast<float>(v * scale); };
     auto Y = [&](double v) { return oy + static_cast<float>(v * scale); };
 
-    const Color ink = Rgb(kSeqInk);
-    const Color actorFill = Rgb(kSeqActorFill);
-    const Color actorStroke = Rgb(kSeqActorStroke);
-    const Color noteFill = Rgb(kSeqNoteFill);
-    const Color noteStroke = Rgb(kSeqNoteStroke);
-    const Color lifeline = Rgb(kSeqLifeline);
-    const Color activation = Rgb(kSeqActivationFill);
-    const Color activationStroke = Rgb(kSeqActivationStroke);
+    const Color ink = ToColor(palette.mermaidText);
+    const Color actorFill = ToColor(palette.mermaidActorFill);
+    const Color actorStroke = ToColor(palette.mermaidActorStroke);
+    const Color noteFill = ToColor(palette.mermaidNoteFill);
+    const Color noteStroke = ToColor(palette.mermaidNoteStroke);
+    const Color lifeline = ToColor(palette.mermaidLifeline);
+    const Color activation = ToColor(palette.mermaidActivationFill);
+    const Color activationStroke = ToColor(palette.mermaidActivationStroke);
     const Color white = Rgb(0xFFFFFF);
 
     // The background of a rect block. Mermaid puts one fill per block,
     // and the layout keeps them in order.
     for (const auto& background : laid.backgrounds) {
-        Color fill = Rgb(kSeqLoopFill);
+        Color fill = ToColor(palette.mermaidLoopFill);
         uint32_t rgb = 0;
         if (ParseCssColor(background.fill, &rgb)) fill = Rgb(rgb);
         Rect rect;

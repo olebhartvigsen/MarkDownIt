@@ -15,19 +15,11 @@
 // #ffffde/#9370DB, signal text #333333, lifeline #666666.
 namespace {
 
-// Palette matches mermaid.js theme-default + the "neo" actor look
-// (verified against a rendered reference SVG, 2026-09-17):
-// actors #eaeaea/#666, notes #fff5ad/#aaaa33, activations #f4f4f4/#666,
-// ink #333, lifelines #666, autonumber disc #333 with white digit.
-constexpr uint32_t kSeqActorFill = 0xEAEAEA;
-constexpr uint32_t kSeqActorStroke = 0x666666;
-constexpr uint32_t kSeqNoteFill = 0xFFF5AD;
-constexpr uint32_t kSeqNoteStroke = 0xAAAA33;
-constexpr uint32_t kSeqInk = 0x333333;
-constexpr uint32_t kSeqLifeline = 0x666666;
-constexpr uint32_t kSeqLoopFill = 0xEDEDED;
-constexpr uint32_t kSeqActivationFill = 0xF4F4F4;
-constexpr uint32_t kSeqActivationStroke = 0x666666;
+// The colours come from the palette's diagram tokens (theme.h). The
+// light values are mermaid.js theme-default's "neo" actor look, verified
+// against a rendered reference SVG on 2026-09-17: actors #eaeaea/#666,
+// notes #fff5ad/#aaaa33, activations #f4f4f4/#666, ink #333, lifelines
+// #666. The dark palettes carry mermaid's own dark theme.
 
 constexpr float kActorBoxHeight = 65.0f;  // mermaid actor box height
 constexpr float kActorFooterHeight = 20.0f; // legacy (unused, kept for ref)
@@ -269,14 +261,14 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
     ID2D1SolidColorBrush* bgFill = nullptr;   // rect-block fill (per diagram)
     ID2D1SolidColorBrush* activation = nullptr; // activation #f4f4f4
     ID2D1SolidColorBrush* whiteInk = nullptr;  // autonumber digit (white)
-    rt->CreateSolidColorBrush(D2D1::ColorF(kSeqInk), &ink);
-    rt->CreateSolidColorBrush(D2D1::ColorF(kSeqActorFill), &actorFill);
-    rt->CreateSolidColorBrush(D2D1::ColorF(kSeqActorStroke), &actorStroke);
-    rt->CreateSolidColorBrush(D2D1::ColorF(kSeqNoteFill), &noteFill);
-    rt->CreateSolidColorBrush(D2D1::ColorF(kSeqNoteStroke), &noteStroke);
-    rt->CreateSolidColorBrush(D2D1::ColorF(kSeqLifeline), &lifeline);
-    rt->CreateSolidColorBrush(D2D1::ColorF(kSeqLoopFill), &bgFill);
-    rt->CreateSolidColorBrush(D2D1::ColorF(kSeqActivationFill), &activation);
+    rt->CreateSolidColorBrush(palette_.mermaidText, &ink);
+    rt->CreateSolidColorBrush(palette_.mermaidActorFill, &actorFill);
+    rt->CreateSolidColorBrush(palette_.mermaidActorStroke, &actorStroke);
+    rt->CreateSolidColorBrush(palette_.mermaidNoteFill, &noteFill);
+    rt->CreateSolidColorBrush(palette_.mermaidNoteStroke, &noteStroke);
+    rt->CreateSolidColorBrush(palette_.mermaidLifeline, &lifeline);
+    rt->CreateSolidColorBrush(palette_.mermaidLoopFill, &bgFill);
+    rt->CreateSolidColorBrush(palette_.mermaidActivationFill, &activation);
     rt->CreateSolidColorBrush(D2D1::ColorF(0xFFFFFF), &whiteInk);
     if (!ink || !actorFill || !actorStroke || !noteFill || !noteStroke ||
         !lifeline || !bgFill || !activation || !whiteInk) {
@@ -298,7 +290,7 @@ void Renderer::DrawMermaidSequenceBlock(ID2D1RenderTarget* rt,
     // fill (rgb() or #hex from the rect rgb(...) lines) when it
     // parses, else the soft-gray default.
     for (const auto& b : ls.backgrounds) {
-        bgFill->SetColor(D2D1::ColorF(kSeqLoopFill));
+        bgFill->SetColor(palette_.mermaidLoopFill);
         uint32_t rgbv = 0;
         if (SeqParseCssColor(b.fill, &rgbv)) {
             bgFill->SetColor(D2D1::ColorF(rgbv));

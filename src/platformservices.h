@@ -24,4 +24,12 @@ namespace platform {
 // answer with std::chrono::steady_clock (documentcontroller.cpp).
 uint64_t GetMonotonicMs();
 
+// Whether the operating system is in its dark app appearance.
+//
+// The appearance decision is shared (theme::ResolveAppearance); this is
+// the one fact only the platform holds. Windows reads the personalization
+// key, macOS compares the effective appearance against Dark Aqua. The
+// shells call it at startup and again when the OS reports a change.
+bool SystemPrefersDark();
+
 }  // namespace platform

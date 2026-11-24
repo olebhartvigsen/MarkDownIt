@@ -28,6 +28,17 @@ void DestroyRibbon();
 // Current screen bounds of a visible ribbon button, including collapsed groups.
 bool GetRibbonButtonRect(HWND hwnd, const wchar_t* label, RECT* bounds);
 
+// Paint the ribbon dark or light.
+//
+// The Ribbon framework has no documented theme property. Windows 10 1809
+// and later answer an undocumented boolean property, 2004, on the
+// framework's own property store; BowPad and TortoiseGit ship exactly
+// this call. The HRESULT is deliberately ignored: a Windows build that
+// drops the property leaves a light ribbon inside a dark window, which
+// is the fallback this project accepts and records in the ledger, not a
+// reason to fail the paint.
+void SetRibbonDarkMode(bool dark);
+
 // Notify the ribbon that the wrap toggle state changed.
 // Called by AppWindow after toggling wrap mode.
 void UpdateRibbonWrapState(bool wrapped);

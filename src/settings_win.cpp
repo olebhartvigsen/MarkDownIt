@@ -40,6 +40,16 @@ AppSettings LoadSettings() {
     if (s.contentWidthMode < 0 || s.contentWidthMode > 3)
         s.contentWidthMode = 0;
 
+    // The appearance mode. A missing value is System, the reference
+    // guide's default, and an unknown value falls back to it.
+    val = 0; sz = sizeof(val); type = 0;
+    if (RegQueryValueExW(hKey, L"ThemeMode", nullptr, &type,
+            reinterpret_cast<BYTE*>(&val), &sz) == ERROR_SUCCESS &&
+        type == REG_DWORD) {
+        s.themeMode = static_cast<int>(val);
+    }
+    if (s.themeMode < 0 || s.themeMode > 2) s.themeMode = 0;
+
     // Zoom factor: stored as a REG_DWORD holding the float bit pattern.
     // Missing or corrupt values fall back to the default (100%).
     val = 0; sz = sizeof(val); type = 0;
@@ -132,6 +142,10 @@ void SaveSettings(const AppSettings& s) {
     DWORD cw = static_cast<DWORD>(s.contentWidthMode);
     RegSetValueExW(hKey, L"ContentWidth", 0, REG_DWORD,
         reinterpret_cast<BYTE*>(&cw), sizeof(cw));
+
+    DWORD tm = static_cast<DWORD>(s.themeMode);
+    RegSetValueExW(hKey, L"ThemeMode", 0, REG_DWORD,
+        reinterpret_cast<BYTE*>(&tm), sizeof(tm));
 
     // Store the zoom factor bit pattern as a REG_DWORD (same layout as
     // the load path above).

@@ -23,6 +23,18 @@ std::string StripTextElements(const std::string& xml);
 // an inline SVG image can be known before it is drawn.
 bool ReadSize(const std::string& xml, float* w, float* h);
 
+// Resolves CSS light-dark(light, dark) to the branch the current page
+// shows, everywhere it appears in the document: a style attribute, a
+// <style> block or a presentation attribute. Returns the input unchanged
+// when there is nothing to resolve.
+//
+// Both ports call this once, on the raw SVG text, before their own
+// reader sees it: Direct2D's parser knows no light-dark() and the mac
+// reader would otherwise have to carry an appearance through every
+// parse function. One string transform at the boundary keeps the rule in
+// one place and keeps the readers unchanged.
+std::string ResolveLightDark(const std::string& xml, bool dark);
+
 // Rewrites marker-start/marker-end references into explicit <g> groups.
 // Direct2D supports neither <marker> nor the marker-* presentation
 // attributes, so every arrowhead in a diagram was silently dropped. The

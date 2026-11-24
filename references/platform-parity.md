@@ -28,6 +28,9 @@ and why. Three checkers read this file:
 | Mermaid painters | `renderer_pie.cpp`, `renderer_sequence.cpp` | `mermaid_painter_mac.cpp` | Each side paints the shared layout with its own API. |
 | Printing | the modern dialog first: the Windows.Graphics.Printing contract in `src/print_winrt.cpp` (dialog preview fed page by page, final job as D2D command lists), with the classic `PrintDlg` in `src/print_win.cpp` as the fallback behind `MARKDOWNIT_NO_MODERN_PRINT=1` or a contract that cannot open | `src/macos/print_mac.mm`: an `NSPrintOperation` over a page view, whose preview and Save as PDF live inside AppKit's panel | The panels, the preview sinks and the printer plumbing are platform chrome. The page model, the cut, the slice, the description-to-page rule (`PrintPageFromDescription`), the band painter (`PaintBandPage`) and the print-path PDF writer are shared (`src/layout/print_pages.*`, `src/layout/display_player.*`, `src/print_pdf.*`, `printing.md`); every layout walk stays on the window's thread, reached through the one shared build. Both ports feed a preview now: the dialogs differ in whose pane it is, AppKit's own against the system print dialog's. The interim standalone preview window `src/print_preview_win.*` was removed 2026-11-19. Both ports write the QA PDF (`MARKDOWNIT_QA_PDF`): the mac through `CGPDFContext`, Windows through the shared pdfio writer. |
 
+| Dark appearance (`src/app.cpp`, `src/ribbon.cpp` against `src/macos/main_mac.mm`) | uxtheme ordinals, DWM frame attributes, the ribbon's undocumented property 2004, `DarkMode_Explorer` scrollbars | `NSApp.appearance`, `effectiveAppearance`, semantic colours | The mechanism is native chrome on both sides; the appearance *decision* is shared (`src/thememode.h`, `src/theme_model.h`) and the document palette is shared (`theme.h`). A window frame belongs to the OS, so this one forks by necessity, like the ribbon row above. |
+| Appearance setting key | `ThemeMode` DWORD in the registry | `themeMode` in `settings.json` | The existing settings-store split; the `AppSettings` field and its meaning are shared. |
+
 ## Commands: ribbon to mac menu
 
 Every command the ribbon offers and the selector that carries it out
@@ -82,6 +85,7 @@ ribbon command needs a row here or a row in the next section.
 | cmdSaveAs | saveDocumentAs |
 | cmdSplitCell | splitCell |
 | cmdStrike | toggleStrike |
+| cmdTheme | toggleTheme |
 | cmdUndo | undo |
 | cmdViewSource | toggleSourceView |
 | cmdWrap | toggleWrap |

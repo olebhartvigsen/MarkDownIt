@@ -60,49 +60,26 @@ void ApplySystemSelectionColors(Palette* p) {
 }  // namespace
 
 Palette SystemPalette() {
-    Palette p = BasePalette();
-    if (ActiveMarkdownStyle() != MarkdownStyle::GitHub) {
-        // A fixed-colour style (Wikipedia) keeps its own article
-        // palette in both appearances; only the selection follows the
-        // system. The GitHub style adopts the system's colours below.
-        ApplySystemSelectionColors(&p);
-        return p;
-    }
-    p.textPrimary = FromColor([NSColor labelColor]);
-    // The system's own secondary label measures about 3.3 to 1 over
-    // white, below the guideline's 4.5 to 1 for muted text, so the
-    // muted slot is the label colour at a gentler alpha instead;
-    // it still follows both appearances.
-    p.textMuted = Faded([NSColor labelColor], 0.62);
-    p.heading = FromColor([NSColor labelColor]);
-    p.link = FromColor([NSColor linkColor]);
-    // A code card must not be the paper it sits on: in the light
-    // appearance windowBackgroundColor is the same white, so the
-    // fenced block had no visible surface. The quaternary label wash
-    // is the same semantic grey the inline spans already use.
-    p.codeBg = FromColor([NSColor quaternaryLabelColor]);
-    p.codeBorder = FromColor([NSColor separatorColor]);
-    // p.mermaidNodeFill / mermaidNodeBorder / mermaidText stay the base
-    // values: the diagrams keep mermaid's default theme.
-    p.inlineCodeBg = FromColor([NSColor quaternaryLabelColor]);
-    p.quoteBar = FromColor([NSColor separatorColor]);
-    // The same muted slot as the body text, for the same contrast
-    // reason.
-    p.quoteText = Faded([NSColor labelColor], 0.62);
-    p.rule = FromColor([NSColor separatorColor]);
-    p.tableBorder = FromColor([NSColor separatorColor]);
-    p.tableHeaderBg = FromColor([NSColor quaternaryLabelColor]);
-    // Half the header's weight: setting a label colour's alpha means
-    // its own strength, and 0.55 read darker than the header, not
-    // fainter.
-    p.tableRowAlt = Faded([NSColor quaternaryLabelColor], 0.05);
+    // The document palette is assembled in shared code, for both ports,
+    // from the appearance the process is drawing in. This function used
+    // to build an article palette out of AppKit colours, which meant a
+    // document palette existed on one platform only and the two ports
+    // rendered different bytes for the same style. What stays native is
+    // the one thing the system owns: the accent-coloured selection.
+    Palette p = PaletteFor(ActiveMarkdownStyle(), AppearanceFor(nil));
     p.selectionBg = FromColor([NSColor selectedContentBackgroundColor]);
     p.selectionText = FromColor([NSColor selectedTextColor]);
-    p.findMatchBg = Faded([NSColor systemYellowColor], 0.30);
-    p.findCurrentMatchBg = Faded([NSColor systemYellowColor], 0.62);
-    p.markerBg = Faded([NSColor systemYellowColor], 0.45);
-    p.markerLine = Faded([NSColor systemOrangeColor], 0.85);
     return p;
+}
+
+theme::Appearance AppearanceFor(NSAppearance* appearance) {
+    NSAppearanceName best = [(appearance ? appearance : NSApp.effectiveAppearance)
+        bestMatchFromAppearancesWithNames:@[
+            NSAppearanceNameAqua, NSAppearanceNameDarkAqua
+        ]];
+    return [best isEqualToString:NSAppearanceNameDarkAqua]
+               ? theme::Appearance::Dark
+               : theme::Appearance::Light;
 }
 
 // The chrome palette for the current appearance: the shared fixed

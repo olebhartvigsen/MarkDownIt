@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include "thememode.h"
 #include "zoommodel.h"
 
 // Persisted application settings.
@@ -29,6 +30,13 @@ struct AppSettings {
     //   2 = 1600 DIP
     //   3 = Full window width (no cap)
     int contentWidthMode = 0;
+
+    // The appearance: 0 = System (the default, follows the OS), 1 =
+    // Light, 2 = Dark. An explicit choice survives a restart even when
+    // the OS is in the other mode; System hands control back to the OS.
+    // The values are theme::ThemeMode, stored as an int so the settings
+    // struct stays a plain record on both platforms.
+    int themeMode = static_cast<int>(theme::kDefaultThemeMode);
 
     // Zoom factor for document content (1.0 = 100%, range 25%..400%,
     // constants and clamp in zoommodel.h). Zoom is a GLOBAL view

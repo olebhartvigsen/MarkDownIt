@@ -1122,7 +1122,12 @@ void Renderer::PaintSharedOverlays(
         }
         if (svgText.empty()) continue;
         svg::SvgDoc picture;
-        if (!picture.Load(d2d_ctx5_, svgText)) continue;
+        // Direct2D's SVG parser knows no light-dark(); the branch the
+        // page shows is resolved before the document reaches it.
+        if (!picture.Load(d2d_ctx5_,
+                          svg::ResolveLightDark(svgText, palette_.dark))) {
+            continue;
+        }
         if (picture.Width() <= 0.0f || picture.Height() <= 0.0f) continue;
         // List space is the column the walk owns, so the frame adds
         // the same origin the replay translated by, and the standing
@@ -1382,7 +1387,7 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (!rt || !dw || !code_fmt_) { outH = 0.0f; return; }
 
     LayoutMetrics m = ComputeMetrics();
-    Palette pal = BasePalette();
+    const Palette& pal = palette_;
 
     std::u32string raw = n.raw;
     while (!raw.empty() && (raw.back() == 0x0A || raw.back() == 0x0D)) {
@@ -1592,7 +1597,7 @@ void Renderer::DrawFilterMarks(ID2D1RenderTarget* rt, const Node& n,
                                const layout::LaidTable& record,
                                const LayoutMetrics& m, float x, float bandTop) {
     if (!rt || record.filterCenters.empty()) return;
-    Palette pal = BasePalette();
+    const Palette& pal = palette_;
     platform::D2DTarget target(rt);
     const float cy = bandTop + record.headerHeight * 0.5f;
     const size_t columns = (std::min)(record.filterCenters.size(),
@@ -1618,7 +1623,7 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (!rt || !dw || !body_fmt_ || n.rows.empty()) { outH = 0.0f; return; }
 
     LayoutMetrics m = ComputeMetrics();
-    Palette pal = BasePalette();
+    const Palette& pal = palette_;
 
     ID2D1SolidColorBrush* textBrush = nullptr;
     rt->CreateSolidColorBrush(pal.textPrimary, &textBrush);
@@ -2227,7 +2232,7 @@ std::vector<platform::Rect> Renderer::RectsForRange(
     // same content column, so the records answer with the geometry
     // the last frame painted.
     LayoutMetrics m = ComputeMetrics();
-    Palette pal = BasePalette();
+    const Palette& pal = palette_;
     float avail = widthDip - 2.0f * m.padX;
     float contentWidth = wrapEnabled_ ? avail : kNoWrapContentWidthDip;
     if (wrapEnabled_ && contentWidth > m.maxContentWidth) {
@@ -2280,7 +2285,7 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
     // so the scroll range and the frame cannot drift apart anymore;
     // its display items are built but not consumed, Measure is height
     // only.
-    const Palette measurePal = BasePalette();
+    const Palette& measurePal = palette_;
     const auto sharedHold =
         SharedLayoutPass(doc, dw, m, &measurePal, contentWidth, nullptr,
                          nullptr);
@@ -2352,7 +2357,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                        const Selection* sel) {
     if (!rt || !dw) return 0.0f;
     LayoutMetrics m = ComputeMetrics();
-    Palette pal = BasePalette();
+    const Palette& pal = palette_;
     // Viewport height in DIPs, used to limit selection highlighting to the
     // lines actually on screen.
     const float viewH = rt->GetSize().height;
@@ -2482,7 +2487,9 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 }
                 if (!svgText.empty()) {
                     svg::SvgDoc svgDoc;
-                    if (svgDoc.Load(d2d_ctx5_, svgText) &&
+                    if (svgDoc.Load(d2d_ctx5_,
+                                    svg::ResolveLightDark(svgText,
+                                                          palette_.dark)) &&
                         svgDoc.Width() > 0.0f && svgDoc.Height() > 0.0f) {
                         RememberImageSize(ib.url, svgDoc.Width(),
                                           svgDoc.Height());
@@ -3024,7 +3031,7 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // repeated calls never accumulate layout-owned entries.
     if (cache_) cache_->Clear();
 
-    Palette pal = BasePalette();
+    const Palette& pal = palette_;
     LayoutMetrics m = ComputeMetrics();
     const float viewH = rt->GetSize().height;
     float avail = widthDip - 2.0f * m.padX;
@@ -3411,9 +3418,9 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (scaled_fmt) scale_fmt = scaled_fmt;
     }
 
-    Palette pal = BasePalette();
+    const Palette& pal = palette_;
     ID2D1SolidColorBrush* edgeBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.mermaidText, &edgeBrush);
+    rt->CreateSolidColorBrush(pal.mermaidEdge, &edgeBrush);
     ID2D1SolidColorBrush* nodeFill = nullptr;
     rt->CreateSolidColorBrush(pal.mermaidNodeFill, &nodeFill);
     ID2D1SolidColorBrush* nodeBorder = nullptr;
@@ -3429,8 +3436,11 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         ID2D1SolidColorBrush* laneFill = nullptr;
         ID2D1SolidColorBrush* laneBorder = nullptr;
         ID2D1SolidColorBrush* laneTitle = nullptr;
-        rt->CreateSolidColorBrush(D2D1::ColorF(0.96f, 0.96f, 0.96f, 1.0f), &laneFill);
-        rt->CreateSolidColorBrush(D2D1::ColorF(0.60f, 0.60f, 0.60f, 1.0f), &laneBorder);
+        // The swimlane band wears the diagram's cluster colours, so a
+        // subgraph follows the appearance instead of staying a light
+        // grey rectangle on a dark page.
+        rt->CreateSolidColorBrush(pal.mermaidClusterBg, &laneFill);
+        rt->CreateSolidColorBrush(pal.mermaidClusterBorder, &laneBorder);
         rt->CreateSolidColorBrush(pal.textPrimary, &laneTitle);
         for (const auto& lb : lo.lanes) {
             float lx = ox + static_cast<float>(lb.x * scale);

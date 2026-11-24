@@ -129,13 +129,16 @@ void Renderer::DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // Text must shrink by the same factor the geometry shrank by.
     const float textScale = scale / (zoom_ > 0.001f ? zoom_ : 1.0f);
 
-    Palette pal = BasePalette();
+    const Palette& pal = palette_;
     ID2D1SolidColorBrush* fillBrush = nullptr;
     ID2D1SolidColorBrush* ringBrush = nullptr;
     ID2D1SolidColorBrush* textBrush = nullptr;
+    // The slices keep mermaid's own palette: a pie's identity is its
+    // colours. The ring, the labels and the legend follow the page, so
+    // they do not vanish on the dark one.
     rt->CreateSolidColorBrush(D2D1::ColorF(0xECECFF), &fillBrush);
-    rt->CreateSolidColorBrush(D2D1::ColorF(0x000000), &ringBrush);
-    rt->CreateSolidColorBrush(D2D1::ColorF(kPieTextDark), &textBrush);
+    rt->CreateSolidColorBrush(pal.textPrimary, &ringBrush);
+    rt->CreateSolidColorBrush(kPieTextDark, &textBrush);
 
     // Outer ring (class pieOuterCircle): stroke-only, fill none, 2px.
     if (ringBrush) {
@@ -245,7 +248,7 @@ void Renderer::DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             swBrush->Release();
         }
         ID2D1SolidColorBrush* legTxt = nullptr;
-        rt->CreateSolidColorBrush(D2D1::ColorF(0x000000), &legTxt);
+        rt->CreateSolidColorBrush(pal.textPrimary, &legTxt);
         DrawPieText(dw, rt, body_fmt_, row.label,
                     rx + 22.0f * scale, ry + 14.0f * scale,
                     1.0f, 1.0f, legTxt ? legTxt : textBrush, false, true, textScale);

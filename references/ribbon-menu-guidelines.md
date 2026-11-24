@@ -175,7 +175,9 @@ Lessons from the File menu's width marker. They hold for any state shown inside 
   Find group is an explicit layout choice. Ctrl+F stays unchanged.
 - The Highlight group is also a single-button group by the same choice:
   it holds Mark and pairs visually with Find on the Home tab.
-- Home > View starts with Zoom In and Zoom Out, then Wrap and Outline.
+- Home > View starts with Zoom In and Zoom Out, then Wrap, Outline and
+  Theme. Theme toggles Light and Dark; System is a settings choice, because
+  a two-state button cannot honestly show three.
 - The table-size picker opens below the Table button, with its left edge
   aligned to the button. It must not follow the document caret.
 - The picker accepts keyboard input as well as mouse: arrows size the

@@ -264,6 +264,10 @@ target_link_libraries(MarkDownIt PRIVATE
     shell32
     shlwapi
     comctl32
+    # The frame, the scrollbars and the ribbon's dark property: DWM and
+    # uxtheme are OS components on every supported Windows.
+    dwmapi
+    uxtheme
     windowscodecs
     winhttp
     comdlg32
@@ -333,6 +337,8 @@ if(BUILD_TESTS AND APPLE)
         tests/layout_golden_test.cpp
         tests/command_table_test.cpp
         tests/commandstate_test.cpp
+        tests/thememode_test.cpp
+        tests/palette_contrast_test.cpp
         tests/filewatch_model_test.cpp
         tests/paragraph_list_quote_test.cpp
         # The transcript replay of the inline formatting family
@@ -467,6 +473,8 @@ elseif(BUILD_TESTS)
         tests/layout_golden_test.cpp
         tests/command_table_test.cpp
         tests/commandstate_test.cpp
+        tests/thememode_test.cpp
+        tests/palette_contrast_test.cpp
         tests/filewatch_model_test.cpp
         tests/paragraph_list_quote_test.cpp
         # The transcript replay of the inline formatting family

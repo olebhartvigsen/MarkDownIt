@@ -178,6 +178,10 @@ public:
         baseMetrics_ = metrics;
         metrics_ = ComputeMetrics();
         palette_ = palette;
+        // The SVG scenes were read with the previous appearance, and a
+        // light-dark() colour is baked in at read time. Dropping them is
+        // the only way the branch follows the page.
+        svgDocs_.clear();
     }
 
     // Lays the document out at the given width. Returns the total height.

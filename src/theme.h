@@ -12,6 +12,7 @@
 // macOS translation unit has to include <d2d1.h>.
 
 #include "markdown_style.h"
+#include "thememode.h"
 
 #ifdef _WIN32
 #include <d2d1.h>
@@ -231,6 +232,12 @@ inline std::string ListMarkerUtf8(int depth) {
 }
 
 struct Palette {
+    // The paper the page is painted on, and the ink the caret is drawn
+    // in. Before these existed the page was cleared with a literal white
+    // and the caret came from the system, which broke the moment the
+    // paper stopped being white.
+    ThemeColor pageBg;
+    ThemeColor caretInk;
     ThemeColor textPrimary;
     ThemeColor textMuted;
     ThemeColor heading;
@@ -240,6 +247,27 @@ struct Palette {
     ThemeColor mermaidNodeFill;
     ThemeColor mermaidNodeBorder;
     ThemeColor mermaidText;
+    // The rest of the diagram's own palette: edges, the subgraph bands,
+    // the label backing, and the sequence diagram's actor, note, lifeline
+    // and activation colours. They live here so a diagram follows the
+    // appearance through the same tokens the document does, instead of
+    // each painter keeping a private set of constants.
+    ThemeColor mermaidEdge;
+    ThemeColor mermaidClusterBg;
+    ThemeColor mermaidClusterBorder;
+    ThemeColor mermaidLabelBg;
+    ThemeColor mermaidActorFill;
+    ThemeColor mermaidActorStroke;
+    ThemeColor mermaidNoteFill;
+    ThemeColor mermaidNoteStroke;
+    ThemeColor mermaidLifeline;
+    ThemeColor mermaidActivationFill;
+    ThemeColor mermaidActivationStroke;
+    ThemeColor mermaidLoopFill;
+    // Whether this palette is the dark one. The SVG reader needs it to
+    // pick the dark branch of a light-dark() colour, and asking the
+    // palette keeps that answer in step with the inks around it.
+    bool dark = false;
     ThemeColor inlineCodeBg;
     ThemeColor quoteBar;
     ThemeColor quoteText;
@@ -565,6 +593,8 @@ inline Palette GitHubPalette() {
     // muted ink its quote and H6 rules use, the accent link, the muted
     // code and table surface, and the border colour that draws the
     // tables, the code cards and the heading rules.
+    p.pageBg = MakeColor(0xFFFFFF);
+    p.caretInk = MakeColor(0x1F2328);
     p.textPrimary = MakeColor(0x1F2328);
     p.textMuted = MakeColor(0x59636E);
     p.heading = MakeColor(0x1F2328);
@@ -574,6 +604,21 @@ inline Palette GitHubPalette() {
     p.mermaidNodeFill = MakeColor(0xECECFF);
     p.mermaidNodeBorder = MakeColor(0x9370DB);
     p.mermaidText = MakeColor(0x333333);
+    // mermaid's own default theme, the one the light diagrams already
+    // matched: ink and lines #333, clusters #ffffde and #aaaa33, a white
+    // edge label, and the "neo" actor look of the sequence diagram.
+    p.mermaidEdge = MakeColor(0x333333);
+    p.mermaidClusterBg = MakeColor(0xFFFFDE);
+    p.mermaidClusterBorder = MakeColor(0xAAAA33);
+    p.mermaidLabelBg = MakeColor(0xFFFFFF);
+    p.mermaidActorFill = MakeColor(0xEAEAEA);
+    p.mermaidActorStroke = MakeColor(0x666666);
+    p.mermaidNoteFill = MakeColor(0xFFF5AD);
+    p.mermaidNoteStroke = MakeColor(0xAAAA33);
+    p.mermaidLifeline = MakeColor(0x666666);
+    p.mermaidActivationFill = MakeColor(0xF4F4F4);
+    p.mermaidActivationStroke = MakeColor(0x666666);
+    p.mermaidLoopFill = MakeColor(0xEDEDED);
     p.inlineCodeBg = MakeColor(0xEFF1F3);
     p.quoteBar = MakeColor(0xD1D9E0);
     p.quoteText = MakeColor(0x59636E);
@@ -608,6 +653,8 @@ inline Palette GitHubPalette() {
 // them, because they are app chrome and not article style.
 inline Palette WikipediaPalette() {
     Palette p = GitHubPalette();
+    p.pageBg = MakeColor(0xFFFFFF);
+    p.caretInk = MakeColor(0x202122);
     p.textPrimary = MakeColor(0x202122);
     p.textMuted = MakeColor(0x54595D);
     p.heading = MakeColor(0x101418);
@@ -632,6 +679,8 @@ inline Palette WikipediaPalette() {
 // the GitHub palette has them (app chrome, not article style).
 inline Palette ApplePalette() {
     Palette p = GitHubPalette();
+    p.pageBg = MakeColor(0xFFFFFF);
+    p.caretInk = MakeColor(0x1D1D1F);
     p.textPrimary = MakeColor(0x1D1D1F);
     p.textMuted = MakeColor(0x6E6E73);
     p.heading = MakeColor(0x1D1D1F);
@@ -665,6 +714,179 @@ inline Palette BasePalette(MarkdownStyle style = ActiveMarkdownStyle()) {
         case MarkdownStyle::Apple: return ApplePalette();
         default: return GitHubPalette();
     }
+}
+
+// The dark counterparts, per style.
+//
+// Each one is written from its own style's ground rather than by
+// inverting the light palette: an inverted hue turns a red danger label
+// cyan and a link purple, and the reference guide forbids exactly that.
+// The values below follow the published dark palettes of the three
+// styles (Primer dark for GitHub, Vector night for Wikipedia, the
+// system neutrals for Apple), then every ink/surface pair was checked
+// against the WCAG ratio the contrast test enforces.
+//
+// Surfaces step instead of inverting: the page is the darkest value, a
+// code card or a table header one step up, a zebra row one step up from
+// that. That is Material's elevation rule expressed with the tokens the
+// layout already has.
+// The colours that are app chrome rather than article style: the
+// selection, the find and marker washes, and the JSON syntax hues. They
+// are the same in all three dark palettes, so they are set once here
+// instead of three times.
+//
+// Each is a dark-surface value, checked against the card it is painted
+// on: the four syntax hues clear 4.4:1 on the code surface, and the
+// selection keeps white text readable.
+inline void ApplyDarkUiColours(Palette* p) {
+    p->selectionBg = MakeColor(0x264F78);
+    p->selectionText = MakeColor(0xFFFFFF);
+    p->findMatchBg = MakeColor(0x4A3C00);
+    p->findCurrentMatchBg = MakeColor(0x7A5E00);
+    p->markerBg = MakeColor(0x6B5A00);
+    p->markerLine = MakeColor(0xD29922);
+    p->jsonKey = MakeColor(0x79C0FF);
+    p->jsonString = MakeColor(0x7EE787);
+    p->jsonNumber = MakeColor(0xFFA657);
+    p->jsonLiteral = MakeColor(0xFF7B72);
+}
+
+inline Palette GitHubDarkPalette() {
+    Palette p = GitHubPalette();
+    p.pageBg = MakeColor(0x0D1117);
+    p.caretInk = MakeColor(0xE6EDF3);
+    p.textPrimary = MakeColor(0xE6EDF3);
+    p.textMuted = MakeColor(0x9198A1);
+    p.heading = MakeColor(0xE6EDF3);
+    p.link = MakeColor(0x4493F8);
+    p.codeBg = MakeColor(0x161B22);
+    p.codeBorder = MakeColor(0x30363D);
+    p.inlineCodeBg = MakeColor(0x262C36);
+    p.quoteBar = MakeColor(0x3D444D);
+    p.quoteText = MakeColor(0x9198A1);
+    p.rule = MakeColor(0x3D444D);
+    p.tableBorder = MakeColor(0x3D444D);
+    p.tableHeaderBg = MakeColor(0x161B22);
+    p.tableRowAlt = MakeColor(0x161B22);
+    // mermaid's own dark theme: nodes #1f2020 one step off the paper,
+    // lines and labels #ccc, cluster bands #302f3d with a #ccc edge.
+    p.dark = true;
+    p.mermaidNodeFill = MakeColor(0x1F2020);
+    p.mermaidNodeBorder = MakeColor(0xCCCCCC);
+    p.mermaidText = MakeColor(0xCCCCCC);
+    p.mermaidEdge = MakeColor(0xCCCCCC);
+    p.mermaidClusterBg = MakeColor(0x302F3D);
+    p.mermaidClusterBorder = MakeColor(0xCCCCCC);
+    p.mermaidLabelBg = MakeColor(0x333333);
+    p.mermaidActorFill = MakeColor(0x4B4B4B);
+    p.mermaidActorStroke = MakeColor(0xCCCCCC);
+    p.mermaidNoteFill = MakeColor(0x3A3520);
+    p.mermaidNoteStroke = MakeColor(0xAAAA33);
+    p.mermaidLifeline = MakeColor(0xCCCCCC);
+    p.mermaidActivationFill = MakeColor(0x333333);
+    p.mermaidActivationStroke = MakeColor(0xCCCCCC);
+    p.mermaidLoopFill = MakeColor(0x2A2A2A);
+    ApplyDarkUiColours(&p);
+    return p;
+}
+
+inline Palette WikipediaDarkPalette() {
+    Palette p = WikipediaPalette();
+    p.pageBg = MakeColor(0x101418);
+    p.caretInk = MakeColor(0xEAECF0);
+    p.textPrimary = MakeColor(0xEAECF0);
+    p.textMuted = MakeColor(0xA2A9B1);
+    p.heading = MakeColor(0xFFFFFF);
+    p.link = MakeColor(0x6699FF);
+    p.codeBg = MakeColor(0x27292D);
+    p.codeBorder = MakeColor(0x404244);
+    p.inlineCodeBg = MakeColor(0x27292D);
+    p.quoteBar = MakeColor(0x404244);
+    p.quoteText = MakeColor(0xEAECF0);
+    p.rule = MakeColor(0x404244);
+    p.tableBorder = MakeColor(0x72777D);
+    p.tableHeaderBg = MakeColor(0x27292D);
+    p.tableRowAlt = MakeColor(0x27292D);
+    p.dark = true;
+    p.mermaidNodeFill = MakeColor(0x27292D);
+    p.mermaidNodeBorder = MakeColor(0xA2A9B1);
+    p.mermaidText = MakeColor(0xEAECF0);
+    p.mermaidEdge = MakeColor(0xA2A9B1);
+    p.mermaidClusterBg = MakeColor(0x1B1E22);
+    p.mermaidClusterBorder = MakeColor(0xA2A9B1);
+    p.mermaidLabelBg = MakeColor(0x101418);
+    p.mermaidActorFill = MakeColor(0x2C2F34);
+    p.mermaidActorStroke = MakeColor(0xA2A9B1);
+    p.mermaidNoteFill = MakeColor(0x3A3520);
+    p.mermaidNoteStroke = MakeColor(0xAAAA33);
+    p.mermaidLifeline = MakeColor(0xA2A9B1);
+    p.mermaidActivationFill = MakeColor(0x2C2F34);
+    p.mermaidActivationStroke = MakeColor(0xA2A9B1);
+    p.mermaidLoopFill = MakeColor(0x1B1E22);
+    ApplyDarkUiColours(&p);
+    return p;
+}
+
+inline Palette AppleDarkPalette() {
+    Palette p = ApplePalette();
+    p.pageBg = MakeColor(0x1C1C1E);
+    p.caretInk = MakeColor(0xF5F5F7);
+    p.textPrimary = MakeColor(0xF5F5F7);
+    p.textMuted = MakeColor(0xA1A1A6);
+    p.heading = MakeColor(0xF5F5F7);
+    p.link = MakeColor(0x409CFF);
+    p.codeBg = MakeColor(0x2C2C2E);
+    p.codeBorder = MakeColor(0x3A3A3C);
+    p.inlineCodeBg = MakeColor(0x2C2C2E);
+    p.quoteBar = MakeColor(0x3A3A3C);
+    p.quoteText = MakeColor(0xA1A1A6);
+    p.rule = MakeColor(0x3A3A3C);
+    p.tableBorder = MakeColor(0x48484A);
+    p.tableHeaderBg = MakeColor(0x2C2C2E);
+    p.tableRowAlt = MakeColor(0x232325);
+    p.dark = true;
+    p.mermaidNodeFill = MakeColor(0x2C2C2E);
+    p.mermaidNodeBorder = MakeColor(0xA1A1A6);
+    p.mermaidText = MakeColor(0xF5F5F7);
+    p.mermaidEdge = MakeColor(0xA1A1A6);
+    p.mermaidClusterBg = MakeColor(0x232325);
+    p.mermaidClusterBorder = MakeColor(0x8E8E93);
+    p.mermaidLabelBg = MakeColor(0x1C1C1E);
+    p.mermaidActorFill = MakeColor(0x3A3A3C);
+    p.mermaidActorStroke = MakeColor(0x8E8E93);
+    p.mermaidNoteFill = MakeColor(0x3A3320);
+    p.mermaidNoteStroke = MakeColor(0xE3A008);
+    p.mermaidLifeline = MakeColor(0x8E8E93);
+    p.mermaidActivationFill = MakeColor(0x3A3A3C);
+    p.mermaidActivationStroke = MakeColor(0x8E8E93);
+    p.mermaidLoopFill = MakeColor(0x242426);
+    // The four information boxes keep their meaning: a dark tint of the
+    // same hue, with a label that still clears the ratio on its tint.
+    p.calloutBg[0] = MakeColor(0x0E2A47);
+    p.calloutBg[1] = MakeColor(0x3A2A0A);
+    p.calloutBg[2] = MakeColor(0x3A1214);
+    p.calloutBg[3] = MakeColor(0x0F2E1A);
+    p.calloutLabel[0] = MakeColor(0x79B8FF);
+    p.calloutLabel[1] = MakeColor(0xE3A008);
+    p.calloutLabel[2] = MakeColor(0xFF7B72);
+    p.calloutLabel[3] = MakeColor(0x56D364);
+    ApplyDarkUiColours(&p);
+    return p;
+}
+
+// The document palette for an appearance. BasePalette() keeps meaning
+// "light", so the print path that asks for it is untouched.
+inline Palette DarkPalette(MarkdownStyle style = ActiveMarkdownStyle()) {
+    switch (style) {
+        case MarkdownStyle::Wikipedia: return WikipediaDarkPalette();
+        case MarkdownStyle::Apple: return AppleDarkPalette();
+        default: return GitHubDarkPalette();
+    }
+}
+
+inline Palette PaletteFor(MarkdownStyle style, theme::Appearance appearance) {
+    if (theme::IsDark(appearance)) return DarkPalette(style);
+    return BasePalette(style);
 }
 
 // The chrome palette: the surfaces the app draws around the document,
@@ -746,4 +968,9 @@ inline ChromePalette DarkChromePalette() {
     c.pillBg = MakeColor(0x2F4A66);
     c.pillBorder = MakeColor(0x4A86C8);
     return c;
+}
+
+// The chrome palette for an appearance, one answer for both ports.
+inline ChromePalette ChromePaletteFor(theme::Appearance appearance) {
+    return theme::IsDark(appearance) ? DarkChromePalette() : BaseChromePalette();
 }

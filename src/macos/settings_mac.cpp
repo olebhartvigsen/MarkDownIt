@@ -287,6 +287,12 @@ void MacSettings::Load() {
     }
     settings_.contentWidthMode = contentWidthMode;
 
+    if (FindJsonNumber(text, "themeMode", &number)) {
+        settings_.themeMode = static_cast<int>(number);
+        if (settings_.themeMode < 0 || settings_.themeMode > 2) {
+            settings_.themeMode = static_cast<int>(theme::kDefaultThemeMode);
+        }
+    }
     if (FindJsonNumber(text, "zoomFactor", &number)) {
         settings_.zoomFactor = static_cast<float>(number);
     }
@@ -337,6 +343,7 @@ bool MacSettings::Save() const {
     out << "  \"fileAssoc\": " << (settings_.fileAssoc ? "true" : "false")
         << ",\n";
     out << "  \"contentWidthMode\": " << settings_.contentWidthMode << ",\n";
+    out << "  \"themeMode\": " << settings_.themeMode << ",\n";
     out << "  \"zoomFactor\": " << settings_.zoomFactor << ",\n";
     out << "  \"outlineWidthDip\": " << settings_.outlineWidthDip << ",\n";
     out << "  \"windowFrameX\": " << settings_.windowFrameX << ",\n";

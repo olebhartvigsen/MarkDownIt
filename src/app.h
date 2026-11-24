@@ -23,6 +23,8 @@
 #include "autoformat.h"
 #include "inputfilter.h"
 #include "settings.h"
+#include "thememode.h"
+#include "theme_model.h"
 #include "welcome_screen.h"
 #include "outlinepane.h"
 #include "mousegesture.h"
@@ -68,6 +70,15 @@ public:
 
     void ToggleOutline();
     void SyncOutlinePane();
+
+    // The appearance. System follows the OS and is the default; Light and
+    // Dark are the user's own choice and outrank the OS until System is
+    // chosen again. The switch is presentation only: it repaints, and it
+    // never re-parses, never relayouts and never touches the document.
+    void ToggleThemeMode();
+    void SetThemeMode(theme::ThemeMode mode);
+    theme::ThemeMode GetThemeMode() const { return theme_mode_; }
+    theme::Appearance GetAppearance() const { return appearance_; }
     bool outline_button_enabled_ = false;
     // True when the document has headings, so the outline can show.
     bool HasOutlineItems() const { return !outline_items_.empty(); }
@@ -355,6 +366,13 @@ private:
     // Persisted settings
     AppSettings    settings_;
 
+    // The appearance the window is drawn in, and the palette that goes
+    // with it. Resolved once at startup and again whenever the OS or the
+    // user changes it, never rebuilt per frame.
+    theme::ThemeMode   theme_mode_ = theme::kDefaultThemeMode;
+    theme::Appearance  appearance_ = theme::Appearance::Light;
+    Palette            page_palette_ = BasePalette();
+
     // Welcome screen (shown when no file is open)
     // The screen itself is shared with the mac app (welcome_screen.h);
     // this window only supplies the Direct2D target and the DirectWrite
@@ -444,6 +462,13 @@ private:
     LRESULT WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
     LRESULT ContentWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
     void OnCreate(HWND hwnd);
+    // Applies the resolved appearance to the document palette, the
+    // native frame, the scrollbars and the ribbon.
+    void ApplyAppearance();
+    void ApplyNativeTheme();
+    // WM_SETTINGCHANGE / ImmersiveColorSet: follow the OS when the mode
+    // is System and ignore it otherwise.
+    void OnSystemThemeChanged();
     void OnSize(HWND hwnd, int width, int height);
     void ResizeContentWindow();
     void OnContentPaint(HWND hwnd);

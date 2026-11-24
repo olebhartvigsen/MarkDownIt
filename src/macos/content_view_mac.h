@@ -225,6 +225,10 @@ public:
 
     // The colour of the selection, and of the caret.
     Color SelectionColor() const;
+
+    // The palette the document is drawn in. The view paints its page
+    // from pageBg, so the paper and the ink come from one place.
+    const Palette& ThemePalette() const { return palette_; }
     Color CaretColor() const;
 
     // Whether the caret is showing. The blink timer flips this, so the
@@ -296,6 +300,8 @@ private:
     std::unique_ptr<TextEngine> engine_;
     RenderTarget* target_;
     MacRenderer renderer_;
+    // Resolved whenever the appearance changes, never per frame.
+    Palette palette_ = PaletteFor(ActiveMarkdownStyle(), theme::Appearance::Light);
     // The welcome screen, which is shown when no document is open.
     WelcomeScreen welcome_;
     // The card of the welcome screen under the mouse.

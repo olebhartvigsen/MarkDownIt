@@ -1,5 +1,6 @@
 #pragma once
 
+#include "thememode.h"
 #include "theme.h"
 
 #ifdef __OBJC__
@@ -27,6 +28,11 @@ ChromePalette SystemChromePalette();
 // window follows that window's appearance, which can differ from the
 // app's.
 ChromePalette ChromePaletteForAppearance(NSAppearance* appearance);
+
+// The appearance an NSAppearance stands for, in the shared vocabulary.
+// Nil means "whatever the process is drawing in", which is what the
+// document palette resolves against.
+theme::Appearance AppearanceFor(NSAppearance* appearance);
 
 // The outline pane as a sidebar: the window material below the pane
 // supplies the backdrop, so the pane paints nothing of its own; the

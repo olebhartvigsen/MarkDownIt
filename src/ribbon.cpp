@@ -80,6 +80,31 @@ bool GetRibbonButtonRect(HWND hwnd, const wchar_t* label, RECT* bounds) {
 
 // Module-level globals.
 IUIFramework* g_pRibbonFramework = NULL;
+
+// The dark-mode property key the ribbon framework reads but never
+// documents: a VT_BOOL at id 2004 on the framework's property store.
+// Spelled out here rather than included from a header, because no SDK
+// header carries it.
+#ifndef UI_PKEY_DarkModeRibbon
+DEFINE_UIPROPERTYKEY(UI_PKEY_DarkModeRibbon, VT_BOOL, 2004);
+#endif
+
+void SetRibbonDarkMode(bool dark) {
+    if (!g_pRibbonFramework) return;
+    IPropertyStore* store = nullptr;
+    if (FAILED(g_pRibbonFramework->QueryInterface(IID_PPV_ARGS(&store))) ||
+        !store) {
+        return;
+    }
+    PROPVARIANT value;
+    PropVariantInit(&value);
+    value.vt = VT_BOOL;
+    value.boolVal = dark ? VARIANT_TRUE : VARIANT_FALSE;
+    store->SetValue(UI_PKEY_DarkModeRibbon, value);
+    store->Commit();
+    PropVariantClear(&value);
+    store->Release();
+}
 IUIApplication* g_pRibbonApplication = NULL;
 UINT g_ribbonHeight = 0;
 
@@ -671,6 +696,7 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_FIND:    m_pApp->ShowFindReplace(false); break;
     case IDC_CMD_REPLACE: m_pApp->ShowFindReplace(true);  break;
     case IDC_CMD_ASSOC_MD:    m_pApp->ToggleMdAssociation();         break;
+    case IDC_CMD_THEME:   m_pApp->ToggleThemeMode();   break;
     case IDC_CMD_WIDTH_STD:   diag::Trace("Execute width std");   m_pApp->SetContentWidthMode(0);        break;
     case IDC_CMD_WIDTH_960:   diag::Trace("Execute width 960");   m_pApp->SetContentWidthMode(1);        break;
     case IDC_CMD_WIDTH_1600:  diag::Trace("Execute width 1600");  m_pApp->SetContentWidthMode(2);        break;

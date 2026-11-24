@@ -23,16 +23,112 @@
 #include "print_winrt.h"
 #include "layout/print_pages.h"
 #include "print_pdf.h"
+
+namespace platform {
+
+// Whether the OS is in its dark app appearance.
+//
+// Windows keeps the answer in the personalization key, not behind a
+// documented API: AppsUseLightTheme is 1 for light and 0 for dark. A
+// missing value means the user never chose, which Windows treats as
+// light, so that is the answer here too. The Windows shell asks this
+// once at startup and again on WM_SETTINGCHANGE, which is the live
+// adoption path the appearance requirement asks for.
+bool SystemPrefersDark() {
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                      L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                      0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) {
+        return false;
+    }
+    DWORD value = 1, size = sizeof(value), type = 0;
+    const LONG result =
+        RegQueryValueExW(key, L"AppsUseLightTheme", nullptr, &type,
+                         reinterpret_cast<BYTE*>(&value), &size);
+    RegCloseKey(key);
+    if (result != ERROR_SUCCESS || type != REG_DWORD) return false;
+    return value == 0;
+}
+
+}  // namespace platform
+
+namespace {
+
+// SetPreferredAppMode, uxtheme ordinal 135. Undocumented, stable since
+// 1903, and the only way to make the frames of a Win32 process follow a
+// choice the user made inside the app rather than the OS setting.
+// 0 default (follow the OS), 1 allow dark, 2 force dark, 3 force light.
+using SetPreferredAppModeFn = int(WINAPI*)(int);
+
+// RefreshImmersiveColorPolicyState, ordinal 104. Clearing an earlier
+// ForceDark without this leaves some controls dark, which is the known
+// asymmetry the reference implementations work around.
+using RefreshPolicyFn = void(WINAPI*)();
+
+// True when the user runs a high contrast theme. The palette is fixed,
+// so it must not override the system's own colours in that case.
+bool HighContrastActive() {
+    HIGHCONTRASTW high = {};
+    high.cbSize = sizeof(high);
+    if (!SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(high), &high, 0)) {
+        return false;
+    }
+    return (high.dwFlags & HCF_HIGHCONTRASTON) != 0;
+}
+
+// Pushes the mode into uxtheme. Called before the first window and on
+// every later switch.
+void ApplyPreferredAppMode(theme::ThemeMode mode) {
+    HMODULE ux = LoadLibraryExW(L"uxtheme.dll", nullptr,
+                               LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!ux) return;
+    const auto set_mode = reinterpret_cast<SetPreferredAppModeFn>(
+        GetProcAddress(ux, MAKEINTRESOURCEA(135)));
+    const auto refresh = reinterpret_cast<RefreshPolicyFn>(
+        GetProcAddress(ux, MAKEINTRESOURCEA(104)));
+    if (set_mode) {
+        switch (mode) {
+            case theme::ThemeMode::Dark: set_mode(2); break;
+            case theme::ThemeMode::Light: set_mode(3); break;
+            default: set_mode(0); break;
+        }
+    }
+    if (refresh) refresh();
+    FreeLibrary(ux);
+}
+
+// A caret that inverts what is under it.
+//
+// CreateCaret with a null bitmap draws in the system's caret colour,
+// which is dark and disappears on the dark page. A monochrome caret
+// whose bits are all one inverts the pixels beneath it, so the same
+// caret is visible on white paper and on the dark one, with no colour
+// table and no per-appearance bookkeeping.
+void CreateInvertingCaret(HWND hwnd, int width, int height) {
+    if (!hwnd || width <= 0 || height <= 0) return;
+    const int stride = ((width + 15) / 16) * 2;
+    std::vector<BYTE> bits(static_cast<size_t>(stride) *
+                               static_cast<size_t>(height),
+                           0xFF);
+    HBITMAP bitmap = CreateBitmap(width, height, 1, 1, bits.data());
+    CreateCaret(hwnd, bitmap, width, height);
+    if (bitmap) DeleteObject(bitmap);
+}
+
+}  // namespace
 #include <commdlg.h>
 #include <commctrl.h>
 #include <windowsx.h>
 
 #include <windows.h>
+#include <dwmapi.h>
+#include <uxtheme.h>
 #include <imm.h>
 #include <shellapi.h>
 #include <d2d1.h>
 #include <d2d1_3.h>
 #include <dwrite.h>
+#include <vector>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -1421,7 +1517,7 @@ void AppWindow::UpdateCaretPosition() {
         if (!qa_active_ && caret_height_ != newH) {
             DestroyCaret();
             caret_visible_ = false; // caret destroyed; must re-show
-            CreateCaret(hwnd_content_, nullptr, SystemCaretWidthPixels(), newH);
+            CreateInvertingCaret(hwnd_content_, SystemCaretWidthPixels(), newH);
             caret_height_ = newH;
         }
         SetCaretPos(cx, cy);
@@ -2303,7 +2399,7 @@ bool AppWindow::EnsureCaretVisible() {
     const float dpix = static_cast<float>(dpi_) / 96.0f;
     int height = static_cast<int>(h * dpix);
     if (height < 1) height = 1;
-    CreateCaret(hwnd_content_, nullptr, SystemCaretWidthPixels(), height);
+    CreateInvertingCaret(hwnd_content_, SystemCaretWidthPixels(), height);
     caret_height_ = height;
     if (haveRect) {
         SetCaretPos(static_cast<int>(x * dpix),
@@ -2751,6 +2847,16 @@ void AppWindow::OnCreate(HWND hwnd) {
 
     // Load settings FIRST; LoadSampleDoc (below) needs recentFiles.
     settings_ = LoadSettings();
+
+    // The appearance, resolved before the first window exists so the
+    // first frame is already in the right colours. The stored mode or the
+    // environment override picks the mode; System asks the OS here.
+    theme_mode_ =
+        theme::StartupThemeMode(theme::ThemeModeFromInt(settings_.themeMode));
+    appearance_ = theme::ResolveAppearance(theme_mode_, platform::SystemPrefersDark());
+    page_palette_ = PaletteFor(ActiveMarkdownStyle(), appearance_);
+    renderer_.SetTheme(page_palette_);
+    ApplyPreferredAppMode(theme_mode_);
 
     // Zoom is a global view setting, not per-document state: restore
     // the factor persisted by the previous session so it carries across
@@ -3540,7 +3646,7 @@ void AppWindow::OnContentPaint(HWND hwnd) {
         BeginPaint(hwnd, &ps);
         rt_->BeginDraw();
         D2D1_SIZE_F size = rt_->GetSize();
-        rt_->Clear(D2D1::ColorF(D2D1::ColorF::White));
+        rt_->Clear(page_palette_.pageBg);
         welcome_.Layout(size.width, size.height);
         UpdateWelcomeTips();
         {
@@ -3575,7 +3681,7 @@ void AppWindow::OnContentPaint(HWND hwnd) {
     PAINTSTRUCT ps;
     BeginPaint(hwnd, &ps);
     rt_->BeginDraw();
-    rt_->Clear(D2D1::ColorF(D2D1::ColorF::White));
+    rt_->Clear(page_palette_.pageBg);
 
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
@@ -3807,6 +3913,16 @@ void AppWindow::QAAdvance() {
         snprintf(line, sizeof(line),
                  "qa csv-pinned: scroll=%.0f editing=%d",
                  (double)scrollY_, editing_ ? 1 : 0);
+        QALogLine(line);
+    } else if (state == "dark") {
+        // The dark appearance, the twin of the mac walk's "dark" state.
+        // The capture is caret-free and the theme is forced, so the
+        // picture never depends on the runner's own setting.
+        SetThemeMode(theme::ThemeMode::Dark);
+        char line[120];
+        snprintf(line, sizeof(line), "qa dark: appearance=%d page=%.3f",
+                 static_cast<int>(appearance_),
+                 static_cast<double>(page_palette_.pageBg.r));
         QALogLine(line);
     } else if (state == "print-pages") {
         // Pagination without a printer, the same numbers the mac walk
@@ -5826,6 +5942,82 @@ float AppWindow::ViewHeightDip() {
     return static_cast<float>(clientH_);
 }
 
+// The appearance methods.
+//
+// ToggleThemeMode is what the ribbon button and the keyboard shortcut
+// land in. A toggle has two states, so it moves between Light and Dark;
+// System is a settings choice rather than a toggle stop, which is also
+// what stops the button from lying about the third state.
+void AppWindow::ToggleThemeMode() {
+    SetThemeMode(appearance_ == theme::Appearance::Dark ? theme::ThemeMode::Light
+                                                       : theme::ThemeMode::Dark);
+}
+
+void AppWindow::SetThemeMode(theme::ThemeMode mode) {
+    const theme::Appearance before = appearance_;
+    theme_mode_ = mode;
+    appearance_ =
+        theme::ResolveAppearance(theme_mode_, platform::SystemPrefersDark());
+    const theme::SwitchPlan plan = theme::PlanForSwitch(before, appearance_);
+    // The choice is a setting, not document state: it persists, and it
+    // never sets the dirty flag or adds an undo entry.
+    settings_.themeMode = static_cast<int>(theme_mode_);
+    SaveSettings(settings_);
+    // The process-wide frame mode has to move before the window repaints,
+    // or the ribbon's parent still erases with the old brush.
+    ApplyPreferredAppMode(theme_mode_);
+    ApplyAppearance();
+    if (plan.repaint) Repaint();
+}
+
+// Pushes the resolved appearance into everything that draws.
+void AppWindow::ApplyAppearance() {
+    page_palette_ = PaletteFor(ActiveMarkdownStyle(), appearance_);
+    renderer_.SetTheme(page_palette_);
+    // SVG scenes cache the branch they were read with.
+    renderer_.ClearSvgCache();
+    ApplyNativeTheme();
+    if (hwnd_content_) InvalidateRect(hwnd_content_, nullptr, TRUE);
+}
+
+// The native half: frame, scrollbars, window background and the ribbon.
+// High contrast wins over the palette, because a fixed set of colours
+// must not override the theme a user chose for accessibility.
+void AppWindow::ApplyNativeTheme() {
+    if (!hwnd_) return;
+    const bool dark = appearance_ == theme::Appearance::Dark &&
+                      !HighContrastActive();
+    BOOL flag = dark ? TRUE : FALSE;
+    // 20 is the attribute from 20H1 on; 19 is the one 1809 to 19H2 answer.
+    if (FAILED(DwmSetWindowAttribute(hwnd_, 20, &flag, sizeof(flag)))) {
+        DwmSetWindowAttribute(hwnd_, 19, &flag, sizeof(flag));
+    }
+    const wchar_t* scrollbars = dark ? L"DarkMode_Explorer" : L"Explorer";
+    SetWindowTheme(hwnd_, scrollbars, nullptr);
+    if (hwnd_content_) SetWindowTheme(hwnd_content_, scrollbars, nullptr);
+    const HBRUSH background =
+        dark ? static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH))
+             : GetSysColorBrush(COLOR_WINDOW);
+    SetClassLongPtrW(hwnd_, GCLP_HBRBACKGROUND,
+                     reinterpret_cast<LONG_PTR>(background));
+    SetRibbonDarkMode(dark);
+    InvalidateRect(hwnd_, nullptr, TRUE);
+}
+
+// The live adoption path: the OS changed its appearance. An explicit
+// Light or Dark choice is not overridden by it, per the reference
+// guide's section 22.2.
+void AppWindow::OnSystemThemeChanged() {
+    if (theme_mode_ != theme::ThemeMode::System) return;
+    const theme::Appearance before = appearance_;
+    appearance_ =
+        theme::ResolveAppearance(theme_mode_, platform::SystemPrefersDark());
+    if (before == appearance_) return;
+    ApplyPreferredAppMode(theme_mode_);
+    ApplyAppearance();
+    Repaint();
+}
+
 void AppWindow::ToggleOutline() {
     if (!outline_.IsCreated()) return;
     // With no headings the pane is held hidden, so the setting decides.
@@ -6260,6 +6452,16 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_SIZE: {
             int w = LOWORD(lp), h = HIWORD(lp);
             OnSize(hwnd, w, h);
+            return 0;
+        }
+        case WM_SETTINGCHANGE: {
+            // The OS appearance is one of the settings that arrives this
+            // way. Only "ImmersiveColorSet" matters here; anything else
+            // (a font change, a locale change) is not ours to act on.
+            if (lp && wcscmp(reinterpret_cast<LPCWSTR>(lp),
+                             L"ImmersiveColorSet") == 0) {
+                OnSystemThemeChanged();
+            }
             return 0;
         }
         case WM_DPICHANGED: {

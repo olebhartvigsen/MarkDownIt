@@ -55,6 +55,10 @@
 
 namespace platform {
 
+bool SystemPrefersDark() {
+    return AppearanceFor(nil) == theme::Appearance::Dark;
+}
+
 // Opens a URL in the user's browser. The caller has checked the
 // scheme; this only performs the handoff.
 bool OpenExternalUrl(const std::string& url) {
@@ -237,6 +241,8 @@ bool OpenExternalUrl(const std::string& url) {
 - (void)toggleSourceView:(id)sender;
 - (void)toggleOutline:(id)sender;
 - (void)toggleWrap:(id)sender;
+- (void)toggleTheme:(id)sender;
+- (void)applyThemeMode;
 - (void)toggleBold:(id)sender;
 - (void)toggleStrike:(id)sender;
 - (void)setHeading:(int)level;
@@ -632,6 +638,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     ]];
 
     [window_ setContentView:container_];
+    // Before the first frame: resolve the stored mode (or the
+    // MARKDOWNIT_THEME override) so the window never flashes the wrong
+    // appearance on launch.
+    [self applyThemeMode];
     [window_ makeKeyAndOrderFront:nil];
     // A preferred window still starts with the tab bar hidden when it
     // is the only window in its group. The explicit toggle makes the
@@ -2614,6 +2624,38 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)toggleSourceView:(id)sender { (void)sender; [self OnToggleSourceView]; }
 - (void)toggleOutline:(id)sender { (void)sender; [self OnToggleOutline]; }
 - (void)toggleWrap:(id)sender { (void)sender; [self OnToggleWrap]; }
+// The appearance. The system is adopted by default; choosing Light or
+// Dark pins the app and survives a restart, and the item is the same
+// two-state toggle the ribbon button offers. System itself is a
+// settings choice, because a checkbox cannot honestly show three.
+- (void)toggleTheme:(id)sender {
+    (void)sender;
+    const bool dark = platform::AppearanceFor(nil) == theme::Appearance::Dark;
+    settings_.settings().themeMode = static_cast<int>(
+        dark ? theme::ThemeMode::Light : theme::ThemeMode::Dark);
+    settings_.Save();
+    [self applyThemeMode];
+}
+
+// Pushes the stored mode into AppKit. Nil is the only value that hands
+// control back to the system: setting a window's appearance to nil after
+// a concrete one was written does not clear it, so the application
+// object owns the override.
+- (void)applyThemeMode {
+    const theme::ThemeMode mode = theme::StartupThemeMode(
+        theme::ThemeModeFromInt(settings_.settings().themeMode));
+    NSAppearance* wanted = nil;
+    if (mode == theme::ThemeMode::Light) {
+        wanted = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+    } else if (mode == theme::ThemeMode::Dark) {
+        wanted = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    }
+    NSApp.appearance = wanted;
+    // The content view re-resolves through viewDidChangeEffectiveAppearance,
+    // so this only has to ask for the frame that follows the change.
+    [view_ setNeedsDisplay:YES];
+    [window_ setNeedsDisplay:YES];
+}
 // The View menu's tab bar command; the native tab bar keeps its own
 // hide button as well.
 - (void)toggleTabBar:(id)sender {
@@ -2800,6 +2842,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     if (action == @selector(toggleCode:)) {
         [item setState:(app_->FormatButtonOn("`") ? NSControlStateValueOn
                                                   : NSControlStateValueOff)];
+        return [self canRunAction:action context:context];
+    }
+    if (action == @selector(toggleTheme:)) {
+        [item setState:(platform::AppearanceFor(nil) == theme::Appearance::Dark
+                            ? NSControlStateValueOn
+                            : NSControlStateValueOff)];
         return [self canRunAction:action context:context];
     }
     if (action == @selector(toggleOutline:)) {

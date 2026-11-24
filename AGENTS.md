@@ -347,6 +347,15 @@ visual hacks.
   row in `references/platform-parity.md` or it does not ship.
 - **Screenshots are taken only in CI, never on a local machine.**
   `tools/check_capture_policy.py` enforces it.
+- **CI may be used for test builds.** A push to main that triggers
+  `build.yml` is the normal way to compile, run the suites and review a
+  change on both platforms, because MSVC and Xcode do not run on the
+  development machine. Poll the run, read the logs and download the build
+  artifact as needed. That is a test build, not a release.
+- **Releases need explicit instruction.** Do NOT create a tag, run
+  `release.yml`, publish to the Store, or bump `src/app.rc` for a release
+  unless the user asks for a release in that session. The procedure in
+  `references/release-pipeline.md` applies only then.
 - All ribbon and menu work must follow references/ribbon-menu-guidelines.md.
   Read it before changing ribbon.xml or adding, moving, or renaming tabs,
   groups, or commands, and use it as the checklist when reviewing the menu.
