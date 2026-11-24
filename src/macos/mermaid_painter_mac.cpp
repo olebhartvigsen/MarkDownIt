@@ -482,7 +482,7 @@ void StrokePieSlice(RenderTarget* target, float centreX, float centreY,
 void PaintPie(TextEngine* engine, RenderTarget* target,
               const mermaid::LaidOutPie& laid, float zoom, float availWidth,
               float originX, float originY, float padding,
-              const FontSpec& bodyFont) {
+              const Palette& palette, const FontSpec& bodyFont) {
     const float scale = FitScale(zoom, laid.width, availWidth);
     const FontSpec font = ScaledFont(bodyFont, scale);
     const float ox = originX;
@@ -650,7 +650,8 @@ void DrawStickman(RenderTarget* target, const Color& stroke,
 void PaintSequence(TextEngine* engine, RenderTarget* target,
                    const mermaid::LaidOutSequence& laid, float zoom,
                    float availWidth, float originX, float originY,
-                   float padding, const FontSpec& bodyFont) {
+                   float padding, const Palette& palette,
+                   const FontSpec& bodyFont) {
     const float scale = FitScale(zoom, laid.width, availWidth);
     const FontSpec font = ScaledFont(bodyFont, scale);
     FontSpec numberFont = bodyFont;
@@ -1009,13 +1010,13 @@ void PaintMermaidDiagram(TextEngine* engine, RenderTarget* target,
         case mermaid::MermaidKind::Pie:
             if (diagram.pie) {
                 PaintPie(engine, target, *diagram.pie, zoom, availWidth,
-                         originX, originY, padding, bodyFont);
+                         originX, originY, padding, palette, bodyFont);
             }
             break;
         case mermaid::MermaidKind::Sequence:
             if (diagram.seq) {
                 PaintSequence(engine, target, *diagram.seq, zoom, availWidth,
-                              originX, originY, padding, bodyFont);
+                              originX, originY, padding, palette, bodyFont);
             }
             break;
         case mermaid::MermaidKind::Gantt:

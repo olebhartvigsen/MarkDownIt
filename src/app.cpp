@@ -79,8 +79,13 @@ bool HighContrastActive() {
 // Pushes the mode into uxtheme. Called before the first window and on
 // every later switch.
 void ApplyPreferredAppMode(theme::ThemeMode mode) {
-    HMODULE ux = LoadLibraryExW(L"uxtheme.dll", nullptr,
-                               LOAD_LIBRARY_SEARCH_SYSTEM32);
+    // uxtheme is loaded by the time a window exists (comctl32 and the
+    // ribbon both pull it in), so this asks for the handle rather than
+    // searching for the file, which avoids depending on a load flag that
+    // is not declared by every SDK the project builds against.
+    HMODULE ux = GetModuleHandleW(L"uxtheme.dll");
+    const bool loaded_here = ux == nullptr;
+    if (!ux) ux = LoadLibraryW(L"uxtheme.dll");
     if (!ux) return;
     const auto set_mode = reinterpret_cast<SetPreferredAppModeFn>(
         GetProcAddress(ux, MAKEINTRESOURCEA(135)));
@@ -94,7 +99,7 @@ void ApplyPreferredAppMode(theme::ThemeMode mode) {
         }
     }
     if (refresh) refresh();
-    FreeLibrary(ux);
+    if (loaded_here) FreeLibrary(ux);
 }
 
 // A caret that inverts what is under it.

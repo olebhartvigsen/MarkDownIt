@@ -389,10 +389,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // of appearing only when a second window joins the group.
     [window_ setTabbingMode:NSWindowTabbingModePreferred];
     [window_ setTabbingIdentifier:@"MarkDownItDocument"];
-    // The window keeps the system's own appearance: the document
-    // palette is resolved from the system's semantic colours, so the
-    // chrome and the document both belong to Light Mode or Dark Mode
-    // (the visual style guide asks for it).
+    // The window takes its appearance from the app, which takes it from
+    // the OS unless the user pinned Light or Dark (applyThemeMode below,
+    // before the first frame). The document palette is resolved from
+    // that appearance through the shared tokens, so the chrome and the
+    // page belong to the same mode.
 
     // The content view goes in a scroll view, so the document scrolls
     // when it is longer than the window.

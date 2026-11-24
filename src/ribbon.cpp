@@ -92,17 +92,20 @@ DEFINE_UIPROPERTYKEY(UI_PKEY_DarkModeRibbon, VT_BOOL, 2004);
 void SetRibbonDarkMode(bool dark) {
     if (!g_pRibbonFramework) return;
     IPropertyStore* store = nullptr;
-    if (FAILED(g_pRibbonFramework->QueryInterface(IID_PPV_ARGS(&store))) ||
+    // __uuidof rather than IID_PPV_ARGS: the macro lives in a header the
+    // ribbon translation unit does not otherwise need.
+    if (FAILED(g_pRibbonFramework->QueryInterface(
+            __uuidof(IPropertyStore), reinterpret_cast<void**>(&store))) ||
         !store) {
         return;
     }
-    PROPVARIANT value;
-    PropVariantInit(&value);
+    // A VT_BOOL owns nothing, so the variant is built by hand and needs
+    // no PropVariantInit/Clear pair (and no header for them).
+    PROPVARIANT value = {};
     value.vt = VT_BOOL;
     value.boolVal = dark ? VARIANT_TRUE : VARIANT_FALSE;
     store->SetValue(UI_PKEY_DarkModeRibbon, value);
     store->Commit();
-    PropVariantClear(&value);
     store->Release();
 }
 IUIApplication* g_pRibbonApplication = NULL;
