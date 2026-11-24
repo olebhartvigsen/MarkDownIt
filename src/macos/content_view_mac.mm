@@ -322,6 +322,12 @@ void ContentView::Draw(RenderTarget* target) {
     // rectangles are in document coordinates, the space this view
     // draws in now that the scroll view scrolls it.
     const Selection& selection = app_->selection();
+    // The renderer needs the same range and colour: a code block paints
+    // its own background inside the frame and would cover a wash drawn
+    // here, so it draws the wash itself, above the card and under the
+    // glyphs.
+    renderer_.SetSelection(selection.Start(), selection.End(),
+                           SelectionColor());
     if (!selection.Empty()) {
         const uint32_t from = selection.Start();
         const uint32_t to = selection.End();

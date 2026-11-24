@@ -1139,10 +1139,21 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
                         break;
                     }
                 }
-                if (haveWashes) {
+                if (haveWashes || hasSelection_) {
                     // The card is opaque, so its fills sit above it and
-                    // under the glyphs, which the re-run puts back.
-                    PaintBlockHighlights(block, scrollOffset);
+                    // under the glyphs, which the re-run puts back. The
+                    // selection belongs to the same layer: drawn before
+                    // the frame, the card covered it, so marking a line
+                    // of code showed nothing.
+                    if (haveWashes) PaintBlockHighlights(block, scrollOffset);
+                    if (hasSelection_) {
+                        for (const Rect& rect :
+                             RectsForRangeInBlock(block, selFrom_, selTo_)) {
+                            Rect drawn = rect;
+                            drawn.y -= scrollOffset;
+                            target_->FillRect(drawn, selColour_);
+                        }
+                    }
                     PaintLines(block.lines, TextX(block),
                                TextTop(block) - scrollOffset);
                 }
@@ -1219,6 +1230,13 @@ void MacRenderer::PaintMarkerHighlights(float scrollOffset) {
             }
         }
     }
+}
+
+void MacRenderer::SetSelection(uint32_t from, uint32_t to, Color colour) {
+    hasSelection_ = to > from;
+    selFrom_ = from;
+    selTo_ = to;
+    selColour_ = colour;
 }
 
 void MacRenderer::PaintBlockHighlights(const LaidOutBlock& block,

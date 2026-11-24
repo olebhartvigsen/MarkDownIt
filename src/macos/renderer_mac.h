@@ -204,6 +204,11 @@ public:
     // href is allowed when the caller only needs the hit.
     bool SvgLinkInView(float viewX, float viewY, std::string* href) const;
 
+    // The selection wash. It joins the block washes: above an opaque
+    // card and under the glyphs, because a code block's background is
+    // painted over anything drawn before the frame.
+    void SetSelection(uint32_t from, uint32_t to, Color colour);
+
     // The column whose filter button holds this document point, from the
     // buttons of the layout the last render built.
     bool TableFilterAt(float docX, float docY, size_t* column) const {
@@ -545,6 +550,12 @@ private:
         std::vector<svg::LinkBox> links;
     };
     std::vector<SvgLinkArea> svgLinkAreas_;
+
+    // The selection the owning view set for this frame.
+    bool hasSelection_ = false;
+    uint32_t selFrom_ = 0;
+    uint32_t selTo_ = 0;
+    Color selColour_ = {};
 
     // The blocks of the laid out document, which the content view uses
     // for hit testing, and the display list they were laid out into,
