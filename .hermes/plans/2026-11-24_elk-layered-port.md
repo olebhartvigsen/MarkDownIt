@@ -64,6 +64,26 @@ rank assignment around shapes and self loops, not ordering. It is the
 first thing to understand, because a 267 pt difference is not a tuning
 delta.
 
+### The 267, explained
+
+The chart is one cycle: A->B->C->D->E->F->A. Two cycle breakers, two
+answers, both valid DAGs:
+
+- ours reverses F--ok-->A and keeps A first (A at y 36.5);
+- ELK reverses C-.->D and keeps the long chain (D at y 36.5).
+
+Tested directly: hand ELK the graph with A->F already reversed, so its
+cycle breaker has nothing to decide, and the ranks come out
+36.5 / 105.5 / 174.5 / 243.5 / 312.5, identical to ours. The 267 was the
+cycle break, nothing else. What still differs on that fixture is x (67
+against 86.1) and the last rank's y (411.5 against 381.5), which is where
+the reversed edge's dummy chain and its room are accounted for.
+
+So the port's first real step is ELK's greedy cycle breaker (Eades-Lin-
+Smyth vertex ordering, then edges that run backwards are reversed), and
+it must sit behind a parameter rather than replace dagre's breaker, or
+the dagre goldens move.
+
 ## Phases
 
 1. **Oracle (done).** elkjs, settings, nine fixtures, goldens committed.
