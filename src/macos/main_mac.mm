@@ -57,7 +57,10 @@
 namespace platform {
 
 bool SystemPrefersDark() {
-    return AppearanceFor(nil) == theme::Appearance::Dark;
+    // The application's effective appearance: the system's while no
+    // override is set, and the override once one is. Asking the drawing
+    // context answered for Aqua outside a draw pass.
+    return AppAppearance() == theme::Appearance::Dark;
 }
 
 // Opens a URL in the user's browser. The caller has checked the
@@ -2681,7 +2684,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 // settings choice, because a checkbox cannot honestly show three.
 - (void)toggleTheme:(id)sender {
     (void)sender;
-    const bool dark = platform::AppearanceFor(nil) == theme::Appearance::Dark;
+    const bool dark = platform::AppAppearance() == theme::Appearance::Dark;
     settings_.settings().themeMode = static_cast<int>(
         dark ? theme::ThemeMode::Light : theme::ThemeMode::Dark);
     settings_.Save();
@@ -2896,7 +2899,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         return [self canRunAction:action context:context];
     }
     if (action == @selector(toggleTheme:)) {
-        [item setState:(platform::AppearanceFor(nil) == theme::Appearance::Dark
+        [item setState:(platform::AppAppearance() == theme::Appearance::Dark
                             ? NSControlStateValueOn
                             : NSControlStateValueOff)];
         return [self canRunAction:action context:context];

@@ -34,6 +34,12 @@ ChromePalette ChromePaletteForAppearance(NSAppearance* appearance);
 // document palette resolves against.
 theme::Appearance AppearanceFor(NSAppearance* appearance);
 
+// The appearance the application itself resolves to. AppearanceFor(nil)
+// answers for the drawing context, which outside a draw pass is the
+// default (Aqua even when the window is dark); this asks NSApp, which is
+// what a menu item or a toggle is describing.
+theme::Appearance AppAppearance();
+
 // The outline pane as a sidebar: the window material below the pane
 // supplies the backdrop, so the pane paints nothing of its own; the
 // words and the marks take the system's label colours, and the active

@@ -54,6 +54,10 @@ Palette SystemPalette() {
     return p;
 }
 
+theme::Appearance AppAppearance() {
+    return AppearanceFor(NSApp.effectiveAppearance);
+}
+
 theme::Appearance AppearanceFor(NSAppearance* appearance) {
     // Nil means "the appearance this code is drawing in", which is the
     // current drawing appearance, not the application's. A window can
