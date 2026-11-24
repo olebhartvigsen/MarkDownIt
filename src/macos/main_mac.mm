@@ -116,6 +116,11 @@ bool OpenExternalUrl(const std::string& url) {
     // what the disk said when this window last read or wrote the file.
     NSTimer* fileWatchTimer_;
     std::string fileWatchPath_;
+    // The document this process was started with. The QA walk opens
+    // other files along the way (the SVG fixtures among them), so
+    // reopening "the current file" later reopens whatever ran last, not
+    // the page the walk is about.
+    std::string launchedDocumentPath_;
     watch::Tracker fileWatch_;
     platform::MacSettings settings_;
     NSWindow* window_;
@@ -720,7 +725,8 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     for (NSUInteger i = 1; i < arguments.count; ++i) {
         NSString* argument = arguments[i];
         if ([argument hasPrefix:@"-"]) continue;
-        [self OpenPath:[argument UTF8String]];
+        launchedDocumentPath_ = [argument UTF8String];
+        [self OpenPath:launchedDocumentPath_];
         break;
     }
 
@@ -1891,8 +1897,11 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // (welcome-scrolled ran just before), and the picture is meant to
         // show the page's head. Reopen the fixture first, or the capture
         // is the welcome page in a dark window and pairs with nothing.
-        if (app_->WelcomeMode() && !app_->filePath().empty()) {
-            [self OpenPath:app_->filePath()];
+        const std::string walkDocument = !launchedDocumentPath_.empty()
+                                             ? launchedDocumentPath_
+                                             : app_->filePath();
+        if (!walkDocument.empty()) {
+            [self OpenPath:walkDocument];
         }
         // The top of the page in the dark appearance, so the picture
         // shows the page's head the way the doc state does. The size
