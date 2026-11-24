@@ -1,5 +1,6 @@
 // Measurement-path tests. The callback is portable; Windows supplies DirectWrite.
 #include "gtest_lite.h"
+#include "../src/mermaid/elk_profile.h"
 #include "../src/mermaid/layout.h"
 #include "../src/mermaid/model.h"
 
@@ -43,7 +44,9 @@ TEST(MermaidMeasure, HandlesAllRankDirections) {
 
 TEST(MermaidMeasure, FailedMeasureFallsBackToStubLayout) {
     const auto flow = TwoNodeFlow(Dir::LR);
-    const auto expected = LayoutFlowchart(flow, LayoutParams{});
+    // The fallback must equal the direct path, and that path uses the
+    // process profile, so the expectation is built with the same one.
+    const auto expected = LayoutFlowchart(flow, LayoutParamsForProfile());
     const auto actual = LayoutFlowchartWith(flow, FailingMeasure, nullptr);
     ASSERT_EQ(actual.nodes.size(), expected.nodes.size());
     EXPECT_NEAR(actual.nodes[0].width, expected.nodes[0].width, 0.001f);
