@@ -489,7 +489,11 @@ void PaintPie(TextEngine* engine, RenderTarget* target,
     const float oy = originY + padding;
 
     const Color black = ToColor(palette.textPrimary);
-    const Color ink = Rgb(0x333333);
+    // The percent labels sit on the slices, which keep mermaid's pale
+    // palette in both appearances, so the ink is chosen against the
+    // slice rather than against the page. The title is on the page and
+    // follows it: a fixed dark grey vanished on a dark background.
+    const Color pageInk = ToColor(palette.mermaidText);
 
     const float centreX = ox + static_cast<float>(laid.cx * scale);
     const float centreY = oy + static_cast<float>(laid.cy * scale);
@@ -528,16 +532,33 @@ void PaintPie(TextEngine* engine, RenderTarget* target,
     // The percent label of every slice, at 0.75 of the radius in the
     // middle of the slice.
     for (const auto& arc : laid.arcs) {
+        const Color slice = Rgb(kPieColors[arc.color_index % kPieColorCount]);
+        // Rec. 601 luma: pale slices take the dark ink, saturated ones
+        // the light one, so a 20% label is readable on either.
+        const float luma =
+            0.299f * slice.r + 0.587f * slice.g + 0.114f * slice.b;
+        const Color labelInk = luma > 0.62f ? Rgb(0x333333) : Rgb(0xF5F5F5);
         DrawCentered(target, engine, arc.pct, font,
                      ox + static_cast<float>(arc.label_x * scale),
-                     oy + static_cast<float>(arc.label_y * scale), ink);
+                     oy + static_cast<float>(arc.label_y * scale), labelInk);
     }
 
-    // The title, above the pie.
+    // The title sits above the pie and above the legend: the legend is
+    // centred on the pie's top, so a title drawn at cy-200 landed inside
+    // the first legend rows and the two read as one smudge.
     if (!laid.title.empty()) {
+        float titleY = static_cast<float>(laid.cy) - 200.0f;
+        if (!laid.legend.empty()) {
+            float top = static_cast<float>(laid.legend.front().y);
+            for (const auto& row : laid.legend) {
+                if (row.y < top) top = static_cast<float>(row.y);
+            }
+            const float above = top - 26.0f;
+            if (above < titleY) titleY = above;
+        }
         DrawCentered(target, engine, laid.title, font,
                      ox + static_cast<float>(laid.cx * scale),
-                     oy + static_cast<float>((laid.cy - 200.0) * scale), ink);
+                     oy + titleY * scale, pageInk);
     }
 
     // The legend: a swatch and the label of every slice, in arc order.

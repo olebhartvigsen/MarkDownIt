@@ -138,7 +138,14 @@ void Renderer::DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // they do not vanish on the dark one.
     rt->CreateSolidColorBrush(D2D1::ColorF(0xECECFF), &fillBrush);
     rt->CreateSolidColorBrush(pal.textPrimary, &ringBrush);
+    // The percent labels sit on pale slices and keep the dark ink; the
+    // title sits on the page and takes the page's ink, or it vanished in
+    // dark mode. A second light brush covers a saturated slice.
     rt->CreateSolidColorBrush(D2D1::ColorF(kPieTextDark), &textBrush);
+    ID2D1SolidColorBrush* lightInk = nullptr;
+    ID2D1SolidColorBrush* pageInk = nullptr;
+    rt->CreateSolidColorBrush(D2D1::ColorF(0xF5F5F5), &lightInk);
+    rt->CreateSolidColorBrush(pal.mermaidText, &pageInk);
 
     // Outer ring (class pieOuterCircle): stroke-only, fill none, 2px.
     if (ringBrush) {
@@ -217,18 +224,37 @@ void Renderer::DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // positioned at 0.75r from center at mid-angle.
     IDWriteTextFormat* slice_fmt = body_fmt_;
     for (const auto& arc : lp.arcs) {
+        const uint32_t hex =
+            kPieColors[arc.color_index %
+                       (sizeof(kPieColors) / sizeof(kPieColors[0]))];
+        const float r = ((hex >> 16) & 0xFF) / 255.0f;
+        const float g = ((hex >> 8) & 0xFF) / 255.0f;
+        const float b = (hex & 0xFF) / 255.0f;
+        const float luma = 0.299f * r + 0.587f * g + 0.114f * b;
+        ID2D1SolidColorBrush* ink =
+            (luma > 0.62f || !lightInk) ? textBrush : lightInk;
         DrawPieText(dw, rt, slice_fmt, arc.pct,
                     static_cast<float>(arc.label_x),
                     static_cast<float>(arc.label_y),
-                    scale, scale, textBrush, true, true, textScale);
+                    scale, scale, ink, true, true, textScale);
     }
 
     // Title: 25px, black, centered at (0, -200) relative to pie center.
     if (!lp.title.empty()) {
-        DrawPieText(dw, rt, body_fmt_, lp.title,
-                    static_cast<float>(lp.cx),
-                    static_cast<float>(lp.cy - 200.0),
-                    scale, scale, textBrush, true, true, textScale);
+        // Above the legend, which is centred on the pie's top: at
+        // cy-200 the title landed inside the first legend rows.
+        float titleY = static_cast<float>(lp.cy) - 200.0f;
+        if (!lp.legend.empty()) {
+            float top = static_cast<float>(lp.legend.front().y);
+            for (const auto& row : lp.legend) {
+                if (row.y < top) top = static_cast<float>(row.y);
+            }
+            const float above = top - 26.0f;
+            if (above < titleY) titleY = above;
+        }
+        DrawPieText(dw, rt, body_fmt_, lp.title, static_cast<float>(lp.cx),
+                    titleY, scale, scale,
+                    pageInk ? pageInk : textBrush, true, true, textScale);
     }
 
     // Legend: swatch 18x18 + text at (216, k*22 - offset) with label text
@@ -258,5 +284,7 @@ void Renderer::DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     if (fillBrush) fillBrush->Release();
     if (ringBrush) ringBrush->Release();
     if (textBrush) textBrush->Release();
+    if (lightInk) lightInk->Release();
+    if (pageInk) pageInk->Release();
     if (fac) fac->Release();
 }
