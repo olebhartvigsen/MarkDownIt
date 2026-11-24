@@ -14,6 +14,7 @@
 
 #include "gtest_lite.h"
 #include "theme.h"
+#include "welcome_palette.h"
 
 #include <cmath>
 #include <string>
@@ -38,6 +39,15 @@ float Contrast(const ThemeColor& a, const ThemeColor& b) {
     const float hi = la > lb ? la : lb;
     const float lo = la > lb ? lb : la;
     return (hi + 0.05f) / (lo + 0.05f);
+}
+
+// The welcome screen speaks the seam's Color, the document speaks
+// ThemeColor. Same arithmetic, so the welcome checks use one overload
+// rather than their own copy.
+float Contrast(const platform::Color& a, const platform::Color& b) {
+    const ThemeColor ca{a.r, a.g, a.b, a.a};
+    const ThemeColor cb{b.r, b.g, b.b, b.a};
+    return Contrast(ca, cb);
 }
 
 const char* StyleName(MarkdownStyle style) {
@@ -231,3 +241,47 @@ TEST(PaletteContrast, ChromeHasADarkCounterpart) {
 }
 
 }  // namespace
+
+// The home screen, which is branded and therefore has a record of its
+// own. Same rule as the document: every ink is checked against the
+// surface it is actually painted on, in both appearances.
+TEST(WelcomeContrast, TextClearsTheRatioOnItsSurface) {
+    struct Case {
+        const char* name;
+        platform::WelcomePalette p;
+    };
+    const Case cases[] = {
+        {"light", platform::LightWelcomePalette()},
+        {"dark", platform::DarkWelcomePalette()},
+    };
+    for (const Case& c : cases) {
+        ASSERT_GE(Contrast(c.p.title, c.p.card), 4.5f);
+        ASSERT_GE(Contrast(c.p.preview, c.p.card), 4.5f);
+        // The folder line is a small secondary label; the light set has
+        // always sat at 3.2:1, so 3:1 is the floor for both.
+        ASSERT_GE(Contrast(c.p.folder, c.p.card), 3.0f);
+        ASSERT_GE(Contrast(c.p.hint, c.p.page), 4.5f);
+        ASSERT_GE(Contrast(c.p.bandText, c.p.bandBottom), 4.5f);
+        ASSERT_GE(Contrast(c.p.bandMint, c.p.bandBottom), 4.5f);
+        ASSERT_GE(Contrast(c.p.solidInk, c.p.solid), 4.5f);
+        // The mark is a graphic, so 3:1 is the bar.
+        ASSERT_GE(Contrast(c.p.markInk, c.p.markDisc), 3.0f);
+        // The card has to read as a surface on the page, not dissolve.
+        ASSERT_GE(Contrast(c.p.card, c.p.page), 1.04f);
+        ASSERT_GE(Contrast(c.p.cardBorder, c.p.card), 1.1f);
+    }
+}
+
+TEST(WelcomeContrast, DarkSetIsDarkAndDistinct) {
+    const platform::WelcomePalette light = platform::LightWelcomePalette();
+    const platform::WelcomePalette dark = platform::DarkWelcomePalette();
+    EXPECT_GE(Contrast(light.page, dark.page), 4.0f);
+    // The band keeps the brand hue: it is still greener than it is red
+    // in both sets, at the bottom of the gradient.
+    EXPECT_GT(dark.bandBottom.g, dark.bandBottom.r);
+    EXPECT_GT(light.bandBottom.g, light.bandBottom.r);
+    // And the appearance switch is one function, not two code paths.
+    EXPECT_GE(Contrast(platform::WelcomePaletteFor(theme::Appearance::Dark).page,
+                       platform::WelcomePaletteFor(theme::Appearance::Light).page),
+              4.0f);
+}

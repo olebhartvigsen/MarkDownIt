@@ -41,7 +41,7 @@ $log = (Resolve-Path $OutDir).Path + "\walk.log"
 # shared runs last: it types into the document, so every state that
 # must see the pristine page comes first.
 $states = @("doc", "find", "edit", "outline", "source", "lower", "end", "tail", "tail2",
-            "dark", "print-pages", "shared", "csv-pinned")
+            "dark", "welcome-dark", "print-pages", "shared", "csv-pinned")
 $env:MARKDOWNIT_QA_STATES = ($states -join ",")
 $env:MARKDOWNIT_QA_LOG = $log
 # The print-pages state writes the document's print pages as a PDF here,

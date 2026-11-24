@@ -310,6 +310,33 @@ build and pass under g++, the parity runners build, and
 The native compile is still CI's job, as `AGENTS.md` says, because MSVC and
 Xcode do not run here.
 
+## The home screen (follow-up, now done)
+
+`welcome_screen.cpp` was the one surface still painted from fixed
+constants: a teal band over a mint page, so a dark window showed a bright
+home screen. It now carries a palette record of its own,
+`src/welcome_palette.{h,cpp}`, with the light set (the site's own colours)
+and a dark set that keeps the brand rather than inverting it: the band
+keeps its hue and deepens, the cards sit one step above a mint-tinted
+near-black page, and the ink flips.
+
+The record lives in its own translation unit so
+`tests/palette_contrast_test.cpp` can hold both sets to the same ratios
+without linking the screen or the SVG reader. Every ink is checked
+against the surface it is painted on, including the band gradient's
+bottom step and the solid button's dark ink.
+
+Both shells hand the record in: Windows in `ApplyAppearance`, macOS in
+`ContentView::RefreshTheme`, so the home screen follows the same
+appearance as the document. A `welcome-dark` state in both capture walks
+photographs it, which is the only way the branded dark set is verified
+rather than asserted.
+
+**A note on verification.** The welcome palette went in without a CI
+cycle: `g++ -fsyntax-only` on `welcome_screen.cpp` and the new unit, plus
+the contrast suite, caught what a compiler would have, and the capture
+state is the part CI has to confirm.
+
 ## Risks and open questions
 
 1. **The ribbon has no contract.** `UI_PKEY_DarkModeRibbon` is reverse engineered, gated by build number, and not present in any Microsoft header. BowPad and TortoiseGit ship it, which is strong evidence it works, not a promise it keeps working. Decide now what happens if a Windows update drops it: a light ribbon inside a dark window (acceptable, documented), or replacing the ribbon with a custom strip (a much bigger change). I would take the first.

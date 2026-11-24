@@ -185,6 +185,7 @@ add_executable(MarkDownIt WIN32
     src/print_win.cpp
     src/print_winrt.cpp
     src/welcome_screen.cpp
+    src/welcome_palette.cpp
     src/svgdoc.cpp
 )
 
@@ -441,6 +442,7 @@ if(BUILD_TESTS AND APPLE)
         src/macos/image_draw_mac.mm
         src/macos/mermaid_painter_mac.cpp
         src/welcome_screen.cpp
+        src/welcome_palette.cpp
     )
 elseif(BUILD_TESTS)
     add_executable(MarkDownIt.tests
@@ -550,6 +552,7 @@ elseif(BUILD_TESTS)
         src/findbar.cpp
         src/svgdoc.cpp
         src/welcome_screen.cpp
+        src/welcome_palette.cpp
         tests/welcome_screen_test.cpp
     )
     target_link_libraries(MarkDownIt.tests PRIVATE
@@ -716,6 +719,7 @@ if(APPLE)
         src/macos/table_picker_mac.mm
         ${MARKDOWNIT_SVG_SHARED_SOURCES}
         src/welcome_screen.cpp
+        src/welcome_palette.cpp
         src/macos/zoom_hud_mac.mm
         src/macos/zoom_hud_mac.h
     )

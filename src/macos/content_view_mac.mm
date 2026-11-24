@@ -53,6 +53,8 @@ ContentView::ContentView(App* app)
     renderer_.SetTextEngine(engine_.get());
     palette_ = platform::SystemPalette();
     renderer_.SetTheme(BaseMetrics(), palette_);
+    welcome_.SetPalette(platform::WelcomePaletteFor(
+        palette_.dark ? theme::Appearance::Dark : theme::Appearance::Light));
     renderer_.SetStandaloneSvg(app_ && app_->IsStandaloneSvg());
     // The renderer reads the source when it normalizes a caret past a
     // marker, the same pointer the Windows cache holds.
@@ -216,6 +218,10 @@ void ContentView::SetEditing(bool on) {
 void ContentView::RefreshTheme() {
     palette_ = platform::SystemPalette();
     renderer_.SetTheme(BaseMetrics(), palette_);
+    // The home screen carries its own branded palette; it follows the
+    // document's appearance so a dark window never shows a mint page.
+    welcome_.SetPalette(platform::WelcomePaletteFor(
+        palette_.dark ? theme::Appearance::Dark : theme::Appearance::Light));
     // The laid-out runs carry the palette's colours inside them, so the
     // document is laid out again. Without that a palette switch kept
     // the previous appearance baked into the text: dark mode drew the

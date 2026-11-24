@@ -1891,6 +1891,18 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             (double)NSWidth([view_ frame]),
             (double)content_->ContentWidth());
         [view_ setNeedsDisplay:YES];
+    } else if ([state isEqualToString:@"welcome-dark"]) {
+        // The home screen at night: the cards and the band from the dark
+        // set, which is its own record rather than a document token.
+        [self showRecents:nil];
+        [self qaScrollToTop];
+        window_.appearance =
+            [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+        [view_ setNeedsDisplay:YES];
+        [view_ layoutSubtreeIfNeeded];
+        [window_ displayIfNeeded];
+        [view_ display];
+        [CATransaction flush];
     } else if ([state isEqualToString:@"dark"]) {
         if (sourceView_) [self OnToggleSourceView];
         // The walk reaches this state from the welcome screen

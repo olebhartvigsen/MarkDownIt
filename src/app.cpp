@@ -2862,6 +2862,7 @@ void AppWindow::OnCreate(HWND hwnd) {
     appearance_ = theme::ResolveAppearance(theme_mode_, platform::SystemPrefersDark());
     page_palette_ = PaletteFor(ActiveMarkdownStyle(), appearance_);
     renderer_.SetTheme(page_palette_);
+    welcome_.SetPalette(platform::WelcomePaletteFor(appearance_));
     ApplyPreferredAppMode(theme_mode_);
 
     // Zoom is a global view setting, not per-document state: restore
@@ -3920,6 +3921,22 @@ void AppWindow::QAAdvance() {
                  "qa csv-pinned: scroll=%.0f editing=%d",
                  (double)scrollY_, editing_ ? 1 : 0);
         QALogLine(line);
+    } else if (state == "welcome-dark") {
+        // The home screen at night, the twin of the mac state of the same
+        // name. The screen carries its own branded palette, so this is
+        // the only way to see that the dark set is actually applied.
+        SetThemeMode(theme::ThemeMode::Dark);
+        // The screen, not LoadSampleDoc: that one clears the buffer, and
+        // the states after this one print and type into the document.
+        welcome_mode_ = true;
+        InvalidateCommandStates();
+        welcome_.SetRecentFiles(settings_.recentFiles);
+        if (rt_) {
+            const D2D1_SIZE_F size = rt_->GetSize();
+            welcome_.Layout(size.width, size.height);
+        }
+        ForceRepaintNow();
+        QALogLine("qa welcome-dark");
     } else if (state == "dark") {
         // The dark appearance, the twin of the mac walk's "dark" state.
         // The mac state returns to the top of the page and out of source
@@ -5987,6 +6004,9 @@ void AppWindow::SetThemeMode(theme::ThemeMode mode) {
 void AppWindow::ApplyAppearance() {
     page_palette_ = PaletteFor(ActiveMarkdownStyle(), appearance_);
     renderer_.SetTheme(page_palette_);
+    // The home screen is branded, not token-based, so it takes its own
+    // record from the same appearance.
+    welcome_.SetPalette(platform::WelcomePaletteFor(appearance_));
     // SVG scenes cache the branch they were read with.
     renderer_.ClearSvgCache();
     ApplyNativeTheme();

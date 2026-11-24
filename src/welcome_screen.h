@@ -14,6 +14,7 @@
 
 #include "platform/seams.h"
 #include "settings.h"
+#include "welcome_palette.h"
 
 namespace platform {
 
@@ -55,6 +56,11 @@ struct WelcomeCard {
 
 class WelcomeScreen {
 public:
+    // The appearance the screen is drawn in. Light until a shell says
+    // otherwise, which is what the constructors of both ports see.
+    void SetPalette(const WelcomePalette& palette) { palette_ = palette; }
+    const WelcomePalette& PaletteNow() const { return palette_; }
+
     // Sets the files the cards show.
     void SetRecentFiles(const std::vector<RecentFile>& files);
 
@@ -109,6 +115,8 @@ public:
     int CardCount() const { return static_cast<int>(cards_.size()); }
 
 private:
+    // The appearance the screen is drawn in.
+    WelcomePalette palette_ = LightWelcomePalette();
     // The cards.
     std::vector<WelcomeCard> cards_;
     // Where the Open button sits, in points.

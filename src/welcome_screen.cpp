@@ -109,43 +109,6 @@ const float kRowHeight = 16.0f;
 // file should not take the app with it.
 const size_t kMaxSvgBytes = 8u * 1024u * 1024u;
 
-// The colors of the screen.
-// The colors are the ones of the MarkDownIt site, a teal on cool white,
-// so the app and the site read as one product.
-//
-// The page is the site's ground: the soft mint under the hero, and the
-// site's white cards on it.
-const Color kPageBackground{0.957f, 0.973f, 0.969f, 1.000f};
-const Color kCardBackground{1.000f, 1.000f, 1.000f, 1.000f};
-const Color kCardBorder{0.886f, 0.910f, 0.910f, 1.000f};
-const Color kDivider{0.886f, 0.910f, 0.910f, 1.000f};
-const Color kShadow{0.043f, 0.118f, 0.133f, 1.000f};
-// The band, from the site's hero: the navy at the top, the deep teal at
-// the bottom, with the mint of the announce bar for the quiet line.
-const Color kBandTop{0.043f, 0.118f, 0.133f, 1.000f};
-const Color kBandMid{0.071f, 0.227f, 0.204f, 1.000f};
-const Color kBandBottom{0.059f, 0.369f, 0.341f, 1.000f};
-const Color kBandText{1.000f, 1.000f, 1.000f, 1.000f};
-const Color kBandMint{0.851f, 0.949f, 0.933f, 1.000f};
-const Color kBandGhost{1.000f, 1.000f, 1.000f, 0.42f};
-const Color kBandGhostFill{1.000f, 1.000f, 1.000f, 0.06f};
-const Color kBandGhostHover{1.000f, 1.000f, 1.000f, 0.72f};
-const Color kBandGhostHoverFill{1.000f, 1.000f, 1.000f, 0.14f};
-// The one solid action is the site's solid button: bright teal with the
-// dark ink on it.
-const Color kSolidButton{0.078f, 0.722f, 0.651f, 1.000f};
-const Color kSolidButtonHover{0.051f, 0.580f, 0.533f, 1.000f};
-const Color kSolidInk{0.016f, 0.188f, 0.169f, 1.000f};
-// The ink of the page under the band.
-const Color kTitle{0.133f, 0.188f, 0.227f, 1.000f};
-const Color kPreview{0.357f, 0.420f, 0.478f, 1.000f};
-const Color kFolder{0.494f, 0.580f, 0.569f, 1.000f};
-const Color kAccent{0.059f, 0.463f, 0.431f, 1.000f};
-const Color kBrightTeal{0.078f, 0.722f, 0.651f, 1.0f};
-const Color kHint{0.357f, 0.420f, 0.478f, 1.000f};
-// The mark: the accent teal of the icon and the site, and the icon's white.
-const Color kMarkDisc = Color{1.0f, 1.0f, 1.0f};
-const Color kMarkInk = kAccent;
 
 // The ellipsis that marks a string the card had to cut.
 const char kEllipsis[] = "\xE2\x80\xA6";
@@ -383,7 +346,7 @@ void WrapLine(TextEngine* engine, const std::string& line,
 // shadow is a few translucent layers that grow outward and fade, which
 // reads as a diffuse shadow on both platforms.
 void DrawShadow(RenderTarget* target, const Rect& rect, float radius,
-                float lift, float strength) {
+                float lift, float strength, const WelcomePalette& p) {
     const int layers = 6;
     for (int i = layers; i >= 1; --i) {
         const float grow = static_cast<float>(i) * (1.0f + lift * 0.25f);
@@ -392,7 +355,7 @@ void DrawShadow(RenderTarget* target, const Rect& rect, float radius,
         layer.y = rect.y - grow + lift + 2.0f;
         layer.width = rect.width + 2.0f * grow;
         layer.height = rect.height + 2.0f * grow;
-        Color color = kShadow;
+        Color color = p.shadow;
         color.a = strength / static_cast<float>(layers) *
                   (1.0f - static_cast<float>(i - 1) /
                               static_cast<float>(layers + 1));
@@ -420,13 +383,13 @@ float ContentLeft(float viewW) {
 // part of it above kBandHeight, so the glow reads as light coming out
 // from under the band.
 void DrawPage(RenderTarget* target, float viewW, float viewH,
-              float bandHeight) {
+              float bandHeight, const WelcomePalette& p) {
     Rect page;
     page.x = 0.0f;
     page.y = 0.0f;
     page.width = viewW;
     page.height = viewH;
-    target->FillRect(page, kPageBackground);
+    target->FillRect(page, p.page);
 
     for (int i = 0; i < 8; ++i) {
         const float w = viewW * (1.12f - 0.105f * static_cast<float>(i));
@@ -436,7 +399,7 @@ void DrawPage(RenderTarget* target, float viewW, float viewH,
         glow.y = bandHeight - h * 0.62f;
         glow.width = w;
         glow.height = h;
-        Color color = kAccent;
+        Color color = p.accent;
         color.a = 0.030f;
         target->FillEllipse(glow, color);
     }
@@ -445,7 +408,8 @@ void DrawPage(RenderTarget* target, float viewW, float viewH,
 // The band at the top: the site's hero, running from the navy at the top
 // to the deep teal at the bottom. The seam fills shapes and does not
 // interpolate a gradient, so the band is laid down in strips.
-void DrawBand(RenderTarget* target, float viewW, float bandHeight) {
+void DrawBand(RenderTarget* target, float viewW, float bandHeight,
+              const WelcomePalette& p) {
     const int strips = 40;
     const float step = bandHeight / static_cast<float>(strips);
     for (int i = 0; i < strips; ++i) {
@@ -453,14 +417,14 @@ void DrawBand(RenderTarget* target, float viewW, float bandHeight) {
         Color color;
         if (t < 0.55f) {
             const float k = t / 0.55f;
-            color.r = kBandTop.r + (kBandMid.r - kBandTop.r) * k;
-            color.g = kBandTop.g + (kBandMid.g - kBandTop.g) * k;
-            color.b = kBandTop.b + (kBandMid.b - kBandTop.b) * k;
+            color.r = p.bandTop.r + (p.bandMid.r - p.bandTop.r) * k;
+            color.g = p.bandTop.g + (p.bandMid.g - p.bandTop.g) * k;
+            color.b = p.bandTop.b + (p.bandMid.b - p.bandTop.b) * k;
         } else {
             const float k = (t - 0.55f) / 0.45f;
-            color.r = kBandMid.r + (kBandBottom.r - kBandMid.r) * k;
-            color.g = kBandMid.g + (kBandBottom.g - kBandMid.g) * k;
-            color.b = kBandMid.b + (kBandBottom.b - kBandMid.b) * k;
+            color.r = p.bandMid.r + (p.bandBottom.r - p.bandMid.r) * k;
+            color.g = p.bandMid.g + (p.bandBottom.g - p.bandMid.g) * k;
+            color.b = p.bandMid.b + (p.bandBottom.b - p.bandMid.b) * k;
         }
         color.a = 1.0f;
         Rect strip;
@@ -476,7 +440,8 @@ void DrawBand(RenderTarget* target, float viewW, float bandHeight) {
 // disc, the white M and the arrow down beside it. The numbers are the
 // icon's own 256-unit box, scaled here, so the page draws the real mark
 // and not an approximation of it.
-void DrawMark(RenderTarget* target, float x, float y, float size) {
+void DrawMark(RenderTarget* target, float x, float y, float size,
+              const WelcomePalette& p) {
     const float s = size / 256.0f;
     const auto px = [x, s](float v) { return x + v * s; };
     const auto py = [y, s](float v) { return y + v * s; };
@@ -487,7 +452,7 @@ void DrawMark(RenderTarget* target, float x, float y, float size) {
     disc.y = py(8.0f);
     disc.width = 240.0f * s;
     disc.height = 240.0f * s;
-    target->FillEllipse(disc, kMarkDisc);
+    target->FillEllipse(disc, p.markDisc);
 
     // The M, as the icon's path walks it: five down strokes and the two
     // valleys between them.
@@ -498,15 +463,15 @@ void DrawMark(RenderTarget* target, float x, float y, float size) {
     std::vector<Point> m;
     m.reserve(12);
     for (int i = 0; i < 24; i += 2) m.push_back(Point{px(letter[i]), py(letter[i + 1])});
-    target->FillPolygon(m, kMarkInk);
+    target->FillPolygon(m, p.markInk);
 
     // The arrow down: the shaft, then the chevron on its tip.
     target->StrokeLine(px(196.0f), py(86.0f), px(196.0f), py(144.0f),
-                       kMarkInk, 16.0f * s);
+                       p.markInk, 16.0f * s);
     const std::vector<Point> chevron = {Point{px(172.0f), py(122.0f)},
                                         Point{px(196.0f), py(148.0f)},
                                         Point{px(220.0f), py(122.0f)}};
-    target->StrokePolygon(chevron, kMarkInk, 16.0f * s, false);
+    target->StrokePolygon(chevron, p.markInk, 16.0f * s, false);
 }
 
 // Fits the strings of a card to its width, once.
@@ -602,13 +567,14 @@ void DrawFolderMark(RenderTarget* target, const Rect& button,
 }  // namespace
 
 void WelcomeScreen::DrawBrand(RenderTarget* target, TextEngine* engine) const {
-    DrawMark(target, nameX_ - kMarkSize - kLockupGap, markTop_, kMarkSize);
+    DrawMark(target, nameX_ - kMarkSize - kLockupGap, markTop_, kMarkSize,
+             palette_);
 
     FontSpec name;
     name.family = "Segoe UI";
     name.size = kWordmarkSize;
     name.bold = true;
-    target->DrawText("MarkDownIt", name, nameX_, wordmarkBaseline_, kBandText);
+    target->DrawText("MarkDownIt", name, nameX_, wordmarkBaseline_, palette_.bandText);
 
     if (!taglineShown_) return;
 
@@ -616,7 +582,7 @@ void WelcomeScreen::DrawBrand(RenderTarget* target, TextEngine* engine) const {
     line.family = "Segoe UI";
     line.size = kTaglineSize;
     target->DrawText("A word processor for Markdown files.", line, nameX_,
-                     taglineBaseline_, kBandMint);
+                     taglineBaseline_, palette_.bandMint);
 }
 
 void WelcomeScreen::SetRecentFiles(const std::vector<RecentFile>& files) {
@@ -734,8 +700,8 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
                            bool openHovered, bool newHovered) {
     if (!target) return;
 
-    DrawPage(target, viewW, viewH, bandHeight_);
-    DrawBand(target, viewW, bandHeight_);
+    DrawPage(target, viewW, viewH, bandHeight_, palette_);
+    DrawBand(target, viewW, bandHeight_, palette_);
 
     // The lockup on the band, on the row Layout placed it.
     DrawBrand(target, engine);
@@ -744,13 +710,13 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
     // still reads as two answers with one of them in front.
     {
         target->FillRoundedRect(newButton_, kButtonRadius,
-                                newHovered ? kBandGhostHoverFill
-                                           : kBandGhostFill);
+                                newHovered ? palette_.ghostHoverFill
+                                           : palette_.ghostFill);
         target->StrokeRoundedRect(newButton_, kButtonRadius,
-                                  newHovered ? kBandGhostHover : kBandGhost,
+                                  newHovered ? palette_.ghostHoverInk : palette_.ghostInk,
                                   newHovered ? 1.6f : 1.2f);
 
-        DrawPlusMark(target, newButton_, kBandText);
+        DrawPlusMark(target, newButton_, palette_.bandText);
     }
     {
         FontSpec label;
@@ -759,7 +725,7 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         const float width = TextWidth(engine, "New", label);
         target->DrawText("New", label,
                          newLabel_.x + (newLabel_.width - width) * 0.5f,
-                         newLabel_.y + kButtonLabelSize, kBandMint);
+                         newLabel_.y + kButtonLabelSize, palette_.bandMint);
     }
 
     // The button that opens a document: the site's solid button, bright
@@ -768,9 +734,9 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
     // so it is drawn before the empty case returns.
     {
         target->FillRoundedRect(openButton_, kButtonRadius,
-                                openHovered ? kSolidButtonHover : kSolidButton);
+                                openHovered ? palette_.solidHover : palette_.solid);
 
-        DrawFolderMark(target, openButton_, kSolidInk);
+        DrawFolderMark(target, openButton_, palette_.solidInk);
     }
     {
         FontSpec label;
@@ -779,7 +745,7 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         const float width = TextWidth(engine, "Open", label);
         target->DrawText("Open", label,
                          openLabel_.x + (openLabel_.width - width) * 0.5f,
-                         openLabel_.y + kButtonLabelSize, kBandMint);
+                         openLabel_.y + kButtonLabelSize, palette_.bandMint);
     }
 
     // Without any files there is a hint under the label line, at the left
@@ -790,7 +756,7 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         font.size = 14.0f;
         target->DrawText("Open or drag a .md file to get started.", font,
                          ContentLeft(viewW), GridTop() + 26.0f,
-                         kHint);
+                         palette_.hint);
         return;
     }
 
@@ -803,7 +769,7 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         font.bold = true;
         target->DrawText("Recent files", font, gridLeft_,
                          bandHeight_ + kLabelLift,
-                         kFolder);
+                         palette_.folder);
     }
 
     for (size_t i = 0; i < cards_.size(); ++i) {
@@ -816,10 +782,10 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         if (hovered) rect.y -= 2.0f;
 
         DrawShadow(target, rect, kCardRadius, hovered ? 4.0f : 0.0f,
-                   hovered ? 0.20f : 0.12f);
-        target->FillRoundedRect(rect, kCardRadius, kCardBackground);
+                   hovered ? 0.20f : 0.12f, palette_);
+        target->FillRoundedRect(rect, kCardRadius, palette_.card);
         target->StrokeRoundedRect(rect, kCardRadius,
-                                  hovered ? kBrightTeal : kCardBorder,
+                                  hovered ? palette_.brightTeal : palette_.cardBorder,
                                   hovered ? 1.5f : 1.0f);
 
         // The text of the card, fitted to the width of it.
@@ -837,7 +803,7 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         titleFont.family = "Segoe UI";
         titleFont.size = 15.0f;
         titleFont.bold = true;
-        target->DrawText(card.titleShown, titleFont, textX, textY, kTitle);
+        target->DrawText(card.titleShown, titleFont, textX, textY, palette_.title);
 
         // The folder the file is in.
         if (!card.folderShown.empty()) {
@@ -846,12 +812,12 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
             folderFont.family = "Segoe UI";
             folderFont.size = 12.0f;
             target->DrawText(card.folderShown, folderFont, textX, textY,
-                             kFolder);
+                             palette_.folder);
         }
 
         // A hairline between the name and the contents.
         target->StrokeLine(textX, rect.y + 60.0f, textX + textWidth,
-                           rect.y + 60.0f, kDivider, 1.0f);
+                           rect.y + 60.0f, palette_.divider, 1.0f);
 
         // A diagram takes the room under the name.
         if (card.image) {
@@ -867,7 +833,7 @@ void WelcomeScreen::Render(RenderTarget* target, TextEngine* engine,
         for (const WelcomeCard::Row& row : card.rows) {
             const FontSpec font = PreviewFont(row.heading);
             target->DrawText(row.text, font, textX, y,
-                             row.heading ? kTitle : kPreview);
+                             row.heading ? palette_.title : palette_.preview);
             y += kRowHeight;
         }
     }
