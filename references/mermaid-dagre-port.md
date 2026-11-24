@@ -93,3 +93,11 @@ explicitly and never reads the profile.
 `tests/mermaid_elk_profile_test.cpp` holds both profiles to the same
 contract: same nodes, same edges, distinct node centres, a routed path
 for every edge, and tighter spacing under ELK.
+
+`tests/mermaid_elk_fixtures_test.cpp` runs the shipped profile over the
+chart fixtures and asserts what must hold without a golden: every node
+and edge preserved, no overlapping boxes, an edge routed from its source
+to its target, ranking in the direction the chart asked for, finite
+geometry. The golden files stay dagre-d3-es output and are compared with
+dagre's parameters named explicitly, so they keep their meaning as the
+external reference.

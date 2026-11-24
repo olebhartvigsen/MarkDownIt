@@ -366,6 +366,7 @@ if(BUILD_TESTS AND APPLE)
         tests/mermaid_layout_test.cpp
         tests/mermaid_elk_profile_test.cpp
         tests/mermaid_golden_test.cpp
+        tests/mermaid_elk_fixtures_test.cpp
         tests/mermaid_pie_golden_test.cpp
         tests/mermaid_seq_golden_test.cpp
         tests/mermaid_gantt_test.cpp
@@ -510,6 +511,7 @@ elseif(BUILD_TESTS)
         tests/mermaid_layout_test.cpp
         tests/mermaid_elk_profile_test.cpp
         tests/mermaid_golden_test.cpp
+        tests/mermaid_elk_fixtures_test.cpp
         tests/mermaid_pie_golden_test.cpp
         tests/mermaid_seq_golden_test.cpp
         tests/mermaid_gantt_test.cpp

@@ -1,6 +1,7 @@
 // Golden gate tests for the mermaid layout pipeline. Compares our C++
 // output against dagre-d3-es JSON goldens produced by tools/mermaid-oracle.
 // Tolerance is 0.5 DIP per the plan's Definition of Done.
+#include "../src/mermaid/elk_profile.h"
 #include "../src/mermaid/layout.h"
 #include "../src/mermaid/layout_internal.h"
 #include "../src/mermaid/parse.h"
@@ -28,7 +29,11 @@ std::string ReadFixture(const char* name) {
 
 mermaid::LaidOutFlowchart LayoutFromFixture(const char* name) {
     mermaid::Flowchart flow = mermaid::ParseFlowchart(ReadFixture(name));
-    mermaid::LayoutParams p;
+    // The goldens are dagre-d3-es geometry, so they are compared with
+    // dagre's parameters. Naming the profile matters: the app lays
+    // diagrams out with ELK, and this suite would otherwise change its
+    // meaning the day a default moved.
+    mermaid::LayoutParams p = mermaid::DagreParams();
     p.margin = 0.0;
     return mermaid::LayoutFlowchart(flow, p);
 }
