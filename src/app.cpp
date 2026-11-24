@@ -1700,6 +1700,22 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     }
 
     last_selectall_tier_ = 0;
+    // A link inside a diagram opens in the browser. Checked before the
+    // caret work, so a press on a shape does not also move the caret.
+    {
+        const float pressScale = 96.0f / static_cast<float>(dpi_);
+        std::string href;
+        if (renderer_.SvgLinkAt(static_cast<float>(x) * pressScale,
+                                static_cast<float>(y) * pressScale + scrollY_,
+                                &href) &&
+            svg::IsOpenableUrl(href)) {
+            const std::wstring wide = textenc::Utf8ToWide(href);
+            ShellExecuteW(nullptr, L"open", wide.c_str(), nullptr, nullptr,
+                          SW_SHOWNORMAL);
+            gesture_.Consume();
+            return;
+        }
+    }
     SetCapture(hwnd);
     float scale = 96.0f / static_cast<float>(dpi_);
     float docX = static_cast<float>(x) * scale;
@@ -2148,6 +2164,19 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
             Repaint();
         }
         return;
+    }
+
+    // A link inside a diagram shows the hand, the same cue the text
+    // links give, so a reader can see the shape is clickable.
+    {
+        const float scale = 96.0f / static_cast<float>(dpi_);
+        std::string href;
+        if (renderer_.SvgLinkAt(static_cast<float>(x) * scale,
+                                static_cast<float>(y) * scale + scrollY_,
+                                &href) &&
+            svg::IsOpenableUrl(href)) {
+            SetCursor(LoadCursorW(nullptr, IDC_HAND));
+        }
     }
 
     // A press the window answered itself owns the movement too: it opened

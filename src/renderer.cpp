@@ -943,10 +943,21 @@ void Renderer::PaintSharedOverlays(
                 if (n.lang == "svg" && standaloneSvg_) {
                     svg::SvgDoc* picture = SvgPictureDocFor(n, sel, bandW);
                     if (picture) {
-                        picture->Draw(d2d_ctx5_, dw, bandX + m.codePad,
-                                      bandY + m.codePad,
+                        const float drawX = bandX + m.codePad;
+                        const float drawY = bandY + m.codePad;
+                        picture->Draw(d2d_ctx5_, dw, drawX, drawY,
                                       picture->Width() * zoom_,
                                       picture->Height() * zoom_);
+                        // Remember where this picture landed, so a click
+                        // can be answered without re-walking the page.
+                        SvgLinkArea area;
+                        area.x = drawX;
+                        area.y = drawY;
+                        area.scale = zoom_;
+                        area.links = svg::CollectLinks(U32ToUtf8(n.raw));
+                        if (!area.links.empty()) {
+                            svg_link_areas_.push_back(std::move(area));
+                        }
                         break;
                     }
                 }
@@ -2405,6 +2416,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // Clip to content area (below the ribbon).
     D2D1_SIZE_F clipSize = rt->GetSize();
     rt->SetTransform(D2D1::Matrix3x2F::Identity());
+    svg_link_areas_.clear();
     rt->PushAxisAlignedClip(
         D2D1::RectF(0.0f, topOffsetDip, clipSize.width, clipSize.height),
         (D2D1_ANTIALIAS_MODE)0);
@@ -3278,6 +3290,20 @@ void Renderer::RememberImageSize(const std::string& url, float w, float h) {
         img_size_cache_.erase(img_size_cache_.begin());
     }
     img_size_cache_.push_back({url, w, h, true});
+}
+
+bool Renderer::SvgLinkAt(float docX, float docY, std::string* href) const {
+    for (auto it = svg_link_areas_.rbegin(); it != svg_link_areas_.rend();
+         ++it) {
+        if (it->scale <= 0.0f) continue;
+        const float u = (docX - it->x) / it->scale;
+        const float v = (docY - it->y) / it->scale;
+        if (const svg::LinkBox* hit = svg::LinkAt(it->links, u, v)) {
+            if (href) *href = hit->href;
+            return true;
+        }
+    }
+    return false;
 }
 
 svg::SvgDoc* Renderer::GetSvgDoc(const Node& n, float availW) {

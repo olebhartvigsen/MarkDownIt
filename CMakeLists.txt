@@ -378,6 +378,7 @@ if(BUILD_TESTS AND APPLE)
         tests/perf_harness.cpp
         tests/test_main.cpp
         tests/svgtext_test.cpp
+        tests/svglink_test.cpp
         tests/zoommodel_test.cpp
         tests/zoomhud_test.cpp
         tests/office_interop_smoke_test.cpp
@@ -520,6 +521,7 @@ elseif(BUILD_TESTS)
         tests/perf_harness.cpp
         tests/test_main.cpp
         tests/svgtext_test.cpp
+        tests/svglink_test.cpp
         tests/zoommodel_test.cpp
         tests/zoomhud_test.cpp
         tests/office_interop_smoke_test.cpp
@@ -601,6 +603,7 @@ if(BUILD_TESTS)
         tests/svg_parity_dump.cpp
         src/macos/svg_mac.cpp
         src/svgtext.cpp
+        src/svglink.cpp
     )
     target_include_directories(MarkDownIt.svg-parity PRIVATE src)
     target_link_libraries(MarkDownIt.svg-parity PRIVATE pugixml)
@@ -637,6 +640,7 @@ if(BUILD_TESTS)
         src/layout/svg_mermaid_layout.cpp
         src/layout/display_player.cpp
         src/svgtext.cpp
+        src/svglink.cpp
         src/json.cpp
         ${MARKDOWNIT_MERMAID_SOURCES}
     )

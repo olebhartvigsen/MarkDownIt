@@ -22,6 +22,7 @@
 #include "svg_mac.h"
 #include "image_mac.h"
 #include "searchreplace.h"
+#include "svglink.h"
 #include "theme.h"
 #include "mermaid/layout_cache.h"
 
@@ -197,6 +198,11 @@ public:
 
     // Draws the laid out document.
     void Render(const Document& doc, float scrollOffset);
+
+    // The link under a point in the view's own space, which is the space
+    // the last frame painted in (block position minus the scroll). Nil
+    // href is allowed when the caller only needs the hit.
+    bool SvgLinkInView(float viewX, float viewY, std::string* href) const;
 
     // The column whose filter button holds this document point, from the
     // buttons of the layout the last render built.
@@ -530,6 +536,15 @@ private:
     LayoutMetrics baseMetrics_{};
     LayoutMetrics metrics_{};
     Palette palette_{};
+
+    // Where each linked picture was drawn last frame, in view space.
+    struct SvgLinkArea {
+        float x = 0.0f;
+        float y = 0.0f;
+        float scale = 1.0f;
+        std::vector<svg::LinkBox> links;
+    };
+    std::vector<SvgLinkArea> svgLinkAreas_;
 
     // The blocks of the laid out document, which the content view uses
     // for hit testing, and the display list they were laid out into,

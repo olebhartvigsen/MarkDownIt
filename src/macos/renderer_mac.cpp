@@ -718,6 +718,20 @@ float MacRenderer::EffectivePadX(float widthDip) const {
     return narrow + (metrics_.padX - narrow) * std::min(1.0f, t);
 }
 
+bool MacRenderer::SvgLinkInView(float viewX, float viewY,
+                                std::string* href) const {
+    for (auto it = svgLinkAreas_.rbegin(); it != svgLinkAreas_.rend(); ++it) {
+        if (it->scale <= 0.0f) continue;
+        const float u = (viewX - it->x) / it->scale;
+        const float v = (viewY - it->y) / it->scale;
+        if (const svg::LinkBox* hit = svg::LinkAt(it->links, u, v)) {
+            if (href) *href = hit->href;
+            return true;
+        }
+    }
+    return false;
+}
+
 const SvgDoc* MacRenderer::GetSvgDoc(const Node& node) {
     // The document is read once per block content, and reused while the
     // same block says the same thing.
@@ -1023,6 +1037,7 @@ std::string MacRenderer::BlocksForQA() const {
 }
 
 void MacRenderer::Render(const Document& doc, float scrollOffset) {
+    svgLinkAreas_.clear();
     (void)doc;
     if (!target_) return;
 
@@ -1103,12 +1118,24 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
                         svgDoc->Height() > 0.0f) {
                         // Natural size times the zoom, the same rule the
                         // image size bridge measured for.
-                        svgDoc->Draw(target_, engine_,
-                                     block.x + metrics_.codePad,
-                                     block.y + metrics_.codePad -
-                                         scrollOffset,
+                        const float drawX = block.x + metrics_.codePad;
+                        const float drawY = block.y + metrics_.codePad -
+                                            scrollOffset;
+                        svgDoc->Draw(target_, engine_, drawX, drawY,
                                      svgDoc->Width() * zoom_,
                                      svgDoc->Height() * zoom_);
+                        // The picture's own links, in the space the draw
+                        // used, so a click can be answered from the
+                        // frame that is on screen.
+                        SvgLinkArea area;
+                        area.x = drawX;
+                        area.y = drawY;
+                        area.scale = zoom_;
+                        area.links = svg::CollectLinks(
+                            Utf32ToUtf8(block.node->raw));
+                        if (!area.links.empty()) {
+                            svgLinkAreas_.push_back(std::move(area));
+                        }
                         break;
                     }
                 }

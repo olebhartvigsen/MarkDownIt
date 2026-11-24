@@ -226,6 +226,12 @@ public:
     // The colour of the selection, and of the caret.
     Color SelectionColor() const;
 
+    // The link under a point in the view's own space, for the cursor and
+    // the click. False when the point is not over a link in a picture.
+    bool LinkAt(float x, float y, std::string* href) const {
+        return renderer_.SvgLinkInView(x, y, href);
+    }
+
     // The palette the document is drawn in. The view paints its page
     // from pageBg, so the paper and the ink come from one place.
     const Palette& ThemePalette() const { return palette_; }

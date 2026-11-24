@@ -1234,6 +1234,19 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
     // A new press starts a new sequence, whatever the last one did.
     gesture_.OnPress();
 
+    // A link inside a diagram opens in the browser, like a link in the
+    // text. The URL is checked first: a diagram is untrusted input.
+    {
+        std::string href;
+        if (app_ && content_->LinkAt(static_cast<float>(point.x),
+                                     static_cast<float>(point.y), &href) &&
+            svg::IsOpenableUrl(href)) {
+            app_->OpenExternalUrl(href);
+            gesture_.Consume();
+            return;
+        }
+    }
+
     // On the welcome screen the two actions start or open a document, and
     // a card opens its file.
     if (app_ && app_->WelcomeMode() &&
@@ -1673,6 +1686,16 @@ static NSTimeInterval InsertionPointBlinkPeriod() {
 }
 
 - (void)mouseMoved:(NSEvent*)event {
+    if (content_) {
+        const NSPoint point = [self convertPoint:[event locationInWindow]
+                                        fromView:nil];
+        std::string href;
+        if (content_->LinkAt(static_cast<float>(point.x),
+                             static_cast<float>(point.y), &href) &&
+            svg::IsOpenableUrl(href)) {
+            [[NSCursor pointingHandCursor] set];
+        }
+    }
     if (!content_ || !app_ || !app_->WelcomeMode()) return;
     const NSPoint point = [self convertPoint:[event locationInWindow]
                                     fromView:nil];

@@ -58,6 +58,7 @@ set(MARKDOWNIT_CORE_SOURCES
     src/outline.cpp
     src/textdrag.cpp
     src/svgtext.cpp
+    src/svglink.cpp
     src/settings.cpp
 )
 

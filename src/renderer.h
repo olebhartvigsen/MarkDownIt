@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include "dom.h"
+#include "svglink.h"
 #include "theme.h"
 // windows.h reaches some translation units that include this header
 // before it reaches them and turns DrawText into a DrawTextW macro,
@@ -211,6 +212,12 @@ public:
     void SetTheme(const Palette& palette) { palette_ = palette; }
     const Palette& ThemePalette() const { return palette_; }
 
+    // The link under a document point, in the space the frame paints in
+    // (document points, before the scroll translation). The areas are
+    // recorded during the last frame, so an answer always describes what
+    // is on screen.
+    bool SvgLinkAt(float docX, float docY, std::string* href) const;
+
 private:
     IDWriteTextFormat* body_fmt_ = nullptr;
     IDWriteTextFormat* num_fmt_ = nullptr;     // seq autonumber (12px)
@@ -245,6 +252,16 @@ private:
     // The palette the frame is painted in. Light until the shell says
     // otherwise, which is what every existing caller expects.
     Palette palette_ = BasePalette();
+
+    // Where the last frame drew each linked SVG picture, and the links
+    // inside it, in the picture's own user units.
+    struct SvgLinkArea {
+        float x = 0.0f;
+        float y = 0.0f;
+        float scale = 1.0f;   // document points per user unit
+        std::vector<svg::LinkBox> links;
+    };
+    std::vector<SvgLinkArea> svg_link_areas_;
 
     // The test replacement of the walk's engine, SetWalkEngineForTesting
     // above. Null in every production build.
