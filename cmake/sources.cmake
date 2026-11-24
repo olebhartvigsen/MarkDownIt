@@ -95,10 +95,9 @@ set(MARKDOWNIT_MERMAID_SOURCES
     src/mermaid/swimlanes.cpp
 )
 
-# The state diagram engine. The macOS app and both test suites build
-# it; the Windows exe does not list it. That difference is a row in
-# references/platform-parity.md.
-# usage: macos-core windows-tests macos-tests
+# The state diagram engine. The parser promotes state fences on both
+# ports, so every target that builds the parser needs it.
+# usage: windows-app macos-core windows-tests macos-tests
 set(MARKDOWNIT_MERMAID_STATE_SOURCES
     src/mermaid/state_parse.cpp
     src/mermaid/state_layout.cpp

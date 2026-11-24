@@ -113,17 +113,12 @@ void Renderer::DrawMermaidStateBlock(ID2D1RenderTarget* rt,
     for (const auto& node : ls.nodes) {
         if (node.kind == "start" || node.kind == "end") {
             const float r = static_cast<float>(node.r * scale);
-            const D2D1_RECT_F rc =
-                D2D1::RectF(X(node.cx) - r, Y(node.cy) - r, X(node.cx) + r,
-                            Y(node.cy) + r);
-            rt->FillEllipse(rc, border);
+            const D2D1_POINT_2F centre = D2D1::Point2F(X(node.cx), Y(node.cy));
+            rt->FillEllipse(D2D1::Ellipse(centre, r, r), border);
             if (node.kind == "end") {
                 // The end marker carries the ring mermaid gives it.
                 const float inner = r * 0.62f;
-                const D2D1_RECT_F ring =
-                    D2D1::RectF(X(node.cx) - inner, Y(node.cy) - inner,
-                                X(node.cx) + inner, Y(node.cy) + inner);
-                rt->FillEllipse(ring, fill);
+                rt->FillEllipse(D2D1::Ellipse(centre, inner, inner), fill);
             }
             continue;
         }

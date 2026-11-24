@@ -165,6 +165,7 @@ add_executable(MarkDownIt WIN32
     ${MARKDOWNIT_CORE_SOURCES}
     ${MARKDOWNIT_SVG_SHARED_SOURCES}
     ${MARKDOWNIT_MERMAID_SOURCES}
+    ${MARKDOWNIT_MERMAID_STATE_SOURCES}
     ${MARKDOWNIT_MERMAID_WINDOWS_SOURCES}
     ${MARKDOWNIT_OFFICE_SOURCES}
     ${MARKDOWNIT_WINDOWS_APP_SOURCES}
@@ -649,6 +650,7 @@ if(BUILD_TESTS)
         src/svglink.cpp
         src/json.cpp
         ${MARKDOWNIT_MERMAID_SOURCES}
+        ${MARKDOWNIT_MERMAID_STATE_SOURCES}
     )
     target_include_directories(MarkDownIt.layout-parity PRIVATE src tests)
     target_link_libraries(MarkDownIt.layout-parity PRIVATE md4c pugixml)

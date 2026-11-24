@@ -14,7 +14,6 @@ and why. Three checkers read this file:
 
 | Source or feature | Windows | macOS | Reason |
 |---|---|---|---|
-| Mermaid state diagrams (`src/mermaid/state_parse.cpp`, `state_layout.cpp`) | tests only, the exe does not build them | app and tests | The Windows exe never listed the files, so the mac app got state diagrams first. The plan promotes the exe in Batch 3, or this row records the decision to stay without them. |
 | Mermaid measurement (`src/mermaid/measure_dwrite.cpp`) | exe | DirectWrite is not there; the layout seam measures with Core Text | A DirectWrite measure file cannot build elsewhere. Batch 2 moves both sides onto one seam. |
 | Text layout engine (`src/textlayout_dwrite.cpp` against `src/textlayout_coretext.cpp`) | exe and tests | core and tests | One engine per platform behind `src/textlayout.h`. |
 | SVG document (`src/svgdoc.cpp`) | exe and tests | not built, the mac renderer paints through the shared reader `src/macos/svg_mac.cpp` | The DirectWrite SVG path is Windows side. The reader `svg_mac.cpp` is shared and lives under `src/macos/` for historical reasons. |
