@@ -1905,17 +1905,26 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
         [self toolbarSync];
         [view_ setNeedsDisplay:YES];
+        // The appearance change lays the page out again, and that pass
+        // keeps the caret in view, so a scroll set before it lands where
+        // the earlier states left the caret. The scroll therefore comes
+        // after the appearance, and once more after the flush.
+        [view_ layoutSubtreeIfNeeded];
+        [self qaScrollToTop];
         // The screenshot is taken as soon as the state announces itself,
         // and an appearance change redraws on the next display pass. Work
         // the layout and the pixels through now, or the capture keeps the
         // frame from before the switch.
-        [view_ layoutSubtreeIfNeeded];
         [window_ displayIfNeeded];
         [view_ displayIfNeeded];
         [view_ display];
         // The view is layer-backed, and a display pass only marks the
         // layer: the window server still has the old pixels until the
         // transaction commits, which is after the screenshot.
+        [CATransaction flush];
+        [self qaScrollToTop];
+        [view_ setNeedsDisplay:YES];
+        [view_ display];
         [CATransaction flush];
     }
 }
