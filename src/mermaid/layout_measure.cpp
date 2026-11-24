@@ -2,6 +2,8 @@
 // dimensions, then the regular flowchart pipeline handles every direction.
 #include "elk_profile.h"
 #include "layout.h"
+
+#include <cmath>
 #include "layout_internal.h"
 
 namespace mermaid {
@@ -25,8 +27,15 @@ LaidOutFlowchart LayoutFlowchartWith(const Flowchart& flow,
         // never turn a diagram into a set of padding-only nodes.
         if (m.width <= 0.0f || m.height <= 0.0f)
             return LayoutFlowchart(flow, LayoutParamsForProfile());
-        g.nodes[i].width = m.width + kPadding * 2.0f;
-        g.nodes[i].height = m.height + kPadding * 2.0f;
+        // Whole points, because the two ports measure the same label
+        // with different engines: DirectWrite and Core Text agree on a
+        // label but not on its last hundredth. A diagram is a block in
+        // the document, so a fraction of a point per node becomes a
+        // different page height on each platform, and every scroll
+        // position after it. Snapping the measure once, here, keeps the
+        // diagram the same size on both.
+        g.nodes[i].width = std::ceil(m.width) + kPadding * 2.0f;
+        g.nodes[i].height = std::ceil(m.height) + kPadding * 2.0f;
     }
     return FinalizeFlowchartLayout(flow, std::move(g), LayoutParamsForProfile());
 }
