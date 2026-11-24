@@ -64,6 +64,18 @@ inline ThemeColor MakeColor(uint32_t rgb, float alpha = 1.0f) {
 #endif
 }
 
+// A palette colour as a 0xRRGGBB value, for the places that speak a
+// plain integer: the SVG transform, which rewrites markup, and any
+// token that has to cross a seam that carries no float colours.
+inline uint32_t Rgb24(const ThemeColor& c) {
+    const auto channel = [](float v) {
+        if (v < 0.0f) v = 0.0f;
+        if (v > 1.0f) v = 1.0f;
+        return static_cast<uint32_t>(v * 255.0f + 0.5f);
+    };
+    return (channel(c.r) << 16) | (channel(c.g) << 8) | channel(c.b);
+}
+
 // The default font family names. Both platforms ask for the same
 // faces. The mac engine draws these names with the platform's own
 // system faces and keeps the bundled metric compatible stand-ins

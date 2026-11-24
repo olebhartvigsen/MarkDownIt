@@ -732,8 +732,11 @@ const SvgDoc* MacRenderer::GetSvgDoc(const Node& node) {
     // The reader has no appearance of its own: light-dark() is resolved
     // to the branch the page shows before the XML reaches it, the same
     // rule the Windows renderer applies before Direct2D sees the file.
-    const std::string resolvedText =
-        svg::ResolveLightDark(Utf32ToUtf8(node.raw), palette_.dark);
+    // light-dark() and the dark-page remap both happen here, on the raw
+    // markup, so the reader stays appearance-blind.
+    const std::string resolvedText = svg::PrepareSvgForAppearance(
+        Utf32ToUtf8(node.raw), palette_.dark, Rgb24(palette_.pageBg),
+        Rgb24(palette_.textPrimary));
     // A fenced block keeps its text in raw, the way the Windows draw
     // reads it; the inline children are empty for a fence.
     if (!doc.Load(resolvedText)) return nullptr;

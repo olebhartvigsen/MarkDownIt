@@ -1144,3 +1144,68 @@ TEST(SvgText, KeepsArgumentsWithCommasAndNesting) {
     const std::string light = svg::ResolveLightDark(xml, false);
     EXPECT_TRUE(light == "fill: rgb(255, 255, 255)");
 }
+
+// The dark-page remap for diagrams that bake their own canvas.
+TEST(SvgText, AdaptsAWhiteCanvasToThePaper) {
+    const std::string xml =
+        "<svg><rect width='100%' height='100%' fill='#ffffff'/>"
+        "<path d='M0 0' stroke='#000000'/></svg>";
+    const std::string dark = svg::AdaptForDark(xml, 0x0d1117, 0xe6edf3);
+    EXPECT_TRUE(dark.find("#0d1117") != std::string::npos);
+    EXPECT_TRUE(dark.find("#e6edf3") != std::string::npos);
+    EXPECT_TRUE(dark.find("#ffffff") == std::string::npos);
+    EXPECT_TRUE(dark.find("#000000") == std::string::npos);
+}
+
+TEST(SvgText, KeepsHueAndFlipsOnlyLightness) {
+    // A light blue node fill must stay blue, just darker: an inversion
+    // that swaps hue would turn a diagram into a different diagram.
+    const std::string xml =
+        "<rect fill='#dae8fc' stroke='#6c8ebf'/>";
+    const std::string dark = svg::AdaptForDark(xml, 0x0d1117, 0xe6edf3);
+    const size_t fill = dark.find("fill='");
+    ASSERT_TRUE(fill != std::string::npos);
+    const size_t start = fill + 6;
+    const size_t close = dark.find('\'', start);
+    ASSERT_TRUE(close != std::string::npos);
+    const std::string value = dark.substr(start, close - start);
+    // Both channels of a blue are present and blue still leads red.
+    unsigned r = 0, g = 0, b = 0;
+    ASSERT_EQ(std::sscanf(value.c_str(), "#%2x%2x%2x", &r, &g, &b), 3);
+    EXPECT_GT(b, r);
+    // And it is darker than the light fill it came from.
+    EXPECT_LT(r + g + b, 0xda + 0xe8 + 0xfc);
+}
+
+TEST(SvgText, LeavesPaintServersAndNoneAlone) {
+    const std::string xml =
+        "<rect fill='none' stroke='url(#grad)' style='fill: none; "
+        "fill-opacity: 0.5'/>";
+    const std::string dark = svg::AdaptForDark(xml, 0x0d1117, 0xe6edf3);
+    EXPECT_TRUE(dark.find("fill='none'") != std::string::npos);
+    EXPECT_TRUE(dark.find("url(#grad)") != std::string::npos);
+    EXPECT_TRUE(dark.find("fill-opacity: 0.5") != std::string::npos);
+}
+
+TEST(SvgText, KeepsAlphaOnAWash) {
+    const std::string xml = "<rect fill='rgba(255, 255, 255, 0.35)'/>";
+    const std::string dark = svg::AdaptForDark(xml, 0x0d1117, 0xe6edf3);
+    // The wash becomes the paper at the same alpha, not an opaque fill.
+    EXPECT_TRUE(dark.find("rgba(") != std::string::npos);
+    EXPECT_TRUE(dark.find("0.35") != std::string::npos);
+}
+
+TEST(SvgText, LightModeIsUntouched) {
+    const std::string xml = "<rect fill='#ffffff' stroke='#000000'/>";
+    EXPECT_TRUE(svg::PrepareSvgForAppearance(xml, false, 0x0d1117, 0xe6edf3) ==
+                xml);
+    // And the two steps compose in the right order: light-dark() first,
+    // then the remap of whatever branch it chose.
+    const std::string both =
+        "<rect fill='light-dark(#ffffff, #000000)'/>";
+    const std::string dark =
+        svg::PrepareSvgForAppearance(both, true, 0x0d1117, 0xe6edf3);
+    EXPECT_TRUE(dark.find("light-dark") == std::string::npos);
+    // The dark branch is black, and black becomes the ink, not the paper.
+    EXPECT_TRUE(dark.find("#e6edf3") != std::string::npos);
+}

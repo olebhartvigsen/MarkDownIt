@@ -1123,10 +1123,13 @@ void Renderer::PaintSharedOverlays(
         }
         if (svgText.empty()) continue;
         svg::SvgDoc picture;
-        // Direct2D's SVG parser knows no light-dark(); the branch the
-        // page shows is resolved before the document reaches it.
+        // Direct2D's SVG parser knows neither light-dark() nor a dark
+        // page: both are resolved into the markup before it sees the
+        // document.
         if (!picture.Load(d2d_ctx5_,
-                          svg::ResolveLightDark(svgText, palette_.dark))) {
+                          svg::PrepareSvgForAppearance(
+                              svgText, palette_.dark, Rgb24(palette_.pageBg),
+                              Rgb24(palette_.textPrimary)))) {
             continue;
         }
         if (picture.Width() <= 0.0f || picture.Height() <= 0.0f) continue;
@@ -2489,8 +2492,10 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 if (!svgText.empty()) {
                     svg::SvgDoc svgDoc;
                     if (svgDoc.Load(d2d_ctx5_,
-                                    svg::ResolveLightDark(svgText,
-                                                          palette_.dark)) &&
+                                    svg::PrepareSvgForAppearance(
+                                        svgText, palette_.dark,
+                                        Rgb24(palette_.pageBg),
+                                        Rgb24(palette_.textPrimary))) &&
                         svgDoc.Width() > 0.0f && svgDoc.Height() > 0.0f) {
                         RememberImageSize(ib.url, svgDoc.Width(),
                                           svgDoc.Height());

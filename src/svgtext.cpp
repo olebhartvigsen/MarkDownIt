@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <unordered_map>
 
 namespace svg {
@@ -2137,6 +2138,270 @@ bool ReadSize(const std::string& xml, float* w, float* h) {
     if (w) *w = rw;
     if (h) *h = rh;
     return true;
+}
+
+namespace {
+
+struct Rgb {
+    double r = 0, g = 0, b = 0, a = 1.0;
+    bool ok = false;
+};
+
+double HexDigit(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+Rgb HexRgb(uint32_t rgb) {
+    Rgb c;
+    c.r = static_cast<double>((rgb >> 16) & 0xFF);
+    c.g = static_cast<double>((rgb >> 8) & 0xFF);
+    c.b = static_cast<double>(rgb & 0xFF);
+    c.ok = true;
+    return c;
+}
+
+// One CSS colour token, the way an SVG attribute or a style rule writes
+// it. False for keywords and paint servers we must not rewrite.
+Rgb ParseColourAt(const std::string& text, size_t at, size_t* end) {
+    Rgb c;
+    if (at >= text.size()) return c;
+    if (text[at] == '#') {
+        size_t i = at + 1;
+        std::string digits;
+        while (i < text.size() && HexDigit(text[i]) >= 0 && digits.size() < 8) {
+            digits.push_back(text[i]);
+            ++i;
+        }
+        if (digits.size() == 3) {
+            c.r = HexDigit(digits[0]) * 17.0;
+            c.g = HexDigit(digits[1]) * 17.0;
+            c.b = HexDigit(digits[2]) * 17.0;
+            c.ok = true;
+        } else if (digits.size() == 6 || digits.size() == 8) {
+            const auto pair = [&digits](size_t k) {
+                return HexDigit(digits[k]) * 16.0 + HexDigit(digits[k + 1]);
+            };
+            c.r = pair(0);
+            c.g = pair(2);
+            c.b = pair(4);
+            if (digits.size() == 8) c.a = pair(6) / 255.0;
+            c.ok = true;
+        }
+        if (!c.ok) return c;
+        *end = i;
+        return c;
+    }
+    if (text.compare(at, 3, "rgb") == 0) {
+        const size_t open = text.find('(', at);
+        if (open == std::string::npos) return c;
+        size_t i = open + 1;
+        double parts[4] = {0, 0, 0, 1};
+        bool has_alpha = false;
+        for (int k = 0; k < 4; ++k) {
+            while (i < text.size() && (text[i] == ' ' || text[i] == ',')) ++i;
+            if (i >= text.size()) break;
+            const std::string rest = text.substr(i);
+            char* stop = nullptr;
+            const double v = std::strtod(rest.c_str(), &stop);
+            if (!stop || stop == rest.c_str()) break;
+            parts[k] = v;
+            if (k == 3) has_alpha = true;
+            i += static_cast<size_t>(stop - rest.c_str());
+        }
+        c.r = parts[0];
+        c.g = parts[1];
+        c.b = parts[2];
+        c.a = has_alpha ? parts[3] : 1.0;
+        size_t close = text.find(')', open);
+        if (close == std::string::npos) return c;
+        c.ok = true;
+        *end = close + 1;
+        return c;
+    }
+    const auto keyword = [&](const char* word, double v) {
+        const size_t n = std::strlen(word);
+        if (text.size() < at + n) return false;
+        for (size_t k = 0; k < n; ++k) {
+            if (std::tolower(static_cast<unsigned char>(text[at + k])) != word[k]) {
+                return false;
+            }
+        }
+        c.r = c.g = c.b = v;
+        c.ok = true;
+        *end = at + n;
+        return true;
+    };
+    if (keyword("white", 255.0)) return c;
+    if (keyword("black", 0.0)) return c;
+    return c;
+}
+
+void ToHsl(const Rgb& c, double* h, double* s, double* l) {
+    const double r = c.r / 255.0, g = c.g / 255.0, b = c.b / 255.0;
+    const double hi = std::max(std::max(r, g), b);
+    const double lo = std::min(std::min(r, g), b);
+    *l = (hi + lo) * 0.5;
+    const double d = hi - lo;
+    if (d <= 1e-9) {
+        *h = 0;
+        *s = 0;
+        return;
+    }
+    *s = *l > 0.5 ? d / (2.0 - hi - lo) : d / (hi + lo);
+    if (hi == r) {
+        *h = (g - b) / d + (g < b ? 6.0 : 0.0);
+    } else if (hi == g) {
+        *h = (b - r) / d + 2.0;
+    } else {
+        *h = (r - g) / d + 4.0;
+    }
+    *h /= 6.0;
+}
+
+Rgb FromHsl(double h, double s, double l, double a) {
+    const auto channel = [](double p, double q, double t) {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1.0 / 6.0) return p + (q - p) * 6.0 * t;
+        if (t < 0.5) return q;
+        if (t < 2.0 / 3.0) return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+        return p;
+    };
+    Rgb c;
+    c.a = a;
+    c.ok = true;
+    if (s <= 1e-9) {
+        c.r = c.g = c.b = l * 255.0;
+        return c;
+    }
+    const double q = l < 0.5 ? l * (1.0 + s) : l + s - l * s;
+    const double p = 2.0 * l - q;
+    c.r = channel(p, q, h + 1.0 / 3.0) * 255.0;
+    c.g = channel(p, q, h) * 255.0;
+    c.b = channel(p, q, h - 1.0 / 3.0) * 255.0;
+    return c;
+}
+
+std::string ToCss(const Rgb& c) {
+    const auto byte = [](double v) {
+        if (v < 0) v = 0;
+        if (v > 255) v = 255;
+        return static_cast<uint32_t>(v + 0.5);
+    };
+    static const char* digits = "0123456789abcdef";
+    const uint32_t parts[3] = {byte(c.r), byte(c.g), byte(c.b)};
+    if (c.a < 0.999) {
+        std::string out = "rgba(";
+        out += std::to_string(parts[0]);
+        out += ",";
+        out += std::to_string(parts[1]);
+        out += ",";
+        out += std::to_string(parts[2]);
+        out += ",";
+        char alpha[32];
+        std::snprintf(alpha, sizeof(alpha), "%g", c.a);
+        out += alpha;
+        out += ")";
+        return out;
+    }
+    std::string out = "#";
+    for (int k = 0; k < 3; ++k) {
+        out.push_back(digits[(parts[k] >> 4) & 0xF]);
+        out.push_back(digits[parts[k] & 0xF]);
+    }
+    return out;
+}
+
+// A colour-bearing property, written either as an attribute (fill="...")
+// or inside a style rule (fill:...). The key must stand alone, so
+// fill-opacity and stroke-width do not match.
+bool IsColourKeyAt(const std::string& text, size_t at, size_t* valueStart) {
+    static const char* keys[] = {"fill", "stroke", "stop-color", "color",
+                                 "flood-color", "lighting-color"};
+    for (const char* key : keys) {
+        const size_t n = std::strlen(key);
+        if (text.compare(at, n, key) != 0) continue;
+        if (at > 0) {
+            const char prev = text[at - 1];
+            if (std::isalnum(static_cast<unsigned char>(prev)) || prev == '-' ||
+                prev == '_') {
+                continue;
+            }
+        }
+        if (at + n < text.size()) {
+            const char next = text[at + n];
+            if (std::isalnum(static_cast<unsigned char>(next)) || next == '-' ||
+                next == '_') {
+                continue;
+            }
+        }
+        size_t i = at + n;
+        while (i < text.size() && (text[i] == ' ' || text[i] == '\t')) ++i;
+        if (i >= text.size() || (text[i] != ':' && text[i] != '=')) continue;
+        ++i;
+        while (i < text.size() && (text[i] == ' ' || text[i] == '\t')) ++i;
+        if (i < text.size() && (text[i] == '"' || text[i] == '\'')) ++i;
+        *valueStart = i;
+        return true;
+    }
+    return false;
+}
+
+}  // namespace
+
+std::string AdaptForDark(const std::string& xml, uint32_t paperRgb,
+                         uint32_t inkRgb) {
+    if (xml.empty()) return xml;
+    const Rgb paper = HexRgb(paperRgb);
+    const Rgb ink = HexRgb(inkRgb);
+    std::string out;
+    out.reserve(xml.size() + xml.size() / 8);
+    size_t at = 0;
+    while (at < xml.size()) {
+        size_t valueStart = 0;
+        if (!IsColourKeyAt(xml, at, &valueStart)) {
+            out.push_back(xml[at++]);
+            continue;
+        }
+        size_t end = valueStart;
+        const Rgb colour = ParseColourAt(xml, valueStart, &end);
+        if (!colour.ok) {
+            // `none`, `currentColor`, `url(#grad)` and anything else
+            // unreadable: copy the key through and carry on past the
+            // separator, so the scan cannot stop on it.
+            out.append(xml, at, valueStart - at);
+            at = valueStart;
+            continue;
+        }
+        double h = 0, s = 0, l = 0;
+        ToHsl(colour, &h, &s, &l);
+        const double flipped = 1.0 - l;
+        Rgb mapped;
+        if (flipped < 0.09) {
+            mapped = paper;
+        } else if (flipped > 0.93) {
+            mapped = ink;
+        } else {
+            // Keep the hue, take a little saturation out so a pastel
+            // fill does not turn neon at night.
+            mapped = FromHsl(h, s * 0.85, flipped, colour.a);
+        }
+        mapped.a = colour.a;
+        out.append(xml, at, valueStart - at);
+        out += ToCss(mapped);
+        at = end;
+    }
+    return out;
+}
+
+std::string PrepareSvgForAppearance(const std::string& xml, bool dark,
+                                    uint32_t paperRgb, uint32_t inkRgb) {
+    const std::string resolved = ResolveLightDark(xml, dark);
+    if (!dark) return resolved;
+    return AdaptForDark(resolved, paperRgb, inkRgb);
 }
 
 }  // namespace svg
