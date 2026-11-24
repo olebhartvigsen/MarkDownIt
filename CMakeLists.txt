@@ -748,6 +748,9 @@ if(APPLE)
             "-framework CoreGraphics"
             "-framework CoreText"
             "-framework AppKit"
+            # CATransaction, so the dark QA state can commit its pixels
+            # before the screenshot takes them.
+            "-framework QuartzCore"
             "-framework CoreServices"
             "-framework Vision"
     )
