@@ -2654,7 +2654,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // The content view re-resolves through viewDidChangeEffectiveAppearance,
     // so this only has to ask for the frame that follows the change.
     [view_ setNeedsDisplay:YES];
-    [window_ setNeedsDisplay:YES];
+    [window_ setViewsNeedDisplay:YES];
 }
 // The View menu's tab bar command; the native tab bar keeps its own
 // hide button as well.

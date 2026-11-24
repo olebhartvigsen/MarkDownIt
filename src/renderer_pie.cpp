@@ -138,7 +138,7 @@ void Renderer::DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // they do not vanish on the dark one.
     rt->CreateSolidColorBrush(D2D1::ColorF(0xECECFF), &fillBrush);
     rt->CreateSolidColorBrush(pal.textPrimary, &ringBrush);
-    rt->CreateSolidColorBrush(kPieTextDark, &textBrush);
+    rt->CreateSolidColorBrush(D2D1::ColorF(kPieTextDark), &textBrush);
 
     // Outer ring (class pieOuterCircle): stroke-only, fill none, 2px.
     if (ringBrush) {
