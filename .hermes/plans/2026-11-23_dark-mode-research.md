@@ -282,7 +282,11 @@ P4 is done, after the follow-up pass:
   pair's worth of duplicated hex. Pie slices keep mermaid's own palette, as a
   pie's identity is its colours; the ring, labels and legend follow the page.
 
-The CI verdict, run 45358359215 on f229f7c: green on every job, both builds,
+Final CI verdict, run 45430894834 on 27f68f4: all thirteen jobs green,
+including the macOS tests and capture parity with the `welcome-dark`
+home screen and the SVG transform in the same build.
+
+Earlier verdict, run 45358359215 on f229f7c: green on every job, both builds,
 both test suites, the Office and Mermaid oracles, and all six parity gates.
 The dark pair compares at 5.14% ink on macOS against 4.24% on Windows, with
 the same 5 px first-row offset the doc state already carries, which is a WARN
@@ -336,6 +340,39 @@ rather than asserted.
 cycle: `g++ -fsyntax-only` on `welcome_screen.cpp` and the new unit, plus
 the contrast suite, caught what a compiler would have, and the capture
 state is the part CI has to confirm.
+
+## Diagrams that bake a white canvas (follow-up, now done)
+
+The last visual hole was the one users hit most in practice: a draw.io or
+Visio export drops a full-size white rect into the SVG, plus near-white
+node fills and near-black strokes. On a dark page that is a glowing white
+card, and `light-dark()` never appears in those files, so the earlier fix
+did nothing for them.
+
+`svg::AdaptForDark(xml, paper, ink)` rewrites the colour-bearing
+properties in the markup before either reader parses it:
+
+- lightness flips, hue and saturation stay (HSL round-trip), so a blue
+  node stays blue instead of turning orange;
+- a white or near-white fill becomes the palette's paper;
+- a black or near-black stroke becomes its ink;
+- `none`, `transparent`, `currentColor` and `url(#...)` paints are left
+  alone, as are `fill-opacity`, `stroke-width` and `<image>` data URIs;
+- alpha survives, so a translucent wash becomes paper at its own alpha.
+
+`PrepareSvgForAppearance` composes it with `light-dark()` in the order
+that must hold: resolve the branch, then recolour whatever it picked.
+Both renderers call it at their load boundary, which is also why it
+covered Windows: Direct2D never knew `light-dark()` either.
+
+Six cases in `tests/svgtext_test.cpp` pin the behaviour, including hue
+preservation, alpha, the paint-server exemptions and light-mode byte
+identity.
+
+**Known gap.** There is no `svg-dark` capture state, because the Windows
+walk has no SVG state at all and one side alone cannot pair. The
+transform is unit-tested and compiled on both platforms, but it is not
+photographed. Adding an SVG state to both walks is the follow-up.
 
 ## Risks and open questions
 
