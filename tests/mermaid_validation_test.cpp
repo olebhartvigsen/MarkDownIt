@@ -186,6 +186,14 @@ std::string CanonicalDump(const Node& n) {
         out << "box " << b.id << " " << b.x << " " << b.y << " " << b.w << " "
             << b.h << "\n";
     }
+    if (n.block == BlockKind::MermaidState && n.mermaid_state) {
+        // Labels are part of the drawing: two of them moving onto one
+        // point is exactly the regression this dump exists to catch.
+        for (const auto& label : n.mermaid_state->labels) {
+            out << "label " << label.text << " " << label.x << " " << label.y
+                << " " << label.w << " " << label.h << "\n";
+        }
+    }
     if (n.block == BlockKind::MermaidFlowchart && n.mermaid_layout) {
         for (const auto& lane : n.mermaid_layout->lanes) {
             out << "lane " << lane.id << " " << lane.x << " " << lane.y << " "
@@ -265,6 +273,28 @@ TEST(MermaidValidation, GeometryObeysItsInvariants) {
                                  boxes[j].id.c_str());
                 }
                 EXPECT_TRUE(apart);
+            }
+        }
+
+        if (n.block == BlockKind::MermaidState && n.mermaid_state) {
+            // Two transitions that share their endpoints get two labels;
+            // a drawing that puts them on one point prints one word over
+            // the other, which is unreadable rather than merely ugly.
+            const auto& labels = n.mermaid_state->labels;
+            for (size_t i = 0; i < labels.size(); ++i) {
+                for (size_t j = i + 1; j < labels.size(); ++j) {
+                    const auto& a = labels[i];
+                    const auto& b = labels[j];
+                    const bool apart =
+                        a.x + a.w <= b.x + 0.5 || b.x + b.w <= a.x + 0.5 ||
+                        a.y + a.h <= b.y + 0.5 || b.y + b.h <= a.y + 0.5;
+                    if (!apart) {
+                        std::fprintf(stderr,
+                                     "[%s] labels '%s' and '%s' overlap\n",
+                                     f.file, a.text.c_str(), b.text.c_str());
+                    }
+                    EXPECT_TRUE(apart);
+                }
             }
         }
 

@@ -67,6 +67,17 @@ LaidOutState LayoutStateDiagram(const StateDiagram& diag) {
     };
 
     // Start/end markers used in transitions implicitly declare the nodes.
+    // Two transitions between the same pair of states (go and pause on
+    // Idle -> Running) each put their label at the middle of their own
+    // route, which is the same point: the words printed on top of each
+    // other. The labels of a shared pair are spread along the path
+    // instead, in a fixed order so the drawing stays deterministic.
+    std::map<std::pair<std::string, std::string>, int> label_totals;
+    for (const auto& t : diag.transitions) {
+        if (!t.label.empty()) ++label_totals[{t.from, t.to}];
+    }
+    std::map<std::pair<std::string, std::string>, int> label_seen;
+
     for (const auto& t : diag.transitions) {
         if (t.from == "root_start") intern("root_start", StateKind::Start);
         if (t.to == "root_end") intern("root_end", StateKind::End);
@@ -517,7 +528,17 @@ LaidOutState LayoutStateDiagram(const StateDiagram& diag) {
                 for (size_t i = 0; i + 1 < poly.size(); ++i)
                     total += std::hypot(poly[i+1].x - poly[i].x,
                                         poly[i+1].y - poly[i].y);
-                double rem = total * 0.5;
+                double frac = 0.5;
+                const auto key = std::make_pair(t.from, t.to);
+                const int total_labels = label_totals[key];
+                if (total_labels > 1) {
+                    const int index = label_seen[key];
+                    frac = 0.5 + (index - (total_labels - 1) * 0.5) * 0.22;
+                }
+                (void)label_seen[key]++;
+                if (frac < 0.15) frac = 0.15;
+                if (frac > 0.85) frac = 0.85;
+                double rem = total * frac;
                 for (size_t i = 0; i + 1 < poly.size(); ++i) {
                     double dx = poly[i+1].x - poly[i].x;
                     double dy = poly[i+1].y - poly[i].y;

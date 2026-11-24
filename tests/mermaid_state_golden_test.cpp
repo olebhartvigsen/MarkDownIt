@@ -8,6 +8,7 @@
 #include "gtest_lite.h"
 
 #include <cmath>
+#include <map>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -91,6 +92,19 @@ void CheckEdges(const char* name, const mermaid::StateGolden& gold,
 void CheckLabels(const char* name, const mermaid::StateGolden& gold,
                  const mermaid::LaidOutState& out, double tol) {
     ASSERT_EQ(gold.labels.size(), out.labels.size());
+
+    // The oracle stacks the labels of two transitions that share their
+    // endpoints (go and pause on Idle -> Running): both land on the same
+    // midpoint and print on top of each other. That is the defect this
+    // port fixes, so for those labels the position is not compared with
+    // dagre; what is compared is that they are apart. Every other label
+    // is still held to the oracle's point.
+    std::map<std::pair<long, long>, int> stacked;
+    for (const auto& gl : gold.labels) {
+        ++stacked[{static_cast<long>(std::lround(gl.x)),
+                   static_cast<long>(std::lround(gl.y))}];
+    }
+
     for (size_t i = 0; i < gold.labels.size(); ++i) {
         const auto& gl = gold.labels[i];
         const auto& l = out.labels[i];
@@ -98,6 +112,29 @@ void CheckLabels(const char* name, const mermaid::StateGolden& gold,
         // golden stores the label CENTER; ours stores the top-left corner.
         double cx = l.x + l.w * 0.5;
         double cy = l.y + l.h * 0.5;
+
+        const auto key = std::make_pair(static_cast<long>(std::lround(gl.x)),
+                                        static_cast<long>(std::lround(gl.y)));
+        if (stacked[key] > 1) {
+            for (size_t j = i + 1; j < gold.labels.size(); ++j) {
+                const auto& gj = gold.labels[j];
+                const auto jkey =
+                    std::make_pair(static_cast<long>(std::lround(gj.x)),
+                                   static_cast<long>(std::lround(gj.y)));
+                if (jkey != key) continue;
+                const auto& lj = out.labels[j];
+                const double dx = (lj.x + lj.w * 0.5) - cx;
+                const double dy = (lj.y + lj.h * 0.5) - cy;
+                if (std::hypot(dx, dy) < 10.0) {
+                    std::fprintf(stderr,
+                                 "[%s] labels %s and %s still pile up\n", name,
+                                 gl.text.c_str(), gj.text.c_str());
+                }
+                EXPECT_TRUE(std::hypot(dx, dy) >= 10.0);
+            }
+            continue;
+        }
+
         if (std::abs(cx - gl.x) > tol || std::abs(cy - gl.y) > tol) {
             std::fprintf(stderr,
                 "[%s] label %s: ours-center=(%.3f,%.3f) golden=(%.3f,%.3f)\n",
