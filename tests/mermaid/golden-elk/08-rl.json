@@ -1,0 +1,68 @@
+{
+  "source": "flowchart RL\n    A --> B\n    B --> C\n",
+  "rankdir": "RL",
+  "nodesep": 20,
+  "ranksep": 20,
+  "edgesep": 10,
+  "padding": 12,
+  "width": 196,
+  "height": 73,
+  "nodes": [
+    {
+      "id": "0",
+      "x": 162,
+      "y": 36.5,
+      "width": 44,
+      "height": 49,
+      "rank": 12
+    },
+    {
+      "id": "1",
+      "x": 98,
+      "y": 36.5,
+      "width": 44,
+      "height": 49,
+      "rank": 12
+    },
+    {
+      "id": "2",
+      "x": 34,
+      "y": 36.5,
+      "width": 44,
+      "height": 49,
+      "rank": 12
+    }
+  ],
+  "edges": [
+    {
+      "from": "0",
+      "to": "1",
+      "label": "",
+      "points": [
+        [
+          140,
+          36.5
+        ],
+        [
+          120,
+          36.5
+        ]
+      ]
+    },
+    {
+      "from": "1",
+      "to": "2",
+      "label": "",
+      "points": [
+        [
+          76,
+          36.5
+        ],
+        [
+          56,
+          36.5
+        ]
+      ]
+    }
+  ]
+}

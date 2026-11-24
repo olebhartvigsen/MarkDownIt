@@ -1,0 +1,9 @@
+{
+  "name": "elk-oracle",
+  "private": true,
+  "type": "module",
+  "description": "Reference geometry from Eclipse Layout Kernel itself, for the layered port.",
+  "dependencies": {
+    "elkjs": "^0.9.3"
+  }
+}
