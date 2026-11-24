@@ -38,15 +38,16 @@ TEST(MermaidElk, SettingsMapOntoTheEngineParameters) {
     EXPECT_NEAR(p.margin, 8.0, 0.001);
 }
 
-TEST(MermaidElk, DagreStaysTheDefault) {
-    const mermaid::LayoutParams dagre = mermaid::DagreParams();
-    EXPECT_NEAR(dagre.rank_sep, 50.0, 0.001);
-    EXPECT_NEAR(dagre.node_sep, 50.0, 0.001);
-    EXPECT_NEAR(dagre.edge_sep, 10.0, 0.001);
-    EXPECT_NEAR(dagre.margin, 20.0, 0.001);
+TEST(MermaidElk, ElkIsTheDefault) {
+    const mermaid::LayoutParams elk = mermaid::ElkParams();
+    EXPECT_NEAR(elk.rank_sep, 20.0, 0.001);
+    EXPECT_NEAR(elk.node_sep, 20.0, 0.001);
+    EXPECT_NEAR(elk.edge_sep, 10.0, 0.001);
+    EXPECT_NEAR(elk.margin, 12.0, 0.001);
     const mermaid::LayoutParams chosen = mermaid::LayoutParamsForProfile();
-    EXPECT_NEAR(chosen.rank_sep, dagre.rank_sep, 0.001);
-    EXPECT_TRUE(std::string(mermaid::MermaidLayoutProfileName()) == "dagre");
+    EXPECT_NEAR(chosen.rank_sep, elk.rank_sep, 0.001);
+    EXPECT_NEAR(chosen.node_sep, elk.node_sep, 0.001);
+    EXPECT_TRUE(std::string(mermaid::MermaidLayoutProfileName()) == "elk");
 }
 
 TEST(MermaidElk, BothProfilesKeepTheDiagramAndChangeTheGaps) {

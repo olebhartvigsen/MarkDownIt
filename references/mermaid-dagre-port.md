@@ -83,10 +83,12 @@ ELK's ids, and `ParamsFor` maps them onto `LayoutParams`
 (`spacing.nodeNodeBetweenLayers` to `rank_sep`, `nodeNode` to `node_sep`,
 `edgeEdge` to `edge_sep`, `padding` to `margin`).
 
-Selected with `MARKDOWNIT_MERMAID_LAYOUT=elk`. The default stays dagre's
-numbers because the flowchart geometry is checked against dagre-d3-es
-goldens; promoting ELK to the default re-baselines every golden and is a
-decision, not a refactor.
+ELK's numbers are the default. `MARKDOWNIT_MERMAID_LAYOUT=dagre` selects
+the older profile, which the golden oracle keeps using: those goldens come
+from dagre-d3-es, so the engine is still compared against it on the one
+profile that can be compared with it. Changing the default does not move
+those goldens, because the oracle test passes dagre's parameters
+explicitly and never reads the profile.
 
 `tests/mermaid_elk_profile_test.cpp` holds both profiles to the same
 contract: same nodes, same edges, distinct node centres, a routed path

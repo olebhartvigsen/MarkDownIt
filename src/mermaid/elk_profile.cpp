@@ -31,13 +31,13 @@ bool ReadProfileFromEnvironment() {
     char* buf = nullptr;
     size_t len = 0;
     if (_dupenv_s(&buf, &len, "MARKDOWNIT_MERMAID_LAYOUT") != 0 || !buf) {
-        return false;
+        return true;  // unset: ELK, the default
     }
     const std::string value(buf);
     free(buf);
 #else
     const char* raw = std::getenv("MARKDOWNIT_MERMAID_LAYOUT");
-    if (!raw) return false;
+    if (!raw) return true;  // unset: ELK, the default
     const std::string value(raw);
 #endif
     std::string lowered;
@@ -47,7 +47,9 @@ bool ReadProfileFromEnvironment() {
                               ? static_cast<char>(c - 'A' + 'a')
                               : c);
     }
-    return lowered == "elk";
+    // ELK is the default; "dagre" is the way back, which is what the
+    // golden oracle uses to keep comparing the engine against dagre-d3-es.
+    return lowered != "dagre";
 }
 
 bool ProfileIsElk() {

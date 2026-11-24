@@ -15,10 +15,10 @@
 // phases, which is what this header describes: one struct naming the
 // options, and a mapping onto the LayoutParams the engine already takes.
 //
-// The default stays dagre's numbers, because the flowchart geometry is
-// checked against dagre-d3-es goldens in CI. The ELK profile is selected
-// with MARKDOWNIT_MERMAID_LAYOUT=elk, and making it the default is a
-// decision about re-baselining those goldens, not a code change.
+// ELK's numbers are the default. MARKDOWNIT_MERMAID_LAYOUT=dagre selects
+// the older profile, which the golden oracle still uses: those goldens
+// come from dagre-d3-es, so the comparison that pins the engine against
+// it keeps running on the profile that can be compared with it.
 
 #include "layout_internal.h"
 
@@ -59,7 +59,7 @@ LayoutParams ElkParams();
 LayoutParams ParamsFor(const ElkSettings& settings);
 
 // The profile this process lays Mermaid diagrams out with, chosen once by
-// MARKDOWNIT_MERMAID_LAYOUT (dagre when unset or unknown).
+// MARKDOWNIT_MERMAID_LAYOUT. ELK unless the value is "dagre".
 LayoutParams LayoutParamsForProfile();
 const char* MermaidLayoutProfileName();
 
