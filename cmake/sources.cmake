@@ -74,6 +74,7 @@ set(MARKDOWNIT_SVG_SHARED_SOURCES
 # exe and the mac core without platform files.
 # usage: windows-app macos-core windows-tests macos-tests
 set(MARKDOWNIT_MERMAID_SOURCES
+    src/mermaid/elk_profile.cpp
     src/mermaid/class_parse.cpp
     src/mermaid/class_layout.cpp
     src/mermaid/layout_acyclic.cpp

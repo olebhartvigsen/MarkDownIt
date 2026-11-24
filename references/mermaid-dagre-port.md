@@ -72,3 +72,22 @@ promoted from `mermaid` fences to a renderable block in the application.
 
 The state oracle is `tools/mermaid-oracle/state_oracle.mjs`. It checks the stt1-5
 fixtures at 0.5 DIP. Composite states and self transitions remain unsupported.
+
+## Layout profile: ELK settings over the shared engine
+
+Eclipse Layout Kernel is Java (elkjs is JavaScript), and this app ships
+neither runtime. ELK's `layered` algorithm is the same family as the
+engine here, so the profile is expressed as ELK's settings rather than a
+second implementation: `src/mermaid/elk_profile.h` names the options with
+ELK's ids, and `ParamsFor` maps them onto `LayoutParams`
+(`spacing.nodeNodeBetweenLayers` to `rank_sep`, `nodeNode` to `node_sep`,
+`edgeEdge` to `edge_sep`, `padding` to `margin`).
+
+Selected with `MARKDOWNIT_MERMAID_LAYOUT=elk`. The default stays dagre's
+numbers because the flowchart geometry is checked against dagre-d3-es
+goldens; promoting ELK to the default re-baselines every golden and is a
+decision, not a refactor.
+
+`tests/mermaid_elk_profile_test.cpp` holds both profiles to the same
+contract: same nodes, same edges, distinct node centres, a routed path
+for every edge, and tighter spacing under ELK.

@@ -1,5 +1,6 @@
 // DirectWrite-independent measurement seam. The injected callback selects node
 // dimensions, then the regular flowchart pipeline handles every direction.
+#include "elk_profile.h"
 #include "layout.h"
 #include "layout_internal.h"
 
@@ -12,7 +13,7 @@ constexpr float kPadding = 15.0f;
 LaidOutFlowchart LayoutFlowchartWith(const Flowchart& flow,
                                      MeasureFn measure,
                                      void* ctx) {
-    if (!measure) return LayoutFlowchart(flow, LayoutParams{});
+    if (!measure) return LayoutFlowchart(flow, LayoutParamsForProfile());
 
     LayoutGraph g = FlowchartToLayoutGraph(flow);
     if (g.nodes.empty()) return LaidOutFlowchart{};
@@ -23,11 +24,11 @@ LaidOutFlowchart LayoutFlowchartWith(const Flowchart& flow,
         // A failed text API must retain the known-good deterministic layout,
         // never turn a diagram into a set of padding-only nodes.
         if (m.width <= 0.0f || m.height <= 0.0f)
-            return LayoutFlowchart(flow, LayoutParams{});
+            return LayoutFlowchart(flow, LayoutParamsForProfile());
         g.nodes[i].width = m.width + kPadding * 2.0f;
         g.nodes[i].height = m.height + kPadding * 2.0f;
     }
-    return FinalizeFlowchartLayout(flow, std::move(g), LayoutParams{});
+    return FinalizeFlowchartLayout(flow, std::move(g), LayoutParamsForProfile());
 }
 
 }  // namespace mermaid
