@@ -400,6 +400,7 @@ bool MarkdownToOfficeModel(const std::string& markdown, DocModel& out,
             case ::BlockKind::MermaidPie:
             case ::BlockKind::MermaidSequence:
             case ::BlockKind::MermaidGantt:
+            case ::BlockKind::MermaidState:
                 AddWarning(report, "mermaid diagram",
                            "the model has no diagram block; the diagram is dropped");
                 continue;

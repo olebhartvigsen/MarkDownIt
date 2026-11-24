@@ -13,16 +13,18 @@
 #include "mermaid/pie_layout.h"
 #include "mermaid/seq_layout.h"
 #include "mermaid/gantt_layout.h"
+#include "mermaid/state_layout.h"
 
 namespace mermaid {
 
-enum class MermaidKind { Flowchart, Pie, Sequence, Gantt };
+enum class MermaidKind { Flowchart, Pie, Sequence, Gantt, State };
 struct MermaidRender {
     MermaidKind kind = MermaidKind::Flowchart;
     std::shared_ptr<LaidOutFlowchart> flow;
     std::shared_ptr<LaidOutPie> pie;
     std::shared_ptr<LaidOutSequence> seq;
     std::shared_ptr<LaidOutGantt> gantt;
+    std::shared_ptr<LaidOutState> state;
 };
 
 constexpr float kMermaidBlockPad = 12.0f;
@@ -61,12 +63,26 @@ inline float MeasureGanttHeight(const LaidOutGantt& lg, float zoom, float avail_
     }
     return static_cast<float>(lg.height) * scale + 2.0f * kMermaidBlockPad;
 }
+inline float MeasureStateHeight(const LaidOutState& ls, float zoom,
+                                float avail_w) {
+    float scale = zoom;
+    const float natural = ls.vbwidth > 0 ? static_cast<float>(ls.vbwidth)
+                                         : static_cast<float>(ls.width);
+    if (natural > 0 && avail_w > 0) {
+        const float fit = avail_w / natural;
+        if (fit < scale) scale = fit;
+    }
+    const float h = ls.vbheight > 0 ? static_cast<float>(ls.vbheight)
+                                    : static_cast<float>(ls.height);
+    return h * scale + 2.0f * kMermaidBlockPad;
+}
 inline float MeasureMermaidHeight(const MermaidRender& mr, float zoom,
                                   float avail_w) {
     switch (mr.kind) {
         case MermaidKind::Pie: return MeasurePieHeight(*mr.pie, zoom, avail_w);
         case MermaidKind::Sequence: return MeasureSequenceHeight(*mr.seq, zoom, avail_w);
         case MermaidKind::Gantt: return MeasureGanttHeight(*mr.gantt, zoom, avail_w);
+        case MermaidKind::State: return MeasureStateHeight(*mr.state, zoom, avail_w);
         case MermaidKind::Flowchart: default:
             return MeasureLayoutHeight(*mr.flow, zoom, avail_w);
     }

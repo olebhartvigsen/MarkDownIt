@@ -14,6 +14,7 @@
 namespace mermaid { struct Flowchart; }
 namespace mermaid { struct LaidOutFlowchart; }
 namespace mermaid { struct LaidOutPie; }
+namespace mermaid { struct LaidOutState; }
 namespace mermaid { struct LaidOutSequence; }
 namespace mermaid { struct LaidOutGantt; }
 
@@ -30,6 +31,7 @@ enum class BlockKind {
     MermaidPie,       // fenced ```mermaid `pie` block, laid out at parse time
     MermaidSequence,  // fenced ```mermaid `sequenceDiagram` block, laid out at parse time
     MermaidGantt,     // fenced ```mermaid `gantt` block, laid out at parse time
+    MermaidState,     // fenced ```mermaid `stateDiagram` block, laid out at parse time
 };
 
 // Inline-level elements (within a block's children)
@@ -145,6 +147,7 @@ struct Node {
     std::shared_ptr<mermaid::LaidOutPie>       mermaid_pie;     // populated when block == MermaidPie
     std::shared_ptr<mermaid::LaidOutSequence>  mermaid_seq;     // populated when block == MermaidSequence
     std::shared_ptr<mermaid::LaidOutGantt>     mermaid_gantt;   // populated when block == MermaidGantt
+    std::shared_ptr<mermaid::LaidOutState>     mermaid_state;   // populated when block == MermaidState
 };
 
 // The full parsed document: a flat list of blocks plus an optional title
@@ -164,6 +167,7 @@ inline bool IsCodeLikeBlock(BlockKind kind) {
     case BlockKind::MermaidPie:
     case BlockKind::MermaidSequence:
     case BlockKind::MermaidGantt:
+    case BlockKind::MermaidState:
         return true;
     default:
         return false;

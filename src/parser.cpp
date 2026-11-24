@@ -15,6 +15,8 @@
 #include "mermaid/pie_parse.h"
 #include "mermaid/pie_layout.h"
 #include "mermaid/seq_parse.h"
+#include "mermaid/state_layout.h"
+#include "mermaid/state_parse.h"
 #include "mermaid/seq_layout.h"
 #include "mermaid/gantt_parse.h"
 #include "mermaid/gantt_layout.h"
@@ -864,6 +866,28 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
                             if (laid->error.empty()) {
                                 n.mermaid_gantt = laid;
                                 n.block = BlockKind::MermaidGantt;
+                                goto promoted;
+                            }
+                        } catch (...) {
+                            // Keep as CodeBlock on layout failure.
+                        }
+                    }
+                }
+                // Not a flowchart, pie, sequence or gantt: try a state
+                // diagram. ParseState rejects everything else, and the
+                // layout refuses what it cannot draw rather than
+                // rendering half of it.
+                {
+                    mermaid::StateDiagram sd =
+                        mermaid::ParseStateDiagram(utf8);
+                    if (sd.error.empty() &&
+                        (!sd.nodes.empty() || !sd.transitions.empty())) {
+                        try {
+                            auto laid = std::make_shared<mermaid::LaidOutState>(
+                                mermaid::LayoutStateDiagram(sd));
+                            if (laid->error.empty() && !laid->nodes.empty()) {
+                                n.mermaid_state = laid;
+                                n.block = BlockKind::MermaidState;
                                 goto promoted;
                             }
                         } catch (...) {

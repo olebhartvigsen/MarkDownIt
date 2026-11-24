@@ -67,8 +67,16 @@ or the oracle changes.
 
 ## State diagrams
 
-State diagrams have parser, layout, and golden-test code. They are not currently
-promoted from `mermaid` fences to a renderable block in the application.
+State diagrams are rendered: a `stateDiagram-v2` fence is promoted at parse
+time to `BlockKind::MermaidState`, laid out by `LayoutStateDiagram`, and drawn
+by the shared painter in each port (`src/renderer_state.cpp` on Windows,
+`PaintState` in `src/macos/mermaid_painter_mac.cpp`). Circles are `[*]`, a box
+is a state, transitions are polylines with arrowheads, and the labels sit where
+the layout placed them.
+
+Flat diagrams are supported. A composite state (`state X { ... }`) makes the
+layout return an error, and the fence then stays a code block rather than
+rendering half a diagram.
 
 The state oracle is `tools/mermaid-oracle/state_oracle.mjs`. It checks the stt1-5
 fixtures at 0.5 DIP. Composite states and self transitions remain unsupported.

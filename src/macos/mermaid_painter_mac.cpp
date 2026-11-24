@@ -1000,6 +1000,80 @@ void PaintGantt(TextEngine* engine, RenderTarget* target,
 
 }  // namespace
 
+// A state diagram: circles for [*], a box per state, a polyline per
+// transition, the geometry the shared state layout produced.
+void PaintState(TextEngine* engine, RenderTarget* target,
+                const mermaid::LaidOutState& laid, float zoom,
+                float availWidth, float originX, float originY, float padding,
+                const Palette& palette, const FontSpec& bodyFont) {
+    const double natural = laid.vbwidth > 0 ? laid.vbwidth : laid.width;
+    const float scale = FitScale(
+        zoom, static_cast<float>(natural > 0 ? natural : 0.0), availWidth);
+    const FontSpec font = ScaledFont(bodyFont, scale);
+
+    const float ox = originX;
+    const float oy = originY + padding;
+    auto X = [&](double v) { return ox + static_cast<float>(v * scale); };
+    auto Y = [&](double v) { return oy + static_cast<float>(v * scale); };
+
+    const Color fill = ToColor(palette.mermaidNodeFill);
+    const Color border = ToColor(palette.mermaidNodeBorder);
+    const Color edge = ToColor(palette.mermaidEdge);
+    const Color ink = ToColor(palette.mermaidText);
+
+    // Transitions under the boxes, the order mermaid draws in.
+    for (const auto& e : laid.edges) {
+        for (size_t i = 1; i < e.points.size(); ++i) {
+            target->StrokeLine(X(e.points[i - 1].x), Y(e.points[i - 1].y),
+                               X(e.points[i].x), Y(e.points[i].y), edge,
+                               1.5f * scale);
+        }
+        if (e.points.size() >= 2) {
+            const auto& a = e.points[e.points.size() - 2];
+            const auto& b = e.points[e.points.size() - 1];
+            const float x1 = X(a.x), y1 = Y(a.y), x2 = X(b.x), y2 = Y(b.y);
+            const float dx = x2 - x1, dy = y2 - y1;
+            const float len = std::sqrt(dx * dx + dy * dy);
+            if (len > 0.001f) {
+                const float ux = dx / len, uy = dy / len;
+                const float size = 7.0f * scale;
+                const float bx = x2 - ux * size, by = y2 - uy * size;
+                target->StrokeLine(x2, y2, bx + uy * size * 0.5f,
+                                   by - ux * size * 0.5f, edge, 1.0f * scale);
+                target->StrokeLine(x2, y2, bx - uy * size * 0.5f,
+                                   by + ux * size * 0.5f, edge, 1.0f * scale);
+            }
+        }
+    }
+
+    for (const auto& node : laid.nodes) {
+        if (node.kind == "start" || node.kind == "end") {
+            const float r = static_cast<float>(node.r * scale);
+            Rect circle{X(node.cx) - r, Y(node.cy) - r, r * 2.0f, r * 2.0f};
+            target->FillEllipse(circle, border);
+            if (node.kind == "end") {
+                const float inner = r * 0.62f;
+                Rect ring{X(node.cx) - inner, Y(node.cy) - inner, inner * 2.0f,
+                          inner * 2.0f};
+                target->FillEllipse(ring, fill);
+            }
+            continue;
+        }
+        Rect box{X(node.cx - node.w * 0.5), Y(node.cy - node.h * 0.5),
+                 static_cast<float>(node.w * scale),
+                 static_cast<float>(node.h * scale)};
+        target->FillRect(box, fill);
+        target->StrokeRect(box, border, 1.0f * scale);
+        DrawCentered(target, engine, node.text, font, X(node.cx), Y(node.cy),
+                     ink);
+    }
+
+    for (const auto& label : laid.labels) {
+        DrawCentered(target, engine, label.text, font, X(label.x), Y(label.y),
+                     ink);
+    }
+}
+
 void PaintMermaidDiagram(TextEngine* engine, RenderTarget* target,
                           const mermaid::MermaidRender& diagram, float zoom,
                           float availWidth, float originX, float originY,
@@ -1023,6 +1097,12 @@ void PaintMermaidDiagram(TextEngine* engine, RenderTarget* target,
             if (diagram.gantt) {
                 PaintGantt(engine, target, *diagram.gantt, zoom, availWidth,
                            originX, originY, padding, bodyFont);
+            }
+            break;
+        case mermaid::MermaidKind::State:
+            if (diagram.state) {
+                PaintState(engine, target, *diagram.state, zoom, availWidth,
+                           originX, originY, padding, palette, bodyFont);
             }
             break;
         case mermaid::MermaidKind::Flowchart:

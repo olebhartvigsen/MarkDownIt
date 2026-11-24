@@ -4,6 +4,7 @@
 #include "../src/parser.h"
 #include "../src/mermaid/model.h"
 #include "../src/mermaid/gantt_layout.h"
+#include "../src/mermaid/state_layout.h"
 
 namespace {
 Document BuildDom(const std::string& md) {
@@ -47,4 +48,39 @@ TEST(DomMermaid, RecognizesGanttFence) {
     EXPECT_EQ(doc.nodes[0].block, BlockKind::MermaidGantt);
     ASSERT_TRUE(doc.nodes[0].mermaid_gantt != nullptr);
     EXPECT_EQ(doc.nodes[0].mermaid_gantt->bars.size(), 1u);
+}
+
+// A state fence is a diagram, not a code card: the parser promotes it
+// and the layout is already there for the painter.
+TEST(DomMermaid, RecognizesStateDiagramFence) {
+    const std::string md =
+        "```mermaid\n"
+        "stateDiagram-v2\n"
+        "    [*] --> Idle\n"
+        "    Idle --> Running : start\n"
+        "    Running --> [*]\n"
+        "```\n";
+    const Document doc = BuildDom(md);
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    EXPECT_EQ(doc.nodes[0].block, BlockKind::MermaidState);
+    ASSERT_TRUE(doc.nodes[0].mermaid_state != nullptr);
+    EXPECT_TRUE(doc.nodes[0].mermaid_state->error.empty());
+    EXPECT_GT(doc.nodes[0].mermaid_state->nodes.size(), 0u);
+    EXPECT_GT(doc.nodes[0].mermaid_state->width, 0.0);
+    EXPECT_GT(doc.nodes[0].mermaid_state->height, 0.0);
+}
+
+// A fence that opens as a state diagram but holds something the layout
+// refuses stays a fence, the same rule the other kinds follow.
+TEST(DomMermaid, StateDiagramWithCompositeStaysACodeBlock) {
+    const std::string md =
+        "```mermaid\n"
+        "stateDiagram-v2\n"
+        "    state Active {\n"
+        "        [*] --> Busy\n"
+        "    }\n"
+        "```\n";
+    const Document doc = BuildDom(md);
+    ASSERT_EQ(doc.nodes.size(), 1u);
+    EXPECT_EQ(doc.nodes[0].block, BlockKind::CodeBlock);
 }

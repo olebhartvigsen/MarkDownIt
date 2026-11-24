@@ -162,6 +162,7 @@ bool HasMermaidLayout(const mermaid::MermaidRender& diagram) {
         case mermaid::MermaidKind::Pie: return diagram.pie != nullptr;
         case mermaid::MermaidKind::Sequence: return diagram.seq != nullptr;
         case mermaid::MermaidKind::Gantt: return diagram.gantt != nullptr;
+        case mermaid::MermaidKind::State: return diagram.state != nullptr;
         case mermaid::MermaidKind::Flowchart:
         default: return diagram.flow != nullptr;
     }
@@ -418,6 +419,10 @@ mermaid::MermaidRender MacRenderer::MermaidRenderFor(const Node& node) const {
         case BlockKind::MermaidGantt:
             diagram.kind = mermaid::MermaidKind::Gantt;
             diagram.gantt = node.mermaid_gantt;
+            break;
+        case BlockKind::MermaidState:
+            diagram.kind = mermaid::MermaidKind::State;
+            diagram.state = node.mermaid_state;
             break;
         case BlockKind::MermaidFlowchart:
         default: {
@@ -1172,7 +1177,8 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
             case BlockKind::MermaidFlowchart:
             case BlockKind::MermaidPie:
             case BlockKind::MermaidSequence:
-            case BlockKind::MermaidGantt: {
+            case BlockKind::MermaidGantt:
+            case BlockKind::MermaidState: {
                 // The diagram is painted by the mermaid painter, which
                 // draws the shared layout through the seam. The painter
                 // follows the zoom itself, so it gets the unzoomed

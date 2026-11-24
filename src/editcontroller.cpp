@@ -622,7 +622,8 @@ bool EditController::DeleteBackward(const Document* doc) {
                     node.block == BlockKind::MermaidFlowchart ||
                     node.block == BlockKind::MermaidPie ||
                     node.block == BlockKind::MermaidSequence ||
-                    node.block == BlockKind::MermaidGantt) {
+                    node.block == BlockKind::MermaidGantt ||
+                    node.block == BlockKind::MermaidState) {
                     literal = true;
                     break;
                 }
@@ -816,7 +817,8 @@ bool EditController::InsertParagraphBreak(const Document& doc) {
             n.block == BlockKind::MermaidFlowchart ||
             n.block == BlockKind::MermaidPie ||
             n.block == BlockKind::MermaidSequence ||
-            n.block == BlockKind::MermaidGantt) {
+            n.block == BlockKind::MermaidGantt ||
+            n.block == BlockKind::MermaidState) {
             inCode = true;
         }
         if (n.block == BlockKind::BlockQuote) {

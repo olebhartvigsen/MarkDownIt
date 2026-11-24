@@ -174,6 +174,7 @@ add_executable(MarkDownIt WIN32
     src/renderer_pie.cpp
     src/renderer_sequence.cpp
     src/renderer_gantt.cpp
+    src/renderer_state.cpp
     src/colortext.cpp
     src/imagehelper.cpp
     src/filewatch.cpp
@@ -552,6 +553,7 @@ elseif(BUILD_TESTS)
         src/renderer_pie.cpp
         src/renderer_sequence.cpp
         src/renderer_gantt.cpp
+        src/renderer_state.cpp
         src/imagehelper.cpp
         ${MARKDOWNIT_MERMAID_WINDOWS_SOURCES}
         src/textlayout_dwrite.cpp

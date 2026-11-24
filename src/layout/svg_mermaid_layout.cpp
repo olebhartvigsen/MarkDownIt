@@ -77,6 +77,12 @@ float MermaidNaturalWidth(const mermaid::MermaidRender& diagram) {
         case mermaid::MermaidKind::Gantt:
             return diagram.gantt ? static_cast<float>(diagram.gantt->width)
                                  : -1.0f;
+        case mermaid::MermaidKind::State:
+            return diagram.state
+                       ? static_cast<float>(diagram.state->vbwidth > 0
+                                                ? diagram.state->vbwidth
+                                                : diagram.state->width)
+                       : -1.0f;
         case mermaid::MermaidKind::Flowchart:
         default:
             return diagram.flow ? static_cast<float>(diagram.flow->width)
@@ -168,6 +174,10 @@ LaidBlock LayoutMermaidBlock(const LayoutCtx& ctx, const Node& node,
         case BlockKind::MermaidGantt:
             diagram.kind = mermaid::MermaidKind::Gantt;
             diagram.gantt = node.mermaid_gantt;
+            break;
+        case BlockKind::MermaidState:
+            diagram.kind = mermaid::MermaidKind::State;
+            diagram.state = node.mermaid_state;
             break;
         default:
             diagram.kind = mermaid::MermaidKind::Flowchart;
