@@ -25,6 +25,7 @@
 #include "../src/mermaid/seq_layout.h"
 #include "gtest_lite.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -341,12 +342,16 @@ TEST(MermaidValidation, GeometryMatchesItsSnapshot) {
         }
         std::stringstream ss;
         ss << in.rdbuf();
-        if (ss.str() != dump) {
+        // Tolerate a CRLF checkout too: the gate is about the numbers,
+        // and a line ending is not one of them.
+        std::string snap = ss.str();
+        snap.erase(std::remove(snap.begin(), snap.end(), '\r'), snap.end());
+        if (snap != dump) {
             std::fprintf(stderr,
                          "[%s] geometry moved; regenerate with "
                          "MARKDOWNIT_UPDATE_SNAPSHOTS=1 if that was intended\n",
                          f.file);
         }
-        EXPECT_TRUE(ss.str() == dump);
+        EXPECT_TRUE(snap == dump);
     }
 }

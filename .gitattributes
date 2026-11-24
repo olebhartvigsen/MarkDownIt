@@ -21,3 +21,8 @@ tests/fixtures/large-document.md text eol=lf
 # per line and fail the gate for a checkout reason, not a layout one.
 tests/fixtures/parity/* text eol=lf
 tests/fixtures/parity/** text eol=lf
+
+# The Mermaid geometry snapshots are compared byte for byte. A CRLF
+# checkout on Windows would read as every fixture having moved, which is
+# a checkout reason and not a layout one.
+tests/mermaid/snapshot/* text eol=lf
