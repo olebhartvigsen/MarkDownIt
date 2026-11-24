@@ -6,6 +6,8 @@
 
 #include "welcome_screen.h"
 
+#include "svgtext.h"
+
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -24,6 +26,17 @@
 #endif
 
 namespace platform {
+namespace {
+// A palette colour as the 0xRRGGBB the SVG reader's colour pass takes.
+uint32_t RgbOf(const Color& c) {
+    const auto channel = [](float v) {
+        const int i = static_cast<int>(v * 255.0f + 0.5f);
+        return static_cast<uint32_t>(i < 0 ? 0 : (i > 255 ? 255 : i));
+    };
+    return (channel(c.r) << 16) | (channel(c.g) << 8) | channel(c.b);
+}
+}  // namespace
+
 namespace {
 
 // The size of a card and the space around them.
@@ -611,14 +624,35 @@ void WelcomeScreen::SetRecentFiles(const std::vector<RecentFile>& files) {
                     if (got <= 0) break;
                     xml.append(buffer, static_cast<size_t>(got));
                 }
+                card.imageXml = xml;
                 std::shared_ptr<SvgDoc> doc = std::make_shared<SvgDoc>();
-                if (doc->Load(xml)) {
+                // A diagram is markup, so it is prepared for the page it
+                // lands on: light-dark() resolved and the drawing
+                // recoloured for a dark card, or a white chart on a dark
+                // card shows as a white block.
+                if (doc->Load(svg::PrepareSvgForAppearance(
+                        xml, dark_, RgbOf(palette_.card),
+                        RgbOf(palette_.preview)))) {
                     card.image = doc;
                     card.preview.clear();
                 }
             }
         }
         cards_.push_back(card);
+    }
+}
+
+void WelcomeScreen::SetDark(bool dark) {
+    if (dark_ == dark) return;
+    dark_ = dark;
+    for (WelcomeCard& card : cards_) {
+        if (card.imageXml.empty()) continue;
+        auto doc = std::make_shared<SvgDoc>();
+        if (doc->Load(svg::PrepareSvgForAppearance(
+                card.imageXml, dark_, RgbOf(palette_.card),
+                RgbOf(palette_.preview)))) {
+            card.image = doc;
+        }
     }
 }
 

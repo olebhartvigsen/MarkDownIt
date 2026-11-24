@@ -2892,6 +2892,7 @@ void AppWindow::OnCreate(HWND hwnd) {
     page_palette_ = PaletteFor(ActiveMarkdownStyle(), appearance_);
     renderer_.SetTheme(page_palette_);
     welcome_.SetPalette(platform::WelcomePaletteFor(appearance_));
+        welcome_.SetDark(theme::IsDark(appearance_));
     // The outline pane is part of the window, not the page, but a dark
     // page beside a grey pane reads as two documents side by side. In
     // dark the pane takes the page colour; in light it keeps the warm
@@ -6047,6 +6048,7 @@ void AppWindow::ApplyAppearance() {
     // The home screen is branded, not token-based, so it takes its own
     // record from the same appearance.
     welcome_.SetPalette(platform::WelcomePaletteFor(appearance_));
+        welcome_.SetDark(theme::IsDark(appearance_));
     // The every-switch path: the outline pane follows the page, which in
     // dark means the page colour rather than the chrome palette's warm
     // grey.

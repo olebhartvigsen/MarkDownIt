@@ -55,6 +55,7 @@ ContentView::ContentView(App* app)
     renderer_.SetTheme(BaseMetrics(), palette_);
     welcome_.SetPalette(platform::WelcomePaletteFor(
         palette_.dark ? theme::Appearance::Dark : theme::Appearance::Light));
+    welcome_.SetDark(palette_.dark);
     renderer_.SetStandaloneSvg(app_ && app_->IsStandaloneSvg());
     // The renderer reads the source when it normalizes a caret past a
     // marker, the same pointer the Windows cache holds.
@@ -222,6 +223,7 @@ void ContentView::RefreshTheme() {
     // document's appearance so a dark window never shows a mint page.
     welcome_.SetPalette(platform::WelcomePaletteFor(
         palette_.dark ? theme::Appearance::Dark : theme::Appearance::Light));
+    welcome_.SetDark(palette_.dark);
     // The laid-out runs carry the palette's colours inside them, so the
     // document is laid out again. Without that a palette switch kept
     // the previous appearance baked into the text: dark mode drew the

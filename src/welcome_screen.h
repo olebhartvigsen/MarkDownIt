@@ -43,6 +43,11 @@ struct WelcomeCard {
     // bytes of an SVG are its XML header, so a card for one shows the
     // picture and not the markup.
     std::shared_ptr<SvgDoc> image;
+    // The document as it was read, kept so the picture can be prepared
+    // again when the appearance changes: the card is drawn long after
+    // the file was opened, and an SVG carries the colours it was
+    // authored with.
+    std::string imageXml;
     // What the card draws, fitted to the width of the card. The width
     // and the fonts are fixed, so the fitting runs once and not on every
     // frame.
@@ -59,6 +64,11 @@ public:
     // The appearance the screen is drawn in. Light until a shell says
     // otherwise, which is what the constructors of both ports see.
     void SetPalette(const WelcomePalette& palette) { palette_ = palette; }
+
+    // The appearance the screen is drawn in. A diagram on a card is
+    // parsed markup, not a bitmap, so it is prepared again for the new
+    // appearance instead of being shown in the colours it was written in.
+    void SetDark(bool dark);
     const WelcomePalette& PaletteNow() const { return palette_; }
 
     // Sets the files the cards show.
@@ -117,6 +127,8 @@ public:
 private:
     // The appearance the screen is drawn in.
     WelcomePalette palette_ = LightWelcomePalette();
+    // The appearance the cards' diagrams were prepared for.
+    bool dark_ = false;
     // The cards.
     std::vector<WelcomeCard> cards_;
     // Where the Open button sits, in points.
