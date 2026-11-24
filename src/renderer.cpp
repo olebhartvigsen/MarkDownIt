@@ -877,6 +877,9 @@ platform::BitmapHandle Renderer::ImageHandleFor(
 // A pin decision, written where the QA walk reads: a state that quietly did
 // nothing and one that ran look the same in a picture, and this is the only
 // place the numbers exist.
+// Defined at the bottom of this file; the picture draw needs it up here.
+static std::string U32ToUtf8(const std::u32string& s);
+
 namespace {
 void QaPinTrace(const char* line) {
     const char* path = std::getenv("MARKDOWNIT_QA_LOG");
