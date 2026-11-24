@@ -38,25 +38,6 @@ ThemeColor FromColor(NSColor* color) {
     return c;
 }
 
-// The same colour at a weaker alpha: the subtle fills (a table row, a
-// highlight) want a wash of a semantic colour, not a solid one.
-ThemeColor Faded(NSColor* color, CGFloat alpha) {
-    return FromColor([color colorWithAlphaComponent:alpha]);
-}
-
-}  // namespace
-
-namespace {
-// The selection and search colours follow the system in every style:
-// they are app chrome, not article style.
-void ApplySystemSelectionColors(Palette* p) {
-    p->selectionBg = FromColor([NSColor selectedContentBackgroundColor]);
-    p->selectionText = FromColor([NSColor selectedTextColor]);
-    p->findMatchBg = Faded([NSColor systemYellowColor], 0.30);
-    p->findCurrentMatchBg = Faded([NSColor systemYellowColor], 0.62);
-    p->markerBg = Faded([NSColor systemYellowColor], 0.45);
-    p->markerLine = Faded([NSColor systemOrangeColor], 0.85);
-}
 }  // namespace
 
 Palette SystemPalette() {

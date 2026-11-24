@@ -128,6 +128,7 @@ void CreateInvertingCaret(HWND hwnd, int width, int height) {
 #include <d2d1.h>
 #include <d2d1_3.h>
 #include <dwrite.h>
+#include <cwchar>
 #include <vector>
 #include <fstream>
 #include <sstream>
@@ -6458,8 +6459,8 @@ LRESULT AppWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             // The OS appearance is one of the settings that arrives this
             // way. Only "ImmersiveColorSet" matters here; anything else
             // (a font change, a locale change) is not ours to act on.
-            if (lp && wcscmp(reinterpret_cast<LPCWSTR>(lp),
-                             L"ImmersiveColorSet") == 0) {
+            if (lp && std::wcscmp(reinterpret_cast<LPCWSTR>(lp),
+                                  L"ImmersiveColorSet") == 0) {
                 OnSystemThemeChanged();
             }
             return 0;
