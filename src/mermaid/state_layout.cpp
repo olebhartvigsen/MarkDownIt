@@ -546,8 +546,41 @@ LaidOutState LayoutStateDiagram(const StateDiagram& diag) {
     }
     out.vbwidth = total_text * 4.0 + 16.0;
     out.vbheight = 28.0;
-    out.width = out.vbwidth;
-    out.height = out.vbheight;
+    // The oracle's canvas is a shim: it is derived from the root text,
+    // not from the drawing, so it comes out 28 points tall however tall
+    // the diagram is, and a painter that trusted it clipped every state
+    // below the first rank. The drawing size is the bounding box of what
+    // is drawn, and that is what width and height mean here; the vb
+    // fields keep the oracle's numbers for its golden.
+    double ink_minx = 0.0, ink_miny = 0.0, ink_maxx = 0.0, ink_maxy = 0.0;
+    bool any_ink = false;
+    for (const auto& n : out.nodes) {
+        const double halfw = n.kind == "state" ? n.w * 0.5 : n.r;
+        const double halfh = n.kind == "state" ? n.h * 0.5 : n.r;
+        const double l = n.cx - halfw, t = n.cy - halfh;
+        const double r = n.cx + halfw, b = n.cy + halfh;
+        if (!any_ink) {
+            ink_minx = l; ink_miny = t; ink_maxx = r; ink_maxy = b; any_ink = true;
+        } else {
+            if (l < ink_minx) ink_minx = l;
+            if (t < ink_miny) ink_miny = t;
+            if (r > ink_maxx) ink_maxx = r;
+            if (b > ink_maxy) ink_maxy = b;
+        }
+    }
+    for (const auto& l : out.labels) {
+        if (!any_ink) {
+            ink_minx = l.x; ink_miny = l.y; ink_maxx = l.x + l.w; ink_maxy = l.y + l.h;
+            any_ink = true;
+        } else {
+            if (l.x < ink_minx) ink_minx = l.x;
+            if (l.y < ink_miny) ink_miny = l.y;
+            if (l.x + l.w > ink_maxx) ink_maxx = l.x + l.w;
+            if (l.y + l.h > ink_maxy) ink_maxy = l.y + l.h;
+        }
+    }
+    out.width = any_ink ? ink_maxx + 8.0 : out.vbwidth;
+    out.height = any_ink ? ink_maxy + 8.0 : out.vbheight;
     out.startx = -out.vbwidth * 0.5;
     out.starty = -14.0;
 

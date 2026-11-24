@@ -109,3 +109,22 @@ to its target, ranking in the direction the chart asked for, finite
 geometry. The golden files stay dagre-d3-es output and are compared with
 dagre's parameters named explicitly, so they keep their meaning as the
 external reference.
+
+## Validating the implementation
+
+`tests/mermaid_validation_test.cpp` is the gate that does not depend on an
+oracle. Every fixture is pushed through the real path (a fenced block, md4c,
+the promotion in the parser) and checked four ways: the fence is promoted to
+the diagram it claims to be, the geometry obeys its invariants (finite
+numbers, nodes inside the canvas, no overlapping boxes, lanes that enclose
+their members and keep off each other), two identical parses produce identical
+geometry, and the geometry matches a checked-in snapshot in
+`tests/mermaid/snapshot/`.
+
+The snapshot is a regression pin, not an oracle: it says the layout did not
+move, not that it is right. Regenerate it on purpose with
+`MARKDOWNIT_UPDATE_SNAPSHOTS=1`, and only when the change is intended.
+
+That suite has already earned its keep: it caught the state layout's canvas
+being an oracle shim (`len * 4 + 16` by 28 points) rather than the drawing's
+bounding box, which clipped every state below the first rank.

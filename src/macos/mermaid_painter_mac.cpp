@@ -1006,7 +1006,7 @@ void PaintState(TextEngine* engine, RenderTarget* target,
                 const mermaid::LaidOutState& laid, float zoom,
                 float availWidth, float originX, float originY, float padding,
                 const Palette& palette, const FontSpec& bodyFont) {
-    const double natural = laid.vbwidth > 0 ? laid.vbwidth : laid.width;
+    const double natural = laid.width;
     const float scale = FitScale(
         zoom, static_cast<float>(natural > 0 ? natural : 0.0), availWidth);
     const FontSpec font = ScaledFont(bodyFont, scale);

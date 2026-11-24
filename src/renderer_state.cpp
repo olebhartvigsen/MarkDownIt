@@ -68,7 +68,9 @@ void Renderer::DrawMermaidStateBlock(ID2D1RenderTarget* rt,
     const float pad = mermaid::kMermaidBlockPad;
     const float availW = width > 2.0f * pad ? width - 2.0f * pad : 0.0f;
 
-    const double natural = ls.vbwidth > 0 ? ls.vbwidth : ls.width;
+    // width/height are the drawing's bounding box; the vb fields are
+    // the oracle's shim and are not a size to fit.
+    const double natural = ls.width;
     float scale = zoom_;
     if (natural > 0 && availW > 0) {
         const float fit = availW / static_cast<float>(natural);

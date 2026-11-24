@@ -66,15 +66,12 @@ inline float MeasureGanttHeight(const LaidOutGantt& lg, float zoom, float avail_
 inline float MeasureStateHeight(const LaidOutState& ls, float zoom,
                                 float avail_w) {
     float scale = zoom;
-    const float natural = ls.vbwidth > 0 ? static_cast<float>(ls.vbwidth)
-                                         : static_cast<float>(ls.width);
+    const float natural = static_cast<float>(ls.width);
     if (natural > 0 && avail_w > 0) {
         const float fit = avail_w / natural;
         if (fit < scale) scale = fit;
     }
-    const float h = ls.vbheight > 0 ? static_cast<float>(ls.vbheight)
-                                    : static_cast<float>(ls.height);
-    return h * scale + 2.0f * kMermaidBlockPad;
+    return static_cast<float>(ls.height) * scale + 2.0f * kMermaidBlockPad;
 }
 inline float MeasureMermaidHeight(const MermaidRender& mr, float zoom,
                                   float avail_w) {

@@ -78,11 +78,8 @@ float MermaidNaturalWidth(const mermaid::MermaidRender& diagram) {
             return diagram.gantt ? static_cast<float>(diagram.gantt->width)
                                  : -1.0f;
         case mermaid::MermaidKind::State:
-            return diagram.state
-                       ? static_cast<float>(diagram.state->vbwidth > 0
-                                                ? diagram.state->vbwidth
-                                                : diagram.state->width)
-                       : -1.0f;
+            return diagram.state ? static_cast<float>(diagram.state->width)
+                                 : -1.0f;
         case mermaid::MermaidKind::Flowchart:
         default:
             return diagram.flow ? static_cast<float>(diagram.flow->width)
