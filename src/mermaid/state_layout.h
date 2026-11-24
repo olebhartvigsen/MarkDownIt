@@ -25,6 +25,9 @@ struct LaidOutStateEdge {
 
 struct LaidOutStateLabel {
     std::string text;
+    // The label's TOP-LEFT corner and its box, not a centre. A painter
+    // that centres its text on x,y draws every label half a box up and
+    // to the left; that is how "go" and "pause" ended up on one point.
     double x = 0, y = 0, w = 0, h = 0;
 };
 

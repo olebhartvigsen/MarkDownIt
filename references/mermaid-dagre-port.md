@@ -128,3 +128,15 @@ move, not that it is right. Regenerate it on purpose with
 That suite has already earned its keep: it caught the state layout's canvas
 being an oracle shim (`len * 4 + 16` by 28 points) rather than the drawing's
 bounding box, which clipped every state below the first rank.
+
+## Where a layout says a text goes
+
+Two conventions live side by side, and mixing them is a silent bug: a node
+stores its centre (`cx`, `cy` or `x`, `y` inside the box) and a painter
+centres on it, while a *label box* stores its top-left corner and a painter
+centres on `x + w/2, y + h/2`. The state labels are boxes; the pie, flowchart,
+gantt and sequence anchors were checked against their painters and agree.
+
+A new painter should ask which one it holds before it draws. The state label
+comment says it, and the dark-mode code comment rule applies: the convention,
+not the caller, decides.
