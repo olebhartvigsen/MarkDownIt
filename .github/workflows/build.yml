@@ -4,9 +4,21 @@ on:
   push:
     branches:
       - main
+    # A change to the site or to a root markdown file cannot move a gate:
+    # no checker, golden or capture reads them. references/ is deliberately
+    # not ignored, because the parity ledger and the test inventory gate
+    # are checked against what lives there.
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - 'LICENSE'
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - 'LICENSE'
   workflow_dispatch:
 
 # The gates read the tree and the push range; nothing here writes to the
@@ -89,6 +101,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # sccache is not on the runner image either, and the Windows compile
+      # is the longest step in the pipeline. Debug info stays out of the
+      # picture (the Release flags carry no /Zi), which is the case sccache
+      # handles best.
+      - name: Install sccache
+        shell: pwsh
+        run: |
+          choco install sccache --yes --no-progress
+          sccache --version
+
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/sccache
+          key: sccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/sources.cmake') }}-${{ github.sha }}
+          restore-keys: |
+            sccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/sources.cmake') }}-
+            sccache-${{ runner.os }}-
+
       - name: Find SDK tools and generate uiribbon.lib
         id: find-sdk
         shell: pwsh
@@ -106,12 +137,25 @@ jobs:
         run: |
           cmake -B build -G "Visual Studio 17 2022" -A x64 `
             -DBUILD_TESTS=ON `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
             -DUICC_EXE="${{ steps.find-sdk.outputs.uicc_path }}" `
             -DUIRIBBON_LIB="${{ steps.find-sdk.outputs.uiribbon_lib }}" `
             -DPROPSYS_LIB="${{ steps.find-sdk.outputs.propsys_lib }}"
 
       - name: Build the app, the tests and the parity tools
+        env:
+          SCCACHE_DIR: ${{ runner.temp }}/sccache
+          SCCACHE_IDLE_TIMEOUT: 0
         run: cmake --build build --config Release --parallel 4
+
+      # What the cache actually did, printed into the log so a regression
+      # in cache hits is visible without reading timings.
+      - name: Compiler cache statistics
+        if: always()
+        env:
+          SCCACHE_DIR: ${{ runner.temp }}/sccache
+        run: sccache --show-stats
 
       - name: Verify exe type
         shell: bash
@@ -253,31 +297,52 @@ jobs:
             build-win/qa/crash_trace.log
           if-no-files-found: ignore
 
-  # The native macOS gate. The same test suite the Windows build runs,
-  # compiled and executed on Apple Silicon. Every change to the shared
-  # core goes through this job before it reaches the macOS app.
+  # The mac tests and the app bundle in one job.
   #
-  # The runner image is read from the environment, because the macOS
-  # runners are scarce and a queue can sit for a long time. The default
-  # is macos-15-arm64, the label the pipeline reference pins: the
-  # macos-14 images are deprecated and unsupported after November 2,
-  # 2026, and macos-26 is the forward option.
-  test-macos:
-    name: Tests (macOS, Apple Silicon)
+  # They used to be two jobs, and both needed this runner: the scarce
+  # resource in the whole pipeline. Two jobs meant two queue slots for
+  # about ten minutes of work that never overlapped, so they run in one
+  # slot now, tests first.
+  #
+  # The runner image comes from the repository variable. The default has
+  # to be a label GitHub hosts: macos-15-arm64 and macos-26-arm64 are
+  # image names in actions/runner-images, not YAML labels, and a job
+  # asking for one of them queues until it times out.
+  macos:
+    name: macOS (tests and app bundle)
     needs: alignment-static
-    # The label is read from the repository variable, because the macOS
-    # runners are scarce and a queue can sit for a long time. The default
-    # has to be a label GitHub actually hosts: macos-15-arm64 and
-    # macos-26-arm64 are image names in actions/runner-images, not YAML
-    # labels, so a job asking for one of them queues until it times out.
     runs-on: ${{ vars.MACOS_RUNNER || 'macos-15' }}
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # ccache is not on the runner image, and a warm compiler cache is
+      # the difference between this job and a coffee break: the tree
+      # compiles the shared sources three times here (tests, sanitizers
+      # and the app).
+      - name: Install ccache
+        run: brew install ccache
+
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          # Exact key per commit, with a fallback to the same dependency
+          # set and then to anything: ccache hashes each translation unit
+          # itself, so an older cache still serves every file that did not
+          # change.
+          key: ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/sources.cmake') }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/sources.cmake') }}-
+            ccache-${{ runner.os }}-
+
       - name: Configure
-        run: cmake -B build-native -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
+        run: |
+          cmake -B build-native -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_OBJCXX_COMPILER_LAUNCHER=ccache
 
       - name: Build
         run: cmake --build build-native --target MarkDownIt.tests MarkDownIt.svg-parity MarkDownIt.layout-parity -j2
@@ -293,14 +358,14 @@ jobs:
           MDI_TRANSCRIPT_OUT: ${{ runner.temp }}/transcript-results.macos.json
         run: |
           ./build-native/MarkDownIt.tests
-          # Until the transcript corpus is enrolled in the test target,
-          # the runner writes nothing and this seeds an empty digest,
-          # so the parity job always has both halves to compare. An
-          # empty digest on both sides is a passing (and reported)
-          # result, not a skip.
+          # The corpus is enrolled (17 cases), so an empty digest means the
+          # runner stopped writing. Fail instead of seeding a file both
+          # sides would agree on.
           if [ ! -s "$MDI_TRANSCRIPT_OUT" ]; then
-            printf '{"cases": []}\n' > "$MDI_TRANSCRIPT_OUT"
+            echo "::error::$MDI_TRANSCRIPT_OUT is empty: the transcript corpus wrote nothing"
+            exit 1
           fi
+
       # The other half of the test inventory parity gate.
       - name: Record the macOS test inventory
         run: ./build-native/MarkDownIt.tests --list > "$RUNNER_TEMP/test-inventory-macos.txt"
@@ -318,7 +383,6 @@ jobs:
           name: transcript-results-macos
           path: ${{ runner.temp }}/transcript-results.macos.json
           if-no-files-found: error
-
 
       - name: Record macOS SVG commands
         run: |
@@ -344,14 +408,16 @@ jobs:
           path: ${{ runner.temp }}/layout-dump.macos.json
           if-no-files-found: error
 
-      # A second build of the same suite with the sanitizers on. It runs
-      # in this job rather than a job of its own: the macOS runners are
-      # scarce, and a second queue slot doubles the wait. Leak detection
-      # is off because AppKit and Core Text report framework allocations
-      # that the app does not own; address and UB errors are the gate.
+      # A second build of the same suite with the sanitizers on. Leak
+      # detection is off because AppKit and Core Text report framework
+      # allocations that the app does not own; address and UB errors are
+      # the gate.
       - name: Configure (sanitizers)
         run: |
           cmake -B build-sanitize -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_OBJCXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
             -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
             -DCMAKE_OBJCXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
@@ -366,21 +432,22 @@ jobs:
           UBSAN_OPTIONS: print_stacktrace=1
         run: ./build-sanitize/MarkDownIt.tests
 
-  # The macOS app and the .app bundle. The bundle is uploaded so it can be
-  # downloaded and run on a real Mac.
-  build-macos:
-    name: Build (macOS, Apple Silicon)
-    needs: alignment-static
-    runs-on: ${{ vars.MACOS_RUNNER || 'macos-15' }}
-    timeout-minutes: 45
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      # What the cache actually did. Without this the only evidence is a
+      # step duration, which also moves with runner load.
+      - name: Compiler cache statistics
+        if: always()
+        run: ccache --show-stats
 
-      - name: Configure
-        run: cmake -B build-mac -DCMAKE_BUILD_TYPE=Release
+      # The app bundle. The bundle is zipped so it can be downloaded and
+      # run on a real Mac, and the zip ships with a release.
+      - name: Configure the app
+        run: |
+          cmake -B build-mac -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_OBJCXX_COMPILER_LAUNCHER=ccache
 
-      - name: Build
+      - name: Build the app
         run: cmake --build build-mac --target MarkDownItMac -j2
 
       # Every command in the menu has to be carried out. A command that
@@ -462,7 +529,7 @@ jobs:
   # The macOS SVG scene is the reference on both platforms.
   svg-parity:
     name: SVG drawing parity (macOS reference)
-    needs: [build, test-macos]
+    needs: [build, macos]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -496,7 +563,7 @@ jobs:
   # updated wrongly.
   layout-parity:
     name: Layout dump parity (Windows vs macOS vs golden)
-    needs: [build, test-macos]
+    needs: [build, macos]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -526,7 +593,7 @@ jobs:
   # test lists differ on purpose in a few documented places.
   test-inventory-parity:
     name: Test inventory parity (Windows vs macOS)
-    needs: [build, test-macos]
+    needs: [build, macos]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -557,7 +624,7 @@ jobs:
   # jobs, with no conditional gating.
   transcript-parity:
     name: Transcript parity (Windows vs macOS)
-    needs: [build, test-macos]
+    needs: [build, macos]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -587,7 +654,7 @@ jobs:
   capture-parity:
     name: Capture parity (Windows vs macOS)
     # Screenshots are taken in the pipeline only (tools/check_capture_policy.py).
-    needs: [build, build-macos]
+    needs: [build, macos]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

@@ -12,6 +12,8 @@ on:
 
 permissions:
   contents: write
+  # publish reads the build.yml run for this commit to fetch the mac zip.
+  actions: read
 
 # A release is never cancelled. Two runs of one tag would race each other
 # for the same asset names, and the last one would silently win.
@@ -28,14 +30,37 @@ jobs:
   # never ran here at all, and this is the only place that can still stop
   # packages from being attached to such a tree.
   gate-static:
-    name: Static alignment gates
+    name: Static alignment gates (preflight)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The tag names the version, so it is read once here and every job
+    # below takes it from this output. It used to be a copy of the same
+    # step in two jobs.
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        # The dispatch input arrives as an environment variable, not as
+        # text inside the script: a value carrying a quote or a $() would
+        # otherwise be run by the shell.
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ -n "$INPUT_VERSION" ]]; then
+            VERSION="$INPUT_VERSION"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Run the gates
         run: bash tools/check_alignment.sh
@@ -58,24 +83,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Extract version from tag
-        id: version
-        shell: bash
-        # The dispatch input arrives as an environment variable, not as
-        # text inside the script: a value carrying a quote or a $() would
-        # otherwise be run by the shell.
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          if [[ -n "$INPUT_VERSION" ]]; then
-            VERSION="$INPUT_VERSION"
-          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION="0.0.0"
-          fi
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Find SDK tools and generate uiribbon.lib
         id: find-sdk
@@ -148,7 +155,7 @@ jobs:
         run: >
           dotnet build MarkDownIt.wixproj -c Release
           -p:Platform=${{ matrix.arch }}
-          -p:ProductVersion=${{ steps.version.outputs.VERSION }}
+          -p:ProductVersion=${{ needs.gate-static.outputs.version }}
           -p:OutputName=MarkDownItSetup-${{ matrix.arch }}
 
       - name: Upload build artifacts
@@ -168,28 +175,12 @@ jobs:
   build-msix:
     name: Build MSIX packages (Store)
     runs-on: windows-2022
-    needs: build
+    needs: [gate-static, build]
     timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Extract version from tag
-        id: version
-        shell: bash
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          if [[ -n "$INPUT_VERSION" ]]; then
-            VERSION="$INPUT_VERSION"
-          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION="0.0.0"
-          fi
-          # MSIX package versions are always four-part: X.Y.Z.0
-          echo "MSIX_VERSION=${VERSION}.0" >> "$GITHUB_OUTPUT"
 
       - name: Download x64 EXE
         uses: actions/download-artifact@v8
@@ -211,7 +202,7 @@ jobs:
         shell: pwsh
         run: |
           ./tools/ci/pack-msix.ps1 -Arch x64 `
-            -Version "${{ steps.version.outputs.MSIX_VERSION }}" `
+            -Version "${{ needs.gate-static.outputs.version }}.0" `
             -StageDir msix-staging/x64 `
             -OutFile msix-staging/MarkDownIt-x64.msix
 
@@ -219,7 +210,7 @@ jobs:
         shell: pwsh
         run: |
           ./tools/ci/pack-msix.ps1 -Arch arm64 `
-            -Version "${{ steps.version.outputs.MSIX_VERSION }}" `
+            -Version "${{ needs.gate-static.outputs.version }}.0" `
             -StageDir msix-staging/arm64 `
             -OutFile msix-staging/MarkDownIt-arm64.msix
 
@@ -263,19 +254,47 @@ jobs:
           name: msix-packages
           path: artifacts/msix
 
+      # The mac bundle is not built here: it is built, checked and
+      # launched by the build.yml run for this same commit, and rebuilding
+      # it would mean a second job on the scarce macOS runner with its own
+      # copy of the codesign and smoke steps. Taking that run's zip instead
+      # also makes the release refuse a commit that never went green.
+      - name: Download the mac bundle built from this commit
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id=$(gh run list \
+            --workflow="Build MarkDownIt" \
+            --commit "$GITHUB_SHA" \
+            --status success \
+            --limit 1 \
+            --json databaseId -q '.[0].databaseId')
+          if [ -z "$run_id" ]; then
+            echo "::error::No successful Build MarkDownIt run for $GITHUB_SHA."
+            echo "A release is tagged on a commit that passed the pipeline; tag a green commit."
+            exit 1
+          fi
+          echo "using build run $run_id"
+          gh run download "$run_id" --name MarkDownIt-macos-arm64 --dir artifacts/macos
+          ls -la artifacts/macos
+
       - name: Attach the install artifacts to the release
         if: github.event_name == 'release'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Release assets are install artifacts only: the per-user MSIs and
-          # the Store MSIX packages, one pair per architecture. No raw exe.
-          # GitHub itself always adds the automatic Source code (zip/tar.gz)
-          # archives; those are not assets and cannot be removed.
+          # Release assets are install artifacts only: the per-user MSIs,
+          # the Store MSIX packages and the ad hoc signed mac bundle. No raw
+          # exe, no dmg, no notarized build. GitHub itself always adds the
+          # automatic Source code (zip/tar.gz) archives; those are not
+          # assets and cannot be removed.
           gh release upload "${{ github.ref_name }}" \
             --clobber \
             "artifacts/x64/installer/output/MarkDownItSetup-x64.msi" \
             "artifacts/arm64/installer/output/MarkDownItSetup-arm64.msi" \
             "artifacts/msix/MarkDownIt-x64.msix" \
-            "artifacts/msix/MarkDownIt-arm64.msix"
+            "artifacts/msix/MarkDownIt-arm64.msix" \
+            "artifacts/macos/MarkDownIt-macos-arm64.zip"

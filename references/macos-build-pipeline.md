@@ -156,6 +156,19 @@ The configure step succeeds on macOS today: every Windows-only CMake block
 Building the default target is the problem, so the test job builds
 `MarkDownIt.tests` explicitly until the APPLE branch exists.
 
+What the workflow does now, and what changed after the port landed: the tests
+and the app bundle are one job (`macos`, "macOS (tests and app bundle)"). They
+were two jobs for a while, and both needed the same scarce runner, so every
+push asked for two queue slots for about ten minutes of work that never
+overlapped. The label default is `macos-15`, because `macos-15-arm64` and
+`macos-26-arm64` are image names in actions/runner-images, not labels GitHub
+hosts. The job installs ccache (it is not on the image) and caches it, which
+matters because the shared sources compile three times there: tests,
+sanitizers and the app.
+
+The YAML below is the plan as it was written before the port, kept for the
+reasoning. Do not read it as the current job list.
+
 Minimal macOS test job, in the build.yml style (checkout, configure, build,
 test, artifact):
 
