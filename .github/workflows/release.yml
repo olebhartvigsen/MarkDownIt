@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -51,87 +51,61 @@ jobs:
           - arch: x64
             cmake_arch: x64
             sdk_arch: x64
-            lib_machine: x64
           - arch: arm64
             cmake_arch: ARM64
             sdk_arch: arm64
-            lib_machine: arm64
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Extract version from tag
         id: version
         shell: bash
+        # The dispatch input arrives as an environment variable, not as
+        # text inside the script: a value carrying a quote or a $() would
+        # otherwise be run by the shell.
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [[ -n "${{ inputs.version }}" ]]; then
-            echo "VERSION=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          if [[ -n "$INPUT_VERSION" ]]; then
+            VERSION="$INPUT_VERSION"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            VERSION="${GITHUB_REF_NAME#v}"
           else
-            echo "VERSION=0.0.0" >> "$GITHUB_OUTPUT"
+            VERSION="0.0.0"
           fi
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Find SDK tools and generate uiribbon.lib
         id: find-sdk
-        shell: powershell
-        run: |
-          # Find UICC.exe (build tool, any arch)
-          $uicc = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\bin" -Recurse -Filter "uicc.exe" -ErrorAction SilentlyContinue | Sort-Object FullName | Select-Object -Last 1
-          if ($uicc) {
-            "uicc_path=$($uicc.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            Write-Host "Found UICC: $($uicc.FullName)"
-          }
-
-          # Find propsys.lib for the target architecture
-          $propsysLib = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\Lib" -Recurse -Filter "propsys.lib" -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -match "${{ matrix.sdk_arch }}" } | Sort-Object FullName | Select-Object -Last 1
-          if ($propsysLib) {
-            "propsys_lib=$($propsysLib.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            Write-Host "Found propsys.lib: $($propsysLib.FullName)"
-          }
-
-          # uiribbon.lib is not shipped with modern Windows SDKs.
-          # Generate it from uiribbon.dll using dumpbin + lib.exe.
-          $dumpbin = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          $libexe = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\lib.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          Write-Host "dumpbin: $dumpbin"
-          Write-Host "lib.exe: $libexe"
-
-          $libDir = "D:\a\_temp\uiribbon_lib"
-          New-Item -ItemType Directory -Force -Path $libDir | Out-Null
-          $defFile = "$libDir\uiribbon.def"
-          $libFile = "$libDir\uiribbon.lib"
-
-          # Export symbols from uiribbon.dll
-          $exports = & $dumpbin /exports "C:\Windows\System32\uiribbon.dll"
-          $defContent = "LIBRARY uiribbon.dll`nEXPORTS`n"
-          foreach ($line in $exports) {
-            if ($line -match '^\s+\d+\s+[0-9A-F]+\s+(\S+)') {
-              $funcName = $matches[1]
-              $defContent += "  $funcName`n"
-            }
-          }
-          Set-Content -Path $defFile -Value $defContent -Encoding ASCII
-          Write-Host "Generated .def with exports"
-
-          # Create import library. The machine type must match the link
-          # target: x64 for x64 builds, arm64 for cross builds.
-          & $libexe /def:"$defFile" /out:"$libFile" /machine:${{ matrix.lib_machine }}
-          if (Test-Path $libFile) {
-            "uiribbon_lib=$libFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            Write-Host "Generated uiribbon.lib: $libFile"
-          } else {
-            Write-Error "Failed to generate uiribbon.lib"
-            exit 1
-          }
+        shell: pwsh
+        # tools/ci/find-sdk.ps1 is the one copy of this work; build.yml
+        # calls it too. It selects the newest SDK by version, the
+        # propsys.lib that matches the link target, and the machine type
+        # for the generated import library.
+        env:
+          SDK_ARCH: ${{ matrix.sdk_arch }}
+        run: ./tools/ci/find-sdk.ps1 -Arch $env:SDK_ARCH
 
       - name: Configure CMake
+        # Arguments are built in the shell rather than interpolated into
+        # one long command line, so an empty test flag cannot become an
+        # empty argument the generator rejects.
+        env:
+          CMAKE_ARCH: ${{ matrix.cmake_arch }}
+          # The x64 leg carries the test suite in the same tree, so the
+          # objects the packages are made from are the ones the tests ran
+          # against. The arm64 leg is a cross build whose exe cannot run
+          # here, so testing it would only cost time.
+          TEST_FLAG: ${{ matrix.arch == 'x64' && '-DBUILD_TESTS=ON' || '' }}
         run: |
-          cmake -B build -G "Visual Studio 17 2022" -A ${{ matrix.cmake_arch }} `
-            -DUICC_EXE="${{ steps.find-sdk.outputs.uicc_path }}" `
-            -DUIRIBBON_LIB="${{ steps.find-sdk.outputs.uiribbon_lib }}" `
-            -DPROPSYS_LIB="${{ steps.find-sdk.outputs.propsys_lib }}"
+          $configure = @('-B', 'build', '-G', 'Visual Studio 17 2022', '-A', $env:CMAKE_ARCH)
+          if ($env:TEST_FLAG) { $configure += $env:TEST_FLAG }
+          $configure += "-DUICC_EXE=${{ steps.find-sdk.outputs.uicc_path }}"
+          $configure += "-DUIRIBBON_LIB=${{ steps.find-sdk.outputs.uiribbon_lib }}"
+          $configure += "-DPROPSYS_LIB=${{ steps.find-sdk.outputs.propsys_lib }}"
+          cmake @configure
 
       - name: Build Release exe
         run: cmake --build build --config Release
@@ -142,10 +116,8 @@ jobs:
 
       # The packages that ship have to be built from the tree that passed
       # the suite. This job builds and ships, and it used to do neither
-      # test nor check: a tag could carry code that never ran here. The
-      # x64 leg runs the suite; the arm64 leg is a cross build whose exe
-      # cannot run on this runner at all.
-      - name: Build and run the tests (x64)
+      # test nor check: a tag could carry code that never ran here.
+      - name: Run the tests (x64)
         if: matrix.arch == 'x64'
         shell: bash
         env:
@@ -155,12 +127,10 @@ jobs:
           MDI_OFFICE_OUT_DIR: ${{ runner.temp }}/office-output
         run: |
           mkdir -p "$MDI_OFFICE_OUT_DIR"
-          cmake -B build-tests -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTS=ON
-          cmake --build build-tests --config Release
-          build-tests/Release/MarkDownIt.tests.exe
+          build/Release/MarkDownIt.tests.exe
 
       - name: Setup .NET (for WiX)
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '9.x'
 
@@ -182,7 +152,7 @@ jobs:
           -p:OutputName=MarkDownItSetup-${{ matrix.arch }}
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-${{ matrix.arch }}
           path: |
@@ -190,7 +160,7 @@ jobs:
             installer/output/MarkDownItSetup-${{ matrix.arch }}.msi
 
       - name: Upload EXE for MSIX
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: exe-${{ matrix.arch }}
           path: build/Release/MarkDownIt.exe
@@ -203,14 +173,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Extract version from tag
         id: version
         shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [[ -n "${{ inputs.version }}" ]]; then
-            VERSION="${{ inputs.version }}"
+          if [[ -n "$INPUT_VERSION" ]]; then
+            VERSION="$INPUT_VERSION"
           elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
@@ -220,13 +192,13 @@ jobs:
           echo "MSIX_VERSION=${VERSION}.0" >> "$GITHUB_OUTPUT"
 
       - name: Download x64 EXE
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: exe-x64
           path: msix-staging/x64
 
       - name: Download arm64 EXE
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: exe-arm64
           path: msix-staging/arm64
@@ -252,7 +224,7 @@ jobs:
             -OutFile msix-staging/MarkDownIt-arm64.msix
 
       - name: Upload MSIX artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: msix-packages
           path: |
@@ -267,26 +239,26 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         # gh resolves the repository from git context; without a checkout,
         # gh release upload fails with "not a git repository".
         with:
           persist-credentials: false
 
       - name: Download x64 build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-x64
           path: artifacts/x64
 
       - name: Download arm64 build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-arm64
           path: artifacts/arm64
 
       - name: Download MSIX artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: msix-packages
           path: artifacts/msix

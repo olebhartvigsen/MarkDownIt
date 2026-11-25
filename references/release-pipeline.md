@@ -21,17 +21,20 @@ gates build.yml runs on every push. A tag can point at a commit whose push
 was cancelled or whose run predates a gate, and nothing else in this
 workflow would notice.
 
-`build` (windows-2022) repeats the SDK dance from build.yml (UICC, generated
-uiribbon.lib, propsys.lib), builds `build/Release/MarkDownIt.exe`, then runs
-WiX 4.0.5 against `installer/MarkDownIt.wixproj`. The MSI installs per-user
-into `%LOCALAPPDATA%\MarkDownIt`, adds Start menu and desktop shortcuts,
-closes a running MarkDownIt.exe during upgrade, and launches the app after
-install. No auto-start entry: MarkDownIt is not a resident utility.
+`build` (windows-2022) calls `tools/ci/find-sdk.ps1` for the build tools
+(UICC, propsys.lib for the link target, and a uiribbon.lib generated with
+the matching machine type), configures one tree with `BUILD_TESTS=ON` on
+the x64 leg, then runs WiX 4.0.5 against `installer/MarkDownIt.wixproj`. The
+MSI installs per-user into `%LOCALAPPDATA%\MarkDownIt`, adds Start menu and
+desktop shortcuts, closes a running MarkDownIt.exe during upgrade, and
+launches the app after install. No auto-start entry: MarkDownIt is not a
+resident utility.
 
 The x64 matrix leg also builds and runs the test suite against the same tree
-the packages are made from. The arm64 leg is a cross build whose exe cannot
-run on an x64 runner, so it is compile-only; that is the one part of a release
-no CI runner can execute.
+the packages are made from: one configure, one build, and the app, the tests
+and the parity tools all link the same objects. The arm64 leg is a cross
+build whose exe cannot run on an x64 runner, so it is compile-only; that is
+the one part of a release no CI runner can execute.
 
 `build-msix` stages the exe, then calls `tools/ci/pack-msix.ps1` once per
 architecture. The script owns the whole package: it writes the version and

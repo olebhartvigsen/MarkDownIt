@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - main
-      - feat/mermaid-flowchart
-      - feat/pdf-word-support
-      - feat/macos-port
   pull_request:
     branches:
       - main
@@ -36,7 +33,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # The paired-file advisory reads the push range.
           fetch-depth: 0
@@ -73,9 +70,12 @@ jobs:
       # Advisory only: one side of a renderer or controller pair that
       # changed alone is how the ports drift. A Parity: line in the
       # commit message records the reason and silences it.
+      # On a pull request there is no event.before, so the base commit of
+      # the branch is the range to read; without that fallback the
+      # advisory silently did nothing on every PR.
       - name: Paired files advisory
         env:
-          MDI_BASE: ${{ github.event.before }}
+          MDI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           MDI_HEAD: ${{ github.sha }}
         run: python3 tools/check_paired_changes.py
 
@@ -87,75 +87,37 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Find SDK tools and generate uiribbon.lib
         id: find-sdk
-        shell: powershell
-        run: |
-          # Find UICC.exe (build tool, any arch)
-          $uicc = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\bin" -Recurse -Filter "uicc.exe" -ErrorAction SilentlyContinue | Sort-Object FullName | Select-Object -Last 1
-          if ($uicc) {
-            "uicc_path=$($uicc.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            Write-Host "Found UICC: $($uicc.FullName)"
-          }
+        shell: pwsh
+        # One script for both workflows. It picks the newest SDK by version,
+        # the propsys.lib that matches the link target, and builds
+        # uiribbon.lib with the matching machine type. The copy that lived
+        # here was hardcoded to x64 and wrote into D:\a\_temp by hand.
+        run: ./tools/ci/find-sdk.ps1 -Arch x64
 
-          # Find propsys.lib
-          $propsysLib = Get-ChildItem -Path "C:\Program Files*\Windows Kits\10\Lib" -Recurse -Filter "propsys.lib" -ErrorAction SilentlyContinue | Where-Object { $_.DirectoryName -match "x64" } | Sort-Object FullName | Select-Object -Last 1
-          if ($propsysLib) {
-            "propsys_lib=$($propsysLib.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            Write-Host "Found propsys.lib: $($propsysLib.FullName)"
-          }
-
-          # uiribbon.lib is not shipped with modern Windows SDKs.
-          # Generate it from uiribbon.dll using dumpbin + lib.exe.
-          $dumpbin = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          $libexe = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\lib.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          Write-Host "dumpbin: $dumpbin"
-          Write-Host "lib.exe: $libexe"
-
-          $libDir = "D:\a\_temp\uiribbon_lib"
-          New-Item -ItemType Directory -Force -Path $libDir | Out-Null
-          $defFile = "$libDir\uiribbon.def"
-          $libFile = "$libDir\uiribbon.lib"
-
-          # Export symbols from uiribbon.dll
-          $exports = & $dumpbin /exports "C:\Windows\System32\uiribbon.dll"
-          $defContent = "LIBRARY uiribbon.dll`nEXPORTS`n"
-          foreach ($line in $exports) {
-            if ($line -match '^\s+\d+\s+[0-9A-F]+\s+(\S+)') {
-              $funcName = $matches[1]
-              $defContent += "  $funcName`n"
-            }
-          }
-          Set-Content -Path $defFile -Value $defContent -Encoding ASCII
-          Write-Host "Generated .def with exports"
-
-          # Create import library
-          & $libexe /def:"$defFile" /out:"$libFile" /machine:x64
-          if (Test-Path $libFile) {
-            "uiribbon_lib=$libFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            Write-Host "Generated uiribbon.lib: $libFile"
-          } else {
-            Write-Error "Failed to generate uiribbon.lib"
-            exit 1
-          }
-
+      # One build tree. With BUILD_TESTS on, the test exes and the parity
+      # tools link the same objects the app links, so the shared code is
+      # compiled once instead of twice: the two configures and the second
+      # full build were most of this job's time.
       - name: Configure CMake
         run: |
           cmake -B build -G "Visual Studio 17 2022" -A x64 `
+            -DBUILD_TESTS=ON `
             -DUICC_EXE="${{ steps.find-sdk.outputs.uicc_path }}" `
             -DUIRIBBON_LIB="${{ steps.find-sdk.outputs.uiribbon_lib }}" `
             -DPROPSYS_LIB="${{ steps.find-sdk.outputs.propsys_lib }}"
 
-      - name: Build Release exe
+      - name: Build the app, the tests and the parity tools
         run: cmake --build build --config Release
 
       - name: Verify exe type
         shell: bash
         run: file build/Release/MarkDownIt.exe
 
-      - name: Build and run tests
+      - name: Run the tests
         shell: bash
         env:
           # The office export tests write the files they produce here, so the
@@ -171,36 +133,33 @@ jobs:
           MDI_TRANSCRIPT_OUT: ${{ runner.temp }}/transcript-results.windows.json
         run: |
           mkdir -p "$MDI_OFFICE_OUT_DIR"
-          cmake -B build-tests -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTS=ON
-          cmake --build build-tests --config Release
-          build-tests/Release/MarkDownIt.tests.exe
-          python tools/test_svg_arrow_contacts.py --exe build-tests/Release/MarkDownIt.svg-parity.exe
-          build-tests/Release/MarkDownIt.svg-parity.exe "$RUNNER_TEMP/svg-commands.json" tests/fixtures/ai-components.svg tests/fixtures/diagram.svg tests/fixtures/svg-parity.svg tests/fixtures/svg-arrow-contacts.svg tests/fixtures/two-boxes.svg tests/fixtures/wide-diagram.svg tests/markdown-mermaid/mermaid-diagram-1788899219877.svg
-          build-tests/Release/MarkDownIt.layout-parity.exe "$RUNNER_TEMP/layout-dump.windows.json" tests/fixtures/parity/*.md
+          build/Release/MarkDownIt.tests.exe
+          python tools/test_svg_arrow_contacts.py --exe build/Release/MarkDownIt.svg-parity.exe
+          build/Release/MarkDownIt.svg-parity.exe "$RUNNER_TEMP/svg-commands.json" tests/fixtures/ai-components.svg tests/fixtures/diagram.svg tests/fixtures/svg-parity.svg tests/fixtures/svg-arrow-contacts.svg tests/fixtures/two-boxes.svg tests/fixtures/wide-diagram.svg tests/markdown-mermaid/mermaid-diagram-1788899219877.svg
+          build/Release/MarkDownIt.layout-parity.exe "$RUNNER_TEMP/layout-dump.windows.json" tests/fixtures/parity/*.md
           ls -la "$MDI_OFFICE_OUT_DIR"
-          # Until the transcript corpus is enrolled in the test target,
-          # the runner writes nothing and this seeds an empty digest,
-          # so the parity job always has both halves to compare. An
-          # empty digest on both sides is a passing (and reported)
-          # result, not a skip.
+          # The transcript corpus is enrolled now (17 cases), so an empty
+          # digest means the runner stopped writing, not that there is
+          # nothing to compare. Fail loudly instead of seeding an empty
+          # file both sides would agree on.
           if [ ! -s "$MDI_TRANSCRIPT_OUT" ]; then
-            printf '{"cases": []}\n' > "$MDI_TRANSCRIPT_OUT"
+            echo "::error::$MDI_TRANSCRIPT_OUT is empty: the transcript corpus wrote nothing"
+            exit 1
           fi
-      # The two platform suites must stay the same suite; the parity
-      # job compares this list against the macOS one.
+
       - name: Record the Windows test inventory
         shell: bash
-        run: build-tests/Release/MarkDownIt.tests.exe --list > "$RUNNER_TEMP/test-inventory-windows.txt"
+        run: build/Release/MarkDownIt.tests.exe --list > "$RUNNER_TEMP/test-inventory-windows.txt"
 
       - name: Upload the Windows test inventory
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-inventory-windows
           path: ${{ runner.temp }}/test-inventory-windows.txt
           if-no-files-found: error
 
       - name: Upload the Windows transcript digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: transcript-results-windows
           path: ${{ runner.temp }}/transcript-results.windows.json
@@ -208,7 +167,7 @@ jobs:
 
 
       - name: Upload Windows SVG commands
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: svg-commands-windows
           path: |
@@ -217,7 +176,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload the Windows layout dump
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: layout-dump-windows
           path: ${{ runner.temp }}/layout-dump.windows.json
@@ -227,7 +186,7 @@ jobs:
       # (python-docx, pypdf) in the verify-export job, not by MarkDownIt itself.
       - name: Upload office output
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: office-output
           path: ${{ github.workspace }}/office-output/
@@ -236,7 +195,7 @@ jobs:
       # Upload AFTER the tests pass, so a red run never publishes a
       # downloadable exe that the deploy loop could pick up unverified.
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MarkDownIt-x64
           path: build/Release/MarkDownIt.exe
@@ -247,7 +206,7 @@ jobs:
       # built here against the exe above. The version is a placeholder:
       # nothing installs this package.
       - name: Setup .NET (for WiX)
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '9.x'
 
@@ -284,7 +243,7 @@ jobs:
 
       - name: Upload the state captures
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MarkDownIt-windows-capture
           path: |
@@ -315,7 +274,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configure
         run: cmake -B build-native -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
@@ -347,14 +306,14 @@ jobs:
         run: ./build-native/MarkDownIt.tests --list > "$RUNNER_TEMP/test-inventory-macos.txt"
 
       - name: Upload the macOS test inventory
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-inventory-macos
           path: ${{ runner.temp }}/test-inventory-macos.txt
           if-no-files-found: error
 
       - name: Upload the macOS transcript digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: transcript-results-macos
           path: ${{ runner.temp }}/transcript-results.macos.json
@@ -367,7 +326,7 @@ jobs:
           ./build-native/MarkDownIt.svg-parity "$RUNNER_TEMP/svg-commands.json" tests/fixtures/ai-components.svg tests/fixtures/diagram.svg tests/fixtures/svg-parity.svg tests/fixtures/svg-arrow-contacts.svg tests/fixtures/two-boxes.svg tests/fixtures/wide-diagram.svg tests/markdown-mermaid/mermaid-diagram-1788899219877.svg
 
       - name: Upload macOS SVG commands
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: svg-commands-macos
           path: |
@@ -379,7 +338,7 @@ jobs:
         run: ./build-native/MarkDownIt.layout-parity "$RUNNER_TEMP/layout-dump.macos.json" tests/fixtures/parity/*.md
 
       - name: Upload the macOS layout dump
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: layout-dump-macos
           path: ${{ runner.temp }}/layout-dump.macos.json
@@ -416,7 +375,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configure
         run: cmake -B build-mac -DCMAKE_BUILD_TYPE=Release
@@ -481,7 +440,7 @@ jobs:
 
       - name: Upload the launch capture
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MarkDownIt-macos-capture
           path: |
@@ -493,7 +452,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload app bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MarkDownIt-macos-arm64
           path: MarkDownIt-macos-arm64.zip
@@ -507,15 +466,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: svg-commands-macos
           path: svg-commands/macos
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: svg-commands-windows
           path: svg-commands/windows
@@ -541,15 +500,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: layout-dump-macos
           path: layout-dumps/macos
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: layout-dump-windows
           path: layout-dumps/windows
@@ -572,12 +531,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+        uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: test-inventory-windows
           path: test-inventory/windows
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: test-inventory-macos
           path: test-inventory/macos
@@ -603,15 +562,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+        uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: transcript-results-macos
           path: transcript-results/macos
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: transcript-results-windows
           path: transcript-results/windows
@@ -633,16 +592,16 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download the mac captures
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: MarkDownIt-macos-capture
           path: captures/macos
 
       - name: Download the Windows captures
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: MarkDownIt-windows-capture
           path: captures/windows
@@ -652,7 +611,7 @@ jobs:
 
       - name: Compare the states
         run: |
-          python3 -m pip install --quiet pillow
+          python3 -m pip install --quiet "pillow==13.0.0"
           python3 tools/compare_platform_captures.py \
             --macos captures/macos/qa \
             --windows captures/windows \
@@ -660,7 +619,7 @@ jobs:
 
       - name: Upload the comparison
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MarkDownIt-capture-parity
           path: parity-out/
@@ -671,10 +630,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '20'
+          # The oracle's dependency tree is pinned by its lockfile, so the
+          # npm cache key follows that file.
+          cache: npm
+          cache-dependency-path: tools/mermaid-oracle/package-lock.json
       - name: Install oracle deps
         working-directory: tools/mermaid-oracle
         # npm ci installs exactly what package-lock.json pins. Under npm
@@ -716,7 +679,7 @@ jobs:
               exit 1
             fi
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mermaid-golden
@@ -728,14 +691,14 @@ jobs:
     needs: build
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Install oracle deps
         run: pip install -r tools/office-oracle/requirements.txt
       - name: Download the files the Windows build produced
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: office-output
           path: office-output
@@ -755,8 +718,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Install oracle deps
@@ -770,7 +733,7 @@ jobs:
       - name: Fail if committed fixtures or goldens drifted
         run: |
           python tools/office-oracle/check_drift.py tests/office /tmp/office-oracle
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: office-oracle
