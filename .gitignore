@@ -33,6 +33,9 @@ a.out
 # Node (oracle harness)
 node_modules/
 package-lock.json
+# The mermaid oracle is a gate: its goldens must regenerate from pinned
+# versions, so this one lockfile is part of the source tree.
+!tools/mermaid-oracle/package-lock.json
 
 # MSIX icon generator intermediates and local installer build output
 out-4x/
