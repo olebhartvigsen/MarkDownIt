@@ -77,10 +77,12 @@ if (-not $uicc) {
 }
 if (-not $uicc) { Fail 'uicc.exe not found in the Windows SDK' }
 
-# propsys.lib has to match the link target.
+# propsys.lib has to match the link target. The leaf of the directory is
+# the architecture ("...\um\x64"), compared whole: a substring match on
+# "x64" also hits "arm64".
 $propsys = Get-ChildItem (Join-Path $kitsRoot 'Lib') -Recurse -Filter 'propsys.lib' `
     -ErrorAction SilentlyContinue |
-    Where-Object { $_.DirectoryName -match "\\$Arch\\" } |
+    Where-Object { (Split-Path $_.DirectoryName -Leaf) -eq $Arch } |
     Sort-Object FullName | Select-Object -First 1
 if (-not $propsys) { Fail "propsys.lib for $Arch not found in the SDK" }
 
