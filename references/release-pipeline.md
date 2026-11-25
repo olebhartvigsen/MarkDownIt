@@ -16,6 +16,11 @@ arm64 import libs, not x64 ones.
 
 ## What the workflow builds
 
+`gate-static` runs `tools/check_alignment.sh` on the tagged commit, the same
+gates build.yml runs on every push. A tag can point at a commit whose push
+was cancelled or whose run predates a gate, and nothing else in this
+workflow would notice.
+
 `build` (windows-2022) repeats the SDK dance from build.yml (UICC, generated
 uiribbon.lib, propsys.lib), builds `build/Release/MarkDownIt.exe`, then runs
 WiX 4.0.5 against `installer/MarkDownIt.wixproj`. The MSI installs per-user
@@ -23,14 +28,19 @@ into `%LOCALAPPDATA%\MarkDownIt`, adds Start menu and desktop shortcuts,
 closes a running MarkDownIt.exe during upgrade, and launches the app after
 install. No auto-start entry: MarkDownIt is not a resident utility.
 
-`build-msix` stages the exe, copies `installer/msix/AppxManifest.xml`, sets
-the package version with a multiline substitution scoped to the Identity
-element (the element spans several lines in the manifest, so a line-based
-sed never reaches the Version attribute), injects
-`ProcessorArchitecture="x64"`, copies the committed PNGs from
-`installer/msix/assets/`, builds `resources.pri` with makepri, and packs with
-makeappx. The Store version registers `.md` through a file type association;
-the plain exe handles association itself at runtime.
+The x64 matrix leg also builds and runs the test suite against the same tree
+the packages are made from. The arm64 leg is a cross build whose exe cannot
+run on an x64 runner, so it is compile-only; that is the one part of a release
+no CI runner can execute.
+
+`build-msix` stages the exe, then calls `tools/ci/pack-msix.ps1` once per
+architecture. The script owns the whole package: it writes the version and
+`ProcessorArchitecture` into `installer/msix/AppxManifest.xml`, copies the
+committed PNGs from `installer/msix/assets/`, builds `resources.pri` with
+makepri, and packs with makeappx. It lives in `tools/ci/` because build.yml
+runs it too, once per push, so a broken manifest or staging step is found in
+minutes instead of on the tag. The Store version registers `.md` through a
+file type association; the plain exe handles association itself at runtime.
 
 `publish` attaches the four install artifacts, `MarkDownItSetup-x64.msi`,
 `MarkDownItSetup-arm64.msi`, `MarkDownIt-x64.msix` and
@@ -44,7 +54,10 @@ nothing; use it to prove a version bump compiles before you tag.
 ## Cutting a release
 
 1. Get `main` green. build.yml runs the tests and the oracle jobs on every
-   push; a release tag should point at a commit that passed them.
+   push, and the release workflow re-runs the static gates and the x64 test
+   suite on the tagged commit, so a red tag fails before anything is attached.
+   Green main is still the rule: the release checks are a backstop, not a
+   substitute.
 2. Bump the version in `src/app.rc`. Four spots must agree:
 
    | Field | Value for 1.2.3 |

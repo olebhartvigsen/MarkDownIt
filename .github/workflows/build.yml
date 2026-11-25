@@ -12,6 +12,19 @@ on:
       - main
   workflow_dispatch:
 
+# The gates read the tree and the push range; nothing here writes to the
+# repository, so the token stays read-only even on a pull request from a
+# fork that runs this file.
+permissions:
+  contents: read
+
+# A newer push to the same branch makes an older run pointless, and the
+# macOS runners are the scarce resource in this pipeline. The newest
+# commit wins; a cancelled run is reported as cancelled, never as red.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Fast, build-free gates that every push runs. They hold the source
   # manifest, the parity ledger and the command coverage against the
@@ -20,6 +33,7 @@ jobs:
   alignment-static:
     name: Static alignment gates
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,6 +83,7 @@ jobs:
     name: Build (x64)
     needs: alignment-static
     runs-on: windows-2022
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -226,6 +241,38 @@ jobs:
           name: MarkDownIt-x64
           path: build/Release/MarkDownIt.exe
 
+      # The installer ships with every release but was built only at
+      # release time, so a broken wixproj, a renamed payload file or an
+      # extension bump was found on the tag, after the tag existed. It is
+      # built here against the exe above. The version is a placeholder:
+      # nothing installs this package.
+      - name: Setup .NET (for WiX)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.x'
+
+      - name: Install WiX toolset
+        run: dotnet tool install --global wix --version 4.0.5
+
+      - name: Build the installer
+        working-directory: installer
+        run: |
+          wix extension add WixToolset.UI.wixext/4.0.5
+          wix extension add WixToolset.Util.wixext/4.0.5
+          dotnet build MarkDownIt.wixproj -c Release `
+            -p:Platform=x64 -p:ProductVersion=0.0.0
+
+      # The Store package is the other half of what ships, and it had the
+      # same problem: staged and packed only on a tag. tools/ci/pack-msix.ps1
+      # is the one implementation both pipelines call.
+      - name: Pack the MSIX (smoke)
+        shell: pwsh
+        run: |
+          ./tools/ci/pack-msix.ps1 -Arch x64 -Version 0.0.0.0 `
+            -Exe build/Release/MarkDownIt.exe `
+            -StageDir "$env:RUNNER_TEMP/msix-smoke/x64" `
+            -OutFile "$env:RUNNER_TEMP/msix-smoke/MarkDownIt-x64.msix"
+
       # The app photographs itself in the named states, the same walk
       # the mac build runs. The capture-parity job compares the two
       # picture sets once both platforms are done.
@@ -259,7 +306,13 @@ jobs:
   test-macos:
     name: Tests (macOS, Apple Silicon)
     needs: alignment-static
-    runs-on: ${{ vars.MACOS_RUNNER || 'macos-15-arm64' }}
+    # The label is read from the repository variable, because the macOS
+    # runners are scarce and a queue can sit for a long time. The default
+    # has to be a label GitHub actually hosts: macos-15-arm64 and
+    # macos-26-arm64 are image names in actions/runner-images, not YAML
+    # labels, so a job asking for one of them queues until it times out.
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-15' }}
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -359,7 +412,8 @@ jobs:
   build-macos:
     name: Build (macOS, Apple Silicon)
     needs: alignment-static
-    runs-on: ${{ vars.MACOS_RUNNER || 'macos-15-arm64' }}
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-15' }}
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -451,6 +505,7 @@ jobs:
     name: SVG drawing parity (macOS reference)
     needs: [build, test-macos]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -484,6 +539,7 @@ jobs:
     name: Layout dump parity (Windows vs macOS vs golden)
     needs: [build, test-macos]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -513,6 +569,7 @@ jobs:
     name: Test inventory parity (Windows vs macOS)
     needs: [build, test-macos]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -543,6 +600,7 @@ jobs:
     name: Transcript parity (Windows vs macOS)
     needs: [build, test-macos]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -572,6 +630,7 @@ jobs:
     # Screenshots are taken in the pipeline only (tools/check_capture_policy.py).
     needs: [build, build-macos]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -610,6 +669,7 @@ jobs:
   oracle:
     name: Mermaid oracle (golden geometry)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -617,7 +677,12 @@ jobs:
           node-version: '20'
       - name: Install oracle deps
         working-directory: tools/mermaid-oracle
-        run: npm install --no-audit --no-fund
+        # npm ci installs exactly what package-lock.json pins. Under npm
+        # install, jsdom and dompurify (both caret ranges) could move
+        # between two runs of an unchanged tree, and a golden that
+        # depends on the DOM shim would then fail with no code change to
+        # blame.
+        run: npm ci --no-audit --no-fund
       - name: Regenerate golden geometry
         run: |
           mkdir -p /tmp/golden
@@ -661,6 +726,7 @@ jobs:
     name: Verify exported Word and PDF (independent reader)
     runs-on: ubuntu-latest
     needs: build
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -687,6 +753,7 @@ jobs:
   office-oracle:
     name: Office oracle (Word/PDF fixtures and goldens)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
