@@ -900,9 +900,11 @@ void MacRenderer::AppendBlockFromLaid(const Document& doc,
         case BlockKind::Paragraph:
             layout::AppendInlineMapping(node.children, &block.visToSrc,
                                         &block.visToSrcEnd);
-            if (block.visToSrc.empty() && node.virtualEmptyParagraph) {
+            if (block.visToSrc.empty() &&
+                (node.virtualEmptyParagraph ||
+                 node.block == BlockKind::Heading)) {
                 // The placeholder line maps to the position the empty
-                // paragraph keeps for its caret.
+                // paragraph or the empty heading keeps for its caret.
                 layout::FinishMapping(node.contentOffset, &block.visToSrc,
                                       &block.visToSrcEnd);
             }

@@ -537,6 +537,99 @@ void SetListSourceRange(ParserCtx& ctx, Node& node) {
     }
 }
 
+// An empty ATX heading ("#" alone on its line) sends no text callback, so
+// nothing in md4c's report places it in the file: it would keep the default
+// range at offset 0, the walk would give it no height, and the caret could
+// not reach the line. Find the heading's own line by scanning forward from
+// the byte the previous block ended on, the way SetListSourceRange finds a
+// bare list marker, and keep the caret at the marker's end.
+//
+// The scan skips blockquote markers and one list marker per line, and only
+// accepts a line that holds nothing but the level's hashes, so a heading
+// with text can never be claimed here.
+void SetEmptyHeadingSourceRange(ParserCtx& ctx, Node& node) {
+    uint32_t high = 0;
+    for (const Node& other : ctx.doc->nodes) {
+        const uint32_t end = other.srcOffset + other.srcLength;
+        if (end > high) high = end;
+    }
+    // A heading inside a list item shares its line with the item's marker,
+    // so there the scan starts on that line. Anywhere else the previous
+    // block owns its line whole and the heading starts on the next one.
+    bool inListItem = false;
+    for (const Frame& frame : ctx.block_stack) {
+        if (frame.type == MD_BLOCK_LI) inListItem = true;
+    }
+    uint32_t cursor = 0;
+    if (high > 0) {
+        const uint32_t size = static_cast<uint32_t>(ctx.inputSize);
+        cursor = BlockLineStart(ctx.input, (std::min)(high, size));
+        if (!inListItem) {
+            cursor = BlockLineEnd(ctx.input, ctx.inputSize, cursor);
+        }
+    }
+    while (cursor < ctx.inputSize) {
+        if (ctx.input[cursor] == '\r' || ctx.input[cursor] == '\n') {
+            ++cursor;
+            continue;
+        }
+        const uint32_t lineStart = BlockLineStart(ctx.input, cursor);
+        const uint32_t lineEnd = BlockLineEnd(ctx.input, ctx.inputSize, cursor);
+        uint32_t p = lineStart;
+        // Up to three spaces of indent, then any quote markers.
+        uint32_t indent = 0;
+        while (p < lineEnd && ctx.input[p] == ' ' && indent < 3) {
+            ++p;
+            ++indent;
+        }
+        while (p < lineEnd && ctx.input[p] == '>') {
+            ++p;
+            while (p < lineEnd && (ctx.input[p] == ' ' || ctx.input[p] == '\t')) ++p;
+        }
+        // One list marker, when the heading sits inside a list item.
+        if (p < lineEnd && (ctx.input[p] == '-' || ctx.input[p] == '+' ||
+                            ctx.input[p] == '*') &&
+            p + 1 < lineEnd &&
+            (ctx.input[p + 1] == ' ' || ctx.input[p + 1] == '\t')) {
+            ++p;
+            while (p < lineEnd && (ctx.input[p] == ' ' || ctx.input[p] == '\t')) ++p;
+        } else if (p < lineEnd && ctx.input[p] >= '0' && ctx.input[p] <= '9') {
+            uint32_t digits = 0;
+            while (p + digits < lineEnd && digits < 9 &&
+                   ctx.input[p + digits] >= '0' && ctx.input[p + digits] <= '9') {
+                ++digits;
+            }
+            if (p + digits < lineEnd &&
+                (ctx.input[p + digits] == '.' || ctx.input[p + digits] == ')')) {
+                p += digits + 1;
+                while (p < lineEnd &&
+                       (ctx.input[p] == ' ' || ctx.input[p] == '\t')) ++p;
+            }
+        }
+        uint32_t hashes = 0;
+        while (p + hashes < lineEnd && ctx.input[p + hashes] == '#') ++hashes;
+        // Only whitespace may follow the hashes: "# Title" is a heading with
+        // text, which md4c places itself, and must not be claimed here.
+        bool blankTail = true;
+        for (uint32_t i = p + hashes; i < lineEnd; ++i) {
+            if (ctx.input[i] != ' ' && ctx.input[i] != '\t') {
+                blankTail = false;
+                break;
+            }
+        }
+        const bool markerOnly = hashes > 0 &&
+            hashes == static_cast<uint32_t>(node.level) && blankTail;
+        if (markerOnly) {
+            node.srcOffset = lineStart;
+            node.srcLength = lineEnd - lineStart;
+            node.contentOffset = lineEnd;
+            node.contentLength = 0;
+            return;
+        }
+        cursor = lineEnd;
+    }
+}
+
 // --- md4c callbacks ---
 
 int cb_enter_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
@@ -775,6 +868,10 @@ int cb_leave_block(MD_BLOCKTYPE type, void* detail, void* userdata) {
                         }
                     }
                 }
+            } else if (type == MD_BLOCK_H) {
+                // A heading with no text of its own is an empty ATX heading:
+                // give it its own line so the caret can reach it.
+                SetEmptyHeadingSourceRange(*ctx, ctx->doc->nodes[frame.node_index]);
             }
         }
         ctx->block_stack.pop_back();

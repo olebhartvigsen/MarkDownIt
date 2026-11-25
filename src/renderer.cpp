@@ -2110,9 +2110,10 @@ void Renderer::BuildBlockMapping(const Node& n,
         case BlockKind::Heading:
         case BlockKind::Paragraph:
             layout::AppendInlineMapping(n.children, visToSrc, visToSrcEnd);
-            if (visToSrc->empty() && n.virtualEmptyParagraph) {
+            if (visToSrc->empty() &&
+                (n.virtualEmptyParagraph || n.block == BlockKind::Heading)) {
                 // The placeholder line maps to the position the empty
-                // paragraph keeps for its caret.
+                // paragraph or the empty heading keeps for its caret.
                 layout::FinishMapping(n.contentOffset, visToSrc,
                                       visToSrcEnd);
             }
@@ -2709,16 +2710,25 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 break;
             }
         }
+        // An empty heading ("#" alone on its line) keeps a caret record:
+        // the walk lays it out as one blank line, so hit-testing and the
+        // caret have a rect inside the block instead of falling through
+        // to the gap between the neighbours.
+        const bool emptyHeadingBlock =
+            text16.empty() && !hasImage && n.block == BlockKind::Heading;
         if (text16.empty() && !hasMarker && !hasImage &&
-            !n.virtualEmptyParagraph) {
+            !n.virtualEmptyParagraph && !emptyHeadingBlock) {
             continue;
         }
 
         // A placeholder supplies a line metric, but both sides map to the
         // same canonical source position. It is layout data, not source text
         // or a special-case document interpretation in mouse hit-testing.
+        // An empty heading is one of these blocks: the walk keeps a blank
+        // line for it, so its caret band exists and its line is clickable.
         const bool emptyCaretBlock = text16.empty() && !hasImage &&
-            (n.virtualEmptyParagraph || n.block == BlockKind::List);
+            (n.virtualEmptyParagraph || n.block == BlockKind::Heading ||
+             n.block == BlockKind::List);
         const std::u16string layoutText16 = emptyCaretBlock ? u" " : text16;
         if (emptyCaretBlock) {
             u16ToSrc.push_back(n.contentOffset);

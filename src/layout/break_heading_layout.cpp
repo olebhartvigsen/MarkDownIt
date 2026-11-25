@@ -13,6 +13,26 @@
 #include <vector>
 
 namespace layout {
+namespace {
+
+// A heading with no text of its own still owns its line. One blank run at
+// the heading's own size keeps the band, the hairline the style puts under
+// an H1 or H2, and a rect the caret can sit in: the same rule a blank
+// paragraph follows, at the heading's metrics instead of the body's.
+std::vector<platform::GlyphRun> EmptyHeadingRuns(
+    const LayoutInput& in, float size, bool bold, const ThemeColor& color,
+    const char* family) {
+    Node blank;
+    InlineBlock child;
+    child.kind = InlineKind::Text;
+    child.text = U" ";
+    blank.children.push_back(child);
+    return BuildRuns(blank, size, bold, false, ToColor(color), false, family,
+                     in.metrics->codeFontSize, in.palette->link,
+                     in.metrics->linkUnderline);
+}
+
+}  // namespace
 
 LaidBlock LayoutBreak(const LayoutCtx& ctx, const Node& node,
                       uint32_t nodeIndex, float* y) {
@@ -71,13 +91,21 @@ LaidBlock LayoutHeading(const LayoutCtx& ctx, const Node& node,
         BuildRuns(node, size, m.headingBold[level], false,
                   ToColor(headingColor), false, headingFamily,
                   m.codeFontSize, ctx.in->palette->link, m.linkUnderline);
+    // An empty heading ("#" on its own line) keeps one blank run so the
+    // block has a line: it is where the caret lands and where the style's
+    // hairline belongs, the same way a browser draws an empty h1.
+    std::vector<platform::GlyphRun> drawnRuns = runs;
+    if (drawnRuns.empty()) {
+        drawnRuns = EmptyHeadingRuns(in, size, m.headingBold[level],
+                                     headingColor, headingFamily);
+    }
     // No BeginLayout here. The pass brackets the engine once, in
     // LayoutDocument, and an engine that drops the measurements of the
     // pass before it answers the lines above this heading with an empty
     // hit test: a click in such a line landed at its start, and the
     // caret could not be drawn anywhere inside it.
     std::vector<platform::TextLine> lines =
-        in.engine->MeasureWrapped(runs, in.contentWidth, 0.0f);
+        in.engine->MeasureWrapped(drawnRuns, in.contentWidth, 0.0f);
     ApplyLineSpacing(&lines, size, m.headingLineHeight, in.zoom, in.engine);
 
     float textHeight = 0.0f;

@@ -26,6 +26,66 @@ TEST(EmptyListMapping, MarkerOnlyItemsAtEof) {
     }
 }
 
+// An empty ATX heading ("#" alone on its line) sends no text callback, so
+// md4c never places it in the file. The block used to keep the default range
+// at offset 0: the walk gave it no height and the caret could not be put on
+// the line, which is what a reader sees as an unselectable empty heading.
+// Its own line is the heading's, and the caret sits at the marker's end.
+TEST(EmptyHeadingMapping, MarkerOnlyHeadingsOwnTheirLine) {
+    struct Case {
+        const char* source;
+        uint32_t start;
+        uint32_t length;
+        uint32_t caret;
+        int level;
+    };
+    const Case cases[] = {
+        {"#", 0, 1, 1, 1},
+        {"# ", 0, 2, 2, 1},
+        {"##", 0, 2, 2, 2},
+        {"text\n\n#\n", 6, 1, 7, 1},
+        {"\n\n#\n", 2, 1, 3, 1},
+        {"# A\n#\n# B\n", 4, 1, 5, 1},
+    };
+    for (const auto& test : cases) {
+        Document doc;
+        ASSERT_TRUE(ParseMarkdown(test.source, doc));
+        bool found = false;
+        for (const Node& node : doc.nodes) {
+            if (node.block != BlockKind::Heading || !node.children.empty()) continue;
+            found = true;
+            EXPECT_EQ(node.level, test.level);
+            EXPECT_EQ(node.srcOffset, test.start);
+            EXPECT_EQ(node.srcLength, test.length);
+            EXPECT_EQ(node.contentOffset, test.caret);
+            EXPECT_EQ(node.contentLength, 0u);
+        }
+        if (!found) std::cerr << "Source: " << test.source << '\n' << DocumentToString(doc);
+        EXPECT_TRUE(found);
+    }
+
+    // The first empty heading, the one the screenshot showed above a real
+    // H1: the block keeps its own line, and the CrLf pair gives the second
+    // heading its own.
+    Document crlf;
+    ASSERT_TRUE(ParseMarkdown("#\r\n#\r\n", crlf));
+    ASSERT_EQ(crlf.nodes.size(), 2u);
+    EXPECT_EQ(crlf.nodes[0].srcOffset, 0u);
+    EXPECT_EQ(crlf.nodes[0].srcLength, 1u);
+    EXPECT_EQ(crlf.nodes[1].srcOffset, 3u);
+    EXPECT_EQ(crlf.nodes[1].srcLength, 1u);
+
+    // A heading with text is placed by its text callback and must not be
+    // claimed by the marker-only search.
+    Document titled;
+    ASSERT_TRUE(ParseMarkdown("# Dette\n#\n", titled));
+    ASSERT_EQ(titled.nodes.size(), 2u);
+    EXPECT_EQ(titled.nodes[0].contentOffset, 2u);
+    EXPECT_EQ(titled.nodes[0].contentLength, 5u);
+    EXPECT_EQ(titled.nodes[1].srcOffset, 8u);
+    EXPECT_EQ(titled.nodes[1].contentOffset, 9u);
+}
+
 TEST(TaskListMapping, CheckStateAndTrimmedText) {
     // "- [ ] todo" / "- [x] done": the check state lands on the node
     // and the mark leaves the rendered text, so the renderer draws a

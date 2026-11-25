@@ -105,6 +105,57 @@ TEST(LayoutGolden, BreakAndHeadingList) {
     EXPECT_NEAR(laid.list.width, 600.0f, 0.001f);
 }
 
+// An empty H1 directly above another H1, the case a reader reported as a
+// line the caret could not be put on: the block must keep one blank line of
+// its own, with its own source position, so the walk reserves the band and
+// the caret and the hit test have something to land on.
+TEST(LayoutGolden, EmptyHeadingKeepsItsLine) {
+    Document doc;
+    ParseMarkdown("#\n# Dette\n", doc);
+    ASSERT_EQ(doc.nodes.size(), static_cast<size_t>(2));
+    ASSERT_EQ(doc.nodes[0].block, BlockKind::Heading);
+    EXPECT_TRUE(doc.nodes[0].children.empty());
+
+    fake::FakeTextEngine engine;
+    const LayoutMetrics m = BaseMetrics();
+    const Palette pal = BasePalette();
+    layout::LayoutInput in;
+    in.doc = &doc; in.metrics = &m; in.palette = &pal;
+    in.contentWidth = 600.0f; in.zoom = 1.0f; in.engine = &engine;
+    in.editing = true;
+    layout::DocumentLayout laid = layout::LayoutDocument(in);
+
+    ASSERT_EQ(laid.blocks.size(), static_cast<size_t>(2));
+    const layout::LaidBlock& empty = laid.blocks[0];
+    const layout::LaidBlock& titled = laid.blocks[1];
+    // One line, the same band a real H1 keeps, not a zero height block.
+    ASSERT_EQ(empty.lines.size(), static_cast<size_t>(1));
+    ASSERT_EQ(titled.lines.size(), static_cast<size_t>(1));
+    const float lineH = titled.lines[0].height;
+    EXPECT_GT(empty.height, 0.0f);
+    // The same band a real H1 keeps: one line plus the style's hairline.
+    EXPECT_NEAR(empty.height, titled.height, 0.001f);
+
+    // The blank run maps to the caret position the parser gave the heading:
+    // the end of its marker, no visible characters.
+    ASSERT_GE(laid.list.items.size(), static_cast<size_t>(2));
+    const display::Text& blank = std::get<display::Text>(laid.list.items[0]);
+    EXPECT_EQ(blank.srcOffset, doc.nodes[0].contentOffset);
+    EXPECT_EQ(blank.srcLength, static_cast<uint32_t>(0));
+    EXPECT_NEAR(blank.line.height, lineH, 0.001f);
+    std::string drawn;
+    for (const platform::GlyphRun& run : blank.line.runs) drawn += run.text;
+    EXPECT_EQ(drawn, std::string(" "));
+
+    // The style's hairline under an H1, the way a browser draws an empty h1.
+    EXPECT_TRUE(std::holds_alternative<display::FillRect>(laid.list.items[1]));
+
+    // The real heading below it starts after the empty block's band.
+    EXPECT_GE(laid.blocks[1].y, empty.y + empty.height - 0.001f);
+    EXPECT_NEAR(laid.list.height, laid.blocks[1].y + laid.blocks[1].height,
+                0.001f);
+}
+
 // Regression: a gantt fence between two headings must be laid out with
 // real height, not skipped by the block layout's "which kind owns this
 // node" switch. A gap in that switch made the diagram invisible even
