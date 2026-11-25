@@ -132,9 +132,13 @@ struct Node {
     // Empty when the table declares no alignment anywhere, so a plain table
     // costs nothing.
     std::vector<ColumnAlign>   aligns;
-    // A table that holds data rather than prose: a CSV document. The cell
-    // runs take the code face, so the columns line up whatever the glyphs
-    // are. Set by src/csvdocument.cpp and read by the table layout.
+    // A table that holds data rather than prose: a CSV document. It carries
+    // two rules, both read by the table layout. The cell runs take the code
+    // face, so the columns line up whatever the glyphs are. And every column
+    // is sized to the longest word a reader has to read whole in it, never
+    // squeezed to fit the page: the table may be wider than the column, and
+    // the view scrolls sideways to reach the rest. Set by
+    // src/csvdocument.cpp.
     bool                       tableMonospace = false;
     // One entry per column: the reader has a filter on it, so the header
     // draws that column's filter button filled. Empty asks for no buttons.

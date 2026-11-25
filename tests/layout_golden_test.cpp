@@ -156,6 +156,44 @@ TEST(LayoutGolden, EmptyHeadingKeepsItsLine) {
                 0.001f);
 }
 
+// A data table wider than the page column widens the document's own width,
+// which is the number both ports size their horizontal scroll range from. A
+// 33 column localisation export used to be squeezed into the window instead,
+// with prose columns a character and a half wide.
+TEST(LayoutGolden, AWideDataTableWidensTheDocument) {
+    Document doc;
+    Node table;
+    table.block = BlockKind::Table;
+    table.tableMonospace = true;
+    TableRow head;
+    TableRow body;
+    for (int c = 0; c < 6; ++c) {
+        TableCell header;
+        header.isHeader = true;
+        header.text = U"fieldnamecolumn";
+        head.cells.push_back(header);
+        TableCell value;
+        value.text = U"a value that needs a wider column than this";
+        body.cells.push_back(value);
+    }
+    table.rows = {head, body};
+    doc.nodes.push_back(table);
+
+    fake::FakeTextEngine engine;
+    const LayoutMetrics m = BaseMetrics();
+    const Palette pal = BasePalette();
+    layout::LayoutInput in;
+    in.doc = &doc; in.metrics = &m; in.palette = &pal;
+    in.contentWidth = 600.0f; in.zoom = 1.0f; in.engine = &engine;
+    layout::DocumentLayout laid = layout::LayoutDocument(in);
+
+    ASSERT_EQ(laid.blocks.size(), static_cast<size_t>(1));
+    const layout::LaidBlock& block = laid.blocks[0];
+    // The page column is 600; the table is its six columns wide.
+    EXPECT_GT(block.width, 600.0f);
+    EXPECT_NEAR(laid.list.width, block.x + block.width, 0.001f);
+}
+
 // Regression: a gantt fence between two headings must be laid out with
 // real height, not skipped by the block layout's "which kind owns this
 // node" switch. A gap in that switch made the diagram invisible even

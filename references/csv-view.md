@@ -42,6 +42,43 @@ drift would show as a column that lines up in markdown and not in CSV.
 - **Blank lines** before the first record are skipped; interior blank records
   are kept as empty rows, because a single column file may mean them.
 
+## The columns size to their content, and the page scrolls sideways
+
+A data table does not split its width equally the way a markdown table does.
+Every column is as wide as the longest word a reader has to read whole in
+it, header and body alike, plus the cell padding, and no wider than thirty
+two characters of the fixed face. When the columns together fit the page,
+the spare width is shared equally on top, so a small file still fills the
+column the way it always has. When they do not fit, every column keeps its
+width and the table becomes wider than the page column: the view scrolls
+horizontally, and the scrollbar is the affordance.
+
+The rule came out of a 33 column localisation export. Splitting 33 columns
+equally left the prose columns one and a third DIP wide, which wraps a
+paragraph one glyph per line: the table was unusable, and the file read as
+one that could not be opened at all. A fixed grid of columns cannot show
+prose; a scrolled grid can.
+
+Two consequences are part of the rule:
+
+- The row washes and the hairline grid span the table's own width, not the
+  page column, so the columns a reader scrolls to are not past the end of
+  their own stripes. `LaidBlock::width` carries that width, and the walk's
+  own width is what both ports size the horizontal scroll range from.
+- The filter funnels travel with the columns: their hit rectangles are in
+  the same document coordinates as the caret, and the Windows shell adds the
+  horizontal scroll to the click before asking (it used to add only the
+  vertical one, which put every press a scroll's width off).
+
+The demand is found by counting, not by measuring. Every cell of a data
+table is drawn in the fixed face, where all glyphs advance the same, so the
+word with the most code points in a column is also its widest. The layout
+takes that one word, measures it once per column, and never asks the engine
+for a layout per word: a 454 by 33 export holds twelve thousand words, and
+twelve thousand text layouts to open a file is a hang, not a measurement.
+Markdown tables keep the per word walk, because a proportional face does not
+let a count stand in for a measure.
+
 ## Caps
 
 | Cap | Value | What the page says |

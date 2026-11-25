@@ -465,12 +465,15 @@ TEST(TableLayout, ADataTableSizesItsColumnsToTheContent) {
     layout::LaidBlock b = layout::LayoutTableBlock(wide.ctx, data, 0, &y);
     ASSERT_TRUE(b.table != nullptr);
     ASSERT_EQ(b.table->colWs.size(), static_cast<size_t>(4));
-    const float need = 15.0f * fake::FakeTextEngine::kGlyphWidth +
-                       2.0f * kM.cellPadX;
+    // Each column carries its own longest word, plus the cell padding.
+    const size_t wordChars[4] = {13, 14, 14, 15};
     float sum = 0.0f;
-    for (float w : b.table->colWs) {
-        NEAR(w, need);
-        sum += w;
+    for (size_t c = 0; c < 4; ++c) {
+        const float need =
+            static_cast<float>(wordChars[c]) * fake::FakeTextEngine::kGlyphWidth +
+            2.0f * kM.cellPadX;
+        NEAR(b.table->colWs[c], need);
+        sum += need;
     }
     // Wider than the page, which is the point: the view scrolls sideways
     // instead of squeezing the columns.
@@ -508,7 +511,9 @@ TEST(TableLayout, ADataTableCapsAColumnAtTheTokenCap) {
     body.cells = {Cell(U"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                        false, 4, 64)};
     n.rows = {head, body};
-    Rig rig(400.0f);
+    // Narrower than the one column's demand, so there is no spare width to
+    // share and the column keeps exactly the cap.
+    Rig rig(200.0f);
     float y = 0.0f;
     layout::LaidBlock b = layout::LayoutTableBlock(rig.ctx, n, 0, &y);
     ASSERT_TRUE(b.table != nullptr);
