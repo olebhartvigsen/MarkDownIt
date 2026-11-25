@@ -101,25 +101,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # sccache is not on the runner image either, and the Windows compile
-      # is the longest step in the pipeline. Debug info stays out of the
-      # picture (the Release flags carry no /Zi), which is the case sccache
-      # handles best.
-      - name: Install sccache
-        shell: pwsh
-        run: |
-          choco install sccache --yes --no-progress
-          sccache --version
-
-      - name: Restore the compiler cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/sccache
-          key: sccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/sources.cmake') }}-${{ github.sha }}
-          restore-keys: |
-            sccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/sources.cmake') }}-
-            sccache-${{ runner.os }}-
-
       - name: Find SDK tools and generate uiribbon.lib
         id: find-sdk
         shell: pwsh
@@ -137,25 +118,19 @@ jobs:
         run: |
           cmake -B build -G "Visual Studio 17 2022" -A x64 `
             -DBUILD_TESTS=ON `
-            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
-            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
             -DUICC_EXE="${{ steps.find-sdk.outputs.uicc_path }}" `
             -DUIRIBBON_LIB="${{ steps.find-sdk.outputs.uiribbon_lib }}" `
             -DPROPSYS_LIB="${{ steps.find-sdk.outputs.propsys_lib }}"
 
+      # No compiler cache here, and that is a measured result rather than an
+      # omission: the Visual Studio generator ignores
+      # CMAKE_<LANG>_COMPILER_LAUNCHER, so sccache saw zero compile
+      # requests while the step looked installed and healthy. Caching MSVC
+      # objects means switching this job to the Ninja generator inside a
+      # developer shell, which is a change to how the shipped exe is built
+      # and not a cache setting.
       - name: Build the app, the tests and the parity tools
-        env:
-          SCCACHE_DIR: ${{ runner.temp }}/sccache
-          SCCACHE_IDLE_TIMEOUT: 0
         run: cmake --build build --config Release --parallel 4
-
-      # What the cache actually did, printed into the log so a regression
-      # in cache hits is visible without reading timings.
-      - name: Compiler cache statistics
-        if: always()
-        env:
-          SCCACHE_DIR: ${{ runner.temp }}/sccache
-        run: sccache --show-stats
 
       - name: Verify exe type
         shell: bash
@@ -313,6 +288,12 @@ jobs:
     needs: alignment-static
     runs-on: ${{ vars.MACOS_RUNNER || 'macos-15' }}
     timeout-minutes: 75
+    env:
+      # The one path ccache and the cache action agree on. See the restore
+      # step for why this is set rather than assumed.
+      CCACHE_DIR: ${{ runner.temp }}/ccache
+      CCACHE_COMPRESS: 'true'
+      CCACHE_MAXSIZE: 2G
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -327,7 +308,10 @@ jobs:
       - name: Restore the compiler cache
         uses: actions/cache@v4
         with:
-          path: ~/.ccache
+          # CCACHE_DIR is pinned at job level. Without it ccache writes to
+          # ~/Library/Caches/ccache on macOS, so caching ~/.ccache restored
+          # an empty directory and every object missed.
+          path: ${{ runner.temp }}/ccache
           # Exact key per commit, with a fallback to the same dependency
           # set and then to anything: ccache hashes each translation unit
           # itself, so an older cache still serves every file that did not

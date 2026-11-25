@@ -18,6 +18,13 @@
 namespace layout {
 namespace {
 
+// The character cap of a data table's column demand: a column is sized to
+// its longest word, and a word longer than this is cut. Thirty two
+// characters of the fixed face is about two hundred and fifty points, the
+// width a phrase of localisation text reads well at; a longer word in a
+// cell wraps instead of turning the column into a page of its own.
+constexpr size_t kDataColumnTokenChars = 32;
+
 // The runs of one cell, ported from the renderers' cell builders:
 // CellInlineSpan ranges index UTF-16 units, so they are counted over
 // the UTF-32 text. Header cells and strong spans go to the semibold
@@ -99,6 +106,139 @@ std::vector<platform::GlyphRun> PlaceholderRuns(
                      ToColor(in.palette->textPrimary), false, nullptr,
                      in.metrics->codeFontSize, in.palette->link,
                      in.metrics->linkUnderline);
+}
+
+// The longest token of one cell, cut to the cap, with the face it is drawn
+// in. A data table draws every cell in the fixed face, where every glyph
+// advances the same, so the word with the most code points is also the
+// widest one: counting beats measuring, and one word per column is all the
+// engine ever sees. The per word walk below stays for prose tables, whose
+// proportional faces do not let a count stand in for a measurement, and
+// which are small enough to afford it.
+struct TokenPiece {
+    std::string text;
+    platform::GlyphRun face;
+    size_t codePoints = 0;
+    bool found = false;
+};
+
+size_t CountCodePoints(const std::string& utf8) {
+    size_t n = 0;
+    for (unsigned char b : utf8) {
+        if ((b & 0xC0) != 0x80) ++n;
+    }
+    return n;
+}
+
+TokenPiece LongestToken(const std::vector<platform::GlyphRun>& runs,
+                        size_t cap) {
+    TokenPiece best;
+    std::string current;
+    const platform::GlyphRun* currentFace = nullptr;
+    auto close = [&]() {
+        const size_t points = CountCodePoints(current);
+        if (points > best.codePoints && currentFace) {
+            best.text = current;
+            best.face = *currentFace;
+            best.codePoints = points;
+            best.found = true;
+        }
+        current.clear();
+        currentFace = nullptr;
+    };
+    for (const platform::GlyphRun& run : runs) {
+        for (size_t i = 0; i < run.text.size(); ++i) {
+            const char c = run.text[i];
+            if (c == ' ' || c == '\t' || c == '\n') {
+                close();
+                continue;
+            }
+            if (!currentFace) currentFace = &run;
+            // The cap only has to hold the longest word, and a word longer
+            // than the cap is cut: a column never grows past it.
+            if (CountCodePoints(current) < cap) current.push_back(c);
+        }
+    }
+    close();
+    return best;
+}
+
+// One token measured through the engine at its own face.
+float MeasureToken(const TokenPiece& token, const LayoutInput& in) {
+    if (!token.found || token.text.empty()) return 0.0f;
+    platform::GlyphRun run = token.face;
+    run.text = token.text;
+    std::vector<platform::GlyphRun> one;
+    one.push_back(std::move(run));
+    const std::vector<platform::TextLine> lines =
+        in.engine->MeasureWrapped(one, 1.0e9f, 0.0f);
+    float width = 0.0f;
+    for (const platform::TextLine& line : lines) {
+        width = (std::max)(width, line.width);
+    }
+    return width;
+}
+
+// The column demands of a data table: each column is as wide as the widest
+// word a reader has to read whole in it, header and body alike, and never
+// wider than the token cap. Two engine calls per column, whatever the file
+// holds.
+std::vector<float> DataTableDemand(const Node& node,
+                                   const LayoutInput& in,
+                                   size_t columnCount) {
+    std::vector<TokenPiece> header(columnCount), body(columnCount);
+    std::vector<float> gutter(columnCount, 0.0f);
+    for (const TableRow& row : node.rows) {
+        const size_t here = (std::min)(row.cells.size(), columnCount);
+        for (size_t c = 0; c < here; ++c) {
+            const TableCell& cell = row.cells[c];
+            std::vector<platform::GlyphRun> runs =
+                BuildCellRuns(cell, cell.isHeader,
+                              ToColor(in.palette->textPrimary),
+                              *in.metrics, node.tableMonospace);
+            if (runs.empty()) runs = PlaceholderRuns(cell.isHeader, in);
+            // A header cell keeps room for the filter button at its right
+            // edge, so a long name wraps earlier instead of running under
+            // the mark.
+            if (cell.isHeader && !node.tableFilterActive.empty()) {
+                gutter[c] = in.metrics->tableFilterGutter;
+            }
+            TokenPiece token = LongestToken(runs, kDataColumnTokenChars);
+            std::vector<TokenPiece>& slot = cell.isHeader ? header : body;
+            if (token.codePoints > slot[c].codePoints) slot[c] = token;
+        }
+    }
+    std::vector<float> demand(columnCount, 0.0f);
+    for (size_t c = 0; c < columnCount; ++c) {
+        demand[c] = (std::max)(MeasureToken(header[c], in),
+                               MeasureToken(body[c], in)) + gutter[c];
+    }
+    return demand;
+}
+
+// A data table's split: every column takes its own demand plus the cell
+// padding, and the page's spare width is shared equally on top of that, so
+// a small file still fills the column the way it always has. When the
+// demands alone outweigh the page every column keeps its width and the
+// table is wider than the column instead: the view scrolls sideways, which
+// is the readable answer. Squeezing instead is what a fixed grid of 33
+// columns used to do, and it left the widest columns a character and a half
+// wide with a paragraph in every cell.
+std::vector<float> DistributeContentColumns(
+    const std::vector<float>& demand, float contentWidth,
+    size_t columnCount, float cellPadX) {
+    std::vector<float> colWs(columnCount, 0.0f);
+    if (columnCount == 0 || contentWidth <= 0.0f) return colWs;
+    float sum = 0.0f;
+    for (size_t c = 0; c < columnCount; ++c) {
+        const float inner = c < demand.size() ? demand[c] : 0.0f;
+        colWs[c] = inner + 2.0f * cellPadX;
+        sum += colWs[c];
+    }
+    if (sum > contentWidth) return colWs;
+    const float spare = (contentWidth - sum) / static_cast<float>(columnCount);
+    for (float& w : colWs) w += spare;
+    return colWs;
 }
 
 // The widest unbreakable token of one cell, the width its column
@@ -253,31 +393,47 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
     }
     t.columnCount = columnCount;
     t.colW = in.contentWidth / static_cast<float>(columnCount);
-    // The column split: a column must carry its longest unbreakable
-    // word instead of slicing it at the cell edge, so the words are
-    // token measured first and the widths follow the demand.
-    std::vector<float> minInner(columnCount, 0.0f);
-    for (const TableRow& row : node.rows) {
-        const size_t here = (std::min)(row.cells.size(), columnCount);
-        for (size_t c = 0; c < here; ++c) {
-            const TableCell& cell = row.cells[c];
-            std::vector<platform::GlyphRun> runs =
-                BuildCellRuns(cell, cell.isHeader,
-                              ToColor(in.palette->textPrimary), m,
-                              node.tableMonospace);
-            if (runs.empty()) runs = PlaceholderRuns(cell.isHeader, in);
-            // A header cell gives the filter button room at its right
-            // edge, so a long name wraps earlier instead of running under
-            // the mark.
-            const float gutter = cell.isHeader && !node.tableFilterActive.empty()
-                                     ? m.tableFilterGutter
-                                     : 0.0f;
-            const float token = WidestToken(runs, in) + gutter;
-            if (token > minInner[c]) minInner[c] = token;
+    // The column split. A markdown table splits its columns equally, with a
+    // column taking its longest unbreakable word instead of slicing it at
+    // the cell edge. A data table sizes each column to its own content, and
+    // may be wider than the column the page gives it: 33 columns of prose
+    // cannot be squeezed into one window without leaving every one of them a
+    // character and a half wide.
+    if (node.tableMonospace) {
+        const std::vector<float> demand =
+            DataTableDemand(node, in, columnCount);
+        t.colWs = DistributeContentColumns(demand, in.contentWidth,
+                                           columnCount, m.cellPadX);
+    } else {
+        std::vector<float> minInner(columnCount, 0.0f);
+        for (const TableRow& row : node.rows) {
+            const size_t here = (std::min)(row.cells.size(), columnCount);
+            for (size_t c = 0; c < here; ++c) {
+                const TableCell& cell = row.cells[c];
+                std::vector<platform::GlyphRun> runs =
+                    BuildCellRuns(cell, cell.isHeader,
+                                  ToColor(in.palette->textPrimary), m,
+                                  node.tableMonospace);
+                if (runs.empty()) runs = PlaceholderRuns(cell.isHeader, in);
+                // A header cell gives the filter button room at its right
+                // edge, so a long name wraps earlier instead of running under
+                // the mark.
+                const float gutter = cell.isHeader && !node.tableFilterActive.empty()
+                                         ? m.tableFilterGutter
+                                         : 0.0f;
+                const float token = WidestToken(runs, in) + gutter;
+                if (token > minInner[c]) minInner[c] = token;
+            }
         }
+        t.colWs = DistributeTableColumns(minInner, in.contentWidth,
+                                         columnCount, m.cellPadX);
     }
-    t.colWs = DistributeTableColumns(minInner, in.contentWidth,
-                                     columnCount, m.cellPadX);
+    // The width the grid and the washes cover: the page's column for a
+    // markdown table, the columns' own sum for a data table that outgrew it.
+    float tableWidth = 0.0f;
+    for (const float w : t.colWs) tableWidth += w;
+    if (!(tableWidth > 0.0f)) tableWidth = in.contentWidth;
+    block.width = tableWidth;
     t.colXs.assign(columnCount + 1, 0.0f);
     {
         float x = 0.0f;
@@ -376,13 +532,13 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
         const bool dataTable = node.tableMonospace;
         if (headerRow) {
             if (m.tableHeaderFill || dataTable)
-                fill(0.0f, rowTop, in.contentWidth, rowH,
+                fill(0.0f, rowTop, tableWidth, rowH,
                      ToColor(dataTable ? in.palette->tableRowAlt
                                        : in.palette->tableHeaderBg),
                      r == 0);
         } else if (!dataTable &&
                    (m.tableBodyFill || (m.tableZebra && r % 2 == 1))) {
-            fill(0.0f, rowTop, in.contentWidth, rowH,
+            fill(0.0f, rowTop, tableWidth, rowH,
                  ToColor(in.palette->tableRowAlt), false);
         }
         rowTop += rowH;
@@ -396,12 +552,12 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
     for (size_t r = 0; r < t.rowHeights.size(); ++r) {
         const float rowH = t.rowHeights[r];
         if (r == 0 && m.tableVerticalLines)
-            fill(0.0f, rowTop, in.contentWidth, 1.0f, grid, true);
-        fill(0.0f, rowTop + rowH - 1.0f, in.contentWidth, 1.0f, grid,
+            fill(0.0f, rowTop, tableWidth, 1.0f, grid, true);
+        fill(0.0f, rowTop + rowH - 1.0f, tableWidth, 1.0f, grid,
              r == 0);
         for (size_t c = 0; c <= t.columnCount && m.tableVerticalLines; ++c) {
             float gx = TableColumnX(t, c);
-            if (c >= t.columnCount) gx = in.contentWidth - 1.0f;
+            if (c >= t.columnCount) gx = tableWidth - 1.0f;
             fill(gx, rowTop, 1.0f, rowH, grid, r == 0);
         }
         rowTop += rowH;
@@ -427,7 +583,7 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
         t.header.items.insert(
             t.header.items.begin(),
             display::FillRect{
-                platform::Rect{0.0f, top, in.contentWidth, t.headerHeight},
+                platform::Rect{0.0f, top, tableWidth, t.headerHeight},
                 PinnedHeaderFill(m, *in.palette, node.tableMonospace)});
 
         // The words go with the band. The page's cells are each port's own

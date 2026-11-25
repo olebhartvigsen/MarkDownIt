@@ -2334,6 +2334,13 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
     for (size_t bi = 0; bi < shared.blocks.size(); ++bi) {
         const layout::LaidBlock& b = shared.blocks[bi];
         float right = 0.0f;
+        // A data table sizes its columns to their content and can be wider
+        // than the page column, so its own right edge is part of the
+        // horizontal range: without it a 33 column file scrolls to the
+        // frame's edge and stops, with two thirds of the table unreachable.
+        if (b.kind == BlockKind::Table && b.width > 0.0f) {
+            right = originX + b.x + b.width + m.padX;
+        }
         if (b.kind == BlockKind::CodeBlock &&
             b.nodeIndex < doc.nodes.size()) {
             const Node& n = doc.nodes[b.nodeIndex];
