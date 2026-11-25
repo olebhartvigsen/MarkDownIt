@@ -31,10 +31,11 @@ launches the app after install. No auto-start entry: MarkDownIt is not a
 resident utility.
 
 The x64 matrix leg also builds and runs the test suite against the same tree
-the packages are made from: one configure, one build, and the app, the tests
-and the parity tools all link the same objects. The arm64 leg is a cross
-build whose exe cannot run on an x64 runner, so it is compile-only; that is
-the one part of a release no CI runner can execute.
+the packages are made from: one configure, one build, one set of
+dependencies. The sources compile per target either way, so the saving is the
+missing second configure and a parallel MSBuild, not shared objects. The arm64
+leg is a cross build whose exe cannot run on an x64 runner, so it is
+compile-only; that is the one part of a release no CI runner can execute.
 
 `build-msix` stages the exe, then calls `tools/ci/pack-msix.ps1` once per
 architecture. The script owns the whole package: it writes the version and

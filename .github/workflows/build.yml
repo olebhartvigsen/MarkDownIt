@@ -98,10 +98,10 @@ jobs:
         # here was hardcoded to x64 and wrote into D:\a\_temp by hand.
         run: ./tools/ci/find-sdk.ps1 -Arch x64
 
-      # One build tree. With BUILD_TESTS on, the test exes and the parity
-      # tools link the same objects the app links, so the shared code is
-      # compiled once instead of twice: the two configures and the second
-      # full build were most of this job's time.
+      # One build tree, and MSBuild told to use every core. The sources are
+      # compiled per target either way (renderer.cpp is in both target
+      # lists), so the win is one configure instead of two and a parallel
+      # MSBuild, not deduplicated objects.
       - name: Configure CMake
         run: |
           cmake -B build -G "Visual Studio 17 2022" -A x64 `
@@ -111,7 +111,7 @@ jobs:
             -DPROPSYS_LIB="${{ steps.find-sdk.outputs.propsys_lib }}"
 
       - name: Build the app, the tests and the parity tools
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --parallel 4
 
       - name: Verify exe type
         shell: bash

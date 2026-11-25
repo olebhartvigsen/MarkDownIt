@@ -108,7 +108,7 @@ jobs:
           cmake @configure
 
       - name: Build Release exe
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --parallel 4
 
       - name: Verify exe type
         shell: bash
