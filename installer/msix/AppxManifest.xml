@@ -47,7 +47,14 @@
       <Extensions>
         <!-- Let the packaged app open .md files from Explorer and the Store. -->
         <uap3:Extension Category="windows.fileTypeAssociation">
-          <uap3:FileTypeAssociation Name="markdownit.md" Logo="assets\DocLogo44.png">
+          <uap3:FileTypeAssociation Name="markdownit.md">
+            <!-- The document icon is a child element, not an attribute:
+                 uap3:FileTypeAssociation takes Name, Parameters,
+                 MultiSelectModel and a few others, and makeappx rejects
+                 anything else (C00CE015, "The attribute 'Logo' ... is not
+                 defined in the DTD/Schema"). It has to sit before
+                 SupportedFileTypes: the schema is a sequence. -->
+            <uap:Logo>assets\DocLogo44.png</uap:Logo>
             <uap:SupportedFileTypes>
               <uap:FileType>.md</uap:FileType>
             </uap:SupportedFileTypes>
