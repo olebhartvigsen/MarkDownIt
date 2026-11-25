@@ -527,6 +527,17 @@ bool AppWindow::Init(HINSTANCE hInst, int nCmdShow, const std::wstring& cmdLine)
     // Initialize the Ribbon Framework after the window is visible.
     InitRibbon(hwnd_, this);
 
+    // The native chrome takes the appearance the window resolved in
+    // OnCreate, and this is the second half of that: the ribbon only
+    // exists once LoadUI has run above, so the property that darkens it
+    // can be written no earlier than here. OnCreate already took the
+    // frame, the scrollbars and the background brush before the first
+    // ShowWindow, so nothing flashes light. Before this call, only a
+    // toggle by hand reached ApplyNativeTheme, which is why a launch
+    // that started dark (System on a dark desktop, or a pinned Dark)
+    // drew a dark page inside a light frame and a light ribbon.
+    ApplyNativeTheme();
+
     // Force a content resize + repaint. The ribbon may not fire
     // OnViewChanged immediately, so we ensure the content window
     // is positioned correctly right after initialization.
@@ -3019,6 +3030,13 @@ void AppWindow::OnCreate(HWND hwnd) {
     }
     // else: a file will be opened via timer 3 from OpenPendingFile.
     // Show a blank document until then (no flash of sample text).
+    // The frame half of the appearance: DWM's caption, the scrollbar
+    // theme and the window's background brush are written here, while
+    // the window is still hidden, so the first frame the reader sees is
+    // already in the resolved colours. The ribbon is not loaded yet, so
+    // SetRibbonDarkMode inside sees no framework and does nothing; Init
+    // calls this again after InitRibbon for that half.
+    ApplyNativeTheme();
     InitEditor();
     UpdateScrollInfo();
 }
@@ -3819,6 +3837,21 @@ void AppWindow::StartQAWalk(const std::string& states) {
         qa_log_path_ = "markdownit-qa.log";
     }
     remove(qa_log_path_.c_str());
+
+    // The appearance this launch resolved before the first frame, and
+    // whether the chrome was themed for it. A state walk has always
+    // switched the mode by hand, so it could never show that the
+    // startup path missed the native half; this line is the record that
+    // it did not. hc is the high contrast bail-out, which wins over the
+    // resolved appearance on purpose.
+    {
+        char line[120];
+        snprintf(line, sizeof(line), "qa launch: appearance=%d mode=%s hc=%d",
+                 static_cast<int>(appearance_),
+                 theme::ThemeModeName(theme_mode_),
+                 HighContrastActive() ? 1 : 0);
+        QALogLine(line);
+    }
 
     // The walk pins the window to the size the mac walk uses, so the
     // two captures line up.

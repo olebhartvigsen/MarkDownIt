@@ -374,6 +374,43 @@ walk has no SVG state at all and one side alone cannot pair. The
 transform is unit-tested and compiled on both platforms, but it is not
 photographed. Adding an SVG state to both walks is the follow-up.
 
+## Launch that starts dark (follow-up, fixed)
+
+A cold start in dark mode drew a dark page inside a light frame: a light
+title bar, light scrollbars and a light ribbon. It was reported as "open a
+md document by clicking it", and the history of the code explains why the
+double click looked like the trigger. `ApplyNativeTheme`, the half that
+writes the DWM caption, the `DarkMode_Explorer` scrollbar theme, the
+window background brush and the ribbon property 2004, was only ever called
+from `ApplyAppearance`, and only `SetThemeMode` and `OnSystemThemeChanged`
+call that. A launch in System mode on a dark desktop, or with Dark pinned,
+resolved the palette correctly and painted the page dark, then left the
+native chrome at its light default until someone toggled the mode by hand.
+Toggling is the first thing a reader does after opening a file, which is
+why the flaw looked like it belonged to the open path.
+
+The fix applies the theme in the two places the work becomes possible:
+
+- `AppWindow::OnCreate` applies the native theme at its end, while the
+  window is still hidden, so the frame, the scrollbars and the brush are
+  right in the first frame the reader sees. The ribbon does not exist yet,
+  so `SetRibbonDarkMode` finds no framework and returns.
+- `AppWindow::Init` applies it again directly after `InitRibbon`, the
+  first moment `LoadUI` has run and the ribbon can be darkened. The second
+  call repeats two DWM and `SetWindowTheme` calls, which is cheaper than a
+  second rule that could drift.
+
+The state walk could not have caught this. Every state that wanted dark
+called `SetThemeMode(Dark)` by hand, and that is the one path that already
+worked. `StartQAWalk` now writes a `qa launch:` line with the resolved
+appearance, the mode and the high contrast answer, so the launch path
+appears in the trace of every capture run instead of being asserted in
+prose.
+
+Verified with `tools/check_alignment.sh` only. The compile and the
+pictures belong to CI, and the Windows job is the one that has to stay
+green here.
+
 ## Risks and open questions
 
 1. **The ribbon has no contract.** `UI_PKEY_DarkModeRibbon` is reverse engineered, gated by build number, and not present in any Microsoft header. BowPad and TortoiseGit ship it, which is strong evidence it works, not a promise it keeps working. Decide now what happens if a Windows update drops it: a light ribbon inside a dark window (acceptable, documented), or replacing the ribbon with a custom strip (a much bigger change). I would take the first.
