@@ -79,6 +79,18 @@ jobs:
       - name: Verify the test inventory checker
         run: python3 tools/test_check_test_inventory.py
 
+      # GitHub answers an invalid workflow file with a run that has no jobs
+      # and no error in the log, which is how a bad context expression got
+      # merged once. actionlint reads the same files and names the problem.
+      # The version is pinned; the tarball is fetched from the release page.
+      - name: Lint the workflows
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+        run: |
+          curl -sSfLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          tar xzf "actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" actionlint
+          ./actionlint -color
+
       # Advisory only: one side of a renderer or controller pair that
       # changed alone is how the ports drift. A Parity: line in the
       # commit message records the reason and silences it.
@@ -290,8 +302,10 @@ jobs:
     timeout-minutes: 75
     env:
       # The one path ccache and the cache action agree on. See the restore
-      # step for why this is set rather than assumed.
-      CCACHE_DIR: ${{ runner.temp }}/ccache
+      # step for why this is set rather than assumed. github.workspace is
+      # used because the runner context is not available in a job-level
+      # env, and GitHub rejects the workflow outright when it is.
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_COMPRESS: 'true'
       CCACHE_MAXSIZE: 2G
     steps:
@@ -311,7 +325,7 @@ jobs:
           # CCACHE_DIR is pinned at job level. Without it ccache writes to
           # ~/Library/Caches/ccache on macOS, so caching ~/.ccache restored
           # an empty directory and every object missed.
-          path: ${{ runner.temp }}/ccache
+          path: ${{ github.workspace }}/.ccache
           # Exact key per commit, with a fallback to the same dependency
           # set and then to anything: ccache hashes each translation unit
           # itself, so an older cache still serves every file that did not

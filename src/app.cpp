@@ -1730,7 +1730,11 @@ void AppWindow::OnLButtonDown(HWND hwnd, int x, int y) {
     }
     SetCapture(hwnd);
     float scale = 96.0f / static_cast<float>(dpi_);
-    float docX = static_cast<float>(x) * scale;
+    // The click arrives in client pixels; the layout speaks document
+    // points, so both axes take the scroll the frame was drawn with.
+    // The x used to skip the horizontal scroll, which put every caret and
+    // every filter press a scroll's width off in a wide table.
+    float docX = static_cast<float>(x) * scale + scrollX_;
     float docY = static_cast<float>(y) * scale + scrollY_;
 
     // Ensure the layout cache is populated. The cache may be empty
@@ -2027,7 +2031,11 @@ void AppWindow::OnLButtonDblClk(HWND hwnd, int x, int y) {
     last_click_time_ = GetTickCount();
     last_click_y_ = y;
     float scale = 96.0f / static_cast<float>(dpi_);
-    float docX = static_cast<float>(x) * scale;
+    // The click arrives in client pixels; the layout speaks document
+    // points, so both axes take the scroll the frame was drawn with.
+    // The x used to skip the horizontal scroll, which put every caret and
+    // every filter press a scroll's width off in a wide table.
+    float docX = static_cast<float>(x) * scale + scrollX_;
     float docY = static_cast<float>(y) * scale + scrollY_;
     uint32_t offset = layout_cache_.PointToOffsetAtOrAfterBlock(docX, docY);
     if (offset == UINT32_MAX) return;
@@ -2208,7 +2216,11 @@ void AppWindow::OnMouseMove(HWND hwnd, int x, int y) {
     } else if (text_dragging_) {
         StopScrollAnimation();
     }
-    float docX = static_cast<float>(x) * scale;
+    // The click arrives in client pixels; the layout speaks document
+    // points, so both axes take the scroll the frame was drawn with.
+    // The x used to skip the horizontal scroll, which put every caret and
+    // every filter press a scroll's width off in a wide table.
+    float docX = static_cast<float>(x) * scale + scrollX_;
     float docY = static_cast<float>(hitY) * scale + scrollY_;
 
     // Ensure the layout cache is populated during drag operations.

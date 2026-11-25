@@ -54,3 +54,4 @@ desktop.ini
 tools/macos-icons/out/
 tools/macos-icons/node_modules
 build-linux/
+.ccache/

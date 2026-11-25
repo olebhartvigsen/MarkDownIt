@@ -438,6 +438,85 @@ TEST(TableLayout, DistributeTableColumnsMath) {
     }
 }
 
+// A data table (a CSV file) sizes every column to the longest word a reader
+// has to read whole in it, and is allowed to be wider than the page column:
+// a 33 column localisation export used to be squeezed into the window until
+// its prose columns were a character and a half wide, with a paragraph
+// wrapped inside each of them. A markdown table keeps the equal split.
+TEST(TableLayout, ADataTableSizesItsColumnsToTheContent) {
+    Node data;
+    data.block = BlockKind::Table;
+    data.tableMonospace = true;
+    TableRow head, body;
+    // Four columns, each holding a fifteen character word: 120 DIP of
+    // glyphs plus the cell padding on both sides.
+    head.cells = {Cell(U"alphaalphabet", true, 0, 14),
+                  Cell(U"bravobravoecho", true, 15, 29),
+                  Cell(U"charliecharlie", true, 30, 45),
+                  Cell(U"deltadeltadelta", true, 46, 61)};
+    body.cells = {Cell(U"alphaalphabet", false, 62, 76),
+                  Cell(U"bravobravoecho", false, 77, 91),
+                  Cell(U"charliecharlie", false, 92, 107),
+                  Cell(U"deltadeltadelta", false, 108, 123)};
+    data.rows = {head, body};
+
+    Rig wide(400.0f);
+    float y = 0.0f;
+    layout::LaidBlock b = layout::LayoutTableBlock(wide.ctx, data, 0, &y);
+    ASSERT_TRUE(b.table != nullptr);
+    ASSERT_EQ(b.table->colWs.size(), static_cast<size_t>(4));
+    const float need = 15.0f * fake::FakeTextEngine::kGlyphWidth +
+                       2.0f * kM.cellPadX;
+    float sum = 0.0f;
+    for (float w : b.table->colWs) {
+        NEAR(w, need);
+        sum += w;
+    }
+    // Wider than the page, which is the point: the view scrolls sideways
+    // instead of squeezing the columns.
+    NEAR(b.width, sum);
+    EXPECT_GT(b.width, 400.0f);
+
+    // The washes and the grid cover the table, not the page column, or the
+    // right hand columns scroll past a stripe that stops halfway.
+    const display::FillRect& wash = At<display::FillRect>(wide.list, 0);
+    NEAR(wash.rect.width, sum);
+
+    // The same rows as a markdown table: the equal split rule, inside the
+    // frame, so a prose table keeps the layout and the goldens it had.
+    data.tableMonospace = false;
+    Rig prose(400.0f);
+    float y2 = 0.0f;
+    layout::LaidBlock plain = layout::LayoutTableBlock(prose.ctx, data, 0, &y2);
+    NEAR(plain.width, 400.0f);
+    ASSERT_EQ(plain.table->colWs.size(), static_cast<size_t>(4));
+    float proseSum = 0.0f;
+    for (float w : plain.table->colWs) proseSum += w;
+    NEAR(proseSum, 400.0f);
+}
+
+// A word longer than the cap is cut: one enormous token in a cell may not
+// turn its column into a page of its own. The cap is characters of the
+// fixed face, thirty two of them.
+TEST(TableLayout, ADataTableCapsAColumnAtTheTokenCap) {
+    Node n;
+    n.block = BlockKind::Table;
+    n.tableMonospace = true;
+    TableRow head, body;
+    head.cells = {Cell(U"ref", true, 0, 3)};
+    // Sixty characters, no space: a URL, or a base64 blob.
+    body.cells = {Cell(U"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                       false, 4, 64)};
+    n.rows = {head, body};
+    Rig rig(400.0f);
+    float y = 0.0f;
+    layout::LaidBlock b = layout::LayoutTableBlock(rig.ctx, n, 0, &y);
+    ASSERT_TRUE(b.table != nullptr);
+    ASSERT_EQ(b.table->colWs.size(), static_cast<size_t>(1));
+    NEAR(b.table->colWs[0], 32.0f * fake::FakeTextEngine::kGlyphWidth +
+                            2.0f * kM.cellPadX);
+}
+
 // Every grid and wash fill lies inside its own table's block. The
 // fills once started at y 0 of the document, so a table laid below
 // the heading painted its grid over the heading and paragraphs above.
