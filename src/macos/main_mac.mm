@@ -1789,6 +1789,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
         // The command wheel is ours: it must zoom and must not scroll.
         const CGFloat docBefore = [view_ frame].size.height;
+        const float zoomBefore = zoom_;
         for (int k = 0; k < 5; ++k) {
             CGEventRef ev = CGEventCreateScrollWheelEvent(
                 NULL, kCGScrollEventUnitPixel, 1, -40);
@@ -1797,6 +1798,17 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             CGEventPost(kCGHIDEventTap, ev);
             CFRelease(ev);
             pump();
+        }
+        // One step, for certain. The posted events race the pump, so the
+        // step sometimes does not land, and every compared frame after
+        // this state assumes the zoom it leaves behind. Land exactly one
+        // step and say in the trace when the queue missed it.
+        if (zoom_ != zoom::Step(zoomBefore, true)) {
+            platform::TraceMac(
+                "qa wheel: the command wheel missed, stepping %.0f -> %.0f",
+                (double)(zoomBefore * 100.0f),
+                (double)(zoom::Step(zoomBefore, true) * 100.0f));
+            [self setZoom:zoom::Step(zoomBefore, true) quietly:YES];
         }
         platform::TraceMac("qa wheel: start=%.1f end=%.1f x=%.1f doc=%.1f->%.1f",
                       startClip, [clip bounds].origin.y, [clip bounds].origin.x,
