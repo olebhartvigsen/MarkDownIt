@@ -18,6 +18,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace platform {
@@ -85,6 +86,98 @@ struct Rect {
     float height = 0.0f;
 };
 
+// The horizontal alignment of a laid out block inside the column it was
+// laid out for.
+enum class TextAlign {
+    Left,    // flush with the column's left edge
+    Center,  // centred on the column
+    Right,   // flush with the column's right edge
+};
+
+// One laid out block of text: the runs of a paragraph or a table cell
+// already broken into lines, measured and aligned, as the text engine
+// keeps them. A target draws it without measuring anything again, which
+// is what a wrapped, aligned block needs and what a row of DrawText calls
+// cannot express: those place one run at one baseline and know nothing
+// of the line the run belongs to.
+//
+// The handle is opaque to shared code. Windows keeps the DirectWrite
+// layout the engine built, macOS keeps the block's Core Text lines, and
+// the generic engine keeps the seam's own line records. A block is drawn
+// by the target that shares its engine; shared code only passes it on.
+class TextLayout {
+public:
+    virtual ~TextLayout() = default;
+
+    // The width of the column the block was laid out in, in points.
+    virtual float Width() const = 0;
+
+    // The height of the block, in points: the top of its first line to
+    // the bottom of its last.
+    virtual float Height() const = 0;
+
+    // The lines the block was broken into, in seam terms, when the layout
+    // keeps them that way. The generic engine's layout does. A native one
+    // answers null, because its lines live inside the platform's own text
+    // object, and its target draws that object instead.
+    virtual const std::vector<TextLine>* Lines() const { return nullptr; }
+
+    // The left edge of one line inside the block's column, from the
+    // alignment the block was laid out with. A native layout aligns its
+    // own lines and answers zero; the portable one answers the offset.
+    virtual float LineX(const TextLine& line) const {
+        (void)line;
+        return 0.0f;
+    }
+};
+
+// The seam's handle on a laid out block. Shared ownership, because a
+// painter may hold a block across frames while the engine's own copies
+// come and go with the layout pass.
+using TextLayoutHandle = std::shared_ptr<const TextLayout>;
+
+namespace detail {
+
+// The portable layout: the lines an engine measured, kept exactly as they
+// came back, with the column width and the alignment they were laid out
+// for. Every engine that owns no text object of its own answers with this
+// one, through the TextEngine default below, and it is what the generic
+// engine has.
+class LineTextLayout final : public TextLayout {
+public:
+    LineTextLayout(std::vector<TextLine> lines, float width, TextAlign align)
+        : lines_(std::move(lines)), width_(width), align_(align) {
+        for (const TextLine& line : lines_) height_ += line.height;
+    }
+
+    float Width() const override { return width_; }
+    float Height() const override { return height_; }
+    const std::vector<TextLine>* Lines() const override { return &lines_; }
+
+    float LineX(const TextLine& line) const override {
+        if (!(width_ > 0.0f)) return 0.0f;
+        if (align_ == TextAlign::Center) return (width_ - line.width) * 0.5f;
+        if (align_ == TextAlign::Right) return width_ - line.width;
+        return 0.0f;
+    }
+
+private:
+    std::vector<TextLine> lines_;
+    float width_ = 0.0f;
+    float height_ = 0.0f;
+    TextAlign align_ = TextAlign::Left;
+};
+
+}  // namespace detail
+
+// Wraps measured lines in the seam's handle, aligned inside the column
+// width they were measured at.
+inline TextLayoutHandle MakeLineLayout(std::vector<TextLine> lines,
+                                       float width, TextAlign align) {
+    return std::make_shared<detail::LineTextLayout>(std::move(lines), width,
+                                                    align);
+}
+
 // Measures and places text.
 //
 // MeasureWrapped lays the runs out in a column of the given width and
@@ -129,6 +222,18 @@ public:
     // The height of a line of the given font, which the editor needs for
     // the caret and for line spacing.
     virtual float LineHeight(const FontSpec& font) const = 0;
+
+    // Lays the runs out into one block that a target draws without
+    // measuring again: the same breaks MeasureWrapped takes at the same
+    // width, kept with the column width and the alignment they were laid
+    // out for. The default builds the portable line block on top of
+    // MeasureWrapped, which every engine already answers; a native engine
+    // overrides it with its own text object.
+    virtual TextLayoutHandle BuildLayout(const std::vector<GlyphRun>& runs,
+                                         float maxWidth, TextAlign align) {
+        return MakeLineLayout(MeasureWrapped(runs, maxWidth, 0.0f), maxWidth,
+                              align);
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -231,6 +336,48 @@ public:
     // left edge of the baseline.
     virtual void DrawText(const std::string& utf8, const FontSpec& font,
                           float x, float baselineY, const Color& color) = 0;
+
+    // Draws a laid out block of text with its top left at (x, topY), its
+    // lines already broken, measured and aligned by the engine that built
+    // it. The whole block is drawn in one colour: a platform text object
+    // paints one brush, and the portable path below matches it.
+    //
+    // A block from this platform's engine goes through the platform's own
+    // text object, which is the only way a wrapped, justified block can be
+    // drawn. Any other block (the generic engine's, on a real target) is
+    // drawn line by line through DrawText by this default, so a target
+    // that has no native path for a block still draws it.
+    virtual void DrawLayout(const TextLayout& layout, float x, float topY,
+                            const Color& color) {
+        const std::vector<TextLine>* lines = layout.Lines();
+        if (!lines) return;  // a native block this target cannot draw
+        float lineTop = topY;
+        for (const TextLine& line : *lines) {
+            const float lineX = x + layout.LineX(line);
+            const float baseline = lineTop + line.ascent;
+            for (size_t k = 0; k < line.runs.size(); ++k) {
+                const GlyphRun& run = line.runs[k];
+                // A run's share of the line runs to the next run's start,
+                // and the last one to the line's own end.
+                const float end = k + 1 < line.runs.size()
+                                      ? line.runs[k + 1].x
+                                      : line.width;
+                const float width = end - run.x;
+                const float runX = lineX + run.x;
+                DrawText(run.text, run.font, runX, baseline, color);
+                if (run.underline)
+                    StrokeLine(runX, baseline + 2.0f, runX + width,
+                               baseline + 2.0f, color, 1.0f);
+                if (run.strike)
+                    StrokeLine(runX,
+                               baseline - 0.30f * run.font.size,
+                               runX + width,
+                               baseline - 0.30f * run.font.size,
+                               color, 1.0f);
+            }
+            lineTop += line.height;
+        }
+    }
 
     // Draws an image into the rectangle, scaled to fit it. The image is
     // scaled to fit, so the aspect ratio is kept and the image is

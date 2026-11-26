@@ -1,25 +1,40 @@
 // The seam conformance suite of plan task 2.2. One set of assertions,
-// every engine that implements the seam. The fake engine of task 2.3
-// runs it on both platforms, the Core Text engine on macOS; the
-// DirectWrite engine enrolls when it lands, and each future engine
-// joins with one line.
+// every engine that implements the seam. The fake engine of task 2.3 and
+// the Core Text engine run it on macOS, the DirectWrite engine on Windows,
+// and each future engine joins with one line.
 //
 // The assertions are structural invariants, not exact numbers: real
 // engines answer with real fonts, so the suite checks what every
 // conforming engine owes its callers, whatever glyph widths it picks.
+//
+// The second half of the grid covers the seam's laid out block: every
+// engine builds one, and it is drawn through a real platform target into
+// an offscreen surface whose ink is read back.
 
 #include "fake_text_engine.h"
 #include "gtest_lite.h"
 
+#include <cmath>
+#include <memory>
 #include <string>
 #include <vector>
 
-#ifdef __APPLE__
-#include "../src/macos/text_engine_mac.h"
+// The concrete adapters below the seam read the seam, and windows.h
+// redefines DrawText as a macro before the seam is read, so the target
+// header comes first, exactly the way renderer.h orders it on Windows.
+#if defined(_WIN32)
+#include "../src/windows/render_target_win.h"
+#include "../src/windows/text_engine_win.h"
+#include <windows.h>
+#include <d2d1.h>
+#include <d2d1helper.h>
+#include <dwrite.h>
 #endif
 
-#ifdef _WIN32
-#include "../src/windows/text_engine_win.h"
+#if defined(__APPLE__)
+#include <CoreGraphics/CoreGraphics.h>
+#include "../src/macos/text_engine_mac.h"
+#include "../src/macos/cg_target_mac.h"
 #endif
 
 using platform::FontSpec;
@@ -253,6 +268,268 @@ void CheckTextEngine(TextEngine& engine) {
     EXPECT_TRUE(hitEnd >= hitZero);
 }
 
+// ---------------------------------------------------------------------------
+// The ink a target actually puts down
+// ---------------------------------------------------------------------------
+//
+// Drawing a laid out block cannot be checked from the parts the seam
+// exposes: the point of the method is that the platform's own text object
+// draws it. So the assertions below draw into an offscreen surface and
+// read the paper back. On Windows that is a Direct2D DC target over a
+// DIB section, on macOS a Core Graphics bitmap context; both are the real
+// adapter, bound to memory instead of a window.
+//
+// Every pixel is 32 bit with four channels and the alpha last, on both
+// platforms, so one scan finds the ink in either byte order: a black
+// glyph is dark in all three colour channels, whichever one leads.
+
+constexpr int kSurfaceW = 320;
+constexpr int kSurfaceH = 120;
+
+platform::Rect ScanInk(const unsigned char* pixels, int width, int height) {
+    int left = width;
+    int top = height;
+    int right = 0;
+    int bottom = 0;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const unsigned char* p = pixels + (static_cast<size_t>(y) *
+                                                   static_cast<size_t>(width) +
+                                               static_cast<size_t>(x)) *
+                                                  4;
+            if (p[0] < 128 && p[1] < 128 && p[2] < 128) {
+                if (x < left) left = x;
+                if (x + 1 > right) right = x + 1;
+                if (y < top) top = y;
+                if (y + 1 > bottom) bottom = y + 1;
+            }
+        }
+    }
+    platform::Rect ink;
+    if (right <= left || bottom <= top) return ink;  // nothing drawn
+    ink.x = static_cast<float>(left);
+    ink.y = static_cast<float>(top);
+    ink.width = static_cast<float>(right - left);
+    ink.height = static_cast<float>(bottom - top);
+    return ink;
+}
+
+#if defined(_WIN32)
+
+// A Direct2D DC target over a top down DIB section: the software path the
+// printer uses, with the pixels readable straight from memory.
+class InkSurface {
+public:
+    bool Ready() const { return ready_; }
+    platform::RenderTarget& Target() { return *target_; }
+
+    void Begin() {
+        dcTarget_->BeginDraw();
+        dcTarget_->SetTransform(D2D1::Matrix3x2F::Identity());
+        dcTarget_->Clear(D2D1::ColorF(1.0f, 1.0f, 1.0f, 1.0f));
+    }
+    void End() { dcTarget_->EndDraw(); }
+
+    platform::Rect Ink() { return ScanInk(bits_, kSurfaceW, kSurfaceH); }
+
+    ~InkSurface() {
+        target_.reset();  // its formats go before the factory they came from
+        engine_.reset();
+        if (dcTarget_) dcTarget_->Release();
+        if (factory_) factory_->Release();
+        if (old_) SelectObject(dc_, old_);
+        if (bitmap_) DeleteObject(bitmap_);
+        if (dc_) DeleteDC(dc_);
+    }
+
+    InkSurface() {
+        BITMAPINFO info = {};
+        info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        info.bmiHeader.biWidth = kSurfaceW;
+        info.bmiHeader.biHeight = -kSurfaceH;  // top down
+        info.bmiHeader.biPlanes = 1;
+        info.bmiHeader.biBitCount = 32;
+        info.bmiHeader.biCompression = BI_RGB;
+        dc_ = CreateCompatibleDC(nullptr);
+        if (!dc_) return;
+        bitmap_ = CreateDIBSection(dc_, &info, DIB_RGB_COLORS,
+                                   reinterpret_cast<void**>(&bits_), nullptr, 0);
+        if (!bitmap_ || !bits_) return;
+        old_ = SelectObject(dc_, bitmap_);
+        if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
+                                     &factory_)) ||
+            !factory_) {
+            return;
+        }
+        D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
+            D2D1_RENDER_TARGET_TYPE_SOFTWARE,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                              D2D1_ALPHA_MODE_IGNORE),
+            96.0f, 96.0f);
+        if (FAILED(factory_->CreateDCRenderTarget(&props, &dcTarget_)) ||
+            !dcTarget_) {
+            return;
+        }
+        RECT area = {0, 0, kSurfaceW, kSurfaceH};
+        if (FAILED(dcTarget_->BindDC(dc_, &area))) return;
+        // Grayscale, never ClearType: the paper has no subpixel stripes.
+        dcTarget_->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+        engine_.reset(new platform::DWriteEngine());
+        target_.reset(
+            new platform::D2DTarget(dcTarget_, engine_->Factory()));
+        ready_ = true;
+    }
+
+private:
+    HDC dc_ = nullptr;
+    HBITMAP bitmap_ = nullptr;
+    HGDIOBJ old_ = nullptr;
+    unsigned char* bits_ = nullptr;
+    ID2D1Factory* factory_ = nullptr;
+    ID2D1DCRenderTarget* dcTarget_ = nullptr;
+    std::unique_ptr<platform::DWriteEngine> engine_;
+    std::unique_ptr<platform::D2DTarget> target_;
+    bool ready_ = false;
+};
+
+#elif defined(__APPLE__)
+
+// A Core Graphics bitmap context with the renderer's own flip: origin top
+// left, y down, so a block placed at (x, top) lands at those pixels.
+class InkSurface {
+public:
+    bool Ready() const { return ready_; }
+    platform::RenderTarget& Target() { return *target_; }
+
+    void Begin() {
+        CGContextSaveGState(context_);
+        CGContextSetRGBFillColor(context_, 1.0, 1.0, 1.0, 1.0);
+        CGContextFillRect(context_, CGRectMake(0, 0, kSurfaceW, kSurfaceH));
+    }
+    void End() { CGContextRestoreGState(context_); }
+
+    platform::Rect Ink() {
+        return ScanInk(pixels_.data(), kSurfaceW, kSurfaceH);
+    }
+
+    ~InkSurface() {
+        target_.reset();
+        engine_.reset();
+        if (context_) CGContextRelease(context_);
+        if (space_) CGColorSpaceRelease(space_);
+    }
+
+    InkSurface() {
+        pixels_.assign(static_cast<size_t>(kSurfaceW) *
+                           static_cast<size_t>(kSurfaceH) * 4,
+                       255);
+        space_ = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        if (!space_) return;
+        context_ = CGBitmapContextCreate(
+            pixels_.data(), kSurfaceW, kSurfaceH, 8,
+            static_cast<size_t>(kSurfaceW) * 4, space_,
+            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+        if (!context_) return;
+        CGContextTranslateCTM(context_, 0, kSurfaceH);
+        CGContextScaleCTM(context_, 1, -1);
+        engine_.reset(new platform::CoreTextEngine());
+        target_.reset(new platform::CoreGraphicsTarget(context_));
+        ready_ = true;
+    }
+
+private:
+    std::vector<unsigned char> pixels_;
+    CGColorSpaceRef space_ = nullptr;
+    CGContextRef context_ = nullptr;
+    std::unique_ptr<platform::CoreTextEngine> engine_;
+    std::unique_ptr<platform::CoreGraphicsTarget> target_;
+    bool ready_ = false;
+};
+
+#endif  // _WIN32 / __APPLE__
+
+// What every conforming engine owes a painter that draws a block: a block
+// of the column's width and a real height, the ink inside the column it
+// was given, a second placement that moves the ink, a narrower column
+// that wraps to more lines, and an alignment that shifts the words to the
+// column's far edge. None of the numbers is a font metric: every engine
+// picks its own, so the grid pins the relations.
+void CheckDrawLayout(TextEngine& engine, InkSurface& surface) {
+    const platform::Color black{0.0f, 0.0f, 0.0f, 1.0f};
+
+    std::vector<GlyphRun> runs = {MakeRun("table ", 14.0f),
+                                  MakeRun("cell", 14.0f)};
+    runs[1].font.bold = true;
+
+    // The block reports the column it was laid out in and the height of
+    // its lines.
+    std::vector<TextLine> whole = engine.MeasureWrapped(runs, 0.0f, 0.0f);
+    ASSERT_TRUE(!whole.empty());
+    ASSERT_TRUE(whole[0].width > 20.0f);
+    const float column = whole[0].width + 120.0f;
+
+    platform::TextLayoutHandle block =
+        engine.BuildLayout(runs, column, platform::TextAlign::Left);
+    ASSERT_TRUE(block != nullptr);
+    if (!block) return;
+    EXPECT_NEAR(block->Width(), column, 0.5f);
+    const float oneLine = block->Height();
+    EXPECT_GT(oneLine, 0.0f);
+
+    // The ink lands inside the column the block was placed in.
+    surface.Begin();
+    surface.Target().DrawLayout(*block, 20.0f, 15.0f, black);
+    surface.End();
+    const platform::Rect ink = surface.Ink();
+    EXPECT_GT(ink.width, 0.0f);
+    EXPECT_GT(ink.height, 0.0f);
+    EXPECT_GE(ink.x, 19.0f);
+    EXPECT_LE(ink.x + ink.width, 21.0f + column);
+    // The block's own top is where its first baseline's ascent starts, and
+    // a line is drawn at its top plus the ascent the engine reported. The
+    // generic engine reports none, so its glyphs may sit above the top;
+    // what every engine owes is that the ink stays inside the block's box.
+    EXPECT_LT(ink.y, 60.0f);
+    EXPECT_LE(ink.y + ink.height, 16.0f + block->Height());
+
+    // Placing the same block further right moves its ink with it: the draw
+    // is placed by the caller, not by a position baked into the layout.
+    surface.Begin();
+    surface.Target().DrawLayout(*block, 180.0f, 15.0f, black);
+    surface.End();
+    const platform::Rect moved = surface.Ink();
+    EXPECT_GT(moved.x, ink.x + 100.0f);
+
+    // A narrower column breaks the same words onto more lines, and the
+    // block grows with them.
+    platform::TextLayoutHandle narrow =
+        engine.BuildLayout(runs, whole[0].width * 0.6f,
+                           platform::TextAlign::Left);
+    ASSERT_TRUE(narrow != nullptr);
+    if (narrow) EXPECT_GT(narrow->Height(), oneLine * 1.5f);
+
+    // Right alignment puts the words at the column's far edge, so the ink
+    // starts a column's worth further right than the same words left
+    // aligned.
+    platform::TextLayoutHandle left =
+        engine.BuildLayout(runs, column, platform::TextAlign::Left);
+    platform::TextLayoutHandle right =
+        engine.BuildLayout(runs, column, platform::TextAlign::Right);
+    ASSERT_TRUE(left != nullptr);
+    ASSERT_TRUE(right != nullptr);
+    if (left && right) {
+        surface.Begin();
+        surface.Target().DrawLayout(*left, 10.0f, 15.0f, black);
+        surface.End();
+        const platform::Rect leftInk = surface.Ink();
+        surface.Begin();
+        surface.Target().DrawLayout(*right, 10.0f, 15.0f, black);
+        surface.End();
+        const platform::Rect rightInk = surface.Ink();
+        EXPECT_GT(rightInk.x, leftInk.x + 40.0f);
+    }
+}
+
 }  // namespace
 
 TEST(SeamConformance, FakeEngineFollowsTheSeam) {
@@ -260,10 +537,31 @@ TEST(SeamConformance, FakeEngineFollowsTheSeam) {
     CheckTextEngine(engine);
 }
 
+// The portable block on a real target: the seam's own line layout, drawn
+// line by line through DrawText, which is the path a target that does not
+// recognise a block takes.
+TEST(SeamConformance, FakeEngineDrawsALaidOutBlock) {
+    fake::FakeTextEngine engine;
+    InkSurface surface;
+    ASSERT_TRUE(surface.Ready());
+    if (!surface.Ready()) return;
+    CheckDrawLayout(engine, surface);
+}
+
 #ifdef __APPLE__
 TEST(SeamConformance, CoreTextEngineFollowsTheSeam) {
     platform::CoreTextEngine engine;
     CheckTextEngine(engine);
+}
+
+// The Core Text block on the Core Graphics target: the measured CTLines,
+// drawn with CTLineDraw, the mac painter's own text path.
+TEST(SeamConformance, CoreTextEngineDrawsALaidOutBlock) {
+    platform::CoreTextEngine engine;
+    InkSurface surface;
+    ASSERT_TRUE(surface.Ready());
+    if (!surface.Ready()) return;
+    CheckDrawLayout(engine, surface);
 }
 #endif
 
@@ -271,5 +569,15 @@ TEST(SeamConformance, CoreTextEngineFollowsTheSeam) {
 TEST(SeamConformance, DWriteEngineFollowsTheSeam) {
     platform::DWriteEngine engine;
     CheckTextEngine(engine);
+}
+
+// The DirectWrite block on the Direct2D target: one DrawTextLayout, the
+// call the table used to make for itself.
+TEST(SeamConformance, DWriteEngineDrawsALaidOutBlock) {
+    platform::DWriteEngine engine;
+    InkSurface surface;
+    ASSERT_TRUE(surface.Ready());
+    if (!surface.Ready()) return;
+    CheckDrawLayout(engine, surface);
 }
 #endif

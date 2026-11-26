@@ -226,6 +226,33 @@ public:
         CFRelease(line);
     }
 
+    void DrawLayout(const TextLayout& layout, float x, float topY,
+                    const Color& color) override {
+        const auto* native = dynamic_cast<const CgTextLayout*>(&layout);
+        if (!native) {
+            // Any other block, the generic engine's on this target: the
+            // seam's portable path, one DrawText per run.
+            RenderTarget::DrawLayout(layout, x, topY, color);
+            return;
+        }
+        CGContextSaveGState(context_);
+        // The block's own box, the Direct2D twin's clip option: a word
+        // that wrapped past the column does not paint outside it.
+        CGContextClipToRect(context_,
+                            CGRectMake(x, topY, native->Width(),
+                                       native->Height()));
+        // The context is flipped, so the text matrix is flipped back, the
+        // same way DrawText stands its glyphs up.
+        CGContextSetTextMatrix(context_, CGAffineTransformMakeScale(1.0, -1.0));
+        for (const CgTextLayout::Line& line : native->DrawLines()) {
+            if (!line.line) continue;
+            CGContextSetTextPosition(context_, x + line.x,
+                                     topY + line.top + line.ascent);
+            CTLineDraw(line.line, context_);
+        }
+        CGContextRestoreGState(context_);
+    }
+
     void DrawBitmap(BitmapHandle image, const Rect& rect) override {
         platform::DrawImageIntoContext(context_, image, rect);
     }

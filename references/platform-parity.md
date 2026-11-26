@@ -163,7 +163,9 @@ row whose pattern matches nothing on its platform is stale and fails.
 | InlineMarkerRuns.* | macos | Same as ClearInlineFormatting. |
 | TextEngineMac.* | macos | The Core Text engine behind the seam. |
 | SeamConformance.DWriteEngineFollowsTheSeam | windows | The DirectWrite enrollment in the shared conformance grid, the twin of the Core Text row below. |
+| SeamConformance.DWriteEngineDrawsALaidOutBlock | windows | The laid out block grid over the DirectWrite engine and the Direct2D target, the twin of the Core Text row below. |
 | SeamConformance.CoreTextEngineFollowsTheSeam | macos | The Core Text enrollment in the shared conformance grid. The grid itself runs on both runners through the fake engine; the DirectWrite engine has its own row above. |
+| SeamConformance.CoreTextEngineDrawsALaidOutBlock | macos | The laid out block grid over the Core Text engine and the Core Graphics target. The same block assertions run on both runners through the fake engine and the portable path. |
 | SvgNativeMac.* | macos | The CoreGraphics SVG probes behind the same seam. |
 | RendererMac.* | macos | The mac renderer layout arithmetic. |
 

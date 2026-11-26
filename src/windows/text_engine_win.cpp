@@ -145,6 +145,98 @@ float DWriteEngine::LineHeight(const FontSpec& font) const {
     return font.size > 0.0f ? font.size * 1.5f : 12.0f;
 }
 
+DWriteTextLayout::DWriteTextLayout(IDWriteTextLayout* layout, float width,
+                                   float height)
+    : layout_(layout), width_(width), height_(height) {
+    if (layout_) layout_->AddRef();
+}
+
+DWriteTextLayout::~DWriteTextLayout() {
+    if (layout_) layout_->Release();
+}
+
+TextLayoutHandle DWriteEngine::BuildLayout(
+        const std::vector<GlyphRun>& runs, float maxWidth, TextAlign align) {
+    // The fallback is the seam's portable block over the lines
+    // MeasureWrapped answers, so a factory that will not build the layout
+    // still leaves the caller something to draw.
+    const auto fallback = [&]() {
+        return TextEngine::BuildLayout(runs, maxWidth, align);
+    };
+    if (!factory_ || runs.empty() || !(maxWidth > 0.0f)) return fallback();
+
+    // The paragraph: every run's text, and the run's own UTF-16 range so
+    // its face and its decorations land on exactly its characters.
+    struct Span {
+        UINT32 start;
+        UINT32 length;
+        size_t run;
+    };
+    std::vector<Span> spans;
+    std::wstring text;
+    for (size_t r = 0; r < runs.size(); ++r) {
+        const std::wstring part = ToUtf16(runs[r].text);
+        spans.push_back(Span{(UINT32)text.size(), (UINT32)part.size(), r});
+        text += part;
+    }
+    if (text.empty()) return fallback();
+
+    // The first run with text owns the base format; every run dresses its
+    // own span, the same order MeasureWrapped applies.
+    size_t base = 0;
+    while (base < runs.size() && runs[base].text.empty()) ++base;
+    IDWriteTextFormat* format =
+        base < runs.size() ? FormatFor(runs[base].font) : nullptr;
+    if (!format) return fallback();
+
+    IDWriteTextLayout* layout = nullptr;
+    if (FAILED(factory_->CreateTextLayout(text.c_str(), (UINT32)text.size(),
+                                          format, maxWidth, 100000.0f,
+                                          &layout)) ||
+        !layout) {
+        return fallback();
+    }
+    layout->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
+    switch (align) {
+        case TextAlign::Center:
+            layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+            break;
+        case TextAlign::Right:
+            layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+            break;
+        case TextAlign::Left:
+            layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+            break;
+    }
+    for (const Span& span : spans) {
+        if (span.length == 0) continue;
+        const GlyphRun& run = runs[span.run];
+        const DWRITE_TEXT_RANGE range = {span.start, span.length};
+        const std::wstring family = FamilyFor(run.font.family);
+        layout->SetFontFamilyName(family.c_str(), range);
+        layout->SetFontSize(run.font.size > 0.0f ? run.font.size : 14.0f,
+                            range);
+        if (WeightFor(run.font) != DWRITE_FONT_WEIGHT_NORMAL)
+            layout->SetFontWeight(
+                static_cast<DWRITE_FONT_WEIGHT>(WeightFor(run.font)), range);
+        if (run.font.italic)
+            layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, range);
+        if (run.underline) layout->SetUnderline(TRUE, range);
+        if (run.strike) layout->SetStrikethrough(TRUE, range);
+    }
+
+    DWRITE_TEXT_METRICS metrics = {};
+    if (FAILED(layout->GetMetrics(&metrics))) {
+        layout->Release();
+        return fallback();
+    }
+    // The column is the width the caller asked for, even when the words
+    // stop short of it: the alignment is measured against the column, and
+    // that is the box the target clips the block to.
+    const float height = metrics.height > 0.0f ? metrics.height : 0.0f;
+    return std::make_shared<DWriteTextLayout>(layout, maxWidth, height);
+}
+
 IDWriteTextFormat* DWriteEngine::FormatFor(const FontSpec& font) const {
     if (!factory_) return nullptr;
     const std::wstring family = FamilyFor(font.family);

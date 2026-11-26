@@ -23,6 +23,11 @@
 #include <cctype>
 #include <cmath>
 
+// The block the engine built, so the target can draw it: the concrete
+// layout type lives with the engine that made it. Included after the
+// macro is gone, because the header reads the seam.
+#include "windows/text_engine_win.h"
+
 namespace platform {
 namespace {
 
@@ -258,6 +263,27 @@ void D2DTarget::DrawText(const std::string& utf8, const FontSpec& font, float x,
         brush->Release();
     }
     layout->Release();
+}
+
+void D2DTarget::DrawLayout(const TextLayout& layout, float x, float topY,
+                           const Color& color) {
+    // The block from this platform's engine: one DrawTextLayout, which
+    // carries the break, the alignment and the per run faces the engine
+    // measured. The CLIP option is what the table's cell always asked
+    // for, so a wrapped word cannot paint outside its column.
+    if (const auto* native = dynamic_cast<const DWriteTextLayout*>(&layout)) {
+        IDWriteTextLayout* text = native->Layout();
+        if (!target_ || !text) return;
+        ID2D1SolidColorBrush* brush = BrushFor(color);
+        if (!brush) return;
+        target_->DrawTextLayout(D2D1::Point2F(x, topY), text, brush,
+                                D2D1_DRAW_TEXT_OPTIONS_CLIP);
+        brush->Release();
+        return;
+    }
+    // Any other block, the generic engine's on this target: the seam's
+    // portable path, one DrawText per run.
+    RenderTarget::DrawLayout(layout, x, topY, color);
 }
 
 void D2DTarget::DrawBitmap(BitmapHandle image, const Rect& rect) {

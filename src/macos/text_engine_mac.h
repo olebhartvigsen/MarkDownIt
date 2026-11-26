@@ -12,6 +12,43 @@
 
 namespace platform {
 
+// The Core Text layout a painter draws: the block's lines, each one the
+// CTLine the engine built (or measured) for it, with the offset the
+// alignment gives the line inside the column and where the line's box
+// sits in the block. CGContext draws it through CTLineDraw, so the words
+// on the page are the words this engine laid out.
+class CgTextLayout final : public TextLayout {
+public:
+    struct Line {
+        // The line itself, owned by this layout.
+        CTLineRef line = nullptr;
+        // The left edge of the line inside the column.
+        float x = 0.0f;
+        // The top of the line's box, from the top of the block.
+        float top = 0.0f;
+        // The distance from the line's top to its baseline.
+        float ascent = 0.0f;
+        float height = 0.0f;
+    };
+
+    CgTextLayout(std::vector<Line> lines, float width, float height);
+    ~CgTextLayout() override;
+
+    CgTextLayout(const CgTextLayout&) = delete;
+    CgTextLayout& operator=(const CgTextLayout&) = delete;
+
+    float Width() const override { return width_; }
+    float Height() const override { return height_; }
+
+    // The lines, for the target that draws them.
+    const std::vector<Line>& DrawLines() const { return lines_; }
+
+private:
+    std::vector<Line> lines_;
+    float width_ = 0.0f;
+    float height_ = 0.0f;
+};
+
 // The font the engine takes for a spec, which the drawing side shares,
 // so the measured metrics and the drawn glyphs come from one font.
 CTFontRef CoreTextFontFor(const FontSpec& spec);
@@ -47,6 +84,12 @@ public:
                            bool* outTrailing) const override;
     Rect OffsetToRect(const TextLine& line, uint32_t offset) const override;
     float LineHeight(const FontSpec& font) const override;
+
+    // The block a painter draws: the lines MeasureWrapped cut, each one
+    // kept as the CTLine the engine already holds for it, so the drawn
+    // lines are the measured ones, with the column's alignment applied.
+    TextLayoutHandle BuildLayout(const std::vector<GlyphRun>& runs,
+                                 float maxWidth, TextAlign align) override;
 
     // The line's text as UTF-8, which the hit tester measures against.
     static std::string LineTextUtf8(const TextLine& line);

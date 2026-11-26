@@ -15,6 +15,31 @@
 
 namespace platform {
 
+// The DirectWrite layout a painter draws: the IDWriteTextLayout the engine
+// built for one block, kept alive for as long as the seam's handle is.
+// D2DTarget draws it through DrawTextLayout, so the words on the page are
+// the words this engine measured and broke.
+class DWriteTextLayout final : public TextLayout {
+public:
+    DWriteTextLayout(IDWriteTextLayout* layout, float width, float height);
+    ~DWriteTextLayout() override;
+
+    DWriteTextLayout(const DWriteTextLayout&) = delete;
+    DWriteTextLayout& operator=(const DWriteTextLayout&) = delete;
+
+    float Width() const override { return width_; }
+    float Height() const override { return height_; }
+
+    // The object itself, lent to the target that draws it. Never null for
+    // a layout this engine answered.
+    IDWriteTextLayout* Layout() const { return layout_; }
+
+private:
+    IDWriteTextLayout* layout_ = nullptr;
+    float width_ = 0.0f;
+    float height_ = 0.0f;
+};
+
 class DWriteEngine final : public TextEngine {
 public:
     DWriteEngine();
@@ -36,6 +61,13 @@ public:
                       uint32_t offset) const override;
 
     float LineHeight(const FontSpec& font) const override;
+
+    // The block the table and the paragraph painters draw: one DirectWrite
+    // layout over the runs, word wrapped at the column width, aligned
+    // inside it and dressed run by run with the faces and decorations the
+    // runs name. A run of DrawText calls cannot say any of that.
+    TextLayoutHandle BuildLayout(const std::vector<GlyphRun>& runs,
+                                 float maxWidth, TextAlign align) override;
 
     // The factory this engine measured with, lent to a painter that
     // must draw exactly what the engine measured: the table cells

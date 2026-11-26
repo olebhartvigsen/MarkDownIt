@@ -47,6 +47,7 @@ public:
     void StrokeRoundedRect(const Rect& rect, float radius, const Color& color, float lineWidth) override;
     void StrokeLine(float x0, float y0, float x1, float y1, const Color& color, float lineWidth) override;
     void DrawText(const std::string& utf8, const FontSpec& font, float x, float baselineY, const Color& color) override;
+    void DrawLayout(const TextLayout& layout, float x, float topY, const Color& color) override;
     void DrawBitmap(BitmapHandle image, const Rect& rect) override;
     void FillEllipse(const Rect& rect, const Color& color) override;
     void StrokeEllipse(const Rect& rect, const Color& color, float lineWidth) override;

@@ -1431,12 +1431,12 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
         (record && record->columnCount == cols &&
          !record->colWs.empty()) ? record : nullptr;
     if (!rec) {
-        // A table painted without its layout record: the washes, the grid
-        // and the row heights come out, the glyphs do not. That used to be
-        // silent. A debug build stops here; a release build paints the
-        // equal-split fallback and writes the line at the end of this
-        // function, so the state cannot pass unnoticed and a wrong table
-        // is never painted as if it were right.
+        // A table painted without its walk record: the column split and the
+        // row heights are the fallback's, not the numbers the walk measured.
+        // That used to be silent. A debug build stops here; a release build
+        // paints the equal-split fallback and writes the line at the end of
+        // this function, so the state cannot pass unnoticed and a table is
+        // never painted at invented positions as if they were the walk's.
         assert(rec != nullptr);
     }
     std::vector<float> colXs(cols + 1, 0.0f);
@@ -1646,71 +1646,61 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
                         target.FillRect(r, selectionColor);
                     }
                 }
-                // The glyphs come from the walk's own lines, the
-                // same lines the caret and the record keep, placed
-                // by the same centre the clones read, so what
-                // paints is what was measured: one geometry, one
-                // place.
-                if (rec && ri < rec->cells.size() &&
-                    c < rec->cells[ri].size() &&
-                    !rec->cells[ri][c].lines.empty()) {
-                    const float innerCW = colWs[c] - 2.0f * m.cellPadX;
+                // The glyphs are the engine's own laid out block: this
+                // cell's runs, broken at the column's inner width with the
+                // column's alignment, built here and drawn through the
+                // target. The walk record still fixes the column split and
+                // the row heights; the words no longer come from it, so a
+                // block without a record draws its text as well.
+                {
+                    const float gutter =
+                        (row.cells[c].isHeader &&
+                         !n.tableFilterActive.empty())
+                            ? m.tableFilterGutter
+                            : 0.0f;
+                    const float innerCW =
+                        colWs[c] - 2.0f * m.cellPadX - gutter;
                     const float clipH = rowH - 2.0f * m.cellPadY;
-                    if (innerCW > 0.0f && clipH > 0.0f) {
-                        target.PushClip(platform::Rect{
-                            cellX + m.cellPadX,
-                            curY + m.cellPadY,
-                            innerCW, clipH});
-                        float textH = 0.0f;
-                        for (const platform::TextLine& line :
-                             rec->cells[ri][c].lines)
-                            textH += line.height;
-                        float lineY = curY +
-                            (std::max)(m.cellPadY,
-                                       (rowH - textH) * 0.5f);
-                        const ColumnAlign align =
-                            layout::CellAlign(n, n.rows[ri], c, m);
-                        for (const platform::TextLine& line :
-                             rec->cells[ri][c].lines) {
-                            float lineX = cellX + m.cellPadX;
-
-                            if (align == ColumnAlign::Center)
-                                lineX += (innerCW - line.width) * 0.5f;
-                            else if (align == ColumnAlign::Right)
-                                lineX += innerCW - line.width;
-                            const float baseline = lineY + line.ascent;
-                            for (size_t k = 0; k < line.runs.size();
-                                 ++k) {
-                                const platform::GlyphRun& run =
-                                    line.runs[k];
-                                const float end =
-                                    k + 1 < line.runs.size()
-                                        ? line.runs[k + 1].x
-                                        : line.width;
-                                const float width = end - run.x;
-                                const float x = lineX + run.x;
-                                const platform::Color color{
-                                    run.r, run.g, run.b, run.a};
-
-                                target.DrawText(
-                                    run.text, run.font, x, baseline,
-                                    color);
-                                if (run.underline)
-                                    target.StrokeLine(
-                                        x, baseline + 2.0f,
-                                        x + width, baseline + 2.0f,
-                                        color, 1.0f);
-                                if (run.strike)
-                                    target.StrokeLine(
-                                        x,
-                                        baseline - 0.30f * run.font.size,
-                                        x + width,
-                                        baseline - 0.30f * run.font.size,
-                                        color, 1.0f);
-                            }
-                            lineY += line.height;
+                    std::vector<platform::GlyphRun> cellRuns =
+                        layout::TableCellRuns(
+                            row.cells[c], row.cells[c].isHeader,
+                            SeamColor(pal.textPrimary), m,
+                            n.tableMonospace);
+                    if (!cellRuns.empty() && innerCW > 0.0f &&
+                        clipH > 0.0f) {
+                        // Zoom is baked into the runs, the way the walk
+                        // measured them.
+                        if (zoom_ != 1.0f) {
+                            for (platform::GlyphRun& run : cellRuns)
+                                run.font.size *= zoom_;
                         }
-                        target.PopClip();
+                        const ColumnAlign align =
+                            layout::CellAlign(n, row, c, m);
+                        const platform::TextAlign seamAlign =
+                            align == ColumnAlign::Center
+                                ? platform::TextAlign::Center
+                                : (align == ColumnAlign::Right
+                                       ? platform::TextAlign::Right
+                                       : platform::TextAlign::Left);
+                        const platform::TextLayoutHandle block =
+                            layoutEngine_.BuildLayout(cellRuns, innerCW,
+                                                      seamAlign);
+                        if (block) {
+                            // The block is centred in the row the way the
+                            // record's lines were: from the top of the
+                            // cell's own box.
+                            const float blockTop =
+                                curY +
+                                (std::max)(m.cellPadY,
+                                           (rowH - block->Height()) * 0.5f);
+                            target.PushClip(platform::Rect{
+                                cellX + m.cellPadX, curY + m.cellPadY,
+                                innerCW, clipH});
+                            target.DrawLayout(
+                                *block, cellX + m.cellPadX, blockTop,
+                                SeamColor(pal.textPrimary));
+                            target.PopClip();
+                        }
                     }
                 }
                 if (cache_) {

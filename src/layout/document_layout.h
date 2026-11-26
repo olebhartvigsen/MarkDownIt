@@ -107,6 +107,17 @@ std::vector<float> DistributeTableColumns(
 float TableColumnX(const LaidTable& t, size_t column);
 float TableColumnW(const LaidTable& t, size_t column);
 
+// The runs of one table cell, in the faces, sizes, colours and
+// decorations the table's own layout measured it with. A painter that
+// builds a text layout for the cell instead of reading the walk record
+// asks here, so the words it draws are the words the record measured:
+// one builder, two readers.
+std::vector<platform::GlyphRun> TableCellRuns(const TableCell& cell,
+                                              bool bold,
+                                              const platform::Color& color,
+                                              const LayoutMetrics& metrics,
+                                              bool monospace);
+
 // One laid out block: what the caret and selection layers need while
 // plan task 3.3 still lives in the renderers. The fields mirror the
 // mac LaidOutBlock, which has carried this data all along.

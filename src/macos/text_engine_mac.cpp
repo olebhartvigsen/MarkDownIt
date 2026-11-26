@@ -37,6 +37,7 @@
 #include <cmath>
 #include <map>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace platform {
@@ -707,6 +708,68 @@ float CoreTextEngine::LineHeight(const FontSpec& font) const {
     const CGFloat leading = CTFontGetLeading(ctFont);
     const CGFloat height = ascent + descent + leading;
     return height > 0.0 ? static_cast<float>(height) : font.size * 1.2f;
+}
+
+CgTextLayout::CgTextLayout(std::vector<Line> lines, float width,
+                           float height)
+    : lines_(std::move(lines)), width_(width), height_(height) {}
+
+CgTextLayout::~CgTextLayout() {
+    for (Line& line : lines_) {
+        if (line.line) CFRelease(line.line);
+    }
+}
+
+TextLayoutHandle CoreTextEngine::BuildLayout(
+    const std::vector<GlyphRun>& runs, float maxWidth, TextAlign align) {
+    // A block the engine cannot cut still has the seam's portable answer,
+    // built from the same measured lines.
+    const auto fallback = [&]() {
+        return TextEngine::BuildLayout(runs, maxWidth, align);
+    };
+    if (runs.empty() || !(maxWidth > 0.0f)) return fallback();
+
+    // The measure also keeps the CTLine of every line for the hit tester.
+    // The block takes its own reference to those lines, so the lines that
+    // draw are the lines that were measured, not a second layout built
+    // from the run texts.
+    const std::vector<TextLine> measured =
+        MeasureWrapped(runs, maxWidth, 0.0f);
+    if (measured.empty()) return fallback();
+
+    std::vector<CgTextLayout::Line> lines;
+    lines.reserve(measured.size());
+    float top = 0.0f;
+    bool complete = true;
+    for (const TextLine& source : measured) {
+        const std::size_t at = EntryIndexFor(source);
+        if (at >= impl_->entries.size() || !impl_->entries[at].line) {
+            complete = false;
+            break;
+        }
+        CgTextLayout::Line out;
+        out.line = static_cast<CTLineRef>(
+            CFRetain(impl_->entries[at].line));
+        // The alignment moves the line inside the column; Core Text draws
+        // from the line's own left edge, unlike DirectWrite, which aligns
+        // the paragraph itself.
+        if (align == TextAlign::Center)
+            out.x = (maxWidth - source.width) * 0.5f;
+        else if (align == TextAlign::Right)
+            out.x = maxWidth - source.width;
+        out.top = top;
+        out.ascent = source.ascent;
+        out.height = source.height;
+        top += source.height;
+        lines.push_back(out);
+    }
+    if (!complete) {
+        for (CgTextLayout::Line& line : lines) {
+            if (line.line) CFRelease(line.line);
+        }
+        return fallback();
+    }
+    return std::make_shared<CgTextLayout>(std::move(lines), maxWidth, top);
 }
 
 std::size_t CoreTextEngine::EntryIndexFor(const TextLine& line) const {

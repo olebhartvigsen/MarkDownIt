@@ -346,6 +346,13 @@ float TableColumnW(const LaidTable& t, size_t column) {
     return t.colW;
 }
 
+std::vector<platform::GlyphRun> TableCellRuns(const TableCell& cell, bool bold,
+                                              const platform::Color& color,
+                                              const LayoutMetrics& m,
+                                              bool monospace) {
+    return BuildCellRuns(cell, bold, color, m, monospace);
+}
+
 platform::Color PinnedHeaderFill(const LayoutMetrics& metrics,
                                  const Palette& palette, bool dataTable) {
     if (dataTable || metrics.tableHeaderFill) {
