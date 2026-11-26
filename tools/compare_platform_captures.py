@@ -61,7 +61,13 @@ STATES = ["doc", "find", "edit", "outline", "source", "lower", "end",
 # platforms' different text metrics out of it.
 DIAGRAM_STATES = {"diagram-sequence", "diagram-gantt", "diagram-pie",
                   "diagram-state"}
-MIN_DIAGRAM_INK = 1.0   # percent of the region below the heading
+# Calibrated on the CI frames: the sparsest drawn kind, the state
+# diagram, carries 0.66 percent ink below its heading, while a page whose
+# painter draws nothing carries none. The row count and the vertical
+# span also fail a region that holds a stray line but no drawing.
+MIN_DIAGRAM_INK = 0.25   # percent of the region below the heading
+MIN_DIAGRAM_ROWS = 8     # rows that carry real ink, not a hairline
+MIN_DIAGRAM_SPAN = 0.05  # fraction of the body height the ink covers
 MAX_DIAGRAM_INK_RATIO = 2.5
 
 # Tolerances, calibrated on the fonts alone: the row gap differs by up
@@ -270,6 +276,20 @@ def diagram_body(pane):
     return pane.crop((0, top, pane.size[0], pane.size[1]))
 
 
+def ink_profile(body):
+    """Ink percent, ink row count and the vertical span those rows cover."""
+    W, H = body.size
+    data = list(body.tobytes())
+    bg = max(set(data), key=data.count)
+    rows = [0] * H
+    for i, v in enumerate(data):
+        if abs(v - bg) > 55:
+            rows[i // W] += 1
+    ink_rows = [y for y, n in enumerate(rows) if n >= kRowInk]
+    span = (ink_rows[-1] - ink_rows[0] + 1) / H if ink_rows else 0.0
+    return ink_percent(body), len(ink_rows), span
+
+
 def compare_diagram_state(mac_pane, win_pane, name):
     """Hold a diagram frame to the one thing it can prove: the drawing.
 
@@ -277,24 +297,26 @@ def compare_diagram_state(mac_pane, win_pane, name):
     pie's fills are continuous ink across whole rows, so the two sides
     merge them into different band counts and a drawn chart looks like
     missing text. Here the page holds one diagram below its heading, and
-    the check is that the region below that heading carries real ink on
-    both sides and in comparable amounts. A painter that stops drawing
-    leaves the region empty, which fails; a font or wrap difference does
-    not.
+    the check is that the region below that heading holds a drawing: real
+    ink on both sides, in comparable amounts, spread over more than a
+    stray line. A painter that stops drawing leaves the region empty,
+    which fails; a font or wrap difference does not.
     """
     fails = []
     warns = []
     inks = []
     for side, pane in (("mac", mac_pane), ("win", win_pane)):
         body = diagram_body(pane)
-        ink = ink_percent(body) if body is not None else 0.0
+        ink, rows, span = ink_profile(body) if body is not None else (0.0, 0, 0.0)
         inks.append(ink)
-        ok = ink >= MIN_DIAGRAM_INK
-        print("  %-8s %-4s %s %.2f%% diagram ink"
-              % (name, side, "PASS" if ok else "FAIL", ink))
+        ok = (ink >= MIN_DIAGRAM_INK and rows >= MIN_DIAGRAM_ROWS and
+              span >= MIN_DIAGRAM_SPAN)
+        print("  %-8s %-4s %s %.2f%% diagram ink, %d rows, %.2f span"
+              % (name, side, "PASS" if ok else "FAIL", ink, rows, span))
         if not ok:
-            fails.append("%s: the diagram below the heading is blank "
-                         "(%.2f%% ink)" % (side, ink))
+            fails.append("%s: the diagram below the heading is blank or "
+                         "reduced to a trace (%.2f%% ink, %d rows, %.2f span)"
+                         % (side, ink, rows, span))
     lo, hi = min(inks), max(inks)
     if lo > 0 and hi > lo * MAX_DIAGRAM_INK_RATIO:
         fails.append("diagram ink differs (mac %.2f%%, windows %.2f%%)"
