@@ -19,6 +19,7 @@
 # The shared core: no Windows headers, fed to the exe and the mac core.
 # usage: windows-app macos-core windows-tests macos-tests
 set(MARKDOWNIT_CORE_SOURCES
+    src/analytics.cpp
     src/parser.cpp
     src/csv.cpp
     src/csvfilter.cpp

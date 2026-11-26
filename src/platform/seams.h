@@ -317,6 +317,28 @@ public:
 };
 
 // ---------------------------------------------------------------------------
+// TelemetrySink: the one outbound request the app makes
+// ---------------------------------------------------------------------------
+
+// Posts an analytics payload and answers whether the service accepted it.
+//
+// The payload is built by shared code (src/analytics.h); this interface is
+// only the transport, so the decision about what leaves the machine stays in
+// one place and can be tested with a fake. Implementations are fire and
+// forget: a failure is written to the crash trace and never shown to the
+// reader, because the app works without a network.
+class TelemetrySink {
+public:
+    virtual ~TelemetrySink() = default;
+
+    // POST `body` to `url` with the app key in the Aptabase header. Returns
+    // true when the service answered 2xx. Implementations must not throw and
+    // must not block the caller for longer than a couple of seconds.
+    virtual bool Post(const std::string& url, const std::string& appKey,
+                      const std::string& body) = 0;
+};
+
+// ---------------------------------------------------------------------------
 // AppShell: the window and the platform
 // ---------------------------------------------------------------------------
 
