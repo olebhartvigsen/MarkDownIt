@@ -588,8 +588,8 @@ void CheckDrawLayout(TextEngine& engine, InkSurface& surface) {
     // colours swapped or both on the same run.
     const platform::Color red{0.85f, 0.05f, 0.05f, 1.0f};
     const platform::Color blue{0.05f, 0.05f, 0.85f, 1.0f};
-    std::vector<GlyphRun> inked = {MakeRun("WWWW", 24.0f),
-                                   MakeRun("HHHH", 24.0f)};
+    std::vector<GlyphRun> inked = {MakeRun("iiii", 24.0f),
+                                   MakeRun("llll", 24.0f)};
     inked[0].color = red;
     inked[1].color = blue;
     engine.BeginLayout();

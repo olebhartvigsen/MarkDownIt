@@ -497,6 +497,14 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
                     kCTForegroundColorAttributeName, color);
                 CFRelease(color);
             }
+        } else {
+            // The run has no ink of its own, so it takes the context's
+            // fill colour: the target's DrawLayout sets that fill to the
+            // block's colour. Without this attribute Core Text would use
+            // black whatever the fill is.
+            CFAttributedStringSetAttribute(
+                attributed, CFRangeMake(u16Length, runLength),
+                kCTForegroundColorFromContextAttributeName, kCFBooleanTrue);
         }
 
         laidRuns.push_back(laid);
