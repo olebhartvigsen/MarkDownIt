@@ -10,6 +10,7 @@
 @implementation MacSettingsWindow {
     id<MacSettingsHost> host_;
     NSButton* outlineCheckbox_;
+    NSButton* analyticsCheckbox_;
 }
 
 - (instancetype)initWithHost:(id<MacSettingsHost>)host {
@@ -29,9 +30,9 @@
     [window setTitle:macstrings::kSettingsWindowTitle];
     [window setReleasedWhenClosed:NO];
 
-    // The rows: a section header and the outline switch. The
-    // document width row is gone on purpose: the pane always fits
-    // the window with the margin the padding leaves, so there is
+    // The rows: a section header, the outline switch and the analytics
+    // switch. The document width row is gone on purpose: the pane always
+    // fits the window with the margin the padding leaves, so there is
     // nothing to set.
     NSTextField* section =
         [NSTextField labelWithString:macstrings::kSettingsViewSection];
@@ -42,8 +43,14 @@
                                             target:self
                                             action:@selector(outlineChanged:)];
 
+    analyticsCheckbox_ =
+        [NSButton checkboxWithTitle:macstrings::kSettingsAnalyticsLabel
+                             target:self
+                             action:@selector(analyticsChanged:)];
+
     NSStackView* stack =
-        [NSStackView stackViewWithViews:@[ section, outlineCheckbox_ ]];
+        [NSStackView stackViewWithViews:@[ section, outlineCheckbox_,
+                                           analyticsCheckbox_ ]];
     [stack setOrientation:NSUserInterfaceLayoutOrientationVertical];
     [stack setAlignment:NSLayoutAttributeLeading];
     [stack setSpacing:12.0];
@@ -67,6 +74,9 @@
     [outlineCheckbox_
         setState:[host_ settingsOutlineVisible] ? NSControlStateValueOn
                                                 : NSControlStateValueOff];
+    [analyticsCheckbox_
+        setState:[host_ settingsAnalyticsEnabled] ? NSControlStateValueOn
+                                                  : NSControlStateValueOff];
     if (![[self window] isVisible]) {
         [[self window] center];
     }
@@ -79,6 +89,14 @@
     (void)sender;
     [host_ applyOutlineVisible:[outlineCheckbox_ state] ==
                                NSControlStateValueOn];
+}
+
+// The analytics row: the checkbox state is the stored choice, and the
+// app writes the settings file when it changes.
+- (void)analyticsChanged:(id)sender {
+    (void)sender;
+    [host_ applyAnalyticsEnabled:[analyticsCheckbox_ state] ==
+                                 NSControlStateValueOn];
 }
 
 @end

@@ -3738,6 +3738,17 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     [self OnToggleOutline];
 }
 
+// The analytics switch: a stored setting, and the file is written the
+// moment it changes so a crash cannot lose the choice.
+- (BOOL)settingsAnalyticsEnabled {
+    return settings_.settings().analyticsEnabled ? YES : NO;
+}
+
+- (void)applyAnalyticsEnabled:(BOOL)enabled {
+    settings_.settings().analyticsEnabled = enabled != NO;
+    settings_.Save();
+}
+
 // The command behind a toolbar item, by the identifier the toolbar gave
 // it. Null for an item with no command row (the sidebar toggle reads the
 // pane, not a document). An if chain rather than a table: this file is

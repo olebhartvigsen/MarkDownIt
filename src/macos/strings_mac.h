@@ -29,5 +29,6 @@ static NSString* const kNoRecentSearches = @"No recent searches";
 static NSString* const kSettingsWindowTitle = @"MarkDownIt Settings";
 static NSString* const kSettingsViewSection = @"View";
 static NSString* const kSettingsOutlineLabel = @"Show the outline pane";
+static NSString* const kSettingsAnalyticsLabel = @"Send anonymous usage statistics";
 
 }  // namespace platformstrings

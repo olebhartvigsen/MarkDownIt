@@ -19,6 +19,13 @@
 // menu command takes.
 - (void)applyOutlineVisible:(BOOL)visible;
 
+// Whether anonymous usage statistics are sent. Off means nothing
+// leaves the machine.
+- (BOOL)settingsAnalyticsEnabled;
+
+// Stores the analytics choice and writes the settings file.
+- (void)applyAnalyticsEnabled:(BOOL)enabled;
+
 @end
 
 // The settings window controller. One instance, kept by the delegate.
