@@ -36,7 +36,13 @@ MAC_RAW = re.compile(r"\b(?:CG[A-Za-z]*Ref|CT[A-Za-z]*Ref|NSGraphicsContext)\b")
 # layout::PaintMatchHighlights and layout::PaintMarkerHighlights, the geometry
 # moved behind platform::TextRangeSource (platform::DWriteRangeSource on
 # Windows), and the four paint paths stopped creating brushes of their own.
-WINDOWS_BASELINE = 85
+#
+# 85 -> 77: Renderer::DrawTable and the two highlight helpers stopped taking
+# ID2D1RenderTarget*; the washes, the hairlines, the selection fills and the
+# cell clip go through platform::RenderTarget, and the table no longer builds a
+# brush of its own. What is left of its DirectWrite use is the cell layout the
+# caret cache keeps and the row height a recordless call measures.
+WINDOWS_BASELINE = 77
 
 PAINTERS = [
     ("src/renderer.cpp", WINDOWS_RAW, WINDOWS_BASELINE, "windows painter"),

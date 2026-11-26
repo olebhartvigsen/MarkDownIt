@@ -357,7 +357,7 @@ void Renderer::SetMarkers(const std::vector<TextMatch>* markers,
     markersVisible_ = visible;
 }
 
-void Renderer::FillMatchHighlights(ID2D1RenderTarget* rt,
+void Renderer::FillMatchHighlights(platform::RenderTarget& target,
                                    IDWriteTextLayout* layout,
                                    const ThemeColor& matchColor,
                                    const ThemeColor& currentColor,
@@ -366,7 +366,7 @@ void Renderer::FillMatchHighlights(ID2D1RenderTarget* rt,
                                    uint32_t blockStart, uint32_t blockEnd,
                                    float originX, float originY,
                                    float scrollY, float viewportH) {
-    if (!rt || !layout) return;
+    if (!layout) return;
     if (!searchMatches_ || searchMatches_->empty()) return;
     if (u16ToSrc.empty() || u16Len == 0) return;
 
@@ -375,7 +375,6 @@ void Renderer::FillMatchHighlights(ID2D1RenderTarget* rt,
     // the shared one, so this answers the same as the pass itself would.
     if (!layout::BlockIntersectsAny(*searchMatches_, map)) return;
 
-    platform::D2DTarget target(rt);
     platform::DWriteRangeSource source(layout, originX, originY);
     const layout::PaintBand band{scrollY,
                                  scrollY + (viewportH > 0.0f ? viewportH : 0.0f)};
@@ -384,7 +383,7 @@ void Renderer::FillMatchHighlights(ID2D1RenderTarget* rt,
                                  SeamColor(currentColor));
 }
 
-void Renderer::FillMarkerHighlights(ID2D1RenderTarget* rt,
+void Renderer::FillMarkerHighlights(platform::RenderTarget& target,
                                     IDWriteTextLayout* layout,
                                     const ThemeColor& fillColor,
                                     const ThemeColor& lineColor,
@@ -393,14 +392,13 @@ void Renderer::FillMarkerHighlights(ID2D1RenderTarget* rt,
                                     uint32_t blockStart, uint32_t blockEnd,
                                     float originX, float originY,
                                     float scrollY, float viewportH) {
-    if (!rt || !layout) return;
+    if (!layout) return;
     if (!HasMarkers()) return;
     if (u16ToSrc.empty() || u16Len == 0) return;
 
     const layout::BlockTextMap map{&u16ToSrc, u16Len, blockStart, blockEnd};
     if (!layout::BlockIntersectsAny(*markerRanges_, map)) return;
 
-    platform::D2DTarget target(rt);
     platform::DWriteRangeSource source(layout, originX, originY);
     const layout::PaintBand band{scrollY,
                                  scrollY + (viewportH > 0.0f ? viewportH : 0.0f)};
@@ -787,9 +785,11 @@ void Renderer::PaintSharedOverlays(
                                           sel->Start() + sel->Length(),
                                           &washRects);
                 }
-                DrawTable(rt, dw, n, bandX, bandY, bandW, outH, sel,
+                platform::D2DTarget tableTarget(rt, layoutEngine_.Factory());
+                DrawTable(tableTarget, dw, n, bandX, bandY, bandW, outH, sel,
                           scrollY, washRects,
-                          b->table ? b->table.get() : nullptr);
+                          b->table ? b->table.get() : nullptr,
+                          rt->GetSize().height);
                 // A table that crosses the viewport's top edge keeps its
                 // header there. The row is drawn again as its own one row
                 // document at the edge, which reuses the whole painter (the
@@ -1261,7 +1261,8 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         // Marker layer for this block, drawn behind the search fills. No
         // brushes: the seam fills by colour, one brush per batch.
         if (HasMarkers()) {
-            FillMarkerHighlights(rt, layout, pal.markerBg, pal.markerLine,
+            platform::D2DTarget highlights(rt);
+            FillMarkerHighlights(highlights, layout, pal.markerBg, pal.markerLine,
                                  matchU16ToSrc,
                                  static_cast<UINT32>(text16.size()),
                                  n.contentOffset,
@@ -1272,7 +1273,8 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (HasSearchMatches()) {
             const uint32_t contentStart = n.contentOffset;
             const uint32_t contentEnd = contentStart + n.contentLength;
-            FillMatchHighlights(rt, layout, pal.findMatchBg,
+            platform::D2DTarget highlights(rt);
+            FillMatchHighlights(highlights, layout, pal.findMatchBg,
                                 pal.findCurrentMatchBg,
                                 matchU16ToSrc,
                                 static_cast<UINT32>(text16.size()),
@@ -1387,28 +1389,25 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     outH = blockH;
 }
 
-void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
                           const Node& n, float x, float y,
                           float width, float& outH,
                           const Selection* sel, float scrollY,
                           const std::vector<platform::Rect>& washRects,
-                          const layout::LaidTable* record) {
-    if (!rt || !dw || !body_fmt_ || n.rows.empty()) { outH = 0.0f; return; }
+                          const layout::LaidTable* record,
+                          float viewportH) {
+    if (!dw || !body_fmt_ || n.rows.empty()) { outH = 0.0f; return; }
 
     LayoutMetrics m = ComputeMetrics();
     const Palette& pal = palette_;
 
-    ID2D1SolidColorBrush* textBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.textPrimary, &textBrush);
-    ID2D1SolidColorBrush* altBg = nullptr;
-    rt->CreateSolidColorBrush(pal.tableRowAlt, &altBg);
-    ID2D1SolidColorBrush* hdrBg = nullptr;
-    rt->CreateSolidColorBrush(pal.tableHeaderBg, &hdrBg);
-    ID2D1SolidColorBrush* borderBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.tableBorder, &borderBrush);
-    ID2D1SolidColorBrush* selBrush = nullptr;
-    if (sel && !sel->Empty())
-        rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
+    // The washes and the grid are colours, not brushes: the seam keeps the
+    // brush alive for the call and the target owns its lifetime.
+    const platform::Color altColor = SeamColor(pal.tableRowAlt);
+    const platform::Color headerColor = SeamColor(pal.tableHeaderBg);
+    const platform::Color borderColor = SeamColor(pal.tableBorder);
+    const platform::Color selectionColor = SeamColor(pal.selectionBg);
+    const bool wantSelection = sel && !sel->Empty();
 
     size_t cols = 0;
     for (const auto& row : n.rows) {
@@ -1416,11 +1415,6 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     }
     if (cols == 0) {
         outH = 0.0f;
-        if (textBrush) textBrush->Release();
-        if (altBg) altBg->Release();
-        if (hdrBg) hdrBg->Release();
-        if (borderBrush) borderBrush->Release();
-        if (selBrush) selBrush->Release();
         return;
     }
 
@@ -1501,23 +1495,22 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
 
         bool isHeaderRow = (!row.cells.empty() && row.cells[0].isHeader);
-        if (isHeaderRow && m.tableHeaderFill && hdrBg) {
-            rt->FillRectangle(
-                D2D1::RectF(x, curY, x + width, curY + rowH), hdrBg);
-        } else if (!isHeaderRow && altBg &&
+        if (isHeaderRow && m.tableHeaderFill) {
+            target.FillRect(
+                platform::Rect{x, curY, width, rowH}, headerColor);
+        } else if (!isHeaderRow &&
                    (m.tableBodyFill || (m.tableZebra && ri % 2 == 1))) {
             // The style's row wash. GitHub's zebra: the first body row
             // is the first muted one, because the header is tr 1.
-            D2D1_RECT_F bg = D2D1::RectF(x, curY, x + width, curY + rowH);
-            rt->FillRectangle(bg, altBg);
+            target.FillRect(
+                platform::Rect{x, curY, width, rowH}, altColor);
         }
 
         for (size_t c = 0; c < row.cells.size() && c < cols; ++c) {
             float cellX = x + colXs[c];
-            if (borderBrush && m.tableVerticalLines) {
-                D2D1_POINT_2F p1 = D2D1::Point2F(cellX, curY);
-                D2D1_POINT_2F p2 = D2D1::Point2F(cellX, curY + rowH);
-                rt->DrawLine(p1, p2, borderBrush, 1.0f);
+            if (m.tableVerticalLines) {
+                target.StrokeLine(cellX, curY, cellX, curY + rowH,
+                                  borderColor, 1.0f);
             }
             std::u16string text16 = ToUtf16(row.cells[c].text);
             IDWriteTextLayout* layout = nullptr;
@@ -1596,8 +1589,8 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                             layout->SetUnderline(TRUE, range);
                     }
                 }
-                D2D1_POINT_2F cellOrigin = D2D1::Point2F(
-                    cellX + m.cellPadX, curY + m.cellPadY);
+                const platform::Point cellOrigin{cellX + m.cellPadX,
+                                                 curY + m.cellPadY};
                 // Marker layer for this cell, behind the search fills.
                 if (HasMarkers() && !row.cells[c].text.empty() &&
                     !text16.empty() && !row.cells[c].u16ToSrc.empty()) {
@@ -1605,12 +1598,12 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     const uint32_t cellStart = cell.srcOffset;
                     const uint32_t cellEnd = cell.srcEnd > cellStart
                         ? cell.srcEnd : cellStart;
-                    FillMarkerHighlights(rt, layout, pal.markerBg, pal.markerLine,
+                    FillMarkerHighlights(target, layout, pal.markerBg, pal.markerLine,
                                          cell.u16ToSrc,
                                          static_cast<UINT32>(text16.size()),
                                          cellStart, cellEnd,
                                          cellOrigin.x, cellOrigin.y,
-                                         scrollY, rt->GetSize().height);
+                                         scrollY, viewportH);
                 }
                 // Search match highlights for this cell, drawn before the
                 // selection so the selection stays on top.
@@ -1620,49 +1613,41 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     const uint32_t cellStart = cell.srcOffset;
                     const uint32_t cellEnd = cell.srcEnd > cellStart
                         ? cell.srcEnd : cellStart;
-                    FillMatchHighlights(rt, layout, pal.findMatchBg,
+                    FillMatchHighlights(target, layout, pal.findMatchBg,
                                         pal.findCurrentMatchBg,
                                         cell.u16ToSrc,
                                         static_cast<UINT32>(text16.size()),
                                         cellStart, cellEnd,
                                         cellOrigin.x, cellOrigin.y,
-                                        scrollY, rt->GetSize().height);
+                                        scrollY, viewportH);
                 }
                 // The selection wash for this cell, from the shared
                 // rect rule: the whole table's rectangles were computed
                 // once above, so the ones inside this cell's band are
                 // the cell's share. The fill keeps the old slot between
                 // the match fills and the glyphs.
-                if (selBrush && sel && !sel->Empty() &&
-                    !washRects.empty()) {
+                if (wantSelection && !washRects.empty()) {
                     for (const platform::Rect& r : washRects) {
                         if (r.x < cellX || r.x >= cellX + colWs[c]) continue;
                         if (r.y < curY || r.y >= curY + rowH) continue;
-                        const D2D1_RECT_F rect = D2D1::RectF(
-                            r.x, r.y, r.x + r.width, r.y + r.height);
-                        rt->FillRectangle(rect, selBrush);
+                        target.FillRect(r, selectionColor);
                     }
                 }
                 // The glyphs come from the walk's own lines, the
                 // same lines the caret and the record keep, placed
                 // by the same centre the clones read, so what
                 // paints is what was measured: one geometry, one
-                // place. A table without record lines, a stack
-                // without a measured walk, falls back to the card's
-                // own layout, the paint that always worked there.
-                bool painted = false;
+                // place.
                 if (rec && ri < rec->cells.size() &&
                     c < rec->cells[ri].size() &&
                     !rec->cells[ri][c].lines.empty()) {
                     const float innerCW = colWs[c] - 2.0f * m.cellPadX;
                     const float clipH = rowH - 2.0f * m.cellPadY;
                     if (innerCW > 0.0f && clipH > 0.0f) {
-                        rt->PushAxisAlignedClip(D2D1::RectF(
+                        target.PushClip(platform::Rect{
                             cellX + m.cellPadX,
                             curY + m.cellPadY,
-                            cellX + m.cellPadX + innerCW,
-                            curY + m.cellPadY + clipH),
-                            D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                            innerCW, clipH});
                         float textH = 0.0f;
                         for (const platform::TextLine& line :
                              rec->cells[ri][c].lines)
@@ -1672,9 +1657,6 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                        (rowH - textH) * 0.5f);
                         const ColumnAlign align =
                             layout::CellAlign(n, n.rows[ri], c, m);
-                        platform::D2DTarget player(
-                            rt, layoutEngine_.Factory());
-                        size_t paintedRuns = 0;
                         for (const platform::TextLine& line :
                              rec->cells[ri][c].lines) {
                             float lineX = cellX + m.cellPadX;
@@ -1696,18 +1678,17 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                 const float x = lineX + run.x;
                                 const platform::Color color{
                                     run.r, run.g, run.b, run.a};
-                                if (!run.text.empty()) ++paintedRuns;
 
-                                player.DrawText(
+                                target.DrawText(
                                     run.text, run.font, x, baseline,
                                     color);
                                 if (run.underline)
-                                    player.StrokeLine(
+                                    target.StrokeLine(
                                         x, baseline + 2.0f,
                                         x + width, baseline + 2.0f,
                                         color, 1.0f);
                                 if (run.strike)
-                                    player.StrokeLine(
+                                    target.StrokeLine(
                                         x,
                                         baseline - 0.30f * run.font.size,
                                         x + width,
@@ -1716,20 +1697,8 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                             }
                             lineY += line.height;
                         }
-                        rt->PopAxisAlignedClip();
-                        // A walk whose engine could not split the
-                        // piece leaves lines with no runs: the
-                        // record paint drew nothing, and the empty
-                        // record wins. Fall back to the card's own
-                        // layout in that case rather than leave a
-                        // cell without glyphs.
-                        painted = paintedRuns > 0;
+                        target.PopClip();
                     }
-                }
-                if (!painted) {
-
-                    rt->DrawTextLayout(cellOrigin, layout, textBrush,
-                                       D2D1_DRAW_TEXT_OPTIONS_CLIP);
                 }
                 if (cache_) {
                     // Add cell layout to cache for hit-testing (double-click,
@@ -1781,31 +1750,20 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 }
             }
         }
-        if (borderBrush && m.tableVerticalLines) {
-            D2D1_POINT_2F p1 = D2D1::Point2F(x + width, curY);
-            D2D1_POINT_2F p2 = D2D1::Point2F(x + width, curY + rowH);
-            rt->DrawLine(p1, p2, borderBrush, 1.0f);
+        if (m.tableVerticalLines) {
+            target.StrokeLine(x + width, curY, x + width, curY + rowH,
+                              borderColor, 1.0f);
         }
-        if (borderBrush) {
-            // The top edge is part of the full grid only; a style with
-            // row hairlines draws the bottom of each row and no more.
-            if (m.tableVerticalLines)
-                rt->DrawLine(
-                    D2D1::Point2F(x, curY), D2D1::Point2F(x + width, curY),
-                    borderBrush, 1.0f);
-            rt->DrawLine(
-                D2D1::Point2F(x, curY + rowH),
-                D2D1::Point2F(x + width, curY + rowH),
-                borderBrush, 1.0f);
-        }
+        // The top edge is part of the full grid only; a style with row
+        // hairlines draws the bottom of each row and no more.
+        if (m.tableVerticalLines)
+            target.StrokeLine(x, curY, x + width, curY,
+                              borderColor, 1.0f);
+        target.StrokeLine(x, curY + rowH, x + width, curY + rowH,
+                          borderColor, 1.0f);
         curY += rowH;
     }
 
-    if (textBrush) textBrush->Release();
-    if (altBg) altBg->Release();
-        if (hdrBg) hdrBg->Release();
-    if (borderBrush) borderBrush->Release();
-    if (selBrush) selBrush->Release();
     outH = curY - y;
 }
 
@@ -2529,7 +2487,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (HasMarkers() && !u16ToSrc.empty() && !text16.empty()) {
             const uint32_t blockStart = n.srcOffset;
             const uint32_t blockEnd = blockStart + n.srcLength;
-            FillMarkerHighlights(rt, layout, pal.markerBg, pal.markerLine,
+            platform::D2DTarget highlights(rt);
+            FillMarkerHighlights(highlights, layout, pal.markerBg, pal.markerLine,
                                  u16ToSrc,
                                  static_cast<UINT32>(text16.size()),
                                  blockStart, blockEnd,
@@ -2541,7 +2500,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (HasSearchMatches() && !u16ToSrc.empty() && !text16.empty()) {
             const uint32_t blockStart = n.srcOffset;
             const uint32_t blockEnd = blockStart + n.srcLength;
-            FillMatchHighlights(rt, layout, pal.findMatchBg,
+            platform::D2DTarget highlights(rt);
+            FillMatchHighlights(highlights, layout, pal.findMatchBg,
                                 pal.findCurrentMatchBg,
                                 u16ToSrc,
                                 static_cast<UINT32>(text16.size()),
@@ -2823,7 +2783,8 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     const std::vector<uint32_t>& u16ToSrcMap = srcState_.u16ToSrc;
     // Marker layer across the whole source, behind the search fills.
     if (HasMarkers() && !u16ToSrcMap.empty() && !text16.empty()) {
-        FillMarkerHighlights(rt, layout, pal.markerBg, pal.markerLine,
+        platform::D2DTarget highlights(rt);
+        FillMarkerHighlights(highlights, layout, pal.markerBg, pal.markerLine,
                              u16ToSrcMap, static_cast<UINT32>(text16.size()),
                              0, static_cast<uint32_t>(src.size()),
                              textX, textY, scrollY, viewH);
@@ -2832,7 +2793,8 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // selection and text stay on top of the match fills. Source view covers
     // the whole document, so the block range is the whole source.
     if (HasSearchMatches() && !u16ToSrcMap.empty() && !text16.empty()) {
-        FillMatchHighlights(rt, layout, pal.findMatchBg,
+        platform::D2DTarget highlights(rt);
+        FillMatchHighlights(highlights, layout, pal.findMatchBg,
                             pal.findCurrentMatchBg,
                             u16ToSrcMap, static_cast<UINT32>(text16.size()),
                             0, static_cast<uint32_t>(src.size()),

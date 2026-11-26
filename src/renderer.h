@@ -519,7 +519,7 @@ private:
     //
     // The body is layout::PaintMatchHighlights: the policy is shared, the
     // geometry comes from the DirectWrite layout through the seam.
-    void FillMatchHighlights(ID2D1RenderTarget* rt,
+    void FillMatchHighlights(platform::RenderTarget& target,
                              IDWriteTextLayout* layout,
                              const ThemeColor& matchColor,
                              const ThemeColor& currentColor,
@@ -533,7 +533,7 @@ private:
     // highlights: one colour for the fill and one for the thin bottom line
     // that keeps a mark off colour alone. There is no current-marker
     // concept, every mark gets the same fill.
-    void FillMarkerHighlights(ID2D1RenderTarget* rt,
+    void FillMarkerHighlights(platform::RenderTarget& target,
                              IDWriteTextLayout* layout,
                              const ThemeColor& fillColor,
                              const ThemeColor& lineColor,
@@ -547,11 +547,12 @@ private:
                        const Node& n, float x, float y, float width, float& outH,
                        const Selection* sel = nullptr, float scrollY = 0.0f,
                        const std::vector<platform::Rect>& washRects = {});
-    void DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+    void DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
                    const Node& n, float x, float y, float width, float& outH,
                    const Selection* sel = nullptr, float scrollY = 0.0f,
                    const std::vector<platform::Rect>& washRects = {},
-                   const layout::LaidTable* record = nullptr);
+                   const layout::LaidTable* record = nullptr,
+                   float viewportH = 0.0f);
     void DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                           const Node& n, float x, float y, float width);
     std::shared_ptr<mermaid::LaidOutFlowchart> GetMermaidLayout(
