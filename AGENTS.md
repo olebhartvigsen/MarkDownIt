@@ -171,13 +171,13 @@ Rules that follow from this:
 | Parsing | `parser.cpp`, `dom.h`, md4c | none |
 | CSV tables | `csv.*`, `csvdocument.*`, `documentparse.*`, the table layout and painters | the open dialog filter |
 | Layout | `src/layout/*`, `layoutcache.*`, `blockspacing.h`, `theme.h`, `markdown_style.h` | none |
-| Painting | display list and `display_player`, the search and marker fills (`layout/range_highlights.*`) | `D2DTarget` (Windows), the Core Graphics target (macOS), Mermaid and SVG painters |
+| Painting | display list and `display_player`, the search and marker fills (`layout/range_highlights.*`), the Mermaid painter (`src/mermaid/painter.cpp`) | `D2DTarget` (Windows), the Core Graphics target (macOS), the SVG painters, and the two Mermaid painters not yet moved (`renderer_sequence.cpp`, `renderer_gantt.cpp`) |
 | Text | `TextEngine` seam, `textlayout.h` seam, `textlayout_generic.cpp` fallback | `DWriteEngine`, `textlayout_dwrite.cpp` / `text_engine_mac.*`, `textlayout_coretext.cpp` |
 | Editing | `DocumentController`, `editcontroller`, `undostack`, `formatting`, `autoformat`, `tableedit`, `navigation`, `inputfilter`, `textbuffer`, `searchreplace`, `findstate`, `markers`, `outline`, `commands.h` | keyboard and mouse event translation |
 | Find | `FindBarModel` (`findbar_model.*`) | `findbar.cpp` / `findbar_mac.mm` |
 | Outline | heading collection (`outline.*`) | `outlinepane.cpp` / `outline_pane_mac.*`, `outline_nsview_mac.*` |
 | Home screen | `welcome_screen.*` (the mark, the name, the two actions, the recent files), drawn through the seams | the shell hands in its target and engine and answers the presses |
-| Diagrams | `mermaid.*`, `mermaidlayout.*`, `diagramcache.*`, `src/mermaid/*`, `svgtext`, SVG reader `src/macos/svg_mac.cpp` | measure and paint adapters |
+| Diagrams | `mermaid.*`, `mermaidlayout.*`, `diagramcache.*`, `src/mermaid/*` (the painter included), `svgtext`, SVG reader `src/macos/svg_mac.cpp` | measure and paint adapters |
 | Office | `src/office/*` (docx and PDF import and export) | file dialogs |
 | Settings | `AppSettings`, recent-file logic in `settings.cpp` | `settings_win.cpp` (registry) / `settings_mac.cpp` (JSON) |
 | Clipboard | escaping, HTML converter, line ends in `clipboard.cpp` | `clipboard_win.cpp` / `clipboard_mac.mm` |
@@ -246,9 +246,10 @@ one, look for a part you can move into shared code.
 
 - App shells: `src/app.cpp` against `src/macos/app_mac.cpp` and
   `main_mac.mm`.
-- Renderer shells and Mermaid painters: `renderer.cpp`,
-  `renderer_pie.cpp`, `renderer_sequence.cpp` against `renderer_mac.cpp`
-  and `src/mermaid/painter.cpp`.
+- Renderer shells: `renderer.cpp` against `renderer_mac.cpp`, plus the two
+  diagram painters `renderer.cpp` still keeps, `renderer_sequence.cpp` and
+  `renderer_gantt.cpp`. The flowchart, pie and state diagrams already paint
+  through `src/mermaid/painter.cpp` on both ports.
 - Chrome, settings, clipboard, find bar and outline pane widgets.
 
 Open migration steps and the reasoning behind them are in
@@ -288,7 +289,7 @@ Open migration steps and the reasoning behind them are in
 |---------------|---------------|
 | `src/main.cpp`, `app.*` | entry point and `AppWindow` (the Win32 shell) |
 | `src/ribbon.*`, `ribbon.xml`, `resource.h` | the ribbon |
-| `src/renderer.*`, `renderer_pie.cpp`, `renderer_sequence.cpp` | Direct2D renderer shell and painters |
+| `src/renderer.*`, `renderer_sequence.cpp`, `renderer_gantt.cpp` | Direct2D renderer shell and the two diagram painters still on Direct2D |
 | `src/windows/` | `DWriteEngine`, `D2DTarget` (the seam adapters) |
 | `src/textlayout_dwrite.cpp` | the DirectWrite text layout |
 | `src/svgdoc.*` | the DirectWrite SVG scene |

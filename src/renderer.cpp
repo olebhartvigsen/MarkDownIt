@@ -35,6 +35,7 @@
 #undef DrawText
 #endif
 #include "layout/display_player.h"
+#include "mermaid/painter.h"
 #include "windows/render_target_win.h"
 #include "windows/text_range_source_win.h"
 
@@ -857,21 +858,39 @@ void Renderer::PaintSharedOverlays(
                                  contentWidth);
                 break;
             }
-            case BlockKind::MermaidPie: {
-                DrawMermaidPieBlock(rt, dw, n, bandX, bandY, contentWidth);
-                break;
-            }
-            case BlockKind::MermaidSequence: {
-                DrawMermaidSequenceBlock(rt, dw, n, bandX, bandY,
-                                         contentWidth);
-                break;
-            }
-            case BlockKind::MermaidGantt: {
-                DrawMermaidGanttBlock(rt, dw, n, bandX, bandY, contentWidth);
-                break;
-            }
+            case BlockKind::MermaidPie:
             case BlockKind::MermaidState: {
-                DrawMermaidStateBlock(rt, dw, n, bandX, bandY, contentWidth);
+                // The pie and the state diagram are painted by the one
+                // shared painter (src/mermaid/painter.cpp), the file the
+                // mac port draws with. It follows the zoom itself and
+                // measures its labels through the seam, so it takes the
+                // band's origin, the content column and the unzoomed body
+                // font, exactly as the flowchart path does. The layout is
+                // made at parse time and rides on the node, so the paint
+                // does not re-run it.
+                mermaid::MermaidRender diagram;
+                if (n.block == BlockKind::MermaidPie) {
+                    diagram.kind = mermaid::MermaidKind::Pie;
+                    diagram.pie = n.mermaid_pie;
+                } else {
+                    diagram.kind = mermaid::MermaidKind::State;
+                    diagram.state = n.mermaid_state;
+                }
+                if (!diagram.pie && !diagram.state) break;
+                platform::D2DTarget mermaidTarget(rt,
+                                                  layoutEngine_.Factory());
+                const float diagramPad = mermaid::kMermaidBlockPad;
+                const float availWidth = contentWidth > 2.0f * diagramPad
+                                             ? contentWidth - 2.0f * diagramPad
+                                             : 0.0f;
+                LayoutMetrics diagramMetrics = ComputeMetrics();
+                platform::FontSpec diagramFont;
+                diagramFont.family = "segoe ui";
+                diagramFont.size = diagramMetrics.bodyFontSize * kPtToDip;
+                platform::PaintMermaidDiagram(
+                    TextEngineForWalk(), &mermaidTarget, diagram, zoom_,
+                    availWidth, bandX, bandY, diagramPad, palette_,
+                    diagramFont);
                 break;
             }
             default:

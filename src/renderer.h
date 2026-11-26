@@ -559,12 +559,8 @@ private:
                           const Node& n, float x, float y, float width);
     std::shared_ptr<mermaid::LaidOutFlowchart> GetMermaidLayout(
         IDWriteFactory* dw, const Node& n) const;
-    void DrawMermaidPieBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
-                             const Node& n, float x, float y, float width);
     void DrawMermaidSequenceBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                   const Node& n, float x, float y, float width);
-    void DrawMermaidStateBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
-                               const Node& n, float x, float y, float width);
     void DrawMermaidGanttBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                const Node& n, float x, float y, float width);
 };

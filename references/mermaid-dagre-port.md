@@ -69,8 +69,8 @@ or the oracle changes.
 
 State diagrams are rendered: a `stateDiagram-v2` fence is promoted at parse
 time to `BlockKind::MermaidState`, laid out by `LayoutStateDiagram`, and drawn
-by the shared painter in each port (`src/renderer_state.cpp` on Windows,
-`PaintState` in `src/mermaid/painter.cpp`). Circles are `[*]`, a box
+by the shared painter (`PaintState` in `src/mermaid/painter.cpp`), on both
+ports. Circles are `[*]`, a box
 is a state, transitions are polylines with arrowheads, and the labels sit where
 the layout placed them.
 

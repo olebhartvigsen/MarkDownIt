@@ -172,10 +172,9 @@ add_executable(MarkDownIt WIN32
     src/main.cpp
     src/app.cpp
     src/renderer.cpp
-    src/renderer_pie.cpp
+    src/mermaid/painter.cpp
     src/renderer_sequence.cpp
     src/renderer_gantt.cpp
-    src/renderer_state.cpp
     src/colortext.cpp
     src/imagehelper.cpp
     src/filewatch.cpp
@@ -555,15 +554,15 @@ elseif(BUILD_TESTS)
         ${MARKDOWNIT_OFFICE_SOURCES}
         ${MARKDOWNIT_WINDOWS_APP_SOURCES}
         # The Windows renderer chain the batch 5.3 twin drives: the
-        # painters the wash test renders through, their win-only pie
-        # and sequence siblings, the DirectWrite Mermaid measure the
-        # painters charge, and the real image loader the painters call
+        # painters the wash test renders through, the two diagram
+        # painters the shared painter does not cover yet, the
+        # DirectWrite Mermaid measure the painters charge, and the real
+        # image loader the painters call
         # (the twin fixtures carry no image URLs, so it only links).
         src/renderer.cpp
-        src/renderer_pie.cpp
+        src/mermaid/painter.cpp
         src/renderer_sequence.cpp
         src/renderer_gantt.cpp
-        src/renderer_state.cpp
         src/imagehelper.cpp
         ${MARKDOWNIT_MERMAID_WINDOWS_SOURCES}
         src/textlayout_dwrite.cpp
