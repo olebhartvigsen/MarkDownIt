@@ -39,6 +39,28 @@ constexpr uint32_t kPieColors[] = {
 };
 constexpr size_t kPieColorCount = sizeof(kPieColors) / sizeof(kPieColors[0]);
 
+// Mermaid's pie text sizes (pieSectionTextSize, pieLegendTextSize,
+// pieTitleTextSize) in the layout's own units. The document body font is
+// larger than any of them, which is what left the percents and the
+// legend oversized.
+constexpr float kPieSectionFontSize = 17.0f;
+constexpr float kPieLegendFontSize = 17.0f;
+constexpr float kPieTitleFontSize = 25.0f;
+
+// The legend row pitch and the gap after the swatch, mermaid's
+// LEGEND_RECT_SIZE 18 plus LEGEND_SPACING 4.
+constexpr float kPieLegendPitch = 22.0f;
+constexpr float kPieLegendGap = 4.0f;
+
+// Where a percent label sits: two thirds of the radius from the centre,
+// so it is clear of both the middle and the rim.
+constexpr float kPieLabelRadius = 0.66f;
+
+// The pie's outline weight: one hairline at the chart's scale. Mermaid
+// states one 2px weight for the whole outline; drawing it once per edge
+// is what made it read as a heavy black border.
+constexpr float kPieStrokeWidth = 1.0f;
+
 // The sequence palette, matching the mermaid sequence default theme.
 // The sequence diagram takes its colours from the palette's diagram
 // tokens (theme.h), so it follows the appearance the way the flowchart
@@ -198,6 +220,16 @@ FontSpec ScaledFont(const FontSpec& font, float scale) {
     FontSpec scaled = font;
     scaled.size = font.size * scale;
     return scaled;
+}
+
+// The font at an explicit mermaid size, keeping the face the caller
+// names. Mermaid states the pie text in px (17 for the slices and the
+// legend, 25 for the title) and the layout is in the same units, so the
+// size comes from mermaid, not from a multiple of the body font.
+FontSpec FontAtSize(const FontSpec& font, float size) {
+    FontSpec sized = font;
+    sized.size = size;
+    return sized;
 }
 
 // Draws a line of text with its left edge on the x and its top on the y.
@@ -444,36 +476,35 @@ void PaintFlowchart(TextEngine* engine, RenderTarget* target,
     }
 }
 
-// Strokes the outline of a pie slice: the two radii and the arc.
+// Draws the pie's outline once: the ring around the slices and one
+// radial divider per boundary angle.
 //
-// The arc is stroked as a chain of short lines, because the seam has no
-// arc primitive. The angles are the layout ones: clockwise from twelve
-// o'clock.
-void StrokePieSlice(RenderTarget* target, float centreX, float centreY,
-                     float radius, double startAngle, double endAngle,
-                     const Color& color, float lineWidth) {
+// Mermaid strokes every slice path, so a radius shared by two slices is
+// stroked twice and the ring is stroked once per slice on top of
+// pieOuterCircle. The same edge painted twice is what made the border
+// read as a heavy black outline and doubled every divider. Here the ring
+// is stroked once and every boundary angle once: each arc's start is a
+// boundary, and the last arc's end is the first arc's start, so the arcs
+// cover all boundaries with none drawn twice. The angles are the layout
+// ones: clockwise from twelve o'clock.
+void StrokePieOutline(RenderTarget* target, float centreX, float centreY,
+                      float radius, float ringRadius,
+                      const std::vector<mermaid::PieArc>& arcs,
+                      const Color& ink, float lineWidth) {
     if (!target) return;
-    const float startX =
-        centreX + static_cast<float>(radius * std::sin(startAngle));
-    const float startY =
-        centreY - static_cast<float>(radius * std::cos(startAngle));
-    const float endX = centreX + static_cast<float>(radius * std::sin(endAngle));
-    const float endY = centreY - static_cast<float>(radius * std::cos(endAngle));
-    target->StrokeLine(centreX, centreY, startX, startY, color, lineWidth);
-    target->StrokeLine(centreX, centreY, endX, endY, color, lineWidth);
+    Rect ring;
+    ring.x = centreX - ringRadius;
+    ring.y = centreY - ringRadius;
+    ring.width = ringRadius * 2.0f;
+    ring.height = ringRadius * 2.0f;
+    target->StrokeEllipse(ring, ink, lineWidth);
 
-    const double sweep = endAngle - startAngle;
-    const int steps = std::max(
-        8, static_cast<int>(std::ceil(std::fabs(sweep) / (kPi / 36.0))));
-    for (int i = 0; i < steps; ++i) {
-        const double from = startAngle + sweep * i / steps;
-        const double to = startAngle + sweep * (i + 1) / steps;
+    for (const auto& arc : arcs) {
         target->StrokeLine(
-            centreX + static_cast<float>(radius * std::sin(from)),
-            centreY - static_cast<float>(radius * std::cos(from)),
-            centreX + static_cast<float>(radius * std::sin(to)),
-            centreY - static_cast<float>(radius * std::cos(to)), color,
-            lineWidth);
+            centreX, centreY,
+            centreX + radius * static_cast<float>(std::sin(arc.start_angle)),
+            centreY - radius * static_cast<float>(std::cos(arc.start_angle)),
+            ink, lineWidth);
     }
 }
 
@@ -483,31 +514,31 @@ void PaintPie(TextEngine* engine, RenderTarget* target,
               float originX, float originY, float padding,
               const Palette& palette, const FontSpec& bodyFont) {
     const float scale = FitScale(zoom, laid.width, availWidth);
-    const FontSpec font = ScaledFont(bodyFont, scale);
     const float ox = originX;
     const float oy = originY + padding;
 
-    const Color black = ToColor(palette.textPrimary);
-    // The percent labels sit on the slices, which keep mermaid's pale
-    // palette in both appearances, so the ink is chosen against the
-    // slice rather than against the page. The title is on the page and
-    // follows it: a fixed dark grey vanished on a dark background.
+    // The mermaid ink of the page: the ring, the dividers, the legend
+    // and the title all sit on the page or on its edge, so they follow
+    // the appearance. The percent labels sit on the slices, which keep
+    // mermaid's pale palette in both appearances, so their ink is chosen
+    // against the slice instead.
     const Color pageInk = ToColor(palette.mermaidText);
+
+    // Mermaid's own pie text sizes. The document body font is larger and
+    // scaled the percents and the legend up with the page text.
+    const FontSpec sectionFont =
+        FontAtSize(bodyFont, kPieSectionFontSize * scale);
+    const FontSpec legendFont =
+        FontAtSize(bodyFont, kPieLegendFontSize * scale);
+    const FontSpec titleFont = FontAtSize(bodyFont, kPieTitleFontSize * scale);
 
     const float centreX = ox + static_cast<float>(laid.cx * scale);
     const float centreY = oy + static_cast<float>(laid.cy * scale);
     const float radius = static_cast<float>(laid.radius * scale);
-
-    // The outer ring is stroked around the slices, not filled.
     const float ringRadius = static_cast<float>(laid.ring_r * scale);
-    Rect ring;
-    ring.x = centreX - ringRadius;
-    ring.y = centreY - ringRadius;
-    ring.width = ringRadius * 2.0f;
-    ring.height = ringRadius * 2.0f;
-    target->StrokeEllipse(ring, black, 2.0f * scale);
 
-    // The slices.
+    // The slices, filled only: the outline is painted once below, not
+    // once per slice.
     for (const auto& arc : laid.arcs) {
         const Color fill = Rgb(kPieColors[arc.color_index % kPieColorCount]);
         Rect slice;
@@ -523,13 +554,13 @@ void PaintPie(TextEngine* engine, RenderTarget* target,
         const float end =
             static_cast<float>(arc.end_angle * 180.0 / kPi) - 90.0f;
         target->FillPieSlice(slice, start, end, fill);
-        // Mermaid strokes every slice, so the slices stay apart.
-        StrokePieSlice(target, centreX, centreY, radius, arc.start_angle,
-                       arc.end_angle, black, 2.0f * scale);
     }
 
-    // The percent label of every slice, at 0.75 of the radius in the
-    // middle of the slice.
+    StrokePieOutline(target, centreX, centreY, radius, ringRadius, laid.arcs,
+                     pageInk, kPieStrokeWidth * scale);
+
+    // The percent label of every slice, two thirds out along the angle
+    // that halves the slice, clear of both the centre and the rim.
     for (const auto& arc : laid.arcs) {
         const Color slice = Rgb(kPieColors[arc.color_index % kPieColorCount]);
         // Rec. 601 luma: pale slices take the dark ink, saturated ones
@@ -537,42 +568,92 @@ void PaintPie(TextEngine* engine, RenderTarget* target,
         const float luma =
             0.299f * slice.r + 0.587f * slice.g + 0.114f * slice.b;
         const Color labelInk = luma > 0.62f ? Rgb(0x333333) : Rgb(0xF5F5F5);
-        DrawCentered(target, engine, arc.pct, font,
-                     ox + static_cast<float>(arc.label_x * scale),
-                     oy + static_cast<float>(arc.label_y * scale), labelInk);
+        const double mid = (arc.start_angle + arc.end_angle) * 0.5;
+        const float labelX = centreX + radius * kPieLabelRadius *
+                                            static_cast<float>(std::sin(mid));
+        const float labelY = centreY - radius * kPieLabelRadius *
+                                            static_cast<float>(std::cos(mid));
+        DrawCentered(target, engine, arc.pct, sectionFont, labelX, labelY,
+                     labelInk);
     }
 
-    // The title sits above the pie and above the legend: the legend is
-    // centred on the pie's top, so a title drawn at cy-200 landed inside
-    // the first legend rows and the two read as one smudge.
+    // The title sits centred above the pie at mermaid's own offset,
+    // -(height - 50) / 2, which is 200 units above the centre.
     if (!laid.title.empty()) {
-        float titleY = static_cast<float>(laid.cy) - 200.0f;
-        if (!laid.legend.empty()) {
-            float top = static_cast<float>(laid.legend.front().y);
-            for (const auto& row : laid.legend) {
-                if (row.y < top) top = static_cast<float>(row.y);
-            }
-            const float above = top - 26.0f;
-            if (above < titleY) titleY = above;
-        }
-        DrawCentered(target, engine, laid.title, font,
-                     ox + static_cast<float>(laid.cx * scale),
-                     oy + titleY * scale, pageInk);
+        DrawCentered(target, engine, laid.title, titleFont, centreX,
+                     centreY - 200.0f * scale, pageInk);
     }
 
-    // The legend: a swatch and the label of every slice, in arc order.
+    // The legend sits beside the pie, vertically centred on it. Mermaid
+    // put both in one group translated to (cx, cy), so the layout's row
+    // x and y are relative to the centre; drawing them from the block
+    // origin put the block above the circle and on top of it.
+    if (laid.legend.empty()) return;
+
+    const TextSize legendLine = MeasureText(engine, "Ag", legendFont);
+    // The pitch follows the measured line height so a taller engine line
+    // cannot make two entries overlap; the swatch is sized to the font.
+    const float legendPitch =
+        std::max(kPieLegendPitch * scale,
+                 legendLine.height + kPieLegendGap * scale);
+    const float swatchSize = legendFont.size;
+    const float legendWidthExtra = swatchSize + kPieLegendGap * scale;
+    const int legendCount = static_cast<int>(laid.legend.size());
+
+    float legendTextWidth = 0.0f;
     for (const auto& row : laid.legend) {
-        const float rx = ox + static_cast<float>(row.x * scale);
-        const float ry = oy + static_cast<float>(row.y * scale);
+        legendTextWidth = std::max(
+            legendTextWidth, MeasureText(engine, row.label, legendFont).width);
+    }
+
+    const float bandTop = oy;
+    const float bandBottom = oy + static_cast<float>(laid.height * scale);
+    const float bandRight = ox + static_cast<float>(laid.width * scale);
+    const float legendLeftBase =
+        ox + static_cast<float>((laid.cx + laid.legend.front().x) * scale);
+    float legendLeft = legendLeftBase;
+    float legendTop = centreY - legendPitch * legendCount * 0.5f;
+    const float legendWidth = legendTextWidth + legendWidthExtra;
+    const float legendHeight = legendPitch * legendCount;
+
+    // Hold the block inside the band the layout pass allocated. The
+    // layout width already reserves the legend column; if the measured
+    // text is wider than that estimate, or a long legend is taller than
+    // the canvas, the block is kept inside the band and the shortfall is
+    // reported so the layout band can grow. The painter never draws over
+    // the block edge.
+    if (legendHeight > bandBottom - bandTop) {
+        std::fprintf(stderr,
+                     "mermaid pie: legend needs %.1f DIP, layout band has "
+                     "%.1f; the layout band has to grow\n",
+                     legendHeight, bandBottom - bandTop);
+    }
+    if (legendTop < bandTop) legendTop = bandTop;
+    if (legendTop + legendHeight > bandBottom) {
+        legendTop = std::max(bandTop, bandBottom - legendHeight);
+    }
+    if (legendLeft + legendWidth > bandRight) {
+        const float shortfall = legendLeft + legendWidth - bandRight;
+        std::fprintf(stderr,
+                     "mermaid pie: legend needs %.1f DIP more width; the "
+                     "layout band has to grow\n",
+                     shortfall);
+        legendLeft = std::max(ox, bandRight - legendWidth);
+    }
+
+    for (size_t i = 0; i < laid.legend.size(); ++i) {
+        const auto& row = laid.legend[i];
+        const float rowMid = legendTop + legendPitch *
+                                            (static_cast<float>(i) + 0.5f);
         Rect swatch;
-        swatch.x = rx;
-        swatch.y = ry;
-        swatch.width = 18.0f * scale;
-        swatch.height = 18.0f * scale;
+        swatch.x = legendLeft;
+        swatch.y = rowMid - swatchSize * 0.5f;
+        swatch.width = swatchSize;
+        swatch.height = swatchSize;
         target->FillRect(
             swatch, Rgb(kPieColors[row.color_index % kPieColorCount]));
-        DrawLeftCentered(target, engine, row.label, font, rx + 22.0f * scale,
-                         ry + 14.0f * scale, black);
+        DrawLeftCentered(target, engine, row.label, legendFont,
+                         legendLeft + legendWidthExtra, rowMid, pageInk);
     }
 }
 
