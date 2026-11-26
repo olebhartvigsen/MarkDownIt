@@ -1,7 +1,16 @@
 #pragma once
 
 #include <cassert>
+
+// The trace beside the default DrawLayout below. crash_trace.h reaches
+// windows.h on Windows, and that header maps DrawText to DrawTextW, which
+// would rename the seam's own method for every translation unit this file
+// reaches. The guard is the same removal renderer.h and
+// render_target_win.h perform after their platform headers.
 #include "crash_trace.h"
+#ifdef DrawText
+#undef DrawText
+#endif
 
 // The narrow interfaces both painters are written against.
 //
