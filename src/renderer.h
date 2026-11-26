@@ -513,13 +513,16 @@ private:
     // wrapping, zoom and scroll. u16ToSrc maps each UTF-16 index of the block
     // layout to its source byte offset; blockStart/blockEnd are the source
     // byte range the block covers; matches outside it are skipped. Other
-    // matches get matchBrush, the match at searchCurrentIndex_ gets
-    // currentBrush. The mapping is read with a binary search when it is
+    // matches get matchColor, the match at searchCurrentIndex_ gets
+    // currentColor. The mapping is read with a binary search when it is
     // non-decreasing, with the linear scan kept as the fallback.
+    //
+    // The body is layout::PaintMatchHighlights: the policy is shared, the
+    // geometry comes from the DirectWrite layout through the seam.
     void FillMatchHighlights(ID2D1RenderTarget* rt,
                              IDWriteTextLayout* layout,
-                             ID2D1SolidColorBrush* matchBrush,
-                             ID2D1SolidColorBrush* currentBrush,
+                             const ThemeColor& matchColor,
+                             const ThemeColor& currentColor,
                              const std::vector<uint32_t>& u16ToSrc,
                              UINT32 u16Len,
                              uint32_t blockStart, uint32_t blockEnd,
@@ -527,13 +530,13 @@ private:
                              float scrollY, float viewportH);
 
     // Paint the marker fills for one block. Same shape as the search
-    // highlights: one brush for the fill and one for the thin bottom line
+    // highlights: one colour for the fill and one for the thin bottom line
     // that keeps a mark off colour alone. There is no current-marker
     // concept, every mark gets the same fill.
     void FillMarkerHighlights(ID2D1RenderTarget* rt,
                              IDWriteTextLayout* layout,
-                             ID2D1SolidColorBrush* fillBrush,
-                             ID2D1SolidColorBrush* lineBrush,
+                             const ThemeColor& fillColor,
+                             const ThemeColor& lineColor,
                              const std::vector<uint32_t>& u16ToSrc,
                              UINT32 u16Len,
                              uint32_t blockStart, uint32_t blockEnd,

@@ -29,9 +29,14 @@ WINDOWS_RAW = re.compile(
 MAC_RAW = re.compile(r"\b(?:CG[A-Za-z]*Ref|CT[A-Za-z]*Ref|NSGraphicsContext)\b")
 
 # Measured on 2026-11-26 in src/renderer.cpp. Every decrement is a method that
-# moved onto platform::RenderTarget or platform::TextEngine; write the new
-# number here when that lands.
-WINDOWS_BASELINE = 111
+# moved onto platform::RenderTarget, platform::TextEngine or
+# platform::TextRangeSource; write the new number here when that lands.
+#
+# 111 -> 85: the search and marker highlight pass became
+# layout::PaintMatchHighlights and layout::PaintMarkerHighlights, the geometry
+# moved behind platform::TextRangeSource (platform::DWriteRangeSource on
+# Windows), and the four paint paths stopped creating brushes of their own.
+WINDOWS_BASELINE = 85
 
 PAINTERS = [
     ("src/renderer.cpp", WINDOWS_RAW, WINDOWS_BASELINE, "windows painter"),

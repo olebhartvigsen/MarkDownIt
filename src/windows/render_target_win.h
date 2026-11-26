@@ -40,6 +40,7 @@ public:
     D2DTarget& operator=(const D2DTarget&) = delete;
 
     void FillRect(const Rect& rect, const Color& color) override;
+    void FillRects(const std::vector<Rect>& rects, const Color& color) override;
     void FillRoundedRect(const Rect& rect, float radius, const Color& color) override;
     void FillRoundedRectSides(const Rect& rect, float radius, const Color& color, bool roundLeft, bool roundRight) override;
     void StrokeRect(const Rect& rect, const Color& color, float lineWidth) override;

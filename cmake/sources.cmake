@@ -34,6 +34,7 @@ set(MARKDOWNIT_CORE_SOURCES
     src/layout/list_layout.cpp
     src/layout/code_layout.cpp
     src/layout/table_layout.cpp
+    src/layout/range_highlights.cpp
     src/layout/svg_mermaid_layout.cpp
     src/layout/display_player.cpp
     src/layout/print_pages.cpp
@@ -137,4 +138,5 @@ set(MARKDOWNIT_WINDOWS_APP_SOURCES
     src/clipboard_win.cpp
     src/windows/text_engine_win.cpp
     src/windows/render_target_win.cpp
+    src/windows/text_range_source_win.cpp
 )

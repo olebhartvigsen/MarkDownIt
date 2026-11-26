@@ -1,16 +1,18 @@
 #pragma once
 
-// The three narrow interfaces the macOS port is written against.
+// The narrow interfaces both painters are written against.
 //
-// The Windows renderer talks to Direct2D and DirectWrite directly. The
-// macOS renderer talks to these seams instead, which are deliberately
-// small: they cover exactly what the markdown renderer needs and nothing
-// else. That keeps the mac drawing code honest, because there is no way
-// to reach for a platform API that is not in the seam.
+// The seams are deliberately small: they cover exactly what the markdown
+// renderer needs and nothing else. That keeps the drawing code honest,
+// because there is no way to reach for a platform API that is not in the
+// seam.
 //
-// The seams are for the mac layer only. The Windows renderer keeps talking
-// to Direct2D; retrofitting it onto the seams is an optional later
-// refactor, not part of this port.
+// The macOS renderer has always drawn through them. The Windows renderer is
+// being moved onto them one method at a time, so a paint pass can become one
+// shared file instead of two bodies that have to be kept alike by hand. The
+// Direct2D and DirectWrite halves live in src/windows/; the Core Graphics and
+// Core Text halves in src/macos/. tools/check_painter_seam.py counts the raw
+// platform names left in each painter and only lets the number fall.
 
 #include <cstdint>
 #include <functional>
@@ -184,6 +186,16 @@ public:
     // Fills a rectangle.
     virtual void FillRect(const Rect& rect, const Color& color) = 0;
 
+    // Fills several rectangles with one colour.
+    //
+    // A search or a marker layer fills a rectangle per wrapped line, so one
+    // block of text with hundreds of matches is hundreds of fills in two
+    // colours. The default fills them one at a time; a target that can keep
+    // a brush alive across the batch overrides it and pays for one brush.
+    virtual void FillRects(const std::vector<Rect>& rects, const Color& color) {
+        for (const Rect& rect : rects) FillRect(rect, color);
+    }
+
     // Fills a rectangle with rounded corners. The radius is in points.
     virtual void FillRoundedRect(const Rect& rect, float radius,
                                  const Color& color) = 0;
@@ -276,6 +288,32 @@ public:
     // PopClip.
     virtual void PushClip(const Rect& rect) = 0;
     virtual void PopClip() = 0;
+};
+
+// ---------------------------------------------------------------------------
+// TextRangeSource: where a character range sits on the page
+// ---------------------------------------------------------------------------
+
+// Answers the rectangles a character range of one laid out block covers.
+//
+// The split is what lets a highlight pass be shared code. The renderer owns
+// the policy: which ranges are drawn, in which colour, in which order. The
+// platform owns the geometry: where the glyphs of a range ended up after
+// wrapping, zoom and scroll. The platform that answers the geometry is the
+// same one that measured the block, so a range can be located in the units
+// it was laid out in.
+class TextRangeSource {
+public:
+    virtual ~TextRangeSource() = default;
+
+    // Appends the rectangle of every line the range covers to `out`, in
+    // target coordinates. The range is in UTF-16 units of the block's text,
+    // which is the unit both platforms lay out in, and is clamped to the
+    // block. Lines whose band lies outside [cullTop, cullBottom) are skipped
+    // without a hit test, so a range scrolled out of view costs nothing.
+    virtual void AppendRangeRects(uint32_t start, uint32_t end,
+                                  float cullTop, float cullBottom,
+                                  std::vector<Rect>* out) = 0;
 };
 
 // ---------------------------------------------------------------------------

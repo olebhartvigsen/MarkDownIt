@@ -173,6 +173,16 @@ void D2DTarget::FillRect(const Rect& rect, const Color& color) {
     brush->Release();
 }
 
+void D2DTarget::FillRects(const std::vector<Rect>& rects, const Color& color) {
+    // One brush for the batch: a highlight pass fills a rectangle per
+    // wrapped line, and the search layer does it in the hundreds.
+    if (!target_ || rects.empty()) return;
+    ID2D1SolidColorBrush* brush = BrushFor(color);
+    if (!brush) return;
+    for (const Rect& rect : rects) target_->FillRectangle(Box(rect), brush);
+    brush->Release();
+}
+
 void D2DTarget::FillRoundedRect(const Rect& rect, float radius, const Color& color) {
     if (radius <= 0.0f) { FillRect(rect, color); return; }
     ID2D1SolidColorBrush* brush = BrushFor(color);

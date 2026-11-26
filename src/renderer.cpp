@@ -17,6 +17,7 @@
 #include "json.h"
 #include "svgtext.h"
 #include "layout/text_runs.h"
+#include "layout/range_highlights.h"
 #include "layout/selection_rects.h"
 #include "mermaid/model.h"
 #include "mermaid/layout_internal.h"
@@ -33,6 +34,7 @@
 #endif
 #include "layout/display_player.h"
 #include "windows/render_target_win.h"
+#include "windows/text_range_source_win.h"
 
 #include <utility>
 
@@ -307,162 +309,18 @@ static void FillSelectionHighlight(ID2D1RenderTarget* rt,
 // Search highlight helpers
 // ---------------------------------------------------------------------------
 //
-// FillMatchHighlights runs per visible block, and a one character search in
-// a big document can carry hundreds of matches. Everything expensive that
-// does not depend on the individual match is therefore hoisted into one
-// cache per block, matches that fall outside the viewport skip their hit
-// test entirely, and the src to UTF-16 mapping uses a binary search when the
-// block's mapping is non-decreasing (which it is everywhere the mapping is
-// built in source order) instead of a linear scan per match.
+// The pass itself is layout::PaintMatchHighlights and
+// layout::PaintMarkerHighlights, shared with the mac painter, so the mapping
+// rule, the "does this block carry any match at all" probe and the viewport
+// skip exist once instead of twice. What stays here is the platform half: the
+// DirectWrite layout is asked where the range sits, through the
+// platform::TextRangeSource seam, and the fills go through the seam target.
+// Both objects are cheap and scoped to one block.
 
-struct LayoutLineCache {
-    std::vector<DWRITE_LINE_METRICS> lines;
-    std::vector<float> lineTop;     // line top, relative to the origin
-    std::vector<UINT32> lineStart;  // UTF-16 index of each line start
-    UINT32 totalU16 = 0;
-    bool valid = false;
-};
-
-static void BuildLayoutLineCache(IDWriteTextLayout* layout,
-                                 LayoutLineCache& cache) {
-    cache = LayoutLineCache();
-    if (!layout) return;
-    UINT32 count = 0;
-    // Sizing probe: DirectWrite reports the needed line count through the
-    // E_NOT_SUFFICIENT_BUFFER failure path, so a failing HRESULT here is
-    // the normal answer, not an error. Only a zero count means there is
-    // nothing to cache. (Checking FAILED() on the probe rejected the count
-    // every time, left the cache invalid, and silently dropped every fill
-    // that depended on it, search matches and markers alike.)
-    layout->GetLineMetrics(nullptr, 0, &count);
-    if (count == 0) return;
-    cache.lines.resize(count);
-    if (FAILED(layout->GetLineMetrics(cache.lines.data(), count, &count)) ||
-        count == 0) {
-        return;
-    }
-    cache.lines.resize(count);
-    cache.lineTop.resize(count);
-    cache.lineStart.resize(count);
-    float y = 0.0f;
-    UINT32 u = 0;
-    for (UINT32 i = 0; i < count; ++i) {
-        cache.lineTop[i] = y;
-        cache.lineStart[i] = u;
-        y += cache.lines[i].height;
-        u += cache.lines[i].length;
-    }
-    cache.totalU16 = u;
-    cache.valid = true;
-}
-
-// First index with value >= target. Exact for a non-decreasing vector, and
-// the same answer the old linear scan gave; callers only use it after
-// checking the mapping really is non-decreasing.
-static UINT32 LowerBoundMapping(const std::vector<uint32_t>& mapping,
-                                uint32_t target) {
-    size_t lo = 0;
-    size_t hi = mapping.size();
-    while (lo < hi) {
-        const size_t mid = lo + (hi - lo) / 2;
-        if (mapping[mid] < target) lo = mid + 1;
-        else hi = mid;
-    }
-    return static_cast<UINT32>(lo);
-}
-
-static bool IsNonDecreasingMapping(const std::vector<uint32_t>& mapping) {
-    for (size_t i = 1; i < mapping.size(); ++i) {
-        if (mapping[i] < mapping[i - 1]) return false;
-    }
-    return true;
-}
-
-// Same fill as FillSelectionHighlight, but for a range drawn from the
-// per-block line cache: no per-match layout setup, and a match that sits
-// outside the visible band never reaches HitTestTextRange.
-static void FillRangeFromCache(ID2D1RenderTarget* rt,
-                               IDWriteTextLayout* layout,
-                               const LayoutLineCache& cache,
-                               ID2D1SolidColorBrush* brush,
-                               UINT32 u16Start, UINT32 u16End,
-                               float originX, float originY,
-                               float scrollY, float viewportH,
-                               ID2D1SolidColorBrush* underlineBrush) {
-    if (!rt || !layout || !brush || !cache.valid) return;
-    if (u16End <= u16Start) return;
-    if (u16Start >= cache.totalU16) return;
-    if (u16End > cache.totalU16) u16End = cache.totalU16;
-
-    const float viewBottom = scrollY + (viewportH > 0.0f ? viewportH : 0.0f);
-    const size_t lineCount = cache.lines.size();
-
-    // Line that contains the match start: the last line whose first
-    // character is at or before u16Start (a match commonly starts in the
-    // middle of a line, so a plain lower bound would start too late).
-    size_t first = 0;
-    {
-        size_t lo = 0, hi = lineCount;
-        while (lo < hi) {
-            const size_t mid = lo + (hi - lo) / 2;
-            if (cache.lineStart[mid] <= u16Start) lo = mid + 1;
-            else hi = mid;
-        }
-        first = (lo == 0) ? 0 : lo - 1;
-    }
-
-    // First line whose bottom is inside the visible band, never before the
-    // match's first line: a match far above the viewport costs no hit test.
-    size_t start = first;
-    {
-        size_t lo = first, hi = lineCount;
-        while (lo < hi) {
-            const size_t mid = lo + (hi - lo) / 2;
-            if (originY + cache.lineTop[mid] + cache.lines[mid].height <
-                scrollY) {
-                lo = mid + 1;
-            } else {
-                hi = mid;
-            }
-        }
-        if (lo > start) start = lo;
-    }
-
-    std::vector<DWRITE_HIT_TEST_METRICS> htm;
-    for (size_t i = start; i < lineCount; ++i) {
-        const float lineTop = originY + cache.lineTop[i];
-        if (lineTop > viewBottom) break;
-        const UINT32 lineStart = cache.lineStart[i];
-        const UINT32 lineEnd = lineStart + cache.lines[i].length;
-        const UINT32 selLo = u16Start > lineStart ? u16Start : lineStart;
-        const UINT32 selHi = u16End < lineEnd ? u16End : lineEnd;
-        if (selHi > selLo) {
-            const UINT32 count = selHi - selLo;
-            htm.resize(count);
-            UINT32 hitCount = 0;
-            HRESULT hr = layout->HitTestTextRange(
-                selLo, count, originX, originY,
-                htm.data(), count, &hitCount);
-            if (SUCCEEDED(hr)) {
-                for (UINT32 h = 0; h < hitCount; ++h) {
-                    D2D1_RECT_F r = D2D1::RectF(
-                        htm[h].left, htm[h].top,
-                        htm[h].left + htm[h].width,
-                        htm[h].top + htm[h].height);
-                    rt->FillRectangle(r, brush);
-                    if (underlineBrush) {
-                        // A thin line along the bottom keeps a mark from
-                        // relying on colour alone.
-                        D2D1_RECT_F line = r;
-                        line.top = r.bottom - 2.0f;
-                        if (line.top < r.top) line.top = r.top;
-                        rt->FillRectangle(line, underlineBrush);
-                    }
-                }
-            }
-        }
-        if (lineEnd >= u16End) break;
-    }
+// The seam colour of a palette entry. ThemeColor is D2D1_COLOR_F on Windows
+// and a plain four float struct elsewhere; the seam speaks the four floats.
+static platform::Color SeamColor(const ThemeColor& c) {
+    return platform::Color{c.r, c.g, c.b, c.a};
 }
 
 Renderer::Renderer() {}
@@ -499,129 +357,55 @@ void Renderer::SetMarkers(const std::vector<TextMatch>* markers,
     markersVisible_ = visible;
 }
 
-// Map a document byte offset to a UTF-16 index inside one block, using a
-// LINEAR scan over u16ToSrc. These block mappings are not guaranteed to be
-// sorted: a table cell can carry gaps where md4c split the text at a mark or
-// an HTML tag, which is why the existing selection code scans too. A binary
-// search over an unsorted map silently highlights the wrong characters.
-static UINT32 MapSrcToU16Linear(const std::vector<uint32_t>& u16ToSrc,
-                                UINT32 u16Len, uint32_t srcOff) {
-    for (size_t i = 0; i < u16ToSrc.size(); ++i) {
-        if (u16ToSrc[i] >= srcOff) return static_cast<UINT32>(i);
-    }
-    return u16Len;
-}
-
 void Renderer::FillMatchHighlights(ID2D1RenderTarget* rt,
                                    IDWriteTextLayout* layout,
-                                   ID2D1SolidColorBrush* matchBrush,
-                                   ID2D1SolidColorBrush* currentBrush,
+                                   const ThemeColor& matchColor,
+                                   const ThemeColor& currentColor,
                                    const std::vector<uint32_t>& u16ToSrc,
                                    UINT32 u16Len,
                                    uint32_t blockStart, uint32_t blockEnd,
                                    float originX, float originY,
                                    float scrollY, float viewportH) {
-    if (!rt || !layout || !matchBrush || !currentBrush) return;
+    if (!rt || !layout) return;
     if (!searchMatches_ || searchMatches_->empty()) return;
     if (u16ToSrc.empty() || u16Len == 0) return;
 
-    // With hundreds of matches, most blocks are not touched at all. Check
-    // first, so the per-block cache below is never built for them.
-    bool touched = false;
-    for (size_t i = 0; i < searchMatches_->size(); ++i) {
-        const TextMatch& m = (*searchMatches_)[i];
-        if (m.length == 0) continue;
-        if (m.start + m.length <= blockStart || m.start >= blockEnd) continue;
-        touched = true;
-        break;
-    }
-    if (!touched) return;
+    const layout::BlockTextMap map{&u16ToSrc, u16Len, blockStart, blockEnd};
+    // A block no match touches never reaches the hit test, and the probe is
+    // the shared one, so this answers the same as the pass itself would.
+    if (!layout::BlockIntersectsAny(*searchMatches_, map)) return;
 
-    LayoutLineCache cache;
-    BuildLayoutLineCache(layout, cache);
-
-    // The binary search is only exact while the mapping is non-decreasing.
-    // Every mapping is built in source order, so it is; the check costs one
-    // pass and keeps the old per-call linear scan as the safe fallback.
-    const bool monotone = IsNonDecreasingMapping(u16ToSrc);
-
-    for (size_t i = 0; i < searchMatches_->size(); ++i) {
-        const TextMatch& m = (*searchMatches_)[i];
-        if (m.length == 0) continue;
-        const uint32_t mStart = m.start;
-        const uint32_t mEnd = m.start + m.length;
-        // Matches are document ranges. Skip anything this block does not
-        // cover rather than clipping, so a match is never drawn twice by two
-        // adjacent blocks.
-        if (mEnd <= blockStart || mStart >= blockEnd) continue;
-
-        ID2D1SolidColorBrush* brush =
-            (static_cast<int>(i) == searchCurrentIndex_) ? currentBrush
-                                                         : matchBrush;
-        UINT32 u16Start = monotone
-            ? LowerBoundMapping(u16ToSrc, mStart)
-            : MapSrcToU16Linear(u16ToSrc, u16Len, mStart);
-        UINT32 u16End = (mEnd >= blockEnd)
-            ? u16Len
-            : (monotone ? LowerBoundMapping(u16ToSrc, mEnd)
-                        : MapSrcToU16Linear(u16ToSrc, u16Len, mEnd));
-        if (u16Start > u16Len) u16Start = u16Len;
-        if (u16End > u16Len) u16End = u16Len;
-        if (u16End <= u16Start) continue;
-        FillRangeFromCache(rt, layout, cache, brush, u16Start, u16End,
-                           originX, originY, scrollY, viewportH, nullptr);
-    }
+    platform::D2DTarget target(rt);
+    platform::DWriteRangeSource source(layout, originX, originY);
+    const layout::PaintBand band{scrollY,
+                                 scrollY + (viewportH > 0.0f ? viewportH : 0.0f)};
+    layout::PaintMatchHighlights(target, source, map, band, *searchMatches_,
+                                 searchCurrentIndex_, SeamColor(matchColor),
+                                 SeamColor(currentColor));
 }
 
 void Renderer::FillMarkerHighlights(ID2D1RenderTarget* rt,
                                     IDWriteTextLayout* layout,
-                                    ID2D1SolidColorBrush* fillBrush,
-                                    ID2D1SolidColorBrush* lineBrush,
+                                    const ThemeColor& fillColor,
+                                    const ThemeColor& lineColor,
                                     const std::vector<uint32_t>& u16ToSrc,
                                     UINT32 u16Len,
                                     uint32_t blockStart, uint32_t blockEnd,
                                     float originX, float originY,
                                     float scrollY, float viewportH) {
-    if (!rt || !layout || !fillBrush || !lineBrush) return;
+    if (!rt || !layout) return;
     if (!HasMarkers()) return;
     if (u16ToSrc.empty() || u16Len == 0) return;
 
-    // Same shape as FillMatchHighlights: the cheap emptiness check first,
-    // one line cache per block, binary mapping with the linear fallback,
-    // and a viewport skip per range.
-    bool touched = false;
-    for (size_t i = 0; i < markerRanges_->size(); ++i) {
-        const TextMatch& m = (*markerRanges_)[i];
-        if (m.length == 0) continue;
-        if (m.start + m.length <= blockStart || m.start >= blockEnd) continue;
-        touched = true;
-        break;
-    }
-    if (!touched) return;
+    const layout::BlockTextMap map{&u16ToSrc, u16Len, blockStart, blockEnd};
+    if (!layout::BlockIntersectsAny(*markerRanges_, map)) return;
 
-    LayoutLineCache cache;
-    BuildLayoutLineCache(layout, cache);
-    const bool monotone = IsNonDecreasingMapping(u16ToSrc);
-
-    for (size_t i = 0; i < markerRanges_->size(); ++i) {
-        const TextMatch& m = (*markerRanges_)[i];
-        if (m.length == 0) continue;
-        const uint32_t mStart = m.start;
-        const uint32_t mEnd = m.start + m.length;
-        if (mEnd <= blockStart || mStart >= blockEnd) continue;
-        UINT32 u16Start = monotone
-            ? LowerBoundMapping(u16ToSrc, mStart)
-            : MapSrcToU16Linear(u16ToSrc, u16Len, mStart);
-        UINT32 u16End = (mEnd >= blockEnd)
-            ? u16Len
-            : (monotone ? LowerBoundMapping(u16ToSrc, mEnd)
-                        : MapSrcToU16Linear(u16ToSrc, u16Len, mEnd));
-        if (u16Start > u16Len) u16Start = u16Len;
-        if (u16End > u16Len) u16End = u16Len;
-        if (u16End <= u16Start) continue;
-        FillRangeFromCache(rt, layout, cache, fillBrush, u16Start, u16End,
-                           originX, originY, scrollY, viewportH, lineBrush);
-    }
+    platform::D2DTarget target(rt);
+    platform::DWriteRangeSource source(layout, originX, originY);
+    const layout::PaintBand band{scrollY,
+                                 scrollY + (viewportH > 0.0f ? viewportH : 0.0f)};
+    layout::PaintMarkerHighlights(target, source, map, band, *markerRanges_,
+                                  SeamColor(fillColor), SeamColor(lineColor));
 }
 
 LayoutMetrics Renderer::ComputeMetrics() const {
@@ -1474,15 +1258,10 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 matchU16ToSrc.push_back(srcByte);
             srcByte += utf8Len;
         }
-        // Marker layer for this block, drawn behind the search fills.
-        ID2D1SolidColorBrush* markerBrush = nullptr;
-        ID2D1SolidColorBrush* markerLine = nullptr;
+        // Marker layer for this block, drawn behind the search fills. No
+        // brushes: the seam fills by colour, one brush per batch.
         if (HasMarkers()) {
-            rt->CreateSolidColorBrush(pal.markerBg, &markerBrush);
-            rt->CreateSolidColorBrush(pal.markerLine, &markerLine);
-        }
-        if (markerBrush && markerLine) {
-            FillMarkerHighlights(rt, layout, markerBrush, markerLine,
+            FillMarkerHighlights(rt, layout, pal.markerBg, pal.markerLine,
                                  matchU16ToSrc,
                                  static_cast<UINT32>(text16.size()),
                                  n.contentOffset,
@@ -1490,24 +1269,17 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                                  x + m.codePad, y + m.codePad,
                                  scrollY, rt->GetSize().height);
         }
-        ID2D1SolidColorBrush* matchBrush = nullptr;
-        ID2D1SolidColorBrush* currentBrush = nullptr;
-        rt->CreateSolidColorBrush(pal.findMatchBg, &matchBrush);
-        rt->CreateSolidColorBrush(pal.findCurrentMatchBg, &currentBrush);
-        if (matchBrush && currentBrush) {
+        if (HasSearchMatches()) {
             const uint32_t contentStart = n.contentOffset;
             const uint32_t contentEnd = contentStart + n.contentLength;
-            FillMatchHighlights(rt, layout, matchBrush, currentBrush,
+            FillMatchHighlights(rt, layout, pal.findMatchBg,
+                                pal.findCurrentMatchBg,
                                 matchU16ToSrc,
                                 static_cast<UINT32>(text16.size()),
                                 contentStart, contentEnd,
                                 x + m.codePad, y + m.codePad,
                                 scrollY, rt->GetSize().height);
         }
-        if (markerBrush) markerBrush->Release();
-        if (markerLine) markerLine->Release();
-        if (matchBrush) matchBrush->Release();
-        if (currentBrush) currentBrush->Release();
     }
 
     // The selection wash, from the shared rect rule: one rectangle
@@ -1637,22 +1409,6 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     ID2D1SolidColorBrush* selBrush = nullptr;
     if (sel && !sel->Empty())
         rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
-    // One pair of brushes for the whole table, released at the end, matching
-    // the selBrush pattern. Both are null when find is closed, so the cells
-    // below test the pointer instead of the match list.
-    ID2D1SolidColorBrush* matchBrush = nullptr;
-    ID2D1SolidColorBrush* currentBrush = nullptr;
-    if (HasSearchMatches()) {
-        rt->CreateSolidColorBrush(pal.findMatchBg, &matchBrush);
-        rt->CreateSolidColorBrush(pal.findCurrentMatchBg, &currentBrush);
-    }
-    // Marker brushes for the whole table, null when the layer is hidden.
-    ID2D1SolidColorBrush* markerBrush = nullptr;
-    ID2D1SolidColorBrush* markerLine = nullptr;
-    if (HasMarkers()) {
-        rt->CreateSolidColorBrush(pal.markerBg, &markerBrush);
-        rt->CreateSolidColorBrush(pal.markerLine, &markerLine);
-    }
 
     size_t cols = 0;
     for (const auto& row : n.rows) {
@@ -1665,10 +1421,6 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (hdrBg) hdrBg->Release();
         if (borderBrush) borderBrush->Release();
         if (selBrush) selBrush->Release();
-        if (markerBrush) markerBrush->Release();
-        if (markerLine) markerLine->Release();
-        if (matchBrush) matchBrush->Release();
-        if (currentBrush) currentBrush->Release();
         return;
     }
 
@@ -1847,14 +1599,13 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 D2D1_POINT_2F cellOrigin = D2D1::Point2F(
                     cellX + m.cellPadX, curY + m.cellPadY);
                 // Marker layer for this cell, behind the search fills.
-                if (markerBrush && markerLine &&
-                    !row.cells[c].text.empty() && !text16.empty() &&
-                    !row.cells[c].u16ToSrc.empty()) {
+                if (HasMarkers() && !row.cells[c].text.empty() &&
+                    !text16.empty() && !row.cells[c].u16ToSrc.empty()) {
                     const auto& cell = row.cells[c];
                     const uint32_t cellStart = cell.srcOffset;
                     const uint32_t cellEnd = cell.srcEnd > cellStart
                         ? cell.srcEnd : cellStart;
-                    FillMarkerHighlights(rt, layout, markerBrush, markerLine,
+                    FillMarkerHighlights(rt, layout, pal.markerBg, pal.markerLine,
                                          cell.u16ToSrc,
                                          static_cast<UINT32>(text16.size()),
                                          cellStart, cellEnd,
@@ -1863,14 +1614,14 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 }
                 // Search match highlights for this cell, drawn before the
                 // selection so the selection stays on top.
-                if (matchBrush && currentBrush &&
-                    !row.cells[c].text.empty() && !text16.empty() &&
-                    !row.cells[c].u16ToSrc.empty()) {
+                if (HasSearchMatches() && !row.cells[c].text.empty() &&
+                    !text16.empty() && !row.cells[c].u16ToSrc.empty()) {
                     const auto& cell = row.cells[c];
                     const uint32_t cellStart = cell.srcOffset;
                     const uint32_t cellEnd = cell.srcEnd > cellStart
                         ? cell.srcEnd : cellStart;
-                    FillMatchHighlights(rt, layout, matchBrush, currentBrush,
+                    FillMatchHighlights(rt, layout, pal.findMatchBg,
+                                        pal.findCurrentMatchBg,
                                         cell.u16ToSrc,
                                         static_cast<UINT32>(text16.size()),
                                         cellStart, cellEnd,
@@ -2055,10 +1806,6 @@ void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (hdrBg) hdrBg->Release();
     if (borderBrush) borderBrush->Release();
     if (selBrush) selBrush->Release();
-    if (markerBrush) markerBrush->Release();
-    if (markerLine) markerLine->Release();
-    if (matchBrush) matchBrush->Release();
-    if (currentBrush) currentBrush->Release();
     outH = curY - y;
 }
 
@@ -2392,21 +2139,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
     }
 
-    // Search match brushes, created once per Render and released at the end.
-    // Both stay null when find is closed, so no block pays for them.
-    ID2D1SolidColorBrush* matchBrush = nullptr;
-    ID2D1SolidColorBrush* currentBrush = nullptr;
-    if (HasSearchMatches()) {
-        rt->CreateSolidColorBrush(pal.findMatchBg, &matchBrush);
-        rt->CreateSolidColorBrush(pal.findCurrentMatchBg, &currentBrush);
-    }
-    // Marker brushes for the same lifetime, null when the layer is hidden.
-    ID2D1SolidColorBrush* markerBrush = nullptr;
-    ID2D1SolidColorBrush* markerLine = nullptr;
-    if (HasMarkers()) {
-        rt->CreateSolidColorBrush(pal.markerBg, &markerBrush);
-        rt->CreateSolidColorBrush(pal.markerLine, &markerLine);
-    }
     // Clip to content area (below the ribbon).
     D2D1_SIZE_F clipSize = rt->GetSize();
     rt->SetTransform(D2D1::Matrix3x2F::Identity());
@@ -2794,11 +2526,10 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         // exact origin the walk's own scale chose.
 
         // Marker layer first, then the search fills on top of it.
-        if (markerBrush && markerLine && !u16ToSrc.empty() &&
-            !text16.empty()) {
+        if (HasMarkers() && !u16ToSrc.empty() && !text16.empty()) {
             const uint32_t blockStart = n.srcOffset;
             const uint32_t blockEnd = blockStart + n.srcLength;
-            FillMarkerHighlights(rt, layout, markerBrush, markerLine,
+            FillMarkerHighlights(rt, layout, pal.markerBg, pal.markerLine,
                                  u16ToSrc,
                                  static_cast<UINT32>(text16.size()),
                                  blockStart, blockEnd,
@@ -2807,11 +2538,11 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
         // Search match highlights, drawn before the selection highlight so
         // selection and text stay on top of the match fills.
-        if (matchBrush && currentBrush && !u16ToSrc.empty() &&
-            !text16.empty()) {
+        if (HasSearchMatches() && !u16ToSrc.empty() && !text16.empty()) {
             const uint32_t blockStart = n.srcOffset;
             const uint32_t blockEnd = blockStart + n.srcLength;
-            FillMatchHighlights(rt, layout, matchBrush, currentBrush,
+            FillMatchHighlights(rt, layout, pal.findMatchBg,
+                                pal.findCurrentMatchBg,
                                 u16ToSrc,
                                 static_cast<UINT32>(text16.size()),
                                 blockStart, blockEnd,
@@ -2905,10 +2636,6 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     rt->PopAxisAlignedClip();
 
     if (selBrush) selBrush->Release();
-    if (markerBrush) markerBrush->Release();
-    if (markerLine) markerLine->Release();
-    if (matchBrush) matchBrush->Release();
-    if (currentBrush) currentBrush->Release();
     // The same extent the old curY walk returned: the last band's
     // bottom on the frame, gaps included, so Measure and this pass
     // still answer callers with one number.
@@ -3092,27 +2819,11 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     rt->CreateSolidColorBrush(pal.textPrimary, &textBrush);
     ID2D1SolidColorBrush* selBrush = nullptr;
     rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
-    // Search match brushes, created once and released at the end like
-    // selBrush. Null when find is closed, so a closed find bar costs nothing.
-    ID2D1SolidColorBrush* matchBrush = nullptr;
-    ID2D1SolidColorBrush* currentBrush = nullptr;
-    if (HasSearchMatches()) {
-        rt->CreateSolidColorBrush(pal.findMatchBg, &matchBrush);
-        rt->CreateSolidColorBrush(pal.findCurrentMatchBg, &currentBrush);
-    }
-    // Marker brushes for the same lifetime, null when the layer is hidden.
-    ID2D1SolidColorBrush* markerBrush = nullptr;
-    ID2D1SolidColorBrush* markerLine = nullptr;
-    if (HasMarkers()) {
-        rt->CreateSolidColorBrush(pal.markerBg, &markerBrush);
-        rt->CreateSolidColorBrush(pal.markerLine, &markerLine);
-    }
 
     const std::vector<uint32_t>& u16ToSrcMap = srcState_.u16ToSrc;
     // Marker layer across the whole source, behind the search fills.
-    if (markerBrush && markerLine && !u16ToSrcMap.empty() &&
-        !text16.empty()) {
-        FillMarkerHighlights(rt, layout, markerBrush, markerLine,
+    if (HasMarkers() && !u16ToSrcMap.empty() && !text16.empty()) {
+        FillMarkerHighlights(rt, layout, pal.markerBg, pal.markerLine,
                              u16ToSrcMap, static_cast<UINT32>(text16.size()),
                              0, static_cast<uint32_t>(src.size()),
                              textX, textY, scrollY, viewH);
@@ -3120,9 +2831,9 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // Search match highlights, drawn before the selection highlight so
     // selection and text stay on top of the match fills. Source view covers
     // the whole document, so the block range is the whole source.
-    if (matchBrush && currentBrush && !u16ToSrcMap.empty() &&
-        !text16.empty()) {
-        FillMatchHighlights(rt, layout, matchBrush, currentBrush,
+    if (HasSearchMatches() && !u16ToSrcMap.empty() && !text16.empty()) {
+        FillMatchHighlights(rt, layout, pal.findMatchBg,
+                            pal.findCurrentMatchBg,
                             u16ToSrcMap, static_cast<UINT32>(text16.size()),
                             0, static_cast<uint32_t>(src.size()),
                             textX, textY, scrollY, viewH);
@@ -3186,10 +2897,6 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
     if (textBrush) textBrush->Release();
     if (selBrush) selBrush->Release();
-    if (markerBrush) markerBrush->Release();
-    if (markerLine) markerLine->Release();
-    if (matchBrush) matchBrush->Release();
-    if (currentBrush) currentBrush->Release();
     return textY + tm.height;
 }
 

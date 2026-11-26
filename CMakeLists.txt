@@ -337,6 +337,7 @@ if(BUILD_TESTS AND APPLE)
         tests/tableedit_test.cpp
         tests/fake_engine_test.cpp
         tests/seam_conformance_test.cpp
+        tests/range_highlights_test.cpp
         tests/layout_golden_test.cpp
         tests/command_table_test.cpp
         tests/commandstate_test.cpp
@@ -478,6 +479,7 @@ elseif(BUILD_TESTS)
         tests/tableedit_test.cpp
         tests/fake_engine_test.cpp
         tests/seam_conformance_test.cpp
+        tests/range_highlights_test.cpp
         tests/layout_golden_test.cpp
         tests/command_table_test.cpp
         tests/commandstate_test.cpp

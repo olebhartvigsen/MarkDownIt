@@ -127,6 +127,13 @@ Rules that follow from this:
 - Selection rectangles, hit testing and caret movement follow one rule
   (`src/layout/selection_rects.h`, `src/navigation.cpp`,
   `src/layoutcache.cpp`). Do not add a per-platform shortcut.
+- The search-match and marker fills are one shared pass
+  (`src/layout/range_highlights.*`). It asks a `TextRangeSource` for the
+  rectangles of a range in UTF-16 units of one block's laid-out text, the
+  unit both platforms lay out in, and the platform answers where those
+  glyphs ended up. The source-byte mapping (`layout::BlockTextMap`) lives in
+  the shared pass and is not sorted for table cells, which carry gaps where
+  md4c split the text.
 - Spacing, sizes and colors come from named tokens in `src/theme.h`
   (`LayoutMetrics`) and the style in `src/markdown_style.h`. Do not put
   float literals into a renderer. The style (apple, github, wikipedia)
@@ -164,7 +171,7 @@ Rules that follow from this:
 | Parsing | `parser.cpp`, `dom.h`, md4c | none |
 | CSV tables | `csv.*`, `csvdocument.*`, `documentparse.*`, the table layout and painters | the open dialog filter |
 | Layout | `src/layout/*`, `layoutcache.*`, `blockspacing.h`, `theme.h`, `markdown_style.h` | none |
-| Painting | display list and `display_player` | `D2DTarget` (Windows), the Core Graphics target (macOS), Mermaid and SVG painters |
+| Painting | display list and `display_player`, the search and marker fills (`layout/range_highlights.*`) | `D2DTarget` (Windows), the Core Graphics target (macOS), Mermaid and SVG painters |
 | Text | `TextEngine` seam, `textlayout.h` seam, `textlayout_generic.cpp` fallback | `DWriteEngine`, `textlayout_dwrite.cpp` / `text_engine_mac.*`, `textlayout_coretext.cpp` |
 | Editing | `DocumentController`, `editcontroller`, `undostack`, `formatting`, `autoformat`, `tableedit`, `navigation`, `inputfilter`, `textbuffer`, `searchreplace`, `findstate`, `markers`, `outline`, `commands.h` | keyboard and mouse event translation |
 | Find | `FindBarModel` (`findbar_model.*`) | `findbar.cpp` / `findbar_mac.mm` |
