@@ -31,6 +31,15 @@ AppSettings LoadSettings() {
         s.fileAssoc = (val != 0);
     }
 
+    // Absent means on: the switch is a default-on feature, and an old
+    // settings block written before it existed must not read as opted out.
+    DWORD an = 1, anSize = sizeof(an), anType = 0;
+    if (RegQueryValueExW(hKey, L"AnalyticsEnabled", nullptr, &anType,
+            reinterpret_cast<BYTE*>(&an), &anSize) == ERROR_SUCCESS &&
+        anType == REG_DWORD) {
+        s.analyticsEnabled = (an != 0);
+    }
+
     val = 0; sz = sizeof(val); type = 0;
     if (RegQueryValueExW(hKey, L"ContentWidth", nullptr, &type,
             reinterpret_cast<BYTE*>(&val), &sz) == ERROR_SUCCESS &&
@@ -138,6 +147,10 @@ void SaveSettings(const AppSettings& s) {
     DWORD fa = s.fileAssoc ? 1u : 0u;
     RegSetValueExW(hKey, L"FileAssoc", 0, REG_DWORD,
         reinterpret_cast<BYTE*>(&fa), sizeof(fa));
+
+    DWORD ae = s.analyticsEnabled ? 1u : 0u;
+    RegSetValueExW(hKey, L"AnalyticsEnabled", 0, REG_DWORD,
+        reinterpret_cast<BYTE*>(&ae), sizeof(ae));
 
     DWORD cw = static_cast<DWORD>(s.contentWidthMode);
     RegSetValueExW(hKey, L"ContentWidth", 0, REG_DWORD,

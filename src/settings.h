@@ -24,6 +24,12 @@ struct AppSettings {
     // Whether .md and .markdown file extensions are registered to MarkDownIt.
     bool fileAssoc = true;
 
+    // Anonymous usage statistics, on by default and off with one switch.
+    // The app sends one app_start event per launch and nothing about a
+    // document; PRIVACY.md is the payload contract and src/analytics.h
+    // builds it. Turning this off stops all sending for that machine.
+    bool analyticsEnabled = true;
+
     // Document pane width mode.
     //   0 = Standard (800 DIP, the original default)
     //   1 = 960 DIP

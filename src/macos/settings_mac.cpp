@@ -280,6 +280,11 @@ void MacSettings::Load() {
         settings_.fileAssoc = fileAssoc;
     }
 
+    bool analyticsEnabled = settings_.analyticsEnabled;
+    if (FindJsonBool(text, "analyticsEnabled", &analyticsEnabled)) {
+        settings_.analyticsEnabled = analyticsEnabled;
+    }
+
     int contentWidthMode = settings_.contentWidthMode;
     double number = 0.0;
     if (FindJsonNumber(text, "contentWidthMode", &number)) {
@@ -340,6 +345,8 @@ bool MacSettings::Save() const {
 
     std::ostringstream out;
     out << "{\n";
+    out << "  \"analyticsEnabled\": "
+        << (settings_.analyticsEnabled ? "true" : "false") << ",\n";
     out << "  \"fileAssoc\": " << (settings_.fileAssoc ? "true" : "false")
         << ",\n";
     out << "  \"contentWidthMode\": " << settings_.contentWidthMode << ",\n";
