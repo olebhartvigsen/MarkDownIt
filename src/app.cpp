@@ -4044,13 +4044,14 @@ void AppWindow::QAAdvance() {
         QALogLine(line);
     } else if (state == "diagram-sequence" || state == "diagram-gantt" ||
                state == "diagram-pie" || state == "diagram-state") {
-        // One state per diagram kind. The layout showcase holds only a
-        // flowchart, so the four kinds the shared painter learned after
-        // it live in their own fixture. That fixture is not under
-        // tests/fixtures/parity, so the layout dump goldens, which read
-        // only that directory, do not move. Each state opens the
-        // fixture itself, so it frames the same heading wherever the
-        // walk lists it.
+        // One state per diagram kind, each on a page that holds that
+        // diagram and nothing else. The layout showcase has only a
+        // flowchart, and adding the other kinds to it would move the
+        // heading anchors the lower states scroll to. The four pages
+        // live outside tests/fixtures/parity, which is the only place
+        // the layout dump goldens read, so no stored golden moves. A
+        // page with one block also keeps the frame honest: if a painter
+        // stops drawing, the picture below its heading is empty.
         if (IsSourceView()) ToggleSourceView();
         if (editing_) SetEdit(false);
         std::wstring dir;
@@ -4058,7 +4059,11 @@ void AppWindow::QAAdvance() {
         if (slash != std::wstring::npos) {
             dir = file_path_.substr(0, slash + 1);
         }
-        const std::wstring path = dir + L"diagram-showcase.md";
+        const wchar_t* file = L"diagram-sequence.md";
+        if (state == "diagram-gantt") file = L"diagram-gantt.md";
+        else if (state == "diagram-pie") file = L"diagram-pie.md";
+        else if (state == "diagram-state") file = L"diagram-state.md";
+        const std::wstring path = dir + file;
         std::ifstream f(path.c_str(), std::ios::binary);
         if (f.is_open()) {
             std::stringstream ss;
@@ -4069,26 +4074,10 @@ void AppWindow::QAAdvance() {
                 totalH_ = renderer_.Measure(dw_factory_, doc_, size.width,
                                             0.0f);
             }
-            // The block cache is filled by a paint, so draw the freshly
-            // loaded page once before asking where a heading sits, then
-            // draw the frame the state is supposed to show.
-            ForceRepaintNow();
-            int heading = 1;   // sequence
-            if (state == "diagram-gantt") heading = 2;
-            else if (state == "diagram-pie") heading = 3;
-            else if (state == "diagram-state") heading = 4;
-            if (heading < static_cast<int>(outline_items_.size())) {
-                int blkIdx = layout_cache_.BlockForOffset(
-                    outline_items_[heading].offset);
-                if (blkIdx >= 0) {
-                    const auto& blocks = layout_cache_.Blocks();
-                    float target = blocks[blkIdx].y - 24.0f;
-                    if (target < 0.0f) target = 0.0f;
-                    scrollY_ = ClampScroll(target);
-                    StopScrollAnimation();
-                    UpdateScrollInfo();
-                }
-            }
+            // The page's own top is where the state was asked to look.
+            scrollY_ = 0.0f;
+            StopScrollAnimation();
+            UpdateScrollInfo();
             ForceRepaintNow();
         }
         char line[160];

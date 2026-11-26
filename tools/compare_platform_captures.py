@@ -40,16 +40,29 @@ from PIL import Image
 # shared command paths, so its frame compares the shared result.
 # csv-pinned is the frozen first row of a long data file: both platforms
 # scroll the same fixture past its header, so the band they draw at the
-# pane's edge is compared instead of taken on trust. The four diagram
-# states open tests/fixtures/diagram-showcase.md and frame one kind each
-# (sequence, gantt, pie, state), so a kind whose painter is missing has
-# no ink and no rows on one side and the pair fails. A
+# pane's edge is compared instead of taken on trust.
+# The four diagram states open one page each,
+# tests/fixtures/diagram-sequence.md and its three siblings, so the frame
+# below the page's heading holds that one diagram and nothing else. A
+# kind whose painter is missing leaves that region blank on one side. A
 # state missing from either side's rects is skipped, not failed, so
 # artifacts from a walk that predates a state still compare cleanly.
 STATES = ["doc", "find", "edit", "outline", "source", "lower", "end",
           "tail", "shared", "csv-pinned", "dark", "settings",
           "diagram-sequence", "diagram-gantt", "diagram-pie",
           "diagram-state"]
+
+# The diagram frames are not text pages: a gantt's bars and a pie's
+# fills merge whole stretches of rows into one band, so the row pairing
+# above reads a drawn chart as missing text. They are held to what the
+# frame is for instead: the region below the page's heading must carry
+# real ink on both sides, in comparable amounts. That fails when a
+# painter stops drawing (the region goes empty) while leaving the two
+# platforms' different text metrics out of it.
+DIAGRAM_STATES = {"diagram-sequence", "diagram-gantt", "diagram-pie",
+                  "diagram-state"}
+MIN_DIAGRAM_INK = 1.0   # percent of the region below the heading
+MAX_DIAGRAM_INK_RATIO = 2.5
 
 # Tolerances, calibrated on the fonts alone: the row gap differs by up
 # to 5 px inside a paragraph (the wrap difference moves band counts by
@@ -246,6 +259,49 @@ def compare_state(mac_pane, win_pane, name):
     return fails, warns
 
 
+def diagram_body(pane):
+    """The region below the page's heading, where the diagram is drawn."""
+    bands = [b for b in band_starts(pane) if b[1] - b[0] >= 4]
+    if not bands:
+        return None
+    top = bands[0][1] + 8
+    if top >= pane.size[1] - 8:
+        return None
+    return pane.crop((0, top, pane.size[0], pane.size[1]))
+
+
+def compare_diagram_state(mac_pane, win_pane, name):
+    """Hold a diagram frame to the one thing it can prove: the drawing.
+
+    The text-row pairing above cannot read a chart. A gantt's bars and a
+    pie's fills are continuous ink across whole rows, so the two sides
+    merge them into different band counts and a drawn chart looks like
+    missing text. Here the page holds one diagram below its heading, and
+    the check is that the region below that heading carries real ink on
+    both sides and in comparable amounts. A painter that stops drawing
+    leaves the region empty, which fails; a font or wrap difference does
+    not.
+    """
+    fails = []
+    warns = []
+    inks = []
+    for side, pane in (("mac", mac_pane), ("win", win_pane)):
+        body = diagram_body(pane)
+        ink = ink_percent(body) if body is not None else 0.0
+        inks.append(ink)
+        ok = ink >= MIN_DIAGRAM_INK
+        print("  %-8s %-4s %s %.2f%% diagram ink"
+              % (name, side, "PASS" if ok else "FAIL", ink))
+        if not ok:
+            fails.append("%s: the diagram below the heading is blank "
+                         "(%.2f%% ink)" % (side, ink))
+    lo, hi = min(inks), max(inks)
+    if lo > 0 and hi > lo * MAX_DIAGRAM_INK_RATIO:
+        fails.append("diagram ink differs (mac %.2f%%, windows %.2f%%)"
+                     % (inks[0], inks[1]))
+    return fails, warns
+
+
 def write_pictures(mac_pane, win_pane, out_dir, name):
     h = max(mac_pane.size[1], win_pane.size[1])
     w = mac_pane.size[0] + win_pane.size[0] + 8
@@ -348,7 +404,10 @@ def main():
             continue
         mac_pane = load_pane(m_png, mac_rects[state])
         win_pane = load_pane(w_png, win_rects[state])
-        fails, warns = compare_state(mac_pane, win_pane, state)
+        if state in DIAGRAM_STATES:
+            fails, warns = compare_diagram_state(mac_pane, win_pane, state)
+        else:
+            fails, warns = compare_state(mac_pane, win_pane, state)
         if fails:
             failed += 1
             print("  %-8s pair FAIL %s" % (state, "; ".join(fails)))

@@ -1574,34 +1574,33 @@ static std::string OcrPdfPage(void* data, const std::string& path,
                [state isEqualToString:@"diagram-gantt"] ||
                [state isEqualToString:@"diagram-pie"] ||
                [state isEqualToString:@"diagram-state"]) {
-        // One state per diagram kind, the same fixture and the same
-        // heading each time as the Windows walk reads. The layout
-        // showcase holds only a flowchart, and the dedicated fixture is
-        // outside tests/fixtures/parity, so the layout dump goldens do
-        // not move.
+        // One state per diagram kind, each on a page that holds that
+        // diagram and nothing else, the same four pages the Windows walk
+        // opens. They sit outside tests/fixtures/parity, so the layout
+        // dump goldens do not move, and a page with one block keeps the
+        // frame honest: if a painter stops drawing, the picture below
+        // its heading is empty.
         if (sourceView_) [self OnToggleSourceView];
         if (app_->Editing()) [self OnToggleEditMode];
         NSString* dir = [[window_ representedFilename]
             stringByDeletingLastPathComponent];
+        NSString* file = @"diagram-sequence.md";
+        if ([state isEqualToString:@"diagram-gantt"]) {
+            file = @"diagram-gantt.md";
+        } else if ([state isEqualToString:@"diagram-pie"]) {
+            file = @"diagram-pie.md";
+        } else if ([state isEqualToString:@"diagram-state"]) {
+            file = @"diagram-state.md";
+        }
         if ([dir length] > 0) {
             app_->MarkClean();
             [window_ setDocumentEdited:NO];
             [self OpenPath:std::string(
-                [[dir stringByAppendingPathComponent:@"diagram-showcase.md"]
-                    UTF8String])];
+                [[dir stringByAppendingPathComponent:file] UTF8String])];
         }
         [view_ syncFrameToContent];
         [self layoutDocumentForWindow];
-        [window_ display];
-        int heading = 1;   // sequence
-        if ([state isEqualToString:@"diagram-gantt"]) heading = 2;
-        else if ([state isEqualToString:@"diagram-pie"]) heading = 3;
-        else if ([state isEqualToString:@"diagram-state"]) heading = 4;
-        [self qaScrollToHeading:heading drop:24.0f];
-        // The scroll lands on a later pass of the run loop, and the frame
-        // that proves it is the one drawn after it.
-        [[NSRunLoop currentRunLoop]
-            runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.4]];
+        [self qaScrollToTop];
         [view_ setNeedsDisplay:YES];
         [window_ display];
         platform::TraceMac("qa %s: headings=%zu scroll=%.0f",
