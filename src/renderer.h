@@ -555,7 +555,7 @@ private:
                    const std::vector<platform::Rect>& washRects = {},
                    const layout::LaidTable* record = nullptr,
                    float viewportH = 0.0f);
-    void DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+    void DrawMermaidBlock(platform::RenderTarget& target, IDWriteFactory* dw,
                           const Node& n, float x, float y, float width);
     std::shared_ptr<mermaid::LaidOutFlowchart> GetMermaidLayout(
         IDWriteFactory* dw, const Node& n) const;

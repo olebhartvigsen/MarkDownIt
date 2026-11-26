@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cassert>
+#include <algorithm>
 #include <d2d1.h>
 #include <dwrite.h>
 #include <string>
@@ -850,7 +851,10 @@ void Renderer::PaintSharedOverlays(
                 // measured them at, so they get the band's origin and
                 // the content column, never the record's picture
                 // width.
-                DrawMermaidBlock(rt, dw, n, bandX, bandY, contentWidth);
+                platform::D2DTarget mermaidTarget(rt,
+                                                  layoutEngine_.Factory());
+                DrawMermaidBlock(mermaidTarget, dw, n, bandX, bandY,
+                                 contentWidth);
                 break;
             }
             case BlockKind::MermaidPie: {
@@ -3010,12 +3014,11 @@ svg::SvgDoc* Renderer::GetSvgDoc(const Node& n, float availW) {
 // Mermaid flowchart rendering (Task 12).
 // -----------------------------------------------------------------------------
 
-// Dotted edge dash pattern (D2D1_DASH_STYLE_CUSTOM takes float pairs:
-// dash, gap in stroke-width multiples). Mermaid's `.flowchart .edgePath
-// [style*='dotted']` renders ~3:3 dots at 1px stroke; we use 1.5/2.2 to read
-// as dots at 1.5px stroke.
+// Dotted edge dash pattern: dash and gap in stroke-width multiples, the
+// pair the Direct2D custom dash style used. Mermaid's
+// `.flowchart .edgePath [style*='dotted']` renders ~3:3 dots at 1px
+// stroke; we use 1:2 to read as dots at 1.5px stroke.
 static const float kMermaidDash[] = {1.0f, 2.0f};
-static const UINT32 kMermaidDashSize = 2;
 
 // Note: layout is computed once at parse time (parser.cpp) and stored on
 // Node::mermaid_layout, so we never re-run layout on WM_PAINT. Height is
@@ -3036,54 +3039,142 @@ std::shared_ptr<mermaid::LaidOutFlowchart> Renderer::GetMermaidLayout(
     return n.mermaid_layout;
 }
 
-static void DrawArrowHead(ID2D1RenderTarget* rt, ID2D1Factory* fac,
-                          ID2D1SolidColorBrush* brush,
-                          const mermaid::Point& a, const mermaid::Point& b,
-                          float ox, float oy, float scale) {
-    if (!rt || !fac || !brush) return;
-    double dx = b.x - a.x;
-    double dy = b.y - a.y;
-    double len = std::sqrt(dx * dx + dy * dy);
-    if (len < 1e-6) return;
-    dx /= len; dy /= len;
-    const float head_len = 10.0f;
-    const float head_w = 6.0f;
-    D2D1_POINT_2F tip = {
-        ox + static_cast<float>(b.x * scale),
-        oy + static_cast<float>(b.y * scale)
-    };
-    double bx = b.x - dx * (head_len / (scale > 1e-6 ? scale : 1.0f));
-    double by = b.y - dy * (head_len / (scale > 1e-6 ? scale : 1.0f));
-    // Perpendicular in world units.
-    double px = -dy;
-    double py = dx;
-    double half = head_w / (scale > 1e-6 ? scale : 1.0f);
-    D2D1_POINT_2F left = {
-        ox + static_cast<float>((bx + px * half) * scale),
-        oy + static_cast<float>((by + py * half) * scale)
-    };
-    D2D1_POINT_2F right = {
-        ox + static_cast<float>((bx - px * half) * scale),
-        oy + static_cast<float>((by - py * half) * scale)
-    };
-    ID2D1PathGeometry* geom = nullptr;
-    if (FAILED(fac->CreatePathGeometry(&geom)) || !geom) return;
-    ID2D1GeometrySink* sink = nullptr;
-    if (FAILED(geom->Open(&sink)) || !sink) { geom->Release(); return; }
-    sink->BeginFigure(tip, D2D1_FIGURE_BEGIN_FILLED);
-    D2D1_POINT_2F pts[2] = { left, right };
-    sink->AddLines(pts, 2);
-    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
-    sink->Close();
-    sink->Release();
-    rt->FillGeometry(geom, brush);
-    geom->Release();
+// The diagram's own numbers, the ones the Direct2D painter drew with.
+// They are mermaid's geometry, not the page's spacing, so they live
+// here rather than in the theme's block tokens.
+constexpr float kMermaidLaneInsetX = 6.0f;
+constexpr float kMermaidLaneInsetY = 2.0f;
+constexpr float kMermaidLaneTitleHeight = 20.0f;
+constexpr float kMermaidNodeRadius = 6.0f;
+constexpr float kMermaidEdgeStroke = 1.5f;
+constexpr float kMermaidEdgeStrokeThick = 3.5f;
+constexpr float kMermaidEdgeLabelWidth = 220.0f;
+constexpr float kMermaidEdgeLabelHeight = 28.0f;
+constexpr float kMermaidEdgeLabelPad = 2.0f;
+constexpr float kMermaidArrowLength = 10.0f;
+constexpr float kMermaidArrowHalfWidth = 6.0f;
+
+// Lays one diagram label out through the walk's text engine.
+//
+// `bodyBox` is the diagram at the page zoom: its labels wore the body
+// format's uniform line box then, so every line is lineBoxEm tall with
+// the glyphs centred in it. A diagram the column shrunk was drawn with
+// a clone that had no box of its own, so its labels keep the font's
+// natural metrics, the ones MeasureWrapped answers.
+static platform::TextLayoutHandle LayOutDiagramLabel(
+        platform::TextEngine* engine, const std::string& text,
+        const platform::FontSpec& font, float maxWidth,
+        platform::TextAlign align, bool bodyBox, float lineBoxEm) {
+    platform::GlyphRun run;
+    run.text = text;
+    run.font = font;
+    std::vector<platform::TextLine> lines =
+        engine->MeasureWrapped({run}, maxWidth, 0.0f);
+    if (bodyBox && !lines.empty()) {
+        const float natural = lines.front().height;
+        const float fontAscent = lines.front().ascent;
+        const float height = lineBoxEm * font.size;
+        const float ascent = (height - natural) * 0.5f + fontAscent;
+        for (platform::TextLine& line : lines) {
+            line.height = height;
+            line.ascent = ascent;
+        }
+    }
+    return platform::MakeLineLayout(std::move(lines), maxWidth, align);
 }
 
-void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
-                                 const Node& n, float x, float y,
-                                 float width) {
-    if (!rt || !dw) return;
+// The widest line of a laid out label, which is the width an edge
+// label's backing rect takes.
+static float LabelWidth(const platform::TextLayout& block) {
+    const std::vector<platform::TextLine>* lines = block.Lines();
+    if (!lines) return block.Width();
+    float widest = 0.0f;
+    for (const platform::TextLine& line : *lines) {
+        if (line.width > widest) widest = line.width;
+    }
+    return widest;
+}
+
+// Draws the arrow head at the end of an edge. The head keeps its size
+// on screen: its length is divided by the scale, so a diagram shrunk
+// into the column does not get a smaller arrow.
+static void DrawArrowHead(platform::RenderTarget& target,
+                          const mermaid::Point& a, const mermaid::Point& b,
+                          float ox, float oy, float scale,
+                          const platform::Color& color) {
+    double dx = b.x - a.x;
+    double dy = b.y - a.y;
+    const double len = std::sqrt(dx * dx + dy * dy);
+    if (len < 1e-6) return;
+    dx /= len;
+    dy /= len;
+    const float denom = scale > 1e-6 ? scale : 1.0f;
+    const platform::Point tip{
+        ox + static_cast<float>(b.x * scale),
+        oy + static_cast<float>(b.y * scale)};
+    // Perpendicular in world units.
+    const double bx = b.x - dx * (kMermaidArrowLength / denom);
+    const double by = b.y - dy * (kMermaidArrowLength / denom);
+    const double px = -dy;
+    const double py = dx;
+    const double half = kMermaidArrowHalfWidth / denom;
+    const platform::Point left{
+        ox + static_cast<float>((bx + px * half) * scale),
+        oy + static_cast<float>((by + py * half) * scale)};
+    const platform::Point right{
+        ox + static_cast<float>((bx - px * half) * scale),
+        oy + static_cast<float>((by - py * half) * scale)};
+    target.FillPolygon({tip, left, right}, color);
+}
+
+// A dotted edge: the custom dash pattern the Direct2D stroke style
+// used (dash and gap in stroke widths, kMermaidDash), walked along the
+// polyline as separate segments because the seam has no dash style.
+// The phase carries across the joints, so the dots keep the spacing a
+// single stroked path had.
+static void StrokeDashedPolyline(platform::RenderTarget& target,
+                                 const std::vector<platform::Point>& route,
+                                 float strokeWidth,
+                                 const platform::Color& color) {
+    const float dash = kMermaidDash[0] * strokeWidth;
+    const float gap = kMermaidDash[1] * strokeWidth;
+    float phase = 0.0f;
+    bool on = true;
+    for (size_t i = 0; i + 1 < route.size(); ++i) {
+        const float x0 = route[i].x;
+        const float y0 = route[i].y;
+        const float x1 = route[i + 1].x;
+        const float y1 = route[i + 1].y;
+        const float dx = x1 - x0;
+        const float dy = y1 - y0;
+        const float length = std::sqrt(dx * dx + dy * dy);
+        if (length <= 0.0f) continue;
+        const float ux = dx / length;
+        const float uy = dy / length;
+        float travelled = 0.0f;
+        while (travelled < length) {
+            const float limit = on ? dash : gap;
+            const float step = (std::min)(limit - phase, length - travelled);
+            if (on && step > 0.0f) {
+                target.StrokeLine(x0 + ux * travelled, y0 + uy * travelled,
+                                  x0 + ux * (travelled + step),
+                                  y0 + uy * (travelled + step), color,
+                                  strokeWidth);
+            }
+            travelled += step;
+            phase += step;
+            if (phase >= limit - 0.001f) {
+                phase = 0.0f;
+                on = !on;
+            }
+        }
+    }
+}
+
+void Renderer::DrawMermaidBlock(platform::RenderTarget& target,
+                                 IDWriteFactory* dw, const Node& n,
+                                 float x, float y, float width) {
+    if (!dw) return;
     const auto laid = GetMermaidLayout(dw, n);
     if (!laid) return;
     const auto& lo = *laid;
@@ -3092,318 +3183,184 @@ void Renderer::DrawMermaidBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // natural canvas is wider than the available width.
     const float availW =
         width > 2.0f * pad ? width - 2.0f * pad : 0.0f;
-    // Lineær zoom: scale = min(zoom, availW/naturalW); aldrig op-skaler.
+    // Lineær zoom: scale = min(zoom, availW/naturalW); aldrig op-skalér.
     float scale = zoom_;
     if (lo.width > 0 && availW > 0) {
         float fit_scale = availW / static_cast<float>(lo.width);
         if (fit_scale < scale) scale = fit_scale;
     }
-    float ox = x;
-    float oy = y + pad;
-    // Text must shrink by the same factor the geometry shrank by: clone the
-    // base format once at the fitted size and use it for all diagram text.
+    const float ox = x;
+    const float oy = y + pad;
+    // Text shrinks by the same factor the geometry did.
     const float textScale = scale / (zoom_ > 0.001f ? zoom_ : 1.0f);
-    IDWriteTextFormat* scale_fmt = body_fmt_;
-    IDWriteTextFormat* scaled_fmt = nullptr;
-    if (body_fmt_ && textScale != 1.0f && textScale > 0.01f) {
-        WCHAR fam[64] = L"";
-        if (SUCCEEDED(body_fmt_->GetFontFamilyName(fam, 64))) {
-            DWRITE_FONT_WEIGHT wght = body_fmt_->GetFontWeight();
-            DWRITE_FONT_STYLE style = body_fmt_->GetFontStyle();
-            DWRITE_FONT_STRETCH stretch = body_fmt_->GetFontStretch();
-            float size = body_fmt_->GetFontSize();
-            dw->CreateTextFormat(fam, nullptr, wght, style, stretch,
-                                 size * textScale, L"", &scaled_fmt);
-        }
-        if (scaled_fmt) scale_fmt = scaled_fmt;
-    }
+    const bool bodyBox = !(textScale != 1.0f && textScale > 0.01f);
 
+    LayoutMetrics m = ComputeMetrics();
     const Palette& pal = palette_;
-    ID2D1SolidColorBrush* edgeBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.mermaidEdge, &edgeBrush);
-    ID2D1SolidColorBrush* nodeFill = nullptr;
-    rt->CreateSolidColorBrush(pal.mermaidNodeFill, &nodeFill);
-    ID2D1SolidColorBrush* nodeBorder = nullptr;
-    rt->CreateSolidColorBrush(pal.mermaidNodeBorder, &nodeBorder);
-    ID2D1SolidColorBrush* textBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.mermaidText, &textBrush);
+    platform::TextEngine* engine = TextEngineForWalk();
 
-    ID2D1Factory* fac = nullptr;
-    rt->GetFactory(&fac);
+    const platform::Color ink = SeamColor(pal.mermaidEdge);
+    const platform::Color nodeFill = SeamColor(pal.mermaidNodeFill);
+    const platform::Color nodeBorder = SeamColor(pal.mermaidNodeBorder);
+    const platform::Color textColor = SeamColor(pal.mermaidText);
+    // The swimlane band wears the diagram's cluster colours, so a
+    // subgraph follows the appearance instead of staying a light grey
+    // rectangle on a dark page.
+    const platform::Color laneFill = SeamColor(pal.mermaidClusterBg);
+    const platform::Color laneBorder = SeamColor(pal.mermaidClusterBorder);
+    const platform::Color laneTitle = SeamColor(pal.textPrimary);
+    const platform::Color paper{1.0f, 1.0f, 1.0f, 1.0f};
 
-    // Swimlane bands first, so nodes/edges overlay.
-    if (!lo.lanes.empty()) {
-        ID2D1SolidColorBrush* laneFill = nullptr;
-        ID2D1SolidColorBrush* laneBorder = nullptr;
-        ID2D1SolidColorBrush* laneTitle = nullptr;
-        // The swimlane band wears the diagram's cluster colours, so a
-        // subgraph follows the appearance instead of staying a light
-        // grey rectangle on a dark page.
-        rt->CreateSolidColorBrush(pal.mermaidClusterBg, &laneFill);
-        rt->CreateSolidColorBrush(pal.mermaidClusterBorder, &laneBorder);
-        rt->CreateSolidColorBrush(pal.textPrimary, &laneTitle);
-        for (const auto& lb : lo.lanes) {
-            float lx = ox + static_cast<float>(lb.x * scale);
-            float ly = oy + static_cast<float>(lb.y * scale);
-            float lw = static_cast<float>(lb.width  * scale);
-            float lh = static_cast<float>(lb.height * scale);
-            D2D1_RECT_F r = D2D1::RectF(lx, ly, lx + lw, ly + lh);
-            D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(r, 6.0f * scale, 6.0f * scale);
-            if (laneFill)   rt->FillRoundedRectangle(rr, laneFill);
-            if (laneBorder) rt->DrawRoundedRectangle(rr, laneBorder, 1.0f);
+    platform::FontSpec font;
+    font.family = "segoe ui";
+    font.size = m.bodyFontSize * kPtToDip * scale;
 
-            if (!lb.title.empty() && body_fmt_ && laneTitle) {
-                std::u16string t16;
-                for (unsigned char c : lb.title) t16.push_back(static_cast<char16_t>(c));
-                IDWriteTextLayout* tl = nullptr;
-                if (SUCCEEDED(dw->CreateTextLayout(
-                        reinterpret_cast<const WCHAR*>(t16.data()),
-                        static_cast<UINT32>(t16.size()),
-                        scale_fmt, lw, 20.0f * scale, &tl)) && tl) {
-                    rt->DrawTextLayout(D2D1::Point2F(lx + 6.0f * scale, ly + 2.0f * scale),
-                                       tl, laneTitle,
-                                       D2D1_DRAW_TEXT_OPTIONS_CLIP);
-                    tl->Release();
-                }
-            }
+    // Swimlane bands first, so nodes and edges overlay.
+    for (const auto& lb : lo.lanes) {
+        const float lx = ox + static_cast<float>(lb.x * scale);
+        const float ly = oy + static_cast<float>(lb.y * scale);
+        const float lw = static_cast<float>(lb.width * scale);
+        const float lh = static_cast<float>(lb.height * scale);
+        const float radius = kMermaidNodeRadius * scale;
+        const platform::Rect band{lx, ly, lw, lh};
+        if (lw <= 0.0f || lh <= 0.0f) continue;
+        target.FillRoundedRect(band, radius, laneFill);
+        target.StrokeRoundedRect(band, radius, laneBorder, 1.0f);
+
+        if (!lb.title.empty()) {
+            const platform::TextLayoutHandle block = LayOutDiagramLabel(
+                engine, lb.title, font, lw, platform::TextAlign::Left,
+                bodyBox, m.bodyLineHeight);
+            const float titleX = lx + kMermaidLaneInsetX * scale;
+            const float titleY = ly + kMermaidLaneInsetY * scale;
+            target.PushClip(platform::Rect{titleX, titleY, lw,
+                                           kMermaidLaneTitleHeight * scale});
+            target.DrawLayout(*block, titleX, titleY, laneTitle);
+            target.PopClip();
         }
-        if (laneFill)   laneFill->Release();
-        if (laneBorder) laneBorder->Release();
-        if (laneTitle)  laneTitle->Release();
     }
 
     // Edges first.
-    if (fac && edgeBrush) {
-        ID2D1SolidColorBrush* labelBrush = nullptr;
-        rt->CreateSolidColorBrush(pal.mermaidText, &labelBrush);
-        for (const auto& e : lo.edges) {
-            if (e.route.size() < 2) continue;
-            // Stroke style: dotted edges use a dash pattern; thick edges
-            // draw at ~2.5x width, matching mermaid's visual weight.
-            const bool dotted = (e.style == mermaid::LineStyle::Dotted);
-            const bool thick = (e.style == mermaid::LineStyle::Thick);
-            const float stroke_w = thick ? 3.5f : 1.5f;
-            ID2D1StrokeStyle* stroke = nullptr;
-            if (dotted && fac) {
-                // Square dashes, like mermaid's stroke-dasharray 3 3 look.
-                fac->CreateStrokeStyle(
-                    D2D1_STROKE_STYLE_PROPERTIES{
-                        D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_FLAT,
-                        D2D1_CAP_STYLE_ROUND, D2D1_LINE_JOIN_MITER, 8.0f,
-                        D2D1_DASH_STYLE_CUSTOM, 0.0f,
-                    },
-                    kMermaidDash, kMermaidDashSize, &stroke);
-            }
-            ID2D1PathGeometry* path = nullptr;
-            if (FAILED(fac->CreatePathGeometry(&path)) || !path) { if (stroke) stroke->Release(); continue; }
-            ID2D1GeometrySink* sink = nullptr;
-            if (FAILED(path->Open(&sink)) || !sink) { path->Release(); if (stroke) stroke->Release(); continue; }
-            D2D1_POINT_2F p0 = {
-                ox + static_cast<float>(e.route[0].x * scale),
-                oy + static_cast<float>(e.route[0].y * scale)
-            };
-            sink->BeginFigure(p0, D2D1_FIGURE_BEGIN_HOLLOW);
-            for (size_t i = 1; i < e.route.size(); ++i) {
-                D2D1_POINT_2F pi = {
-                    ox + static_cast<float>(e.route[i].x * scale),
-                    oy + static_cast<float>(e.route[i].y * scale)
-                };
-                sink->AddLine(pi);
-            }
-            sink->EndFigure(D2D1_FIGURE_END_OPEN);
-            sink->Close();
-            sink->Release();
-            rt->DrawGeometry(path, edgeBrush, stroke_w, stroke);
-            path->Release();
-            if (stroke) stroke->Release();
-            if (e.head == mermaid::Head::Arrow) {
-                DrawArrowHead(rt, fac, edgeBrush,
-                              e.route[e.route.size() - 2], e.route.back(),
-                              ox, oy, scale);
-            }
-
-            // Edge label: centered at the polyline midpoint, with an opaque
-            // backing rect so the line does not strike through the glyphs.
-            if (!e.label.empty() && labelBrush && body_fmt_) {
-                size_t mid_seg = (e.route.size() - 1) / 2;
-                double mx = (e.route[mid_seg].x + e.route[mid_seg + 1].x) * 0.5;
-                double my = (e.route[mid_seg].y + e.route[mid_seg + 1].y) * 0.5;
-                std::u16string m16;
-                {
-                    const std::string& s = e.label;
-                    for (size_t i = 0; i < s.size(); ) {
-                        unsigned char c = static_cast<unsigned char>(s[i]);
-                        uint32_t cp = 0;
-                        int n_b = 1;
-                        if (c < 0x80) { cp = c; n_b = 1; }
-                        else if ((c & 0xE0) == 0xC0 && i + 1 < s.size()) {
-                            cp = ((c & 0x1F) << 6) | (s[i+1] & 0x3F); n_b = 2;
-                        } else if ((c & 0xF0) == 0xE0 && i + 2 < s.size()) {
-                            cp = ((c & 0x0F) << 12) | ((s[i+1] & 0x3F) << 6) |
-                                 (s[i+2] & 0x3F); n_b = 3;
-                        } else if ((c & 0xF8) == 0xF0 && i + 3 < s.size()) {
-                            cp = ((c & 0x07) << 18) | ((s[i+1] & 0x3F) << 12) |
-                                 ((s[i+2] & 0x3F) << 6) | (s[i+3] & 0x3F); n_b = 4;
-                        } else { cp = '?'; n_b = 1; }
-                        if (cp <= 0xFFFF) {
-                            m16.push_back(static_cast<char16_t>(cp));
-                        } else {
-                            cp -= 0x10000;
-                            m16.push_back(static_cast<char16_t>(0xD800 + (cp >> 10)));
-                            m16.push_back(static_cast<char16_t>(0xDC00 + (cp & 0x3FF)));
-                        }
-                        i += n_b;
-                    }
-                }
-                IDWriteTextLayout* tl = nullptr;
-                float max_lbl_w = 220.0f * scale;
-                if (SUCCEEDED(dw->CreateTextLayout(
-                        reinterpret_cast<const WCHAR*>(m16.data()),
-                        static_cast<UINT32>(m16.size()),
-                        scale_fmt, max_lbl_w, 28.0f * scale, &tl)) && tl) {
-                    DWRITE_TEXT_METRICS tm{};
-                    tl->GetMetrics(&tm);
-                    float lbl_w = tm.widthIncludingTrailingWhitespace;
-                    float lbl_h = tm.height;
-                    float lx = ox + static_cast<float>(mx * scale) - lbl_w * 0.5f;
-                    float ly = oy + static_cast<float>(my * scale) - lbl_h * 0.5f;
-                    D2D1_RECT_F bg = D2D1::RectF(lx - 2.0f, ly - 2.0f,
-                                                 lx + lbl_w + 2.0f, ly + lbl_h + 2.0f);
-                    ID2D1SolidColorBrush* bgBrush = nullptr;
-                    rt->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 1.0f), &bgBrush);
-                    if (bgBrush) {
-                        rt->FillRectangle(bg, bgBrush);
-                        bgBrush->Release();
-                    }
-                    rt->DrawTextLayout(D2D1::Point2F(lx, ly), tl, labelBrush,
-                                       D2D1_DRAW_TEXT_OPTIONS_CLIP);
-                    tl->Release();
-                }
-            }
+    for (const auto& e : lo.edges) {
+        if (e.route.size() < 2) continue;
+        // Stroke style: dotted edges use a dash pattern; thick edges
+        // draw at ~2.5x width, matching mermaid's visual weight.
+        const bool dotted = (e.style == mermaid::LineStyle::Dotted);
+        const bool thick = (e.style == mermaid::LineStyle::Thick);
+        const float stroke_w = thick ? kMermaidEdgeStrokeThick
+                                     : kMermaidEdgeStroke;
+        std::vector<platform::Point> route;
+        route.reserve(e.route.size());
+        for (const mermaid::Point& p : e.route) {
+            route.push_back(platform::Point{
+                ox + static_cast<float>(p.x * scale),
+                oy + static_cast<float>(p.y * scale)});
         }
-        if (labelBrush) labelBrush->Release();
+        if (dotted) {
+            StrokeDashedPolyline(target, route, stroke_w, ink);
+        } else {
+            target.StrokePolygon(route, ink, stroke_w, false);
+        }
+        if (e.head == mermaid::Head::Arrow) {
+            DrawArrowHead(target, e.route[e.route.size() - 2], e.route.back(),
+                          ox, oy, scale, ink);
+        }
+
+        // Edge label: centered at the polyline midpoint, with an opaque
+        // backing rect so the line does not strike through the glyphs.
+        if (!e.label.empty()) {
+            const size_t mid_seg = (e.route.size() - 1) / 2;
+            const double mx =
+                (e.route[mid_seg].x + e.route[mid_seg + 1].x) * 0.5;
+            const double my =
+                (e.route[mid_seg].y + e.route[mid_seg + 1].y) * 0.5;
+            const float maxLblW = kMermaidEdgeLabelWidth * scale;
+            if (!(maxLblW > 0.0f)) continue;
+            const platform::TextLayoutHandle block = LayOutDiagramLabel(
+                engine, e.label, font, maxLblW, platform::TextAlign::Left,
+                bodyBox, m.bodyLineHeight);
+            const float lbl_w = LabelWidth(*block);
+            const float lbl_h = block->Height();
+            const float lx = ox + static_cast<float>(mx * scale) -
+                             lbl_w * 0.5f;
+            const float ly = oy + static_cast<float>(my * scale) -
+                             lbl_h * 0.5f;
+            const float back = kMermaidEdgeLabelPad;
+            target.FillRect(
+                platform::Rect{lx - back, ly - back,
+                               lbl_w + 2.0f * back, lbl_h + 2.0f * back},
+                paper);
+            target.PushClip(platform::Rect{lx, ly, maxLblW,
+                                           kMermaidEdgeLabelHeight * scale});
+            target.DrawLayout(*block, lx, ly, textColor);
+            target.PopClip();
+        }
     }
 
     // Nodes.
     for (const auto& nd : lo.nodes) {
         if (nd.is_dummy) continue;
-        float nx = ox + static_cast<float>((nd.x - nd.width / 2.0f) * scale);
-        float ny = oy + static_cast<float>((nd.y - nd.height / 2.0f) * scale);
-        float nw = static_cast<float>(nd.width * scale);
-        float nh = static_cast<float>(nd.height * scale);
-        D2D1_RECT_F rect = D2D1::RectF(nx, ny, nx + nw, ny + nh);
+        const float nx =
+            ox + static_cast<float>((nd.x - nd.width / 2.0f) * scale);
+        const float ny =
+            oy + static_cast<float>((nd.y - nd.height / 2.0f) * scale);
+        const float nw = static_cast<float>(nd.width * scale);
+        const float nh = static_cast<float>(nd.height * scale);
+        const platform::Rect rect{nx, ny, nw, nh};
 
         switch (nd.shape) {
             case mermaid::NodeShape::Round: {
-                D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(rect, 6.0f * scale, 6.0f * scale);
-                if (nodeFill) rt->FillRoundedRectangle(rr, nodeFill);
-                if (nodeBorder) rt->DrawRoundedRectangle(rr, nodeBorder, 1.0f);
+                const float radius = kMermaidNodeRadius * scale;
+                target.FillRoundedRect(rect, radius, nodeFill);
+                target.StrokeRoundedRect(rect, radius, nodeBorder, 1.0f);
                 break;
             }
             case mermaid::NodeShape::Stadium: {
-                float r = nh * 0.5f;
-                D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(rect, r, r);
-                if (nodeFill) rt->FillRoundedRectangle(rr, nodeFill);
-                if (nodeBorder) rt->DrawRoundedRectangle(rr, nodeBorder, 1.0f);
+                const float radius = nh * 0.5f;
+                target.FillRoundedRect(rect, radius, nodeFill);
+                target.StrokeRoundedRect(rect, radius, nodeBorder, 1.0f);
                 break;
             }
             case mermaid::NodeShape::Circle: {
-                D2D1_ELLIPSE el = D2D1::Ellipse(
-                    D2D1::Point2F(nx + nw * 0.5f, ny + nh * 0.5f),
-                    nw * 0.5f, nh * 0.5f);
-                if (nodeFill) rt->FillEllipse(el, nodeFill);
-                if (nodeBorder) rt->DrawEllipse(el, nodeBorder, 1.0f);
+                target.FillEllipse(rect, nodeFill);
+                target.StrokeEllipse(rect, nodeBorder, 1.0f);
                 break;
             }
             case mermaid::NodeShape::Diamond: {
-                if (fac) {
-                    ID2D1PathGeometry* geom = nullptr;
-                    if (SUCCEEDED(fac->CreatePathGeometry(&geom)) && geom) {
-                        ID2D1GeometrySink* sink = nullptr;
-                        if (SUCCEEDED(geom->Open(&sink)) && sink) {
-                            D2D1_POINT_2F top = D2D1::Point2F(nx + nw * 0.5f, ny);
-                            D2D1_POINT_2F right = D2D1::Point2F(nx + nw, ny + nh * 0.5f);
-                            D2D1_POINT_2F bot = D2D1::Point2F(nx + nw * 0.5f, ny + nh);
-                            D2D1_POINT_2F left = D2D1::Point2F(nx, ny + nh * 0.5f);
-                            sink->BeginFigure(top, D2D1_FIGURE_BEGIN_FILLED);
-                            D2D1_POINT_2F pts[3] = { right, bot, left };
-                            sink->AddLines(pts, 3);
-                            sink->EndFigure(D2D1_FIGURE_END_CLOSED);
-                            sink->Close();
-                            sink->Release();
-                            if (nodeFill) rt->FillGeometry(geom, nodeFill);
-                            if (nodeBorder) rt->DrawGeometry(geom, nodeBorder, 1.0f);
-                        }
-                        geom->Release();
-                    }
-                }
+                const std::vector<platform::Point> corners = {
+                    platform::Point{nx + nw * 0.5f, ny},
+                    platform::Point{nx + nw, ny + nh * 0.5f},
+                    platform::Point{nx + nw * 0.5f, ny + nh},
+                    platform::Point{nx, ny + nh * 0.5f}};
+                target.FillPolygon(corners, nodeFill);
+                target.StrokePolygon(corners, nodeBorder, 1.0f, true);
                 break;
             }
             case mermaid::NodeShape::Rect:
             default: {
-                if (nodeFill) rt->FillRectangle(rect, nodeFill);
-                if (nodeBorder) rt->DrawRectangle(rect, nodeBorder, 1.0f);
+                target.FillRect(rect, nodeFill);
+                target.StrokeRect(rect, nodeBorder, 1.0f);
                 break;
             }
         }
 
         // Label text, centered. Mermaid line-break separators (<br/> etc.)
-        // split into separate lines; the DWrite layout renders them as a
-        // multi-line block that matches SplitLabelLines sizing.
-        if (!nd.label.empty() && body_fmt_ && textBrush) {
-            std::vector<std::string> lines =
-                mermaid::SplitLabelLines(nd.label);
-            if (lines.empty()) lines.push_back(nd.label);
-            std::u16string text16;
-            for (size_t li = 0; li < lines.size(); ++li) {
-                if (li > 0) text16.push_back(u'\n');
-                const std::string& s = lines[li];
-                for (size_t i = 0; i < s.size(); ) {
-                    unsigned char c = static_cast<unsigned char>(s[i]);
-                    uint32_t cp = 0;
-                    int n_bytes = 1;
-                    if (c < 0x80) { cp = c; n_bytes = 1; }
-                    else if ((c & 0xE0) == 0xC0 && i + 1 < s.size()) {
-                        cp = ((c & 0x1F) << 6) | (s[i+1] & 0x3F);
-                        n_bytes = 2;
-                    } else if ((c & 0xF0) == 0xE0 && i + 2 < s.size()) {
-                        cp = ((c & 0x0F) << 12) | ((s[i+1] & 0x3F) << 6) |
-                             (s[i+2] & 0x3F);
-                        n_bytes = 3;
-                    } else if ((c & 0xF8) == 0xF0 && i + 3 < s.size()) {
-                        cp = ((c & 0x07) << 18) | ((s[i+1] & 0x3F) << 12) |
-                             ((s[i+2] & 0x3F) << 6) | (s[i+3] & 0x3F);
-                        n_bytes = 4;
-                    } else { cp = '?'; n_bytes = 1; }
-                    if (cp <= 0xFFFF) {
-                        text16.push_back(static_cast<char16_t>(cp));
-                    } else {
-                        cp -= 0x10000;
-                        text16.push_back(static_cast<char16_t>(0xD800 + (cp >> 10)));
-                        text16.push_back(static_cast<char16_t>(0xDC00 + (cp & 0x3FF)));
-                    }
-                    i += n_bytes;
-                }
-            }
-            IDWriteTextLayout* layout = nullptr;
-            HRESULT hr = dw->CreateTextLayout(
-                reinterpret_cast<const WCHAR*>(text16.data()),
-                static_cast<UINT32>(text16.size()),
-                scale_fmt, nw, nh, &layout);
-            if (SUCCEEDED(hr) && layout) {
-                layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                layout->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-                rt->DrawTextLayout(D2D1::Point2F(nx, ny), layout, textBrush,
-                                   D2D1_DRAW_TEXT_OPTIONS_CLIP);
-                layout->Release();
-            }
+        // split into separate lines, which the engine lays out as one
+        // multi-line block and the block centres inside the node.
+        if (nd.label.empty() || !(nw > 0.0f) || !(nh > 0.0f)) continue;
+        std::vector<std::string> lines = mermaid::SplitLabelLines(nd.label);
+        if (lines.empty()) lines.push_back(nd.label);
+        std::string joined;
+        for (size_t li = 0; li < lines.size(); ++li) {
+            if (li > 0) joined.push_back('\n');
+            joined += lines[li];
         }
+        const platform::TextLayoutHandle block = LayOutDiagramLabel(
+            engine, joined, font, nw, platform::TextAlign::Center, bodyBox,
+            m.bodyLineHeight);
+        const float labelH = block->Height();
+        target.PushClip(rect);
+        target.DrawLayout(*block, nx, ny + (nh - labelH) * 0.5f, textColor);
+        target.PopClip();
     }
-
-    if (scaled_fmt) scaled_fmt->Release();
-    if (fac) fac->Release();
-    if (edgeBrush) edgeBrush->Release();
-    if (nodeFill) nodeFill->Release();
-    if (nodeBorder) nodeBorder->Release();
-    if (textBrush) textBrush->Release();
 }

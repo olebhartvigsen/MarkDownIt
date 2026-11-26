@@ -49,7 +49,14 @@ MAC_RAW = re.compile(r"\b(?:CG[A-Za-z]*Ref|CT[A-Za-z]*Ref|NSGraphicsContext)\b")
 # json token colours ride the shared runs instead of drawing effects. What is
 # left of its DirectWrite use is the one layout the caret cache keeps and the
 # search fills hit test against.
-WINDOWS_BASELINE = 68
+#
+# 68 -> 42: Renderer::DrawMermaidBlock stopped taking ID2D1RenderTarget*, the
+# last function that did, and the arrow head helper beside it went with it. The
+# bands, the node shapes, the arrow heads and the dotted edges are seam
+# primitives now, the labels are seam blocks through DrawLayout, and the one
+# DirectWrite use left is the factory GetMermaidLayout needs to measure the
+# diagram the layout pass also reads.
+WINDOWS_BASELINE = 42
 
 PAINTERS = [
     ("src/renderer.cpp", WINDOWS_RAW, WINDOWS_BASELINE, "windows painter"),
