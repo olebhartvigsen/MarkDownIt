@@ -838,7 +838,9 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // wheel left behind.
     static NSString* const kComparedFrames[] = {
         @"find", @"edit", @"outline", @"source", @"lower", @"end", @"tail",
-        @"shared", @"csv-pinned", @"dark", @"settings"};
+        @"shared", @"csv-pinned", @"dark", @"settings",
+        @"diagram-sequence", @"diagram-gantt", @"diagram-pie",
+        @"diagram-state"};
     for (NSString* pinned : kComparedFrames) {
         if ([state isEqualToString:pinned]) {
             [self setZoom:zoom::kDefaultZoom quietly:YES];
@@ -1568,6 +1570,44 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             app_->GetDocument().nodes.size(),
             [[view_ qaPinnedProbe] UTF8String],
             [[view_ qaBlockList] UTF8String]);
+    } else if ([state isEqualToString:@"diagram-sequence"] ||
+               [state isEqualToString:@"diagram-gantt"] ||
+               [state isEqualToString:@"diagram-pie"] ||
+               [state isEqualToString:@"diagram-state"]) {
+        // One state per diagram kind, the same fixture and the same
+        // heading each time as the Windows walk reads. The layout
+        // showcase holds only a flowchart, and the dedicated fixture is
+        // outside tests/fixtures/parity, so the layout dump goldens do
+        // not move.
+        if (sourceView_) [self OnToggleSourceView];
+        if (app_->Editing()) [self OnToggleEditMode];
+        NSString* dir = [[window_ representedFilename]
+            stringByDeletingLastPathComponent];
+        if ([dir length] > 0) {
+            app_->MarkClean();
+            [window_ setDocumentEdited:NO];
+            [self OpenPath:std::string(
+                [[dir stringByAppendingPathComponent:@"diagram-showcase.md"]
+                    UTF8String])];
+        }
+        [view_ syncFrameToContent];
+        [self layoutDocumentForWindow];
+        [window_ display];
+        int heading = 1;   // sequence
+        if ([state isEqualToString:@"diagram-gantt"]) heading = 2;
+        else if ([state isEqualToString:@"diagram-pie"]) heading = 3;
+        else if ([state isEqualToString:@"diagram-state"]) heading = 4;
+        [self qaScrollToHeading:heading drop:24.0f];
+        // The scroll lands on a later pass of the run loop, and the frame
+        // that proves it is the one drawn after it.
+        [[NSRunLoop currentRunLoop]
+            runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.4]];
+        [view_ setNeedsDisplay:YES];
+        [window_ display];
+        platform::TraceMac("qa %s: headings=%zu scroll=%.0f",
+                           [state UTF8String],
+                           CollectHeadings(app_->GetDocument()).size(),
+                           (double)content_->scrollOffset());
     } else if ([state isEqualToString:@"print-pages"]) {
         // Pagination without a printer: the fixed A4 page, the same numbers
         // the Windows walk reports, and, when the walk names a file, the

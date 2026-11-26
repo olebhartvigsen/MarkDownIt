@@ -40,11 +40,16 @@ from PIL import Image
 # shared command paths, so its frame compares the shared result.
 # csv-pinned is the frozen first row of a long data file: both platforms
 # scroll the same fixture past its header, so the band they draw at the
-# pane's edge is compared instead of taken on trust. A
+# pane's edge is compared instead of taken on trust. The four diagram
+# states open tests/fixtures/diagram-showcase.md and frame one kind each
+# (sequence, gantt, pie, state), so a kind whose painter is missing has
+# no ink and no rows on one side and the pair fails. A
 # state missing from either side's rects is skipped, not failed, so
 # artifacts from a walk that predates a state still compare cleanly.
 STATES = ["doc", "find", "edit", "outline", "source", "lower", "end",
-          "tail", "shared", "csv-pinned", "dark", "settings"]
+          "tail", "shared", "csv-pinned", "dark", "settings",
+          "diagram-sequence", "diagram-gantt", "diagram-pie",
+          "diagram-state"]
 
 # Tolerances, calibrated on the fonts alone: the row gap differs by up
 # to 5 px inside a paragraph (the wrap difference moves band counts by

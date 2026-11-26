@@ -4042,6 +4042,59 @@ void AppWindow::QAAdvance() {
                  "qa csv-pinned: scroll=%.0f editing=%d",
                  (double)scrollY_, editing_ ? 1 : 0);
         QALogLine(line);
+    } else if (state == "diagram-sequence" || state == "diagram-gantt" ||
+               state == "diagram-pie" || state == "diagram-state") {
+        // One state per diagram kind. The layout showcase holds only a
+        // flowchart, so the four kinds the shared painter learned after
+        // it live in their own fixture. That fixture is not under
+        // tests/fixtures/parity, so the layout dump goldens, which read
+        // only that directory, do not move. Each state opens the
+        // fixture itself, so it frames the same heading wherever the
+        // walk lists it.
+        if (IsSourceView()) ToggleSourceView();
+        if (editing_) SetEdit(false);
+        std::wstring dir;
+        const size_t slash = file_path_.find_last_of(L"\\/");
+        if (slash != std::wstring::npos) {
+            dir = file_path_.substr(0, slash + 1);
+        }
+        const std::wstring path = dir + L"diagram-showcase.md";
+        std::ifstream f(path.c_str(), std::ios::binary);
+        if (f.is_open()) {
+            std::stringstream ss;
+            ss << f.rdbuf();
+            LoadDocumentText(ss.str(), path);
+            if (renderer_inited_ && dw_factory_ && rt_) {
+                const D2D1_SIZE_F size = rt_->GetSize();
+                totalH_ = renderer_.Measure(dw_factory_, doc_, size.width,
+                                            0.0f);
+            }
+            // The block cache is filled by a paint, so draw the freshly
+            // loaded page once before asking where a heading sits, then
+            // draw the frame the state is supposed to show.
+            ForceRepaintNow();
+            int heading = 1;   // sequence
+            if (state == "diagram-gantt") heading = 2;
+            else if (state == "diagram-pie") heading = 3;
+            else if (state == "diagram-state") heading = 4;
+            if (heading < static_cast<int>(outline_items_.size())) {
+                int blkIdx = layout_cache_.BlockForOffset(
+                    outline_items_[heading].offset);
+                if (blkIdx >= 0) {
+                    const auto& blocks = layout_cache_.Blocks();
+                    float target = blocks[blkIdx].y - 24.0f;
+                    if (target < 0.0f) target = 0.0f;
+                    scrollY_ = ClampScroll(target);
+                    StopScrollAnimation();
+                    UpdateScrollInfo();
+                }
+            }
+            ForceRepaintNow();
+        }
+        char line[160];
+        snprintf(line, sizeof(line), "qa %s: headings=%zu scroll=%.0f",
+                 state.c_str(), outline_items_.size(), (double)scrollY_);
+        QALogLine(line);
     } else if (state == "welcome-dark") {
         // The home screen at night, the twin of the mac state of the same
         // name. The screen carries its own branded palette, so this is

@@ -133,16 +133,17 @@ if [ -f "$DOC" ] && [ "${SMOKE_QA:-1}" = "1" ]; then
     rm -rf "$QA_DIR"
     mkdir -p "$QA_DIR"
     rm -f "$LOG"
-    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_PDF="$QA_DIR/print-pages.pdf" MARKDOWNIT_QA_PRINT_PDF="$QA_DIR/print-ink.pdf" MARKDOWNIT_QA_TRACE_PRINT=1 MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-click,welcome-scrolled,welcome-dark,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,print-pages,print-file,shared,csv-pinned,cmd-z,print-panel" "$BIN" "$DOC" &
+    MARKDOWNIT_TRACE_HITIT=1 MARKDOWNIT_QA_PDF="$QA_DIR/print-pages.pdf" MARKDOWNIT_QA_PRINT_PDF="$QA_DIR/print-ink.pdf" MARKDOWNIT_QA_TRACE_PRINT=1 MARKDOWNIT_QA_STATES="doc,wheel,find,edit,format-bar,outline,source,lower,end,tail,tail2,narrow,wide,no-outline,grow,no-headings,svg,svg-fresh,svg-swap,svg-drawio,svg-drawio-100,zoom-hud,zoom-hud-clear,zoom-reopen,mark,welcome,welcome-click,welcome-scrolled,welcome-dark,dark,zoom-hud-dark,zoom-hud-clear,settings,keys-source,click-scroll,keys-doc,nav,print-pages,print-file,diagram-sequence,diagram-gantt,diagram-pie,diagram-state,shared,csv-pinned,cmd-z,print-panel" "$BIN" "$DOC" &
     PID=$!
     seen=" "
     waited=0
     # The walk runs one state every five seconds and shared runs last,
     # so the watcher's budget has to span the whole walk plus startup;
     # a shared announcement that lands past the budget is a silently
-    # missing capture on the mac side.
-    while [ "$waited" -lt 420 ]; do
-        for name in doc wheel find edit format-bar outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap svg-drawio svg-drawio-100 zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc print-pages print-file shared csv-pinned cmd-z print-panel; do
+    # missing capture on the mac side. The four diagram states add
+    # twenty seconds to the walk, so the budget keeps its headroom.
+    while [ "$waited" -lt 720 ]; do
+        for name in doc wheel find edit format-bar outline source lower end tail tail2 narrow wide no-outline grow no-headings svg svg-fresh svg-swap svg-drawio svg-drawio-100 zoom-hud zoom-hud-clear zoom-reopen mark welcome welcome-scrolled dark zoom-hud-dark zoom-hud-clear settings keys-source keys-doc print-pages print-file diagram-sequence diagram-gantt diagram-pie diagram-state shared csv-pinned cmd-z print-panel; do
             case "$seen" in *" $name "*) continue ;; esac
             if grep -q "qa state ready: $name" "$LOG" 2>/dev/null; then
                 sleep 0.6
