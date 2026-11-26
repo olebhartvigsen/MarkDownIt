@@ -220,6 +220,9 @@ Drift is a build failure, not a code review remark. The
 - `check_shared_guards.py`: no unguarded Windows header in a shared
   source.
 - `check_mac_sources.py`, `check_capture_policy.py`.
+- `check_painter_seam.py`: the Windows painter's count of Direct2D and
+  DirectWrite names may only go down, and the mac painter stays at zero
+  (plan 2.2).
 - `check_paired_changes.py` (advisory): warns when one side of a twin
   pair changes alone.
 

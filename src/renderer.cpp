@@ -1615,27 +1615,6 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     outH = blockH;
 }
 
-void Renderer::DrawFilterMarks(ID2D1RenderTarget* rt, const Node& n,
-                               const layout::LaidTable& record,
-                               const LayoutMetrics& m, float x, float bandTop) {
-    if (!rt || record.filterCenters.empty()) return;
-    const Palette& pal = palette_;
-    platform::D2DTarget target(rt);
-    const float cy = bandTop + record.headerHeight * 0.5f;
-    const size_t columns = (std::min)(record.filterCenters.size(),
-                                      n.tableFilterActive.size());
-    for (size_t c = 0; c < columns; ++c) {
-        const std::array<platform::Point, 6> points = layout::FilterGlyph(
-            x + record.filterCenters[c].x, cy, m.tableFilterMark);
-        const ThemeColor& theme =
-            n.tableFilterActive[c] ? pal.link : pal.textMuted;
-        const platform::Color color{theme.r, theme.g, theme.b, theme.a};
-        target.FillPolygon(std::vector<platform::Point>(points.begin(),
-                                                        points.end()),
-                           color);
-    }
-}
-
 void Renderer::DrawTable(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                           const Node& n, float x, float y,
                           float width, float& outH,

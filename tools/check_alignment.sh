@@ -27,6 +27,8 @@ run python3 tools/check_shared_guards.py
 run python3 tools/check_mac_sources.py
 run python3 tools/test_check_capture_policy.py
 run python3 tools/check_capture_policy.py
+run python3 tools/test_check_painter_seam.py
+run python3 tools/check_painter_seam.py
 
 # Advisory only, same as in CI.
 python3 tools/check_paired_changes.py --base "${1:-HEAD~1}" --head HEAD || true
