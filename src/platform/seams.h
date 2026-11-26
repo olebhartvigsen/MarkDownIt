@@ -39,6 +39,14 @@ namespace platform {
 // TextEngine: measure and place text
 // ---------------------------------------------------------------------------
 
+// A color as 0..1 floats in RGBA order.
+struct Color {
+    float r = 0.0f;
+    float g = 0.0f;
+    float b = 0.0f;
+    float a = 1.0f;
+};
+
 // A font request, in the terms the shared theme uses.
 struct FontSpec {
     // Font family name, for example "Helvetica Neue" or "Menlo".
@@ -59,11 +67,13 @@ struct GlyphRun {
     std::string text;
     // The style of the run.
     FontSpec font;
-    // The color of the run, as 0..1 floats in RGBA order.
-    float r = 0.0f;
-    float g = 0.0f;
-    float b = 0.0f;
-    float a = 1.0f;
+    // The ink of the run, as a color. A run that names no colour of its
+    // own leaves the alpha at zero, and the block that draws it decides
+    // the ink instead: DrawLayout's color argument on the portable path,
+    // the same argument as the default brush on a native one. Every
+    // builder that means a colour sets one, so a token run and the run
+    // beside it can be drawn in one block and still differ in ink.
+    Color color{0.0f, 0.0f, 0.0f, 0.0f};
     // The horizontal offset of the run inside its line, in points.
     float x = 0.0f;
     // The run is a link, drawn with an underline under the glyphs.
@@ -71,6 +81,21 @@ struct GlyphRun {
     // The run is struck through.
     bool strike = false;
 };
+
+// The ink a run is drawn in: its own colour, or `fallback` when the run
+// carries none (alpha zero, the default). One rule for every reader, so
+// the portable path and the native ones cannot disagree about which runs
+// own their ink.
+inline Color RunInk(const GlyphRun& run, const Color& fallback) {
+    return run.color.a > 0.0f ? run.color : fallback;
+}
+
+// The ink of a run that has no block colour to fall back on. The seam's
+// historical default, black, which is what a builder that sets no ink has
+// always drawn.
+inline Color RunInk(const GlyphRun& run) {
+    return RunInk(run, Color{0.0f, 0.0f, 0.0f, 1.0f});
+}
 
 // One laid out line of text.
 struct TextLine {
@@ -252,14 +277,6 @@ public:
 // RenderTarget: draw
 // ---------------------------------------------------------------------------
 
-// A color as 0..1 floats in RGBA order.
-struct Color {
-    float r = 0.0f;
-    float g = 0.0f;
-    float b = 0.0f;
-    float a = 1.0f;
-};
-
 // A point in points.
 struct Point {
     float x = 0.0f;
@@ -351,8 +368,13 @@ public:
 
     // Draws a laid out block of text with its top left at (x, topY), its
     // lines already broken, measured and aligned by the engine that built
-    // it. The whole block is drawn in one colour: a platform text object
-    // paints one brush, and the portable path below matches it.
+    // it. Each run is drawn in its own colour; `color` is the ink for the
+    // runs that carry none (the default, a transparent run colour), so a
+    // block whose runs are all unset draws in one colour exactly as it
+    // did before runs could carry their own.
+    //
+    // A json fence is the case that needs it: four token inks across one
+    // block, on the same lines, at the same positions.
     //
     // A block from this platform's engine goes through the platform's own
     // text object, which is the only way a wrapped, justified block can be
@@ -383,16 +405,17 @@ public:
                                       : line.width;
                 const float width = end - run.x;
                 const float runX = lineX + run.x;
-                DrawText(run.text, run.font, runX, baseline, color);
+                const Color ink = RunInk(run, color);
+                DrawText(run.text, run.font, runX, baseline, ink);
                 if (run.underline)
                     StrokeLine(runX, baseline + 2.0f, runX + width,
-                               baseline + 2.0f, color, 1.0f);
+                               baseline + 2.0f, ink, 1.0f);
                 if (run.strike)
                     StrokeLine(runX,
                                baseline - 0.30f * run.font.size,
                                runX + width,
                                baseline - 0.30f * run.font.size,
-                               color, 1.0f);
+                               ink, 1.0f);
             }
             lineTop += line.height;
         }

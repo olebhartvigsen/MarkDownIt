@@ -97,10 +97,7 @@ std::vector<platform::GlyphRun> BuildRuns(const Node& node,
         const bool link = child.kind == InlineKind::Link;
         const platform::Color runColor =
             link ? ToColor(linkColor) : color;
-        run.r = runColor.r;
-        run.g = runColor.g;
-        run.b = runColor.b;
-        run.a = runColor.a;
+        run.color = runColor;
         run.underline = link && underlineLinks;
         run.strike = child.strike;
         runs.push_back(run);

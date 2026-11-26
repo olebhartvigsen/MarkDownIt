@@ -86,8 +86,7 @@ std::vector<platform::GlyphRun> BuildCellRuns(const TableCell& cell,
                                 : (code ? kCodeFont : nullptr));
         glyph.font = fontSpecific(size, strong && (monospace || code), em,
                                   monospace || code, family);
-        glyph.r = color.r; glyph.g = color.g;
-        glyph.b = color.b; glyph.a = color.a;
+        glyph.color = color;
         glyph.underline = link && m.linkUnderline; glyph.strike = strike;
         runs.push_back(std::move(glyph));
     }

@@ -158,7 +158,7 @@ TEST(MarkdownStyle, LinkUnderlineFollowsTheStyle) {
         const display::Text& t =
             std::get<display::Text>(laid.list.items[0]);
         EXPECT_EQ(t.line.runs[0].underline, style == MarkdownStyle::GitHub);
-        EXPECT_NEAR(t.line.runs[0].r,
+        EXPECT_NEAR(t.line.runs[0].color.r,
                     style == MarkdownStyle::GitHub ? 9.0f / 255.0f
                                                    : 0x33 / 255.0f,
                     0.001f);
@@ -368,7 +368,7 @@ TEST(AppleStyle, InformationBoxIsATintedRoundedSurfaceWithABoldLabel) {
     ASSERT_TRUE(text->line.runs.size() >= 2);
     EXPECT_EQ(text->line.runs[0].text, std::string("Warning:"));
     EXPECT_TRUE(text->line.runs[0].font.bold);
-    EXPECT_NEAR(text->line.runs[0].r, pal.calloutLabel[1].r, 0.001f);
+    EXPECT_NEAR(text->line.runs[0].color.r, pal.calloutLabel[1].r, 0.001f);
     std::string all;
     for (const auto& r : text->line.runs) all += r.text;
     EXPECT_EQ(all, std::string("Warning: mind the gap"));
@@ -436,8 +436,8 @@ TEST(AppleStyle, TheParagraphAfterTheTitleReadsLikeEveryOtherParagraph) {
         EXPECT_NEAR(afterTitle, body, 0.01f);
         EXPECT_NEAR(afterTitle, m.bodyFontSize * layout::kPtToDip, 0.01f);
         // Both carry the body colour, so neither stands out.
-        EXPECT_NEAR(texts[1]->line.runs[0].r, pal.textPrimary.r, 0.001f);
-        EXPECT_NEAR(texts[2]->line.runs[0].r, pal.textPrimary.r, 0.001f);
+        EXPECT_NEAR(texts[1]->line.runs[0].color.r, pal.textPrimary.r, 0.001f);
+        EXPECT_NEAR(texts[2]->line.runs[0].color.r, pal.textPrimary.r, 0.001f);
     }
 }
 

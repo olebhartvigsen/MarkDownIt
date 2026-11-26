@@ -87,8 +87,8 @@ void WriteFont(std::ostream& out, const platform::FontSpec& f) {
 void WriteRun(std::ostream& out, const platform::GlyphRun& r) {
     out << "{\"text\":" << Json(r.text) << ",\"font\":";
     WriteFont(out, r.font);
-    out << ",\"r\":" << Num(r.r) << ",\"g\":" << Num(r.g)
-        << ",\"b\":" << Num(r.b) << ",\"a\":" << Num(r.a)
+    out << ",\"r\":" << Num(r.color.r) << ",\"g\":" << Num(r.color.g)
+        << ",\"b\":" << Num(r.color.b) << ",\"a\":" << Num(r.color.a)
         << ",\"x\":" << Num(r.x)
         << ",\"underline\":" << (r.underline ? "true" : "false")
         << ",\"strike\":" << (r.strike ? "true" : "false") << '}';

@@ -1184,7 +1184,7 @@ std::u16string Renderer::ToUtf16(const std::u32string& s32) {
     return out;
 }
 
-// A UTF-8 to UTF-16 conversion for the json token slices below; the
+// A UTF-8 to UTF-16 conversion for the source view below; the
 // definition lives with the source view code further down the file.
 static std::u16string Utf8ToUtf16(const std::string& s);
 
@@ -1314,32 +1314,14 @@ void Renderer::DrawCodeBlock(platform::RenderTarget& target, IDWriteFactory* dw,
     }
 
     // The glyphs: the walk's own lines, drawn at the card's pad and clipped
-    // to its inner box, the box the layout used to clip to itself.
+    // to its inner box, the box the layout used to clip to itself. Each run
+    // carries its own ink, so a ```json fence's four token colours ride one
+    // block instead of a DrawText per token.
     const float textX = x + m.codePad;
     const float textTop = y + m.codePad;
     target.PushClip(
         platform::Rect{textX, textTop, codeWidth, block->Height()});
-    if (n.lang == "json") {
-        // A ```json fence carries four inks across its token runs.
-        // DrawLayout paints a whole block in one colour, so these runs go
-        // out one at a time, at the positions the walk measured them at,
-        // exactly as the replay drew them.
-        const std::vector<platform::TextLine>* blockLines = block->Lines();
-        float lineTop = textTop;
-        if (blockLines) {
-            for (const platform::TextLine& line : *blockLines) {
-                for (const platform::GlyphRun& run : line.runs) {
-                    target.DrawText(run.text, run.font, textX + run.x,
-                                    lineTop + line.ascent,
-                                    platform::Color{run.r, run.g, run.b,
-                                                    run.a});
-                }
-                lineTop += line.height;
-            }
-        }
-    } else {
-        target.DrawLayout(*block, textX, textTop, codeColor);
-    }
+    target.DrawLayout(*block, textX, textTop, codeColor);
     target.PopClip();
 
     if (cache_) {

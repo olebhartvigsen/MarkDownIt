@@ -276,8 +276,43 @@ void D2DTarget::DrawLayout(const TextLayout& layout, float x, float topY,
         if (!target_ || !text) return;
         ID2D1SolidColorBrush* brush = BrushFor(color);
         if (!brush) return;
+        // The runs that name their own ink get it as a per range drawing
+        // effect: a Direct2D brush, which DrawTextLayout uses for the
+        // glyphs, the underline and the strike of its range. A run that
+        // names none keeps the brush handed to the call, so `color` is
+        // still the fallback. One brush per distinct colour, one layout,
+        // one DrawTextLayout.
+        std::vector<std::pair<Color, ID2D1SolidColorBrush*>> inks;
+        for (const DWriteTextLayout::ColorSpan& span : native->ColorSpans()) {
+            if (!(span.color.a > 0.0f)) continue;
+            ID2D1SolidColorBrush* ink = nullptr;
+            for (const auto& known : inks) {
+                if (known.first.r == span.color.r &&
+                    known.first.g == span.color.g &&
+                    known.first.b == span.color.b &&
+                    known.first.a == span.color.a) {
+                    ink = known.second;
+                    break;
+                }
+            }
+            if (!ink) {
+                ink = BrushFor(span.color);
+                if (!ink) continue;
+                inks.push_back(std::make_pair(span.color, ink));
+            }
+            const DWRITE_TEXT_RANGE range = {span.start, span.length};
+            text->SetDrawingEffect(ink, range);
+        }
         target_->DrawTextLayout(D2D1::Point2F(x, topY), text, brush,
                                 D2D1_DRAW_TEXT_OPTIONS_CLIP);
+        // The layout keeps what it was given. Clear the effects so it holds
+        // no brush between draws, then drop this call's references.
+        for (const DWriteTextLayout::ColorSpan& span : native->ColorSpans()) {
+            if (!(span.color.a > 0.0f)) continue;
+            const DWRITE_TEXT_RANGE range = {span.start, span.length};
+            text->SetDrawingEffect(nullptr, range);
+        }
+        for (auto& known : inks) known.second->Release();
         brush->Release();
         return;
     }

@@ -38,9 +38,7 @@ GlyphRun Run(const std::string& text, bool bold = false,
     run.font.family = family;
     run.font.size = 16.0f;
     run.font.bold = bold;
-    run.r = 0.2f;
-    run.g = 0.3f;
-    run.b = 0.4f;
+    run.color = platform::Color{0.2f, 0.3f, 0.4f, 1.0f};
     return run;
 }
 

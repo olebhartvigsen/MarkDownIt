@@ -228,7 +228,7 @@ TEST(ParagraphListQuote, QuoteBarAndIndent) {
     EXPECT_NEAR(bar.color.g, pal.quoteBar.g, 0.001f);
     const display::Text& text = std::get<display::Text>(laid.list.items[1]);
     EXPECT_NEAR(text.x, 20.0f, 0.001f);
-    EXPECT_NEAR(text.line.runs[0].g, pal.quoteText.g, 0.001f);
+    EXPECT_NEAR(text.line.runs[0].color.g, pal.quoteText.g, 0.001f);
     // The nesting chain: three indents in, and the second bar pushed
     // past the first quote by the paragraph gap.
     EXPECT_NEAR(laid.blocks[1].x, 60.0f, 0.001f);

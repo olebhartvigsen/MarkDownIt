@@ -195,7 +195,7 @@ LaidBlock LayoutListBlock(const LayoutCtx& ctx, const Node& node,
         run.text = block.markerText;
         run.font = fontSpecific(size, false, false, false, nullptr);
         const platform::Color ink = ToColor(in.palette->textPrimary);
-        run.r = ink.r; run.g = ink.g; run.b = ink.b; run.a = ink.a;
+        run.color = ink;
         marker.line.runs.push_back(run);
         marker.srcOffset = node.contentOffset;
         marker.srcLength = 0;  // the marker bytes are hidden syntax

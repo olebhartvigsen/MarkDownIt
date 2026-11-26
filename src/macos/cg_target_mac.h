@@ -242,8 +242,12 @@ public:
                             CGRectMake(x, topY, native->Width(),
                                        native->Height()));
         // The context is flipped, so the text matrix is flipped back, the
-        // same way DrawText stands its glyphs up.
+        // same way DrawText stands its glyphs up. The fill colour is the
+        // block's ink: a run that carries its own colour paints from its
+        // CTForegroundColor attribute, and a run that carries none paints
+        // from this fill.
         CGContextSetTextMatrix(context_, CGAffineTransformMakeScale(1.0, -1.0));
+        CGContextSetRGBFillColor(context_, color.r, color.g, color.b, color.a);
         for (const CgTextLayout::Line& line : native->DrawLines()) {
             if (!line.line) continue;
             CGContextSetTextPosition(context_, x + line.x,

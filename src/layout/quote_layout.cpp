@@ -53,8 +53,7 @@ LaidBlock LayoutQuote(const LayoutCtx& ctx, const Node& node,
         platform::GlyphRun label = runs[0];
         label.text = runs[0].text.substr(0, callout.labelLength);
         label.font.bold = true;
-        label.r = labelInk.r; label.g = labelInk.g;
-        label.b = labelInk.b; label.a = labelInk.a;
+        label.color = labelInk;
         runs[0].text.erase(0, callout.labelLength);
         if (runs[0].text.empty()) runs.erase(runs.begin());
         runs.insert(runs.begin(), label);

@@ -1682,7 +1682,7 @@ TEST(RendererMac, RecoloursTheRunsWhenTheThemeChanges) {
     ASSERT_EQ(renderer.blocks()[0].lines.size(), 1u);
     const TextLine& light = renderer.blocks()[0].lines[0];
     ASSERT_EQ(light.runs.size(), 1u);
-    EXPECT_TRUE(light.runs[0].r < 0.3f);  // the light theme's dark ink
+    EXPECT_TRUE(light.runs[0].color.r < 0.3f);  // the light theme's dark ink
 
     Palette dark = BasePalette();
     dark.textPrimary = ThemeColor{0.9f, 0.9f, 0.9f, 1.0f};
@@ -1690,7 +1690,7 @@ TEST(RendererMac, RecoloursTheRunsWhenTheThemeChanges) {
     renderer.Measure(doc, 1400.0f);
     const TextLine& fresh = renderer.blocks()[0].lines[0];
     ASSERT_EQ(fresh.runs.size(), 1u);
-    EXPECT_TRUE(fresh.runs[0].r > 0.8f);  // the new appearance's ink
+    EXPECT_TRUE(fresh.runs[0].color.r > 0.8f);  // the new appearance's ink
 }
 
 // A blank line next to a list is a caret paragraph in the model (the

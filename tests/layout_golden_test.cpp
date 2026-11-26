@@ -99,7 +99,7 @@ TEST(LayoutGolden, BreakAndHeadingList) {
     // The level 6 heading reads muted and carries no rule.
     const display::Text& head6 =
         std::get<display::Text>(laid.list.items[3]);
-    EXPECT_NEAR(head6.line.runs[0].r, pal.quoteText.r, 0.001f);
+    EXPECT_NEAR(head6.line.runs[0].color.r, pal.quoteText.r, 0.001f);
 
     // The document column, no platform rounding anywhere.
     EXPECT_NEAR(laid.list.width, 600.0f, 0.001f);

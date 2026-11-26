@@ -146,8 +146,10 @@ float DWriteEngine::LineHeight(const FontSpec& font) const {
 }
 
 DWriteTextLayout::DWriteTextLayout(IDWriteTextLayout* layout, float width,
-                                   float height)
-    : layout_(layout), width_(width), height_(height) {
+                                   float height,
+                                   std::vector<ColorSpan> colorSpans)
+    : layout_(layout), width_(width), height_(height),
+      colorSpans_(std::move(colorSpans)) {
     if (layout_) layout_->AddRef();
 }
 
@@ -173,10 +175,18 @@ TextLayoutHandle DWriteEngine::BuildLayout(
         size_t run;
     };
     std::vector<Span> spans;
+    std::vector<DWriteTextLayout::ColorSpan> colorSpans;
     std::wstring text;
     for (size_t r = 0; r < runs.size(); ++r) {
         const std::wstring part = ToUtf16(runs[r].text);
         spans.push_back(Span{(UINT32)text.size(), (UINT32)part.size(), r});
+        if (!part.empty()) {
+            DWriteTextLayout::ColorSpan ink;
+            ink.start = (UINT32)text.size();
+            ink.length = (UINT32)part.size();
+            ink.color = runs[r].color;
+            colorSpans.push_back(ink);
+        }
         text += part;
     }
     if (text.empty()) return fallback();
@@ -234,7 +244,8 @@ TextLayoutHandle DWriteEngine::BuildLayout(
     // stop short of it: the alignment is measured against the column, and
     // that is the box the target clips the block to.
     const float height = metrics.height > 0.0f ? metrics.height : 0.0f;
-    return std::make_shared<DWriteTextLayout>(layout, maxWidth, height);
+    return std::make_shared<DWriteTextLayout>(layout, maxWidth, height,
+                                              std::move(colorSpans));
 }
 
 IDWriteTextFormat* DWriteEngine::FormatFor(const FontSpec& font) const {

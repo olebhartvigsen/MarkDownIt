@@ -21,7 +21,17 @@ namespace platform {
 // the words this engine measured and broke.
 class DWriteTextLayout final : public TextLayout {
 public:
-    DWriteTextLayout(IDWriteTextLayout* layout, float width, float height);
+    // One run's UTF-16 range and the ink it asked for. A range with a
+    // transparent colour drew no colour of its own; the target leaves it
+    // to the brush it hands DrawTextLayout.
+    struct ColorSpan {
+        UINT32 start = 0;
+        UINT32 length = 0;
+        Color color;
+    };
+
+    DWriteTextLayout(IDWriteTextLayout* layout, float width, float height,
+                     std::vector<ColorSpan> colorSpans);
     ~DWriteTextLayout() override;
 
     DWriteTextLayout(const DWriteTextLayout&) = delete;
@@ -34,10 +44,14 @@ public:
     // a layout this engine answered.
     IDWriteTextLayout* Layout() const { return layout_; }
 
+    // The run ranges and their inks, in the order the runs were given.
+    const std::vector<ColorSpan>& ColorSpans() const { return colorSpans_; }
+
 private:
     IDWriteTextLayout* layout_ = nullptr;
     float width_ = 0.0f;
     float height_ = 0.0f;
+    std::vector<ColorSpan> colorSpans_;
 };
 
 class DWriteEngine final : public TextEngine {

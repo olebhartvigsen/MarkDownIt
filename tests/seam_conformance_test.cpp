@@ -314,6 +314,42 @@ platform::Rect ScanInk(const unsigned char* pixels, int width, int height) {
     return ink;
 }
 
+// The same sweep, restricted to the pixels one hue owns. Green is the
+// second byte in both pixel layouts the surfaces use; red and blue swap
+// places between them, so the caller names the two indices. A red glyph
+// reads redder than blue down to its faint antialiased edge, and the
+// white paper reads neither.
+platform::Rect ScanInkHue(const unsigned char* pixels, int width, int height,
+                          int redAt, int blueAt, bool red) {
+    int left = width;
+    int top = height;
+    int right = 0;
+    int bottom = 0;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const unsigned char* p = pixels + (static_cast<size_t>(y) *
+                                                   static_cast<size_t>(width) +
+                                               static_cast<size_t>(x)) *
+                                                  4;
+            const int r = p[redAt];
+            const int b = p[blueAt];
+            const bool hit = red ? r > b + 24 : b > r + 24;
+            if (!hit) continue;
+            if (x < left) left = x;
+            if (x + 1 > right) right = x + 1;
+            if (y < top) top = y;
+            if (y + 1 > bottom) bottom = y + 1;
+        }
+    }
+    platform::Rect ink;
+    if (right <= left || bottom <= top) return ink;  // nothing drawn
+    ink.x = static_cast<float>(left);
+    ink.y = static_cast<float>(top);
+    ink.width = static_cast<float>(right - left);
+    ink.height = static_cast<float>(bottom - top);
+    return ink;
+}
+
 #if defined(_WIN32)
 
 // A Direct2D DC target over a top down DIB section: the software path the
@@ -331,6 +367,14 @@ public:
     void End() { dcTarget_->EndDraw(); }
 
     platform::Rect Ink() { return ScanInk(bits_, kSurfaceW, kSurfaceH); }
+    // The two inks the per run colour test lays down. The DIB is
+    // B8G8R8A8, so blue leads and red trails.
+    platform::Rect RedInk() {
+        return ScanInkHue(bits_, kSurfaceW, kSurfaceH, 2, 0, true);
+    }
+    platform::Rect BlueInk() {
+        return ScanInkHue(bits_, kSurfaceW, kSurfaceH, 2, 0, false);
+    }
 
     ~InkSurface() {
         target_.reset();  // its formats go before the factory they came from
@@ -410,6 +454,14 @@ public:
 
     platform::Rect Ink() {
         return ScanInk(pixels_.data(), kSurfaceW, kSurfaceH);
+    }
+    // The two inks the per run colour test lays down. The bitmap is
+    // RGBA, so red leads and blue trails.
+    platform::Rect RedInk() {
+        return ScanInkHue(pixels_.data(), kSurfaceW, kSurfaceH, 0, 2, true);
+    }
+    platform::Rect BlueInk() {
+        return ScanInkHue(pixels_.data(), kSurfaceW, kSurfaceH, 0, 2, false);
     }
 
     ~InkSurface() {
@@ -528,6 +580,64 @@ void CheckDrawLayout(TextEngine& engine, InkSurface& surface) {
         const platform::Rect rightInk = surface.Ink();
         EXPECT_GT(rightInk.x, leftInk.x + 40.0f);
     }
+
+    // Runs that carry their own ink: one block, two colours, and each
+    // colour has to land on the paper where its own run sits. The scan
+    // reads the two hues apart, so a target that paints the whole block in
+    // the fallback colour fails here, and so does one that paints the
+    // colours swapped or both on the same run.
+    const platform::Color red{0.85f, 0.05f, 0.05f, 1.0f};
+    const platform::Color blue{0.05f, 0.05f, 0.85f, 1.0f};
+    std::vector<GlyphRun> inked = {MakeRun("WWWW", 24.0f),
+                                   MakeRun("HHHH", 24.0f)};
+    inked[0].color = red;
+    inked[1].color = blue;
+    engine.BeginLayout();
+    std::vector<TextLine> inkedLines =
+        engine.MeasureWrapped(inked, 0.0f, 0.0f);
+    ASSERT_TRUE(!inkedLines.empty());
+    if (!inkedLines.empty()) {
+        const TextLine& inkedLine = inkedLines[0];
+        ASSERT_TRUE(inkedLine.runs.size() >= 2);
+        if (inkedLine.runs.size() >= 2) {
+            // Where the red run ends and the blue one starts, measured by
+            // the engine that will draw them.
+            const float split = inkedLine.runs[1].x;
+            platform::TextLayoutHandle inkedBlock = engine.BuildLayout(
+                inked, inkedLine.width + 60.0f, platform::TextAlign::Left);
+            ASSERT_TRUE(inkedBlock != nullptr);
+            if (inkedBlock) {
+                const float placeX = 10.0f;
+                surface.Begin();
+                surface.Target().DrawLayout(*inkedBlock, placeX, 15.0f,
+                                            black);
+                surface.End();
+                const platform::Rect redInk = surface.RedInk();
+                const platform::Rect blueInk = surface.BlueInk();
+                EXPECT_GT(redInk.width, 0.0f);
+                EXPECT_GT(blueInk.width, 0.0f);
+                EXPECT_GT(blueInk.x, redInk.x + 1.0f);
+                // Each colour stays inside its own run's x range, with a
+                // pixel of slack for the antialiased edge.
+                EXPECT_GE(redInk.x, placeX - 1.0f);
+                EXPECT_LE(redInk.x + redInk.width, placeX + split + 2.0f);
+                EXPECT_GE(blueInk.x, placeX + split - 2.0f);
+                EXPECT_LE(blueInk.x + blueInk.width,
+                          placeX + inkedLine.width + 2.0f);
+            }
+        }
+    }
+
+    // A run with no colour of its own still draws in the block's colour:
+    // the draw parameter is the fallback, so a one colour block is what it
+    // always was.
+    surface.Begin();
+    surface.Target().DrawLayout(*block, 20.0f, 15.0f, red);
+    surface.End();
+    const platform::Rect fallbackInk = surface.RedInk();
+    EXPECT_GT(fallbackInk.width, 0.0f);
+    EXPECT_GE(fallbackInk.x, 19.0f);
+    EXPECT_LE(fallbackInk.x + fallbackInk.width, 21.0f + column);
 }
 
 }  // namespace

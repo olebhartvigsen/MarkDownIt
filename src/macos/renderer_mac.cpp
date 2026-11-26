@@ -803,10 +803,7 @@ void MacRenderer::LayoutSourceBlocks(float x, float width, float* y) {
     run.font = MakeFont(metrics_, metrics_.codeFontSize * kPtToDip * zoom_,
                         false, false, true);
     const Color color = ToColor(palette_.textPrimary);
-    run.r = color.r;
-    run.g = color.g;
-    run.b = color.b;
-    run.a = color.a;
+    run.color = color;
     std::vector<GlyphRun> runs;
     runs.push_back(std::move(run));
 
@@ -1358,11 +1355,7 @@ void MacRenderer::PaintLineRuns(const TextLine& line, float x,
 
     for (size_t i = 0; i < line.runs.size(); ++i) {
         const GlyphRun& run = line.runs[i];
-        Color color;
-        color.r = run.r;
-        color.g = run.g;
-        color.b = run.b;
-        color.a = run.a;
+        Color color = platform::RunInk(run);
         target_->DrawText(run.text, run.font, x + run.x,
                           y + line.ascent, color);
 

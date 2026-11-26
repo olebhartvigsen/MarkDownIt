@@ -87,7 +87,7 @@ void PlayText(platform::RenderTarget* target, const Text& item) {
     const float baseline = item.top + item.line.ascent;
     for (size_t i = 0; i < item.line.runs.size(); ++i) {
         const platform::GlyphRun& run = item.line.runs[i];
-        const Color color{run.r, run.g, run.b, run.a};
+        const platform::Color color = platform::RunInk(run);
         const float x = item.x + run.x, width = RunWidth(item.line, i);
         target->DrawText(run.text, run.font, x, baseline, color);
         if (run.underline)

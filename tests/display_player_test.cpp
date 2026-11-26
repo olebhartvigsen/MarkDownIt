@@ -120,9 +120,9 @@ TEST(DisplayPlayer, GoldenHandmade) {
     text.line.width = 120; text.line.ascent = 12;
     GlyphRun plain, link;  // body text, then an underlined link run
     plain.text = "plain"; plain.font.family = "Segoe UI";
-    plain.r = 0.2f; plain.g = 0.2f; plain.b = 0.2f;
+    plain.color = Color{0.2f, 0.2f, 0.2f, 1.0f};
     link.text = "link"; link.font.family = "Segoe UI"; link.x = 42;
-    link.underline = true; link.r = 0.1f; link.g = 0.4f; link.b = 0.9f;
+    link.underline = true; link.color = Color{0.1f, 0.4f, 0.9f, 1.0f};
     text.line.runs = {plain, link};
     display::StrokePolygon route;  // the dash walks across the corner
     route.points = {Point{0, 0}, Point{10, 0}, Point{10, 10}};

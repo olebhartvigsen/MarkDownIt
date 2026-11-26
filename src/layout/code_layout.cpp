@@ -45,10 +45,7 @@ std::vector<platform::GlyphRun> CodeBlockRuns(const std::string& code,
                 case json::TokenKind::Literal: c = literalColor; break;
                 case json::TokenKind::Punct: c = ink; break;
             }
-            run.r = c.r;
-            run.g = c.g;
-            run.b = c.b;
-            run.a = c.a;
+            run.color = c;
             runs.push_back(std::move(run));
         }
     } else {
@@ -56,10 +53,7 @@ std::vector<platform::GlyphRun> CodeBlockRuns(const std::string& code,
         run.text = code;
         run.font = fontSpecific(m.codeFontSize, false, false, true,
                                 kCodeFont);
-        run.r = ink.r;
-        run.g = ink.g;
-        run.b = ink.b;
-        run.a = ink.a;
+        run.color = ink;
         runs.push_back(std::move(run));
     }
     return runs;

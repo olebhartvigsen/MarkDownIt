@@ -306,10 +306,7 @@ CFStringRef MakeCFString(const std::string& utf8) {
 struct LaidRun {
     std::string text;
     FontSpec font;
-    float r = 0.0f;
-    float g = 0.0f;
-    float b = 0.0f;
-    float a = 1.0f;
+    Color color;
     // The run is a link and carries an underline, or is struck
     // through; the flags travel through the measured lines so the
     // renderer can draw the decorations.
@@ -427,10 +424,7 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
         LaidRun laid;
         laid.text = run.text;
         laid.font = run.font;
-        laid.r = run.r;
-        laid.g = run.g;
-        laid.b = run.b;
-        laid.a = run.a;
+        laid.color = run.color;
         laid.underline = run.underline;
         laid.strike = run.strike;
         laid.start = u16Length;
@@ -489,14 +483,20 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
                 attributed, CFRangeMake(u16Length, runLength),
                 kCTFontAttributeName, font);
         }
-        // The colour, as a CGColor, which is the type the foreground
-        // attribute takes, the same as the drawing side builds.
-        CGColorRef color = CGColorCreateGenericRGB(run.r, run.g, run.b, run.a);
-        if (color) {
-            CFAttributedStringSetAttribute(
-                attributed, CFRangeMake(u16Length, runLength),
-                kCTForegroundColorAttributeName, color);
-            CFRelease(color);
+        // The colour, as a CGColor, and only for a run that names one. A
+        // run with no ink of its own carries no foreground attribute, so
+        // Core Text draws it in the context's fill colour: the ink the
+        // target passes to DrawLayout. That is the same fallback the
+        // portable path applies to a run with no colour.
+        if (run.color.a > 0.0f) {
+            CGColorRef color = CGColorCreateGenericRGB(run.color.r, run.color.g,
+                                                      run.color.b, run.color.a);
+            if (color) {
+                CFAttributedStringSetAttribute(
+                    attributed, CFRangeMake(u16Length, runLength),
+                    kCTForegroundColorAttributeName, color);
+                CFRelease(color);
+            }
         }
 
         laidRuns.push_back(laid);
@@ -575,10 +575,7 @@ std::vector<TextLine> CoreTextEngine::MeasureWrapped(
             glyph.text = laid.text.substr(byteFrom, byteTo - byteFrom);
             if (glyph.text.empty()) continue;
             glyph.font = laid.font;
-            glyph.r = laid.r;
-            glyph.g = laid.g;
-            glyph.b = laid.b;
-            glyph.a = laid.a;
+            glyph.color = laid.color;
             glyph.underline = laid.underline;
             glyph.strike = laid.strike;
             glyph.x = static_cast<float>(runX);
