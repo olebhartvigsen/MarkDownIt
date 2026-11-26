@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cassert>
 #include <d2d1.h>
 #include <dwrite.h>
 #include <string>
@@ -1421,11 +1422,23 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
     // One geometry source: the walk's record carries the column
     // split that carries every column's longest word and the row
     // heights its cells measured, so this painter reads it instead
-    // of re-measuring. The equal split stays as the fall back for
-    // a recordless call.
+    // of re-measuring. The equal split is still the fall back for a
+    // recordless call: it sizes the columns and the cells are measured
+    // for the row heights, so the geometry is never invented. Only the
+    // words have no source then, and that is what the assert and the
+    // trace below are for.
     const layout::LaidTable* rec =
         (record && record->columnCount == cols &&
          !record->colWs.empty()) ? record : nullptr;
+    if (!rec) {
+        // A table painted without its layout record: the washes, the grid
+        // and the row heights come out, the glyphs do not. That used to be
+        // silent. A debug build stops here; a release build paints the
+        // equal-split fallback and writes the line at the end of this
+        // function, so the state cannot pass unnoticed and a wrong table
+        // is never painted as if it were right.
+        assert(rec != nullptr);
+    }
     std::vector<float> colXs(cols + 1, 0.0f);
     std::vector<float> colWs(cols, 0.0f);
     {
@@ -1765,6 +1778,19 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
     }
 
     outH = curY - y;
+
+    if (!rec) {
+        // The one line the recordless paint leaves behind: the geometry it
+        // fell back to (the equal column split and the measured cells), so
+        // a report of a table without words carries the numbers it was
+        // painted at.
+        diag::TraceFmt(
+            "TABLE no layout record: rows=%zu cols=%zu "
+            "column=%.1fpt equal split, row heights measured from the "
+            "cells, painted=%.1fpt",
+            n.rows.size(), cols,
+            (double)(width / static_cast<float>(cols)), (double)outH);
+    }
 }
 
 // ---------------------------------------------------------------------------
