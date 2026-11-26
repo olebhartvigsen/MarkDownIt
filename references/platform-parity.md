@@ -86,10 +86,17 @@ ribbon command needs a row here or a row in the next section.
 | cmdStrike | toggleStrike |
 | cmdTheme | toggleTheme |
 | cmdUndo | undo |
+| cmdUsageStatistics | toggleUsageStatistics |
 | cmdViewSource | toggleSourceView |
 | cmdWrap | toggleWrap |
 | cmdZoomIn | zoomIn |
 | cmdZoomOut | zoomOut |
+
+`cmdUsageStatistics` is the one preference command the mac carries twice:
+Windows has no settings dialog, so it is a ribbon toggle in the View
+group there, while macOS has both the View-menu item and the checkbox in
+the settings window. Both mac surfaces edit the same stored field, so
+they cannot disagree.
 
 ## Commands without a mac counterpart
 

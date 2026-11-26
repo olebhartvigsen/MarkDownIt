@@ -71,6 +71,12 @@ public:
     void ToggleOutline();
     void SyncOutlinePane();
 
+    // The anonymous usage statistics switch. Windows has no settings
+    // dialog, so the ribbon toggle is the opt-out; the handler flips the
+    // setting, writes it and repaints the button.
+    void ToggleUsageStatistics();
+    bool AnalyticsEnabled() const { return settings_.analyticsEnabled; }
+
     // The appearance. System follows the OS and is the default; Light and
     // Dark are the user's own choice and outrank the OS until System is
     // chosen again. The switch is presentation only: it repaints, and it

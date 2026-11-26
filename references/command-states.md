@@ -59,7 +59,7 @@ commands away.
 | Command group | Welcome | View mode | Edit, markdown | Edit, code or diagram |
 |----------------|---------|-----------|----------------|------------------------|
 | New, Open, Import Word, Import PDF | yes | yes | yes | yes |
-| Home, Show Tab Bar, About, Settings, Help | yes | yes | yes | yes |
+| Home, Show Tab Bar, About, Settings, Help, Usage statistics | yes | yes | yes | yes |
 
 | Reload, Save As, Print, Close, Share, Export | no | yes | yes | yes |
 | Save | no | no | yes | yes |

@@ -420,6 +420,18 @@ STDMETHODIMP CRibbonCommandHandler::UpdateProperty(
         }
     }
 
+    if (nCmdID == IDC_CMD_USAGE_STATS && ppropvarNewValue)
+    {
+        if (IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
+        {
+            ppropvarNewValue->vt = VT_BOOL;
+            ppropvarNewValue->boolVal =
+                (m_pApp && m_pApp->AnalyticsEnabled()) ? VARIANT_TRUE
+                                                       : VARIANT_FALSE;
+            return S_OK;
+        }
+    }
+
     if (nCmdID == IDC_CMD_EDIT && ppropvarNewValue)
     {
         if (IsEqualPropertyKey(key, UI_PKEY_BooleanValue))
@@ -656,6 +668,7 @@ STDMETHODIMP CRibbonCommandHandler::Execute(
     case IDC_CMD_OPEN_JSON_EDITOR: m_pApp->OpenInJsonEditor(); break;
     case IDC_CMD_WRAP:    m_pApp->ToggleWrap();        break;
     case IDC_CMD_OUTLINE: m_pApp->ToggleOutline();     break;
+    case IDC_CMD_USAGE_STATS: m_pApp->ToggleUsageStatistics(); break;
     case IDC_CMD_MARK:
         diag::Trace("MARKEXEC execute");
         m_pApp->ToggleMarkSelection();

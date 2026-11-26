@@ -240,6 +240,7 @@ NSMenu* BuildMainMenu() {
              {"Source View", @selector(toggleSourceView:)},
              {"Edit Mode", @selector(editMode:)},
              {"Outline", @selector(toggleOutline:)},
+             {"Usage Statistics", @selector(toggleUsageStatistics:)},
              {"Dark Mode", @selector(toggleTheme:)},
              {"Home", @selector(showRecents:)},
              {"Show Tab Bar", @selector(toggleTabBar:)},

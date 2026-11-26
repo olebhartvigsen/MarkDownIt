@@ -210,6 +210,24 @@
         <Image Source="icons/outline_16.png" MinDPI="96"/>
       </Command.SmallImages>
     </Command>
+    <Command Name="cmdUsageStatistics" Symbol="IDC_CMD_USAGE_STATS" Id="10608">
+      <Command.LabelTitle>
+        <String>Usage statistics</String>
+      </Command.LabelTitle>
+      <Command.TooltipTitle>
+        <String>Send anonymous usage statistics</String>
+      </Command.TooltipTitle>
+      <Command.TooltipDescription>
+        <String>Share anonymous usage counts with the developer, with no document content, no file names and no account. PRIVACY.md has the contract.</String>
+      </Command.TooltipDescription>
+      <Command.LargeImages>
+        <Image Source="icons/about_32.png" MinDPI="96"/>
+        <Image Source="icons/about_64.png" MinDPI="192"/>
+      </Command.LargeImages>
+      <Command.SmallImages>
+        <Image Source="icons/about_16.png" MinDPI="96"/>
+      </Command.SmallImages>
+    </Command>
     <Command Name="cmdTheme" Symbol="IDC_CMD_THEME" Id="10607">
       <Command.LabelTitle>
         <String>Theme</String>
@@ -894,11 +912,12 @@
             <Button CommandName="cmdUndo" />
             <Button CommandName="cmdRedo" />
           </Group>
-          <Group CommandName="cmdGroupView" SizeDefinition="FiveButtons">
+          <Group CommandName="cmdGroupView" SizeDefinition="SixButtons">
             <Button CommandName="cmdZoomIn" />
             <Button CommandName="cmdZoomOut" />
             <ToggleButton CommandName="cmdWrap" />
             <ToggleButton CommandName="cmdOutline" />
+            <ToggleButton CommandName="cmdUsageStatistics" />
             <ToggleButton CommandName="cmdTheme" />
           </Group>
           <Group CommandName="cmdGroupFind" SizeDefinition="OneButton">

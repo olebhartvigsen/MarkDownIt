@@ -6183,6 +6183,17 @@ bool AppWindow::IsOutlineVisible() const {
     return outline_.IsCreated() && outline_.IsVisible();
 }
 
+// The Windows opt-out. There is no settings dialog on this port, so the
+// View group toggle is the one place the choice is made; the setting is
+// the same field both ports store (AnalyticsEnabled in the registry).
+void AppWindow::ToggleUsageStatistics() {
+    settings_.analyticsEnabled = !settings_.analyticsEnabled;
+    SaveSettings(settings_);
+    if (g_pRibbonFramework)
+        g_pRibbonFramework->InvalidateUICommand(IDC_CMD_USAGE_STATS,
+            UI_INVALIDATIONS_PROPERTY, &UI_PKEY_BooleanValue);
+}
+
 void AppWindow::NavigateToHeading(uint32_t offset) {
     // The OpenLink anchor precedent (walk + BlockForOffset +
     // StartSpring), composed into the outline jump. Both modes scroll

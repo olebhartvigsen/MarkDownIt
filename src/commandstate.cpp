@@ -224,8 +224,10 @@ const Requirements& RequirementsOf(CommandId id) {
         return kZoomOut;
     case CommandId::ViewRecent:
     case CommandId::TabBar:
-        // The appearance is available on every surface: an empty page on
-        // the welcome screen is exactly where a glare hurts most.
+        // These are available on every surface: an empty page on the
+        // welcome screen is exactly where a glare hurts most, and the
+        // statistics switch is a preference that never needs a document.
+    case CommandId::UsageStatistics:
     case CommandId::Theme:
         return kAlways;
 

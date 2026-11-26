@@ -46,6 +46,10 @@ enum class CommandId : uint8_t {
     Bullets, Numbering, Quote, Indent, Outdent,
     // View.
     EditToggle, SourceView, Wrap, Outline,
+    // The opt-out for the anonymous usage statistics sits next to the
+    // outline toggle: Windows has no settings dialog, so the ribbon is
+    // where a Windows reader turns the statistics off.
+    UsageStatistics,
     ZoomIn, ZoomOut, ZoomReset, ViewRecent, Share, TabBar, WidthMenu, Theme,
     WidthStandard, Width960, Width1600, WidthFull,
     // Find.
@@ -213,6 +217,12 @@ inline constexpr CommandSpec kCommands[] = {
      NoWin, NoMac},
     {CommandId::Outline, "Outline", "cmdOutline", 10606, "toggleOutline:", false,
      NoWin, Key("O")},
+    // The analytics opt-out. Windows carries it as a ribbon toggle in the
+    // View group; the mac carries the same command in the View menu and
+    // mirrors it as a checkbox in the settings window. Neither needs a
+    // key: nobody turns statistics off often enough to want one.
+    {CommandId::UsageStatistics, "Usage statistics", "cmdUsageStatistics",
+     10608, "toggleUsageStatistics:", false, NoWin, NoMac},
     // The appearance toggle. A toggle has two states, so it moves between
     // Light and Dark; System is a settings choice, not a third stop. On
     // Windows the ribbon button carries it, on macOS the View menu item.

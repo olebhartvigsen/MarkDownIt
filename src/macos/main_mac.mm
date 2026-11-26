@@ -249,6 +249,7 @@ bool OpenExternalUrl(const std::string& url) {
 - (void)setZoom:(float)factor quietly:(BOOL)quiet;
 - (void)toggleSourceView:(id)sender;
 - (void)toggleOutline:(id)sender;
+- (void)toggleUsageStatistics:(id)sender;
 - (void)toggleWrap:(id)sender;
 - (void)toggleTheme:(id)sender;
 - (void)applyThemeMode;
@@ -2677,6 +2678,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)zoomReset:(id)sender { (void)sender; [self OnZoomReset]; }
 - (void)toggleSourceView:(id)sender { (void)sender; [self OnToggleSourceView]; }
 - (void)toggleOutline:(id)sender { (void)sender; [self OnToggleOutline]; }
+- (void)toggleUsageStatistics:(id)sender {
+    (void)sender;
+    [self OnToggleUsageStatistics];
+}
 - (void)toggleWrap:(id)sender { (void)sender; [self OnToggleWrap]; }
 // The appearance. The system is adopted by default; choosing Light or
 // Dark pins the app and survives a restart, and the item is the same
@@ -2908,6 +2913,15 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // The pane is only on offer while the document has headings.
         [item setState:(outlineVisible_ ? NSControlStateValueOn
                                         : NSControlStateValueOff)];
+        return [self canRunAction:action context:context];
+    }
+    if (action == @selector(toggleUsageStatistics:)) {
+        // The stored choice is the state the item shows. The settings
+        // window reads the same field when it opens, so the checkbox and
+        // this item cannot disagree.
+        [item setState:(settings_.settings().analyticsEnabled
+                            ? NSControlStateValueOn
+                            : NSControlStateValueOff)];
         return [self canRunAction:action context:context];
     }
     if (action == @selector(editMode:)) {
@@ -3973,6 +3987,16 @@ static const commands::CommandSpec* ToolbarCommand(NSString* identifier) {
     settings_.settings().outlineVisible = outlinePreferred_;
     settings_.Save();
     [self applyOutlineState];
+}
+
+// The analytics opt-out. It is the same stored field the settings window
+// edits, so the window's checkbox follows the menu without extra work.
+// The menu item is validated when it opens, and that is where the check
+// mark is refreshed.
+- (void)OnToggleUsageStatistics {
+    settings_.settings().analyticsEnabled =
+        !settings_.settings().analyticsEnabled;
+    settings_.Save();
 }
 
 - (void)OnToggleMark {
