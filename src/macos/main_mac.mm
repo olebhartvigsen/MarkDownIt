@@ -826,16 +826,16 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 - (void)applyQAState:(NSString*)state {
     // Every frame the comparison tool reads after the wheel state has to
     // share one leading on both platforms. The wheel state posts its
-    // command-wheel step and the queue may or may not deliver it before
-    // the next state runs, so those frames are pinned to the one step
-    // the comparison was calibrated at instead of inheriting whatever
-    // the wheel left behind.
+    // command-wheel events and the queue may deliver one, some or none
+    // of them before the next state runs, so those frames are pinned to
+    // the document's default zoom instead of inheriting whatever the
+    // wheel left behind.
     static NSString* const kComparedFrames[] = {
         @"find", @"edit", @"outline", @"source", @"lower", @"end", @"tail",
         @"shared", @"csv-pinned", @"dark", @"settings"};
     for (NSString* pinned : kComparedFrames) {
         if ([state isEqualToString:pinned]) {
-            [self setZoom:zoom::Step(zoom::kDefaultZoom, true) quietly:YES];
+            [self setZoom:zoom::kDefaultZoom quietly:YES];
             break;
         }
     }
