@@ -61,6 +61,10 @@ TEST(Analytics, PayloadHasTheContractShape) {
     EXPECT_TRUE(json.find("\"appVersion\":\"0.2.1\"") != std::string::npos);
     EXPECT_TRUE(json.find("\"locale\":\"da-DK\"") != std::string::npos);
     EXPECT_TRUE(json.find("\"isDebug\":false") != std::string::npos);
+    // Aptabase answers 400 "SystemProps.SdkVersion is required" without
+    // this field, so an event missing it is never recorded at all.
+    EXPECT_TRUE(json.find("\"sdkVersion\":\"markdownit-cpp@1\"") !=
+                std::string::npos);
     EXPECT_TRUE(json.find("\"props\":{}") != std::string::npos);
     // Braces balance, which is the cheapest proof the JSON is not truncated.
     size_t open = 0, close = 0;

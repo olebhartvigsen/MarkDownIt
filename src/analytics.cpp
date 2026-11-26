@@ -93,6 +93,8 @@ std::string BuildEventJson(const std::string& eventName,
     json += Quote(system.appVersion);
     json += ",\"isDebug\":";
     json += system.debug ? "true" : "false";
+    json += ",\"sdkVersion\":";
+    json += Quote(kSdkVersion);
     json += "},\"props\":{}}";
     return json;
 }

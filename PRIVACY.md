@@ -17,6 +17,7 @@ service, on the EU region:
 | `osName` | `Windows` or `macOS` | which build you run |
 | `osVersion` | `10.0.22631` | which OS version |
 | `appVersion` | `0.2.1` | which release |
+| `sdkVersion` | `markdownit-cpp@1` | which client library, a constant the service requires |
 | `locale` | `da-DK` | which language the system is in |
 | `isDebug` | `false` | whether this is a development build |
 

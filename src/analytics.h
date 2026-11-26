@@ -39,6 +39,12 @@ inline constexpr const char kAptabaseUrl[] = "https://eu.aptabase.com/api/v0/eve
 // The one event the app sends today.
 inline constexpr const char kAppStartEvent[] = "app_start";
 
+// Aptabase requires this field and rejects the whole event with 400
+// ("SystemProps.SdkVersion is required") when it is missing, so a payload
+// without it is silently never recorded. It names the client library, not the
+// app version, so it does not duplicate the version in src/app.rc.
+inline constexpr const char kSdkVersion[] = "markdownit-cpp@1";
+
 // What the event says about the machine. Every field is coarse on purpose:
 // the OS family and version, the app version, and whether this is a debug
 // build. Nothing here identifies a person or a document.
@@ -61,7 +67,8 @@ std::string NewSessionId();
 // Shape, from Aptabase's ingest contract:
 //   {"timestamp":"...","sessionId":"...","eventName":"...",
 //    "systemProps":{"locale":"...","osName":"...","osVersion":"...",
-//                   "appVersion":"...","isDebug":false},"props":{}}
+//                   "appVersion":"...","isDebug":false,
+//                   "sdkVersion":"..."},"props":{}}
 std::string BuildEventJson(const std::string& eventName,
                            const std::string& sessionId,
                            const std::string& timestamp,
