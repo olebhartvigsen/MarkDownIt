@@ -118,6 +118,17 @@ std::vector<platform::GlyphRun> TableCellRuns(const TableCell& cell,
                                               const LayoutMetrics& metrics,
                                               bool monospace);
 
+// The runs of a fenced code block, in the face and the inks its own
+// layout measures it with: one monospace run of the whole trimmed text,
+// or one run per json::Token so a ```json fence keeps its colours. A
+// painter that draws the card itself asks here instead of building its
+// own paragraph, so the words it draws are the words the walk measured:
+// one builder, two readers.
+std::vector<platform::GlyphRun> CodeBlockRuns(const std::string& code,
+                                              const std::string& lang,
+                                              const LayoutMetrics& metrics,
+                                              const Palette& palette);
+
 // One laid out block: what the caret and selection layers need while
 // plan task 3.3 still lives in the renderers. The fields mirror the
 // mac LaidOutBlock, which has carried this data all along.

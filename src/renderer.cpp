@@ -766,8 +766,10 @@ void Renderer::PaintSharedOverlays(
                                           sel->Start() + sel->Length(),
                                           &washRects);
                 }
-                DrawCodeBlock(rt, dw, n, bandX, bandY, bandW, outH, sel,
-                              scrollY, washRects);
+                platform::D2DTarget codeTarget(rt, layoutEngine_.Factory());
+                DrawCodeBlock(codeTarget, dw, n, bandX, bandY, bandW, outH,
+                              sel, scrollY, washRects, b,
+                              rt->GetSize().height);
                 break;
             }
             case BlockKind::Table: {
@@ -1186,67 +1188,83 @@ std::u16string Renderer::ToUtf16(const std::u32string& s32) {
 // definition lives with the source view code further down the file.
 static std::u16string Utf8ToUtf16(const std::string& s);
 
-void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+void Renderer::DrawCodeBlock(platform::RenderTarget& target, IDWriteFactory* dw,
                               const Node& n, float x, float y,
                               float width, float& outH,
                               const Selection* sel, float scrollY,
-                              const std::vector<platform::Rect>& washRects) {
-    if (!rt || !dw || !code_fmt_) { outH = 0.0f; return; }
+                              const std::vector<platform::Rect>& washRects,
+                              const layout::LaidBlock* record,
+                              float viewportH) {
+    if (!dw || !code_fmt_) { outH = 0.0f; return; }
 
     LayoutMetrics m = ComputeMetrics();
     const Palette& pal = palette_;
+    const platform::Color codeColor = SeamColor(pal.textPrimary);
 
     std::u32string raw = n.raw;
     while (!raw.empty() && (raw.back() == 0x0A || raw.back() == 0x0D)) {
         raw.pop_back();
     }
     std::u16string text16 = ToUtf16(raw);
-
-    ID2D1SolidColorBrush* bgBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.codeBg, &bgBrush);
-    ID2D1SolidColorBrush* codeBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.textPrimary, &codeBrush);
+    const std::string code = layout::Utf32ToUtf8(raw);
 
     float codeWidth = width - 2.0f * m.codePad;
     if (codeWidth <= 0) {
         outH = 0.0f;
-        if (bgBrush) bgBrush->Release();
-        if (codeBrush) codeBrush->Release();
         return;
     }
 
-    IDWriteTextLayout* layout = nullptr;
-    HRESULT hr = dw->CreateTextLayout(
-        reinterpret_cast<const WCHAR*>(text16.data()),
-        static_cast<UINT32>(text16.size()),
-        code_fmt_, codeWidth, 1.0e9f, &layout);
-    if (FAILED(hr) || !layout) {
-        if (bgBrush) bgBrush->Release();
-        if (codeBrush) codeBrush->Release();
-        outH = 0.0f;
-        return;
+    // The lines are the walk's: the breaks, the CSS line box and the runs
+    // in the inks the card was measured with, which is what the display
+    // list replay drew under this card. A caller without a record gets the
+    // same lines from the shared run builder through the same engine, so
+    // the card's own glyph pass can never disagree with its own height.
+    std::vector<platform::TextLine> lines;
+    if (record && record->kind == BlockKind::CodeBlock &&
+        !record->lines.empty()) {
+        lines = record->lines;
+    } else {
+        WalkTextEngine walkEngine(TextEngineForWalk(), zoom_);
+        lines = walkEngine.MeasureWrapped(
+            layout::CodeBlockRuns(code, n.lang, m, pal), codeWidth, 0.0f);
+        layout::ApplyLineSpacing(&lines, m.codeFontSize, m.codeLineHeight,
+                                 zoom_, &walkEngine);
     }
-
-    DWRITE_TEXT_METRICS metrics = {};
-    layout->GetMetrics(&metrics);
-
-    float blockH = metrics.height + 2.0f * m.codePad;
+    const platform::TextLayoutHandle block = platform::MakeLineLayout(
+        std::move(lines), codeWidth, platform::TextAlign::Left);
+    const float blockH = block->Height() + 2.0f * m.codePad;
 
     // Rounded background.
-    D2D1_RECT_F bgRect = D2D1::RectF(x, y, x + width, y + blockH);
+    const platform::Rect bgRect{x, y, width, blockH};
     if (m.codeRadius > 0.5f) {
-        D2D1_ROUNDED_RECT rrect = D2D1::RoundedRect(bgRect,
-            m.codeRadius, m.codeRadius);
-        rt->FillRoundedRectangle(rrect, bgBrush);
+        target.FillRoundedRect(bgRect, m.codeRadius,
+                               SeamColor(pal.codeBg));
     } else {
-        rt->FillRectangle(bgRect, bgBrush);
+        target.FillRect(bgRect, SeamColor(pal.codeBg));
+    }
+
+    // The native layout the highlight pass and the caret cache read. The
+    // cache's own seam speaks the platform's text layout, and a search fill
+    // has to sit on the block's lines, so both keep the code format's
+    // layout: the card's glyphs are drawn from the walk's lines, which
+    // carry the same line box this format was built with.
+    IDWriteTextLayout* native = nullptr;
+    const bool wantNative =
+        cache_ != nullptr || HasSearchMatches() || HasMarkers();
+    if (wantNative) {
+        if (FAILED(dw->CreateTextLayout(
+                reinterpret_cast<const WCHAR*>(text16.data()),
+                static_cast<UINT32>(text16.size()),
+                code_fmt_, codeWidth, 1.0e9f, &native))) {
+            native = nullptr;
+        }
     }
 
     // Search match highlights, under the text and under the selection so a
     // selection always stays readable on top of a match fill. The mapping is
     // rebuilt here rather than reusing the cache copy, because the cache is
     // optional and the highlight must not depend on hit-testing being on.
-    if ((HasSearchMatches() || HasMarkers()) && !raw.empty() &&
+    if (native && (HasSearchMatches() || HasMarkers()) && !raw.empty() &&
         !text16.empty()) {
         std::vector<uint32_t> matchU16ToSrc;
         matchU16ToSrc.reserve(text16.size());
@@ -1262,26 +1280,24 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         // Marker layer for this block, drawn behind the search fills. No
         // brushes: the seam fills by colour, one brush per batch.
         if (HasMarkers()) {
-            platform::D2DTarget highlights(rt);
-            FillMarkerHighlights(highlights, layout, pal.markerBg, pal.markerLine,
+            FillMarkerHighlights(target, native, pal.markerBg, pal.markerLine,
                                  matchU16ToSrc,
                                  static_cast<UINT32>(text16.size()),
                                  n.contentOffset,
                                  n.contentOffset + n.contentLength,
                                  x + m.codePad, y + m.codePad,
-                                 scrollY, rt->GetSize().height);
+                                 scrollY, viewportH);
         }
         if (HasSearchMatches()) {
             const uint32_t contentStart = n.contentOffset;
             const uint32_t contentEnd = contentStart + n.contentLength;
-            platform::D2DTarget highlights(rt);
-            FillMatchHighlights(highlights, layout, pal.findMatchBg,
+            FillMatchHighlights(target, native, pal.findMatchBg,
                                 pal.findCurrentMatchBg,
                                 matchU16ToSrc,
                                 static_cast<UINT32>(text16.size()),
                                 contentStart, contentEnd,
                                 x + m.codePad, y + m.codePad,
-                                scrollY, rt->GetSize().height);
+                                scrollY, viewportH);
         }
     }
 
@@ -1291,64 +1307,40 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // records. The old per code point translation is gone; the wash
     // keeps its slot between the match fills and the glyphs.
     if (sel && !sel->Empty() && !washRects.empty()) {
-        ID2D1SolidColorBrush* selBrush = nullptr;
-        rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
-        if (selBrush) {
-            for (const platform::Rect& r : washRects) {
-                const D2D1_RECT_F rect = D2D1::RectF(
-                    r.x, r.y, r.x + r.width, r.y + r.height);
-                rt->FillRectangle(rect, selBrush);
-            }
-            selBrush->Release();
+        const platform::Color selectionColor = SeamColor(pal.selectionBg);
+        for (const platform::Rect& r : washRects) {
+            target.FillRect(r, selectionColor);
         }
     }
 
-    // Draw text. A ```json fence also carries its token colours here:
-    // this painter re-runs after the display-list replay, so the
-    // replay's coloured runs (LayoutCodeBlock) would otherwise lie
-    // under the card fill and the single-ink glyph pass below. The
-    // one DWrite layout stays the caret cache's, the token ranges just
-    // dress its drawing effects; punct keeps the ink brush. Every
-    // other fence draws exactly as it always did.
-    D2D1_POINT_2F origin = D2D1::Point2F(x + m.codePad, y + m.codePad);
-    if (n.lang == "json" && layout) {
-        const std::string code = layout::Utf32ToUtf8(raw);
-        ID2D1SolidColorBrush* keyBrush = nullptr;
-        ID2D1SolidColorBrush* stringBrush = nullptr;
-        ID2D1SolidColorBrush* numberBrush = nullptr;
-        ID2D1SolidColorBrush* literalBrush = nullptr;
-        rt->CreateSolidColorBrush(pal.jsonKey, &keyBrush);
-        rt->CreateSolidColorBrush(pal.jsonString, &stringBrush);
-        rt->CreateSolidColorBrush(pal.jsonNumber, &numberBrush);
-        rt->CreateSolidColorBrush(pal.jsonLiteral, &literalBrush);
-        UINT32 u16Cursor = 0;
-        for (const json::Token& tok : json::Tokenize(code)) {
-            const std::u16string piece =
-                Utf8ToUtf16(code.substr(tok.offset, tok.length));
-            if (piece.empty()) continue;
-            const DWRITE_TEXT_RANGE range = {u16Cursor,
-                                             static_cast<UINT32>(piece.size())};
-            ID2D1SolidColorBrush* brush = codeBrush;
-            switch (tok.kind) {
-                case json::TokenKind::Key: brush = keyBrush; break;
-                case json::TokenKind::String: brush = stringBrush; break;
-                case json::TokenKind::Number: brush = numberBrush; break;
-                case json::TokenKind::Literal: brush = literalBrush; break;
-                case json::TokenKind::Punct: break;
+    // The glyphs: the walk's own lines, drawn at the card's pad and clipped
+    // to its inner box, the box the layout used to clip to itself.
+    const float textX = x + m.codePad;
+    const float textTop = y + m.codePad;
+    target.PushClip(
+        platform::Rect{textX, textTop, codeWidth, block->Height()});
+    if (n.lang == "json") {
+        // A ```json fence carries four inks across its token runs.
+        // DrawLayout paints a whole block in one colour, so these runs go
+        // out one at a time, at the positions the walk measured them at,
+        // exactly as the replay drew them.
+        const std::vector<platform::TextLine>* blockLines = block->Lines();
+        float lineTop = textTop;
+        if (blockLines) {
+            for (const platform::TextLine& line : *blockLines) {
+                for (const platform::GlyphRun& run : line.runs) {
+                    target.DrawText(run.text, run.font, textX + run.x,
+                                    lineTop + line.ascent,
+                                    platform::Color{run.r, run.g, run.b,
+                                                    run.a});
+                }
+                lineTop += line.height;
             }
-            if (brush) layout->SetDrawingEffect(brush, range);
-            u16Cursor += static_cast<UINT32>(piece.size());
         }
-        rt->DrawTextLayout(origin, layout, codeBrush,
-                           D2D1_DRAW_TEXT_OPTIONS_CLIP);
-        if (keyBrush) keyBrush->Release();
-        if (stringBrush) stringBrush->Release();
-        if (numberBrush) numberBrush->Release();
-        if (literalBrush) literalBrush->Release();
     } else {
-        rt->DrawTextLayout(origin, layout, codeBrush,
-                           D2D1_DRAW_TEXT_OPTIONS_CLIP);
+        target.DrawLayout(*block, textX, textTop, codeColor);
     }
+    target.PopClip();
 
     if (cache_) {
         // Build u16ToSrc mapping for the code block.
@@ -1367,11 +1359,12 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
             srcByte += utf8Len;
         }
         BlockLayout bl;
-        bl.layout = layout;
+        bl.layout = native;
+        if (native) native->AddRef();
         bl.x = x + m.codePad;
         bl.y = y + m.codePad;
         bl.width = codeWidth;
-        bl.height = metrics.height;
+        bl.height = block->Height();
         bl.srcOffset = n.srcOffset;
         bl.srcLength = n.srcLength;
         bl.textStartOffset = n.contentOffset;
@@ -1382,11 +1375,8 @@ void Renderer::DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         // (cursor-blinking guide), not the em size.
         bl.fontHeight = LineHeightOf(code_fmt_);
         cache_->Add(bl);
-    } else {
-        layout->Release();
     }
-    if (bgBrush) bgBrush->Release();
-    if (codeBrush) codeBrush->Release();
+    if (native) native->Release();
     outH = blockH;
 }
 

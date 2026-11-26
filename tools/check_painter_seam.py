@@ -42,7 +42,14 @@ MAC_RAW = re.compile(r"\b(?:CG[A-Za-z]*Ref|CT[A-Za-z]*Ref|NSGraphicsContext)\b")
 # cell clip go through platform::RenderTarget, and the table no longer builds a
 # brush of its own. What is left of its DirectWrite use is the cell layout the
 # caret cache keeps and the row height a recordless call measures.
-WINDOWS_BASELINE = 77
+#
+# 77 -> 68: Renderer::DrawCodeBlock stopped taking ID2D1RenderTarget* and its
+# seven brushes: the card, the selection wash and the glyphs go through
+# platform::RenderTarget, the card's lines are the walk's own record, and the
+# json token colours ride the shared runs instead of drawing effects. What is
+# left of its DirectWrite use is the one layout the caret cache keeps and the
+# search fills hit test against.
+WINDOWS_BASELINE = 68
 
 PAINTERS = [
     ("src/renderer.cpp", WINDOWS_RAW, WINDOWS_BASELINE, "windows painter"),

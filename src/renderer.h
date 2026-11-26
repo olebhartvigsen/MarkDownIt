@@ -543,10 +543,12 @@ private:
                              float originX, float originY,
                              float scrollY, float viewportH);
 
-    void DrawCodeBlock(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+    void DrawCodeBlock(platform::RenderTarget& target, IDWriteFactory* dw,
                        const Node& n, float x, float y, float width, float& outH,
                        const Selection* sel = nullptr, float scrollY = 0.0f,
-                       const std::vector<platform::Rect>& washRects = {});
+                       const std::vector<platform::Rect>& washRects = {},
+                       const layout::LaidBlock* record = nullptr,
+                       float viewportH = 0.0f);
     void DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
                    const Node& n, float x, float y, float width, float& outH,
                    const Selection* sel = nullptr, float scrollY = 0.0f,

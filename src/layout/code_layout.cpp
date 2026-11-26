@@ -13,6 +13,58 @@
 
 namespace layout {
 
+std::vector<platform::GlyphRun> CodeBlockRuns(const std::string& code,
+                                              const std::string& lang,
+                                              const LayoutMetrics& m,
+                                              const Palette& pal) {
+    // One run of the full trimmed text, normally: the line breaks stay
+    // inside it and the engine owns both the breaks at them and the
+    // wrap at the card's inner width. A ```json fence splits that one
+    // run into several runs instead, one per json::Token, each
+    // carrying its own ink colour; every byte is still covered and
+    // still in order, so this changes nothing about wrapping or line
+    // breaking, only which colour rides each run.
+    std::vector<platform::GlyphRun> runs;
+    if (code.empty()) return runs;
+    const platform::Color ink = ToColor(pal.textPrimary);
+    if (lang == "json") {
+        const platform::Color keyColor = ToColor(pal.jsonKey);
+        const platform::Color stringColor = ToColor(pal.jsonString);
+        const platform::Color numberColor = ToColor(pal.jsonNumber);
+        const platform::Color literalColor = ToColor(pal.jsonLiteral);
+        for (const json::Token& tok : json::Tokenize(code)) {
+            platform::GlyphRun run;
+            run.text = code.substr(tok.offset, tok.length);
+            run.font = fontSpecific(m.codeFontSize, false, false, true,
+                                    kCodeFont);
+            platform::Color c = ink;
+            switch (tok.kind) {
+                case json::TokenKind::Key: c = keyColor; break;
+                case json::TokenKind::String: c = stringColor; break;
+                case json::TokenKind::Number: c = numberColor; break;
+                case json::TokenKind::Literal: c = literalColor; break;
+                case json::TokenKind::Punct: c = ink; break;
+            }
+            run.r = c.r;
+            run.g = c.g;
+            run.b = c.b;
+            run.a = c.a;
+            runs.push_back(std::move(run));
+        }
+    } else {
+        platform::GlyphRun run;
+        run.text = code;
+        run.font = fontSpecific(m.codeFontSize, false, false, true,
+                                kCodeFont);
+        run.r = ink.r;
+        run.g = ink.g;
+        run.b = ink.b;
+        run.a = ink.a;
+        runs.push_back(std::move(run));
+    }
+    return runs;
+}
+
 LaidBlock LayoutCodeBlock(const LayoutCtx& ctx, const Node& node,
                           uint32_t nodeIndex, float* y) {
     const LayoutInput& in = *ctx.in;
@@ -50,43 +102,8 @@ LaidBlock LayoutCodeBlock(const LayoutCtx& ctx, const Node& node,
     // carrying its own ink colour; every byte is still covered and
     // still in order, so this changes nothing about wrapping or line
     // breaking, only which colour rides each run.
-    std::vector<platform::GlyphRun> runs;
-    const platform::Color ink = ToColor(in.palette->textPrimary);
-    if (!code.empty() && node.lang == "json") {
-        const platform::Color keyColor = ToColor(in.palette->jsonKey);
-        const platform::Color stringColor = ToColor(in.palette->jsonString);
-        const platform::Color numberColor = ToColor(in.palette->jsonNumber);
-        const platform::Color literalColor = ToColor(in.palette->jsonLiteral);
-        for (const json::Token& tok : json::Tokenize(code)) {
-            platform::GlyphRun run;
-            run.text = code.substr(tok.offset, tok.length);
-            run.font = fontSpecific(m.codeFontSize, false, false, true,
-                                    kCodeFont);
-            platform::Color c = ink;
-            switch (tok.kind) {
-                case json::TokenKind::Key: c = keyColor; break;
-                case json::TokenKind::String: c = stringColor; break;
-                case json::TokenKind::Number: c = numberColor; break;
-                case json::TokenKind::Literal: c = literalColor; break;
-                case json::TokenKind::Punct: c = ink; break;
-            }
-            run.r = c.r;
-            run.g = c.g;
-            run.b = c.b;
-            run.a = c.a;
-            runs.push_back(std::move(run));
-        }
-    } else if (!code.empty()) {
-        platform::GlyphRun run;
-        run.text = code;
-        run.font = fontSpecific(m.codeFontSize, false, false, true,
-                                kCodeFont);
-        run.r = ink.r;
-        run.g = ink.g;
-        run.b = ink.b;
-        run.a = ink.a;
-        runs.push_back(std::move(run));
-    }
+    const std::vector<platform::GlyphRun> runs =
+        CodeBlockRuns(code, node.lang, m, *in.palette);
 
     std::vector<platform::TextLine> lines =
         in.engine->MeasureWrapped(runs, wrap, 0.0f);
