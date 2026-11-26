@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -337,6 +338,11 @@ public:
     virtual bool Post(const std::string& url, const std::string& appKey,
                       const std::string& body) = 0;
 };
+
+// The transport for this platform: WinHTTP in src/windows/telemetry_win.cpp,
+// NSURLSession in src/macos/telemetry_mac.mm. The shell asks for one here and
+// never names a platform header to get it. Never returns null, never throws.
+std::unique_ptr<TelemetrySink> CreateTelemetrySink();
 
 // ---------------------------------------------------------------------------
 // AppShell: the window and the platform

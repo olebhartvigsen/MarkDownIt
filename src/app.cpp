@@ -1,8 +1,14 @@
 #include "app.h"
+#include "analytics.h"
 #include "json.h"
 #include "imagepath.h"
 #include "textenc.h"
 #include "windows/render_target_win.h"
+#include "windows/telemetry_win.h"
+// The seam, for the whole TelemetrySink the factory returns. Safe here:
+// renderer.h has already undefined the DrawText macro windows.h installs
+// (AGENTS.md, "Build gotcha").
+#include "platform/seams.h"
 #include "commands.h"
 #include "formatting.h"
 #include "platformservices.h"
@@ -139,6 +145,7 @@ void CreateInvertingCaret(HWND hwnd, int width, int height) {
 #include <sstream>
 #include <string>
 #include <memory>
+#include <thread>
 #include <cstdio>
 #include <cmath>
 #include <algorithm>
@@ -2912,6 +2919,27 @@ void AppWindow::OnCreate(HWND hwnd) {
 
     // Load settings FIRST; LoadSampleDoc (below) needs recentFiles.
     settings_ = LoadSettings();
+
+    // The one app_start event of this launch, off the startup path. The
+    // transport blocks for up to two seconds on a bad network, so it runs on
+    // a detached thread and the window never waits for it. The setting is
+    // the only gate: nothing is built, and no socket is opened, when the
+    // reader turned the switch off. The thread touches no UI, and every
+    // failure goes to the trace log inside the transport (PRIVACY.md).
+    const bool analyticsEnabled = settings_.analyticsEnabled;
+    if (analyticsEnabled) {
+        auto sink = platform::CreateTelemetrySink();
+        auto systemProps = platform::CurrentSystemProps();
+        try {
+            std::thread([sink = std::move(sink), systemProps,
+                         analyticsEnabled]() {
+                analytics::TrackAppStart(*sink, systemProps, analyticsEnabled);
+            }).detach();
+        } catch (...) {
+            // A thread that cannot start means one skipped event. Analytics
+            // is never a reason to fail a launch.
+        }
+    }
 
     // The appearance, resolved before the first window exists so the
     // first frame is already in the right colours. The stored mode or the

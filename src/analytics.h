@@ -18,6 +18,14 @@
 // every client, not a secret, so it lives here rather than in a build secret.
 // The EU region is baked into the key, and the endpoint follows from it.
 
+// The transport seam. Declared here and not with the seam header on purpose:
+// the payload code needs only the name, and this keeps every Windows shell
+// translation unit that includes analytics.h clear of platform/seams.h and
+// the DrawText macro trap that comes with it (AGENTS.md).
+namespace platform {
+class TelemetrySink;
+}  // namespace platform
+
 namespace analytics {
 
 // The Aptabase app key, region EU.
@@ -58,6 +66,30 @@ std::string BuildEventJson(const std::string& eventName,
                            const std::string& sessionId,
                            const std::string& timestamp,
                            const SystemProps& system);
+
+// True in a build without NDEBUG. The one definition of "is this a
+// development build", so both shells and the payload agree, and the flag is
+// not decided again at a second call site.
+inline constexpr bool IsDebugBuild() {
+#ifdef NDEBUG
+    return false;
+#else
+    return true;
+#endif
+}
+
+// Sends the one app_start event of this launch.
+//
+// `enabled` is the setting, and it is the only gate here: when it is false
+// this does nothing at all, no payload is built and no transport is touched
+// (tests/analytics_test.cpp proves the sink sees zero calls). When it is
+// true the payload is built with a fresh session id and the current time and
+// handed to `sink`, which owns the wire and writes any failure to the crash
+// trace. The call blocks for up to the transport's two seconds, so the shell
+// runs it on a detached thread: startup never waits on the network, and the
+// sink never touches the UI.
+void TrackAppStart(platform::TelemetrySink& sink, const SystemProps& system,
+                   bool enabled);
 
 // The current UTC time in the format the payload needs, without a locale or
 // timezone dependency: "2026-11-26T10:15:30.123Z".

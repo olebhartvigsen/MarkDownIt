@@ -336,6 +336,12 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     // list, on top of what the reader already had. One double click in
     // the Finder emptied the list that way.
     settings_.Load();
+
+    // The one app_start event of this launch. The setting is read now,
+    // because this is the last point before the window exists where nothing
+    // else can have moved it, and the send itself runs on a detached thread,
+    // so the launch never waits on the network.
+    app_->TrackAppStart(settings_.settings().analyticsEnabled);
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {

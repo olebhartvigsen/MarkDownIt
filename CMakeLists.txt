@@ -273,6 +273,9 @@ target_link_libraries(MarkDownIt PRIVATE
     uxtheme
     windowscodecs
     winhttp
+    # WinHttpTelemetrySink reads the app version from the version resource
+    # that src/app.rc compiles in (VerQueryValueW).
+    version
     comdlg32
     # The modern print contract: the D3D11 preview surfaces, DXGI, and
     # the OS loader for the C++/WinRT headers (an OS component, nothing
@@ -587,6 +590,9 @@ elseif(BUILD_TESTS)
         shlwapi
         windowscodecs
         winhttp
+        # The WinHTTP telemetry transport builds into this target too, and
+        # it reads the app version with VerQueryValueW.
+        version
     )
     target_include_directories(MarkDownIt.tests PRIVATE
         src
@@ -728,6 +734,7 @@ if(APPLE)
         src/macos/outline_nsview_mac.h
         src/macos/outline_nsview_mac.mm
         src/macos/crash_trace_mac.cpp
+        src/macos/telemetry_mac.mm
         src/macos/image_mac.mm
         src/macos/image_draw_mac.mm
         src/macos/findbar_mac.mm
@@ -757,6 +764,7 @@ if(APPLE)
         src/macos/format_bar_mac.mm
         src/macos/table_picker_mac.mm
         src/macos/zoom_hud_mac.mm
+        src/macos/telemetry_mac.mm
         PROPERTIES COMPILE_FLAGS "-fobjc-arc"
     )
     target_link_libraries(MarkDownItMac

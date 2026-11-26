@@ -8,7 +8,12 @@
 #include "formatting.h"
 
 #include <fstream>
+#include <memory>
 #include <sstream>
+#include <thread>
+
+#include "analytics.h"
+#include "telemetry_mac.h"
 
 #include "autoformat.h"
 #include "clipboard.h"
@@ -1282,6 +1287,27 @@ void App::Redo() {
 
 void App::SetContentView(std::unique_ptr<ContentView> view) {
     contentView_ = std::move(view);
+}
+
+// The one app_start event of this launch, off the startup path. The
+// transport blocks for up to two seconds on a bad network, so it runs on a
+// detached thread and the launch never waits for it. The setting is the only
+// gate: nothing is built, and no request is made, when the reader turned the
+// switch off. The thread touches no UI, and every failure goes to the crash
+// trace inside the transport (PRIVACY.md).
+void App::TrackAppStart(bool analyticsEnabled) {
+    if (!analyticsEnabled) return;
+    auto sink = CreateTelemetrySink();
+    auto systemProps = CurrentSystemProps();
+    try {
+        std::thread([sink = std::move(sink), systemProps,
+                     analyticsEnabled]() {
+            analytics::TrackAppStart(*sink, systemProps, analyticsEnabled);
+        }).detach();
+    } catch (...) {
+        // A thread that cannot start means one skipped event. Analytics is
+        // never a reason to fail a launch.
+    }
 }
 
 }  // namespace platform

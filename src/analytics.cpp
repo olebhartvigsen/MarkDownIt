@@ -5,6 +5,8 @@
 #include <ctime>
 #include <random>
 
+#include "platform/seams.h"
+
 namespace analytics {
 namespace {
 
@@ -93,6 +95,24 @@ std::string BuildEventJson(const std::string& eventName,
     json += system.debug ? "true" : "false";
     json += "},\"props\":{}}";
     return json;
+}
+
+void TrackAppStart(platform::TelemetrySink& sink, const SystemProps& system,
+                   bool enabled) {
+    // The opt-out: no payload is built and the sink is never called, so a
+    // reader who turned the switch off makes no request at all.
+    if (!enabled) return;
+
+    // A fresh session id and the moment of this launch. Neither is kept: the
+    // id is drawn for this event and dropped with it.
+    const std::string body =
+        BuildEventJson(kAppStartEvent, NewSessionId(), UtcTimestampNow(),
+                       system);
+
+    // Fire and forget. The answer goes to the trace log inside the transport;
+    // the reader is never shown anything, because the app works without a
+    // network and this is not a feature they asked for.
+    sink.Post(kAptabaseUrl, kAptabaseKey, body);
 }
 
 }  // namespace analytics

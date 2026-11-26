@@ -132,7 +132,8 @@ set(MARKDOWNIT_OFFICE_SOURCES
 )
 
 # Windows platform half of a shared interface: registry settings and
-# Win32 clipboard, behind the structs in src/settings.h / src/clipboard.h.
+# Win32 clipboard, behind the structs in src/settings.h / src/clipboard.h,
+# and the WinHTTP telemetry transport behind platform::TelemetrySink.
 # usage: windows-app windows-tests
 set(MARKDOWNIT_WINDOWS_APP_SOURCES
     src/settings_win.cpp
@@ -140,4 +141,5 @@ set(MARKDOWNIT_WINDOWS_APP_SOURCES
     src/windows/text_engine_win.cpp
     src/windows/render_target_win.cpp
     src/windows/text_range_source_win.cpp
+    src/windows/telemetry_win.cpp
 )

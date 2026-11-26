@@ -449,6 +449,12 @@ public:
     // Takes ownership of the content view, which the window creates.
     void SetContentView(std::unique_ptr<ContentView> view);
 
+    // Sends the one app_start event of this launch, on a detached thread so
+    // the launch never waits on the network. `analyticsEnabled` is the
+    // stored setting and the only gate; the payload says nothing about a
+    // document (PRIVACY.md, src/analytics.h).
+    void TrackAppStart(bool analyticsEnabled);
+
     // The source text, which is what a source view shows.
     const std::string& sourceText() const { return buffer_.Text(); }
 

@@ -33,9 +33,15 @@ person.
 
 ## Turning it off
 
-Settings has an **Anonymous usage statistics** switch. Turning it off stops all
-sending immediately and permanently for that machine. Nothing is queued and
-nothing is retried.
+The switch lives on the surface each platform already has for view options:
+
+- **Windows:** the **Usage statistics** toggle in the **View** group of the
+  ribbon.
+- **macOS:** **Usage Statistics** in the **View** menu, and the **Send
+  anonymous usage statistics** checkbox in the settings window.
+
+Turning either one off stops all sending immediately and permanently for that
+machine. Nothing is queued and nothing is retried.
 
 The preference is stored with the rest of the app's settings: the registry on
 Windows, `~/Library/Application Support/MarkDownIt/settings.json` on macOS.
