@@ -1,13 +1,12 @@
-// The mermaid diagram painter.
+// The mermaid diagram painter, shared by both ports.
 //
-// The Windows build paints the diagrams with Direct2D. This file paints
-// the same geometry through the RenderTarget seam, so the two platforms
-// show the same diagrams. Everything the Windows painter does with
-// Direct2D paths, brushes and text layouts is done here with the seam
-// primitives, and the numbers are the same ones, so the two renderings
-// line up.
+// It paints the shared layout through the RenderTarget and TextEngine
+// seams. Everything the diagram needs is a seam primitive: paths are
+// polylines, brushes are colors, and text is measured by the engine the
+// caller passes in. The numbers are mermaid's own, so both ports draw
+// the same picture from the same file.
 
-#include "mermaid_painter_mac.h"
+#include "mermaid/painter.h"
 
 #include <algorithm>
 #include <cmath>

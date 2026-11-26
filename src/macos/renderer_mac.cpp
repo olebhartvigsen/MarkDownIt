@@ -29,7 +29,7 @@
 #include "mermaid/model.h"
 #include "mermaid/pie_layout.h"
 #include "mermaid/seq_layout.h"
-#include "mermaid_painter_mac.h"
+#include "mermaid/painter.h"
 #include "navigation.h"
 #include "svg_mac.h"
 

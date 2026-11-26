@@ -248,7 +248,7 @@ one, look for a part you can move into shared code.
   `main_mac.mm`.
 - Renderer shells and Mermaid painters: `renderer.cpp`,
   `renderer_pie.cpp`, `renderer_sequence.cpp` against `renderer_mac.cpp`
-  and `mermaid_painter_mac.cpp`.
+  and `src/mermaid/painter.cpp`.
 - Chrome, settings, clipboard, find bar and outline pane widgets.
 
 Open migration steps and the reasoning behind them are in
@@ -304,7 +304,7 @@ Open migration steps and the reasoning behind them are in
 |---------------|---------------|
 | `main_mac.mm`, `app_mac.*` | the application, the window, the selectors |
 | `content_view_mac.*`, `content_nsview_mac.h`, `outline_nsview_mac.*` | the AppKit views |
-| `renderer_mac.*`, `mermaid_painter_mac.*` | the renderer shell and Mermaid painter |
+| `renderer_mac.*` | the renderer shell (the Mermaid painter is shared, `src/mermaid/painter.*`) |
 | `text_engine_mac.*`, `cg_target_mac.h`, `fonts_mac.*`, `textlayout_coretext.cpp` (in `src/`) | the seam adapters |
 | `menu_mac.*`, `toolbar_mac.*`, `table_picker_mac.*`, `zoom_hud_mac.*` | native chrome |
 | `findbar_mac.*`, `outline_pane_mac.*` | find bar and outline pane |

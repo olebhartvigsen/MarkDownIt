@@ -54,7 +54,7 @@ Everything else lives in `src/macos/`:
 | `seams.h` | The narrow interfaces the mac layer is written against |
 | `text_engine_mac.*` | Core Text measurement and drawing |
 | `renderer_mac.*` | The renderer: blocks, inline styles, tables, images, mermaid, SVG |
-| `mermaid_painter_mac.*` | The mermaid shapes |
+| `src/mermaid/painter.*` | The mermaid shapes (shared by both ports) |
 | `svg_mac.*` | The SVG reader and its painter |
 | `welcome_screen.*` (shared with Windows) | The welcome screen with the recent files |
 | `findbar_mac.*` | The find bar |

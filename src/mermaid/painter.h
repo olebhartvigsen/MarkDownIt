@@ -1,11 +1,11 @@
 #pragma once
 
-// The mermaid diagram painter for the macOS port.
+// The mermaid diagram painter, shared by both ports.
 //
-// The Windows build paints the mermaid diagrams with Direct2D. This one
-// paints the same geometry through the RenderTarget seam, so the two
-// platforms draw the same diagrams. The layout is the shared one
-// (mermaid::MermaidRender), so only the drawing calls differ.
+// It paints the shared layout (mermaid::MermaidRender) through the
+// RenderTarget and TextEngine seams, so the two platforms draw the same
+// diagrams with the same code. There is no platform type in here, and
+// nothing in here knows which platform it is drawing on.
 
 #include "mermaid/layout_cache.h"
 #include "platform/seams.h"

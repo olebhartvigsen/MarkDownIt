@@ -451,7 +451,7 @@ if(BUILD_TESTS AND APPLE)
         src/macos/renderer_mac.cpp
         src/macos/image_mac.mm
         src/macos/image_draw_mac.mm
-        src/macos/mermaid_painter_mac.cpp
+        src/mermaid/painter.cpp
         src/welcome_screen.cpp
         src/welcome_palette.cpp
     )
@@ -715,7 +715,7 @@ if(APPLE)
         src/macos/filewatch_mac.h
         src/macos/content_view_mac.mm
         src/macos/renderer_mac.cpp
-        src/macos/mermaid_painter_mac.cpp
+        src/mermaid/painter.cpp
         src/macos/text_engine_mac.cpp
         src/macos/fonts_mac.mm
         src/macos/system_theme_mac.mm
