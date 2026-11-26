@@ -12,10 +12,11 @@ only go down; lower it in the same commit that moves a method onto the seam.
 A rise is a regression against the architecture, not a refactor.
 
 It counts every Windows painter file, not only `src/renderer.cpp`. The diagram
-siblings (`renderer_sequence.cpp`, `renderer_gantt.cpp`) were always separate
-translation units, so counting one file let 127 names hide behind a baseline of
-42 while four painters were deleted. The total across the files is gated as
-well, because that total is the number the plan is trying to reach zero.
+siblings were always separate translation units, so counting one file let 127
+names hide behind a baseline of 42 while four painters were deleted. The total
+across the files is gated as well, because that total is the number the plan is
+trying to reach zero. Only the renderer shell is left, so the file count and
+the total are the same number now.
 
 Usage:
   python3 tools/check_painter_seam.py           # gate: fail above the baseline
@@ -65,28 +66,25 @@ MAC_RAW = re.compile(r"\b(?:CG[A-Za-z]*Ref|CT[A-Za-z]*Ref|NSGraphicsContext)\b")
 #
 # The ratio of file to total, on 2026-11-26 after the shared mermaid painter
 # took the pie and the state diagram: renderer.cpp 42, renderer_sequence.cpp
-# 35, renderer_gantt.cpp 16. Total 93 of an original 127. The two remaining
-# siblings stay until their disagreements with the shared painter are settled:
-# autonumber digits at 12 units against 16 DIP and the activation stroke
-# colour in Sequence, bold section titles in Gantt.
+# 35, renderer_gantt.cpp 16. Total 93 of an original 127.
+#
+# The last two siblings then left by decision: the shared painter is
+# authoritative where the two Windows bodies disagreed with it. Sequence kept
+# the shared painter's 12 mermaid unit autonumber digits and its palette
+# activation stroke (#666666); gantt kept its bold section titles. Both
+# diagrams paint through platform::PaintMermaidDiagram now and their Windows
+# files are gone, so the shell is all that is counted: 42 of an original 127.
 WINDOWS_BASELINE = 42
-SEQUENCE_BASELINE = 35
-GANTT_BASELINE = 16
-WINDOWS_TOTAL_BASELINE = 93
+WINDOWS_TOTAL_BASELINE = 42
 
 PAINTERS = [
     ("src/renderer.cpp", WINDOWS_RAW, WINDOWS_BASELINE, "windows painter"),
-    ("src/renderer_sequence.cpp", WINDOWS_RAW, SEQUENCE_BASELINE,
-     "windows sequence painter"),
-    ("src/renderer_gantt.cpp", WINDOWS_RAW, GANTT_BASELINE,
-     "windows gantt painter"),
     ("src/macos/renderer_mac.cpp", MAC_RAW, 0, "mac painter"),
 ]
 
 # Files that count towards the Windows total. Kept separate from PAINTERS so a
 # deleted painter shows up as a fall in the total rather than as a read error.
-WINDOWS_FILES = ("src/renderer.cpp", "src/renderer_sequence.cpp",
-                 "src/renderer_gantt.cpp")
+WINDOWS_FILES = ("src/renderer.cpp",)
 
 
 def count(pattern, text):

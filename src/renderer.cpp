@@ -859,24 +859,43 @@ void Renderer::PaintSharedOverlays(
                 break;
             }
             case BlockKind::MermaidPie:
-            case BlockKind::MermaidState: {
-                // The pie and the state diagram are painted by the one
-                // shared painter (src/mermaid/painter.cpp), the file the
-                // mac port draws with. It follows the zoom itself and
-                // measures its labels through the seam, so it takes the
-                // band's origin, the content column and the unzoomed body
-                // font, exactly as the flowchart path does. The layout is
-                // made at parse time and rides on the node, so the paint
-                // does not re-run it.
+            case BlockKind::MermaidState:
+            case BlockKind::MermaidSequence:
+            case BlockKind::MermaidGantt: {
+                // The pie, the state, the sequence and the gantt diagram
+                // are painted by the one shared painter
+                // (src/mermaid/painter.cpp), the file the mac port draws
+                // with. It follows the zoom itself and measures its labels
+                // through the seam, so it takes the band's origin, the
+                // content column and the unzoomed body font, exactly as
+                // the flowchart path does. The layout is made at parse
+                // time and rides on the node, so the paint does not re-run
+                // it.
                 mermaid::MermaidRender diagram;
-                if (n.block == BlockKind::MermaidPie) {
-                    diagram.kind = mermaid::MermaidKind::Pie;
-                    diagram.pie = n.mermaid_pie;
-                } else {
-                    diagram.kind = mermaid::MermaidKind::State;
-                    diagram.state = n.mermaid_state;
+                switch (n.block) {
+                    case BlockKind::MermaidPie:
+                        diagram.kind = mermaid::MermaidKind::Pie;
+                        diagram.pie = n.mermaid_pie;
+                        break;
+                    case BlockKind::MermaidState:
+                        diagram.kind = mermaid::MermaidKind::State;
+                        diagram.state = n.mermaid_state;
+                        break;
+                    case BlockKind::MermaidSequence:
+                        diagram.kind = mermaid::MermaidKind::Sequence;
+                        diagram.seq = n.mermaid_seq;
+                        break;
+                    case BlockKind::MermaidGantt:
+                        diagram.kind = mermaid::MermaidKind::Gantt;
+                        diagram.gantt = n.mermaid_gantt;
+                        break;
+                    default:
+                        break;
                 }
-                if (!diagram.pie && !diagram.state) break;
+                if (!diagram.pie && !diagram.state && !diagram.seq &&
+                    !diagram.gantt) {
+                    break;
+                }
                 platform::D2DTarget mermaidTarget(rt,
                                                   layoutEngine_.Factory());
                 const float diagramPad = mermaid::kMermaidBlockPad;

@@ -25,9 +25,7 @@ import subprocess
 import sys
 
 PAIRS = [
-    (("src/renderer.cpp", "src/renderer_sequence.cpp",
-      "src/renderer_gantt.cpp"),
-     ("src/macos/renderer_mac.cpp",)),
+    (("src/renderer.cpp",), ("src/macos/renderer_mac.cpp",)),
     (("src/app.cpp",), ("src/macos/app_mac.cpp",)),
     (("src/ribbon.cpp", "src/ribbon.xml"),
      ("src/macos/menu_mac.mm", "src/macos/toolbar_mac.mm")),
