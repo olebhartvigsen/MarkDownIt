@@ -167,6 +167,10 @@ TEST(Perf, ReparseOneCharacterIncrementally) {
     // is the exact mistake the older version of this harness made.
     EXPECT_TRUE(wentIncremental);
     Report("reparse one character", ms, 5.0);
+    // The sanitizer build runs the same suite with instrumentation that costs
+    // more than the budget itself, so the number is reported and not asserted;
+    // every other budget in this file does the same.
+    if (MD_TESTS_UNDER_SANITIZERS) return;
     EXPECT_TRUE(ms < 5.0);
 }
 
