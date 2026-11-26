@@ -1387,9 +1387,15 @@ void AppWindow::OnReparseTimer() {
         ForceRepaintNow();
         return;
     }
-    doc_ = Document{};
-    ParseDocument(buffer_.Text(), ImeWideToUtf8(file_path_),
-                  controller_.tableFilters(), doc_);
+    // A markdown edit only changes the blocks it touches, so the parse is
+    // applied to the document already on screen instead of rebuilding it. The
+    // choice between that and a full parse is shared (ReparseDocument), so the
+    // macOS app takes the same path with the same buffer knowledge; the shells
+    // do not each own a copy of the policy.
+    ReparseDocument(buffer_.Text(), ImeWideToUtf8(file_path_),
+                    controller_.tableFilters(), doc_,
+                    buffer_.reparseRange());
+    buffer_.ClearReparseRange();
     layout_cache_.Clear();
     renderer_.ClearSvgCache();
     UpdateScrollInfo();

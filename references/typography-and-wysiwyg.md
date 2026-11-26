@@ -328,11 +328,16 @@ Six answers differ from the plans on purpose. They are decisions, not debt:
 
 ### 6.3 Open items
 
-- Incremental reparse (plan Task 12) is not implemented on either platform.
-  `ParseMarkdownIncremental` ignores the edit and full-parses; on the Windows
-  host that measured about 463 ms per keystroke on a 1 MB document against a
-  5 ms budget. Small documents are unaffected. The budget is an expected
-  failure in `tests/perf_harness.cpp`, so it cannot be quietly deleted.
+- Incremental reparse (plan Task 12) is built and shared. The dirty byte range
+  comes from `TextBuffer`, `ReparseDocument` in `src/documentparse.cpp` picks
+  between the incremental parse and a full one, and both shells call it, so the
+  mac app gets the same path. Edits it cannot judge alone stand down to the
+  full parse: a line break, a change in a code block or a table, a change that
+  crosses a block edge, the title's H1, a document with link reference
+  definitions, a nested block in the region, a block that changes shape. A
+  keystroke inside a paragraph measured 1.8 ms on the 1 MB fixture against the
+  5 ms budget, with the full parse at 83 ms; the budget test in
+  `tests/perf_harness.cpp` also asserts the fast path was actually taken.
 - Accessibility (plan Task 21) is the one wholly open requirement. No
   `ITextProvider` and no high-contrast detection exist on Windows; macOS
   exposes the outline and the table cells only.

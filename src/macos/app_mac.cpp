@@ -616,13 +616,19 @@ void App::ApplyTableFilterText(std::size_t column,
 }
 
 void App::Reparse() {
-    // The parse is the shared one. A parse failure leaves the previous
-    // document in place, which is what the Windows build does too. The
-    // user still sees their text.
-    if (!ParseDocument(buffer_.Text(), filePath_,
-                       controller_.tableFilters(), document_)) {
+    // The parse is the shared one, and so is the choice of parse: the buffer
+    // knows which byte range its splices covered, so a keystroke reparses the
+    // blocks it touched instead of the whole document. The incremental path
+    // stands down for the edits it cannot judge alone (the title, a link
+    // reference definition, a block changing shape) and the full parse
+    // answers; a failure leaves the previous document in place either way,
+    // which is what the Windows build does too. The user still sees their text.
+    if (!ReparseDocument(buffer_.Text(), filePath_,
+                         controller_.tableFilters(), document_,
+                         buffer_.reparseRange())) {
         return;
     }
+    buffer_.ClearReparseRange();
     if (contentView_) contentView_->OnDocumentChanged();
     if (documentChanged_) documentChanged_();
 }

@@ -159,6 +159,16 @@ struct Node {
 struct Document {
     std::vector<Node>  nodes;
     std::u32string     title;    // first H1 text, or empty
+    // Size in bytes of the UTF-8 text this document was parsed from. The
+    // incremental reparse checks it against the text it is handed, so a
+    // document that no longer matches the buffer is never patched in place.
+    uint32_t           sourceSize = 0;
+    // Whether the text defines a link reference ([label]: destination).
+    // A definition makes the parse global - a reference link anywhere
+    // resolves against it - so the incremental path stands down. Recorded
+    // at parse time because rescanning a megabyte per keystroke is not
+    // free and the answer only changes when an edit adds one.
+    bool               hasLinkRefs = false;
 };
 
 // The block kinds that hold source rather than prose: a fence, an

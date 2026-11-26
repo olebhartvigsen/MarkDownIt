@@ -33,6 +33,7 @@
 #include <windows.h>
 #endif
 #include <cctype>
+#include <cstdio>
 #include <stack>
 #include <string>
 #include <vector>
@@ -1529,9 +1530,29 @@ ib.strike = strike;
 
 }  // namespace
 
+// What the surrounding document looks like when the text being parsed is a
+// slice of it rather than the whole file. A blank run's meaning depends on
+// the blocks on either side of it: a blank line next to a list is an
+// editable paragraph, a blank line between two paragraphs is not. When the
+// slice starts or ends in the middle of the document those neighbours sit
+// outside the slice, so the caller states them here. A whole-document call
+// leaves every field at its default and the flags are derived from the
+// slice's own nodes, which is exactly the old behaviour.
+struct BlankRunContext {
+    bool wholeDocument = true;
+    bool hasPrevBlock = false;
+    BlockKind prevKind = BlockKind::Paragraph;
+    bool hasNextBlock = false;
+    BlockKind nextKind = BlockKind::Paragraph;
+    // The slice reaches the end of the file. A run that ends a slice only
+    // counts as a run that ends the document when this is true.
+    bool atDocumentEnd = false;
+};
+
 static void AddVirtualEmptyParagraphs(const std::string& source,
-                                      Document& doc) {
-    if (source.empty()) {
+                                      Document& doc,
+                                      const BlankRunContext& ctx = {}) {
+    if (ctx.wholeDocument && source.empty()) {
         Node blank;
         blank.block = BlockKind::Paragraph;
         blank.virtualEmptyParagraph = true;
@@ -1539,7 +1560,8 @@ static void AddVirtualEmptyParagraphs(const std::string& source,
         return;
     }
 
-    if (doc.nodes.empty() && std::all_of(source.begin(), source.end(),
+    if (ctx.wholeDocument && doc.nodes.empty() &&
+        std::all_of(source.begin(), source.end(),
             [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; })) {
         size_t breaks = 0;
         for (size_t i = 0; i < source.size(); ++i) {
@@ -1602,11 +1624,18 @@ static void AddVirtualEmptyParagraphs(const std::string& source,
         }
         const bool overlapsBlock = nextNode < sourceNodes.size() &&
             sourceNodes[nextNode]->srcOffset < runEnd;
-        const bool hasPreviousBlock = nextNode > 0;
-        const bool hasNextBlock = nextNode < sourceNodes.size();
+        // A slice's neighbours sit outside it; the caller names them so a
+        // run at the slice edge is judged against the real document.
+        const bool hasPreviousBlock = nextNode > 0 || ctx.hasPrevBlock;
+        const bool hasNextBlock = nextNode < sourceNodes.size() || ctx.hasNextBlock;
+        const BlockKind prevKind = nextNode > 0
+            ? sourceNodes[nextNode - 1]->block : ctx.prevKind;
+        const BlockKind nextKind = nextNode < sourceNodes.size()
+            ? sourceNodes[nextNode]->block : ctx.nextKind;
         const bool listBoundary =
-            (hasPreviousBlock && sourceNodes[nextNode - 1]->block == BlockKind::List) ||
-            (hasNextBlock && sourceNodes[nextNode]->block == BlockKind::List);
+            (hasPreviousBlock && prevKind == BlockKind::List) ||
+            (hasNextBlock && nextKind == BlockKind::List);
+        if (getenv("MDI_BLANK_DEBUG")) fprintf(stderr,"run [%u,%u) breaks=%zu prev=%d next=%d list=%d overlaps=%d\n", runStart, runEnd, breakEnds.size(), (int)hasPreviousBlock, (int)hasNextBlock, (int)listBoundary, (int)overlapsBlock);
         if (!overlapsBlock && listBoundary) {
             // A blank line next to a list is an editable paragraph, including
             // the line left by removing an empty bullet. Anchor it at the
@@ -1621,7 +1650,9 @@ static void AddVirtualEmptyParagraphs(const std::string& source,
             };
             if (!hasPreviousBlock && runStart == 0) addBlank(0);
             for (uint32_t offset : breakEnds) {
-                if (offset < runEnd || runEnd == source.size()) addBlank(offset);
+                if (offset < runEnd ||
+                    (runEnd == source.size() &&
+                     (ctx.wholeDocument || ctx.atDocumentEnd))) addBlank(offset);
             }
             continue;
         }
@@ -1725,6 +1756,38 @@ static int GuardedParseInner(const std::string& utf8, Document& out) {
 }
 #endif
 
+// Whether the text carries a link reference definition: a line whose first
+// non-space run is "[label]:" followed by a destination. Such a definition is
+// global to the document - a reference link anywhere resolves against it -
+// so an incremental reparse that only sees one slice cannot reproduce the
+// parse. The prefilter keeps the common case cheap: without "]" followed by
+// ":" anywhere there is nothing to find.
+static bool HasLinkReferenceDefinitions(const std::string& text) {
+    if (text.find("]:") == std::string::npos) return false;
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t lineEnd = text.find('\n', pos);
+        if (lineEnd == std::string::npos) lineEnd = text.size();
+        size_t i = pos;
+        int indent = 0;
+        while (i < lineEnd && text[i] == ' ' && indent < 4) { ++i; ++indent; }
+        if (indent <= 3 && i < lineEnd && text[i] == '[') {
+            // "[" ... "]" ":" with no space inside the label.
+            size_t close = text.find(']', i + 1);
+            if (close != std::string::npos && close < lineEnd &&
+                close + 1 < text.size() && text[close + 1] == ':') {
+                bool plain = true;
+                for (size_t k = i + 1; k < close; ++k) {
+                    if (text[k] == '[' || text[k] == '\n') { plain = false; break; }
+                }
+                if (plain) return true;
+            }
+        }
+        pos = lineEnd + 1;
+    }
+    return false;
+}
+
 bool ParseMarkdown(const std::string& utf8, Document& out) {
     // Every parse builds the document from nothing and the result is
     // swapped in only when the parse succeeded. The app reparses into
@@ -1747,62 +1810,12 @@ bool ParseMarkdown(const std::string& utf8, Document& out) {
 #endif
     if (rc != 0) return false;
     AddVirtualEmptyParagraphs(utf8, fresh);
+    fresh.sourceSize = static_cast<uint32_t>(utf8.size());
+    fresh.hasLinkRefs = HasLinkReferenceDefinitions(utf8);
     out = std::move(fresh);
     return true;
 }
 
-
-// --- Incremental reparse ---
-
-// Find the nearest blank line boundary at or before the given offset.
-// A blank line is a line containing only whitespace.
-static uint32_t FindBlockStart(const std::string& text, uint32_t offset) {
-    if (offset == 0) return 0;
-    uint32_t i = offset;
-    // Walk backwards looking for a blank line.
-    while (i > 0) {
-        // Check if line ending at i is blank.
-        uint32_t lineEnd = i;
-        uint32_t lineStart = i;
-        while (lineStart > 0 && text[lineStart - 1] != '\n') lineStart--;
-        // Check if this line is blank (only whitespace).
-        bool blank = true;
-        for (uint32_t j = lineStart; j < lineEnd; j++) {
-            if (text[j] != ' ' && text[j] != '\t' && text[j] != '\r' && text[j] != '\n') {
-                blank = false;
-                break;
-            }
-        }
-        if (blank && lineStart < i) return lineStart;
-        i = lineStart;
-        if (i > 0) i--; // skip the \n
-    }
-    return 0;
-}
-
-// Find the nearest blank line boundary at or after the given offset.
-static uint32_t FindBlockEnd(const std::string& text, uint32_t offset) {
-    uint32_t n = static_cast<uint32_t>(text.size());
-    if (offset >= n) return n;
-    uint32_t i = offset;
-    while (i < n) {
-        // Find end of current line.
-        uint32_t lineEnd = i;
-        while (lineEnd < n && text[lineEnd] != '\n') lineEnd++;
-        // Check if this line is blank.
-        bool blank = true;
-        for (uint32_t j = i; j <= lineEnd && j < n; j++) {
-            if (text[j] != ' ' && text[j] != '\t' && text[j] != '\r' && text[j] != '\n') {
-                blank = false;
-                break;
-            }
-        }
-        if (blank) return lineEnd + 1;
-        if (lineEnd < n) i = lineEnd + 1;
-        else return n;
-    }
-    return n;
-}
 
 double MeasureParseMs(const std::string& utf8) {
     auto start = std::chrono::high_resolution_clock::now();
@@ -1844,17 +1857,375 @@ std::string DocumentToString(const Document& doc) {
     return s;
 }
 
+// --- Incremental reparse ---
+//
+// The editor reparses after every change. A full parse of a megabyte costs
+// most of a frame, so a change is applied to the existing document instead:
+// the blocks the change reached are parsed again and spliced into the flat
+// node list, and the source offsets of every later block shift by the
+// change's byte delta.
+//
+// The region is chosen from the old document's own block ranges, not from a
+// blank-line scan. The blocks a change reached are known exactly, and a
+// "block" is what md4c actually emitted. The region is widened by one block
+// on each side, and to the blank-line runs on either side of it, so a change
+// that turns a paragraph into a list, or a fence into a paragraph, is judged
+// together with the neighbours whose meaning it can change. Anything whose
+// meaning is global - a link reference definition, the title's first H1 -
+// sends the whole document back through ParseMarkdown.
+//
+// The contract is the one the plan states: the spliced document is identical
+// to a full parse. tests/incremental_test.cpp checks it against a corpus and
+// a spread of edits.
+
+namespace {
+
+struct RealBlock {
+    size_t flat;      // index into doc.nodes
+    uint32_t start;   // first source byte of the block
+    uint32_t end;     // one past the last source byte
+    BlockKind kind;
+};
+
+// Move every source offset in a node by delta. Inline children, table cells
+// and links all carry absolute offsets into the same text, so a splice that
+// moves a block has to move them too, or the renderer highlights the wrong
+// bytes. A block with no source bytes (a thematic break) keeps its zeros.
+void ShiftNodeOffsets(Node& n, int64_t delta) {
+    if (n.srcLength == 0 && !n.virtualEmptyParagraph) return;
+    auto shift = [delta](uint32_t v) {
+        return static_cast<uint32_t>(static_cast<int64_t>(v) + delta);
+    };
+    n.srcOffset = shift(n.srcOffset);
+    n.contentOffset = shift(n.contentOffset);
+    for (auto& c : n.children) {
+        if (c.srcLength > 0) c.srcOffset = shift(c.srcOffset);
+    }
+    for (auto& row : n.rows) {
+        for (auto& cell : row.cells) {
+            // A cell whose range was never resolved stays at 0/0; the parser
+            // reads that pair as "unset" (see the table cell bookkeeping), so
+            // moving it would invent a range.
+            if (cell.srcOffset == 0 && cell.srcEnd == 0) continue;
+            // A zero here means "never resolved", not "byte zero": the cell
+            // bookkeeping leaves 0 for a cell md4c never gave a range. Moving
+            // those would invent a span.
+            if (cell.srcOffset != 0) cell.srcOffset = shift(cell.srcOffset);
+            if (cell.srcEnd != 0) cell.srcEnd = shift(cell.srcEnd);
+            for (auto& v : cell.u16ToSrc) if (v != 0) v = shift(v);
+            for (auto& v : cell.u16ToSrcEnd) if (v != 0) v = shift(v);
+            for (auto& link : cell.links)
+                if (link.srcOffset != 0) link.srcOffset = shift(link.srcOffset);
+        }
+    }
+}
+
+}  // namespace
+
+static bool IncDbg() { static const bool on = getenv("MDI_INC_DEBUG") != nullptr; return on; }
+#define INCDBG(msg) do { if (IncDbg()) fprintf(stderr, "inc: %s\n", msg); } while (0)
+
+bool ParseMarkdownIncremental(const std::string& utf8, Document& doc,
+                              const ReparseRange& range) {
+    if (!range.valid) { INCDBG("invalid range"); return false; }
+    if (range.oldEnd < range.start || range.newEnd < range.start) { INCDBG("bad range"); return false; }
+    const int64_t delta = static_cast<int64_t>(range.newEnd) -
+                          static_cast<int64_t>(range.oldEnd);
+    if (delta == 0 && range.oldEnd == range.start) { INCDBG("no change"); return false; }
+    const int64_t oldSize = static_cast<int64_t>(utf8.size()) - delta;
+    if (oldSize < 0) return false;
+    if (static_cast<int64_t>(doc.sourceSize) != oldSize) { if (IncDbg()) fprintf(stderr,"inc: sourceSize mismatch doc=%u old=%lld new=%zu\n", doc.sourceSize, (long long)oldSize, utf8.size()); return false; }
+    if (range.oldEnd > static_cast<uint32_t>(oldSize)) return false;
+    if (range.newEnd > utf8.size()) return false;
+    if (doc.hasLinkRefs) { INCDBG("link refs"); return false; }
+    if (doc.nodes.empty()) { INCDBG("no nodes"); return false; }
+
+    // The flat node list, with the source range each real block occupies and
+    // the effective position of every node (a block with no bytes sits where
+    // the previous block ended).
+    std::vector<RealBlock> blocks;
+    blocks.reserve(doc.nodes.size());
+    uint32_t cursor = 0;
+    for (size_t i = 0; i < doc.nodes.size(); ++i) {
+        const Node& n = doc.nodes[i];
+        if (n.srcLength > 0) {
+            const uint32_t end = n.srcOffset + n.srcLength;
+            blocks.push_back({i, n.srcOffset, end, n.block});
+            if (end > cursor) cursor = end;
+        }
+    }
+    if (blocks.empty()) { INCDBG("no blocks"); return false; }
+
+    // The first block the change reached, and the last one it reached.
+    size_t i0 = blocks.size();
+    for (size_t k = 0; k < blocks.size(); ++k) {
+        if (blocks[k].end > range.start) { i0 = k; break; }
+    }
+    if (i0 == blocks.size()) i0 = blocks.size() - 1;   // change after the last block
+    size_t i1 = i0;
+    for (size_t k = i0; k < blocks.size(); ++k) {
+        if (blocks[k].start < range.oldEnd) i1 = k;
+        else break;
+    }
+    // One block of context on each side: a change can turn a paragraph into a
+    // list or a fence into a paragraph, and the neighbour's meaning changes
+    // with it. A block with no source bytes (a thematic break) is never a
+    // RealBlock, so it is picked up as part of the gap around it.
+    if (i0 > 0) --i0;
+    if (i1 + 1 < blocks.size()) ++i1;
+    // A fenced block's node starts at its content, not at the opening fence,
+    // so a region that ends at the next block's start would cut the fence
+    // open. Swallow whole fenced blocks until the next block is prose.
+    while (i1 + 1 < blocks.size() && IsCodeLikeBlock(blocks[i1 + 1].kind)) ++i1;
+
+    // Code blocks are never sliced. A fenced node's srcOffset is its first
+    // content byte, so the opening ``` line lies before any region that a
+    // change inside the fence could produce, and a fragment of a fence parses
+    // as prose. The full parse answers for those edits; they are rare next to
+    // typing in a paragraph, and a wrong document is worse than a slow one.
+    for (size_t k = i0; k <= i1; ++k) {
+        if (IsCodeLikeBlock(blocks[k].kind)) {
+            INCDBG("code block in region");
+            return false;
+        }
+    }
+
+    // A line break is a block-level edit: a paragraph splits, a list starts, a
+    // fence opens, and the slice's blank-line reconstruction has to agree with
+    // the neighbours on both edges. Typing a character never does any of that,
+    // so the fast path keeps the keystroke case and hands every structural
+    // edit to the full parse. The span is the union of the splices, so a run
+    // that included a newline anywhere stands down too.
+    for (uint32_t p = range.start; p < range.newEnd; ++p) {
+        if (utf8[p] == '\n' || utf8[p] == '\r') {
+            INCDBG("line break in change");
+            return false;
+        }
+    }
+
+    // The change must lie inside one block. A span that crosses a block's
+    // edge, or the blank run between two blocks, can add or remove the newline
+    // that separates them, and the deleted bytes are not available here to
+    // judge that: only the new text is. Typing inside a paragraph, at either
+    // end of it, stays on the fast path; anything reaching past it does not.
+    {
+        bool contained = false;
+        for (size_t k = 0; k < blocks.size(); ++k) {
+            if (blocks[k].start <= range.start && range.oldEnd <= blocks[k].end) {
+                contained = true;
+                break;
+            }
+        }
+        if (!contained) {
+            INCDBG("change crosses a block edge");
+            return false;
+        }
+    }
+
+    // The region runs from the end of the block before it to the start of the
+    // block after it, so the blank-line runs on both edges belong to it. A
+    // run split across the boundary would be regenerated against the wrong
+    // neighbours.
+    const uint32_t regionStartOld = i0 > 0 ? blocks[i0 - 1].end : 0;
+    const uint32_t regionEndOld = i1 + 1 < blocks.size()
+        ? blocks[i1 + 1].start : static_cast<uint32_t>(oldSize);
+    if (regionEndOld < regionStartOld) return false;
+    if (regionEndOld < range.oldEnd) { INCDBG("region ends early"); return false; }
+
+    const uint32_t regionStartNew = regionStartOld;
+    const uint32_t regionEndNew = static_cast<uint32_t>(
+        static_cast<int64_t>(regionEndOld) + delta);
+    if (regionEndNew > utf8.size()) { INCDBG("region past end"); return false; }
+
+    // The split is taken in the OLD document's coordinates: the suffix is
+    // "everything from the block after the region", and those nodes are moved
+    // by the edit delta afterwards. Splitting by the new end would pull the
+    // trailing blank run's nodes into the suffix when the edit shortens the
+    // text, and they would be regenerated as well as shifted.
+    // The split is taken from the block list, not from offsets: a virtual
+    // empty paragraph sitting exactly on the region's end offset belongs to
+    // the trailing blank run, and an offset comparison would hand it to the
+    // suffix and regenerate it twice.
+    const size_t regionStartFlat = i0 > 0 ? blocks[i0 - 1].flat + 1 : 0;
+    const size_t regionEndFlat = i1 + 1 < blocks.size()
+        ? blocks[i1 + 1].flat : doc.nodes.size();
+
+    // The title comes from the first H1. The check is against the change, not
+    // against the expanded region: a keystroke in the paragraph after the
+    // title pulls the title block in as context, and the title itself did not
+    // change. Judging it by the region made every edit near the top of a
+    // document stand down.
+    size_t firstH1 = doc.nodes.size();
+    for (size_t i = 0; i < doc.nodes.size(); ++i) {
+        if (doc.nodes[i].block == BlockKind::Heading && doc.nodes[i].level == 1) {
+            firstH1 = i;
+            break;
+        }
+    }
+    if (firstH1 < doc.nodes.size()) {
+        const uint32_t h1Start = doc.nodes[firstH1].srcOffset;
+        // The heading's srcLength stops at the newline, so an insertion at
+        // h1End is still inside the title's line: the comparison is
+        // inclusive at the end and exclusive at the start.
+        const uint32_t h1End = h1Start + doc.nodes[firstH1].srcLength;
+        if (range.start <= h1End && h1Start < range.oldEnd) {
+            INCDBG("title in region");
+            return false;
+        }
+    }
+    // The whole document changed: the empty-document rules (a single
+    // addressable blank paragraph) only run on a full parse.
+    if (regionStartNew == 0 && regionEndNew == utf8.size()) {
+        // A slice of the whole document is still a normal slice; only the
+        // empty-document rules need the full parse.
+        bool allBlank = true;
+        for (char ch : utf8) {
+            if (ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n') { allBlank = false; break; }
+        }
+        if (allBlank) { INCDBG("whole doc, blank"); return false; }
+    }
+
+    // Parse the slice. Its node offsets are relative to the slice and are
+    // moved into place after the blank runs are rebuilt against the real
+    // neighbours.
+    if (IncDbg()) fprintf(stderr,"delta=%lld regionOld[%u,%u) regionNew[%u,%u) flat[%zu,%zu) nodes=%zu\n",(long long)delta,regionStartOld,regionEndOld,regionStartNew,regionEndNew,regionStartFlat,regionEndFlat,doc.nodes.size());
+    const std::string slice = utf8.substr(regionStartNew, regionEndNew - regionStartNew);
+    Document fresh;
+    if (ParseMarkdownInner(slice, fresh) != 0) { INCDBG("slice parse failed"); return false; }
+
+    // A slice loses the list and quote context it sat in: md4c decides list
+    // depth from the enclosing containers, and a fragment parsed alone starts
+    // at depth zero. A nested block therefore cannot be judged in isolation.
+    for (size_t k = regionStartFlat; k < regionEndFlat; ++k) {
+        const Node& n = doc.nodes[k];
+        if (n.depth > 0) { INCDBG("nested block in region"); return false; }
+    }
+
+    // The slice must reproduce the block structure the region had. A paragraph
+    // that becomes two paragraphs is a legitimate change and stays cheap; a
+    // paragraph that becomes a table or a list is a structural change whose
+    // surroundings matter, so it goes back to a full parse. Typing inside a
+    // list item keeps the item's shape and stays on the fast path.
+    {
+        std::vector<BlockKind> oldKinds, newKinds;
+        for (size_t k = regionStartFlat; k < regionEndFlat; ++k)
+            if (doc.nodes[k].srcLength > 0) oldKinds.push_back(doc.nodes[k].block);
+        for (const Node& n : fresh.nodes)
+            if (n.srcLength > 0) newKinds.push_back(n.block);
+        bool shapeOk = oldKinds.size() == newKinds.size();
+        if (shapeOk) {
+            for (size_t k = 0; k < oldKinds.size(); ++k)
+                if (oldKinds[k] != newKinds[k]) { shapeOk = false; break; }
+        } else {
+            auto simple = [](BlockKind k) {
+                return k == BlockKind::Paragraph || k == BlockKind::Heading;
+            };
+            for (BlockKind k : oldKinds) if (!simple(k)) { shapeOk = false; break; }
+            if (shapeOk) for (BlockKind k : newKinds) if (!simple(k)) { shapeOk = false; break; }
+        }
+        if (!shapeOk) { INCDBG("block shape changed"); return false; }
+    }
+    if (doc.title.empty() && !fresh.title.empty()) {
+        return false;   // the change creates the document's first H1
+    }
+    // The title block can be inside the region as context. If its text moved,
+    // the window title and the outline would keep the old one, so the full
+    // parse answers instead of a splice that cannot update them.
+    if (firstH1 >= regionStartFlat && firstH1 < regionEndFlat &&
+        fresh.title != doc.title) {
+        INCDBG("title text changed");
+        return false;
+    }
+    if (!doc.title.empty() && firstH1 >= regionEndFlat && !fresh.title.empty()) {
+        return false;   // an H1 ahead of the document's first one takes the title
+    }
+
+    BlankRunContext ctx;
+    ctx.wholeDocument = false;
+    ctx.hasPrevBlock = i0 > 0;
+    ctx.prevKind = i0 > 0 ? blocks[i0 - 1].kind : BlockKind::Paragraph;
+    ctx.hasNextBlock = i1 + 1 < blocks.size();
+    ctx.nextKind = i1 + 1 < blocks.size() ? blocks[i1 + 1].kind : BlockKind::Paragraph;
+    ctx.atDocumentEnd = regionEndNew == utf8.size();
+    AddVirtualEmptyParagraphs(slice, fresh, ctx);
+
+    const int64_t startShift = static_cast<int64_t>(regionStartNew);
+    for (auto& n : fresh.nodes) {
+        if (n.srcLength > 0 || n.virtualEmptyParagraph) {
+            n.srcOffset = static_cast<uint32_t>(static_cast<int64_t>(n.srcOffset) + startShift);
+            n.contentOffset = static_cast<uint32_t>(static_cast<int64_t>(n.contentOffset) + startShift);
+            for (auto& c : n.children) {
+                if (c.srcLength > 0)
+                    c.srcOffset = static_cast<uint32_t>(static_cast<int64_t>(c.srcOffset) + startShift);
+            }
+            for (auto& row : n.rows) {
+                for (auto& cell : row.cells) {
+                    if (cell.srcOffset == 0 && cell.srcEnd == 0) continue;
+                    if (cell.srcOffset != 0)
+                        cell.srcOffset = static_cast<uint32_t>(static_cast<int64_t>(cell.srcOffset) + startShift);
+                    if (cell.srcEnd != 0)
+                        cell.srcEnd = static_cast<uint32_t>(static_cast<int64_t>(cell.srcEnd) + startShift);
+                    for (auto& v : cell.u16ToSrc)
+                        v = static_cast<uint32_t>(static_cast<int64_t>(v) + startShift);
+                    for (auto& v : cell.u16ToSrcEnd)
+                        v = static_cast<uint32_t>(static_cast<int64_t>(v) + startShift);
+                    for (auto& link : cell.links)
+                        link.srcOffset = static_cast<uint32_t>(static_cast<int64_t>(link.srcOffset) + startShift);
+                }
+            }
+        }
+    }
+
+    const size_t prefixCount = regionStartFlat;
+    const size_t suffixCount = doc.nodes.size() - regionEndFlat;
+    const size_t newCount = prefixCount + fresh.nodes.size() + suffixCount;
+
+    try {
+        if (newCount == doc.nodes.size()) {
+            // The common case: a keystroke inside one paragraph. The node
+            // count is unchanged, so nothing moves.
+            for (size_t i = 0; i < fresh.nodes.size(); ++i)
+                doc.nodes[prefixCount + i] = std::move(fresh.nodes[i]);
+        } else {
+            doc.nodes.erase(doc.nodes.begin() + static_cast<std::ptrdiff_t>(prefixCount),
+                            doc.nodes.begin() + static_cast<std::ptrdiff_t>(regionEndFlat));
+            doc.nodes.insert(doc.nodes.begin() + static_cast<std::ptrdiff_t>(prefixCount),
+                             std::make_move_iterator(fresh.nodes.begin()),
+                             std::make_move_iterator(fresh.nodes.end()));
+        }
+        for (size_t i = prefixCount + fresh.nodes.size(); i < doc.nodes.size(); ++i)
+            ShiftNodeOffsets(doc.nodes[i], delta);
+    } catch (...) {
+        // A failed allocation leaves the document in an unknown state; the
+        // caller falls back to a full parse.
+        return false;
+    }
+    doc.sourceSize = static_cast<uint32_t>(utf8.size());
+    return true;
+}
+
+bool ParseMarkdownIncremental(const std::string& utf8, Document& doc,
+                              uint32_t editOffset, uint32_t oldLen,
+                              uint32_t newLen) {
+    ReparseRange range;
+    range.start = editOffset;
+    range.oldEnd = editOffset + oldLen;
+    range.newEnd = editOffset + newLen;
+    range.valid = true;
+    return ParseMarkdownIncremental(utf8, doc, range);
+}
+
 bool ParseMarkdownIncremental(const std::string& utf8,
                                const Document& oldDoc,
                                uint32_t editOffset,
                                uint32_t oldLen,
                                uint32_t newLen,
-                               Document& out) {
-    // For correctness, we parse the full document.
-    // The incremental optimization is in the debouncing layer (app.cpp).
-    // This function exists so the correctness test can compare
-    // incremental vs full reparse and prove they produce identical results.
-    (void)oldDoc; (void)editOffset; (void)oldLen; (void)newLen;
+                               Document& out,
+                               bool* incremental) {
+    out = oldDoc;
+    const bool ok = ParseMarkdownIncremental(utf8, out, editOffset, oldLen, newLen);
+    if (incremental) *incremental = ok;
+    if (ok) return true;
     return ParseMarkdown(utf8, out);
 }
 

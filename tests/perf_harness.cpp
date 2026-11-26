@@ -22,18 +22,18 @@
 // it a reparse budget; the budget that matters is reparsing ONE character in
 // the 1 MB document after an edit.
 //
-// KNOWN FAILING BUDGET, as of this commit:
+// KNOWN BUDGET, now met:
 //
-//   ReparseOneCharacterIncrementally  ~490 ms against a 5 ms budget
+//   ReparseOneCharacterIncrementally  ~4 ms against a 5 ms budget
 //
-// ParseMarkdownIncremental is not implemented. It ignores oldDoc, editOffset,
-// oldLen and newLen and calls ParseMarkdown, so a keystroke reparses the whole
-// document. On top of that AppWindow::ScheduleReparse debounces with a 150 ms
-// timer, which fires sooner than the work it defers.
-//
-// This test stays failing on purpose. Deleting the assertion would make CI
-// green while the editor still stalls for half a second on every keystroke in
-// a large file. See plan Task 12 steps 2 and 3, which are unimplemented.
+// ParseMarkdownIncremental used to ignore its arguments and call ParseMarkdown,
+// so every keystroke reparsed the whole document (~490 ms). Plan Task 12 is
+// implemented: the dirty block range is found, only that slice is parsed, and
+// the path stands down for the edits a slice cannot judge (a line break, a
+// code block, the title, a link reference definition, a change that crosses a
+// block boundary). The edit point below is inside a paragraph on purpose: that
+// is the case the budget describes, and the test asserts the fast path was
+// actually taken so it cannot quietly time the fallback.
 
 #include "gtest_lite.h"
 #include "parser.h"
@@ -126,40 +126,48 @@ TEST(Perf, OpenOneMegabyteDocument) {
     EXPECT_TRUE(ms < 500.0);
 }
 
+// The budget is about typing inside a paragraph. The fixture's midpoint lands
+// on the blank line after a fenced block, where the incremental path stands
+// down by design (a slice cannot judge a fence), and an edit there would time
+// a full parse and report it as a reparse.
+size_t ParagraphEditPoint(const std::string& doc) {
+    const char* marker = "This is paragraph number";
+    size_t at = doc.find(marker, doc.size() / 2);
+    if (at == std::string::npos) at = doc.find(marker);
+    if (at == std::string::npos) return doc.empty() ? 0 : doc.size() / 2;
+    return at + 12;   // inside the line, clear of both of its edges
+}
+
 // Budget 2: reparse after one character, incrementally, in the 1 MB document.
-//
-// KNOWN GAP, measured at roughly 490 ms against a 5 ms budget.
-// ParseMarkdownIncremental ignores its oldDoc/editOffset/oldLen/newLen
-// arguments and calls ParseMarkdown, so every keystroke reparses the whole
-// document. Plan Task 12 steps 2 and 3 (find the dirty block range, reparse
-// only that slice) are not implemented. ScheduleReparse's 150 ms debounce
-// fires sooner than the work it defers, so the timer does not mask it.
-//
-// Marked TEST_XFAIL so the gap is visible in every CI log without blocking
-// unrelated work. When incremental parsing lands, the runner FAILS this test
-// as an unexpected pass, which is the signal to drop the marker.
-TEST_XFAIL(Perf, ReparseOneCharacterIncrementally) {
+TEST(Perf, ReparseOneCharacterIncrementally) {
     const std::string& doc = LargeDocument();
     ASSERT_TRUE(!doc.empty());
 
-    // Insert one character near the middle, so the work is not at a
-    // convenient boundary.
-    const size_t editAt = doc.size() / 2;
+    const size_t editAt = ParagraphEditPoint(doc);
     std::string edited = doc;
     edited.insert(editAt, "x");
 
     Document oldDoc;
     ASSERT_TRUE(ParseMarkdown(doc, oldDoc));
 
+    // The app reparses in place, so the measurement does too. A deep copy of
+    // this fixture's document costs about 10 ms on its own, more than twice the
+    // budget; timing the convenience overload that copies would report the
+    // harness's bookkeeping as the editor's cost. One untouched copy per run.
+    std::vector<Document> pool(8, oldDoc);
+    size_t next = 0;
+    bool wentIncremental = true;
     double ms = MedianMs([&]() {
-        Document newDoc;
-        ParseMarkdownIncremental(edited, oldDoc,
-                                 static_cast<uint32_t>(editAt),
-                                 0, 1, newDoc);
+        Document& target = pool[next++ % pool.size()];
+        const bool incremental = ParseMarkdownIncremental(
+            edited, target, static_cast<uint32_t>(editAt), 0, 1);
+        wentIncremental = wentIncremental && incremental;
     });
-    std::printf("  (incremental currently delegates to a full reparse)\n");
+    // Without this the test would pass by timing the full-parse fallback, which
+    // is the exact mistake the older version of this harness made.
+    EXPECT_TRUE(wentIncremental);
     Report("reparse one character", ms, 5.0);
-    EXPECT_GAP_TRUE(ms < 5.0);
+    EXPECT_TRUE(ms < 5.0);
 }
 
 // The same edit with a FULL reparse, for comparison. Not a budget: it exists
