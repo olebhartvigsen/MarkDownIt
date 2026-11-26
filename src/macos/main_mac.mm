@@ -824,6 +824,21 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 }
 
 - (void)applyQAState:(NSString*)state {
+    // Every frame the comparison tool reads after the wheel state has to
+    // share one leading on both platforms. The wheel state posts its
+    // command-wheel step and the queue may or may not deliver it before
+    // the next state runs, so those frames are pinned to the one step
+    // the comparison was calibrated at instead of inheriting whatever
+    // the wheel left behind.
+    static NSString* const kComparedFrames[] = {
+        @"find", @"edit", @"outline", @"source", @"lower", @"end", @"tail",
+        @"shared", @"csv-pinned", @"dark", @"settings"};
+    for (NSString* pinned : kComparedFrames) {
+        if ([state isEqualToString:pinned]) {
+            [self setZoom:zoom::Step(zoom::kDefaultZoom, true) quietly:YES];
+            break;
+        }
+    }
     if ([state isEqualToString:@"doc"]) {
         // The document opened at launch; the state is the picture of
         // it as it lands. The bar reports itself here, so the walk can
@@ -1789,7 +1804,6 @@ static std::string OcrPdfPage(void* data, const std::string& path,
 
         // The command wheel is ours: it must zoom and must not scroll.
         const CGFloat docBefore = [view_ frame].size.height;
-        const float zoomBefore = zoom_;
         for (int k = 0; k < 5; ++k) {
             CGEventRef ev = CGEventCreateScrollWheelEvent(
                 NULL, kCGScrollEventUnitPixel, 1, -40);
@@ -1798,17 +1812,6 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             CGEventPost(kCGHIDEventTap, ev);
             CFRelease(ev);
             pump();
-        }
-        // One step, for certain. The posted events race the pump, so the
-        // step sometimes does not land, and every compared frame after
-        // this state assumes the zoom it leaves behind. Land exactly one
-        // step and say in the trace when the queue missed it.
-        if (zoom_ != zoom::Step(zoomBefore, true)) {
-            platform::TraceMac(
-                "qa wheel: the command wheel missed, stepping %.0f -> %.0f",
-                (double)(zoomBefore * 100.0f),
-                (double)(zoom::Step(zoomBefore, true) * 100.0f));
-            [self setZoom:zoom::Step(zoomBefore, true) quietly:YES];
         }
         platform::TraceMac("qa wheel: start=%.1f end=%.1f x=%.1f doc=%.1f->%.1f",
                       startClip, [clip bounds].origin.y, [clip bounds].origin.x,
