@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cassert>
+#include "crash_trace.h"
+
 // The narrow interfaces both painters are written against.
 //
 // The seams are deliberately small: they cover exactly what the markdown
@@ -350,7 +353,14 @@ public:
     virtual void DrawLayout(const TextLayout& layout, float x, float topY,
                             const Color& color) {
         const std::vector<TextLine>* lines = layout.Lines();
-        if (!lines) return;  // a native block this target cannot draw
+        if (!lines) {
+            // A native block handed to a target that does not own it. This is
+            // a bug in the caller, not a state to absorb: drawing nothing
+            // would leave a blank run in the document that no test notices.
+            assert(false && "native text layout given to a target that cannot draw it");
+            diag::TraceFmt("SEAMLAYOUT: target cannot draw a native block (native=1)");
+            return;
+        }
         float lineTop = topY;
         for (const TextLine& line : *lines) {
             const float lineX = x + layout.LineX(line);
