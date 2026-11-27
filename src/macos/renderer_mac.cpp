@@ -15,6 +15,7 @@
 #include "layout/display_player.h"
 #include "layout/selection_rects.h"
 #include "layout/text_runs.h"
+#include "platform/offset_target.h"
 #include "markers.h"
 
 #include <algorithm>
@@ -274,99 +275,6 @@ public:
 private:
     TextEngine* inner_;
     float zoom_;
-};
-
-// The target the finished display list replays onto.
-//
-// The list is in content column coordinates: origin at the top left
-// of the column, y growing down, the scroll not applied. The renderer
-// draws in view coordinates with the column pinned at originX_, so one
-// translate wraps the real target and every replayed item lands where
-// the per block painter used to draw it.
-class TranslatedTarget final : public RenderTarget {
-public:
-    TranslatedTarget(RenderTarget* inner, float dx, float dy)
-        : inner_(inner), dx_(dx), dy_(dy) {}
-
-    void FillRect(const Rect& rect, const Color& color) override {
-        inner_->FillRect(Shift(rect), color);
-    }
-    void FillRoundedRect(const Rect& rect, float radius,
-                         const Color& color) override {
-        inner_->FillRoundedRect(Shift(rect), radius, color);
-    }
-    void FillRoundedRectSides(const Rect& rect, float radius,
-                              const Color& color, bool roundLeft,
-                              bool roundRight) override {
-        inner_->FillRoundedRectSides(Shift(rect), radius, color, roundLeft,
-                                     roundRight);
-    }
-    void StrokeRect(const Rect& rect, const Color& color,
-                    float lineWidth) override {
-        inner_->StrokeRect(Shift(rect), color, lineWidth);
-    }
-    void StrokeRoundedRect(const Rect& rect, float radius,
-                           const Color& color, float lineWidth) override {
-        inner_->StrokeRoundedRect(Shift(rect), radius, color, lineWidth);
-    }
-    void StrokeLine(float x0, float y0, float x1, float y1,
-                    const Color& color, float lineWidth) override {
-        inner_->StrokeLine(x0 + dx_, y0 + dy_, x1 + dx_, y1 + dy_, color,
-                           lineWidth);
-    }
-    void DrawText(const std::string& utf8, const FontSpec& font, float x,
-                  float baselineY, const Color& color) override {
-        inner_->DrawText(utf8, font, x + dx_, baselineY + dy_, color);
-    }
-    void DrawBitmap(BitmapHandle image, const Rect& rect) override {
-        inner_->DrawBitmap(image, Shift(rect));
-    }
-    void FillEllipse(const Rect& rect, const Color& color) override {
-        inner_->FillEllipse(Shift(rect), color);
-    }
-    void StrokeEllipse(const Rect& rect, const Color& color,
-                       float lineWidth) override {
-        inner_->StrokeEllipse(Shift(rect), color, lineWidth);
-    }
-    void FillPolygon(const std::vector<Point>& points,
-                     const Color& color) override {
-        inner_->FillPolygon(Shift(points), color);
-    }
-    void StrokePolygon(const std::vector<Point>& points,
-                       const Color& color, float lineWidth,
-                       bool closed) override {
-        inner_->StrokePolygon(Shift(points), color, lineWidth, closed);
-    }
-    void FillPieSlice(const Rect& rect, float startAngle, float endAngle,
-                      const Color& color) override {
-        inner_->FillPieSlice(Shift(rect), startAngle, endAngle, color);
-    }
-    void PushClip(const Rect& rect) override { inner_->PushClip(Shift(rect)); }
-    void PopClip() override { inner_->PopClip(); }
-    void DrawChevron(const Rect& rect, bool expanded,
-                     const Color& color) override {
-        inner_->DrawChevron(Shift(rect), expanded, color);
-    }
-
-private:
-    Rect Shift(const Rect& rect) const {
-        Rect out = rect;
-        out.x += dx_;
-        out.y += dy_;
-        return out;
-    }
-    std::vector<Point> Shift(const std::vector<Point>& points) const {
-        std::vector<Point> out = points;
-        for (Point& p : out) {
-            p.x += dx_;
-            p.y += dy_;
-        }
-        return out;
-    }
-
-    RenderTarget* inner_;
-    float dx_;
-    float dy_;
 };
 
 }  // namespace
@@ -1095,7 +1003,7 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
     // block painter always drew at. The player owns the run
     // decorations and the dash flattening, so a line, a link and a
     // table grid draw exactly as the seam spells them.
-    TranslatedTarget translated(target_, originX_,
+    platform::OffsetTarget translated(target_, originX_,
                                 metrics_.padTop - scrollOffset);
     display::Play(displayList_, &translated,
                   [this](const display::Image& item) {
@@ -1623,7 +1531,7 @@ void MacRenderer::DrawPinnedHeaders(RenderTarget* target, float visibleTop) {
         // top, which is not the block's document y: the block carries the
         // page's padding on top of it, and using that number put the band one
         // padding above the edge, out of sight.
-        TranslatedTarget band(target, originX_,
+        platform::OffsetTarget band(target, originX_,
                               pinTop - block.tableRecord->headerTop);
         display::Play(block.tableRecord->header, &band,
                       [this](const display::Image& item) {

@@ -1,5 +1,7 @@
 #include "imagehelper.h"
 #include "imagepath.h"
+#include "platform/seams.h"
+#include "windows/render_target_win.h"
 
 #include <windows.h>
 #include <wincodec.h>
@@ -371,6 +373,30 @@ bool ImageHelper::LoadImageSize(const std::string& url8, float* w, float* h,
     }
     wicFactory->Release();
     return ok;
+}
+
+void* ImageHelper::LoadBitmapForTarget(platform::RenderTarget& target,
+    const std::string& url, float maxWidth, const std::string& baseDir) {
+    // The seam target is the Direct2D adapter on this platform; anything
+    // else (a test double, a portable target) has no Direct2D bitmap to
+    // make, and the caller's placeholder band stands.
+    auto* d2d = dynamic_cast<platform::D2DTarget*>(&target);
+    if (!d2d) return nullptr;
+    return LoadBitmapFromUrl(d2d->Native(), url, maxWidth, baseDir);
+}
+
+void ImageHelper::ReleaseBitmap(void* bitmap) {
+    if (!bitmap) return;
+    static_cast<ID2D1Bitmap*>(bitmap)->Release();
+}
+
+void ImageHelper::BitmapSize(void* bitmap, float* w, float* h) {
+    if (w) *w = 0.0f;
+    if (h) *h = 0.0f;
+    if (!bitmap) return;
+    const D2D1_SIZE_F size = static_cast<ID2D1Bitmap*>(bitmap)->GetSize();
+    if (w) *w = size.width;
+    if (h) *h = size.height;
 }
 
 std::string ImageHelper::LoadSvgText(const std::string& url8,

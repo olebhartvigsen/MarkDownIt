@@ -57,6 +57,11 @@ public:
     void PushClip(const Rect& rect) override;
     void PopClip() override;
 
+    // The wrapped Direct2D target. For the Windows-only helpers that must
+    // have the concrete interface, which is the image decoder's bitmap
+    // creation; nothing a painter draws needs it. Never null.
+    ID2D1RenderTarget* Native() const { return target_; }
+
 private:
     // One brush per call, then Released, the renderer.cpp lifecycle.
     ID2D1SolidColorBrush* BrushFor(const Color& color) const;

@@ -154,8 +154,14 @@ public:
     // Returns the total rendered height in DIPs (unscrolled).
     // scrollX scrolls the content column horizontally; it is zero unless
     // the column is wider than the viewport, which happens at high zoom.
-    float Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
-                 const Document& doc, float widthDip, float scrollY,
+    //
+    // The target is the seam, not the platform interface: every drawing
+    // call in the frame, the clip and the scroll offset included, is
+    // platform::RenderTarget. viewportHeightDip is the visible height the
+    // frame culls and clips to; the seam has no size query, so the caller
+    // that owns the window hands it in.
+    float Render(platform::RenderTarget& rt, const Document& doc,
+                 float widthDip, float viewportHeightDip, float scrollY,
                  float topOffsetDip, float scrollX = 0.0f,
                  const Selection* sel = nullptr);
 
@@ -182,8 +188,8 @@ public:
 
     // Draw the raw markdown source with monospace font and word wrap.
     // Returns the total rendered height in DIPs.
-    float RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
-                           const std::string& src, float widthDip,
+    float RenderSourceView(platform::RenderTarget& rt, const std::string& src,
+                           float widthDip, float viewportHeightDip,
                            float scrollY, float topOffsetDip,
                            float scrollX = 0.0f,
                            const Selection* sel = nullptr);
@@ -302,7 +308,10 @@ private:
     // frame (every scroll tick used to re-download it on the UI thread).
     struct InlineImageCacheEntry {
         std::string url;
-        ID2D1Bitmap* bmp = nullptr;
+        // The seam's opaque bitmap handle (the decoded Direct2D bitmap on
+        // Windows). The cache is shared-level, so it names no platform
+        // type; ImageHelper owns the release and the size.
+        platform::BitmapHandle bmp = nullptr;
         // A URL that already failed to load or decode. Kept so a repaint
         // does not retry it: the fetch is synchronous and on the paint
         // thread, so an unreachable URL in the document would otherwise be
@@ -478,12 +487,13 @@ private:
     // draw from the SvgDoc cache and the mermaid painters draw the
     // walk's measured band. Every band sits at the shared record's y,
     // so the frame never drifts from the walk that measured it.
-    void PaintSharedOverlays(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+    void PaintSharedOverlays(platform::RenderTarget& rt,
                              const Document& doc,
                              const std::vector<const layout::LaidBlock*>& byNode,
                              const layout::DocumentLayout& shared,
                              const LayoutMetrics& m, float contentWidth,
                              float originX, float topOffsetDip,
+                             float viewportHeightDip, float scrollX,
                              const Selection* sel, float scrollY);
 
     // The parsed document of a ```svg fence in picture form: a
@@ -510,23 +520,24 @@ private:
 
     // Paint the search-match fills for one block of text, using the same
     // line-by-line hit test as the selection highlight so the fill follows
-    // wrapping, zoom and scroll. u16ToSrc maps each UTF-16 index of the block
-    // layout to its source byte offset; blockStart/blockEnd are the source
-    // byte range the block covers; matches outside it are skipped. Other
-    // matches get matchColor, the match at searchCurrentIndex_ gets
-    // currentColor. The mapping is read with a binary search when it is
-    // non-decreasing, with the linear scan kept as the fallback.
+    // wrapping, zoom and scroll. `source` answers where the range's glyphs
+    // ended up (platform::DWriteRangeSource on Windows); u16ToSrc maps each
+    // UTF-16 index of the block layout to its source byte offset;
+    // blockStart/blockEnd are the source byte range the block covers;
+    // matches outside it are skipped. Other matches get matchColor, the
+    // match at searchCurrentIndex_ gets currentColor. The mapping is read
+    // with a binary search when it is non-decreasing, with the linear scan
+    // kept as the fallback.
     //
     // The body is layout::PaintMatchHighlights: the policy is shared, the
-    // geometry comes from the DirectWrite layout through the seam.
+    // geometry comes from the range source through the seam.
     void FillMatchHighlights(platform::RenderTarget& target,
-                             IDWriteTextLayout* layout,
+                             platform::TextRangeSource& source,
                              const ThemeColor& matchColor,
                              const ThemeColor& currentColor,
                              const std::vector<uint32_t>& u16ToSrc,
                              UINT32 u16Len,
                              uint32_t blockStart, uint32_t blockEnd,
-                             float originX, float originY,
                              float scrollY, float viewportH);
 
     // Paint the marker fills for one block. Same shape as the search
@@ -534,13 +545,12 @@ private:
     // that keeps a mark off colour alone. There is no current-marker
     // concept, every mark gets the same fill.
     void FillMarkerHighlights(platform::RenderTarget& target,
-                             IDWriteTextLayout* layout,
+                             platform::TextRangeSource& source,
                              const ThemeColor& fillColor,
                              const ThemeColor& lineColor,
                              const std::vector<uint32_t>& u16ToSrc,
                              UINT32 u16Len,
                              uint32_t blockStart, uint32_t blockEnd,
-                             float originX, float originY,
                              float scrollY, float viewportH);
 
     void DrawCodeBlock(platform::RenderTarget& target, IDWriteFactory* dw,

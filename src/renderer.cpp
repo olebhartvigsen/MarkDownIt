@@ -36,6 +36,7 @@
 #endif
 #include "layout/display_player.h"
 #include "mermaid/painter.h"
+#include "platform/offset_target.h"
 #include "windows/render_target_win.h"
 #include "windows/text_range_source_win.h"
 
@@ -235,77 +236,31 @@ static void MergeNodeItemSpans(
     }
 }
 
-// Fill the selection highlight for a UTF-16 range of a text layout.
+// The seam colour of a palette entry. ThemeColor is D2D1_COLOR_F on Windows
+// and a plain four float struct elsewhere; the seam speaks the four floats.
+static platform::Color SeamColor(const ThemeColor& c) {
+    return platform::Color{c.r, c.g, c.b, c.a};
+}
+
+// Fill the selection highlight for a UTF-16 range of a laid out block.
 //
-// HitTestTextRange returns one DWRITE_HIT_TEST_METRICS per text position,
-// so passing a fixed 64-entry stack array silently truncated any selection
-// longer than 64 characters. Source view lays the whole document out as a
-// single layout, so Ctrl+A there highlighted only the first 64 characters
-// and read as "select all does nothing". Rendered view had the same latent
-// truncation for long paragraphs, code blocks and table cells.
-//
-// Walk the layout line by line and touch only the lines that intersect the
-// viewport. That keeps the highlight correct for a selection of any length
-// and bounds the work per frame to what is actually on screen, which a
-// document-wide hit test over a million characters could not.
-static void FillSelectionHighlight(ID2D1RenderTarget* rt,
-                                   IDWriteTextLayout* layout,
-                                   ID2D1SolidColorBrush* brush,
+// The geometry is the range source's, the seam the search and marker fills
+// already use: one rectangle per line the range covers, in target
+// coordinates. The old body walked the DirectWrite layout itself and filled
+// through a brush; this asks the same layout through platform::
+// DWriteRangeSource and fills through the seam, so a source view selection
+// and a rendered one hold the same shape on both ports. The line cache is
+// built once per call, which is once per frame here.
+static void FillSelectionHighlight(platform::RenderTarget& target,
+                                   platform::TextRangeSource& source,
+                                   const ThemeColor& color,
                                    UINT32 u16Start, UINT32 u16End,
-                                   float originX, float originY,
                                    float scrollY, float viewportH) {
-    if (!rt || !layout || !brush) return;
     if (u16End <= u16Start) return;
-
-    DWRITE_TEXT_METRICS tm = {};
-    layout->GetMetrics(&tm);
-    if (tm.lineCount == 0) return;
-
-    // GetLineMetrics fills a caller-supplied array and reports how many
-    // lines it wrote, so ask once with a zero-size call to size the array.
-    UINT32 lineCount = 0;
-    layout->GetLineMetrics(nullptr, 0, &lineCount);
-    if (lineCount == 0) return;
-    std::vector<DWRITE_LINE_METRICS> lines(lineCount);
-    if (FAILED(layout->GetLineMetrics(lines.data(), lineCount, &lineCount)))
-        return;
-
     const float viewBottom = scrollY + (viewportH > 0.0f ? viewportH : 0.0f);
-    std::vector<DWRITE_HIT_TEST_METRICS> htm;
-    float lineTop = originY;
-    UINT32 lineStart = 0;
-    for (UINT32 i = 0; i < lineCount; ++i) {
-        const DWRITE_LINE_METRICS& lm = lines[i];
-        const float lineBottom = lineTop + lm.height;
-        const UINT32 lineEnd = lineStart + lm.length;
-
-        // Visible band test, in document coordinates.
-        if (lineBottom >= scrollY && lineTop <= viewBottom) {
-            const UINT32 selLo = u16Start > lineStart ? u16Start : lineStart;
-            const UINT32 selHi = u16End < lineEnd ? u16End : lineEnd;
-            if (selHi > selLo) {
-                const UINT32 count = selHi - selLo;
-                htm.resize(count);
-                UINT32 hitCount = 0;
-                HRESULT hr = layout->HitTestTextRange(
-                    selLo, count, originX, originY,
-                    htm.data(), count, &hitCount);
-                if (SUCCEEDED(hr)) {
-                    for (UINT32 h = 0; h < hitCount; ++h) {
-                        D2D1_RECT_F r = D2D1::RectF(
-                            htm[h].left, htm[h].top,
-                            htm[h].left + htm[h].width,
-                            htm[h].top + htm[h].height);
-                        rt->FillRectangle(r, brush);
-                    }
-                }
-            }
-        }
-        lineStart = lineEnd;
-        lineTop = lineBottom;
-        // Lines are in increasing y, so nothing below can be visible.
-        if (lineTop > viewBottom) break;
-    }
+    std::vector<platform::Rect> rects;
+    source.AppendRangeRects(u16Start, u16End, scrollY, viewBottom, &rects);
+    target.FillRects(rects, SeamColor(color));
 }
 
 // ---------------------------------------------------------------------------
@@ -319,12 +274,6 @@ static void FillSelectionHighlight(ID2D1RenderTarget* rt,
 // DirectWrite layout is asked where the range sits, through the
 // platform::TextRangeSource seam, and the fills go through the seam target.
 // Both objects are cheap and scoped to one block.
-
-// The seam colour of a palette entry. ThemeColor is D2D1_COLOR_F on Windows
-// and a plain four float struct elsewhere; the seam speaks the four floats.
-static platform::Color SeamColor(const ThemeColor& c) {
-    return platform::Color{c.r, c.g, c.b, c.a};
-}
 
 Renderer::Renderer() {}
 Renderer::~Renderer() { Release(); }
@@ -361,15 +310,13 @@ void Renderer::SetMarkers(const std::vector<TextMatch>* markers,
 }
 
 void Renderer::FillMatchHighlights(platform::RenderTarget& target,
-                                   IDWriteTextLayout* layout,
+                                   platform::TextRangeSource& source,
                                    const ThemeColor& matchColor,
                                    const ThemeColor& currentColor,
                                    const std::vector<uint32_t>& u16ToSrc,
                                    UINT32 u16Len,
                                    uint32_t blockStart, uint32_t blockEnd,
-                                   float originX, float originY,
                                    float scrollY, float viewportH) {
-    if (!layout) return;
     if (!searchMatches_ || searchMatches_->empty()) return;
     if (u16ToSrc.empty() || u16Len == 0) return;
 
@@ -378,7 +325,6 @@ void Renderer::FillMatchHighlights(platform::RenderTarget& target,
     // the shared one, so this answers the same as the pass itself would.
     if (!layout::BlockIntersectsAny(*searchMatches_, map)) return;
 
-    platform::DWriteRangeSource source(layout, originX, originY);
     const layout::PaintBand band{scrollY,
                                  scrollY + (viewportH > 0.0f ? viewportH : 0.0f)};
     layout::PaintMatchHighlights(target, source, map, band, *searchMatches_,
@@ -387,22 +333,19 @@ void Renderer::FillMatchHighlights(platform::RenderTarget& target,
 }
 
 void Renderer::FillMarkerHighlights(platform::RenderTarget& target,
-                                    IDWriteTextLayout* layout,
+                                    platform::TextRangeSource& source,
                                     const ThemeColor& fillColor,
                                     const ThemeColor& lineColor,
                                     const std::vector<uint32_t>& u16ToSrc,
                                     UINT32 u16Len,
                                     uint32_t blockStart, uint32_t blockEnd,
-                                    float originX, float originY,
                                     float scrollY, float viewportH) {
-    if (!layout) return;
     if (!HasMarkers()) return;
     if (u16ToSrc.empty() || u16Len == 0) return;
 
     const layout::BlockTextMap map{&u16ToSrc, u16Len, blockStart, blockEnd};
     if (!layout::BlockIntersectsAny(*markerRanges_, map)) return;
 
-    platform::DWriteRangeSource source(layout, originX, originY);
     const layout::PaintBand band{scrollY,
                                  scrollY + (viewportH > 0.0f ? viewportH : 0.0f)};
     layout::PaintMarkerHighlights(target, source, map, band, *markerRanges_,
@@ -677,11 +620,16 @@ void QaPinTrace(const char* line) {
 }  // namespace
 
 void Renderer::PaintSharedOverlays(
-    ID2D1RenderTarget* rt, IDWriteFactory* dw, const Document& doc,
+    platform::RenderTarget& rt, const Document& doc,
     const std::vector<const layout::LaidBlock*>& byNode,
     const layout::DocumentLayout& shared, const LayoutMetrics& m,
     float contentWidth, float originX, float topOffsetDip,
+    float viewportHeightDip, float scrollX,
     const Selection* sel, float scrollY) {
+    // The frame's scroll offset, applied to the coordinates rather than to
+    // the target: the seam has no transform, and this is the same shift the
+    // old SetTransform carried, so every band below lands where it did.
+    platform::OffsetTarget view(&rt, -scrollX, -scrollY);
     // Every band at the record's own y, the frame the walk measured:
     // padTop and the caller's top offset stack on it, so paint and
     // advance are the same number in both passes.
@@ -733,7 +681,13 @@ void Renderer::PaintSharedOverlays(
                     if (picture) {
                         const float drawX = bandX + m.codePad;
                         const float drawY = bandY + m.codePad;
-                        picture->Draw(d2d_ctx5_, dw, drawX, drawY,
+                        // The SVG painter is native (its own device
+                        // context), so it cannot ride the offset seam
+                        // target: the frame's scroll goes on the
+                        // coordinates here, the shift the old transform
+                        // carried.
+                        picture->Draw(d2d_ctx5_, dw_factory_,
+                                      drawX - scrollX, drawY - scrollY,
                                       picture->Width() * zoom_,
                                       picture->Height() * zoom_);
                         // Remember where this picture landed, so a click
@@ -768,10 +722,9 @@ void Renderer::PaintSharedOverlays(
                                           sel->Start() + sel->Length(),
                                           &washRects);
                 }
-                platform::D2DTarget codeTarget(rt, layoutEngine_.Factory());
-                DrawCodeBlock(codeTarget, dw, n, bandX, bandY, bandW, outH,
-                              sel, scrollY, washRects, b,
-                              rt->GetSize().height);
+                DrawCodeBlock(view, dw_factory_, n, bandX, bandY, bandW,
+                              outH, sel, scrollY, washRects, b,
+                              viewportHeightDip);
                 break;
             }
             case BlockKind::Table: {
@@ -790,11 +743,10 @@ void Renderer::PaintSharedOverlays(
                                           sel->Start() + sel->Length(),
                                           &washRects);
                 }
-                platform::D2DTarget tableTarget(rt, layoutEngine_.Factory());
-                DrawTable(tableTarget, dw, n, bandX, bandY, bandW, outH, sel,
+                DrawTable(view, dw_factory_, n, bandX, bandY, bandW, outH, sel,
                           scrollY, washRects,
                           b->table ? b->table.get() : nullptr,
-                          rt->GetSize().height);
+                          viewportHeightDip);
                 // A table that crosses the viewport's top edge keeps its
                 // header there. The row is drawn again as its own one row
                 // document at the edge, which reuses the whole painter (the
@@ -811,21 +763,17 @@ void Renderer::PaintSharedOverlays(
                         // hairlines, its funnels and its words. One replay
                         // puts the whole band on the edge, and the table's
                         // row painter is not asked to draw a row at a place
-                        // it was never measured for.
-                        platform::D2DTarget player(rt);
-                        D2D1_MATRIX_3X2_F saved = {};
-                        rt->GetTransform(&saved);
-                        // The band's items are the walk's: x from the table's
-                        // own left edge, y from its top. The frame's own
-                        // translation is kept for the column and dropped for
-                        // the row, which lands at the viewport's edge.
-                        rt->SetTransform(D2D1::Matrix3x2F::Translation(
-                            bandX + saved._31, -b->table->headerTop));
-                        display::Play(b->table->header, &player,
+                        // it was never measured for. The band's items are
+                        // the walk's: x from the table's own left edge, y
+                        // from its top. The column's own x offset is kept
+                        // and the row lands at the viewport's edge, the
+                        // shift the old saved transform expressed.
+                        platform::OffsetTarget pinned(
+                            &rt, bandX - scrollX, -b->table->headerTop);
+                        display::Play(b->table->header, &pinned,
                                       [this](const display::Image& item) {
                                           return ImageHandleFor(item);
                                       });
-                        rt->SetTransform(saved);
                     }
                     char pinLine[220];
                     snprintf(pinLine, sizeof(pinLine),
@@ -852,9 +800,7 @@ void Renderer::PaintSharedOverlays(
                 // measured them at, so they get the band's origin and
                 // the content column, never the record's picture
                 // width.
-                platform::D2DTarget mermaidTarget(rt,
-                                                  layoutEngine_.Factory());
-                DrawMermaidBlock(mermaidTarget, dw, n, bandX, bandY,
+                DrawMermaidBlock(view, dw_factory_, n, bandX, bandY,
                                  contentWidth);
                 break;
             }
@@ -896,8 +842,6 @@ void Renderer::PaintSharedOverlays(
                     !diagram.gantt) {
                     break;
                 }
-                platform::D2DTarget mermaidTarget(rt,
-                                                  layoutEngine_.Factory());
                 const float diagramPad = mermaid::kMermaidBlockPad;
                 const float availWidth = contentWidth > 2.0f * diagramPad
                                              ? contentWidth - 2.0f * diagramPad
@@ -907,7 +851,7 @@ void Renderer::PaintSharedOverlays(
                 diagramFont.family = "segoe ui";
                 diagramFont.size = diagramMetrics.bodyFontSize * kPtToDip;
                 platform::PaintMermaidDiagram(
-                    TextEngineForWalk(), &mermaidTarget, diagram, zoom_,
+                    TextEngineForWalk(), &view, diagram, zoom_,
                     availWidth, bandX, bandY, diagramPad, palette_,
                     diagramFont);
                 break;
@@ -981,11 +925,12 @@ void Renderer::PaintSharedOverlays(
         }
         if (picture.Width() <= 0.0f || picture.Height() <= 0.0f) continue;
         // List space is the column the walk owns, so the frame adds
-        // the same origin the replay translated by, and the standing
-        // scroll transform carries it to the view.
-        picture.Draw(d2d_ctx5_, dw,
-                     originX + img->rect.x,
-                     m.padTop + topOffsetDip + img->rect.y,
+        // the same origin the replay translated by, and the scroll
+        // offset goes on the coordinates, because this native painter
+        // does not ride the seam target.
+        picture.Draw(d2d_ctx5_, dw_factory_,
+                     originX + img->rect.x - scrollX,
+                     m.padTop + topOffsetDip + img->rect.y - scrollY,
                      img->rect.width, img->rect.height);
     }
 }
@@ -1320,25 +1265,27 @@ void Renderer::DrawCodeBlock(platform::RenderTarget& target, IDWriteFactory* dw,
             srcByte += utf8Len;
         }
         // Marker layer for this block, drawn behind the search fills. No
-        // brushes: the seam fills by colour, one brush per batch.
+        // brushes: the seam fills by colour, one brush per batch. The
+        // range source is the platform's geometry answer, built once for
+        // the block and asked by both layers.
+        platform::DWriteRangeSource range(native, x + m.codePad,
+                                          y + m.codePad);
         if (HasMarkers()) {
-            FillMarkerHighlights(target, native, pal.markerBg, pal.markerLine,
+            FillMarkerHighlights(target, range, pal.markerBg, pal.markerLine,
                                  matchU16ToSrc,
                                  static_cast<UINT32>(text16.size()),
                                  n.contentOffset,
                                  n.contentOffset + n.contentLength,
-                                 x + m.codePad, y + m.codePad,
                                  scrollY, viewportH);
         }
         if (HasSearchMatches()) {
             const uint32_t contentStart = n.contentOffset;
             const uint32_t contentEnd = contentStart + n.contentLength;
-            FillMatchHighlights(target, native, pal.findMatchBg,
+            FillMatchHighlights(target, range, pal.findMatchBg,
                                 pal.findCurrentMatchBg,
                                 matchU16ToSrc,
                                 static_cast<UINT32>(text16.size()),
                                 contentStart, contentEnd,
-                                x + m.codePad, y + m.codePad,
                                 scrollY, viewportH);
         }
     }
@@ -1618,6 +1565,10 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
                 }
                 const platform::Point cellOrigin{cellX + m.cellPadX,
                                                  curY + m.cellPadY};
+                // The platform's geometry answer for this cell, built
+                // once and asked by the marker and the search layer.
+                platform::DWriteRangeSource range(layout, cellOrigin.x,
+                                                  cellOrigin.y);
                 // Marker layer for this cell, behind the search fills.
                 if (HasMarkers() && !row.cells[c].text.empty() &&
                     !text16.empty() && !row.cells[c].u16ToSrc.empty()) {
@@ -1625,11 +1576,10 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
                     const uint32_t cellStart = cell.srcOffset;
                     const uint32_t cellEnd = cell.srcEnd > cellStart
                         ? cell.srcEnd : cellStart;
-                    FillMarkerHighlights(target, layout, pal.markerBg, pal.markerLine,
+                    FillMarkerHighlights(target, range, pal.markerBg, pal.markerLine,
                                          cell.u16ToSrc,
                                          static_cast<UINT32>(text16.size()),
                                          cellStart, cellEnd,
-                                         cellOrigin.x, cellOrigin.y,
                                          scrollY, viewportH);
                 }
                 // Search match highlights for this cell, drawn before the
@@ -1640,12 +1590,11 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
                     const uint32_t cellStart = cell.srcOffset;
                     const uint32_t cellEnd = cell.srcEnd > cellStart
                         ? cell.srcEnd : cellStart;
-                    FillMatchHighlights(target, layout, pal.findMatchBg,
+                    FillMatchHighlights(target, range, pal.findMatchBg,
                                         pal.findCurrentMatchBg,
                                         cell.u16ToSrc,
                                         static_cast<UINT32>(text16.size()),
                                         cellStart, cellEnd,
-                                        cellOrigin.x, cellOrigin.y,
                                         scrollY, viewportH);
                 }
                 // The selection wash for this cell, from the shared
@@ -2095,16 +2044,17 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
     return height;
 }
 
-float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
-                       const Document& doc, float widthDip, float scrollY,
+float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
+                       float widthDip, float viewportHeightDip, float scrollY,
                        float topOffsetDip, float scrollX,
                        const Selection* sel) {
-    if (!rt || !dw) return 0.0f;
+    if (!dw_factory_) return 0.0f;
     LayoutMetrics m = ComputeMetrics();
     const Palette& pal = palette_;
     // Viewport height in DIPs, used to limit selection highlighting to the
-    // lines actually on screen.
-    const float viewH = rt->GetSize().height;
+    // lines actually on screen. The seam has no size query, so the caller
+    // that owns the window hands it in.
+    const float viewH = viewportHeightDip > 0.0f ? viewportHeightDip : 0.0f;
     if (widthDip <= 0.0f) return m.padTop;
 
     float avail = widthDip - 2.0f * m.padX;
@@ -2117,28 +2067,18 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         ? (widthDip - contentWidth) * 0.5f
         : m.padX;
 
-    // The brushes shared by the passes below. The glyphs themselves
-    // are the replay's now, so the body, link and quote brushes the
-    // per node text painter kept are gone; what stays are the washes
-    // and the fills the caret side still paints from (the code card
-    // and the table build and release their own).
-    ID2D1SolidColorBrush* selBrush = nullptr;
-    if (sel && !sel->Empty()) {
-        rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
-    }
-
-    // Clip to content area (below the ribbon).
-    D2D1_SIZE_F clipSize = rt->GetSize();
-    rt->SetTransform(D2D1::Matrix3x2F::Identity());
+    // Clip to content area (below the ribbon). The clip is in target
+    // coordinates, so it goes on before any column offset is applied.
     svg_link_areas_.clear();
-    rt->PushAxisAlignedClip(
-        D2D1::RectF(0.0f, topOffsetDip, clipSize.width, clipSize.height),
-        (D2D1_ANTIALIAS_MODE)0);
+    rt.PushClip(platform::Rect{0.0f, topOffsetDip, widthDip,
+                               viewportHeightDip});
 
     // Scroll both axes: the content column exceeds the viewport width at
     // high zoom, so a vertical-only offset left the right-hand part of
-    // every line unreachable.
-    rt->SetTransform(D2D1::Matrix3x2F::Translation(-scrollX, -scrollY));
+    // every line unreachable. The seam has no transform; the offset is
+    // applied to the coordinates by this view target, which is how the
+    // old SetTransform was expressed.
+    platform::OffsetTarget view(&rt, -scrollX, -scrollY);
 
     // Clear the layout cache before rebuilding.
     if (cache_) cache_->Clear();
@@ -2151,7 +2091,8 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // are decoded before the walk reads their sizes.
     std::vector<const layout::LaidBlock*> sharedByNode;
     const auto sharedHold =
-        SharedLayoutPass(doc, dw, m, &pal, contentWidth, &sharedByNode, sel);
+        SharedLayoutPass(doc, dw_factory_, m, &pal, contentWidth,
+                         &sharedByNode, sel);
     const layout::DocumentLayout& shared = *sharedHold;
 
     // The engine the walk and the rect twin ask their geometry
@@ -2208,8 +2149,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 if (!svgTried) {
                     svgText = ImageHelper::LoadSvgText(ib.url, baseDir_);
                     if (img_cache_.size() >= 128) {
-                        if (img_cache_.front().bmp)
-                            img_cache_.front().bmp->Release();
+                        ImageHelper::ReleaseBitmap(img_cache_.front().bmp);
                         img_cache_.erase(img_cache_.begin());
                     }
                     img_cache_.push_back(
@@ -2233,7 +2173,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                 // repaints (the scroll ticks used to re-fetch it). The
                 // outcome is cached either way: the failure entry is
                 // what stops a dead URL being fetched again.
-                ID2D1Bitmap* bmp = nullptr;
+                platform::BitmapHandle bmp = nullptr;
                 bool alreadyTried = false;
                 for (const auto& e : img_cache_) {
                     if (e.url == ib.url) {
@@ -2243,20 +2183,20 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     }
                 }
                 if (!bmp && !alreadyTried) {
-                    bmp = ImageHelper::LoadBitmapFromUrl(
+                    bmp = ImageHelper::LoadBitmapForTarget(
                         rt, ib.url, columnDrawW, baseDir_);
                     if (img_cache_.size() >= 128) {
-                        if (img_cache_.front().bmp)
-                            img_cache_.front().bmp->Release();
+                        ImageHelper::ReleaseBitmap(img_cache_.front().bmp);
                         img_cache_.erase(img_cache_.begin());
                     }
                     img_cache_.push_back(
                         {ib.url, bmp, bmp == nullptr, std::string()});
                 }
                 if (bmp) {
-                    D2D1_SIZE_F bmpSize = bmp->GetSize();
-                    RememberImageSize(ib.url, bmpSize.width,
-                                      bmpSize.height);
+                    float bmpW = 0.0f;
+                    float bmpH = 0.0f;
+                    ImageHelper::BitmapSize(bmp, &bmpW, &bmpH);
+                    RememberImageSize(ib.url, bmpW, bmpH);
                     nodeDrewImage[nodeIdx] = 1;
                 }
             }
@@ -2278,39 +2218,34 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // reaches the neighbouring words or spaces. They go down first, under
     // the search and selection fills, as before.
     {
-        ID2D1SolidColorBrush* codeBg = nullptr;
-        rt->CreateSolidColorBrush(pal.inlineCodeBg, &codeBg);
-        if (codeBg) {
-            const float codeEm = m.codeFontSize * kPtToDip * zoom_;
-            const float padX = m.inlineCodePadX * codeEm;
-            const float originY = m.padTop + topOffsetDip;
-            for (const display::Item& item : shared.list.items) {
-                const auto* t = std::get_if<display::Text>(&item);
-                if (!t) continue;
-                const float top = originY + t->top;
-                if (top > scrollY + viewH || top + t->line.height < scrollY)
+        const platform::Color codeBg = SeamColor(pal.inlineCodeBg);
+        const float codeEm = m.codeFontSize * kPtToDip * zoom_;
+        const float padX = m.inlineCodePadX * codeEm;
+        const float originY = m.padTop + topOffsetDip;
+        for (const display::Item& item : shared.list.items) {
+            const auto* t = std::get_if<display::Text>(&item);
+            if (!t) continue;
+            const float top = originY + t->top;
+            if (top > scrollY + viewH || top + t->line.height < scrollY)
+                continue;
+            const auto& runs = t->line.runs;
+            for (size_t i = 0; i < runs.size(); ++i) {
+                if (!runs[i].font.monospace || runs[i].text.empty())
                     continue;
-                const auto& runs = t->line.runs;
-                for (size_t i = 0; i < runs.size(); ++i) {
-                    if (!runs[i].font.monospace || runs[i].text.empty())
-                        continue;
-                    const float right = i + 1 < runs.size()
-                                            ? runs[i + 1].x
-                                            : t->line.width;
-                    const float w = right - runs[i].x;
-                    if (w <= 0.0f) continue;
-                    const float boxH = std::min(t->line.height, 1.6f * codeEm);
-                    const float left = originX + t->x + runs[i].x;
-                    const float boxTop =
-                        top + (t->line.height - boxH) * 0.5f;
-                    D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(
-                        D2D1::RectF(left - padX, boxTop, left + w + padX,
-                                    boxTop + boxH),
-                        6.0f * zoom_, 6.0f * zoom_);
-                    rt->FillRoundedRectangle(rr, codeBg);
-                }
+                const float right = i + 1 < runs.size()
+                                        ? runs[i + 1].x
+                                        : t->line.width;
+                const float w = right - runs[i].x;
+                if (w <= 0.0f) continue;
+                const float boxH = std::min(t->line.height, 1.6f * codeEm);
+                const float left = originX + t->x + runs[i].x;
+                const float boxTop =
+                    top + (t->line.height - boxH) * 0.5f;
+                view.FillRoundedRect(
+                    platform::Rect{left - padX, boxTop, w + 2.0f * padX,
+                                   boxH},
+                    6.0f * zoom_, codeBg);
             }
-            codeBg->Release();
         }
     }
 
@@ -2444,8 +2379,11 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         float textX = drawX + markerW;
         float textW = drawW - markerW;
 
+        // The caret cache's layout. layoutcache.h speaks the platform's
+        // own text layout, so this one object, and the format it is built
+        // from, are the two DirectWrite types the frame still needs.
         IDWriteTextLayout* layout = nullptr;
-        HRESULT hr = dw->CreateTextLayout(
+        HRESULT hr = dw_factory_->CreateTextLayout(
             reinterpret_cast<const WCHAR*>(layoutText16.data()),
             static_cast<UINT32>(layoutText16.size()),
             fmt, textW > 0 ? textW : drawW, 1.0e9f, &layout);
@@ -2517,12 +2455,12 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (HasMarkers() && !u16ToSrc.empty() && !text16.empty()) {
             const uint32_t blockStart = n.srcOffset;
             const uint32_t blockEnd = blockStart + n.srcLength;
-            platform::D2DTarget highlights(rt);
-            FillMarkerHighlights(highlights, layout, pal.markerBg, pal.markerLine,
+            platform::DWriteRangeSource source(layout, textX, curY);
+            FillMarkerHighlights(view, source, pal.markerBg, pal.markerLine,
                                  u16ToSrc,
                                  static_cast<UINT32>(text16.size()),
                                  blockStart, blockEnd,
-                                 textX, curY, scrollY, viewH);
+                                 scrollY, viewH);
         }
 
         // Search match highlights, drawn before the selection highlight so
@@ -2530,13 +2468,13 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         if (HasSearchMatches() && !u16ToSrc.empty() && !text16.empty()) {
             const uint32_t blockStart = n.srcOffset;
             const uint32_t blockEnd = blockStart + n.srcLength;
-            platform::D2DTarget highlights(rt);
-            FillMatchHighlights(highlights, layout, pal.findMatchBg,
+            platform::DWriteRangeSource source(layout, textX, curY);
+            FillMatchHighlights(view, source, pal.findMatchBg,
                                 pal.findCurrentMatchBg,
                                 u16ToSrc,
                                 static_cast<UINT32>(text16.size()),
                                 blockStart, blockEnd,
-                                textX, curY, scrollY, viewH);
+                                scrollY, viewH);
         }
 
         // Draw the selection wash, Batch 3.3: the same shared rect rule
@@ -2547,7 +2485,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         // did: the placement below is the walk's own text placement,
         // the one the replay paints the lines at, and the band top
         // counts the images the record stacked above the text.
-        if (selBrush && sel && !sel->Empty() && !b->lines.empty()) {
+        if (sel && !sel->Empty() && !b->lines.empty()) {
             std::vector<uint32_t> visToSrc;
             std::vector<uint32_t> visToSrcEnd;
             BuildBlockMapping(n, &visToSrc, &visToSrcEnd);
@@ -2561,12 +2499,7 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
                     b->lines, visToSrc, twinEngine, washX, washTop,
                     sel->Start(), sel->Start() + sel->Length(),
                     &washRects, ColumnAlign::Default, 0.0f, false);
-                for (const platform::Rect& r : washRects) {
-                    rt->FillRectangle(
-                        D2D1::RectF(r.x, r.y, r.x + r.width,
-                                    r.y + r.height),
-                        selBrush);
-                }
+                view.FillRects(washRects, SeamColor(pal.selectionBg));
             }
         }
 
@@ -2598,34 +2531,31 @@ float Renderer::Render(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         }
     }
 
-    // Phase two, the replay: the whole display list under one
-    // translate, the exact structure the mac twin uses. Every band
-    // sits at padTop + topOffset + record.y, exactly where the per
-    // node pass puts the caret bands, so the glyphs land on the same
-    // lines the cache points at; the scroll-only translate keeps every
-    // item at its walked width and position.
+    // Phase two, the replay: the whole display list under one column
+    // origin, the exact structure the mac twin uses. Every band sits at
+    // padTop + topOffset + record.y, exactly where the per node pass
+    // puts the caret bands, so the glyphs land on the same lines the
+    // cache points at; the column target keeps every item at its walked
+    // width and position.
     {
         const float originY = m.padTop + topOffsetDip;
-        platform::D2DTarget player(rt);
-        rt->SetTransform(D2D1::Matrix3x2F::Translation(
-            originX - scrollX, originY - scrollY));
-        display::Play(shared.list, &player,
+        platform::OffsetTarget column(&rt, originX - scrollX,
+                                      originY - scrollY);
+        display::Play(shared.list, &column,
                       [this](const display::Image& item) {
                           return ImageHandleFor(item);
                       });
-        rt->SetTransform(D2D1::Matrix3x2F::Translation(-scrollX, -scrollY));
     }
 
     // Phase three, the opaque layers above the glyph pass: cards and
-    // cells that cover their own bands, so they re-run on the raw
-    // target, in view coordinates, each at RecordY.
-    PaintSharedOverlays(rt, dw, doc, sharedByNode, shared, m, contentWidth,
-                        originX, topOffsetDip, sel, scrollY);
+    // cells that cover their own bands, so they re-run above the list,
+    // in view coordinates, each at RecordY.
+    PaintSharedOverlays(rt, doc, sharedByNode, shared, m, contentWidth,
+                        originX, topOffsetDip, viewportHeightDip, scrollX,
+                        sel, scrollY);
 
-    rt->SetTransform(D2D1::Matrix3x2F::Identity());
-    rt->PopAxisAlignedClip();
+    rt.PopClip();
 
-    if (selBrush) selBrush->Release();
     // The same extent the old curY walk returned: the last band's
     // bottom on the frame, gaps included, so Measure and this pass
     // still answer callers with one number.
@@ -2758,12 +2688,12 @@ float Renderer::MeasureSourceView(IDWriteFactory* dw, const std::string& src,
     return totalH;
 }
 
-float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
+float Renderer::RenderSourceView(platform::RenderTarget& rt,
                                   const std::string& src, float widthDip,
-                                  float scrollY, float topOffsetDip,
-                                  float scrollX,
+                                  float viewportHeightDip, float scrollY,
+                                  float topOffsetDip, float scrollX,
                                   const Selection* sel) {
-    if (!rt || !dw || !code_fmt_) return topOffsetDip;
+    if (!dw_factory_ || !code_fmt_) return topOffsetDip;
 
     // Own the cache lifecycle like Render() does: clear stale blocks so
     // repeated calls never accumulate layout-owned entries.
@@ -2771,7 +2701,7 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
 
     const Palette& pal = palette_;
     LayoutMetrics m = ComputeMetrics();
-    const float viewH = rt->GetSize().height;
+    const float viewH = viewportHeightDip > 0.0f ? viewportHeightDip : 0.0f;
     float avail = widthDip - 2.0f * m.padX;
     float contentWidth = wrapEnabled_ ? avail : kNoWrapContentWidthDip;
     if (wrapEnabled_ && contentWidth > m.maxContentWidth)
@@ -2789,48 +2719,48 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
     // builds afresh, so an edit can never show the old text.
     const bool allowed = srcState_.fresh || layoutReuse_;
     srcState_.fresh = false;
-    if (!EnsureSourceLayout(dw, src, widthDip, textW, contentWidth, !allowed))
+    if (!EnsureSourceLayout(dw_factory_, src, widthDip, textW, contentWidth,
+                            !allowed))
         return topOffsetDip + 20.0f;
     const std::u16string& text16 = srcState_.text16;
+    // The caret cache keeps this layout: layoutcache.h speaks the
+    // platform's own text layout, so the cache is where DirectWrite's
+    // type is still needed here.
     IDWriteTextLayout* layout = srcState_.layout;
     DWRITE_TEXT_METRICS tm = {};
     layout->GetMetrics(&tm);
 
-    // Clip to the content area (document coordinates; transform handles scrollY).
-    D2D1_RECT_F clipRect = D2D1::RectF(
-        originX, textY, originX + contentWidth, textY + tm.height + 50.0f);
-    rt->PushAxisAlignedClip(clipRect, D2D1_ANTIALIAS_MODE_ALIASED);
+    // Clip to the content area. The clip is in target coordinates, before
+    // the scroll offset is applied to the coordinates below.
+    rt.PushClip(platform::Rect{originX, textY, contentWidth,
+                               tm.height + 50.0f});
 
-    // Translate for scrolling.
-    rt->SetTransform(D2D1::Matrix3x2F::Translation(-scrollX, -scrollY));
-
-    // Draw text.
-    ID2D1SolidColorBrush* textBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.textPrimary, &textBrush);
-    ID2D1SolidColorBrush* selBrush = nullptr;
-    rt->CreateSolidColorBrush(pal.selectionBg, &selBrush);
+    // The scroll offset, carried by the coordinates instead of a target
+    // transform: the seam has no transform, and this target is the frame.
+    platform::OffsetTarget view(&rt, -scrollX, -scrollY);
 
     const std::vector<uint32_t>& u16ToSrcMap = srcState_.u16ToSrc;
+    // The platform's geometry answer for the one source block, asked by
+    // the marker layer, the search fills and the selection wash.
+    platform::DWriteRangeSource range(layout, textX, textY);
     // Marker layer across the whole source, behind the search fills.
     if (HasMarkers() && !u16ToSrcMap.empty() && !text16.empty()) {
-        platform::D2DTarget highlights(rt);
-        FillMarkerHighlights(highlights, layout, pal.markerBg, pal.markerLine,
+        FillMarkerHighlights(view, range, pal.markerBg, pal.markerLine,
                              u16ToSrcMap, static_cast<UINT32>(text16.size()),
                              0, static_cast<uint32_t>(src.size()),
-                             textX, textY, scrollY, viewH);
+                             scrollY, viewH);
     }
     // Search match highlights, drawn before the selection highlight so
     // selection and text stay on top of the match fills. Source view covers
     // the whole document, so the block range is the whole source.
     if (HasSearchMatches() && !u16ToSrcMap.empty() && !text16.empty()) {
-        platform::D2DTarget highlights(rt);
-        FillMatchHighlights(highlights, layout, pal.findMatchBg,
+        FillMatchHighlights(view, range, pal.findMatchBg,
                             pal.findCurrentMatchBg,
                             u16ToSrcMap, static_cast<UINT32>(text16.size()),
                             0, static_cast<uint32_t>(src.size()),
-                            textX, textY, scrollY, viewH);
+                            scrollY, viewH);
     }
-    if (selBrush && sel && !sel->Empty() && !u16ToSrcMap.empty()) {
+    if (sel && !sel->Empty() && !u16ToSrcMap.empty()) {
         uint32_t selStart = sel->Start();
         uint32_t selEnd = selStart + sel->Length();
         // Binary search: find first u16 index where u16ToSrc[idx] >= srcOff.
@@ -2849,14 +2779,15 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         UINT32 u16Start = findU16(selStart);
         UINT32 u16End = (selEnd >= static_cast<uint32_t>(src.size())) ?
             static_cast<UINT32>(text16.size()) : findU16(selEnd);
-        FillSelectionHighlight(rt, layout, selBrush, u16Start, u16End,
-                               textX, textY, scrollY, viewH);
+        FillSelectionHighlight(view, range, pal.selectionBg, u16Start,
+                               u16End, scrollY, viewH);
     }
 
-    // Draw the text in document coordinates (transform handles scrollY).
-    rt->DrawTextLayout(D2D1::Point2F(textX, textY),
-                       layout, textBrush,
-                       D2D1_DRAW_TEXT_OPTIONS_CLIP);
+    // Draw the text. The block is the layout the cache keeps, drawn
+    // through the seam: DrawLayout carries the native object to the
+    // target's own DrawTextLayout, the call this used to make directly.
+    platform::DWriteTextLayout sourceBlock(layout, tm.width, tm.height, {});
+    view.DrawLayout(sourceBlock, textX, textY, SeamColor(pal.textPrimary));
 
     // Add block layout to cache for hit-testing and caret placement.
     if (cache_) {
@@ -2869,9 +2800,7 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         // Extend the block's y range to cover the full viewport so
         // that margin clicks at any visible y find this block even
         // when the text is shorter than the viewport.
-        D2D1_SIZE_F rtSize = rt->GetSize();
-        float viewportH = rtSize.height;
-        if (bl.height < viewportH) bl.height = viewportH + m.padTop;
+        if (bl.height < viewH) bl.height = viewH + m.padTop;
         bl.srcOffset = 0;
         bl.srcLength = static_cast<uint32_t>(src.size());
         bl.textStartOffset = 0;
@@ -2884,11 +2813,8 @@ float Renderer::RenderSourceView(ID2D1RenderTarget* rt, IDWriteFactory* dw,
         cache_->Add(bl);
     }
 
-    rt->SetTransform(D2D1::Matrix3x2F::Identity());
-    rt->PopAxisAlignedClip();
+    rt.PopClip();
 
-    if (textBrush) textBrush->Release();
-    if (selBrush) selBrush->Release();
     return textY + tm.height;
 }
 
@@ -2926,7 +2852,7 @@ void Renderer::ClearSvgCache() {
     // Inline bitmaps belong to the render target; drop them whenever the
     // target is recreated or the document changes.
     for (auto& e : img_cache_) {
-        if (e.bmp) e.bmp->Release();
+        ImageHelper::ReleaseBitmap(e.bmp);
     }
     img_cache_.clear();
     // Intrinsic sizes are read from the files on disk, so a document change

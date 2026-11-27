@@ -74,8 +74,27 @@ MAC_RAW = re.compile(r"\b(?:CG[A-Za-z]*Ref|CT[A-Za-z]*Ref|NSGraphicsContext)\b")
 # activation stroke (#666666); gantt kept its bold section titles. Both
 # diagrams paint through platform::PaintMermaidDiagram now and their Windows
 # files are gone, so the shell is all that is counted: 42 of an original 127.
-WINDOWS_BASELINE = 42
-WINDOWS_TOTAL_BASELINE = 42
+#
+# 42 -> 26: the three frame entry points left Direct2D. Renderer::Render,
+# Renderer::RenderSourceView and Renderer::PaintSharedOverlays take
+# platform::RenderTarget&, the scroll offset and the column origin are carried
+# by platform::OffsetTarget instead of SetTransform, the inline code chips and
+# the selection washes are seam fills, the decoded image cache holds the
+# seam's opaque BitmapHandle, and the two highlight helpers take a
+# platform::TextRangeSource rather than an IDWriteTextLayout. The clip is
+# platform::RenderTarget::PushClip.
+#
+# The floor for the next step is 26, and it is 26 for one reason: the caret
+# cache. layoutcache.h keeps BlockLayout.layout as the platform's own
+# IDWriteTextLayout, so Render and RenderSourceView must build one (two
+# IDWriteTextLayout names and one IDWriteTextFormat, three of the 26), and
+# every private helper that builds or keeps that same object names it too
+# (the layout pass, DrawCodeBlock, DrawTable, EnsureSourceLayout, the mermaid
+# measure). The range source is already behind the seam; it is handed the
+# layout the cache owns. To go below 26, layoutcache.h has to speak a seam
+# handle for the block, and the mermaid measure has to take a TextEngine.
+WINDOWS_BASELINE = 26
+WINDOWS_TOTAL_BASELINE = 26
 
 PAINTERS = [
     ("src/renderer.cpp", WINDOWS_RAW, WINDOWS_BASELINE, "windows painter"),
