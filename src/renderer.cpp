@@ -938,8 +938,27 @@ void Renderer::PaintSharedOverlays(
 bool Renderer::Init(IDWriteFactory* dw) {
     if (!dw) return false;
     dw_factory_ = dw;
+    engine_ = &layoutEngine_;
 
     LayoutMetrics base = BaseMetrics();
+
+    // The faces of the three block roles, in seam terms. A size already
+    // carries the zoom, the way the formats below did, so a zoom change
+    // still re-creates the roles through Release and Init.
+    const float zoom = zoom_ > 0.0f ? zoom_ : 1.0f;
+    bodyFont_.family = base.bodyFont;
+    bodyFont_.size = base.bodyFontSize * kPtToDip * zoom;
+    codeFont_.family = base.codeFont;
+    codeFont_.size = base.codeFontSize * kPtToDip * zoom;
+    codeFont_.monospace = true;
+    for (int lvl = 1; lvl <= 6; ++lvl) {
+        platform::FontSpec& heading = headingFont_[lvl];
+        heading.family =
+            base.headingFamily[lvl] ? base.headingFamily[lvl] : base.bodyFont;
+        heading.size = base.headingSizes[lvl] * kPtToDip * zoom;
+        heading.bold = base.headingBold[lvl];
+        heading.semibold = !base.headingBold[lvl] && !base.headingFamily[lvl];
+    }
 
     // Body format: Segoe UI, 15pt.
     HRESULT hr = dw->CreateTextFormat(
@@ -950,18 +969,21 @@ bool Renderer::Init(IDWriteFactory* dw) {
         base.bodyFontSize * kPtToDip * zoom_,
         L"", &body_fmt_);
     if (FAILED(hr) || !body_fmt_) return false;
-    auto applyLineBox = [this](IDWriteTextFormat* fmt, float lineHeightEm) {
+    auto applyLineBox = [this](IDWriteTextFormat* fmt,
+                               const platform::FontSpec& font,
+                               float lineHeightEm) {
         float natural = 0.0f;
         float ascent = 0.0f;
-        if (!fmt || !FontBoxOf(fmt, &natural, &ascent) || natural <= 0.0f) {
+        if (!fmt || !engine_ ||
+            !engine_->FontBox(font, &natural, &ascent) || natural <= 0.0f) {
             return;
         }
-        const float height = lineHeightEm * fmt->GetFontSize();
+        const float height = lineHeightEm * font.size;
         const float baseline = (height - natural) * 0.5f + ascent;
         fmt->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, height,
                             baseline);
     };
-    applyLineBox(body_fmt_, base.bodyLineHeight);
+    applyLineBox(body_fmt_, bodyFont_, base.bodyLineHeight);
 
     // Flowchart coordinates are kept in canonical DIPs. This format is
     // deliberately unzoomed, so zoom is applied once by the drawing path.
@@ -999,7 +1021,7 @@ bool Renderer::Init(IDWriteFactory* dw) {
         base.codeFontSize * kPtToDip * zoom_,
         L"", &code_fmt_);
     if (FAILED(hr) || !code_fmt_) return false;
-    applyLineBox(code_fmt_, base.codeLineHeight);
+    applyLineBox(code_fmt_, codeFont_, base.codeLineHeight);
     // Whole words only: the shared walk's canon (the same rule the
     // golden engine spells, a run never breaks inside itself) lets an
     // unbreakable token overflow the line instead of splitting it
@@ -1035,7 +1057,8 @@ bool Renderer::Init(IDWriteFactory* dw) {
             base.headingSizes[lvl] * kPtToDip * zoom_,
             L"", &heading_fmt_[lvl]);
         if (FAILED(hr) || !heading_fmt_[lvl]) return false;
-        applyLineBox(heading_fmt_[lvl], base.headingLineHeight);
+        applyLineBox(heading_fmt_[lvl], headingFont_[lvl],
+                     base.headingLineHeight);
     }
 
     return true;
@@ -1043,10 +1066,10 @@ bool Renderer::Init(IDWriteFactory* dw) {
 
 void Renderer::Release() {
     auto rel = [](IDWriteTextFormat*& p) { if (p) { p->Release(); p = nullptr; } };
-    // Formats are about to be recreated (zoom change) or torn down:
-    // drop the line-height cache with them. Keys are format pointers,
-    // and a newly allocated format could land on a freed one's
-    // address, which would answer a different zoom's cached height.
+    // The formats are about to be re-created (a zoom change) or torn
+    // down. The line-height cache is keyed by the face, and a face
+    // carries the zoom in its size, so a new zoom would answer a new key
+    // anyway; it is dropped here so a torn down renderer keeps nothing.
     lineHeightCache_.clear();
     DropSourceLayout();
     rel(body_fmt_);
@@ -1057,65 +1080,33 @@ void Renderer::Release() {
     for (int i = 1; i <= 6; ++i) rel(heading_fmt_[i]);
 }
 
-// Natural line height of the format: ascent + descent + lineGap from
-// the font's own metrics, scaled from design units to the format's
-// size. This is what the cursor-blinking guide calls "the current
-// font's line height" for the caret: distinct from the em size (the
-// height of one character) the code used before, and also distinct
-// from the rendered line box, which additionally carries the app's
-// line-spacing multiplier. A zero result means the metrics could
-// not be resolved; the caller then falls back to the rendered line.
-bool Renderer::FontBoxOf(IDWriteTextFormat* fmt, float* natural,
-                         float* ascent) {
-    if (!fmt) return false;
-    IDWriteFontCollection* coll = nullptr;
-    if (SUCCEEDED(fmt->GetFontCollection(&coll)) && coll) {
-        IDWriteFontFamily* family = nullptr;
-        UINT32 idx = 0; BOOL exists = FALSE;
-        wchar_t famName[64];
-        UINT32 nameLen = fmt->GetFontFamilyNameLength();
-        if (nameLen < 64 &&
-            SUCCEEDED(fmt->GetFontFamilyName(famName, 64)) &&
-            SUCCEEDED(coll->FindFamilyName(famName, &idx, &exists)) &&
-            exists &&
-            SUCCEEDED(coll->GetFontFamily(idx, &family)) && family) {
-            IDWriteFont* font = nullptr;
-            if (SUCCEEDED(family->GetFirstMatchingFont(
-                    fmt->GetFontWeight(), fmt->GetFontStretch(),
-                    fmt->GetFontStyle(), &font)) && font) {
-                DWRITE_FONT_METRICS m = {};
-                font->GetMetrics(&m);
-                const float units = static_cast<float>(
-                    m.ascent + m.descent + m.lineGap);
-                const float design =
-                    static_cast<float>(m.designUnitsPerEm);
-                if (design > 0.0f && units > 0.0f) {
-                    const float size = fmt->GetFontSize();
-                    if (natural) *natural = size * units / design;
-                    if (ascent) {
-                        *ascent = size * static_cast<float>(m.ascent) / design;
-                    }
-                    font->Release();
-                    family->Release();
-                    coll->Release();
-                    return true;
-                }
-                font->Release();
-            }
-            family->Release();
-        }
-        coll->Release();
-    }
-    return false;
+// The key one face's line height is cached under: the family, the size
+// and the three flags that pick a face out of it. Two roles that ask
+// about the same face share one answer, which is what the format pointer
+// key did while a format was the face.
+static std::string FontKey(const platform::FontSpec& font) {
+    char buf[320];
+    snprintf(buf, sizeof(buf), "%s|%.3f|%d%d%d", font.family.c_str(),
+             static_cast<double>(font.size), font.bold ? 1 : 0,
+             font.semibold ? 1 : 0, font.italic ? 1 : 0);
+    return std::string(buf);
 }
 
-float Renderer::LineHeightOf(IDWriteTextFormat* fmt) {
-    if (!fmt) return 0.0f;
-    auto hit = lineHeightCache_.find(fmt);
+// Natural line height of the face: ascent + descent + lineGap from the
+// font's own metrics, scaled to the size the spec names. This is what
+// the cursor-blinking guide calls "the current font's line height" for
+// the caret: distinct from the em size (the height of one character) the
+// code used before, and also distinct from the rendered line box, which
+// additionally carries the app's line-spacing multiplier. A zero result
+// means the metrics could not be resolved; the caller then falls back to
+// the rendered line.
+float Renderer::LineHeightOf(const platform::FontSpec& font) {
+    const std::string key = FontKey(font);
+    auto hit = lineHeightCache_.find(key);
     if (hit != lineHeightCache_.end()) return hit->second;
     float natural = 0.0f;
-    if (!FontBoxOf(fmt, &natural, nullptr)) natural = 0.0f;
-    lineHeightCache_[fmt] = natural;
+    if (!engine_ || !engine_->FontBox(font, &natural, nullptr)) natural = 0.0f;
+    lineHeightCache_[key] = natural;
     return natural;
 }
 
@@ -1338,7 +1329,7 @@ void Renderer::DrawCodeBlock(platform::RenderTarget& target, IDWriteFactory* dw,
         bl.u16ToSrcEnd = std::move(cu16ToSrcEnd);
         // Caret height: the natural line height of the code font
         // (cursor-blinking guide), not the em size.
-        bl.fontHeight = LineHeightOf(code_fmt_);
+        bl.fontHeight = LineHeightOf(code_font_);
         cache_->Add(bl);
     }
     outH = blockH;
@@ -1672,7 +1663,7 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
                     bl.isTableCell = true;
                     bl.u16ToSrc = row.cells[c].u16ToSrc; // copy parser's mapping
                     bl.u16ToSrcEnd = row.cells[c].u16ToSrcEnd;
-                    bl.fontHeight = LineHeightOf(body_fmt_);
+                    bl.fontHeight = LineHeightOf(body_font_);
                     cache_->Add(bl);
                 }
             }
@@ -2224,6 +2215,10 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
         float drawW = b->width > 0.0f ? b->width : contentWidth;
 
         IDWriteTextFormat* fmt = nullptr;
+        // The face of this block, in seam terms: the caret height and
+        // the block's own layout both name it, and the engine owns the
+        // format it becomes.
+        const platform::FontSpec* face = &bodyFont_;
         if (n.block == BlockKind::Heading) {
             // Only the caret's DirectWrite side: fmt feeds the cache
             // and washes; the glyphs and rule come from the list.
@@ -2231,6 +2226,7 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
             if (lvl < 1) lvl = 1;
             if (lvl > 6) lvl = 6;
             fmt = heading_fmt_[lvl];
+            face = &headingFont_[lvl];
         } else {
             fmt = body_fmt_;
         }
@@ -2473,7 +2469,7 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
             bl.u16ToSrcEnd = std::move(u16ToSrcEnd);
             // Caret height: the natural line height of this block's
             // format (cursor-blinking guide), not the em size.
-            bl.fontHeight = LineHeightOf(fmt);
+            bl.fontHeight = LineHeightOf(*face);
             cache_->Add(bl);
         }
     }
@@ -2750,7 +2746,7 @@ float Renderer::RenderSourceView(platform::RenderTarget& rt,
         bl.srcLength = static_cast<uint32_t>(src.size());
         bl.textStartOffset = 0;
         bl.nodeIndex = 0;
-        bl.fontHeight = LineHeightOf(code_fmt_);
+        bl.fontHeight = LineHeightOf(code_font_);
         bl.u16ToSrc = srcState_.u16ToSrc;
         bl.u16ToSrcEnd = srcState_.u16ToSrcEnd;
         cache_->Add(bl);

@@ -83,6 +83,7 @@ std::wstring FamilyFor(const std::string& family) {
 // instead: the same look, and DirectWrite always has it.
 int WeightFor(const FontSpec& font) {
     if (font.bold) return DWRITE_FONT_WEIGHT_BOLD;
+    if (font.semibold) return DWRITE_FONT_WEIGHT_SEMI_BOLD;
     std::string f = font.family;
     std::transform(f.begin(), f.end(), f.begin(),
                    [](unsigned char c) { return (char)tolower(c); });
@@ -146,6 +147,58 @@ void DWriteEngine::BeginLayout() {
 
 float DWriteEngine::LineHeight(const FontSpec& font) const {
     return font.size > 0.0f ? font.size * 1.5f : 12.0f;
+}
+
+bool DWriteEngine::FontBox(const FontSpec& font, float* natural,
+                           float* ascent) const {
+    if (!factory_ || font.family.empty() || !(font.size > 0.0f)) return false;
+    IDWriteFontCollection* coll = nullptr;
+    if (FAILED(factory_->GetSystemFontCollection(&coll, FALSE)) || !coll) {
+        return false;
+    }
+    // The walk the renderer used to do itself: the family by name, its
+    // face at the weight and slant the spec names, then the face's own
+    // metrics scaled from design units to the spec's size.
+    const std::wstring family = ToUtf16(font.family);
+    UINT32 index = 0;
+    BOOL exists = FALSE;
+    if (FAILED(coll->FindFamilyName(family.c_str(), &index, &exists)) ||
+        !exists) {
+        coll->Release();
+        return false;
+    }
+    IDWriteFontFamily* found = nullptr;
+    if (FAILED(coll->GetFontFamily(index, &found)) || !found) {
+        coll->Release();
+        return false;
+    }
+    IDWriteFont* face = nullptr;
+    const bool ok = SUCCEEDED(found->GetFirstMatchingFont(
+        static_cast<DWRITE_FONT_WEIGHT>(WeightFor(font)),
+        DWRITE_FONT_STRETCH_NORMAL,
+        font.italic ? DWRITE_FONT_STYLE_ITALIC : DWRITE_FONT_STYLE_NORMAL,
+        &face)) && face;
+    bool answered = false;
+    if (ok) {
+        DWRITE_FONT_METRICS metrics = {};
+        face->GetMetrics(&metrics);
+        const float units =
+            static_cast<float>(metrics.ascent + metrics.descent +
+                               metrics.lineGap);
+        const float design = static_cast<float>(metrics.designUnitsPerEm);
+        if (design > 0.0f && units > 0.0f) {
+            if (natural) *natural = font.size * units / design;
+            if (ascent) {
+                *ascent = font.size * static_cast<float>(metrics.ascent) /
+                          design;
+            }
+            answered = true;
+        }
+        face->Release();
+    }
+    found->Release();
+    coll->Release();
+    return answered;
 }
 
 DWriteTextLayout::DWriteTextLayout(IDWriteTextLayout* layout, float width,

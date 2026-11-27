@@ -69,6 +69,30 @@ void CheckTextEngine(TextEngine& engine) {
     const float h2 = engine.LineHeight(MakeFont(24.0f));
     EXPECT_TRUE(h2 >= h1);
 
+    // The font's own box: a natural line height and an ascent inside it,
+    // the same pair pass to pass. Every engine, native or not, answers
+    // the caret's question with a box no smaller than the glyphs it sets.
+    // The probe names the theme's body face, which both ports resolve to
+    // a real family, so a native engine can answer with its own metrics.
+    FontSpec probe;
+    probe.family = "Segoe UI";
+    probe.size = 14.0f;
+    float natural = 0.0f;
+    float ascent = 0.0f;
+    EXPECT_TRUE(engine.FontBox(probe, &natural, &ascent));
+    EXPECT_GT(natural, 0.0f);
+    EXPECT_GT(ascent, 0.0f);
+    EXPECT_LE(ascent, natural);
+    EXPECT_TRUE(natural >= 14.0f * 0.9f);
+    float naturalAgain = 0.0f;
+    EXPECT_TRUE(engine.FontBox(probe, &naturalAgain, nullptr));
+    EXPECT_NEAR(naturalAgain, natural, 0.001f);
+    // A bigger size asks a bigger box.
+    probe.size = 28.0f;
+    float bigBox = 0.0f;
+    EXPECT_TRUE(engine.FontBox(probe, &bigBox, nullptr));
+    EXPECT_GT(bigBox, natural);
+
     std::vector<GlyphRun> runs = {MakeRun("first words", 14.0f),
                                   MakeRun("second", 14.0f)};
 

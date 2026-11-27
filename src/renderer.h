@@ -59,16 +59,13 @@ public:
 
     // Set a specific zoom factor. The value is clamped to
     // [kMinZoom, kMaxZoom] before it is stored.
-    // Line height of fmt per DWRITE_FONT_METRICS (ascent+descent+
-    // lineGap) scaled to the format's size, cached. This is the natural
-    // font line height the cursor-blinking guide requires for the
-    // caret, distinct from both the em size and the rendered line box
-    // (the app's line spacing multiplier is deliberately excluded).
-    float LineHeightOf(IDWriteTextFormat* fmt);
-
-    // The font's natural line box and ascent, in DIP, for the CSS
-    // line-height setup. False when the metrics cannot be resolved.
-    bool FontBoxOf(IDWriteTextFormat* fmt, float* natural, float* ascent);
+    // Line height of the face per the engine's font metrics (ascent +
+    // descent + line gap) at the spec's size, cached. This is the natural
+    // font line height the cursor-blinking guide requires for the caret,
+    // distinct from both the em size and the rendered line box (the app's
+    // line spacing multiplier is deliberately excluded). The spec is a
+    // seam question, not a platform format: the engine resolves the face.
+    float LineHeightOf(const platform::FontSpec& font);
     void SetZoom(float z);
     float GetZoom() const { return zoom_; }
     float Zoom() const { return zoom_; }  // legacy alias for GetZoom
@@ -225,6 +222,16 @@ public:
     bool SvgLinkAt(float docX, float docY, std::string* href) const;
 
 private:
+    // The faces the block roles wear, in seam terms: what the renderer
+    // used to keep as a platform text format per role. The engine owns
+    // the format a face needs; the renderer owns the face.
+    platform::FontSpec bodyFont_;
+    platform::FontSpec codeFont_;
+    platform::FontSpec headingFont_[7];
+    // The engine the renderer asks its text questions, its block layouts
+    // and its diagram measure. It is the renderer's own DWriteEngine
+    // below, so Init needs no factory from the shell.
+    platform::TextEngine* engine_ = nullptr;
     IDWriteTextFormat* body_fmt_ = nullptr;
     IDWriteTextFormat* num_fmt_ = nullptr;     // seq autonumber (12px)
     IDWriteTextFormat* code_fmt_ = nullptr;      // monospace for code blocks
@@ -250,11 +257,11 @@ private:
     // before them so the find hit and the text stay readable on top.
     const std::vector<TextMatch>* markerRanges_ = nullptr;
     bool markersVisible_ = false;
-    // Cache of the line height per text format, in DIP at the current
-    // zoom, used for caret sizing (cursor-blinking guide). Keyed by
-    // format pointer: formats are re-created on zoom change, so the
-    // pointer acts as the cache key and a miss refills it.
-    std::map<const void*, float> lineHeightCache_;
+    // Cache of the line height per face, in DIP at the current zoom,
+    // used for caret sizing (cursor-blinking guide). Keyed by the seam's
+    // font spec: a face is its family, its size and its weight and slant,
+    // and a zoom change re-creates the specs, so the key moves with it.
+    std::map<std::string, float> lineHeightCache_;
     // The palette the frame is painted in. Light until the shell says
     // otherwise, which is what every existing caller expects.
     Palette palette_ = BasePalette();

@@ -98,8 +98,18 @@ MAC_RAW = re.compile(r"\b(?:CG[A-Za-z]*Ref|CT[A-Za-z]*Ref|NSGraphicsContext)\b")
 # (IDWriteFontCollection, IDWriteFontFamily, IDWriteFont). The next step is to
 # move the format ownership behind the engine, so an entry point takes a
 # platform::TextEngine instead of a factory.
-WINDOWS_BASELINE = 20
-WINDOWS_TOTAL_BASELINE = 20
+#
+# 20 -> 15: the font metrics left the renderer. platform::TextEngine gained
+# FontBox, the font's own natural line box and ascent at a size, and the
+# Windows and Core Text engines answer it from their own font metrics. The
+# renderer's FontBoxOf walked the system collection itself, through an
+# IDWriteTextFormat: the family name out of the format, the collection, the
+# family and the first matching face. That walk is DWriteEngine::FontBox now,
+# so its three names left the painter, and so did the two IDWriteTextFormat
+# parameters the two helpers carried. LineHeightOf caches by the face instead
+# of by the format pointer.
+WINDOWS_BASELINE = 15
+WINDOWS_TOTAL_BASELINE = 15
 
 PAINTERS = [
     ("src/renderer.cpp", WINDOWS_RAW, WINDOWS_BASELINE, "windows painter"),

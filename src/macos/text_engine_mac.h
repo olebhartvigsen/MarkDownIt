@@ -95,6 +95,12 @@ public:
     Rect OffsetToRect(const TextLine& line, uint32_t offset) const override;
     float LineHeight(const FontSpec& font) const override;
 
+    // The font's own vertical metrics from Core Text: the ascent, the
+    // descent and the leading of the face the spec resolves to, which is
+    // the same triple LineHeight sums.
+    bool FontBox(const FontSpec& font, float* natural,
+                 float* ascent) const override;
+
     // The block a painter draws: the lines MeasureWrapped cut, each one
     // kept as the CTLine the engine already holds for it, so the drawn
     // lines are the measured ones, with the column's alignment applied.

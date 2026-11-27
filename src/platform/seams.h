@@ -55,6 +55,9 @@ struct FontSpec {
     float size = 14.0f;
     // Bold.
     bool bold = false;
+    // Semibold, which the theme's heading levels wear when they name no
+    // family of their own. Bold wins when both are set.
+    bool semibold = false;
     // Italic.
     bool italic = false;
     // Monospace, which the code theme needs.
@@ -539,6 +542,28 @@ public:
     // The height of a line of the given font, which the editor needs for
     // the caret and for line spacing.
     virtual float LineHeight(const FontSpec& font) const = 0;
+
+    // The font's own vertical metrics at the spec's size: the natural
+    // line box it asks for (ascent + descent + line gap) and its ascent,
+    // both in points. False when the platform cannot resolve the family.
+    //
+    // This is the number the cursor guide calls the current font's line
+    // height, the one the caret is drawn with. It is not the rendered
+    // line box: that one carries the theme's line-height multiplier and
+    // is a different question, asked by the caller that sets a block's
+    // line box.
+    //
+    // The base answers from LineHeight, which every engine already has,
+    // with the ascent as the usual share of it. The native engines
+    // override it with the font's own metrics, which is what the caret
+    // has always measured.
+    virtual bool FontBox(const FontSpec& font, float* natural,
+                         float* ascent) const {
+        const float height = LineHeight(font);
+        if (natural) *natural = height;
+        if (ascent) *ascent = height * 0.8f;
+        return height > 0.0f;
+    }
 
     // Lays the runs out into one block that a target draws without
     // measuring again: the same breaks MeasureWrapped takes at the same

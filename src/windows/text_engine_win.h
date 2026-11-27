@@ -86,6 +86,12 @@ public:
 
     float LineHeight(const FontSpec& font) const override;
 
+    // The font's own vertical metrics, from the system collection the
+    // engine's factory owns: the family the spec names is resolved here
+    // instead of in a renderer that used to walk the collection itself.
+    bool FontBox(const FontSpec& font, float* natural,
+                 float* ascent) const override;
+
     // The block the table and the paragraph painters draw: one DirectWrite
     // layout over the runs, word wrapped at the column width, aligned
     // inside it and dressed run by run with the faces and decorations the

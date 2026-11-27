@@ -715,6 +715,20 @@ float CoreTextEngine::LineHeight(const FontSpec& font) const {
     return height > 0.0 ? static_cast<float>(height) : font.size * 1.2f;
 }
 
+bool CoreTextEngine::FontBox(const FontSpec& font, float* natural,
+                             float* ascent) const {
+    CTFontRef ctFont = GetFont(font);
+    if (!ctFont) return false;
+    const CGFloat up = CTFontGetAscent(ctFont);
+    const CGFloat down = CTFontGetDescent(ctFont);
+    const CGFloat leading = CTFontGetLeading(ctFont);
+    const CGFloat height = up + down + leading;
+    if (!(height > 0.0)) return false;
+    if (natural) *natural = static_cast<float>(height);
+    if (ascent) *ascent = static_cast<float>(up);
+    return true;
+}
+
 CgTextLayout::CgTextLayout(std::vector<Line> lines, float width,
                            float height)
     : lines_(std::move(lines)), width_(width), height_(height) {}
