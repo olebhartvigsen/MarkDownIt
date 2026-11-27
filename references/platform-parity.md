@@ -50,13 +50,15 @@ block, the unit both platforms lay out in, and each block answers from its own
 text object: `DWriteTextLayout` through the DirectWrite queries in
 `src/textlayout_dwrite.cpp`, `CgTextLayout` from its CTLines, and the portable
 block from the line records it carries, which is what the fake engine and the
-tests use. `tools/check_painter_seam.py` counts what is left in the Windows
-painter: 20 Direct2D and DirectWrite names, down from 127 when the count began
-and from 26 before the cache moved, and every one of the 20 is DirectWrite
-ownership (the factory, five text formats, the font-family walk), not a paint
-call. The mac painter stays at 0. The cache itself is the Windows editor's;
-the mac editor reads its caret out of the painter's own walk records, a
-standing difference this step leaves as it was.
+tests use. `tools/check_painter_seam.py` counts the platform graphics names in
+each painter: both baselines are 0 (2026-11-28), down from 127 on Windows when
+the count began. Text, metrics and block layouts all reach the painter through
+the seam: `TextEngine::FontBox` answers a face's own metrics, `BuildBlock`
+builds a role block from a `BlockStyle`, `MeasureText` answers a label
+measure, and `FontFamilies` answers the platform's list, so the renderer holds
+`FontSpec` and `BlockStyle` values and no format or factory handle. The cache
+itself is the Windows editor's; the mac editor reads its caret out of the
+painter's own walk records, a standing difference this step leaves as it was.
 
 ## Commands: ribbon to mac menu
 
