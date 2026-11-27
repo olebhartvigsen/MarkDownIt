@@ -41,6 +41,24 @@ the Windows 16 DIP; the sequence activation outline is the palette activation
 stroke `#666666`, not the fill colour; the gantt section titles are bold, not
 regular weight.
 
+The text painters are one body as well (plan 2.2, finished 2026-11-27). Both
+renderers draw through `platform::RenderTarget`, and a laid out block is a
+`platform::TextLayout` handle on both ports: the caret cache no longer holds a
+native layout, so `layoutcache.h` names no platform type. `platform::TextLayout`
+answers the caret's own questions (`LineCount`, `LineHeightAt`,
+`LineTextRange`, `HitTestPoint`, `CaretAtOffset`) in UTF-16 code units of the
+block, the unit both platforms lay out in, and each block answers from its own
+text object: `DWriteTextLayout` through the DirectWrite queries in
+`src/textlayout_dwrite.cpp`, `CgTextLayout` from its CTLines, and the portable
+block from the line records it carries, which is what the fake engine and the
+tests use. `tools/check_painter_seam.py` counts what is left in the Windows
+painter: 20 Direct2D and DirectWrite names, down from 127 when the count began
+and from 26 before the cache moved, and every one of the 20 is DirectWrite
+ownership (the factory, five text formats, the font-family walk), not a paint
+call. The mac painter stays at 0. The cache itself is the Windows editor's;
+the mac editor reads its caret out of the painter's own walk records, a
+standing difference this step leaves as it was.
+
 ## Commands: ribbon to mac menu
 
 Every command the ribbon offers and the selector that carries it out
@@ -183,7 +201,10 @@ row whose pattern matches nothing on its platform is stale and fails.
 
 - `src/textlayout_generic.cpp`: the third, platform-neutral engine
   behind the same `textlayout.h` seam, for builds that have neither
-  DirectWrite nor Core Text. No target compiles it today, because both
-  test suites run on Windows or macOS. It joins the portable build in
-  plan Batch 2.2, or the fake measurer of Batch 2.3 replaces it and the
-  file is deleted.
+  DirectWrite nor Core Text. No target compiles it: both test suites run
+  on Windows or macOS, and 2.2 closed without a portable test target. The
+  job it was kept for, a block with no platform engine behind it, now
+  belongs to `platform::LineTextLayout` in `src/platform/seams.h`, which
+  answers the caret's questions from the line records and is what the fake
+  measurer builds. A later step can delete the file once the fake measurer
+  covers the engine-level fallback too.
