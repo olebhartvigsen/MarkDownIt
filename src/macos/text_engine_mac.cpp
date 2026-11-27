@@ -729,6 +729,28 @@ bool CoreTextEngine::FontBox(const FontSpec& font, float* natural,
     return true;
 }
 
+std::vector<std::string> CoreTextEngine::FontFamilies() const {
+    std::vector<std::string> names;
+    CFArrayRef families = CTFontManagerCopyAvailableFontFamilyNames();
+    if (!families) return names;
+    const CFIndex count = CFArrayGetCount(families);
+    names.reserve(static_cast<size_t>(count > 0 ? count : 0));
+    for (CFIndex i = 0; i < count; ++i) {
+        CFStringRef name = static_cast<CFStringRef>(
+            CFArrayGetValueAtIndex(families, i));
+        if (!name) continue;
+        char buffer[512];
+        if (CFStringGetCString(name, buffer, sizeof(buffer),
+                               kCFStringEncodingUTF8)) {
+            names.push_back(buffer);
+        }
+    }
+    CFRelease(families);
+    std::sort(names.begin(), names.end());
+    names.erase(std::unique(names.begin(), names.end()), names.end());
+    return names;
+}
+
 CgTextLayout::CgTextLayout(std::vector<Line> lines, float width,
                            float height)
     : lines_(std::move(lines)), width_(width), height_(height) {}

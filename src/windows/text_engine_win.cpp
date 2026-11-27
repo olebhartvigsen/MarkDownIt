@@ -201,6 +201,47 @@ bool DWriteEngine::FontBox(const FontSpec& font, float* natural,
     return answered;
 }
 
+std::vector<std::string> DWriteEngine::FontFamilies() const {
+    std::vector<std::string> names;
+    if (!factory_) return names;
+    IDWriteFontCollection* coll = nullptr;
+    if (FAILED(factory_->GetSystemFontCollection(&coll, FALSE)) || !coll) {
+        return names;
+    }
+    const UINT32 count = coll->GetFontFamilyCount();
+    names.reserve(count);
+    for (UINT32 i = 0; i < count; ++i) {
+        IDWriteFontFamily* family = nullptr;
+        if (FAILED(coll->GetFontFamily(i, &family)) || !family) continue;
+        IDWriteLocalizedStrings* strings = nullptr;
+        if (SUCCEEDED(family->GetFamilyNames(&strings)) && strings) {
+            UINT32 index = 0;
+            BOOL exists = FALSE;
+            if (FAILED(strings->FindLocaleName(L"en-us", &index, &exists)) ||
+                !exists) {
+                index = 0;
+            }
+            UINT32 length = 0;
+            if (SUCCEEDED(strings->GetStringLength(index, &length)) &&
+                length > 0) {
+                std::vector<wchar_t> buffer(static_cast<size_t>(length) + 1,
+                                            L'\0');
+                if (SUCCEEDED(strings->GetString(index, buffer.data(),
+                                                 length + 1))) {
+                    names.push_back(textenc::WideToUtf8(
+                        std::wstring(buffer.data(), length)));
+                }
+            }
+            strings->Release();
+        }
+        family->Release();
+    }
+    coll->Release();
+    std::sort(names.begin(), names.end());
+    names.erase(std::unique(names.begin(), names.end()), names.end());
+    return names;
+}
+
 DWriteTextLayout::DWriteTextLayout(IDWriteTextLayout* layout, float width,
                                    float height,
                                    std::vector<ColorSpan> colorSpans)

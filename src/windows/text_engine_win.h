@@ -92,6 +92,10 @@ public:
     bool FontBox(const FontSpec& font, float* natural,
                  float* ascent) const override;
 
+    // The family names the system collection holds, sorted and unique:
+    // the list a caller asks for instead of walking the collection.
+    std::vector<std::string> FontFamilies() const override;
+
     // The block the table and the paragraph painters draw: one DirectWrite
     // layout over the runs, word wrapped at the column width, aligned
     // inside it and dressed run by run with the faces and decorations the

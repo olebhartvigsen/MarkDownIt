@@ -101,6 +101,10 @@ public:
     bool FontBox(const FontSpec& font, float* natural,
                  float* ascent) const override;
 
+    // The family names the system offers, sorted and unique, from Core
+    // Text's own family list rather than a collection walk.
+    std::vector<std::string> FontFamilies() const override;
+
     // The block a painter draws: the lines MeasureWrapped cut, each one
     // kept as the CTLine the engine already holds for it, so the drawn
     // lines are the measured ones, with the column's alignment applied.

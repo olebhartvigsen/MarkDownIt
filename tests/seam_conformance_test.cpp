@@ -93,6 +93,17 @@ void CheckTextEngine(TextEngine& engine) {
     EXPECT_TRUE(engine.FontBox(probe, &bigBox, nullptr));
     EXPECT_GT(bigBox, natural);
 
+    // The platform's family list, the answer that replaced the renderer's
+    // own collection walk. A portable engine may hold none, so the grid
+    // pins the shape: the same list twice, unique, and every name real.
+    const std::vector<std::string> families = engine.FontFamilies();
+    const std::vector<std::string> familiesAgain = engine.FontFamilies();
+    EXPECT_EQ(families.size(), familiesAgain.size());
+    for (size_t i = 0; i < families.size(); ++i) {
+        EXPECT_TRUE(!families[i].empty());
+        if (i > 0) EXPECT_LT(families[i - 1], families[i]);
+    }
+
     std::vector<GlyphRun> runs = {MakeRun("first words", 14.0f),
                                   MakeRun("second", 14.0f)};
 

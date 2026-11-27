@@ -565,6 +565,11 @@ public:
         return height > 0.0f;
     }
 
+    // The family names the platform can set, sorted and unique. Shared
+    // code asks for a name here instead of walking a platform collection
+    // of its own; an engine with no collection answers an empty list.
+    virtual std::vector<std::string> FontFamilies() const { return {}; }
+
     // Lays the runs out into one block that a target draws without
     // measuring again: the same breaks MeasureWrapped takes at the same
     // width, kept with the column width and the alignment they were laid
