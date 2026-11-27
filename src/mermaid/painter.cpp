@@ -690,8 +690,15 @@ void PaintPie(TextEngine* engine, RenderTarget* target,
         swatch.y = rowMid - swatchSize * 0.5f;
         swatch.width = swatchSize;
         swatch.height = swatchSize;
-        target->FillRect(
-            swatch, Rgb(kPieColors[row.color_index % kPieColorCount]));
+        const Color fill = Rgb(kPieColors[row.color_index % kPieColorCount]);
+        target->FillRect(swatch, fill);
+        // A hairline on every swatch. Three of the pastel fills sit on a
+        // page that is nearly the same value, and without an edge the
+        // key's first column read as blank gaps rather than as colours.
+        // The ink is the divider rule's: the dark or the light line,
+        // whichever separates the fill from the page better.
+        target->StrokeRect(swatch, DividerInk(fill, ToColor(palette.pageBg)),
+                           1.0f);
         DrawLeftCentered(target, engine, row.label, legendFont,
                          legendLeft + legendWidthExtra, rowMid, pageInk);
     }
