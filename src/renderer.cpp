@@ -905,8 +905,7 @@ void Renderer::PaintSharedOverlays(
         if (!svgTried) {
             svgText = ImageHelper::LoadSvgText(img->url, baseDir_);
             if (img_cache_.size() >= 128) {
-                if (img_cache_.front().bmp)
-                    img_cache_.front().bmp->Release();
+                ImageHelper::ReleaseBitmap(img_cache_.front().bmp);
                 img_cache_.erase(img_cache_.begin());
             }
             img_cache_.push_back(
