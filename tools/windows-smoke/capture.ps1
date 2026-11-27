@@ -42,7 +42,8 @@ $log = (Resolve-Path $OutDir).Path + "\walk.log"
 # must see the pristine page comes first.
 $states = @("doc", "find", "edit", "outline", "source", "lower", "end", "tail", "tail2",
             "dark", "welcome-dark", "print-pages", "shared", "csv-pinned",
-            "diagram-sequence", "diagram-gantt", "diagram-pie", "diagram-state")
+            "diagram-sequence", "diagram-gantt", "diagram-pie", "diagram-state",
+            "diagram-pie-uneven", "diagram-pie-many")
 $env:MARKDOWNIT_QA_STATES = ($states -join ",")
 $env:MARKDOWNIT_QA_LOG = $log
 # The print-pages state writes the document's print pages as a PDF here,

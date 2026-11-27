@@ -13,6 +13,9 @@
 
 #import <CoreGraphics/CoreGraphics.h>
 
+#include <algorithm>
+#include <cmath>
+
 #include "platform/seams.h"
 #include "image_draw_mac.h"
 #include "text_engine_mac.h"
@@ -332,20 +335,36 @@ public:
 
     void FillPieSlice(const Rect& rect, float startAngle, float endAngle,
                       const Color& color) override {
-        // The seam counts the angles clockwise from three o'clock, and
-        // Core Graphics counts them counter-clockwise, so the angles are
-        // negated. The context is flipped, with the y axis pointing
-        // downwards, so the negated angle sweeps clockwise on screen.
+        // The seam counts the angles clockwise from three o'clock in a
+        // y-down space, which is the plain screen angle. Negating them for
+        // Core Graphics (as this target used to) reflects every wedge
+        // about the three o'clock axis: the fills then sat on the mirror
+        // of the layout's arcs while the dividers and the percent labels
+        // stayed put, so every label landed on a fill boundary. The wedge
+        // is built from screen-space points here instead, the same
+        // arithmetic the Windows target runs, so the two sides cannot
+        // drift on a coordinate convention again.
         const CGFloat centreX = rect.x + rect.width * 0.5;
         const CGFloat centreY = rect.y + rect.height * 0.5;
         const CGFloat radius = std::min(rect.width, rect.height) * 0.5;
-        const CGFloat start = -startAngle * kPi / 180.0;
-        const CGFloat end = -endAngle * kPi / 180.0;
+        CGFloat sweep = static_cast<CGFloat>(endAngle) - startAngle;
+        if (!(radius > 0.0) || !(sweep > 0.0)) return;
+        if (sweep > 360.0) sweep = 360.0;
+        const int steps = std::max(
+            2, static_cast<int>(std::ceil(sweep / 1.0)));  // one degree a step
+        const auto pointAt = [&](CGFloat deg) {
+            const CGFloat t = deg * kPi / 180.0;
+            return CGPointMake(centreX + radius * std::cos(t),
+                               centreY + radius * std::sin(t));
+        };
         CGContextSaveGState(context_);
         CGContextSetRGBFillColor(context_, color.r, color.g, color.b, color.a);
         CGContextBeginPath(context_);
         CGContextMoveToPoint(context_, centreX, centreY);
-        CGContextAddArc(context_, centreX, centreY, radius, start, end, true);
+        for (int i = 1; i <= steps; ++i) {
+            const CGPoint p = pointAt(startAngle + sweep * i / steps);
+            CGContextAddLineToPoint(context_, p.x, p.y);
+        }
         CGContextClosePath(context_);
         CGContextFillPath(context_);
         CGContextRestoreGState(context_);

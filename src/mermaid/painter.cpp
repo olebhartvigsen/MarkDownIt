@@ -52,14 +52,14 @@ constexpr float kPieTitleFontSize = 25.0f;
 constexpr float kPieLegendPitch = 22.0f;
 constexpr float kPieLegendGap = 4.0f;
 
-// Where a percent label sits: two thirds of the radius from the centre,
-// so it is clear of both the middle and the rim.
-constexpr float kPieLabelRadius = 0.66f;
-
 // The pie's outline weight: one hairline at the chart's scale. Mermaid
 // states one 2px weight for the whole outline; drawing it once per edge
 // is what made it read as a heavy black border.
 constexpr float kPieStrokeWidth = 1.0f;
+
+static_assert(sizeof(kPieColors) / sizeof(kPieColors[0]) ==
+                  static_cast<size_t>(mermaid::kPieColorCount),
+              "the painter palette and the layout's colour count must agree");
 
 // The sequence palette, matching the mermaid sequence default theme.
 // The sequence diagram takes its colours from the palette's diagram
@@ -86,6 +86,25 @@ Color ToColor(const ThemeColor& color) {
 
 // A colour from a 0xRRGGBB value.
 Color Rgb(uint32_t rgb) { return ToColor(MakeColor(rgb)); }
+
+// A colour behind a hairline. Mermaid strokes every slice, so a boundary
+// is drawn in one ink; it has to separate the two fills it lies between,
+// including two neighbours that ended up with the same fill. The dark and
+// the light ink are tried against both fills and the one with the larger
+// worst case wins, so a pale pair takes the dark line and a saturated
+// pair the light one.
+Color DividerInk(const Color& left, const Color& right) {
+    const Color dark = Rgb(0x333333);
+    const Color light = Rgb(0xF5F5F5);
+    const auto luma = [](const Color& c) {
+        return 0.299f * c.r + 0.587f * c.g + 0.114f * c.b;
+    };
+    const auto worst = [&](const Color& ink) {
+        return std::min(std::fabs(luma(ink) - luma(left)),
+                        std::fabs(luma(ink) - luma(right)));
+    };
+    return worst(dark) >= worst(light) ? dark : light;
+}
 
 // The measured size of one line of text.
 struct TextSize {
@@ -499,12 +518,19 @@ void StrokePieOutline(RenderTarget* target, float centreX, float centreY,
     ring.height = ringRadius * 2.0f;
     target->StrokeEllipse(ring, ink, lineWidth);
 
-    for (const auto& arc : arcs) {
+    for (size_t i = 0; i < arcs.size(); ++i) {
+        // The boundary at this arc's start is shared with the arc before
+        // it, so the ink is chosen against both fills.
+        const auto& arc = arcs[i];
+        const int before = arcs[(i + arcs.size() - 1) % arcs.size()].color_index;
+        const Color inkAt =
+            DividerInk(Rgb(kPieColors[before % kPieColorCount]),
+                       Rgb(kPieColors[arc.color_index % kPieColorCount]));
         target->StrokeLine(
             centreX, centreY,
             centreX + radius * static_cast<float>(std::sin(arc.start_angle)),
             centreY - radius * static_cast<float>(std::cos(arc.start_angle)),
-            ink, lineWidth);
+            inkAt, lineWidth);
     }
 }
 
@@ -559,8 +585,11 @@ void PaintPie(TextEngine* engine, RenderTarget* target,
     StrokePieOutline(target, centreX, centreY, radius, ringRadius, laid.arcs,
                      pageInk, kPieStrokeWidth * scale);
 
-    // The percent label of every slice, two thirds out along the angle
-    // that halves the slice, clear of both the centre and the rim.
+    // The percent label of every slice, on the angle that halves the
+    // slice. The position comes from PlacePieLabel, which keeps the whole
+    // box inside the wedge with a margin (see pie_layout.h); a slice too
+    // narrow for its text shrinks the type, and one too narrow for that
+    // is reported here and drawn at the rim on its bisector.
     for (const auto& arc : laid.arcs) {
         const Color slice = Rgb(kPieColors[arc.color_index % kPieColorCount]);
         // Rec. 601 luma: pale slices take the dark ink, saturated ones
@@ -568,13 +597,24 @@ void PaintPie(TextEngine* engine, RenderTarget* target,
         const float luma =
             0.299f * slice.r + 0.587f * slice.g + 0.114f * slice.b;
         const Color labelInk = luma > 0.62f ? Rgb(0x333333) : Rgb(0xF5F5F5);
-        const double mid = (arc.start_angle + arc.end_angle) * 0.5;
-        const float labelX = centreX + radius * kPieLabelRadius *
-                                            static_cast<float>(std::sin(mid));
-        const float labelY = centreY - radius * kPieLabelRadius *
-                                            static_cast<float>(std::cos(mid));
-        DrawCentered(target, engine, arc.pct, sectionFont, labelX, labelY,
-                     labelInk);
+        const TextSize box = MeasureText(engine, arc.pct, sectionFont);
+        const mermaid::PieLabelPlacement place = mermaid::PlacePieLabel(
+            arc, box.width * 0.5, box.height * 0.5, radius);
+        if (!place.inside) {
+            std::fprintf(stderr,
+                         "mermaid pie: label %s does not fit its %.1f degree "
+                         "slice at any radius\n",
+                         arc.pct.c_str(),
+                         (arc.end_angle - arc.start_angle) * 180.0 / kPi);
+        }
+        const FontSpec labelFont =
+            place.font_scale == 1.0
+                ? sectionFont
+                : FontAtSize(bodyFont, kPieSectionFontSize * scale *
+                                           static_cast<float>(place.font_scale));
+        DrawCentered(target, engine, arc.pct, labelFont,
+                     centreX + static_cast<float>(place.x),
+                     centreY + static_cast<float>(place.y), labelInk);
     }
 
     // The title sits centred above the pie at mermaid's own offset,

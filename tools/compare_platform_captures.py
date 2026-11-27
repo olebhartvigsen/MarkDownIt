@@ -41,7 +41,7 @@ from PIL import Image
 # csv-pinned is the frozen first row of a long data file: both platforms
 # scroll the same fixture past its header, so the band they draw at the
 # pane's edge is compared instead of taken on trust.
-# The four diagram states open one page each,
+# The six diagram states open one page each,
 # tests/fixtures/diagram-sequence.md and its three siblings, so the frame
 # below the page's heading holds that one diagram and nothing else. A
 # kind whose painter is missing leaves that region blank on one side. A
@@ -50,7 +50,7 @@ from PIL import Image
 STATES = ["doc", "find", "edit", "outline", "source", "lower", "end",
           "tail", "shared", "csv-pinned", "dark", "settings",
           "diagram-sequence", "diagram-gantt", "diagram-pie",
-          "diagram-state"]
+          "diagram-state", "diagram-pie-uneven", "diagram-pie-many"]
 
 # The diagram frames are not text pages: a gantt's bars and a pie's
 # fills merge whole stretches of rows into one band, so the row pairing
@@ -60,7 +60,8 @@ STATES = ["doc", "find", "edit", "outline", "source", "lower", "end",
 # painter stops drawing (the region goes empty) while leaving the two
 # platforms' different text metrics out of it.
 DIAGRAM_STATES = {"diagram-sequence", "diagram-gantt", "diagram-pie",
-                  "diagram-state"}
+                  "diagram-state", "diagram-pie-uneven",
+                  "diagram-pie-many"}
 # Calibrated on the CI frames: the sparsest drawn kind, the state
 # diagram, carries 0.66 percent ink below its heading, while a page whose
 # painter draws nothing carries none. The row count and the vertical

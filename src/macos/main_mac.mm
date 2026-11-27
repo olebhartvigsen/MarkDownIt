@@ -840,7 +840,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         @"find", @"edit", @"outline", @"source", @"lower", @"end", @"tail",
         @"shared", @"csv-pinned", @"dark", @"settings",
         @"diagram-sequence", @"diagram-gantt", @"diagram-pie",
-        @"diagram-state"};
+        @"diagram-state", @"diagram-pie-uneven", @"diagram-pie-many"};
     for (NSString* pinned : kComparedFrames) {
         if ([state isEqualToString:pinned]) {
             [self setZoom:zoom::kDefaultZoom quietly:YES];
@@ -1573,13 +1573,17 @@ static std::string OcrPdfPage(void* data, const std::string& path,
     } else if ([state isEqualToString:@"diagram-sequence"] ||
                [state isEqualToString:@"diagram-gantt"] ||
                [state isEqualToString:@"diagram-pie"] ||
-               [state isEqualToString:@"diagram-state"]) {
-        // One state per diagram kind, each on a page that holds that
-        // diagram and nothing else, the same four pages the Windows walk
-        // opens. They sit outside tests/fixtures/parity, so the layout
-        // dump goldens do not move, and a page with one block keeps the
-        // frame honest: if a painter stops drawing, the picture below
-        // its heading is empty.
+               [state isEqualToString:@"diagram-state"] ||
+               [state isEqualToString:@"diagram-pie-uneven"] ||
+               [state isEqualToString:@"diagram-pie-many"]) {
+        // One state per diagram kind, plus the two pie shapes the percent
+        // labels have to survive (four uneven slices, and more slices than
+        // the twelve colour palette), each on a page that holds that
+        // diagram and nothing else, the same pages the Windows walk opens.
+        // They sit outside tests/fixtures/parity, so the layout dump
+        // goldens do not move, and a page with one block keeps the frame
+        // honest: if a painter stops drawing, the picture below its
+        // heading is empty.
         if (sourceView_) [self OnToggleSourceView];
         if (app_->Editing()) [self OnToggleEditMode];
         NSString* dir = [[window_ representedFilename]
@@ -1591,6 +1595,10 @@ static std::string OcrPdfPage(void* data, const std::string& path,
             file = @"diagram-pie.md";
         } else if ([state isEqualToString:@"diagram-state"]) {
             file = @"diagram-state.md";
+        } else if ([state isEqualToString:@"diagram-pie-uneven"]) {
+            file = @"diagram-pie-uneven.md";
+        } else if ([state isEqualToString:@"diagram-pie-many"]) {
+            file = @"diagram-pie-many.md";
         }
         if ([dir length] > 0) {
             app_->MarkClean();

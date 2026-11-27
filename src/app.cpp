@@ -4043,15 +4043,19 @@ void AppWindow::QAAdvance() {
                  (double)scrollY_, editing_ ? 1 : 0);
         QALogLine(line);
     } else if (state == "diagram-sequence" || state == "diagram-gantt" ||
-               state == "diagram-pie" || state == "diagram-state") {
-        // One state per diagram kind, each on a page that holds that
+               state == "diagram-pie" || state == "diagram-state" ||
+               state == "diagram-pie-uneven" ||
+               state == "diagram-pie-many") {
+        // One state per diagram kind, plus the two pie shapes the percent
+        // labels have to survive (four uneven slices, and more slices than
+        // the twelve colour palette), each on a page that holds that
         // diagram and nothing else. The layout showcase has only a
         // flowchart, and adding the other kinds to it would move the
-        // heading anchors the lower states scroll to. The four pages
-        // live outside tests/fixtures/parity, which is the only place
-        // the layout dump goldens read, so no stored golden moves. A
-        // page with one block also keeps the frame honest: if a painter
-        // stops drawing, the picture below its heading is empty.
+        // heading anchors the lower states scroll to. The pages live
+        // outside tests/fixtures/parity, which is the only place the
+        // layout dump goldens read, so no stored golden moves. A page
+        // with one block also keeps the frame honest: if a painter stops
+        // drawing, the picture below its heading is empty.
         if (IsSourceView()) ToggleSourceView();
         if (editing_) SetEdit(false);
         std::wstring dir;
@@ -4063,6 +4067,8 @@ void AppWindow::QAAdvance() {
         if (state == "diagram-gantt") file = L"diagram-gantt.md";
         else if (state == "diagram-pie") file = L"diagram-pie.md";
         else if (state == "diagram-state") file = L"diagram-state.md";
+        else if (state == "diagram-pie-uneven") file = L"diagram-pie-uneven.md";
+        else if (state == "diagram-pie-many") file = L"diagram-pie-many.md";
         const std::wstring path = dir + file;
         std::ifstream f(path.c_str(), std::ios::binary);
         if (f.is_open()) {
