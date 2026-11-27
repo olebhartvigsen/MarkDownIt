@@ -725,6 +725,95 @@ CgTextLayout::~CgTextLayout() {
     }
 }
 
+// The caret's questions, answered by the CTLine the block kept for each
+// line. Core Text knows a line's string range directly, so unlike
+// DirectWrite there is no need to probe the line's edges.
+
+uint32_t CgTextLayout::LineCount() const {
+    return static_cast<uint32_t>(lines_.size());
+}
+
+float CgTextLayout::LineHeightAt(uint32_t lineIndex) const {
+    return lineIndex < lines_.size() ? lines_[lineIndex].height : 0.0f;
+}
+
+bool CgTextLayout::LineTextRange(uint32_t lineIndex, float layoutWidth,
+                                 uint32_t* outStart, uint32_t* outEnd) const {
+    (void)layoutWidth;  // the line knows its own range
+    if (lineIndex >= lines_.size() || !lines_[lineIndex].line) return false;
+    const CFRange range = CTLineGetStringRange(lines_[lineIndex].line);
+    if (range.location == kCFNotFound || range.location < 0) return false;
+    if (outStart) *outStart = static_cast<uint32_t>(range.location);
+    if (outEnd) {
+        *outEnd = static_cast<uint32_t>(range.location + range.length);
+    }
+    return true;
+}
+
+TextHit CgTextLayout::HitTestPoint(float x, float y) const {
+    TextHit hit;
+    if (lines_.empty()) return hit;
+
+    uint32_t index = 0;
+    for (uint32_t i = 0; i < lines_.size(); ++i) {
+        if (y < lines_[i].top + lines_[i].height ||
+            i + 1 == lines_.size()) {
+            index = i;
+            break;
+        }
+    }
+    const Line& line = lines_[index];
+    if (!line.line) return hit;
+
+    const CGPoint point = CGPointMake(x - line.x, 0.0);
+    CFIndex at = CTLineGetStringIndexForPosition(line.line, point);
+    const CFRange range = CTLineGetStringRange(line.line);
+    const CFIndex lineEnd = range.location + range.length;
+    if (at == kCFNotFound || at < range.location) at = range.location;
+    if (at > lineEnd) at = lineEnd;
+
+    // The trailing half of the glyph decides the side of the caret the
+    // point belongs to, the rule the engine's own hit tester uses.
+    const CGFloat here = CTLineGetOffsetForStringIndex(line.line, at, nullptr);
+    const CGFloat next =
+        at < lineEnd ? CTLineGetOffsetForStringIndex(line.line, at + 1, nullptr)
+                     : here;
+    hit.trailing = (x - line.x - here) > (next - here) * 0.5;
+    hit.textPosition = static_cast<uint32_t>(at);
+    hit.height = line.height;
+    hit.inside = y >= line.top && y < line.top + line.height &&
+                 x >= 0.0f && x <= width_;
+    return hit;
+}
+
+TextHit CgTextLayout::CaretAtOffset(uint32_t textPosition) const {
+    TextHit hit;
+    hit.textPosition = textPosition;
+    if (lines_.empty()) return hit;
+
+    uint32_t index = 0;
+    for (uint32_t i = 0; i < lines_.size(); ++i) {
+        index = i;
+        if (!lines_[i].line) break;
+        const CFRange range = CTLineGetStringRange(lines_[i].line);
+        const CFIndex lineEnd = range.location + range.length;
+        if (textPosition < static_cast<uint32_t>(lineEnd) ||
+            i + 1 == lines_.size()) {
+            break;
+        }
+    }
+    const Line& line = lines_[index];
+    if (!line.line) return hit;
+
+    const CGFloat offset = CTLineGetOffsetForStringIndex(
+        line.line, static_cast<CFIndex>(textPosition), nullptr);
+    hit.x = line.x + static_cast<float>(offset);
+    hit.y = line.top;
+    hit.height = line.height;
+    hit.inside = true;
+    return hit;
+}
+
 TextLayoutHandle CoreTextEngine::BuildLayout(
     const std::vector<GlyphRun>& runs, float maxWidth, TextAlign align) {
     // A block the engine cannot cut still has the seam's portable answer,

@@ -40,6 +40,16 @@ public:
     float Width() const override { return width_; }
     float Height() const override { return height_; }
 
+    // The caret's questions, answered from the block's own CTLines: a
+    // native block keeps no seam line records, so the base class's
+    // portable answer has nothing to read here.
+    uint32_t LineCount() const override;
+    float LineHeightAt(uint32_t lineIndex) const override;
+    bool LineTextRange(uint32_t lineIndex, float layoutWidth,
+                       uint32_t* outStart, uint32_t* outEnd) const override;
+    TextHit HitTestPoint(float x, float y) const override;
+    TextHit CaretAtOffset(uint32_t textPosition) const override;
+
     // The lines, for the target that draws them.
     const std::vector<Line>& DrawLines() const { return lines_; }
 

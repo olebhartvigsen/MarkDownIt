@@ -132,3 +132,41 @@ TEST(FakeEngine, EmptyRunsDrawOneEmptyLine) {
     platform::Rect rect = engine.OffsetToRect(lines[0], 0);
     EXPECT_NEAR(rect.width, FakeTextEngine::kGlyphWidth, 0.001f);
 }
+
+// The seam's portable block answers the caret's questions from the line
+// records it already keeps, so a block on a platform with neither text
+// engine still places a caret. The numbers are the fake engine's fixed
+// advance, pinned here because a golden may read them.
+TEST(FakeEngine, PortableBlockAnswersTheCaretFromItsLines) {
+    FakeTextEngine engine;
+    std::vector<GlyphRun> runs = {MakeRun("abcd"), MakeRun("ef")};
+    platform::TextLayoutHandle block =
+        engine.BuildLayout(runs, 0.0f, platform::TextAlign::Left);
+    ASSERT_TRUE(block != nullptr);
+    if (!block) return;
+    EXPECT_EQ(block->LineCount(), 1u);
+    EXPECT_NEAR(block->LineHeightAt(0), block->Height(), 0.001f);
+
+    uint32_t start = 99;
+    uint32_t end = 0;
+    ASSERT_TRUE(block->LineTextRange(0, block->Width(), &start, &end));
+    EXPECT_EQ(start, 0u);
+    EXPECT_EQ(end, 6u);
+
+    // A caret sits on the left edge of the glyph its offset starts.
+    const platform::TextHit at0 = block->CaretAtOffset(0);
+    EXPECT_NEAR(at0.x, 0.0f, 0.001f);
+    EXPECT_NEAR(at0.y, 0.0f, 0.001f);
+    EXPECT_NEAR(at0.height, block->Height(), 0.001f);
+    const platform::TextHit at4 = block->CaretAtOffset(4);
+    EXPECT_NEAR(at4.x, 4 * FakeTextEngine::kGlyphWidth, 0.001f);
+
+    // A point inside glyph two answers offset one, on its trailing half.
+    const platform::TextHit hit =
+        block->HitTestPoint(1.75f * FakeTextEngine::kGlyphWidth,
+                            block->Height() * 0.5f);
+    EXPECT_EQ(hit.textPosition, 1u);
+    EXPECT_TRUE(hit.trailing);
+    EXPECT_TRUE(hit.inside);
+    EXPECT_NEAR(hit.height, block->Height(), 0.001f);
+}

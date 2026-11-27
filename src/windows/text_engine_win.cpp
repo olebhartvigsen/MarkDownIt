@@ -10,6 +10,8 @@
 #include <dwrite.h>
 #include <windows.h>
 
+#include "textlayout.h"
+
 #include <algorithm>
 #include <utility>
 
@@ -155,6 +157,51 @@ DWriteTextLayout::DWriteTextLayout(IDWriteTextLayout* layout, float width,
 
 DWriteTextLayout::~DWriteTextLayout() {
     if (layout_) layout_->Release();
+}
+
+// The caret's questions. textlayout:: holds the DirectWrite queries the
+// shared layout cache has always asked, and this block is the one that
+// owns the object they need, so the answers pass straight through. The
+// seam's caller sees a handle and never the IDWriteTextLayout behind it.
+
+uint32_t DWriteTextLayout::LineCount() const {
+    return textlayout::LineCount(layout_);
+}
+
+float DWriteTextLayout::LineHeightAt(uint32_t lineIndex) const {
+    return textlayout::LineHeight(layout_, lineIndex);
+}
+
+bool DWriteTextLayout::LineTextRange(uint32_t lineIndex, float layoutWidth,
+                                     uint32_t* outStart,
+                                     uint32_t* outEnd) const {
+    return textlayout::LineTextRange(layout_, lineIndex, layoutWidth, outStart,
+                                     outEnd);
+}
+
+TextHit DWriteTextLayout::HitTestPoint(float x, float y) const {
+    const textlayout::Hit answer =
+        textlayout::HitTestPoint(layout_, x, y, nullptr);
+    TextHit hit;
+    hit.textPosition = answer.textPosition;
+    hit.height = answer.height;
+    hit.trailing = answer.trailing;
+    hit.inside = answer.inside;
+    return hit;
+}
+
+TextHit DWriteTextLayout::CaretAtOffset(uint32_t textPosition) const {
+    float x = 0.0f;
+    float y = 0.0f;
+    const textlayout::Hit answer =
+        textlayout::HitTestTextPosition(layout_, textPosition, &x, &y);
+    TextHit hit;
+    hit.textPosition = answer.textPosition;
+    hit.x = x;
+    hit.y = y;
+    hit.height = answer.height;
+    hit.inside = true;
+    return hit;
 }
 
 TextLayoutHandle DWriteEngine::BuildLayout(

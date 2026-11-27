@@ -97,6 +97,27 @@ inline Color RunInk(const GlyphRun& run) {
     return RunInk(run, Color{0.0f, 0.0f, 0.0f, 1.0f});
 }
 
+// A UTF-16 range of one block's text and the inline styles the range
+// carries, so a platform can dress its own text object with them.
+//
+// The ranges are applied in the order they are given. A whole-cell range
+// (a bold header row) therefore comes before the spans inside it that may
+// override it, which is the order the table's own dressing has always
+// used.
+struct TextRangeStyle {
+    // The range, in UTF-16 code units of the block's text.
+    uint32_t start = 0;
+    uint32_t length = 0;
+    bool bold = false;
+    bool italic = false;
+    bool underline = false;
+    bool strike = false;
+    // A code span is drawn in this face at this size, in points. An empty
+    // family leaves the block's own face in place.
+    std::string family;
+    float size = 0.0f;
+};
+
 // One laid out line of text.
 struct TextLine {
     // The width of the line, in points.
@@ -121,6 +142,24 @@ struct Rect {
     float y = 0.0f;
     float width = 0.0f;
     float height = 0.0f;
+};
+
+// One answer to a caret question about a laid out block, in the block's
+// own coordinates: x from the column's left edge, y from the block's top.
+struct TextHit {
+    // UTF-16 code-unit index into the block's text.
+    uint32_t textPosition = 0;
+    // Where the position sits: the glyph edge for an offset. A hit test
+    // answers a position, not a caret, so it leaves this at zero.
+    float x = 0.0f;
+    // The top of the line the position is on, from the top of the block.
+    float y = 0.0f;
+    // The height of that line, in points.
+    float height = 0.0f;
+    // True when the point landed on the trailing half of a glyph.
+    bool trailing = false;
+    // True when the point is inside the block's box.
+    bool inside = false;
 };
 
 // The horizontal alignment of a laid out block inside the column it was
@@ -166,12 +205,250 @@ public:
         (void)line;
         return 0.0f;
     }
+
+    // The caret's questions about the block, in the block's own
+    // coordinates. A caret cache and a selection wash ask these instead of
+    // holding the platform's text object, so one seam answers where the
+    // glyphs ended up on both platforms.
+    //
+    // The base answers them from Lines(), the seam's own line records,
+    // which the portable block keeps. A native block keeps no such
+    // records: its lines live inside the platform's text object, so
+    // DWriteTextLayout and CgTextLayout answer these themselves.
+    //
+    // The positions are UTF-16 code units, the unit a block speaks, not
+    // the UTF-8 bytes TextEngine's per line answers take.
+    virtual uint32_t LineCount() const;
+    virtual float LineHeightAt(uint32_t lineIndex) const;
+    // The UTF-16 range one visual line covers. `layoutWidth` is the width
+    // of the whole block: DirectWrite has no direct query for a line's
+    // text range and finds one by hit testing the line's edges, the right
+    // one probed at the block's width.
+    virtual bool LineTextRange(uint32_t lineIndex, float layoutWidth,
+                               uint32_t* outStart, uint32_t* outEnd) const;
+    // Hit test a point in the block.
+    virtual TextHit HitTestPoint(float x, float y) const;
+    // Where a UTF-16 position sits in the block: the caret's own answer.
+    virtual TextHit CaretAtOffset(uint32_t textPosition) const;
 };
 
 // The seam's handle on a laid out block. Shared ownership, because a
 // painter may hold a block across frames while the engine's own copies
 // come and go with the layout pass.
 using TextLayoutHandle = std::shared_ptr<const TextLayout>;
+
+namespace detail {
+
+// One UTF-8 code point: how many bytes it takes and how many UTF-16 code
+// units it becomes. A stray byte counts as one unit, the replacement a
+// real text object would draw for it.
+inline void Utf8Char(const std::string& text, size_t at, size_t* bytes,
+                     uint32_t* units) {
+    const unsigned char c = static_cast<unsigned char>(text[at]);
+    if (c < 0x80) {
+        *bytes = 1;
+        *units = 1;
+    } else if ((c & 0xE0) == 0xC0) {
+        *bytes = 2;
+        *units = 1;
+    } else if ((c & 0xF0) == 0xE0) {
+        *bytes = 3;
+        *units = 1;
+    } else if ((c & 0xF8) == 0xF0) {
+        *bytes = 4;
+        *units = 2;
+    } else {
+        *bytes = 1;
+        *units = 1;
+    }
+    if (*bytes > text.size() - at) *bytes = text.size() - at;
+}
+
+// The UTF-16 code units of a UTF-8 string.
+inline uint32_t Utf16Length(const std::string& text) {
+    uint32_t units = 0;
+    for (size_t at = 0; at < text.size();) {
+        size_t bytes = 1;
+        uint32_t width = 1;
+        Utf8Char(text, at, &bytes, &width);
+        units += width;
+        at += bytes;
+    }
+    return units;
+}
+
+// The UTF-16 range one line of a portable block covers.
+inline bool LineRangeOf(const std::vector<TextLine>& lines,
+                        uint32_t lineIndex, uint32_t* outStart,
+                        uint32_t* outEnd) {
+    if (lineIndex >= lines.size()) return false;
+    uint32_t start = 0;
+    for (uint32_t i = 0; i < lineIndex; ++i) {
+        for (const GlyphRun& run : lines[i].runs) start += Utf16Length(run.text);
+    }
+    uint32_t length = 0;
+    for (const GlyphRun& run : lines[lineIndex].runs) {
+        length += Utf16Length(run.text);
+    }
+    if (outStart) *outStart = start;
+    if (outEnd) *outEnd = start + length;
+    return true;
+}
+
+// The top of one line of a portable block, from the top of the block.
+inline float LineTopOf(const std::vector<TextLine>& lines,
+                       uint32_t lineIndex) {
+    float top = 0.0f;
+    for (uint32_t i = 0; i < lineIndex && i < lines.size(); ++i) {
+        top += lines[i].height;
+    }
+    return top;
+}
+
+// The right edge of one run's share of a line: the next run's start, or
+// the line's own end for the last run.
+inline float RunRight(const TextLine& line, size_t runIndex) {
+    return runIndex + 1 < line.runs.size() ? line.runs[runIndex + 1].x
+                                           : line.width;
+}
+
+}  // namespace detail
+
+// The base answers the caret's questions from the seam's own line
+// records, and stays a no-op for a block that keeps none and overrides
+// nothing.
+
+inline uint32_t TextLayout::LineCount() const {
+    const std::vector<TextLine>* lines = Lines();
+    return lines ? static_cast<uint32_t>(lines->size()) : 0u;
+}
+
+inline float TextLayout::LineHeightAt(uint32_t lineIndex) const {
+    const std::vector<TextLine>* lines = Lines();
+    if (!lines || lineIndex >= lines->size()) return 0.0f;
+    return (*lines)[lineIndex].height;
+}
+
+inline bool TextLayout::LineTextRange(uint32_t lineIndex, float layoutWidth,
+                                      uint32_t* outStart,
+                                      uint32_t* outEnd) const {
+    (void)layoutWidth;  // a line record knows its own range
+    const std::vector<TextLine>* lines = Lines();
+    if (!lines) return false;
+    return detail::LineRangeOf(*lines, lineIndex, outStart, outEnd);
+}
+
+inline TextHit TextLayout::HitTestPoint(float x, float y) const {
+    TextHit hit;
+    const std::vector<TextLine>* lines = Lines();
+    if (!lines || lines->empty()) return hit;
+
+    uint32_t index = 0;
+    float top = 0.0f;
+    for (uint32_t i = 0; i < lines->size(); ++i) {
+        const float height = (*lines)[i].height;
+        if (y < top + height || i + 1 == lines->size()) {
+            index = i;
+            break;
+        }
+        top += height;
+    }
+    const TextLine& line = (*lines)[index];
+    uint32_t start = 0;
+    uint32_t end = 0;
+    detail::LineRangeOf(*lines, index, &start, &end);
+
+    // The run the point landed on, split evenly across its characters:
+    // the line records carry each run's left edge and the line's width,
+    // not a glyph advance per character.
+    uint32_t offset = start;
+    bool trailing = false;
+    const float into = x - LineX(line);
+    if (!line.runs.empty() && into > 0.0f) {
+        uint32_t runStart = start;
+        for (size_t r = 0; r < line.runs.size(); ++r) {
+            const GlyphRun& run = line.runs[r];
+            const float right = detail::RunRight(line, r);
+            const uint32_t units = detail::Utf16Length(run.text);
+            const bool last = r + 1 == line.runs.size();
+            if (into < right || last) {
+                const float span = right - run.x;
+                const float intoRun = into - run.x;
+                if (units == 0 || span <= 0.0f) {
+                    offset = runStart + units;
+                } else {
+                    const float fraction = intoRun / span;
+                    const uint32_t at =
+                        fraction <= 0.0f
+                            ? 0u
+                            : (fraction >= 1.0f
+                                   ? units
+                                   : static_cast<uint32_t>(fraction * units));
+                    offset = runStart + at;
+                    const float cell = span / static_cast<float>(units);
+                    trailing =
+                        intoRun - static_cast<float>(at) * cell > cell * 0.5f;
+                }
+                break;
+            }
+            runStart += units;
+        }
+    }
+    if (offset > end) offset = end;
+
+    hit.textPosition = offset;
+    hit.y = top;
+    hit.height = line.height;
+    hit.trailing = trailing;
+    hit.inside = true;
+    return hit;
+}
+
+inline TextHit TextLayout::CaretAtOffset(uint32_t textPosition) const {
+    TextHit hit;
+    hit.textPosition = textPosition;
+    const std::vector<TextLine>* lines = Lines();
+    if (!lines || lines->empty()) return hit;
+
+    uint32_t index = 0;
+    for (uint32_t i = 0; i < lines->size(); ++i) {
+        uint32_t start = 0;
+        uint32_t end = 0;
+        detail::LineRangeOf(*lines, i, &start, &end);
+        index = i;
+        if (textPosition < end || i + 1 == lines->size()) break;
+    }
+    const TextLine& line = (*lines)[index];
+    uint32_t start = 0;
+    uint32_t end = 0;
+    detail::LineRangeOf(*lines, index, &start, &end);
+    uint32_t offset = textPosition > end ? end : textPosition;
+    if (offset < start) offset = start;
+
+    float x = 0.0f;
+    uint32_t runStart = start;
+    for (size_t r = 0; r < line.runs.size(); ++r) {
+        const GlyphRun& run = line.runs[r];
+        const float right = detail::RunRight(line, r);
+        const uint32_t units = detail::Utf16Length(run.text);
+        if (offset <= runStart + units || r + 1 == line.runs.size()) {
+            const float span = right - run.x;
+            const uint32_t into = offset > runStart ? offset - runStart : 0;
+            x = units == 0
+                    ? run.x
+                    : run.x + span * static_cast<float>(into) /
+                                  static_cast<float>(units);
+            break;
+        }
+        runStart += units;
+    }
+
+    hit.x = LineX(line) + x;
+    hit.y = detail::LineTopOf(*lines, index);
+    hit.height = line.height;
+    hit.inside = true;
+    return hit;
+}
 
 namespace detail {
 

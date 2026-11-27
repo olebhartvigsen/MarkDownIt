@@ -581,6 +581,46 @@ void CheckDrawLayout(TextEngine& engine, InkSurface& surface) {
         EXPECT_GT(rightInk.x, leftInk.x + 40.0f);
     }
 
+    // The caret's questions, which the layout cache asks of the block
+    // instead of holding the platform's text object: the block names its
+    // lines, a line knows its text range and its height, a point answers
+    // a position, and a position answers a caret. Relations only: every
+    // engine picks its own glyph widths.
+    ASSERT_TRUE(block->LineCount() >= 1u);
+    float stacked = 0.0f;
+    for (uint32_t i = 0; i < block->LineCount(); ++i) {
+        EXPECT_GT(block->LineHeightAt(i), 0.0f);
+        stacked += block->LineHeightAt(i);
+    }
+    EXPECT_NEAR(stacked, block->Height(), 1.0f);
+
+    uint32_t caretLineStart = 99u;
+    uint32_t caretLineEnd = 0u;
+    ASSERT_TRUE(block->LineTextRange(0, block->Width(), &caretLineStart,
+                                     &caretLineEnd));
+    EXPECT_EQ(caretLineStart, 0u);
+    EXPECT_TRUE(caretLineEnd > 0u);
+
+    const platform::TextHit caretAtStart = block->CaretAtOffset(0);
+    EXPECT_NEAR(caretAtStart.x, 0.0f, 0.5f);
+    EXPECT_NEAR(caretAtStart.y, 0.0f, 0.5f);
+    EXPECT_GT(caretAtStart.height, 0.0f);
+
+    const platform::TextHit caretAtEnd = block->CaretAtOffset(caretLineEnd);
+    EXPECT_GT(caretAtEnd.x, caretAtStart.x + 1.0f);
+    EXPECT_NEAR(caretAtEnd.y, caretAtStart.y, 0.5f);
+    EXPECT_NEAR(caretAtEnd.height, caretAtStart.height, 0.5f);
+
+    // A point halfway along the first line answers a position inside it,
+    // on the same line the caret does.
+    const platform::TextHit midHit = block->HitTestPoint(
+        (caretAtStart.x + caretAtEnd.x) * 0.5f,
+        caretAtStart.y + caretAtStart.height * 0.5f);
+    EXPECT_TRUE(midHit.inside);
+    EXPECT_TRUE(midHit.textPosition > 0u);
+    EXPECT_TRUE(midHit.textPosition < caretLineEnd);
+    EXPECT_NEAR(midHit.height, caretAtStart.height, 0.5f);
+
     // Runs that carry their own ink: one block, two colours, and each
     // colour has to land on the paper where its own run sits. The scan
     // reads the two hues apart, so a target that paints the whole block in

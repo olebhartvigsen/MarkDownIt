@@ -40,6 +40,16 @@ public:
     float Width() const override { return width_; }
     float Height() const override { return height_; }
 
+    // The caret's questions, answered by the DirectWrite layout itself:
+    // the block keeps no seam line records, so the base class's portable
+    // answer has nothing to read here.
+    uint32_t LineCount() const override;
+    float LineHeightAt(uint32_t lineIndex) const override;
+    bool LineTextRange(uint32_t lineIndex, float layoutWidth,
+                       uint32_t* outStart, uint32_t* outEnd) const override;
+    TextHit HitTestPoint(float x, float y) const override;
+    TextHit CaretAtOffset(uint32_t textPosition) const override;
+
     // The object itself, lent to the target that draws it. Never null for
     // a layout this engine answered.
     IDWriteTextLayout* Layout() const { return layout_; }
