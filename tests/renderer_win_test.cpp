@@ -1404,7 +1404,7 @@ TEST(RendererWin, SelectionRepaintAsksNoLayoutBeyondTheRects) {
     // The frame without a selection first: its calls are the walk's
     // own measures, nothing more.
     FakeRenderTarget rtBare;
-    platform::D2DTarget paint(&rtBare, &dw);
+    platform::D2DTarget paint(&rtBare);
     renderer.Render(paint, doc, width, rtBare.size.height, 0.0f, 0.0f, 0.0f, nullptr);
     const size_t bareCalls = engine.calls.size();
 
@@ -1414,7 +1414,7 @@ TEST(RendererWin, SelectionRepaintAsksNoLayoutBeyondTheRects) {
     Selection sel;
     sel.anchor.offset = doc.nodes[1].contentOffset + 4;
     sel.active.offset = sel.anchor.offset + 20;
-    platform::D2DTarget paintSel(&rt, &dw);
+    platform::D2DTarget paintSel(&rt);
     renderer.Render(paintSel, doc, width, rt.size.height, 0.0f, 0.0f, 0.0f, &sel);
     EXPECT_EQ(engine.calls.size(), bareCalls * 2u);
 
@@ -1467,7 +1467,7 @@ TEST(RendererWin, FrameWashesCrossingBlocksMatchTheTwin) {
     sel.anchor.offset = doc.nodes[0].contentOffset;
     sel.active.offset = doc.nodes[1].rows[1].cells[0].srcEnd;
 
-    platform::D2DTarget paintSel(&rt, &dw);
+    platform::D2DTarget paintSel(&rt);
     renderer.Render(paintSel, doc, width, rt.size.height, 0.0f, 0.0f, 0.0f, &sel);
 
     const std::vector<Rect> twin = renderer.RectsForRange(
@@ -1597,7 +1597,7 @@ TEST(RendererWin, PaintedLinesKeepTheWordSpaces) {
     const float width =
         2.0f * ScaleMetrics(kBase, 1.0f).padX + 8.0f * kBodyEm;
     FakeRenderTarget rt;
-    platform::D2DTarget paint(&rt, &dw);
+    platform::D2DTarget paint(&rt);
     renderer.Render(paint, doc, width, rt.size.height, 0.0f, 0.0f, 0.0f, nullptr);
     if (rt.textDraws.empty()) {
         printf("PaintedLines: engine degraded, no pieces\n");
@@ -1671,7 +1671,7 @@ TEST(RendererWin, PaintedCellsNeverOverlap) {
     const float width =
         2.0f * ScaleMetrics(kBase, 1.0f).padX + 30.0f * kBodyEm;
     FakeRenderTarget rt;
-    platform::D2DTarget paint(&rt, &dw);
+    platform::D2DTarget paint(&rt);
     renderer.Render(paint, doc, width, rt.size.height, 0.0f, 0.0f, 0.0f, nullptr);
     printf("PaintedCells: pieces=%zu\n", rt.textDraws.size());
     for (const FakeRenderTarget::TextDraw& d : rt.textDraws) {
@@ -1717,7 +1717,7 @@ TEST(RendererWin, DualGeometryProbe) {
     const float width =
         2.0f * ScaleMetrics(kBase, 1.0f).padX + 30.0f * kBodyEm;
     FakeRenderTarget rt;
-    platform::D2DTarget paint(&rt, &dw);
+    platform::D2DTarget paint(&rt);
     renderer.Render(paint, doc, width, rt.size.height, 0.0f, 0.0f, 0.0f, nullptr);
     printf("DUALP fills=%zu\n", rt.fills.size());
     for (size_t i = 0; i < rt.fills.size(); ++i) {
@@ -1759,7 +1759,7 @@ TEST(RendererWin, ReportTableShapeHolds) {
     renderer.SetContentWidthMode(0);
 
     FakeRenderTarget rt;
-    platform::D2DTarget paint(&rt, &dw);
+    platform::D2DTarget paint(&rt);
     renderer.Render(paint, doc, 1561.0f, rt.size.height, 0.0f, 0.0f, 0.0f, nullptr);
     printf("REPORT fills=%zu pieces=%zu\n", rt.fills.size(),
            rt.textDraws.size());
@@ -1856,7 +1856,7 @@ TEST(RendererWin, ReportDocumentStacksAtEveryZoom) {
         renderer.SetContentWidthMode(0);
         renderer.SetZoom(z);
         FakeRenderTarget rt;
-        platform::D2DTarget paint(&rt, &dw);
+        platform::D2DTarget paint(&rt);
         renderer.Render(paint, doc, 1561.0f, rt.size.height, 0.0f, 0.0f,
                         0.0f, nullptr);
         // Grid hairlines: vertical stripes from the fills, distinct
@@ -1962,7 +1962,7 @@ TEST(RendererWin, ReportTableFullWalk) {
     renderer.SetContentWidthMode(0);
 
     FakeRenderTarget rt;
-    platform::D2DTarget paint(&rt, &dw);
+    platform::D2DTarget paint(&rt);
     renderer.Render(paint, doc, 1228.0f, rt.size.height, 0.0f, 0.0f, 0.0f, nullptr);
 
     float maxAdv = 0.0f;
@@ -2048,7 +2048,7 @@ TEST(RendererWin, ReportTableFullWalk) {
         ASSERT_TRUE(rz.Init(&dw));
         rz.SetContentWidthMode(0);
         rz.SetZoom(zoom);
-        platform::D2DTarget paintZ(&rtz, &dw);
+        platform::D2DTarget paintZ(&rtz);
         rz.Render(paintZ, doc, 1228.0f, rtz.size.height, 0.0f, 0.0f, 0.0f, nullptr);
         std::vector<float> xsz;
         for (size_t i = 0; i < rtz.fills.size(); ++i) {
@@ -2101,7 +2101,7 @@ TEST(RendererWin, ReportTableFullWalk) {
         Renderer r3;
         ASSERT_TRUE(r3.Init(&dw));
         r3.SetContentWidthMode(3);
-        platform::D2DTarget paint3(&rt3, &dw);
+        platform::D2DTarget paint3(&rt3);
         r3.Render(paint3, doc, 1246.0f, rt3.size.height, 0.0f, 0.0f, 0.0f, nullptr);
         std::vector<float> xs3;
         for (size_t i = 0; i < rt3.fills.size(); ++i) {
@@ -2145,7 +2145,7 @@ TEST(RendererWin, ReportTableFullWalk) {
     // where the deficit begins: the columns tell whether the split
     // still carries every token and every cell paints.
     FakeRenderTarget rt2;
-    platform::D2DTarget paint2(&rt2, &dw);
+    platform::D2DTarget paint2(&rt2);
     renderer.Render(paint2, doc, 983.0f, rt2.size.height, 0.0f, 0.0f, 0.0f, nullptr);
     std::vector<float> xs2;
     for (size_t i = 0; i < rt2.fills.size(); ++i) {

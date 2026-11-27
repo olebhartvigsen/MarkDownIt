@@ -3799,9 +3799,11 @@ void AppWindow::OnContentPaint(HWND hwnd) {
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
         // The target the frame draws through is the seam. One wrapper
-        // over the device context, the same object the welcome screen
-        // already hands its painter.
-        platform::D2DTarget paintTarget(rt_, dw_factory_);
+        // over the device context, built without a factory argument so it
+        // keeps the shared DirectWrite factory the replay has always
+        // drawn its runs with, the same object the welcome screen's
+        // painter gets from its own call.
+        platform::D2DTarget paintTarget(rt_);
         if (source_view_) {
             // RenderSourceView doesn't clear the cache itself.
             layout_cache_.Clear();
