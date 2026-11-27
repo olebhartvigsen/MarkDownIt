@@ -14,7 +14,6 @@ and why. Three checkers read this file:
 
 | Source or feature | Windows | macOS | Reason |
 |---|---|---|---|
-| Mermaid measurement (`src/mermaid/measure_dwrite.cpp`) | exe | DirectWrite is not there; the layout seam measures with Core Text | A DirectWrite measure file cannot build elsewhere. Batch 2 moves both sides onto one seam. |
 | Text layout engine (`src/textlayout_dwrite.cpp` against `src/textlayout_coretext.cpp`) | exe and tests | core and tests | One engine per platform behind `src/textlayout.h`. |
 | SVG document (`src/svgdoc.cpp`) | exe and tests | not built, the mac renderer paints through the shared reader `src/macos/svg_mac.cpp` | The DirectWrite SVG path is Windows side. The reader `svg_mac.cpp` is shared and lives under `src/macos/` for historical reasons. |
 | Window chrome | ribbon, `src/ribbon.xml` | native menu and toolbar, `menu_mac.mm` and `toolbar_mac.mm` | The platform UI guidelines: `ribbon-menu-guidelines.md` on Windows, `macos-native-chrome.md` on macOS. |

@@ -119,8 +119,26 @@ MAC_RAW = re.compile(r"\b(?:CG[A-Za-z]*Ref|CT[A-Za-z]*Ref|NSGraphicsContext)\b")
 # the two engines build it: one DirectWrite layout on Windows, the measured
 # Core Text lines on the mac. The renderer holds three BlockRole values, no
 # format, and Release has nothing left to release but the diagram measure.
-WINDOWS_BASELINE = 12
-WINDOWS_TOTAL_BASELINE = 12
+#
+# 12 -> 0: the factory left the renderer. Init takes no factory and creates
+# nothing of its own: the renderer's DWriteEngine owns the factory, and Init
+# asks it for the one the SVG pictures are drawn with. Every entry point that
+# took an IDWriteFactory stops taking one, because the engine the renderer
+# already holds answers for it: Init, Measure, RectsForRange,
+# MeasureSourceView, EnsureSourceLayout, DrawCodeBlock, DrawTable,
+# DrawMermaidBlock and the two shared layout passes. The mermaid measure left
+# its DirectWrite bridge as well: the labels are measured through
+# TextEngine::MeasureText with the diagram's own 1.3 line box, the way the
+# mac renderer measures them, and src/mermaid/measure_dwrite.{h,cpp} is gone
+# with its source group.
+#
+# This is the end of 2.2's ownership move. Both painters name no platform
+# graphics type, and the seam in src/platform/seams.h is the only way either
+# of them reaches text, geometry or paint. What the plan still lists under 2.2
+# is the merge of the two renderer shells into one file (its steps 3 and 4),
+# which moves bodies between files and changes no ownership.
+WINDOWS_BASELINE = 0
+WINDOWS_TOTAL_BASELINE = 0
 
 PAINTERS = [
     ("src/renderer.cpp", WINDOWS_RAW, WINDOWS_BASELINE, "windows painter"),

@@ -8,6 +8,11 @@
 # Usage: launch_smoke.sh [path/to/MarkDownIt.app]
 set -uo pipefail
 
+# A smoke run starts the product, and the product sends one launch event by
+# default. The veto is read inside analytics::TrackAppStart (src/analytics.cpp),
+# so setting it here keeps CI and a developer's local run silent at the wire.
+export MARKDOWNIT_NO_ANALYTICS=1
+
 # Screen capture policy: screenshots are allowed in the build pipeline
 # (GitHub Actions) and never on a developer machine. Every capture in
 # this script goes through ci_screencapture, which refuses anywhere else.

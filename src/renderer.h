@@ -32,7 +32,11 @@ public:
     Renderer();
     ~Renderer();
 
-    bool Init(IDWriteFactory* dw);
+    // Builds the roles the blocks are laid out in, on the renderer's own
+    // text engine. The renderer owns that engine (layoutEngine_ below),
+    // so the shell hands in no factory; the engine's factory serves the
+    // SVG pictures too.
+    bool Init();
     void Release();
 
     // Zoom model: default 100%, clamped to 25%..400%, step x1.25.
@@ -164,8 +168,7 @@ public:
 
     // Measure the total content height in DIPs without drawing.
     // Use this when only the scrollbar range needs updating.
-    float Measure(IDWriteFactory* dw, const Document& doc, float widthDip,
-                     float topOffsetDip);
+    float Measure(const Document& doc, float widthDip, float topOffsetDip);
 
     // The selection rectangles of a source byte range, the Batch 3.3
     // twin of the mac renderer's RectsForRange: one rect per wrapped
@@ -179,9 +182,8 @@ public:
     // the same SharedLayoutPass the frame runs, so the answer is the
     // geometry the last frame painted.
     std::vector<platform::Rect> RectsForRange(
-        IDWriteFactory* dw, const Document& doc, float widthDip,
-        float topOffsetDip, uint32_t start, uint32_t end,
-        const Selection* sel = nullptr);
+        const Document& doc, float widthDip, float topOffsetDip,
+        uint32_t start, uint32_t end, const Selection* sel = nullptr);
 
     // Draw the raw markdown source with monospace font and word wrap.
     // Returns the total rendered height in DIPs.
@@ -205,8 +207,8 @@ public:
     std::shared_ptr<const layout::DocumentLayout> PrintLayout(
         const Document& document, float contentWidthSeam);
 
-    float MeasureSourceView(IDWriteFactory* dw, const std::string& src,
-                            float widthDip, float topOffsetDip);
+    float MeasureSourceView(const std::string& src, float widthDip,
+                            float topOffsetDip);
 
     // The colours the window is drawn in. The shell resolves the
     // appearance and hands the matching palette in; the renderer never
@@ -248,7 +250,10 @@ private:
     int  contentWidthMode_ = 0;  // 0=Standard(800), 1=960, 2=1600, 3=Full
     LayoutCache* cache_ = nullptr;
     ID2D1Factory* d2d_factory_ = nullptr;
-    IDWriteFactory* dw_factory_ = nullptr;  // for text measurement in layout
+    // The engine's factory, lent to the SVG pictures' text. The renderer
+    // measures through the seam and never names this type in its own
+    // source; Init takes it from the engine it owns.
+    IDWriteFactory* dw_factory_ = nullptr;
     const std::string* srcText_ = nullptr;  // source text for offset calc
     // The open .md file's own directory; see SetBaseDir.
     std::string baseDir_;
@@ -392,20 +397,17 @@ private:
     // a code specimen); Measure passes null because its band choice
     // cannot depend on the caret.
     std::shared_ptr<const layout::DocumentLayout> SharedLayoutPass(
-        const Document& doc,
-        IDWriteFactory* dw, const LayoutMetrics& metrics,
+        const Document& doc, const LayoutMetrics& metrics,
         const Palette* palette, float contentWidth,
         std::vector<const layout::LaidBlock*>* byNode, const Selection* sel);
     std::shared_ptr<const layout::DocumentLayout> RunSharedLayoutPass(
-        const Document& doc,
-        IDWriteFactory* dw, const LayoutMetrics& metrics,
+        const Document& doc, const LayoutMetrics& metrics,
         const Palette* palette, float contentWidth, const Selection* sel);
     // The same walk with the inputs the caller names, so the print path can
     // lay a page out at 100% in reading mode while the window keeps its own
     // zoom and mode. RunSharedLayoutPass hands the window's own in.
     std::shared_ptr<const layout::DocumentLayout> BuildSharedLayout(
-        const Document& doc,
-        IDWriteFactory* dw, const LayoutMetrics& metrics,
+        const Document& doc, const LayoutMetrics& metrics,
         const Palette* palette, float contentWidth, const Selection* sel,
         float zoom, bool editing);
 
@@ -471,9 +473,8 @@ private:
         bool fresh = false;  // built by this frame's measure
     };
     SourceLayoutState srcState_;
-    bool EnsureSourceLayout(IDWriteFactory* dw, const std::string& src,
-                            float widthDip, float textW, float contentWidth,
-                            bool forceRebuild);
+    bool EnsureSourceLayout(const std::string& src, float widthDip, float textW,
+                            float contentWidth, bool forceRebuild);
     void DropSourceLayout();
     // The last Measure's answer, valid while the shared layout it walked
     // is the one still held (a new layout is a new pointer).
@@ -573,20 +574,20 @@ private:
                              uint32_t blockStart, uint32_t blockEnd,
                              float scrollY, float viewportH);
 
-    void DrawCodeBlock(platform::RenderTarget& target, IDWriteFactory* dw,
-                       const Node& n, float x, float y, float width, float& outH,
+    void DrawCodeBlock(platform::RenderTarget& target, const Node& n, float x,
+                       float y, float width, float& outH,
                        const Selection* sel = nullptr, float scrollY = 0.0f,
                        const std::vector<platform::Rect>& washRects = {},
                        const layout::LaidBlock* record = nullptr,
                        float viewportH = 0.0f);
-    void DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
-                   const Node& n, float x, float y, float width, float& outH,
+    void DrawTable(platform::RenderTarget& target, const Node& n, float x,
+                   float y, float width, float& outH,
                    const Selection* sel = nullptr, float scrollY = 0.0f,
                    const std::vector<platform::Rect>& washRects = {},
                    const layout::LaidTable* record = nullptr,
                    float viewportH = 0.0f);
-    void DrawMermaidBlock(platform::RenderTarget& target, IDWriteFactory* dw,
-                          const Node& n, float x, float y, float width);
+    void DrawMermaidBlock(platform::RenderTarget& target, const Node& n,
+                          float x, float y, float width);
     std::shared_ptr<mermaid::LaidOutFlowchart> GetMermaidLayout(
-        IDWriteFactory* dw, const Node& n) const;
+        const Node& n) const;
 };

@@ -51,9 +51,9 @@ namespace mermaid {
 
 namespace {
 
-// measure_dwrite.h exposes the platform measure seam; the portable core
-// uses the generated table, the platform renderer swaps in DirectWrite
-// behind the same function signature when MeasureSeqText is set.
+// The platform renderer can swap in its own measure behind the same
+// function signature when MeasureSeqText is set; the portable core uses
+// the generated table.
 SeqMeasureFn g_seq_measure = nullptr; // tests may inject
 
 double DefaultSeqTextWidth(const std::string& utf8, double fontSize) {

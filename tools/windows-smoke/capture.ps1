@@ -46,6 +46,10 @@ $states = @("doc", "find", "edit", "outline", "source", "lower", "end", "tail", 
             "diagram-pie-uneven", "diagram-pie-many")
 $env:MARKDOWNIT_QA_STATES = ($states -join ",")
 $env:MARKDOWNIT_QA_LOG = $log
+# The app sends one launch event by default. The veto is read inside
+# analytics::TrackAppStart (src/analytics.cpp), so this keeps the capture run
+# silent at the wire, on CI and on a developer's machine alike.
+$env:MARKDOWNIT_NO_ANALYTICS = "1"
 # The print-pages state writes the document's print pages as a PDF here,
 # the same file the mac smoke writes, so the shared writer is exercised on
 # both runners and the assertions below hold the pages it made.

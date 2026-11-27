@@ -8,11 +8,10 @@
 // heading, an hr or a table cell charges is the band the frame
 // paints. The engine is a fixed grid (the same arithmetic the mac
 // suite's FakeEngine spells), installed through
-// SetWalkEngineForTesting; DirectWrite is faked by the COM shims
-// below, which implement the real interface shape so the same file
-// compiles against the real SDK on the Windows runner and against
-// the winsmoke stubs in the headless harness. Production never
-// calls the seam, so the shipped build is untouched.
+// SetWalkEngineForTesting. The renderer builds its own blocks now, so
+// the tests run against the runner's DirectWrite through the renderer's
+// engine; the D2D shims below record what the frame paints. Production
+// never calls the seam, so the shipped build is untouched.
 
 #include "gtest_lite.h"
 
@@ -37,11 +36,11 @@ using platform::TextLine;
 
 // Whether the build sees the winsmoke stub SDK (the headless
 // harness defines WINSMOKE_STUB). The guard blocks below spell the
-// DirectWrite and D2D1 pure virtuals that only the real SDK
-// declares, so the fakes derive the real interfaces on the Windows
-// runner; against the stubs those members would name types the
-// stub never spelled, and the stub's own smaller pure set is fully
-// covered by the unguarded members above them.
+// D2D1 pure virtuals that only the real SDK declares, so the fakes
+// derive the real interfaces on the Windows runner; against the stubs
+// those members would name types the stub never spelled, and the
+// stub's own smaller pure set is fully covered by the unguarded
+// members above them.
 #ifndef WINSMOKE_STUB
 #define MARKDOWNIT_REAL_SDK 1
 #endif
@@ -155,656 +154,6 @@ private:
             if (run.font.size > 0.0f) return run.font.size * 0.5f;
         }
         return 0.0f;
-    }
-};
-
-// ---------------------------------------------------------------------------
-// The DirectWrite fakes. The unguarded members cover the pure set the
-// winsmoke stub declares (the surface renderer.cpp uses); the
-// MARKDOWNIT_REAL_SDK blocks complete the real SDK's interfaces so
-// the same class is concrete on the Windows runner. Bodies of the
-// guarded members never run in these tests.
-//
-// FakeTextFormat and FakeTextLayout are two separate bases, the way
-// the two real interfaces are: both spell the format level, so a
-// layout can stand in for a format (CreateTextLayout hands it the
-// source format's family and size), and each carries its own copy of
-// the format members instead of sharing a C++ base the interfaces
-// do not share.
-// ---------------------------------------------------------------------------
-
-struct FakeFmtState {
-    std::wstring family;
-    float size = 16.0f;
-    DWRITE_TEXT_ALIGNMENT align = DWRITE_TEXT_ALIGNMENT_LEADING;
-    DWRITE_WORD_WRAPPING wrap = DWRITE_WORD_WRAPPING_WRAP;
-};
-
-class FakeTextFormat : public IDWriteTextFormat {
-public:
-    FakeFmtState st;
-
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
-        (void)riid;
-        if (!ppv) return 0x80004003L;
-        *ppv = this;
-        return 0;
-    }
-    ULONG STDMETHODCALLTYPE AddRef() override { return 1; }
-    ULONG STDMETHODCALLTYPE Release() override { return 1; }
-
-    HRESULT STDMETHODCALLTYPE SetTextAlignment(
-        DWRITE_TEXT_ALIGNMENT textAlignment) override {
-        st.align = textAlignment;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE SetParagraphAlignment(
-        DWRITE_PARAGRAPH_ALIGNMENT) override {
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE SetWordWrapping(
-        DWRITE_WORD_WRAPPING wordWrapping) override {
-        st.wrap = wordWrapping;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE SetLineSpacing(
-        DWRITE_LINE_SPACING_METHOD method, FLOAT, FLOAT) override {
-        (void)method;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetLineSpacing(
-        DWRITE_LINE_SPACING_METHOD* method, FLOAT* height,
-        FLOAT* baseline) override {
-        if (method) *method = DWRITE_LINE_SPACING_METHOD_DEFAULT;
-        if (height) *height = st.size;
-        if (baseline) *baseline = st.size * 0.8f;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetFontFamilyName(WCHAR* fontFamilyName,
-                                                UINT32 nameLength) override {
-        if (!fontFamilyName || nameLength == 0) return 0x80070057L;
-        const size_t n = st.family.size() < nameLength - 1
-                             ? st.family.size()
-                             : nameLength - 1;
-        for (size_t i = 0; i < n; ++i) fontFamilyName[i] = st.family[i];
-        fontFamilyName[n] = L'\0';
-        return 0;
-    }
-    // The stub spells the getters const, the real header does not,
-    // so both spellings exist and answer the same numbers.
-    UINT32 STDMETHODCALLTYPE GetFontFamilyNameLength() const {
-        return static_cast<UINT32>(st.family.size());
-    }
-    UINT32 STDMETHODCALLTYPE GetFontFamilyNameLength() {
-        return static_cast<UINT32>(st.family.size());
-    }
-    // The renderer's FontBoxOf asks for a collection first and stops
-    // when the answer is empty, so no collection is ever spelled.
-    HRESULT STDMETHODCALLTYPE GetFontCollection(
-        IDWriteFontCollection** fontCollection) override {
-        if (fontCollection) *fontCollection = nullptr;
-        return 0;
-    }
-    DWRITE_TEXT_ALIGNMENT STDMETHODCALLTYPE GetTextAlignment() const {
-        return st.align;
-    }
-    DWRITE_TEXT_ALIGNMENT STDMETHODCALLTYPE GetTextAlignment() {
-        return st.align;
-    }
-    DWRITE_WORD_WRAPPING STDMETHODCALLTYPE GetWordWrapping() const {
-        return st.wrap;
-    }
-    DWRITE_WORD_WRAPPING STDMETHODCALLTYPE GetWordWrapping() {
-        return st.wrap;
-    }
-    DWRITE_FONT_WEIGHT STDMETHODCALLTYPE GetFontWeight() const {
-        return DWRITE_FONT_WEIGHT_NORMAL;
-    }
-    DWRITE_FONT_WEIGHT STDMETHODCALLTYPE GetFontWeight() {
-        return DWRITE_FONT_WEIGHT_NORMAL;
-    }
-    DWRITE_FONT_STYLE STDMETHODCALLTYPE GetFontStyle() const {
-        return DWRITE_FONT_STYLE_NORMAL;
-    }
-    DWRITE_FONT_STYLE STDMETHODCALLTYPE GetFontStyle() {
-        return DWRITE_FONT_STYLE_NORMAL;
-    }
-    DWRITE_FONT_STRETCH STDMETHODCALLTYPE GetFontStretch() const {
-        return DWRITE_FONT_STRETCH_NORMAL;
-    }
-    DWRITE_FONT_STRETCH STDMETHODCALLTYPE GetFontStretch() {
-        return DWRITE_FONT_STRETCH_NORMAL;
-    }
-    FLOAT STDMETHODCALLTYPE GetFontSize() const { return st.size; }
-    FLOAT STDMETHODCALLTYPE GetFontSize() { return st.size; }
-
-    // Real SDK only: reading direction, flow, tabs, trimming and the
-    // locale getters the real format adds.
-    HRESULT STDMETHODCALLTYPE SetReadingDirection(
-        DWRITE_READING_DIRECTION) { return 0; }
-    HRESULT STDMETHODCALLTYPE SetFlowDirection(DWRITE_FLOW_DIRECTION) {
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE SetIncrementalTabStop(FLOAT) { return 0; }
-    HRESULT STDMETHODCALLTYPE SetTrimming(
-        const DWRITE_TRIMMING*, IDWriteInlineObject*) { return 0; }
-    HRESULT STDMETHODCALLTYPE GetTrimming(
-        DWRITE_TRIMMING*, IDWriteInlineObject**) { return 0; }
-    DWRITE_READING_DIRECTION STDMETHODCALLTYPE GetReadingDirection() {
-        return DWRITE_READING_DIRECTION_LEFT_TO_RIGHT;
-    }
-    DWRITE_FLOW_DIRECTION STDMETHODCALLTYPE GetFlowDirection() {
-        return DWRITE_FLOW_DIRECTION_TOP_TO_BOTTOM;
-    }
-    FLOAT STDMETHODCALLTYPE GetIncrementalTabStop() { return 4.0f * st.size; }
-    DWRITE_PARAGRAPH_ALIGNMENT STDMETHODCALLTYPE GetParagraphAlignment() {
-        return DWRITE_PARAGRAPH_ALIGNMENT_NEAR;
-    }
-    UINT32 STDMETHODCALLTYPE GetLocaleNameLength() { return 0; }
-    HRESULT STDMETHODCALLTYPE GetLocaleName(WCHAR*, UINT32) { return 0; }
-};
-
-class FakeTextLayout : public IDWriteTextLayout {
-public:
-    FakeTextLayout(const std::wstring& text, FakeTextFormat* src,
-                   float maxW, float maxH)
-        : text_(text), maxW_(maxW) {
-        (void)maxH;
-        if (src) st = src->st;
-    }
-
-    FakeFmtState st;
-
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
-        (void)riid;
-        if (!ppv) return 0x80004003L;
-        *ppv = this;
-        return 0;
-    }
-    ULONG STDMETHODCALLTYPE AddRef() override { return 1; }
-    ULONG STDMETHODCALLTYPE Release() override { return 1; }
-
-    // The format level, spelled again: the real layout is a format.
-    HRESULT STDMETHODCALLTYPE SetTextAlignment(
-        DWRITE_TEXT_ALIGNMENT textAlignment) override {
-        st.align = textAlignment;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE SetParagraphAlignment(
-        DWRITE_PARAGRAPH_ALIGNMENT) override {
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE SetWordWrapping(
-        DWRITE_WORD_WRAPPING wordWrapping) override {
-        st.wrap = wordWrapping;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE SetLineSpacing(
-        DWRITE_LINE_SPACING_METHOD, FLOAT, FLOAT) override {
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetLineSpacing(
-        DWRITE_LINE_SPACING_METHOD* method, FLOAT* height,
-        FLOAT* baseline) override {
-        if (method) *method = DWRITE_LINE_SPACING_METHOD_DEFAULT;
-        if (height) *height = st.size;
-        if (baseline) *baseline = st.size * 0.8f;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetFontFamilyName(WCHAR* fontFamilyName,
-                                                UINT32 nameLength) override {
-        if (!fontFamilyName || nameLength == 0) return 0x80070057L;
-        const size_t n = st.family.size() < nameLength - 1
-                             ? st.family.size()
-                             : nameLength - 1;
-        for (size_t i = 0; i < n; ++i) fontFamilyName[i] = st.family[i];
-        fontFamilyName[n] = L'\0';
-        return 0;
-    }
-    UINT32 STDMETHODCALLTYPE GetFontFamilyNameLength() const {
-        return static_cast<UINT32>(st.family.size());
-    }
-    UINT32 STDMETHODCALLTYPE GetFontFamilyNameLength() {
-        return static_cast<UINT32>(st.family.size());
-    }
-    HRESULT STDMETHODCALLTYPE GetFontCollection(
-        IDWriteFontCollection** fontCollection) override {
-        if (fontCollection) *fontCollection = nullptr;
-        return 0;
-    }
-    DWRITE_TEXT_ALIGNMENT STDMETHODCALLTYPE GetTextAlignment() const {
-        return st.align;
-    }
-    DWRITE_TEXT_ALIGNMENT STDMETHODCALLTYPE GetTextAlignment() {
-        return st.align;
-    }
-    DWRITE_WORD_WRAPPING STDMETHODCALLTYPE GetWordWrapping() const {
-        return st.wrap;
-    }
-    DWRITE_WORD_WRAPPING STDMETHODCALLTYPE GetWordWrapping() {
-        return st.wrap;
-    }
-    DWRITE_FONT_WEIGHT STDMETHODCALLTYPE GetFontWeight() const {
-        return DWRITE_FONT_WEIGHT_NORMAL;
-    }
-    DWRITE_FONT_WEIGHT STDMETHODCALLTYPE GetFontWeight() {
-        return DWRITE_FONT_WEIGHT_NORMAL;
-    }
-    DWRITE_FONT_STYLE STDMETHODCALLTYPE GetFontStyle() const {
-        return DWRITE_FONT_STYLE_NORMAL;
-    }
-    DWRITE_FONT_STYLE STDMETHODCALLTYPE GetFontStyle() {
-        return DWRITE_FONT_STYLE_NORMAL;
-    }
-    DWRITE_FONT_STRETCH STDMETHODCALLTYPE GetFontStretch() const {
-        return DWRITE_FONT_STRETCH_NORMAL;
-    }
-    DWRITE_FONT_STRETCH STDMETHODCALLTYPE GetFontStretch() {
-        return DWRITE_FONT_STRETCH_NORMAL;
-    }
-    FLOAT STDMETHODCALLTYPE GetFontSize() const { return st.size; }
-    FLOAT STDMETHODCALLTYPE GetFontSize() { return st.size; }
-
-    // The layout level the frame drives. GetMetrics answers with
-    // the same grid arithmetic the walk's engine answers with, so
-    // whatever still asks a layout reads the band the walk charged.
-    HRESULT STDMETHODCALLTYPE GetMetrics(
-        DWRITE_TEXT_METRICS* textMetrics) override {
-        if (!textMetrics) return 0x80004003L;
-        // A real layout wraps at its box: the width it reports is the
-        // widest line inside the box, never the whole string laid
-        // out flat. The fake answers the same shape so pieces that
-        // share a line measure honestly.
-        const float charWidth = st.size * 0.5f;
-        const size_t chars = text_.size();
-        size_t per = chars > 0 ? chars : 1;
-        UINT32 lines = 1;
-        if (maxW_ > 0.0f && charWidth > 0.0f && chars > 0) {
-            const size_t perLine =
-                static_cast<size_t>(maxW_ / charWidth);
-            per = perLine < 1 ? 1 : perLine;
-            lines = static_cast<UINT32>((chars + per - 1) / per);
-            if (lines < 1) lines = 1;
-        }
-        const size_t widest = chars < per ? chars : per;
-        const float width = static_cast<float>(widest) * charWidth;
-        textMetrics->left = 0.0f;
-        textMetrics->top = 0.0f;
-        textMetrics->width = width;
-        textMetrics->widthIncludingTrailingWhitespace = width;
-        textMetrics->height = static_cast<float>(lines) * st.size;
-        textMetrics->layoutWidth = maxW_;
-        textMetrics->layoutHeight = 0.0f;
-        textMetrics->maxBidiReorderingDepth = 1;
-        textMetrics->lineCount = lines;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetLineMetrics(
-        DWRITE_LINE_METRICS* lineMetrics, UINT32 maxLineCount,
-        UINT32* actualLineCount) override {
-        if (!actualLineCount) return 0x80004003L;
-        const UINT32 want = static_cast<UINT32>(text_.size());
-        const UINT32 n = want < maxLineCount ? want : maxLineCount;
-        for (UINT32 i = 0; i < n; ++i) {
-            if (lineMetrics) {
-                lineMetrics[i].length = 1;
-                lineMetrics[i].trailingWhitespaceLength = 0;
-                lineMetrics[i].newlineLength = 0;
-                lineMetrics[i].height = st.size;
-                lineMetrics[i].baseline = st.size * 0.8f;
-                lineMetrics[i].isTrimmed = 0;
-            }
-        }
-        *actualLineCount = want;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE SetFontSize(FLOAT, DWRITE_TEXT_RANGE) override {
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE SetFontFamilyName(const WCHAR*,
-                                               DWRITE_TEXT_RANGE) override {
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE SetFontWeight(DWRITE_FONT_WEIGHT,
-                                           DWRITE_TEXT_RANGE) override {
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE SetFontStyle(DWRITE_FONT_STYLE,
-                                          DWRITE_TEXT_RANGE) override {
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE SetUnderline(BOOL, DWRITE_TEXT_RANGE) override {
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE SetStrikethrough(BOOL,
-                                               DWRITE_TEXT_RANGE) override {
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE SetDrawingEffect(IUnknown*,
-                                              DWRITE_TEXT_RANGE) override {
-        return 0;
-    }
-    // The hit tests answer an empty hand: selection and caret geometry
-    // come from the walk's records now, so any leftover caller paints
-    // nothing instead of drifting from them.
-    HRESULT STDMETHODCALLTYPE HitTestTextRange(
-        UINT32, UINT32, FLOAT, FLOAT, DWRITE_HIT_TEST_METRICS* m,
-        UINT32, UINT32* actualHitTestMetricsCount) override {
-        if (m) {
-            m->left = 0; m->top = 0; m->width = 0; m->height = 0;
-            m->textPosition = 0; m->length = 0; m->isTrimmed = 0;
-        }
-        if (actualHitTestMetricsCount) *actualHitTestMetricsCount = 0;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE HitTestPoint(FLOAT, FLOAT, BOOL* isTrailingHit,
-                                           BOOL* isInside,
-                                           DWRITE_HIT_TEST_METRICS* m) override {
-        if (isTrailingHit) *isTrailingHit = 0;
-        if (isInside) *isInside = 0;
-        if (m) {
-            m->left = 0; m->top = 0; m->width = 0; m->height = 0;
-            m->textPosition = 0; m->length = 0; m->isTrimmed = 0;
-        }
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE HitTestTextPosition(
-        UINT32, BOOL, FLOAT* pointX, FLOAT* pointY,
-        DWRITE_HIT_TEST_METRICS* m) override {
-        if (pointX) *pointX = 0.0f;
-        if (pointY) *pointY = 0.0f;
-        if (m) {
-            m->left = 0; m->top = 0; m->width = 0; m->height = 0;
-            m->textPosition = 0; m->length = 0; m->isTrimmed = 0;
-        }
-        return 0;
-    }
-
-    // Real SDK only: the format getters the real layout redeclares
-    // with a position argument, plus the rest of its own surface.
-    HRESULT STDMETHODCALLTYPE SetReadingDirection(
-        DWRITE_READING_DIRECTION) { return 0; }
-    HRESULT STDMETHODCALLTYPE SetFlowDirection(DWRITE_FLOW_DIRECTION) {
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE SetIncrementalTabStop(FLOAT) { return 0; }
-    HRESULT STDMETHODCALLTYPE SetTrimming(
-        const DWRITE_TRIMMING*, IDWriteInlineObject*) { return 0; }
-    HRESULT STDMETHODCALLTYPE GetTrimming(
-        DWRITE_TRIMMING*, IDWriteInlineObject**) { return 0; }
-    DWRITE_READING_DIRECTION STDMETHODCALLTYPE GetReadingDirection() {
-        return DWRITE_READING_DIRECTION_LEFT_TO_RIGHT;
-    }
-    DWRITE_FLOW_DIRECTION STDMETHODCALLTYPE GetFlowDirection() {
-        return DWRITE_FLOW_DIRECTION_TOP_TO_BOTTOM;
-    }
-    FLOAT STDMETHODCALLTYPE GetIncrementalTabStop() { return 4.0f * st.size; }
-    DWRITE_PARAGRAPH_ALIGNMENT STDMETHODCALLTYPE GetParagraphAlignment() {
-        return DWRITE_PARAGRAPH_ALIGNMENT_NEAR;
-    }
-    UINT32 STDMETHODCALLTYPE GetLocaleNameLength() { return 0; }
-    HRESULT STDMETHODCALLTYPE GetLocaleName(WCHAR*, UINT32) { return 0; }
-    HRESULT STDMETHODCALLTYPE SetMaxWidth(FLOAT) { return 0; }
-    HRESULT STDMETHODCALLTYPE SetMaxHeight(FLOAT) { return 0; }
-    HRESULT STDMETHODCALLTYPE SetFontCollection(
-        IDWriteFontCollection*, DWRITE_TEXT_RANGE) { return 0; }
-    HRESULT STDMETHODCALLTYPE SetFontStretch(DWRITE_FONT_STRETCH,
-                                             DWRITE_TEXT_RANGE) { return 0; }
-    HRESULT STDMETHODCALLTYPE SetInlineObject(IDWriteInlineObject*,
-                                             DWRITE_TEXT_RANGE) { return 0; }
-    HRESULT STDMETHODCALLTYPE SetTypography(IDWriteTypography*,
-                                            DWRITE_TEXT_RANGE) { return 0; }
-    HRESULT STDMETHODCALLTYPE SetLocaleName(const WCHAR*,
-                                           DWRITE_TEXT_RANGE) { return 0; }
-    FLOAT STDMETHODCALLTYPE GetMaxWidth() { return maxW_; }
-    FLOAT STDMETHODCALLTYPE GetMaxHeight() { return 0.0f; }
-    HRESULT STDMETHODCALLTYPE GetFontCollection(
-        UINT32, IDWriteFontCollection** fontCollection, DWRITE_TEXT_RANGE*) {
-        if (fontCollection) *fontCollection = nullptr;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetFontFamilyNameLength(
-        UINT32, UINT32* nameLength, DWRITE_TEXT_RANGE*) {
-        if (nameLength) *nameLength = static_cast<UINT32>(st.family.size());
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetFontFamilyName(UINT32, WCHAR* name,
-                                               UINT32 nameSize,
-                                               DWRITE_TEXT_RANGE*) {
-        return GetFontFamilyName(name, nameSize);
-    }
-    HRESULT STDMETHODCALLTYPE GetFontWeight(UINT32, DWRITE_FONT_WEIGHT* w,
-                                           DWRITE_TEXT_RANGE*) {
-        if (w) *w = DWRITE_FONT_WEIGHT_NORMAL;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetFontStyle(UINT32, DWRITE_FONT_STYLE* s,
-                                           DWRITE_TEXT_RANGE*) {
-        if (s) *s = DWRITE_FONT_STYLE_NORMAL;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetFontStretch(UINT32, DWRITE_FONT_STRETCH* s,
-                                             DWRITE_TEXT_RANGE*) {
-        if (s) *s = DWRITE_FONT_STRETCH_NORMAL;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetFontSize(UINT32, FLOAT* s, DWRITE_TEXT_RANGE*) {
-        if (s) *s = st.size;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetUnderline(UINT32, BOOL* b, DWRITE_TEXT_RANGE*) {
-        if (b) *b = 0;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetStrikethrough(UINT32, BOOL* b,
-                                              DWRITE_TEXT_RANGE*) {
-        if (b) *b = 0;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetDrawingEffect(UINT32, IUnknown** e,
-                                               DWRITE_TEXT_RANGE*) {
-        if (e) *e = nullptr;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetInlineObject(UINT32, IDWriteInlineObject**,
-                                              DWRITE_TEXT_RANGE*) {
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetTypography(UINT32, IDWriteTypography** t,
-                                           DWRITE_TEXT_RANGE*) {
-        (void)t;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetLocaleNameLength(
-        UINT32, UINT32* nameLength, DWRITE_TEXT_RANGE*) {
-        if (nameLength) *nameLength = 0;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetLocaleName(UINT32, WCHAR* n, UINT32 sz,
-                                            DWRITE_TEXT_RANGE*) {
-        (void)n; (void)sz;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE Draw(void*, IDWriteTextRenderer*, FLOAT,
-                                   FLOAT) {
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetOverhangMetrics(DWRITE_OVERHANG_METRICS* o) {
-        if (o) *o = DWRITE_OVERHANG_METRICS();
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE GetClusterMetrics(DWRITE_CLUSTER_METRICS*,
-                                                UINT32, UINT32* out) {
-        if (out) *out = 0;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE DetermineMinWidth(FLOAT* minWidth) {
-        if (minWidth) *minWidth = 0.0f;
-        return 0;
-    }
-
-private:
-    std::wstring text_;
-    float maxW_ = 0.0f;
-};
-
-class FakeDWriteFactory : public IDWriteFactory {
-public:
-    std::vector<FakeTextFormat*> formats;
-    std::vector<FakeTextLayout*> layouts;
-
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
-        (void)riid;
-        if (!ppv) return 0x80004003L;
-        *ppv = this;
-        return 0;
-    }
-    ULONG STDMETHODCALLTYPE AddRef() override { return 1; }
-    ULONG STDMETHODCALLTYPE Release() override { return 1; }
-
-    HRESULT STDMETHODCALLTYPE CreateTextFormat(
-        const WCHAR* fontFamilyName, IDWriteFontCollection*,
-        DWRITE_FONT_WEIGHT, DWRITE_FONT_STYLE, DWRITE_FONT_STRETCH,
-        FLOAT fontSize, const WCHAR* localeName,
-        IDWriteTextFormat** textFormat) override {
-        (void)localeName;
-        if (!textFormat) return 0x80004003L;
-        FakeTextFormat* fmt = new FakeTextFormat();
-        fmt->st.size = fontSize;
-        if (fontFamilyName) {
-            for (const WCHAR* p = fontFamilyName; *p; ++p) {
-                fmt->st.family.push_back(*p);
-            }
-        }
-        formats.push_back(fmt);
-        *textFormat = fmt;
-        return 0;
-    }
-
-    HRESULT STDMETHODCALLTYPE CreateTextLayout(
-        const WCHAR* string, UINT32 stringLength, IDWriteTextFormat* textFormat,
-        FLOAT maxWidth, FLOAT maxHeight,
-        IDWriteTextLayout** textLayout) override {
-        (void)maxHeight;
-        if (!textLayout) return 0x80004003L;
-        std::wstring text;
-        if (string) {
-            for (UINT32 i = 0; i < stringLength; ++i) text.push_back(string[i]);
-        }
-        FakeTextFormat* src = static_cast<FakeTextFormat*>(textFormat);
-        FakeTextLayout* layout = new FakeTextLayout(text, src, maxWidth, 0.0f);
-        layouts.push_back(layout);
-        *textLayout = layout;
-        return 0;
-    }
-
-    // Real SDK only: the rest of the factory's pure surface. None of
-    // it is reached by these tests; the bodies only complete the
-    // interface so the class is concrete on the runner.
-    HRESULT STDMETHODCALLTYPE GetSystemFontCollection(
-        IDWriteFontCollection** fontCollection, BOOL checkForUpdates) {
-        (void)checkForUpdates;
-        if (fontCollection) *fontCollection = nullptr;
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE CreateCustomFontCollection(
-        IDWriteFontCollectionLoader* collectionLoader, const void* collectionKey,
-        UINT32 collectionKeySize, IDWriteFontCollection** fontCollection) {
-        (void)collectionLoader; (void)collectionKey; (void)collectionKeySize;
-        if (fontCollection) *fontCollection = nullptr;
-        return 0x80004001L;
-    }
-    HRESULT STDMETHODCALLTYPE CreateGdiCompatibleTextLayout(
-        const WCHAR* string, UINT32 stringLength, IDWriteTextFormat* textFormat,
-        FLOAT maxWidth, FLOAT maxHeight, FLOAT pixelsPerDip,
-        const DWRITE_MATRIX* transform, BOOL useGdiNatural,
-        IDWriteTextLayout** textLayout) {
-        (void)string; (void)stringLength; (void)textFormat; (void)maxWidth;
-        (void)maxHeight; (void)pixelsPerDip; (void)transform;
-        (void)useGdiNatural;
-        if (textLayout) *textLayout = nullptr;
-        return 0x80004001L;
-    }
-    HRESULT STDMETHODCALLTYPE RegisterFontCollectionLoader(
-        IDWriteFontCollectionLoader*) { return 0; }
-    HRESULT STDMETHODCALLTYPE UnregisterFontCollectionLoader(
-        IDWriteFontCollectionLoader*) { return 0; }
-    HRESULT STDMETHODCALLTYPE CreateFontFileReference(
-        const WCHAR* filePath, const FILETIME* lastWriteTime,
-        IDWriteFontFile** fontFile) {
-        (void)filePath; (void)lastWriteTime;
-        if (fontFile) *fontFile = nullptr;
-        return 0x80004001L;
-    }
-    HRESULT STDMETHODCALLTYPE CreateCustomFontFileReference(
-        const void* fontFileReferenceKey, UINT32 fontFileReferenceKeySize,
-        IDWriteFontFileLoader* fontFileLoader, IDWriteFontFile** fontFile) {
-        (void)fontFileReferenceKey; (void)fontFileReferenceKeySize;
-        (void)fontFileLoader;
-        if (fontFile) *fontFile = nullptr;
-        return 0x80004001L;
-    }
-    HRESULT STDMETHODCALLTYPE CreateFontFace(
-        DWRITE_FONT_FACE_TYPE fontFaceType, UINT32 numberOfFiles,
-        IDWriteFontFile* const* fontFiles, UINT32 faceIndex,
-        DWRITE_FONT_SIMULATIONS fontFaceSimulationFlags,
-        IDWriteFontFace** fontFace) {
-        (void)fontFaceType; (void)numberOfFiles; (void)fontFiles;
-        (void)faceIndex; (void)fontFaceSimulationFlags;
-        if (fontFace) *fontFace = nullptr;
-        return 0x80004001L;
-    }
-    HRESULT STDMETHODCALLTYPE CreateRenderingParams(
-        IDWriteRenderingParams** renderingParams) {
-        if (renderingParams) *renderingParams = nullptr;
-        return 0x80004001L;
-    }
-    HRESULT STDMETHODCALLTYPE CreateMonitorRenderingParams(
-        HMONITOR monitor, IDWriteRenderingParams** renderingParams) {
-        (void)monitor;
-        if (renderingParams) *renderingParams = nullptr;
-        return 0x80004001L;
-    }
-    HRESULT STDMETHODCALLTYPE CreateCustomRenderingParams(
-        FLOAT gamma, FLOAT enhancedContrast, FLOAT clearTypeLevel,
-        DWRITE_PIXEL_GEOMETRY pixelGeometry, DWRITE_RENDERING_MODE renderingMode,
-        IDWriteRenderingParams** renderingParams) {
-        (void)gamma; (void)enhancedContrast; (void)clearTypeLevel;
-        (void)pixelGeometry; (void)renderingMode;
-        if (renderingParams) *renderingParams = nullptr;
-        return 0x80004001L;
-    }
-    HRESULT STDMETHODCALLTYPE RegisterFontFileLoader(IDWriteFontFileLoader*) {
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE UnregisterFontFileLoader(IDWriteFontFileLoader*) {
-        return 0;
-    }
-    HRESULT STDMETHODCALLTYPE CreateTypography(IDWriteTypography** typography) {
-        if (typography) *typography = nullptr;
-        return 0x80004001L;
-    }
-    HRESULT STDMETHODCALLTYPE GetGdiInterop(IDWriteGdiInterop** gdiInterop) {
-        if (gdiInterop) *gdiInterop = nullptr;
-        return 0x80004001L;
-    }
-    HRESULT STDMETHODCALLTYPE CreateEllipsisTrimmingSign(
-        IDWriteTextFormat*, IDWriteInlineObject**) {
-        return 0x80004001L;
-    }
-    HRESULT STDMETHODCALLTYPE CreateTextAnalyzer(IDWriteTextAnalyzer**) {
-        return 0x80004001L;
-    }
-    HRESULT STDMETHODCALLTYPE CreateNumberSubstitution(
-        DWRITE_NUMBER_SUBSTITUTION_METHOD, const WCHAR*, BOOL,
-        IDWriteNumberSubstitution**) {
-        return 0x80004001L;
-    }
-    HRESULT STDMETHODCALLTYPE CreateGlyphRunAnalysis(
-        const DWRITE_GLYPH_RUN*, FLOAT, const DWRITE_MATRIX*,
-        DWRITE_RENDERING_MODE, DWRITE_MEASURING_MODE, FLOAT, FLOAT,
-        IDWriteGlyphRunAnalysis**) {
-        return 0x80004001L;
     }
 };
 
@@ -1218,8 +567,7 @@ bool SameRect(const Rect& a, const FakeRenderTarget::Fill& b, float eps) {
 TEST(RendererWin, SelectionRectsAnswerPerWrappedLine) {
     FakeEngine engine;
     Renderer renderer;
-    FakeDWriteFactory dw;
-    ASSERT_TRUE(renderer.Init(&dw));
+    ASSERT_TRUE(renderer.Init());
     renderer.SetWalkEngineForTesting(&engine);
     renderer.SetContentWidthMode(3);  // no cap: the wrap is ours alone
 
@@ -1233,7 +581,7 @@ TEST(RendererWin, SelectionRectsAnswerPerWrappedLine) {
     const uint32_t start = doc.nodes[0].contentOffset + 2;
     const uint32_t end = doc.nodes[0].contentOffset + 34;
 
-    const std::vector<Rect> rects = renderer.RectsForRange(&dw, doc, width,
+    const std::vector<Rect> rects = renderer.RectsForRange(doc, width,
                                                            0.0f, start, end);
     // The 16-character column breaks the 60-byte run every 16 bytes,
     // so bytes 2 through 33 cross three wrapped lines: the first line
@@ -1257,8 +605,7 @@ TEST(RendererWin, SelectionRectsAnswerPerWrappedLine) {
 TEST(RendererWin, SelectionRectsAnswerNoWashForACaret) {
     FakeEngine engine;
     Renderer renderer;
-    FakeDWriteFactory dw;
-    ASSERT_TRUE(renderer.Init(&dw));
+    ASSERT_TRUE(renderer.Init());
     renderer.SetWalkEngineForTesting(&engine);
     renderer.SetContentWidthMode(3);
 
@@ -1268,7 +615,7 @@ TEST(RendererWin, SelectionRectsAnswerNoWashForACaret) {
 
     const LayoutMetrics m = ScaleMetrics(kBase, 1.0f);
     const std::vector<Rect> rects = renderer.RectsForRange(
-        &dw, doc, 600.0f, 0.0f, doc.nodes[0].contentOffset,
+        doc, 600.0f, 0.0f, doc.nodes[0].contentOffset,
         doc.nodes[0].contentOffset);
     EXPECT_TRUE(rects.empty());
 }
@@ -1279,8 +626,7 @@ TEST(RendererWin, SelectionRectsAnswerNoWashForACaret) {
 TEST(RendererWin, SelectionRectsAnswerTheTableCellBands) {
     FakeEngine engine;
     Renderer renderer;
-    FakeDWriteFactory dw;
-    ASSERT_TRUE(renderer.Init(&dw));
+    ASSERT_TRUE(renderer.Init());
     renderer.SetWalkEngineForTesting(&engine);
     renderer.SetContentWidthMode(3);
 
@@ -1290,7 +636,7 @@ TEST(RendererWin, SelectionRectsAnswerTheTableCellBands) {
     const LayoutMetrics m = ScaleMetrics(kBase, 1.0f);
     const float width = 600.0f;
     const std::vector<Rect> rects = renderer.RectsForRange(
-        &dw, doc, width, 0.0f, doc.nodes[0].rows[1].cells[1].srcOffset,
+        doc, width, 0.0f, doc.nodes[0].rows[1].cells[1].srcOffset,
         doc.nodes[0].rows[1].cells[1].srcEnd);
 
     // The right cell of the second row: one line, inside its column,
@@ -1311,8 +657,7 @@ TEST(RendererWin, SelectionRectsAnswerTheTableCellBands) {
 TEST(RendererWin, MeasureAndRenderAdvanceOneWalk) {
     FakeEngine engine;
     Renderer renderer;
-    FakeDWriteFactory dw;
-    ASSERT_TRUE(renderer.Init(&dw));
+    ASSERT_TRUE(renderer.Init());
     renderer.SetWalkEngineForTesting(&engine);
     renderer.SetContentWidthMode(3);
 
@@ -1329,8 +674,8 @@ TEST(RendererWin, MeasureAndRenderAdvanceOneWalk) {
     Document both = Doc({Heading(1, "Title"), Para("body")});
     NumberOffsets(&both);
 
-    const float headOnly = renderer.Measure(&dw, heading, width, 0.0f);
-    const float two = renderer.Measure(&dw, both, width, 0.0f);
+    const float headOnly = renderer.Measure(heading, width, 0.0f);
+    const float two = renderer.Measure(both, width, 0.0f);
     const float h1 = kBase.headingSizes[1] * kPtToDip;
     const float headBand = h1 * kBase.headingLineHeight + 0.3f * h1 + 1.0f;
     EXPECT_NEAR(headOnly - headBand, m.padTop * 3.0f, 0.02f);
@@ -1342,8 +687,8 @@ TEST(RendererWin, MeasureAndRenderAdvanceOneWalk) {
     Document plain = Doc({Para("body"), Para("tail")});
     NumberOffsets(&plain);
     const float ruleDelta =
-        renderer.Measure(&dw, withRule, width, 0.0f) -
-        renderer.Measure(&dw, plain, width, 0.0f);
+        renderer.Measure(withRule, width, 0.0f) -
+        renderer.Measure(plain, width, 0.0f);
     // The walk charges the hr band at four units and its gaps above
     // and below, in the slot a plain paragraph gap takes without it.
     EXPECT_NEAR(ruleDelta,
@@ -1359,8 +704,8 @@ TEST(RendererWin, MeasureAndRenderAdvanceOneWalk) {
     Document table3 = Doc(
         {Table({{"ab", "cd"}, {"ef", "gh"}, {"ij", "kl"}})});
     NumberOffsets(&table3);
-    const float t2 = renderer.Measure(&dw, table2, width, 0.0f);
-    const float t3 = renderer.Measure(&dw, table3, width, 0.0f);
+    const float t2 = renderer.Measure(table2, width, 0.0f);
+    const float t3 = renderer.Measure(table3, width, 0.0f);
     EXPECT_NEAR(t3 - t2, rowH, 0.02f);
 
     FakeRenderTarget rt;
@@ -1368,7 +713,7 @@ TEST(RendererWin, MeasureAndRenderAdvanceOneWalk) {
     sel.anchor.offset = table3.nodes[0].rows[2].cells[1].srcOffset;
     sel.active.offset = table3.nodes[0].rows[2].cells[1].srcEnd;
     const std::vector<Rect> twin = renderer.RectsForRange(
-        &dw, table3, width, 0.0f, sel.Start(), sel.End(), &sel);
+        table3, width, 0.0f, sel.Start(), sel.End(), &sel);
     ASSERT_EQ(twin.size(), 1u);
     EXPECT_NEAR(twin[0].y, m.padTop + 2.0f * rowH + m.cellPadY, 0.02f);
     // The walk sits its bands on one padTop and closes the frame with
@@ -1386,8 +731,7 @@ TEST(RendererWin, MeasureAndRenderAdvanceOneWalk) {
 TEST(RendererWin, SelectionRepaintAsksNoLayoutBeyondTheRects) {
     FakeEngine engine;
     Renderer renderer;
-    FakeDWriteFactory dw;
-    ASSERT_TRUE(renderer.Init(&dw));
+    ASSERT_TRUE(renderer.Init());
     renderer.SetWalkEngineForTesting(&engine);
     renderer.SetContentWidthMode(3);
 
@@ -1421,7 +765,7 @@ TEST(RendererWin, SelectionRepaintAsksNoLayoutBeyondTheRects) {
     // And the washes the selection frame painted are exactly the
     // twin's rects for the same selection.
     const std::vector<Rect> twin = renderer.RectsForRange(
-        &dw, doc, width, 0.0f, sel.Start(), sel.End(), &sel);
+        doc, width, 0.0f, sel.Start(), sel.End(), &sel);
     ASSERT_TRUE(!twin.empty());
     size_t matched = 0;
     for (const Rect& r : twin) {
@@ -1452,8 +796,7 @@ TEST(RendererWin, SelectionRepaintAsksNoLayoutBeyondTheRects) {
 TEST(RendererWin, FrameWashesCrossingBlocksMatchTheTwin) {
     FakeEngine engine;
     Renderer renderer;
-    FakeDWriteFactory dw;
-    ASSERT_TRUE(renderer.Init(&dw));
+    ASSERT_TRUE(renderer.Init());
     renderer.SetWalkEngineForTesting(&engine);
     renderer.SetContentWidthMode(3);
 
@@ -1471,7 +814,7 @@ TEST(RendererWin, FrameWashesCrossingBlocksMatchTheTwin) {
     renderer.Render(paintSel, doc, width, rt.size.height, 0.0f, 0.0f, 0.0f, &sel);
 
     const std::vector<Rect> twin = renderer.RectsForRange(
-        &dw, doc, width, 0.0f, sel.Start(), sel.End(), &sel);
+        doc, width, 0.0f, sel.Start(), sel.End(), &sel);
     ASSERT_GE(twin.size(), 2u);
     for (const Rect& r : twin) {
         bool found = false;
@@ -1519,9 +862,9 @@ TEST(RendererWin, RealEngineSliceGapsMatchTheLayout) {
     const std::vector<platform::TextLine> lines =
         engine.MeasureWrapped(runs, 0.0f, 0.0f);
     if (lines.empty() || lines[0].runs.empty()) {
-        // No DirectWrite factory in this environment (the fake stack
-        // links the engine against a stub without one); the runner
-        // owns the real answer.
+        // No DirectWrite factory in this environment (a stub harness
+        // links the engine without one); the runner owns the real
+        // answer.
         printf("RealEngineSliceGaps: engine degraded, no layout\n");
         fflush(stdout);
         return;
@@ -1570,17 +913,16 @@ TEST(RendererWin, RealEngineSliceGapsMatchTheLayout) {
 // through the real engine, and every piece on one text row must
 // sit where the piece before it ended, neither before its ink has
 // finished (glued words) nor a void beyond the space it carries
-// (spread words). The fake stack has no DirectWrite factory, so no
-// walk pieces exist there and the test reports its degradation; the
-// runner owns the real numbers.
+// (spread words). A build with no DirectWrite factory answers no walk
+// pieces and the test reports its degradation; the runner owns the real
+// numbers.
 TEST(RendererWin, PaintedLinesKeepTheWordSpaces) {
     Document doc = Doc({Heading(2, "Statisk evidens fundet af test"),
                         Para("Almindelig tekst med **fede** og *skraa* ord")});
     NumberOffsets(&doc);
 
     Renderer renderer;
-    FakeDWriteFactory dw;
-    ASSERT_TRUE(renderer.Init(&dw));
+    ASSERT_TRUE(renderer.Init());
     renderer.SetContentWidthMode(3);
     // The highlight feature: a marker band under the headings and
     // the words, the layer the drift report suspects. The wash must
@@ -1658,8 +1000,7 @@ TEST(RendererWin, PaintedCellsNeverOverlap) {
     NumberOffsets(&doc);
 
     Renderer renderer;
-    FakeDWriteFactory dw;
-    ASSERT_TRUE(renderer.Init(&dw));
+    ASSERT_TRUE(renderer.Init());
     renderer.SetContentWidthMode(3);
     std::vector<TextMatch> marks;
     marks.push_back({0, 400});
@@ -1711,8 +1052,7 @@ TEST(RendererWin, DualGeometryProbe) {
     })});
     NumberOffsets(&doc);
     Renderer renderer;
-    FakeDWriteFactory dw;
-    ASSERT_TRUE(renderer.Init(&dw));
+    ASSERT_TRUE(renderer.Init());
     renderer.SetContentWidthMode(3);
     const float width =
         2.0f * ScaleMetrics(kBase, 1.0f).padX + 30.0f * kBodyEm;
@@ -1754,8 +1094,7 @@ TEST(RendererWin, ReportTableShapeHolds) {
     })});
     NumberOffsets(&doc);
     Renderer renderer;
-    FakeDWriteFactory dw;
-    ASSERT_TRUE(renderer.Init(&dw));
+    ASSERT_TRUE(renderer.Init());
     renderer.SetContentWidthMode(0);
 
     FakeRenderTarget rt;
@@ -1851,8 +1190,7 @@ TEST(RendererWin, ReportDocumentStacksAtEveryZoom) {
 
     for (float z : zooms) {
         Renderer renderer;
-        FakeDWriteFactory dw;
-        ASSERT_TRUE(renderer.Init(&dw));
+        ASSERT_TRUE(renderer.Init());
         renderer.SetContentWidthMode(0);
         renderer.SetZoom(z);
         FakeRenderTarget rt;
@@ -1957,8 +1295,7 @@ TEST(RendererWin, ReportTableFullWalk) {
     })});
     NumberOffsets(&doc);
     Renderer renderer;
-    FakeDWriteFactory dw;
-    ASSERT_TRUE(renderer.Init(&dw));
+    ASSERT_TRUE(renderer.Init());
     renderer.SetContentWidthMode(0);
 
     FakeRenderTarget rt;
@@ -2037,7 +1374,7 @@ TEST(RendererWin, ReportTableFullWalk) {
     for (float zoom : {0.5f, 0.62f, 0.71f, 0.85f}) {
         FakeRenderTarget rtz;
         Renderer rz;
-        ASSERT_TRUE(rz.Init(&dw));
+        ASSERT_TRUE(rz.Init());
         rz.SetContentWidthMode(0);
         rz.SetZoom(zoom);
         platform::D2DTarget paintZ(&rtz);
@@ -2091,7 +1428,7 @@ TEST(RendererWin, ReportTableFullWalk) {
     {
         FakeRenderTarget rt3;
         Renderer r3;
-        ASSERT_TRUE(r3.Init(&dw));
+        ASSERT_TRUE(r3.Init());
         r3.SetContentWidthMode(3);
         platform::D2DTarget paint3(&rt3);
         r3.Render(paint3, doc, 1246.0f, rt3.size.height, 0.0f, 0.0f, 0.0f, nullptr);

@@ -2,6 +2,8 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <random>
 
@@ -9,6 +11,16 @@
 
 namespace analytics {
 namespace {
+
+// Unset, empty and "0" all mean "the variable is not asking for silence"; any
+// other value is an opt-out. That is what DO_NOT_TRACK says, and it keeps a
+// script that expands an unset variable (`MARKDOWNIT_NO_ANALYTICS=$FLAG app`)
+// from silencing a real launch by accident.
+bool EnvOptOut(const char* name) {
+    const char* value = std::getenv(name);
+    if (value == nullptr || *value == '\0') return false;
+    return std::strcmp(value, "0") != 0;
+}
 
 // JSON string escaping for the five fields we send. They are short and come
 // from the OS, but a locale name is not guaranteed to be ASCII everywhere, so
@@ -38,6 +50,10 @@ std::string Quote(const std::string& in) {
 }
 
 }  // namespace
+
+bool IsSuppressed() {
+    return EnvOptOut("MARKDOWNIT_NO_ANALYTICS") || EnvOptOut("DO_NOT_TRACK");
+}
 
 std::string NewSessionId() {
     std::random_device device;
@@ -102,8 +118,10 @@ std::string BuildEventJson(const std::string& eventName,
 void TrackAppStart(platform::TelemetrySink& sink, const SystemProps& system,
                    bool enabled) {
     // The opt-out: no payload is built and the sink is never called, so a
-    // reader who turned the switch off makes no request at all.
-    if (!enabled) return;
+    // reader who turned the switch off makes no request at all. The
+    // environment gets the same veto, which is how a build, a test run or a
+    // capture run keeps every launch silent while it works.
+    if (!enabled || IsSuppressed()) return;
 
     // A fresh session id and the moment of this launch. Neither is kept: the
     // id is drawn for this event and dropped with it.

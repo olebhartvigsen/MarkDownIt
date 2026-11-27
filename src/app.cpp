@@ -613,7 +613,7 @@ int AppWindow::Run() {
 
 void AppWindow::EnsureRenderer() {
     if (renderer_inited_ || !dw_factory_) return;
-    renderer_inited_ = renderer_.Init(dw_factory_);
+    renderer_inited_ = renderer_.Init();
     renderer_.SetLayoutCache(&layout_cache_);
     renderer_.SetD2DDeviceContext5(d2d_ctx5_);
     layout_cache_.SetSourceText(&buffer_.Text());
@@ -3781,10 +3781,10 @@ void AppWindow::OnContentPaint(HWND hwnd) {
     if (renderer_inited_ && dw_factory_) {
         D2D1_SIZE_F size = rt_->GetSize();
         if (source_view_) {
-            totalH_ = renderer_.MeasureSourceView(
-                dw_factory_, buffer_.Text(), size.width, 0.0f);
+            totalH_ =
+                renderer_.MeasureSourceView(buffer_.Text(), size.width, 0.0f);
         } else {
-            totalH_ = renderer_.Measure(dw_factory_, doc_, size.width, 0.0f);
+            totalH_ = renderer_.Measure(doc_, size.width, 0.0f);
         }
         UpdateScrollInfo();
     }
@@ -4035,8 +4035,7 @@ void AppWindow::QAAdvance() {
             // picture is supposed to show.
             if (renderer_inited_ && dw_factory_ && rt_) {
                 const D2D1_SIZE_F size = rt_->GetSize();
-                totalH_ = renderer_.Measure(dw_factory_, doc_, size.width,
-                                            0.0f);
+                totalH_ = renderer_.Measure(doc_, size.width, 0.0f);
             }
             scrollY_ = ClampScroll(260.0f);
             StopScrollAnimation();
@@ -4083,8 +4082,7 @@ void AppWindow::QAAdvance() {
             LoadDocumentText(ss.str(), path);
             if (renderer_inited_ && dw_factory_ && rt_) {
                 const D2D1_SIZE_F size = rt_->GetSize();
-                totalH_ = renderer_.Measure(dw_factory_, doc_, size.width,
-                                            0.0f);
+                totalH_ = renderer_.Measure(doc_, size.width, 0.0f);
             }
             // The page's own top is where the state was asked to look.
             scrollY_ = 0.0f;
@@ -6078,10 +6076,10 @@ void AppWindow::ApplyZoom(float newZoom, float focusYdip, float focusXdip) {
     if (renderer_inited_ && dw_factory_ && rt_) {
         D2D1_SIZE_F size = rt_->GetSize();
         if (source_view_) {
-            totalH_ = renderer_.MeasureSourceView(
-                dw_factory_, buffer_.Text(), size.width, 0.0f);
+            totalH_ =
+                renderer_.MeasureSourceView(buffer_.Text(), size.width, 0.0f);
         } else {
-            totalH_ = renderer_.Measure(dw_factory_, doc_, size.width, 0.0f);
+            totalH_ = renderer_.Measure(doc_, size.width, 0.0f);
         }
     }
     UpdateScrollInfo();

@@ -166,7 +166,6 @@ add_executable(MarkDownIt WIN32
     ${MARKDOWNIT_SVG_SHARED_SOURCES}
     ${MARKDOWNIT_MERMAID_SOURCES}
     ${MARKDOWNIT_MERMAID_STATE_SOURCES}
-    ${MARKDOWNIT_MERMAID_WINDOWS_SOURCES}
     ${MARKDOWNIT_OFFICE_SOURCES}
     ${MARKDOWNIT_WINDOWS_APP_SOURCES}
     src/main.cpp
@@ -561,7 +560,6 @@ elseif(BUILD_TESTS)
         src/renderer.cpp
         src/mermaid/painter.cpp
         src/imagehelper.cpp
-        ${MARKDOWNIT_MERMAID_WINDOWS_SOURCES}
         src/textlayout_dwrite.cpp
         src/findbar.cpp
         src/svgdoc.cpp

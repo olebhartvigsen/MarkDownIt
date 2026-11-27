@@ -105,12 +105,6 @@ set(MARKDOWNIT_MERMAID_STATE_SOURCES
     src/mermaid/state_layout.cpp
 )
 
-# DirectWrite measurement for the Mermaid engine, Windows only.
-# usage: windows-app windows-tests
-set(MARKDOWNIT_MERMAID_WINDOWS_SOURCES
-    src/mermaid/measure_dwrite.cpp
-)
-
 # The pre-refactor Mermaid entry points, used only by the Windows test
 # suite while its tests are migrated to the shared engine.
 # usage: windows-tests

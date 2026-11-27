@@ -2,6 +2,7 @@
 #include "gtest_lite.h"
 #include "platform/seams.h"
 
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -36,6 +37,58 @@ public:
 
 private:
     bool answer_;
+};
+
+// The environment is process-wide and the suite runs every test in one
+// process, so each case below puts the variables back the way it found them.
+void SetEnv(const char* name, const char* value) {
+#ifdef _WIN32
+    _putenv_s(name, value == nullptr ? "" : value);
+#else
+    if (value == nullptr) {
+        unsetenv(name);
+    } else {
+        setenv(name, value, 1);
+    }
+#endif
+}
+
+// The environment is process-wide, so each case restores both variables when
+// it ends. CI runs this suite with MARKDOWNIT_NO_ANALYTICS=1 set, and no later
+// test may see that changed.
+struct EnvValue {
+    bool present = false;
+    std::string value;
+};
+
+EnvValue SaveEnv(const char* name) {
+    const char* v = std::getenv(name);
+    EnvValue saved;
+    saved.present = v != nullptr;
+    if (v != nullptr) saved.value = v;
+    return saved;
+}
+
+class VetoScope {
+public:
+    VetoScope()
+        : analytics_(SaveEnv("MARKDOWNIT_NO_ANALYTICS")),
+          doNotTrack_(SaveEnv("DO_NOT_TRACK")) {
+        SetEnv("MARKDOWNIT_NO_ANALYTICS", nullptr);
+        SetEnv("DO_NOT_TRACK", nullptr);
+    }
+    ~VetoScope() {
+        SetEnv("MARKDOWNIT_NO_ANALYTICS",
+               analytics_.present ? analytics_.value.c_str() : nullptr);
+        SetEnv("DO_NOT_TRACK",
+               doNotTrack_.present ? doNotTrack_.value.c_str() : nullptr);
+    }
+    VetoScope(const VetoScope&) = delete;
+    VetoScope& operator=(const VetoScope&) = delete;
+
+private:
+    EnvValue analytics_;
+    EnvValue doNotTrack_;
 };
 
 }  // namespace
@@ -125,6 +178,7 @@ TEST(Analytics, TheKeyIsTheEuRegionOne) {
 // The opt-out, proven at the seam: with the switch off the transport is
 // never touched, so no socket is opened and no bytes leave the machine.
 TEST(Analytics, DisabledLaunchMakesZeroPostCalls) {
+    VetoScope veto;
     FakeTelemetrySink sink;
     analytics::SystemProps system;
     system.osName = "Windows";
@@ -139,9 +193,75 @@ TEST(Analytics, DisabledLaunchMakesZeroPostCalls) {
     EXPECT_EQ(static_cast<int>(sink.calls.size()), 0);
 }
 
+// A build, a test run and a capture run must not report, even with the
+// setting on. CI and the smoke scripts rely on this veto, and the check lives
+// inside TrackAppStart so neither port can skip it.
+TEST(Analytics, EnvironmentVetoMakesZeroPostCalls) {
+    VetoScope veto;
+    SetEnv("MARKDOWNIT_NO_ANALYTICS", "1");
+
+    FakeTelemetrySink sink;
+    analytics::SystemProps system;
+    system.osName = "macOS";
+    system.osVersion = "15.1";
+    system.appVersion = "0.2.1";
+    system.locale = "da-DK";
+
+    EXPECT_TRUE(analytics::IsSuppressed());
+    analytics::TrackAppStart(sink, system, true);
+
+    EXPECT_EQ(static_cast<int>(sink.calls.size()), 0);
+
+    // With the variable gone the veto is over; the guard puts back whatever
+    // the environment held when the case started.
+    SetEnv("MARKDOWNIT_NO_ANALYTICS", nullptr);
+    EXPECT_FALSE(analytics::IsSuppressed());
+}
+
+// DO_NOT_TRACK is the cross-tool convention, so a machine that sets it for
+// every application silences this one too.
+TEST(Analytics, DoNotTrackVetoMakesZeroPostCalls) {
+    VetoScope veto;
+    SetEnv("DO_NOT_TRACK", "1");
+
+    FakeTelemetrySink sink;
+    analytics::SystemProps system;
+    system.osName = "Windows";
+    system.osVersion = "10.0.22631";
+    system.appVersion = "0.2.1";
+    system.locale = "en-GB";
+
+    EXPECT_TRUE(analytics::IsSuppressed());
+    analytics::TrackAppStart(sink, system, true);
+
+    EXPECT_EQ(static_cast<int>(sink.calls.size()), 0);
+}
+
+// "0" is the documented way to say "not set". A variable that carries it must
+// not silence a normal launch, or an unset shell variable in a wrapper would
+// stop the count everywhere.
+TEST(Analytics, AZeroInTheVetoVariableDoesNotSilence) {
+    VetoScope veto;
+    SetEnv("MARKDOWNIT_NO_ANALYTICS", "0");
+    SetEnv("DO_NOT_TRACK", "0");
+
+    FakeTelemetrySink sink;
+    analytics::SystemProps system;
+    system.osName = "Windows";
+    system.osVersion = "10.0.22631";
+    system.appVersion = "0.2.1";
+    system.locale = "en-GB";
+
+    EXPECT_FALSE(analytics::IsSuppressed());
+    analytics::TrackAppStart(sink, system, true);
+
+    EXPECT_EQ(static_cast<int>(sink.calls.size()), 1);
+}
+
 // The send, proven at the seam: one call, to the EU endpoint, with the app
 // key and the event the privacy note names.
 TEST(Analytics, EnabledLaunchMakesExactlyOnePost) {
+    VetoScope veto;
     FakeTelemetrySink sink;
     analytics::SystemProps system;
     system.osName = "macOS";
@@ -178,6 +298,7 @@ TEST(Analytics, EnabledLaunchMakesExactlyOnePost) {
 // without a network, so the only record is the trace log inside the
 // transport and the launch carries on.
 TEST(Analytics, AFailedSendIsNotRetried) {
+    VetoScope veto;
     FakeTelemetrySink sink(false);
     analytics::SystemProps system;
     system.osName = "Windows";
@@ -190,6 +311,7 @@ TEST(Analytics, AFailedSendIsNotRetried) {
 // The payload leaves with no document in it. This is the case that fails if
 // a path, a title or the text of a file is ever added to the event.
 TEST(Analytics, TheSentBodyCarriesNoDocument) {
+    VetoScope veto;
     FakeTelemetrySink sink;
     analytics::SystemProps system;
     system.osName = "Windows";

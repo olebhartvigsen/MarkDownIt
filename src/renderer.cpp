@@ -26,7 +26,6 @@
 #include "mermaid/layout_internal.h"
 #include "mermaid/layout.h"
 #include "mermaid/layout_cache.h"
-#include "mermaid/measure_dwrite.h"
 #include <cmath>
 
 // crash_trace.h above brings windows.h, which redefines DrawText
@@ -370,8 +369,7 @@ LayoutMetrics Renderer::ComputeMetrics() const {
 }
 
 std::shared_ptr<const layout::DocumentLayout> Renderer::SharedLayoutPass(
-    const Document& doc, IDWriteFactory* dw,
-    const LayoutMetrics& metrics,
+    const Document& doc, const LayoutMetrics& metrics,
     const Palette* palette, float contentWidth,
     std::vector<const layout::LaidBlock*>* byNode,
     const Selection* sel) {
@@ -413,7 +411,7 @@ std::shared_ptr<const layout::DocumentLayout> Renderer::SharedLayoutPass(
     key.caret = sel ? sel->active.offset : 0xffffffffu;
     key.dark = palette && palette->dark;
     if (!(layoutReuse_ && slot.layout && slot.key == key)) {
-        slot.layout = RunSharedLayoutPass(doc, dw, metrics, palette,
+        slot.layout = RunSharedLayoutPass(doc, metrics, palette,
                                           contentWidth, sel);
         slot.key = key;
     }
@@ -430,17 +428,15 @@ std::shared_ptr<const layout::DocumentLayout> Renderer::SharedLayoutPass(
 }
 
 std::shared_ptr<const layout::DocumentLayout> Renderer::RunSharedLayoutPass(
-    const Document& doc, IDWriteFactory* dw,
-    const LayoutMetrics& metrics,
+    const Document& doc, const LayoutMetrics& metrics,
     const Palette* palette, float contentWidth,
     const Selection* sel) {
-    return BuildSharedLayout(doc, dw, metrics, palette, contentWidth, sel,
+    return BuildSharedLayout(doc, metrics, palette, contentWidth, sel,
                              zoom_, editing_);
 }
 
 std::shared_ptr<const layout::DocumentLayout> Renderer::BuildSharedLayout(
-    const Document& doc, IDWriteFactory* dw,
-    const LayoutMetrics& metrics,
+    const Document& doc, const LayoutMetrics& metrics,
     const Palette* palette, float contentWidth,
     const Selection* sel, float zoom, bool editing) {
     // The walk measures through the adapter, never the raw engine:
@@ -466,9 +462,9 @@ std::shared_ptr<const layout::DocumentLayout> Renderer::BuildSharedLayout(
     // The flowchart relaid the painter shares with the walk: the very
     // layout object DrawMermaidBlock lays its hands on, its cache and
     // its measure format, so the charged band is the ink the frame
-    // paints. A null factory keeps the parse provisional layout.
-    in.flowchartRelaid = [this, dw](const Node& n) {
-        return GetMermaidLayout(dw, n);
+    // paints. Without an engine the parse provisional layout stands.
+    in.flowchartRelaid = [this](const Node& n) {
+        return GetMermaidLayout(n);
     };
     layout::DocumentLayout out = layout::LayoutDocument(in);
 
@@ -517,8 +513,8 @@ std::shared_ptr<const layout::DocumentLayout> Renderer::PrintLayout(
     // The light palette, whatever the window is wearing: paper is white, and
     // a dark theme printed onto it would be unreadable.
     const Palette palette = BasePalette();
-    return BuildSharedLayout(document, dw_factory_, metrics, &palette,
-                             contentWidthSeam, nullptr, 1.0f, false);
+    return BuildSharedLayout(document, metrics, &palette, contentWidthSeam,
+                             nullptr, 1.0f, false);
 }
 
 layout::ImageSize Renderer::ImageSizeForUrl(const Document& doc,
@@ -723,9 +719,8 @@ void Renderer::PaintSharedOverlays(
                                           sel->Start() + sel->Length(),
                                           &washRects);
                 }
-                DrawCodeBlock(view, dw_factory_, n, bandX, bandY, bandW,
-                              outH, sel, scrollY, washRects, b,
-                              viewportHeightDip);
+                DrawCodeBlock(view, n, bandX, bandY, bandW, outH, sel,
+                              scrollY, washRects, b, viewportHeightDip);
                 break;
             }
             case BlockKind::Table: {
@@ -744,8 +739,8 @@ void Renderer::PaintSharedOverlays(
                                           sel->Start() + sel->Length(),
                                           &washRects);
                 }
-                DrawTable(view, dw_factory_, n, bandX, bandY, bandW, outH, sel,
-                          scrollY, washRects,
+                DrawTable(view, n, bandX, bandY, bandW, outH, sel, scrollY,
+                          washRects,
                           b->table ? b->table.get() : nullptr,
                           viewportHeightDip);
                 // A table that crosses the viewport's top edge keeps its
@@ -801,8 +796,7 @@ void Renderer::PaintSharedOverlays(
                 // measured them at, so they get the band's origin and
                 // the content column, never the record's picture
                 // width.
-                DrawMermaidBlock(view, dw_factory_, n, bandX, bandY,
-                                 contentWidth);
+                DrawMermaidBlock(view, n, bandX, bandY, contentWidth);
                 break;
             }
             case BlockKind::MermaidPie:
@@ -935,17 +929,16 @@ void Renderer::PaintSharedOverlays(
     }
 }
 
-bool Renderer::Init(IDWriteFactory* dw) {
-    if (!dw) return false;
-    dw_factory_ = dw;
+bool Renderer::Init() {
     engine_ = &layoutEngine_;
-    if (!engine_->Factory()) return false;
+    dw_factory_ = layoutEngine_.Factory();
+    if (!engine_ || !dw_factory_) return false;
 
     LayoutMetrics base = BaseMetrics();
 
     // The roles the blocks are laid out in, in seam terms. A size already
-    // carries the zoom, the way the formats below did, so a zoom change
-    // still re-creates the roles through Release and Init.
+    // carries the zoom, so a zoom change re-creates the roles through
+    // Release and Init.
     const float zoom = zoom_ > 0.0f ? zoom_ : 1.0f;
     bodyRole_.font.family = textenc::WideToUtf8(std::wstring(base.bodyFont));
     bodyRole_.font.size = base.bodyFontSize * kPtToDip * zoom;
@@ -982,23 +975,6 @@ bool Renderer::Init(IDWriteFactory* dw) {
         heading.wholeWordWrap = false;
     }
     ++styleEpoch_;
-
-    // Flowchart coordinates are kept in canonical DIPs. This format is
-    // deliberately unzoomed, so zoom is applied once by the drawing path.
-    HRESULT hr = dw->CreateTextFormat(
-        base.bodyFont, nullptr,
-        DWRITE_FONT_WEIGHT_REGULAR,
-        DWRITE_FONT_STYLE_NORMAL,
-        DWRITE_FONT_STRETCH_NORMAL,
-        base.bodyFontSize * kPtToDip,
-        L"", &mermaid_measure_fmt_);
-    if (SUCCEEDED(hr) && mermaid_measure_fmt_) {
-        // The diagram labels keep their own 1.3 line box: the document's
-        // 1.5 is a reading measure, not a diagram metric.
-        mermaid_measure_fmt_->SetLineSpacing(
-            DWRITE_LINE_SPACING_METHOD_PROPORTIONAL, 1.3f, 1.24f);
-    }
-
     return true;
 }
 
@@ -1021,10 +997,6 @@ void Renderer::Release() {
     // ones; the caches are dropped with the old render.
     lineHeightCache_.clear();
     DropSourceLayout();
-    if (mermaid_measure_fmt_) {
-        mermaid_measure_fmt_->Release();
-        mermaid_measure_fmt_ = nullptr;
-    }
     mermaid_layout_cache_.Clear();
 }
 
@@ -1114,14 +1086,14 @@ std::u16string Renderer::ToUtf16(const std::u32string& s32) {
 // definition lives with the source view code further down the file.
 static std::u16string Utf8ToUtf16(const std::string& s);
 
-void Renderer::DrawCodeBlock(platform::RenderTarget& target, IDWriteFactory* dw,
-                              const Node& n, float x, float y,
+void Renderer::DrawCodeBlock(platform::RenderTarget& target, const Node& n,
+                              float x, float y,
                               float width, float& outH,
                               const Selection* sel, float scrollY,
                               const std::vector<platform::Rect>& washRects,
                               const layout::LaidBlock* record,
                               float viewportH) {
-    if (!engine_ || !dw) { outH = 0.0f; return; }
+    if (!engine_) { outH = 0.0f; return; }
 
     LayoutMetrics m = ComputeMetrics();
     const Palette& pal = palette_;
@@ -1339,14 +1311,14 @@ static std::vector<platform::TextRangeStyle> CellTextStyles(
     return styles;
 }
 
-void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
-                          const Node& n, float x, float y,
+void Renderer::DrawTable(platform::RenderTarget& target, const Node& n,
+                          float x, float y,
                           float width, float& outH,
                           const Selection* sel, float scrollY,
                           const std::vector<platform::Rect>& washRects,
                           const layout::LaidTable* record,
                           float viewportH) {
-    if (!engine_ || !dw || n.rows.empty()) { outH = 0.0f; return; }
+    if (!engine_ || n.rows.empty()) { outH = 0.0f; return; }
 
     LayoutMetrics m = ComputeMetrics();
     const Palette& pal = palette_;
@@ -1809,10 +1781,10 @@ void Renderer::AppendBlockRangeRects(
 }
 
 std::vector<platform::Rect> Renderer::RectsForRange(
-    IDWriteFactory* dw, const Document& doc, float widthDip,
+    const Document& doc, float widthDip,
     float topOffsetDip, uint32_t start, uint32_t end, const Selection* sel) {
     std::vector<platform::Rect> rects;
-    if (!dw || widthDip <= 0.0f) return rects;
+    if (!engine_ || widthDip <= 0.0f) return rects;
 
     // The same frame the paint pass builds: the same metrics, the
     // same content column, so the records answer with the geometry
@@ -1831,7 +1803,7 @@ std::vector<platform::Rect> Renderer::RectsForRange(
 
     std::vector<const layout::LaidBlock*> byNode;
     const auto sharedHold =
-        SharedLayoutPass(doc, dw, m, &pal, contentWidth, &byNode, sel);
+        SharedLayoutPass(doc, m, &pal, contentWidth, &byNode, sel);
     const layout::DocumentLayout& shared = *sharedHold;
 
     // The engine the records were measured through: the walk measures
@@ -1849,9 +1821,9 @@ std::vector<platform::Rect> Renderer::RectsForRange(
     return rects;
 }
 
-float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
-                           float widthDip, float topOffsetDip) {
-    if (!dw) return 0.0f;
+float Renderer::Measure(const Document& doc, float widthDip,
+                        float topOffsetDip) {
+    if (!engine_) return 0.0f;
     LayoutMetrics m = ComputeMetrics();
     widestBlockRight_ = 0.0f;
     if (widthDip <= 0.0f) return m.padTop + topOffsetDip;
@@ -1873,7 +1845,7 @@ float Renderer::Measure(IDWriteFactory* dw, const Document& doc,
     // only.
     const Palette& measurePal = palette_;
     const auto sharedHold =
-        SharedLayoutPass(doc, dw, m, &measurePal, contentWidth, nullptr,
+        SharedLayoutPass(doc, m, &measurePal, contentWidth, nullptr,
                          nullptr);
     const layout::DocumentLayout& shared = *sharedHold;
     // The same layout and width give the same height and scroll range,
@@ -1991,7 +1963,7 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
     // are decoded before the walk reads their sizes.
     std::vector<const layout::LaidBlock*> sharedByNode;
     const auto sharedHold =
-        SharedLayoutPass(doc, dw_factory_, m, &pal, contentWidth,
+        SharedLayoutPass(doc, m, &pal, contentWidth,
                          &sharedByNode, sel);
     const layout::DocumentLayout& shared = *sharedHold;
 
@@ -2495,9 +2467,9 @@ void Renderer::DropSourceLayout() {
     srcState_ = SourceLayoutState();
 }
 
-bool Renderer::EnsureSourceLayout(IDWriteFactory* dw, const std::string& src,
-                                  float widthDip, float textW,
-                                  float contentWidth, bool forceRebuild) {
+bool Renderer::EnsureSourceLayout(const std::string& src, float widthDip,
+                                  float textW, float contentWidth,
+                                  bool forceRebuild) {
     SourceLayoutState& st = srcState_;
     const bool same = st.layout && !forceRebuild && st.width == widthDip &&
                       st.zoom == zoom_ && st.wrap == wrapEnabled_ &&
@@ -2546,9 +2518,9 @@ bool Renderer::EnsureSourceLayout(IDWriteFactory* dw, const std::string& src,
     return true;
 }
 
-float Renderer::MeasureSourceView(IDWriteFactory* dw, const std::string& src,
-                                   float widthDip, float topOffsetDip) {
-    if (!engine_ || !dw) return 0.0f;
+float Renderer::MeasureSourceView(const std::string& src, float widthDip,
+                                  float topOffsetDip) {
+    if (!engine_) return 0.0f;
 
     // The source view has no pictures, so it must not inherit the scroll
     // range a rendered document left behind.
@@ -2566,7 +2538,7 @@ float Renderer::MeasureSourceView(IDWriteFactory* dw, const std::string& src,
 
     // A scroll frame (reuse granted) keeps the last layout; every other
     // frame builds it afresh, and the render that follows uses that one.
-    if (!EnsureSourceLayout(dw, src, widthDip, textW, contentWidth,
+    if (!EnsureSourceLayout(src, widthDip, textW, contentWidth,
                             !layoutReuse_))
         return topOffsetDip + 20.0f;
     srcState_.fresh = true;
@@ -2605,8 +2577,7 @@ float Renderer::RenderSourceView(platform::RenderTarget& rt,
     // builds afresh, so an edit can never show the old text.
     const bool allowed = srcState_.fresh || layoutReuse_;
     srcState_.fresh = false;
-    if (!EnsureSourceLayout(dw_factory_, src, widthDip, textW, contentWidth,
-                            !allowed))
+    if (!EnsureSourceLayout(src, widthDip, textW, contentWidth, !allowed))
         return topOffsetDip + 20.0f;
     const std::u16string& text16 = srcState_.text16;
     // The block the draw, the fills and the caret cache share: the seam's
@@ -2865,18 +2836,59 @@ svg::SvgDoc* Renderer::GetSvgDoc(const Node& n, float availW) {
 // stroke; we use 1:2 to read as dots at 1.5px stroke.
 static const float kMermaidDash[] = {1.0f, 2.0f};
 
+// The diagram labels' line box, as multiples of the label size: the same
+// 1.3 box the page's reading measure is not. It is mermaid's metric, not
+// the document's, so it lives here rather than in the theme.
+static constexpr float kMermaidLabelHeightEm = 1.3f;
+static constexpr float kMermaidLabelBaselineEm = 1.24f;
+
+// What one diagram measure needs: the engine and the label face. The
+// labels are measured unzoomed, the way the diagram coordinates are, so
+// the painter applies the zoom once.
+struct DiagramMeasureCtx {
+    platform::TextEngine* engine = nullptr;
+    platform::FontSpec font;
+    platform::LineBox box;
+};
+
+// One diagram label measured by the page's own text engine. The label is
+// joined with the newline its own line breaks stand for, so the engine
+// measures the same text the painter draws.
+mermaid::LabelSize MeasureLabelWithEngine(const std::string& label,
+                                          float maxWidth, void* ctx) {
+    const auto* c = static_cast<const DiagramMeasureCtx*>(ctx);
+    if (!c || !c->engine) return {0.0f, 0.0f};
+    const std::vector<std::string> lines = mermaid::SplitLabelLines(label);
+    std::string text;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        if (i != 0) text.push_back('\n');
+        text += lines[i];
+    }
+    if (text.empty()) return {0.0f, 0.0f};
+    const platform::TextMeasure measured =
+        c->engine->MeasureText(text, c->font, maxWidth, c->box);
+    return {measured.width, measured.height};
+}
+
 // Note: layout is computed once at parse time (parser.cpp) and stored on
 // Node::mermaid_layout, so we never re-run layout on WM_PAINT. Height is
 // derived through mermaid::MeasureLayoutHeight so measure and paint agree.
 std::shared_ptr<mermaid::LaidOutFlowchart> Renderer::GetMermaidLayout(
-        IDWriteFactory* dw, const Node& n) const {
-    if (!n.mermaid_flowchart || n.mermaid_source.empty() || !dw ||
-        !mermaid_measure_fmt_) return n.mermaid_layout;
+        const Node& n) const {
+    if (!n.mermaid_flowchart || n.mermaid_source.empty() || !engine_)
+        return n.mermaid_layout;
     if (auto cached = mermaid_layout_cache_.Find(n.mermaid_source, zoom_))
         return cached;
+    LayoutMetrics base = BaseMetrics();
+    DiagramMeasureCtx ctx;
+    ctx.engine = engine_;
+    ctx.font.family = textenc::WideToUtf8(std::wstring(base.bodyFont));
+    ctx.font.size = base.bodyFontSize * kPtToDip;
+    ctx.box.heightEm = kMermaidLabelHeightEm;
+    ctx.box.baselineEm = kMermaidLabelBaselineEm;
     auto laid = std::make_shared<mermaid::LaidOutFlowchart>(
-        mermaid::LayoutFlowchartWithDWrite(*n.mermaid_flowchart, dw,
-                                            mermaid_measure_fmt_));
+        mermaid::LayoutFlowchartWith(*n.mermaid_flowchart,
+                                     MeasureLabelWithEngine, &ctx));
     if (!laid->nodes.empty()) {
         mermaid_layout_cache_.Put(n.mermaid_source, zoom_, laid);
         return laid;
@@ -3016,11 +3028,10 @@ static void StrokeDashedPolyline(platform::RenderTarget& target,
     }
 }
 
-void Renderer::DrawMermaidBlock(platform::RenderTarget& target,
-                                 IDWriteFactory* dw, const Node& n,
+void Renderer::DrawMermaidBlock(platform::RenderTarget& target, const Node& n,
                                  float x, float y, float width) {
-    if (!dw) return;
-    const auto laid = GetMermaidLayout(dw, n);
+    if (!engine_) return;
+    const auto laid = GetMermaidLayout(n);
     if (!laid) return;
     const auto& lo = *laid;
     const float pad = mermaid::kMermaidBlockPad;

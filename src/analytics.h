@@ -95,8 +95,24 @@ inline constexpr bool IsDebugBuild() {
 // trace. The call blocks for up to the transport's two seconds, so the shell
 // runs it on a detached thread: startup never waits on the network, and the
 // sink never touches the UI.
+//
+// The environment can veto the event even when the setting is on; see
+// IsSuppressed. The check lives in there, not in the shells, so neither port
+// can forget it.
 void TrackAppStart(platform::TelemetrySink& sink, const SystemProps& system,
                    bool enabled);
+
+// True when the environment forbids the event outright, whatever the setting
+// says. A build, a test run or a capture run sets one of these and the app
+// then makes no request at all:
+//
+//   MARKDOWNIT_NO_ANALYTICS  this project's switch
+//   DO_NOT_TRACK             the cross-tool convention (do-not-track)
+//
+// Unset, empty and "0" all mean "carry on"; any other value is an opt-out.
+// CI sets the first one (see .github/workflows/build.yml), and the smoke
+// scripts set it so a developer's test launch is silent too.
+bool IsSuppressed();
 
 // The current UTC time in the format the payload needs, without a locale or
 // timezone dependency: "2026-11-26T10:15:30.123Z".
