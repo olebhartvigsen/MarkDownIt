@@ -108,7 +108,10 @@ struct TextRangeStyle {
     // The range, in UTF-16 code units of the block's text.
     uint32_t start = 0;
     uint32_t length = 0;
-    bool bold = false;
+    // The weight the range asks for, 100 to 900, or zero to keep the
+    // format's own. 600 is the semibold a table header wears and 700 the
+    // bold of a strong span.
+    int weight = 0;
     bool italic = false;
     bool underline = false;
     bool strike = false;

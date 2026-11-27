@@ -125,6 +125,24 @@ private:
     mutable std::map<FormatKey, IDWriteTextFormat*> formats_;
 };
 
+// Wraps a DirectWrite layout the caller already built in the seam's
+// handle, so a cache can hold the block without naming its type. The
+// handle takes its own reference; the caller releases the one
+// CreateTextLayout gave it.
+TextLayoutHandle AdoptTextLayout(IDWriteTextLayout* layout, float width,
+                                 float height);
+
+// Builds the block the caret cache keeps for one plain text in a format
+// the renderer owns: the text wrapped at `maxWidth`, dressed with the
+// inline styles the ranges name, and aligned inside the column. Null when
+// DirectWrite refuses the layout. The caller keeps the text and the
+// format, the handle keeps the layout.
+TextLayoutHandle MakeTextLayout(IDWriteFactory* factory,
+                                const std::u16string& text,
+                                IDWriteTextFormat* format, float maxWidth,
+                                const std::vector<TextRangeStyle>& styles,
+                                TextAlign align);
+
 }  // namespace platform
 
 #endif  // MARKDOWNIT_SRC_WINDOWS_TEXT_ENGINE_WIN_H_

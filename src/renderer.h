@@ -444,7 +444,8 @@ private:
         size_t srcSize = 0;
         const void* format = nullptr;
         std::u16string text16;
-        IDWriteTextLayout* layout = nullptr;  // one reference held here
+        // The seam's handle on the block: one reference held here.
+        platform::TextLayoutHandle layout;
         float height = 0.0f;
         std::vector<uint32_t> u16ToSrc;
         std::vector<uint32_t> u16ToSrcEnd;

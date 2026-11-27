@@ -84,17 +84,22 @@ MAC_RAW = re.compile(r"\b(?:CG[A-Za-z]*Ref|CT[A-Za-z]*Ref|NSGraphicsContext)\b")
 # platform::TextRangeSource rather than an IDWriteTextLayout. The clip is
 # platform::RenderTarget::PushClip.
 #
-# The floor for the next step is 26, and it is 26 for one reason: the caret
-# cache. layoutcache.h keeps BlockLayout.layout as the platform's own
-# IDWriteTextLayout, so Render and RenderSourceView must build one (two
-# IDWriteTextLayout names and one IDWriteTextFormat, three of the 26), and
-# every private helper that builds or keeps that same object names it too
-# (the layout pass, DrawCodeBlock, DrawTable, EnsureSourceLayout, the mermaid
-# measure). The range source is already behind the seam; it is handed the
-# layout the cache owns. To go below 26, layoutcache.h has to speak a seam
-# handle for the block, and the mermaid measure has to take a TextEngine.
-WINDOWS_BASELINE = 26
-WINDOWS_TOTAL_BASELINE = 26
+# The floor for the next step is 20, and it is 20 because the renderer still
+# owns the DirectWrite factory and its text formats. The caret cache no longer
+# holds a native layout: layoutcache.h keeps a platform::TextLayoutHandle, so
+# the code block, the table cells, the paragraph pass and the source view all
+# build their block through platform::MakeTextLayout, the range fills take the
+# handle, and the source view draws the handle it keeps. That removed the six
+# IDWriteTextLayout names in the frame; what is left is twelve
+# IDWriteFactory (Init and the format setup, the factory parameter every
+# measure and paint entry point still takes, and the mermaid measure), five
+# IDWriteTextFormat (the two helpers that take one, the format the heading and
+# body pass picks, and LineHeightOf), and three names in the font-family walk
+# (IDWriteFontCollection, IDWriteFontFamily, IDWriteFont). The next step is to
+# move the format ownership behind the engine, so an entry point takes a
+# platform::TextEngine instead of a factory.
+WINDOWS_BASELINE = 20
+WINDOWS_TOTAL_BASELINE = 20
 
 PAINTERS = [
     ("src/renderer.cpp", WINDOWS_RAW, WINDOWS_BASELINE, "windows painter"),

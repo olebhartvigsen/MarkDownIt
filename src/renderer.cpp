@@ -17,6 +17,7 @@
 #include "crash_trace.h"
 #include "imagehelper.h"
 #include "json.h"
+#include "textenc.h"
 #include "svgtext.h"
 #include "layout/text_runs.h"
 #include "layout/range_highlights.h"
@@ -1229,28 +1230,23 @@ void Renderer::DrawCodeBlock(platform::RenderTarget& target, IDWriteFactory* dw,
         target.FillRect(bgRect, SeamColor(pal.codeBg));
     }
 
-    // The native layout the highlight pass and the caret cache read. The
-    // cache's own seam speaks the platform's text layout, and a search fill
-    // has to sit on the block's lines, so both keep the code format's
-    // layout: the card's glyphs are drawn from the walk's lines, which
-    // carry the same line box this format was built with.
-    IDWriteTextLayout* native = nullptr;
-    const bool wantNative =
+    // The block the highlight pass and the caret cache read: the same
+    // text and format as before, built behind the seam so this file names
+    // no DirectWrite type. A search fill has to sit on the block's lines,
+    // and the cache asks it the caret's questions, so both keep this one.
+    const bool wantCaretBlock =
         cache_ != nullptr || HasSearchMatches() || HasMarkers();
-    if (wantNative) {
-        if (FAILED(dw->CreateTextLayout(
-                reinterpret_cast<const WCHAR*>(text16.data()),
-                static_cast<UINT32>(text16.size()),
-                code_fmt_, codeWidth, 1.0e9f, &native))) {
-            native = nullptr;
-        }
-    }
+    const platform::TextLayoutHandle caretBlock =
+        wantCaretBlock
+            ? platform::MakeTextLayout(dw, text16, code_fmt_, codeWidth, {},
+                                       platform::TextAlign::Left)
+            : nullptr;
 
     // Search match highlights, under the text and under the selection so a
     // selection always stays readable on top of a match fill. The mapping is
     // rebuilt here rather than reusing the cache copy, because the cache is
     // optional and the highlight must not depend on hit-testing being on.
-    if (native && (HasSearchMatches() || HasMarkers()) && !raw.empty() &&
+    if (caretBlock && (HasSearchMatches() || HasMarkers()) && !raw.empty() &&
         !text16.empty()) {
         std::vector<uint32_t> matchU16ToSrc;
         matchU16ToSrc.reserve(text16.size());
@@ -1267,7 +1263,7 @@ void Renderer::DrawCodeBlock(platform::RenderTarget& target, IDWriteFactory* dw,
         // brushes: the seam fills by colour, one brush per batch. The
         // range source is the platform's geometry answer, built once for
         // the block and asked by both layers.
-        platform::DWriteRangeSource range(native, x + m.codePad,
+        platform::DWriteRangeSource range(caretBlock, x + m.codePad,
                                           y + m.codePad);
         if (HasMarkers()) {
             FillMarkerHighlights(target, range, pal.markerBg, pal.markerLine,
@@ -1329,8 +1325,7 @@ void Renderer::DrawCodeBlock(platform::RenderTarget& target, IDWriteFactory* dw,
             srcByte += utf8Len;
         }
         BlockLayout bl;
-        bl.layout = native;
-        if (native) native->AddRef();
+        bl.layout = caretBlock;
         bl.x = x + m.codePad;
         bl.y = y + m.codePad;
         bl.width = codeWidth;
@@ -1346,8 +1341,62 @@ void Renderer::DrawCodeBlock(platform::RenderTarget& target, IDWriteFactory* dw,
         bl.fontHeight = LineHeightOf(code_fmt_);
         cache_->Add(bl);
     }
-    if (native) native->Release();
     outH = blockH;
+}
+
+// The inline styles one table cell's text is dressed with, in the order
+// the cell's layout has always applied them: the header's own weight
+// first, so a strong span inside it can still win, then the spans, then
+// the links' underlines.
+static std::vector<platform::TextRangeStyle> CellTextStyles(
+    const TableCell& cell, size_t u16Length, const LayoutMetrics& m,
+    float zoom, bool links) {
+    std::vector<platform::TextRangeStyle> styles;
+    if (cell.isHeader && u16Length > 0) {
+        platform::TextRangeStyle header;
+        header.start = 0;
+        header.length = static_cast<uint32_t>(u16Length);
+        header.weight = 600;  // the semibold a table header wears
+        styles.push_back(header);
+    }
+    for (const auto& sp : cell.inlineSpans) {
+        platform::TextRangeStyle style;
+        style.start = sp.u16Start;
+        style.length = sp.u16End > sp.u16Start ? sp.u16End - sp.u16Start : 0;
+        if (sp.bold) style.weight = 700;
+        style.italic = sp.italic;
+        if (sp.code) {
+            // GitHub's 85% code size inside a table cell.
+            style.family = textenc::WideToUtf8(std::wstring(m.codeFont));
+            style.size = m.codeFontSize * kPtToDip * zoom;
+        }
+        style.strike = sp.strike;
+        styles.push_back(style);
+    }
+    if (!links) return styles;
+    for (const auto& link : cell.links) {
+        uint32_t linkStart = static_cast<uint32_t>(u16Length);
+        uint32_t linkEnd = 0;
+        for (size_t ui = 0; ui < cell.u16ToSrc.size(); ++ui) {
+            const uint32_t spanStart = cell.u16ToSrc[ui];
+            const uint32_t spanEnd = ui < cell.u16ToSrcEnd.size()
+                ? cell.u16ToSrcEnd[ui] : spanStart + 1;
+            const uint32_t linkEndSrc = link.srcOffset + link.srcLength;
+            if (spanEnd <= link.srcOffset || spanStart >= linkEndSrc) {
+                continue;
+            }
+            linkStart = std::min(linkStart, static_cast<uint32_t>(ui));
+            linkEnd = std::max(linkEnd, static_cast<uint32_t>(ui + 1));
+        }
+        if (linkEnd > linkStart && m.linkUnderline) {
+            platform::TextRangeStyle style;
+            style.start = linkStart;
+            style.length = linkEnd - linkStart;
+            style.underline = true;
+            styles.push_back(style);
+        }
+    }
+    return styles;
 }
 
 void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
@@ -1426,39 +1475,17 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
         } else {
         for (size_t c = 0; c < row.cells.size() && c < cols; ++c) {
             std::u16string text16 = ToUtf16(row.cells[c].text);
-            IDWriteTextLayout* layout = nullptr;
-            HRESULT hr = dw->CreateTextLayout(
-                reinterpret_cast<const WCHAR*>(text16.data()),
-                static_cast<UINT32>(text16.size()),
-                body_fmt_, colWs[c] - 2.0f * m.cellPadX, 1.0e9f, &layout);
-            if (SUCCEEDED(hr) && layout) {
-                // Apply the same inline formatting as the draw pass,
-                // because code spans use a wider monospace font that
-                // may wrap differently and need more vertical space.
-                if (row.cells[c].isHeader) {
-                    DWRITE_TEXT_RANGE r = {0,
-                        static_cast<UINT32>(text16.size())};
-                    layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, r);
-                }
-                for (const auto& sp : row.cells[c].inlineSpans) {
-                    DWRITE_TEXT_RANGE r = {sp.u16Start,
-                        sp.u16End - sp.u16Start};
-                    if (sp.bold)
-                        layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, r);
-                    if (sp.italic)
-                        layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, r);
-                    if (sp.code) {
-                        layout->SetFontFamilyName(m.codeFont, r);
-                        layout->SetFontSize(
-                            m.codeFontSize * kPtToDip * zoom_, r);
-                    }
-                    if (sp.strike)
-                        layout->SetStrikethrough(true, r);
-                }
-                DWRITE_TEXT_METRICS tm = {};
-                layout->GetMetrics(&tm);
-                if (tm.height > rowH) rowH = tm.height;
-                layout->Release();
+            // The cell's height, measured through the seam: the same text,
+            // format and inline styles the cell's own layout is built
+            // with, so a code span still wraps and still needs its room.
+            const platform::TextLayoutHandle cellBlock =
+                platform::MakeTextLayout(
+                    dw, text16, body_fmt_, colWs[c] - 2.0f * m.cellPadX,
+                    CellTextStyles(row.cells[c], text16.size(), m, zoom_,
+                                   false),
+                    platform::TextAlign::Left);
+            if (cellBlock && cellBlock->Height() > rowH) {
+                rowH = cellBlock->Height();
             }
         }
         if (rowH == 0.0f) {
@@ -1486,87 +1513,32 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
                                   borderColor, 1.0f);
             }
             std::u16string text16 = ToUtf16(row.cells[c].text);
-            IDWriteTextLayout* layout = nullptr;
-            HRESULT hr = dw->CreateTextLayout(
-                reinterpret_cast<const WCHAR*>(text16.data()),
-                static_cast<UINT32>(text16.size()),
-                body_fmt_, colWs[c] - 2.0f * m.cellPadX, 1.0e9f, &layout);
-            if (SUCCEEDED(hr) && layout) {
-                // Honour the column alignment written in the delimiter row
-                // (`:---`, `:---:`, `---:`). DirectWrite lays the text out
-                // inside the cell, so the selection highlight below follows
-                // the same alignment automatically.
-                {
-                    // DWRITE_TEXT_ALIGNMENT is the horizontal one:
-                    // LEADING is left, TRAILING is right. The paragraph
-                    // enum only has NEAR, FAR and CENTER, and NEAR/FAR are
-                    // vertical.
-                    switch (layout::CellAlign(n, row, c, m)) {
-                        case ColumnAlign::Left:
-                            layout->SetTextAlignment(
-                                DWRITE_TEXT_ALIGNMENT_LEADING);
-                            break;
-                        case ColumnAlign::Center:
-                            layout->SetTextAlignment(
-                                DWRITE_TEXT_ALIGNMENT_CENTER);
-                            break;
-                        case ColumnAlign::Right:
-                            layout->SetTextAlignment(
-                                DWRITE_TEXT_ALIGNMENT_TRAILING);
-                            break;
-                        case ColumnAlign::Default:
-                            break;
-                    }
-                }
-                if (row.cells[c].isHeader) {
-                    DWRITE_TEXT_RANGE r = {0,
-                        static_cast<UINT32>(text16.size())};
-                    layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD, r);
-                }
-                // Apply inline formatting spans (bold, italic, code, strike).
-                for (const auto& sp : row.cells[c].inlineSpans) {
-                    DWRITE_TEXT_RANGE r = {sp.u16Start,
-                        sp.u16End - sp.u16Start};
-                    if (sp.bold)
-                        layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, r);
-                    if (sp.italic)
-                        layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, r);
-                    if (sp.code) {
-                        // GitHub's 85% code size inside a table cell.
-                        layout->SetFontFamilyName(m.codeFont, r);
-                        layout->SetFontSize(
-                            m.codeFontSize * kPtToDip * zoom_, r);
-                    }
-                    if (sp.strike)
-                        layout->SetStrikethrough(true, r);
-                }
-                for (const auto& link : row.cells[c].links) {
-                    UINT32 linkStart = static_cast<UINT32>(text16.size());
-                    UINT32 linkEnd = 0;
-                    for (size_t ui = 0; ui < row.cells[c].u16ToSrc.size(); ++ui) {
-                        const uint32_t spanStart = row.cells[c].u16ToSrc[ui];
-                        const uint32_t spanEnd = ui < row.cells[c].u16ToSrcEnd.size()
-                            ? row.cells[c].u16ToSrcEnd[ui] : spanStart + 1;
-                        const uint32_t linkEndSrc = link.srcOffset + link.srcLength;
-                        if (spanEnd <= link.srcOffset || spanStart >= linkEndSrc)
-                            continue;
-                        linkStart = std::min<UINT32>(linkStart,
-                            static_cast<UINT32>(ui));
-                        linkEnd = std::max<UINT32>(linkEnd,
-                            static_cast<UINT32>(ui + 1));
-                    }
-                    if (linkEnd > linkStart) {
-                        DWRITE_TEXT_RANGE range = {linkStart,
-                            linkEnd - linkStart};
-                        if (m.linkUnderline)
-                            layout->SetUnderline(TRUE, range);
-                    }
-                }
+            // Honour the column alignment written in the delimiter row
+            // (`:---`, `:---:`, `---:`). The layout is aligned inside the
+            // cell, so the selection highlight below follows it, and the
+            // glyph block below is built with the same one.
+            const ColumnAlign align = layout::CellAlign(n, row, c, m);
+            const platform::TextAlign seamAlign =
+                align == ColumnAlign::Center
+                    ? platform::TextAlign::Center
+                    : (align == ColumnAlign::Right
+                           ? platform::TextAlign::Right
+                           : platform::TextAlign::Left);
+            // The cell's block, built behind the seam: the text, the
+            // format and the inline styles the cell has always been
+            // dressed with, in one place, and drawn from the same handle
+            // the cache and the range fills ask.
+            const platform::TextLayoutHandle cellBlock =
+                platform::MakeTextLayout(
+                    dw, text16, body_fmt_, colWs[c] - 2.0f * m.cellPadX,
+                    CellTextStyles(row.cells[c], text16.size(), m, zoom_, true),
+                    seamAlign);
+            if (cellBlock) {
                 const platform::Point cellOrigin{cellX + m.cellPadX,
                                                  curY + m.cellPadY};
                 // The platform's geometry answer for this cell, built
                 // once and asked by the marker and the search layer.
-                platform::DWriteRangeSource range(layout, cellOrigin.x,
+                platform::DWriteRangeSource range(cellBlock, cellOrigin.x,
                                                   cellOrigin.y);
                 // Marker layer for this cell, behind the search fills.
                 if (HasMarkers() && !row.cells[c].text.empty() &&
@@ -1636,14 +1608,6 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
                             for (platform::GlyphRun& run : cellRuns)
                                 run.font.size *= zoom_;
                         }
-                        const ColumnAlign align =
-                            layout::CellAlign(n, row, c, m);
-                        const platform::TextAlign seamAlign =
-                            align == ColumnAlign::Center
-                                ? platform::TextAlign::Center
-                                : (align == ColumnAlign::Right
-                                       ? platform::TextAlign::Right
-                                       : platform::TextAlign::Left);
                         const platform::TextLayoutHandle block =
                             layoutEngine_.BuildLayout(cellRuns, innerCW,
                                                       seamAlign);
@@ -1672,7 +1636,7 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
                     // handles gaps from md4c mark splits (e.g., ':' as a
                     // permissive URL autolink mark).
                     BlockLayout bl;
-                    bl.layout = layout;
+                    bl.layout = cellBlock;
                     bl.x = cellOrigin.x;
                     bl.y = cellOrigin.y;
                     bl.width = colWs[c] - 2.0f * m.cellPadX;
@@ -1710,8 +1674,6 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
                     bl.u16ToSrcEnd = row.cells[c].u16ToSrcEnd;
                     bl.fontHeight = LineHeightOf(body_fmt_);
                     cache_->Add(bl);
-                } else {
-                    layout->Release();
                 }
             }
         }
@@ -2378,45 +2340,34 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
         float textX = drawX + markerW;
         float textW = drawW - markerW;
 
-        // The caret cache's layout. layoutcache.h speaks the platform's
-        // own text layout, so this one object, and the format it is built
-        // from, are the two DirectWrite types the frame still needs.
-        IDWriteTextLayout* layout = nullptr;
-        HRESULT hr = dw_factory_->CreateTextLayout(
-            reinterpret_cast<const WCHAR*>(layoutText16.data()),
-            static_cast<UINT32>(layoutText16.size()),
-            fmt, textW > 0 ? textW : drawW, 1.0e9f, &layout);
-        if (FAILED(hr) || !layout) {
+        // The caret cache's block: the paragraph's text in the format the
+        // block is measured with, dressed with the inline spans. The seam
+        // builds it, so the frame names no DirectWrite type here.
+        LayoutMetrics base = BaseMetrics();
+        std::vector<platform::TextRangeStyle> styles;
+        styles.reserve(spans.size());
+        for (const auto& s : spans) {
+            platform::TextRangeStyle style;
+            style.start = s.start;
+            style.length = s.length;
+            if (s.strong) style.weight = 700;
+            style.italic = s.em;
+            if (s.code) {
+                style.family =
+                    textenc::WideToUtf8(std::wstring(base.codeFont));
+                style.size = base.codeFontSize * kPtToDip * zoom_;
+            }
+            style.underline = s.link && base.linkUnderline;
+            style.strike = s.strike;
+            styles.push_back(style);
+        }
+        const platform::TextLayoutHandle layout = platform::MakeTextLayout(
+            dw_factory_, layoutText16, fmt, textW > 0 ? textW : drawW, styles,
+            platform::TextAlign::Left);
+        if (!layout) {
             continue;
         }
-
-        LayoutMetrics base = BaseMetrics();
-        for (const auto& s : spans) {
-            DWRITE_TEXT_RANGE range = {s.start, s.length};
-            if (s.strong) {
-                layout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, range);
-            }
-            if (s.em) {
-                layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, range);
-            }
-            if (s.code) {
-                layout->SetFontFamilyName(base.codeFont, range);
-                layout->SetFontSize(
-                    base.codeFontSize * kPtToDip * zoom_, range);
-            }
-            if (s.link && base.linkUnderline) {
-                // Underline is span metadata the hit tests never read;
-                // the colour itself is the replay's run property, so no
-                // drawing effect is attached anymore.
-                layout->SetUnderline(TRUE, range);
-            }
-            if (s.strike) {
-                layout->SetStrikethrough(TRUE, range);
-            }
-        }
-
-        DWRITE_TEXT_METRICS metrics = {};
-        layout->GetMetrics(&metrics);
+        const float layoutHeight = layout->Height();
 
         // The blank line the parser keeps next to a list is bare in both
         // modes: the source uses it to separate the list from its
@@ -2432,7 +2383,7 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
         const float blankAdvance =
             (n.virtualEmptyParagraph && (blankNextToList || !editing_))
                 ? kReadBlankLineStripDip
-                : metrics.height;
+                : layoutHeight;
 
         // A block whose image drew keeps no caret record: the image
         // owns the band the way it always did (the old pass released
@@ -2440,7 +2391,6 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
         // block shows on screen, the fitted bitmap and the text below
         // it, is the walk's and the resolver's own work now.
         if (nodeDrewImage[nodeIdx]) {
-            layout->Release();
             continue;
         }
 
@@ -2525,8 +2475,6 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
             // format (cursor-blinking guide), not the em size.
             bl.fontHeight = LineHeightOf(fmt);
             cache_->Add(bl);
-        } else {
-            layout->Release();
         }
     }
 
@@ -2607,7 +2555,7 @@ static std::u16string Utf8ToUtf16(const std::string& s) {
 }
 
 void Renderer::DropSourceLayout() {
-    if (srcState_.layout) srcState_.layout->Release();
+    // The state owns the handle, so replacing it releases the block.
     srcState_ = SourceLayoutState();
 }
 
@@ -2623,17 +2571,18 @@ bool Renderer::EnsureSourceLayout(IDWriteFactory* dw, const std::string& src,
     DropSourceLayout();
     st.text16 = Utf8ToUtf16(src);
     if (st.text16.empty()) return false;
-    IDWriteTextLayout* layout = nullptr;
-    const HRESULT hr = dw->CreateTextLayout(
-        reinterpret_cast<const WCHAR*>(st.text16.data()),
-        static_cast<UINT32>(st.text16.size()),
-        code_fmt_, textW > 0 ? textW : contentWidth, 1.0e9f, &layout);
-    if (FAILED(hr) || !layout) { st = SourceLayoutState(); return false; }
-    layout->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
-    DWRITE_TEXT_METRICS tm = {};
-    layout->GetMetrics(&tm);
+    // The source view's block, built behind the seam: the raw markdown in
+    // the code format, wrapped at the column. One handle serves the draw,
+    // the fills and the caret cache.
+    platform::TextLayoutHandle layout = platform::MakeTextLayout(
+        dw, st.text16, code_fmt_, textW > 0 ? textW : contentWidth, {},
+        platform::TextAlign::Left);
+    if (!layout) {
+        st = SourceLayoutState();
+        return false;
+    }
     st.layout = layout;
-    st.height = tm.height;
+    st.height = layout->Height();
     st.u16ToSrc.reserve(st.text16.size());
     st.u16ToSrcEnd.reserve(st.text16.size());
     uint32_t bi = 0;
@@ -2722,17 +2671,15 @@ float Renderer::RenderSourceView(platform::RenderTarget& rt,
                             !allowed))
         return topOffsetDip + 20.0f;
     const std::u16string& text16 = srcState_.text16;
-    // The caret cache keeps this layout: layoutcache.h speaks the
-    // platform's own text layout, so the cache is where DirectWrite's
-    // type is still needed here.
-    IDWriteTextLayout* layout = srcState_.layout;
-    DWRITE_TEXT_METRICS tm = {};
-    layout->GetMetrics(&tm);
+    // The block the draw, the fills and the caret cache share: the seam's
+    // handle, the same one EnsureSourceLayout just built.
+    const platform::TextLayoutHandle& layout = srcState_.layout;
+    const float textHeight = layout->Height();
 
     // Clip to the content area. The clip is in target coordinates, before
     // the scroll offset is applied to the coordinates below.
     rt.PushClip(platform::Rect{originX, textY, contentWidth,
-                               tm.height + 50.0f});
+                               textHeight + 50.0f});
 
     // The scroll offset, carried by the coordinates instead of a target
     // transform: the seam has no transform, and this target is the frame.
@@ -2783,10 +2730,9 @@ float Renderer::RenderSourceView(platform::RenderTarget& rt,
     }
 
     // Draw the text. The block is the layout the cache keeps, drawn
-    // through the seam: DrawLayout carries the native object to the
-    // target's own DrawTextLayout, the call this used to make directly.
-    platform::DWriteTextLayout sourceBlock(layout, tm.width, tm.height, {});
-    view.DrawLayout(sourceBlock, textX, textY, SeamColor(pal.textPrimary));
+    // through the seam: the target takes the handle's native object to its
+    // own DrawTextLayout, the call this used to make directly.
+    view.DrawLayout(*layout, textX, textY, SeamColor(pal.textPrimary));
 
     // Add block layout to cache for hit-testing and caret placement.
     if (cache_) {
@@ -2795,7 +2741,7 @@ float Renderer::RenderSourceView(platform::RenderTarget& rt,
         bl.x = textX;
         bl.y = textY;
         bl.width = textW > 0 ? textW : contentWidth;
-        bl.height = tm.height;
+        bl.height = textHeight;
         // Extend the block's y range to cover the full viewport so
         // that margin clicks at any visible y find this block even
         // when the text is shorter than the viewport.
@@ -2807,14 +2753,12 @@ float Renderer::RenderSourceView(platform::RenderTarget& rt,
         bl.fontHeight = LineHeightOf(code_fmt_);
         bl.u16ToSrc = srcState_.u16ToSrc;
         bl.u16ToSrcEnd = srcState_.u16ToSrcEnd;
-        // The cache holds its own reference; this renderer keeps one.
-        layout->AddRef();
         cache_->Add(bl);
     }
 
     rt.PopClip();
 
-    return textY + tm.height;
+    return textY + textHeight;
 }
 
 

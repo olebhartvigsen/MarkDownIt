@@ -3,10 +3,12 @@
 #include "layoutcache.h"
 #ifdef _WIN32
 #include <windows.h>
-// The layout cache asks the platform neutral text layout seam, so it
-// no longer includes DirectWrite itself. This test uses the real
-// DirectWrite factory, so it includes the header.
+// The layout cache asks the platform neutral text layout seam, so it no
+// longer includes DirectWrite itself. This test uses the real
+// DirectWrite factory and wraps its layout in the seam's handle, so it
+// includes the adapter.
 #include <dwrite.h>
+#include "windows/text_engine_win.h"
 #endif
 
 // AC-03: marker-only list items own the position after their source prefix.
@@ -302,7 +304,8 @@ TEST(EmptyListMapping, DirectWritePlaceholderHasOneClickableCaret) {
         LayoutCache cache;
         cache.SetSourceText(&source);
         BlockLayout block;
-        block.layout = layout;
+        block.layout = platform::AdoptTextLayout(layout, 200.0f,
+                                                 metrics.height);
         block.x = 20.0f;
         block.y = 40.0f;
         block.width = 200.0f;

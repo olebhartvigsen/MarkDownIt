@@ -1,5 +1,6 @@
 #include "layoutcache.h"
 #include "editcontroller.h"
+#include "platform/seams.h"
 #include <algorithm>
 #include <cmath>
 
@@ -8,12 +9,8 @@ LayoutCache::~LayoutCache() {
 }
 
 void LayoutCache::Clear() {
-    for (auto& bl : blocks_) {
-        if (bl.layout) {
-            textlayout::Release(bl.layout);
-            bl.layout = nullptr;
-        }
-    }
+    // The blocks own their layouts through the seam's handle, so dropping
+    // the vector releases them.
     blocks_.clear();
     spanIndexBuilt_ = false;
 }
@@ -122,7 +119,7 @@ bool LayoutCache::GetLineRangeAtY(int blockIndex, float y,
     // Get the line metrics from the layout. The count has to be queried
     // first: a fixed-size buffer silently truncates for layouts with more
     // lines, which broke line selection in long code blocks.
-    const uint32_t lineCount = textlayout::LineCount(bl.layout);
+    const uint32_t lineCount = bl.layout->LineCount();
     if (lineCount == 0) return false;
 
     // Convert y to layout-local coordinate.
@@ -133,7 +130,7 @@ bool LayoutCache::GetLineRangeAtY(int blockIndex, float y,
     float lineBottom = 0.0f;
     int lineIdx = 0;
     for (uint32_t i = 0; i < lineCount; ++i) {
-        lineBottom = lineTop + textlayout::LineHeight(bl.layout, i);
+        lineBottom = lineTop + bl.layout->LineHeightAt(i);
         if (localY >= lineTop && localY < lineBottom) {
             lineIdx = static_cast<int>(i);
             break;
@@ -146,7 +143,7 @@ bool LayoutCache::GetLineRangeAtY(int blockIndex, float y,
         // Recompute lineTop for the last line
         lineTop = 0.0f;
         for (uint32_t i = 0; i + 1 < lineCount; ++i)
-            lineTop += textlayout::LineHeight(bl.layout, i);
+            lineTop += bl.layout->LineHeightAt(i);
     }
 
     if (outLineTop) *outLineTop = lineTop;
@@ -156,8 +153,8 @@ bool LayoutCache::GetLineRangeAtY(int blockIndex, float y,
     // recovered by hit testing the line's edges, which the seam handles.
     uint32_t u16Start = 0;
     uint32_t u16End = 0;
-    if (!textlayout::LineTextRange(bl.layout, static_cast<uint32_t>(lineIdx),
-                                   bl.width, &u16Start, &u16End))
+    if (!bl.layout->LineTextRange(static_cast<uint32_t>(lineIdx), bl.width,
+                                  &u16Start, &u16End))
         return false;
 
     // Convert UTF-16 positions to UTF-8 source offsets via u16ToSrc.
@@ -462,9 +459,8 @@ uint32_t LayoutCache::PointToOffsetInBlock(int blockIndex, float x,
     const float localX = x - bl.x;
     const float localY = y - bl.y;
 
-    bool isTrailingHit = false;
-    const textlayout::Hit hit =
-        textlayout::HitTestPoint(bl.layout, localX, localY, &isTrailingHit);
+    const platform::TextHit hit = bl.layout->HitTestPoint(localX, localY);
+    const bool isTrailingHit = hit.trailing;
 
     // hit.textPosition is a UTF-16 code-unit position within the layout.
     // Use the u16ToSrc mapping to convert to a UTF-8 source offset.
@@ -515,8 +511,9 @@ bool LayoutCache::OffsetToCaretRect(uint32_t offset,
     }
 
     float caretX = 0.0f, caretY = 0.0f;
-    const textlayout::Hit hit =
-        textlayout::HitTestTextPosition(bl.layout, u16Pos, &caretX, &caretY);
+    const platform::TextHit hit = bl.layout->CaretAtOffset(u16Pos);
+    caretX = hit.x;
+    caretY = hit.y;
 
     if (outX) *outX = bl.x + caretX;
     // Vertically center the caret on the text within the line.

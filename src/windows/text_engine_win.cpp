@@ -11,6 +11,7 @@
 #include <windows.h>
 
 #include "textlayout.h"
+#include "textenc.h"
 
 #include <algorithm>
 #include <utility>
@@ -293,6 +294,74 @@ TextLayoutHandle DWriteEngine::BuildLayout(
     const float height = metrics.height > 0.0f ? metrics.height : 0.0f;
     return std::make_shared<DWriteTextLayout>(layout, maxWidth, height,
                                               std::move(colorSpans));
+}
+
+// The seam's own constructors for a caret block. Both live here because
+// only this adapter can name the type the block wraps.
+
+TextLayoutHandle AdoptTextLayout(IDWriteTextLayout* layout, float width,
+                                 float height) {
+    if (!layout) return nullptr;
+    return std::make_shared<DWriteTextLayout>(
+        layout, width, height, std::vector<DWriteTextLayout::ColorSpan>{});
+}
+
+TextLayoutHandle MakeTextLayout(IDWriteFactory* factory,
+                                const std::u16string& text,
+                                IDWriteTextFormat* format, float maxWidth,
+                                const std::vector<TextRangeStyle>& styles,
+                                TextAlign align) {
+    if (!factory || !format || !(maxWidth > 0.0f)) {
+        return nullptr;
+    }
+    IDWriteTextLayout* layout = nullptr;
+    if (FAILED(factory->CreateTextLayout(
+            reinterpret_cast<const WCHAR*>(text.data()),
+            static_cast<UINT32>(text.size()), format, maxWidth, 1.0e9f,
+            &layout)) ||
+        !layout) {
+        return nullptr;
+    }
+    switch (align) {
+        case TextAlign::Center:
+            layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+            break;
+        case TextAlign::Right:
+            layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+            break;
+        case TextAlign::Left:
+            break;  // DirectWrite's own default
+    }
+    for (const TextRangeStyle& style : styles) {
+        if (style.length == 0) continue;
+        const DWRITE_TEXT_RANGE range = {style.start, style.length};
+        if (style.weight > 0) {
+            layout->SetFontWeight(
+                static_cast<DWRITE_FONT_WEIGHT>(style.weight), range);
+        }
+        if (style.italic) {
+            layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, range);
+        }
+        if (!style.family.empty()) {
+            const std::wstring family = textenc::Utf8ToWide(style.family);
+            layout->SetFontFamilyName(family.c_str(), range);
+        }
+        if (style.size > 0.0f) layout->SetFontSize(style.size, range);
+        if (style.underline) layout->SetUnderline(TRUE, range);
+        if (style.strike) layout->SetStrikethrough(TRUE, range);
+    }
+    DWRITE_TEXT_METRICS metrics = {};
+    if (FAILED(layout->GetMetrics(&metrics))) {
+        layout->Release();
+        return nullptr;
+    }
+    const float height = metrics.height > 0.0f ? metrics.height : 0.0f;
+    // The column is the width the caller asked for, the box the alignment
+    // and the clip are measured against, the same answer BuildLayout gives.
+    TextLayoutHandle handle = std::make_shared<DWriteTextLayout>(
+        layout, maxWidth, height, std::vector<DWriteTextLayout::ColorSpan>{});
+    layout->Release();
+    return handle;
 }
 
 IDWriteTextFormat* DWriteEngine::FormatFor(const FontSpec& font) const {

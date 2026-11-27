@@ -23,6 +23,10 @@ public:
     // coordinates, which is where the block's layout was asked to place
     // its glyphs.
     DWriteRangeSource(IDWriteTextLayout* layout, float originX, float originY);
+    // The block's own seam handle: the adapter reads the native object
+    // back out of it, so a caller never names IDWriteTextLayout.
+    DWriteRangeSource(const TextLayoutHandle& block, float originX,
+                      float originY);
     ~DWriteRangeSource() override;
 
     DWriteRangeSource(const DWriteRangeSource&) = delete;

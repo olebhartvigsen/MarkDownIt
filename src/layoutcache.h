@@ -1,17 +1,21 @@
 #pragma once
 #include <vector>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include "dom.h"
-#include "textlayout.h"
+
+namespace platform {
+class TextLayout;
+}
 
 // One entry per rendered block: the live layout plus the rect it
 // occupied, in document coordinates (before scroll translation).
 struct BlockLayout {
-    // The platform text layout for this block, owned by the cache, may be
-    // null. The handle is opaque: DirectWrite on Windows, Core Text on
-    // macOS. See textlayout.h.
-    TextLayoutHandle layout = nullptr;
+    // The block's laid out text, owned by the cache, may be null. The
+    // handle is the seam's: the caret's questions are asked of it, and
+    // which platform produced it is not this file's business.
+    std::shared_ptr<const platform::TextLayout> layout;
     float x = 0.0f;
     float y = 0.0f;
     float width = 0.0f;

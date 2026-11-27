@@ -1,8 +1,25 @@
 #include "windows/text_range_source_win.h"
+#include "windows/text_engine_win.h"
 
 #include <algorithm>
 
 namespace platform {
+
+namespace {
+
+// The native object behind a block, or null when the block is not one of
+// this adapter's own.
+IDWriteTextLayout* NativeLayoutOf(const TextLayoutHandle& block) {
+    const DWriteTextLayout* dwrite =
+        dynamic_cast<const DWriteTextLayout*>(block.get());
+    return dwrite ? dwrite->Layout() : nullptr;
+}
+
+}  // namespace
+
+DWriteRangeSource::DWriteRangeSource(const TextLayoutHandle& block,
+                                     float originX, float originY)
+    : DWriteRangeSource(NativeLayoutOf(block), originX, originY) {}
 
 DWriteRangeSource::DWriteRangeSource(IDWriteTextLayout* layout, float originX,
                                      float originY)

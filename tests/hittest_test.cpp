@@ -1,4 +1,5 @@
 #include "gtest_lite.h"
+#include "fake_text_engine.h"
 #include "layoutcache.h"
 #include "navigation.h"
 #include "parser.h"
@@ -6,6 +7,60 @@
 #include <string>
 
 // ASCII: each byte is one UTF-8 char and one UTF-16 unit.
+// The cache asks the block itself for the caret's geometry, so a block on
+// the seam's portable layout places a caret and answers a click with no
+// platform text object behind it. This is the path every renderer that
+// builds a block through the seam takes, on either platform.
+TEST(HitTest, SeamBlockAnswersTheCaretFromItsLineRecords) {
+    fake::FakeTextEngine engine;
+    std::vector<platform::GlyphRun> runs;
+    platform::GlyphRun run;
+    run.text = "hello";
+    run.font.size = 14.0f;
+    runs.push_back(run);
+    const platform::TextLayoutHandle block =
+        engine.BuildLayout(runs, 0.0f, platform::TextAlign::Left);
+    ASSERT_TRUE(block != nullptr);
+    if (!block) return;
+
+    const std::string source = "hello";
+    LayoutCache cache;
+    cache.SetSourceText(&source);
+    BlockLayout bl;
+    bl.layout = block;
+    bl.x = 10.0f;
+    bl.y = 20.0f;
+    bl.width = 40.0f;
+    bl.height = block->Height();
+    bl.srcOffset = 0;
+    bl.srcLength = 5;
+    bl.textStartOffset = 0;
+    bl.u16ToSrc = {0, 1, 2, 3, 4};
+    bl.u16ToSrcEnd = {1, 2, 3, 4, 5};
+    cache.Add(bl);
+
+    float x = 0.0f;
+    float y = 0.0f;
+    float h = 0.0f;
+    ASSERT_TRUE(cache.OffsetToCaretRect(0, &x, &y, &h));
+    EXPECT_NEAR(x, 10.0f, 0.01f);
+    EXPECT_NEAR(y, 20.0f, 0.01f);
+    EXPECT_GT(h, 0.0f);
+
+    // A click at the start of the third glyph answers its offset.
+    EXPECT_EQ(cache.PointToOffset(
+                  10.0f + 2.5f * fake::FakeTextEngine::kGlyphWidth,
+                  20.0f + h * 0.5f),
+              2u);
+
+    // The block's only line covers the whole source text.
+    uint32_t start = 9;
+    uint32_t end = 0;
+    ASSERT_TRUE(cache.GetLineRangeAtY(0, 20.0f + h * 0.5f, &start, &end));
+    EXPECT_EQ(start, 0u);
+    EXPECT_EQ(end, 5u);
+}
+
 TEST(Utf8Utf16, AsciiRoundTrip) {
     std::string s = "Hello, World!";
     EXPECT_EQ(Utf8OffsetToUtf16(s, 0), 0u);
