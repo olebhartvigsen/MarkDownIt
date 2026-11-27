@@ -946,15 +946,15 @@ bool Renderer::Init(IDWriteFactory* dw) {
     // carries the zoom, the way the formats below did, so a zoom change
     // still re-creates the roles through Release and Init.
     const float zoom = zoom_ > 0.0f ? zoom_ : 1.0f;
-    bodyFont_.family = base.bodyFont;
+    bodyFont_.family = textenc::WideToUtf8(std::wstring(base.bodyFont));
     bodyFont_.size = base.bodyFontSize * kPtToDip * zoom;
-    codeFont_.family = base.codeFont;
+    codeFont_.family = textenc::WideToUtf8(std::wstring(base.codeFont));
     codeFont_.size = base.codeFontSize * kPtToDip * zoom;
     codeFont_.monospace = true;
     for (int lvl = 1; lvl <= 6; ++lvl) {
         platform::FontSpec& heading = headingFont_[lvl];
-        heading.family =
-            base.headingFamily[lvl] ? base.headingFamily[lvl] : base.bodyFont;
+        heading.family = base.headingFamily[lvl] ? base.headingFamily[lvl]
+                                                 : bodyFont_.family;
         heading.size = base.headingSizes[lvl] * kPtToDip * zoom;
         heading.bold = base.headingBold[lvl];
         heading.semibold = !base.headingBold[lvl] && !base.headingFamily[lvl];
@@ -1329,7 +1329,7 @@ void Renderer::DrawCodeBlock(platform::RenderTarget& target, IDWriteFactory* dw,
         bl.u16ToSrcEnd = std::move(cu16ToSrcEnd);
         // Caret height: the natural line height of the code font
         // (cursor-blinking guide), not the em size.
-        bl.fontHeight = LineHeightOf(code_font_);
+        bl.fontHeight = LineHeightOf(codeFont_);
         cache_->Add(bl);
     }
     outH = blockH;
@@ -1663,7 +1663,7 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
                     bl.isTableCell = true;
                     bl.u16ToSrc = row.cells[c].u16ToSrc; // copy parser's mapping
                     bl.u16ToSrcEnd = row.cells[c].u16ToSrcEnd;
-                    bl.fontHeight = LineHeightOf(body_font_);
+                    bl.fontHeight = LineHeightOf(bodyFont_);
                     cache_->Add(bl);
                 }
             }
@@ -2746,7 +2746,7 @@ float Renderer::RenderSourceView(platform::RenderTarget& rt,
         bl.srcLength = static_cast<uint32_t>(src.size());
         bl.textStartOffset = 0;
         bl.nodeIndex = 0;
-        bl.fontHeight = LineHeightOf(code_font_);
+        bl.fontHeight = LineHeightOf(codeFont_);
         bl.u16ToSrc = srcState_.u16ToSrc;
         bl.u16ToSrcEnd = srcState_.u16ToSrcEnd;
         cache_->Add(bl);
