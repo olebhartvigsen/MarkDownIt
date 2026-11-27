@@ -222,21 +222,25 @@ public:
     bool SvgLinkAt(float docX, float docY, std::string* href) const;
 
 private:
-    // The faces the block roles wear, in seam terms: what the renderer
-    // used to keep as a platform text format per role. The engine owns
-    // the format a face needs; the renderer owns the face.
-    platform::FontSpec bodyFont_;
-    platform::FontSpec codeFont_;
-    platform::FontSpec headingFont_[7];
+    // The role a block is laid out in: the face, the line box as a
+    // multiple of its size and the wrap rule. What a platform text
+    // format used to carry per role, in seam terms. The engine owns the
+    // format a role becomes; the renderer owns the role.
+    struct BlockRole {
+        platform::FontSpec font;
+        float lineHeightEm = 0.0f;
+        bool wholeWordWrap = false;
+    };
+    BlockRole bodyRole_;
+    BlockRole codeRole_;
+    BlockRole headingRole_[7];
     // The engine the renderer asks its text questions, its block layouts
     // and its diagram measure. It is the renderer's own DWriteEngine
     // below, so Init needs no factory from the shell.
     platform::TextEngine* engine_ = nullptr;
-    IDWriteTextFormat* body_fmt_ = nullptr;
-    IDWriteTextFormat* num_fmt_ = nullptr;     // seq autonumber (12px)
-    IDWriteTextFormat* code_fmt_ = nullptr;      // monospace for code blocks
-    IDWriteTextFormat* mermaid_measure_fmt_ = nullptr;  // unzoomed DirectWrite metrics
-    IDWriteTextFormat* heading_fmt_[7] = {};
+    // Bumped by Init: the role set a source layout was built with, so a
+    // zoom change rebuilds it even when every other key matches.
+    int styleEpoch_ = 0;
     float zoom_ = kDefaultZoom;  // 100%
     bool wrapEnabled_ = true;
     bool editing_ = true;
@@ -353,6 +357,12 @@ private:
 
     LayoutMetrics ComputeMetrics() const;
 
+    // The seam's request for one role in a column: the face, the line box
+    // and the wrap rule, with the alignment the block is drawn at.
+    static platform::BlockStyle BlockStyleOf(const BlockRole& role,
+                                             float width,
+                                             platform::TextAlign align);
+
 private:
     // Batch 3.3, the rect twin's private half. The source map of one
     // block's drawn text (the builders layout/selection_rects.h owns,
@@ -449,7 +459,9 @@ private:
         bool wrap = false;
         int widthMode = -1;
         size_t srcSize = 0;
-        const void* format = nullptr;
+        // The role set the block was laid out with; a re-init (a zoom
+        // change) bumps the epoch, so the cached block is rebuilt.
+        int styleEpoch = -1;
         std::u16string text16;
         // The seam's handle on the block: one reference held here.
         platform::TextLayoutHandle layout;

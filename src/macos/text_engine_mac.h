@@ -111,6 +111,19 @@ public:
     TextLayoutHandle BuildLayout(const std::vector<GlyphRun>& runs,
                                  float maxWidth, TextAlign align) override;
 
+    // The block one role wears: the text and its inline ranges dressed
+    // into runs, measured by Core Text, in the line box the style names.
+    TextLayoutHandle BuildBlock(const std::u16string& text,
+                                const std::vector<TextRangeStyle>& styles,
+                                const BlockStyle& style) override;
+
+    // The measure a caller lays out itself asks for: the widest line and
+    // the summed line boxes, from the same Core Text measure the page
+    // uses.
+    TextMeasure MeasureText(const std::string& text, const FontSpec& font,
+                            float maxWidth,
+                            const LineBox& box = LineBox()) override;
+
     // The line's text as UTF-8, which the hit tester measures against.
     static std::string LineTextUtf8(const TextLine& line);
 

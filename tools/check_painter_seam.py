@@ -108,8 +108,19 @@ MAC_RAW = re.compile(r"\b(?:CG[A-Za-z]*Ref|CT[A-Za-z]*Ref|NSGraphicsContext)\b")
 # so its three names left the painter, and so did the two IDWriteTextFormat
 # parameters the two helpers carried. LineHeightOf caches by the face instead
 # of by the format pointer.
-WINDOWS_BASELINE = 15
-WINDOWS_TOTAL_BASELINE = 15
+#
+# 15 -> 12: the block roles left the renderer's formats. The renderer kept one
+# IDWriteTextFormat per role (body, code, six heading levels, and the unused
+# sequence autonumber) and created them in Init with the line box the theme
+# asks for; every caret block, table cell, paragraph and source view was then
+# built through platform::MakeTextLayout with one of them.
+# platform::TextEngine gained BuildBlock, which takes the seam's BlockStyle
+# (the face, the line box, the column, the wrap rule and the alignment), and
+# the two engines build it: one DirectWrite layout on Windows, the measured
+# Core Text lines on the mac. The renderer holds three BlockRole values, no
+# format, and Release has nothing left to release but the diagram measure.
+WINDOWS_BASELINE = 12
+WINDOWS_TOTAL_BASELINE = 12
 
 PAINTERS = [
     ("src/renderer.cpp", WINDOWS_RAW, WINDOWS_BASELINE, "windows painter"),

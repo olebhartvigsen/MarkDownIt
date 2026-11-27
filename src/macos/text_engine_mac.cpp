@@ -850,6 +850,50 @@ TextHit CgTextLayout::CaretAtOffset(uint32_t textPosition) const {
     return hit;
 }
 
+TextMeasure CoreTextEngine::MeasureText(const std::string& text,
+                                        const FontSpec& font, float maxWidth,
+                                        const LineBox& box) {
+    TextMeasure out;
+    if (text.empty()) return out;
+    GlyphRun run;
+    run.text = text;
+    run.font = font;
+    // One run, the label's own newlines and the width the diagram wraps
+    // at: the same measure the mac painter's diagram path always made.
+    const std::vector<TextLine> lines =
+        MeasureWrapped({run}, maxWidth > 0.0f ? maxWidth : 1.0e6f, 0.0f);
+    for (const TextLine& line : lines) {
+        if (line.width > out.width) out.width = line.width;
+        out.height += box.heightEm > 0.0f ? box.heightEm * font.size
+                                          : line.height;
+    }
+    return out;
+}
+
+TextLayoutHandle CoreTextEngine::BuildBlock(
+    const std::u16string& text, const std::vector<TextRangeStyle>& styles,
+    const BlockStyle& style) {
+    if (text.empty() || !(style.maxWidth > 0.0f)) return nullptr;
+    const std::vector<GlyphRun> runs = detail::DressedRuns(text, styles,
+                                                           style.font);
+    if (runs.empty()) return nullptr;
+    std::vector<TextLine> lines = MeasureWrapped(runs, style.maxWidth, 0.0f);
+    if (lines.empty()) return nullptr;
+    if (style.lineHeightEm > 0.0f) {
+        float natural = 0.0f;
+        float ascent = 0.0f;
+        if (FontBox(style.font, &natural, &ascent) && natural > 0.0f) {
+            const float height = style.lineHeightEm * style.font.size;
+            const float baseline = (height - natural) * 0.5f + ascent;
+            for (TextLine& line : lines) {
+                line.height = height;
+                line.ascent = baseline;
+            }
+        }
+    }
+    return MakeLineLayout(std::move(lines), style.maxWidth, style.align);
+}
+
 TextLayoutHandle CoreTextEngine::BuildLayout(
     const std::vector<GlyphRun>& runs, float maxWidth, TextAlign align) {
     // A block the engine cannot cut still has the seam's portable answer,

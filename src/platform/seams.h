@@ -176,6 +176,40 @@ enum class TextAlign {
     Right,   // flush with the column's right edge
 };
 
+// The line box a block of text wears, as multiples of its font size: the
+// distance between baselines and the distance from the top of a line to
+// its baseline. A height of zero keeps the font's natural box, the one
+// FontBox answers.
+struct LineBox {
+    float heightEm = 0.0f;
+    float baselineEm = 0.0f;
+};
+
+// One measured block of text: the widest line, its trailing whitespace
+// included, and the total height of the lines.
+struct TextMeasure {
+    float width = 0.0f;
+    float height = 0.0f;
+};
+
+// The role one block of text is laid out in: the base face, its line box,
+// the wrap rule and the column. This is what a renderer used to keep as a
+// platform text format per role (body, code, each heading level). It is a
+// struct of numbers and flags, never a handle.
+struct BlockStyle {
+    // The base face of the block.
+    FontSpec font;
+    // The line box, in multiples of the font size. Zero keeps the font's
+    // natural box.
+    float lineHeightEm = 0.0f;
+    // The column the block is laid out in, in points.
+    float maxWidth = 0.0f;
+    // Break only between words, never inside one. The code card needs it
+    // so its own measure equals the walk's record of the same text.
+    bool wholeWordWrap = true;
+    TextAlign align = TextAlign::Left;
+};
+
 // One laid out block of text: the runs of a paragraph or a table cell
 // already broken into lines, measured and aligned, as the text engine
 // keeps them. A target draws it without measuring anything again, which
@@ -498,6 +532,128 @@ inline TextLayoutHandle MakeLineLayout(std::vector<TextLine> lines,
                                                     align);
 }
 
+namespace detail {
+
+// The UTF-8 form of one UTF-16 slice. A lone surrogate becomes the
+// replacement character, which is the byte a text object draws for one.
+inline std::string Utf16SliceToUtf8(const std::u16string& text, uint32_t start,
+                                    uint32_t end) {
+    std::string out;
+    out.reserve(end > start ? end - start : 0);
+    for (uint32_t i = start; i < end; ++i) {
+        uint32_t cp = text[i];
+        if (cp >= 0xD800u && cp <= 0xDBFFu && i + 1 < end &&
+            text[i + 1] >= 0xDC00u && text[i + 1] <= 0xDFFFu) {
+            cp = 0x10000u + ((cp - 0xD800u) << 10) +
+                 (static_cast<uint32_t>(text[i + 1]) - 0xDC00u);
+            ++i;
+        } else if (cp >= 0xD800u && cp <= 0xDFFFu) {
+            cp = 0xFFFDu;
+        }
+        if (cp < 0x80u) {
+            out.push_back(static_cast<char>(cp));
+        } else if (cp < 0x800u) {
+            out.push_back(static_cast<char>(0xC0u | (cp >> 6)));
+            out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+        } else if (cp < 0x10000u) {
+            out.push_back(static_cast<char>(0xE0u | (cp >> 12)));
+            out.push_back(static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu)));
+            out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+        } else {
+            out.push_back(static_cast<char>(0xF0u | (cp >> 18)));
+            out.push_back(static_cast<char>(0x80u | ((cp >> 12) & 0x3Fu)));
+            out.push_back(static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu)));
+            out.push_back(static_cast<char>(0x80u | (cp & 0x3Fu)));
+        }
+    }
+    return out;
+}
+
+// The face one UTF-16 unit of a block wears: the base face, with the
+// ranges that reach it applied in order, so a later range wins, the
+// order TextRangeStyle documents.
+struct StyleUnit {
+    bool bold = false;
+    bool semibold = false;
+    bool italic = false;
+    bool underline = false;
+    bool strike = false;
+    std::string family;
+    float size = 0.0f;
+
+    bool operator==(const StyleUnit& o) const {
+        return bold == o.bold && semibold == o.semibold && italic == o.italic &&
+               underline == o.underline && strike == o.strike &&
+               family == o.family && size == o.size;
+    }
+};
+
+// The runs one block's text and its style ranges make: one run per stretch
+// of text that wears the same face and the same decorations. A surrogate
+// pair is never split between two runs.
+inline std::vector<GlyphRun> DressedRuns(const std::u16string& text,
+                                         const std::vector<TextRangeStyle>& styles,
+                                         const FontSpec& base) {
+    std::vector<GlyphRun> runs;
+    if (text.empty()) return runs;
+    StyleUnit baseUnit;
+    baseUnit.bold = base.bold;
+    baseUnit.semibold = base.semibold;
+    baseUnit.family = base.family;
+    baseUnit.size = base.size;
+    std::vector<StyleUnit> units(text.size(), baseUnit);
+    for (const TextRangeStyle& style : styles) {
+        const uint32_t from =
+            style.start < text.size() ? style.start
+                                      : static_cast<uint32_t>(text.size());
+        uint32_t to = from + style.length;
+        if (to > text.size()) to = static_cast<uint32_t>(text.size());
+        for (uint32_t i = from; i < to; ++i) {
+            StyleUnit& unit = units[i];
+            if (style.weight >= 700) {
+                unit.bold = true;
+                unit.semibold = false;
+            } else if (style.weight >= 600) {
+                unit.bold = false;
+                unit.semibold = true;
+            } else if (style.weight > 0) {
+                unit.bold = false;
+                unit.semibold = false;
+            }
+            if (style.italic) unit.italic = true;
+            if (style.underline) unit.underline = true;
+            if (style.strike) unit.strike = true;
+            if (!style.family.empty()) unit.family = style.family;
+            if (style.size > 0.0f) unit.size = style.size;
+        }
+    }
+    uint32_t at = 0;
+    while (at < text.size()) {
+        uint32_t end = at + 1;
+        // A surrogate pair is one character, whatever the ranges say.
+        if (text[at] >= 0xD800u && text[at] <= 0xDBFFu && end < text.size()) {
+            ++end;
+        }
+        while (end < text.size() && units[end] == units[at]) ++end;
+        const StyleUnit& unit = units[at];
+        GlyphRun run;
+        run.text = Utf16SliceToUtf8(text, at, end);
+        run.font.family = unit.family;
+        run.font.size = unit.size;
+        run.font.bold = unit.bold;
+        run.font.semibold = unit.semibold;
+        run.font.italic = unit.italic;
+        run.font.monospace = base.monospace;
+        run.underline = unit.underline;
+        run.strike = unit.strike;
+        if (!run.text.empty()) runs.push_back(std::move(run));
+        at = end;
+    }
+    return runs;
+}
+
+}  // namespace detail
+
 // Measures and places text.
 //
 // MeasureWrapped lays the runs out in a column of the given width and
@@ -569,6 +725,70 @@ public:
     // code asks for a name here instead of walking a platform collection
     // of its own; an engine with no collection answers an empty list.
     virtual std::vector<std::string> FontFamilies() const { return {}; }
+
+    // Measures a block of UTF-8 text for a caller that lays it out
+    // itself: the text broken at its own newlines and wrapped at
+    // maxWidth (zero means one unbounded line), answered as the widest
+    // line's width, its trailing whitespace included, and the summed line
+    // boxes. The diagram engine asks this, so a label is measured by the
+    // engine that draws the page instead of by a format the caller built.
+    //
+    // The base answers from MeasureWrapped with one run in the face, so a
+    // portable engine answers too. The native engines override it with
+    // the measure their own text object gives, which is the number the
+    // diagrams have always used.
+    virtual TextMeasure MeasureText(const std::string& text,
+                                    const FontSpec& font, float maxWidth,
+                                    const LineBox& box = LineBox()) {
+        TextMeasure out;
+        if (text.empty()) return out;
+        GlyphRun run;
+        run.text = text;
+        run.font = font;
+        const std::vector<TextLine> lines =
+            MeasureWrapped({run}, maxWidth, 0.0f);
+        for (const TextLine& line : lines) {
+            if (line.width > out.width) out.width = line.width;
+            out.height += box.heightEm > 0.0f ? box.heightEm * font.size
+                                              : line.height;
+        }
+        return out;
+    }
+
+    // Lays one block out for a painter: `text` in UTF-16 code units (the
+    // unit a block speaks), dressed with the inline `styles` ranges, in
+    // the face, the line box, the column and the alignment `style` names.
+    // The answer is the seam's handle, which a target draws with
+    // DrawLayout, and which the caret and the range fills ask where the
+    // glyphs ended up.
+    //
+    // The base dresses the text into runs and builds the portable block
+    // over MeasureWrapped, so an engine that keeps no native text object
+    // still answers. The native engines override it with their own text
+    // object, which is what the renderer's roles have always used.
+    virtual TextLayoutHandle BuildBlock(const std::u16string& text,
+                                        const std::vector<TextRangeStyle>& styles,
+                                        const BlockStyle& style) {
+        const std::vector<GlyphRun> runs =
+            detail::DressedRuns(text, styles, style.font);
+        if (runs.empty()) return nullptr;
+        std::vector<TextLine> lines =
+            MeasureWrapped(runs, style.maxWidth, 0.0f);
+        if (lines.empty()) return nullptr;
+        if (style.lineHeightEm > 0.0f) {
+            float natural = 0.0f;
+            float ascent = 0.0f;
+            if (FontBox(style.font, &natural, &ascent) && natural > 0.0f) {
+                const float height = style.lineHeightEm * style.font.size;
+                const float baseline = (height - natural) * 0.5f + ascent;
+                for (TextLine& line : lines) {
+                    line.height = height;
+                    line.ascent = baseline;
+                }
+            }
+        }
+        return MakeLineLayout(std::move(lines), style.maxWidth, style.align);
+    }
 
     // Lays the runs out into one block that a target draws without
     // measuring again: the same breaks MeasureWrapped takes at the same

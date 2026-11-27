@@ -140,20 +140,13 @@ mermaid::LabelSize MeasureWithEngine(const std::string& label, float maxWidth,
     }
     if (text.empty()) return {0.0f, 0.0f};
 
-    GlyphRun run;
-    run.text = text;
-    run.font = c->font;
-    const std::vector<TextLine> measured = c->engine->MeasureWrapped(
-        {run}, maxWidth > 0.0f ? maxWidth : 1.0e6f, 0.0f);
-    if (measured.empty()) return {0.0f, 0.0f};
-
-    float width = 0.0f;
-    float height = 0.0f;
-    for (const TextLine& line : measured) {
-        if (line.width > width) width = line.width;
-        height += line.height;
-    }
-    return {width, height};
+    // The seam's own measure question: the label's text in the diagram
+    // face, its own newlines kept, and the font's natural box. The
+    // engine that draws the page answers it, so a label is never
+    // measured by a second text object.
+    const TextMeasure measured = c->engine->MeasureText(
+        text, c->font, maxWidth > 0.0f ? maxWidth : 1.0e6f, LineBox());
+    return {measured.width, measured.height};
 }
 
 

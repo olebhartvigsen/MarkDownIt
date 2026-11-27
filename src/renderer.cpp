@@ -939,55 +939,53 @@ bool Renderer::Init(IDWriteFactory* dw) {
     if (!dw) return false;
     dw_factory_ = dw;
     engine_ = &layoutEngine_;
+    if (!engine_->Factory()) return false;
 
     LayoutMetrics base = BaseMetrics();
 
-    // The faces of the three block roles, in seam terms. A size already
+    // The roles the blocks are laid out in, in seam terms. A size already
     // carries the zoom, the way the formats below did, so a zoom change
     // still re-creates the roles through Release and Init.
     const float zoom = zoom_ > 0.0f ? zoom_ : 1.0f;
-    bodyFont_.family = textenc::WideToUtf8(std::wstring(base.bodyFont));
-    bodyFont_.size = base.bodyFontSize * kPtToDip * zoom;
-    codeFont_.family = textenc::WideToUtf8(std::wstring(base.codeFont));
-    codeFont_.size = base.codeFontSize * kPtToDip * zoom;
-    codeFont_.monospace = true;
-    for (int lvl = 1; lvl <= 6; ++lvl) {
-        platform::FontSpec& heading = headingFont_[lvl];
-        heading.family = base.headingFamily[lvl] ? base.headingFamily[lvl]
-                                                 : bodyFont_.family;
-        heading.size = base.headingSizes[lvl] * kPtToDip * zoom;
-        heading.bold = base.headingBold[lvl];
-        heading.semibold = !base.headingBold[lvl] && !base.headingFamily[lvl];
-    }
+    bodyRole_.font.family = textenc::WideToUtf8(std::wstring(base.bodyFont));
+    bodyRole_.font.size = base.bodyFontSize * kPtToDip * zoom;
+    bodyRole_.lineHeightEm = base.bodyLineHeight;
+    bodyRole_.wholeWordWrap = false;
 
-    // Body format: Segoe UI, 15pt.
-    HRESULT hr = dw->CreateTextFormat(
-        base.bodyFont, nullptr,
-        DWRITE_FONT_WEIGHT_REGULAR,
-        DWRITE_FONT_STYLE_NORMAL,
-        DWRITE_FONT_STRETCH_NORMAL,
-        base.bodyFontSize * kPtToDip * zoom_,
-        L"", &body_fmt_);
-    if (FAILED(hr) || !body_fmt_) return false;
-    auto applyLineBox = [this](IDWriteTextFormat* fmt,
-                               const platform::FontSpec& font,
-                               float lineHeightEm) {
-        float natural = 0.0f;
-        float ascent = 0.0f;
-        if (!fmt || !engine_ ||
-            !engine_->FontBox(font, &natural, &ascent) || natural <= 0.0f) {
-            return;
-        }
-        const float height = lineHeightEm * font.size;
-        const float baseline = (height - natural) * 0.5f + ascent;
-        fmt->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, height,
-                            baseline);
-    };
-    applyLineBox(body_fmt_, bodyFont_, base.bodyLineHeight);
+    // The code card wraps whole words only. The shared walk's canon (a run
+    // never breaks inside itself) lets an unbreakable token overflow the
+    // line instead of splitting it mid word. The emergency break D2D takes
+    // by default would wrap a long hash or minified line into a taller card
+    // than the walk charged, so the band and the card drift apart; wrapping
+    // whole words keeps the card's own measure equal to the record the walk
+    // hands the frame.
+    codeRole_.font.family = textenc::WideToUtf8(std::wstring(base.codeFont));
+    codeRole_.font.size = base.codeFontSize * kPtToDip * zoom;
+    codeRole_.font.monospace = true;
+    codeRole_.lineHeightEm = base.codeLineHeight;
+    codeRole_.wholeWordWrap = true;
+
+    // The heading roles, scaled by level. The face follows the style: the
+    // semibold body face, or the family the style names for the level (the
+    // serif of the Wikipedia H1 and H2). The selection washes measure with
+    // these, so they must match the drawn face.
+    for (int lvl = 1; lvl <= 6; ++lvl) {
+        BlockRole& heading = headingRole_[lvl];
+        heading.font.family = base.headingFamily[lvl]
+                                  ? base.headingFamily[lvl]
+                                  : bodyRole_.font.family;
+        heading.font.size = base.headingSizes[lvl] * kPtToDip * zoom;
+        heading.font.bold = base.headingBold[lvl];
+        heading.font.semibold =
+            !base.headingBold[lvl] && !base.headingFamily[lvl];
+        heading.lineHeightEm = base.headingLineHeight;
+        heading.wholeWordWrap = false;
+    }
+    ++styleEpoch_;
 
     // Flowchart coordinates are kept in canonical DIPs. This format is
     // deliberately unzoomed, so zoom is applied once by the drawing path.
-    hr = dw->CreateTextFormat(
+    HRESULT hr = dw->CreateTextFormat(
         base.bodyFont, nullptr,
         DWRITE_FONT_WEIGHT_REGULAR,
         DWRITE_FONT_STYLE_NORMAL,
@@ -1001,83 +999,33 @@ bool Renderer::Init(IDWriteFactory* dw) {
             DWRITE_LINE_SPACING_METHOD_PROPORTIONAL, 1.3f, 1.24f);
     }
 
-    // Sequence autonumber digits: mermaid renders 12px sans-serif.
-    hr = dw->CreateTextFormat(
-        L"Segoe UI", nullptr,
-        DWRITE_FONT_WEIGHT_REGULAR,
-        DWRITE_FONT_STYLE_NORMAL,
-        DWRITE_FONT_STRETCH_NORMAL,
-        12.0f * (4.0f / 3.0f) * zoom_,
-        L"", &num_fmt_);
-    if (FAILED(hr)) num_fmt_ = nullptr;
-
-    // Code format: Cascadia Mono at GitHub's 85% size (falls back to
-    // Consolas).
-    hr = dw->CreateTextFormat(
-        base.codeFont, nullptr,
-        DWRITE_FONT_WEIGHT_REGULAR,
-        DWRITE_FONT_STYLE_NORMAL,
-        DWRITE_FONT_STRETCH_NORMAL,
-        base.codeFontSize * kPtToDip * zoom_,
-        L"", &code_fmt_);
-    if (FAILED(hr) || !code_fmt_) return false;
-    applyLineBox(code_fmt_, codeFont_, base.codeLineHeight);
-    // Whole words only: the shared walk's canon (the same rule the
-    // golden engine spells, a run never breaks inside itself) lets an
-    // unbreakable token overflow the line instead of splitting it
-    // mid word. The emergency break D2D takes by default would wrap a
-    // long hash or minified line into a taller card than the walk
-    // charged, so the band and the card drift apart; wrapping whole
-    // words keeps the card's own DirectWrite measure equal to the
-    // record the walk hands the frame. The source view sets its own
-    // wrap explicitly on the layout and keeps the flat rule.
-    code_fmt_->SetWordWrapping(DWRITE_WORD_WRAPPING_WHOLE_WORD);
-
-    // Heading formats, scaled by level. The face follows the style:
-    // the semibold body face, or the family the style names for the
-    // level (the serif of the Wikipedia H1 and H2). The selection
-    // washes measure with these, so they must match the drawn face.
-    for (int lvl = 1; lvl <= 6; ++lvl) {
-        std::wstring headingFamilyW;
-        if (base.headingFamily[lvl])
-            headingFamilyW.assign(base.headingFamily[lvl],
-                                  base.headingFamily[lvl] +
-                                      std::strlen(base.headingFamily[lvl]));
-        const wchar_t* headingFace =
-            base.headingFamily[lvl] ? headingFamilyW.c_str() : base.bodyFont;
-        const DWRITE_FONT_WEIGHT headingWeight =
-            base.headingBold[lvl]    ? DWRITE_FONT_WEIGHT_BOLD
-            : base.headingFamily[lvl] ? DWRITE_FONT_WEIGHT_NORMAL
-                                      : DWRITE_FONT_WEIGHT_SEMI_BOLD;
-        hr = dw->CreateTextFormat(
-            headingFace, nullptr,
-            headingWeight,
-            DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL,
-            base.headingSizes[lvl] * kPtToDip * zoom_,
-            L"", &heading_fmt_[lvl]);
-        if (FAILED(hr) || !heading_fmt_[lvl]) return false;
-        applyLineBox(heading_fmt_[lvl], headingFont_[lvl],
-                     base.headingLineHeight);
-    }
-
     return true;
 }
 
+// The seam's request for one role in a column. The role's own align is
+// left, the alignment a block is drawn at is the caller's.
+platform::BlockStyle Renderer::BlockStyleOf(const BlockRole& role,
+                                            float width,
+                                            platform::TextAlign align) {
+    platform::BlockStyle style;
+    style.font = role.font;
+    style.lineHeightEm = role.lineHeightEm;
+    style.maxWidth = width;
+    style.wholeWordWrap = role.wholeWordWrap;
+    style.align = align;
+    return style;
+}
+
 void Renderer::Release() {
-    auto rel = [](IDWriteTextFormat*& p) { if (p) { p->Release(); p = nullptr; } };
-    // The formats are about to be re-created (a zoom change) or torn
-    // down. The line-height cache is keyed by the face, and a face
-    // carries the zoom in its size, so a new zoom would answer a new key
-    // anyway; it is dropped here so a torn down renderer keeps nothing.
+    // The roles carry the zoom in their sizes, so a re-init names new
+    // ones; the caches are dropped with the old render.
     lineHeightCache_.clear();
     DropSourceLayout();
-    rel(body_fmt_);
-    rel(code_fmt_);
-    rel(num_fmt_);
-    rel(mermaid_measure_fmt_);
+    if (mermaid_measure_fmt_) {
+        mermaid_measure_fmt_->Release();
+        mermaid_measure_fmt_ = nullptr;
+    }
     mermaid_layout_cache_.Clear();
-    for (int i = 1; i <= 6; ++i) rel(heading_fmt_[i]);
 }
 
 // The key one face's line height is cached under: the family, the size
@@ -1173,7 +1121,7 @@ void Renderer::DrawCodeBlock(platform::RenderTarget& target, IDWriteFactory* dw,
                               const std::vector<platform::Rect>& washRects,
                               const layout::LaidBlock* record,
                               float viewportH) {
-    if (!dw || !code_fmt_) { outH = 0.0f; return; }
+    if (!engine_ || !dw) { outH = 0.0f; return; }
 
     LayoutMetrics m = ComputeMetrics();
     const Palette& pal = palette_;
@@ -1229,8 +1177,9 @@ void Renderer::DrawCodeBlock(platform::RenderTarget& target, IDWriteFactory* dw,
         cache_ != nullptr || HasSearchMatches() || HasMarkers();
     const platform::TextLayoutHandle caretBlock =
         wantCaretBlock
-            ? platform::MakeTextLayout(dw, text16, code_fmt_, codeWidth, {},
-                                       platform::TextAlign::Left)
+            ? engine_->BuildBlock(
+                  text16, {},
+                  BlockStyleOf(codeRole_, codeWidth, platform::TextAlign::Left))
             : nullptr;
 
     // Search match highlights, under the text and under the selection so a
@@ -1329,7 +1278,7 @@ void Renderer::DrawCodeBlock(platform::RenderTarget& target, IDWriteFactory* dw,
         bl.u16ToSrcEnd = std::move(cu16ToSrcEnd);
         // Caret height: the natural line height of the code font
         // (cursor-blinking guide), not the em size.
-        bl.fontHeight = LineHeightOf(codeFont_);
+        bl.fontHeight = LineHeightOf(codeRole_.font);
         cache_->Add(bl);
     }
     outH = blockH;
@@ -1397,7 +1346,7 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
                           const std::vector<platform::Rect>& washRects,
                           const layout::LaidTable* record,
                           float viewportH) {
-    if (!dw || !body_fmt_ || n.rows.empty()) { outH = 0.0f; return; }
+    if (!engine_ || !dw || n.rows.empty()) { outH = 0.0f; return; }
 
     LayoutMetrics m = ComputeMetrics();
     const Palette& pal = palette_;
@@ -1469,12 +1418,11 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
             // The cell's height, measured through the seam: the same text,
             // format and inline styles the cell's own layout is built
             // with, so a code span still wraps and still needs its room.
-            const platform::TextLayoutHandle cellBlock =
-                platform::MakeTextLayout(
-                    dw, text16, body_fmt_, colWs[c] - 2.0f * m.cellPadX,
-                    CellTextStyles(row.cells[c], text16.size(), m, zoom_,
-                                   false),
-                    platform::TextAlign::Left);
+            const platform::TextLayoutHandle cellBlock = engine_->BuildBlock(
+                text16,
+                CellTextStyles(row.cells[c], text16.size(), m, zoom_, false),
+                BlockStyleOf(bodyRole_, colWs[c] - 2.0f * m.cellPadX,
+                             platform::TextAlign::Left));
             if (cellBlock && cellBlock->Height() > rowH) {
                 rowH = cellBlock->Height();
             }
@@ -1519,11 +1467,11 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
             // format and the inline styles the cell has always been
             // dressed with, in one place, and drawn from the same handle
             // the cache and the range fills ask.
-            const platform::TextLayoutHandle cellBlock =
-                platform::MakeTextLayout(
-                    dw, text16, body_fmt_, colWs[c] - 2.0f * m.cellPadX,
-                    CellTextStyles(row.cells[c], text16.size(), m, zoom_, true),
-                    seamAlign);
+            const platform::TextLayoutHandle cellBlock = engine_->BuildBlock(
+                text16,
+                CellTextStyles(row.cells[c], text16.size(), m, zoom_, true),
+                BlockStyleOf(bodyRole_, colWs[c] - 2.0f * m.cellPadX,
+                             seamAlign));
             if (cellBlock) {
                 const platform::Point cellOrigin{cellX + m.cellPadX,
                                                  curY + m.cellPadY};
@@ -1663,7 +1611,7 @@ void Renderer::DrawTable(platform::RenderTarget& target, IDWriteFactory* dw,
                     bl.isTableCell = true;
                     bl.u16ToSrc = row.cells[c].u16ToSrc; // copy parser's mapping
                     bl.u16ToSrcEnd = row.cells[c].u16ToSrcEnd;
-                    bl.fontHeight = LineHeightOf(bodyFont_);
+                    bl.fontHeight = LineHeightOf(bodyRole_.font);
                     cache_->Add(bl);
                 }
             }
@@ -2214,24 +2162,15 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
         float drawX = originX + b->x;
         float drawW = b->width > 0.0f ? b->width : contentWidth;
 
-        IDWriteTextFormat* fmt = nullptr;
-        // The face of this block, in seam terms: the caret height and
-        // the block's own layout both name it, and the engine owns the
-        // format it becomes.
-        const platform::FontSpec* face = &bodyFont_;
+        // The role of this block, in seam terms: the caret height and the
+        // block's own layout both name it, and the engine owns the format
+        // it becomes.
+        const BlockRole* role = &bodyRole_;
         if (n.block == BlockKind::Heading) {
-            // Only the caret's DirectWrite side: fmt feeds the cache
-            // and washes; the glyphs and rule come from the list.
             int lvl = n.level;
             if (lvl < 1) lvl = 1;
             if (lvl > 6) lvl = 6;
-            fmt = heading_fmt_[lvl];
-            face = &headingFont_[lvl];
-        } else {
-            fmt = body_fmt_;
-        }
-        if (!fmt) {
-            continue;
+            role = &headingRole_[lvl];
         }
 
         std::u32string text32;
@@ -2357,9 +2296,10 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
             style.strike = s.strike;
             styles.push_back(style);
         }
-        const platform::TextLayoutHandle layout = platform::MakeTextLayout(
-            dw_factory_, layoutText16, fmt, textW > 0 ? textW : drawW, styles,
-            platform::TextAlign::Left);
+        const platform::TextLayoutHandle layout = engine_->BuildBlock(
+            layoutText16, styles,
+            BlockStyleOf(*role, textW > 0 ? textW : drawW,
+                         platform::TextAlign::Left));
         if (!layout) {
             continue;
         }
@@ -2469,7 +2409,7 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
             bl.u16ToSrcEnd = std::move(u16ToSrcEnd);
             // Caret height: the natural line height of this block's
             // format (cursor-blinking guide), not the em size.
-            bl.fontHeight = LineHeightOf(*face);
+            bl.fontHeight = LineHeightOf(role->font);
             cache_->Add(bl);
         }
     }
@@ -2562,7 +2502,8 @@ bool Renderer::EnsureSourceLayout(IDWriteFactory* dw, const std::string& src,
     const bool same = st.layout && !forceRebuild && st.width == widthDip &&
                       st.zoom == zoom_ && st.wrap == wrapEnabled_ &&
                       st.widthMode == contentWidthMode_ &&
-                      st.srcSize == src.size() && st.format == code_fmt_;
+                      st.srcSize == src.size() &&
+                      st.styleEpoch == styleEpoch_;
     if (same) return true;
     DropSourceLayout();
     st.text16 = Utf8ToUtf16(src);
@@ -2570,9 +2511,10 @@ bool Renderer::EnsureSourceLayout(IDWriteFactory* dw, const std::string& src,
     // The source view's block, built behind the seam: the raw markdown in
     // the code format, wrapped at the column. One handle serves the draw,
     // the fills and the caret cache.
-    platform::TextLayoutHandle layout = platform::MakeTextLayout(
-        dw, st.text16, code_fmt_, textW > 0 ? textW : contentWidth, {},
-        platform::TextAlign::Left);
+    platform::TextLayoutHandle layout = engine_->BuildBlock(
+        st.text16, {},
+        BlockStyleOf(codeRole_, textW > 0 ? textW : contentWidth,
+                     platform::TextAlign::Left));
     if (!layout) {
         st = SourceLayoutState();
         return false;
@@ -2600,13 +2542,13 @@ bool Renderer::EnsureSourceLayout(IDWriteFactory* dw, const std::string& src,
     st.wrap = wrapEnabled_;
     st.widthMode = contentWidthMode_;
     st.srcSize = src.size();
-    st.format = code_fmt_;
+    st.styleEpoch = styleEpoch_;
     return true;
 }
 
 float Renderer::MeasureSourceView(IDWriteFactory* dw, const std::string& src,
                                    float widthDip, float topOffsetDip) {
-    if (!dw || !code_fmt_) return 0.0f;
+    if (!engine_ || !dw) return 0.0f;
 
     // The source view has no pictures, so it must not inherit the scroll
     // range a rendered document left behind.
@@ -2637,7 +2579,7 @@ float Renderer::RenderSourceView(platform::RenderTarget& rt,
                                   float viewportHeightDip, float scrollY,
                                   float topOffsetDip, float scrollX,
                                   const Selection* sel) {
-    if (!dw_factory_ || !code_fmt_) return topOffsetDip;
+    if (!dw_factory_ || !engine_) return topOffsetDip;
 
     // Own the cache lifecycle like Render() does: clear stale blocks so
     // repeated calls never accumulate layout-owned entries.
@@ -2746,7 +2688,7 @@ float Renderer::RenderSourceView(platform::RenderTarget& rt,
         bl.srcLength = static_cast<uint32_t>(src.size());
         bl.textStartOffset = 0;
         bl.nodeIndex = 0;
-        bl.fontHeight = LineHeightOf(codeFont_);
+        bl.fontHeight = LineHeightOf(codeRole_.font);
         bl.u16ToSrc = srcState_.u16ToSrc;
         bl.u16ToSrcEnd = srcState_.u16ToSrcEnd;
         cache_->Add(bl);

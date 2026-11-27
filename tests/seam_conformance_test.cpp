@@ -104,6 +104,41 @@ void CheckTextEngine(TextEngine& engine) {
         if (i > 0) EXPECT_LT(families[i - 1], families[i]);
     }
 
+    // The measure a caller lays out itself asks for: a width and a height
+    // for the block, deterministic, and a taller answer when the caller
+    // asks for a bigger line box. The exact numbers are the engine's.
+    const platform::TextMeasure naturalBox =
+        engine.MeasureText("label", probe, 500.0f, platform::LineBox());
+    EXPECT_GT(naturalBox.width, 0.0f);
+    EXPECT_GT(naturalBox.height, 0.0f);
+    const platform::TextMeasure measureAgain =
+        engine.MeasureText("label", probe, 500.0f, platform::LineBox());
+    EXPECT_NEAR(measureAgain.width, naturalBox.width, 0.001f);
+    EXPECT_NEAR(measureAgain.height, naturalBox.height, 0.001f);
+    const platform::TextMeasure tallBox =
+        engine.MeasureText("label", probe, 500.0f,
+                           platform::LineBox{2.0f, 1.6f});
+    EXPECT_GT(tallBox.height, naturalBox.height);
+
+    // The block a role asks for: the column it named, a real height, and
+    // one line box of the style's height per line it broke into.
+    platform::BlockStyle role;
+    role.font = probe;
+    role.maxWidth = 200.0f;
+    role.lineHeightEm = 2.0f;
+    const std::vector<platform::TextRangeStyle> noRanges;
+    const platform::TextLayoutHandle roleBlock =
+        engine.BuildBlock(u"one two", noRanges, role);
+    ASSERT_TRUE(roleBlock != nullptr);
+    if (roleBlock) {
+        EXPECT_NEAR(roleBlock->Width(), 200.0f, 0.5f);
+        EXPECT_GT(roleBlock->Height(), 0.0f);
+        EXPECT_NEAR(roleBlock->Height(),
+                    2.0f * probe.size *
+                        static_cast<float>(roleBlock->LineCount()),
+                    1.5f);
+    }
+
     std::vector<GlyphRun> runs = {MakeRun("first words", 14.0f),
                                   MakeRun("second", 14.0f)};
 

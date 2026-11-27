@@ -137,6 +137,12 @@ DWriteEngine::~DWriteEngine() {
     for (auto& entry : formats_) {
         if (entry.second) entry.second->Release();
     }
+    for (auto& entry : blockFormats_) {
+        if (entry.second) entry.second->Release();
+    }
+    for (auto& entry : measureFormats_) {
+        if (entry.second) entry.second->Release();
+    }
     if (factory_) factory_->Release();
 }
 
@@ -454,6 +460,158 @@ TextLayoutHandle MakeTextLayout(IDWriteFactory* factory,
     // and the clip are measured against, the same answer BuildLayout gives.
     TextLayoutHandle handle = std::make_shared<DWriteTextLayout>(
         layout, maxWidth, height, std::vector<DWriteTextLayout::ColorSpan>{});
+    layout->Release();
+    return handle;
+}
+
+IDWriteTextFormat* DWriteEngine::BlockFormatFor(
+    const BlockStyle& style) const {
+    if (!factory_) return nullptr;
+    // The requested family, not the theme's mapping: these formats are
+    // the roles the renderer used to create itself, and a missing face
+    // has always been DirectWrite's silent substitution.
+    const std::wstring family = ToUtf16(style.font.family);
+    const float size = style.font.size > 0.0f ? style.font.size : 14.0f;
+    const int weight = WeightFor(style.font);
+    const int slant = style.font.italic ? 1 : 0;
+    const int wrap = style.wholeWordWrap ? 1 : 0;
+    const BlockFormatKey key(family, size, weight, slant, wrap,
+                             style.lineHeightEm);
+    auto it = blockFormats_.find(key);
+    if (it != blockFormats_.end()) return it->second;
+    IDWriteTextFormat* format = nullptr;
+    if (FAILED(factory_->CreateTextFormat(
+            family.c_str(), nullptr,
+            static_cast<DWRITE_FONT_WEIGHT>(weight),
+            slant ? DWRITE_FONT_STYLE_ITALIC : DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL, size, L"", &format))) {
+        format = nullptr;
+    }
+    if (format) {
+        format->SetWordWrapping(wrap ? DWRITE_WORD_WRAPPING_WHOLE_WORD
+                                     : DWRITE_WORD_WRAPPING_WRAP);
+        format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+        if (style.lineHeightEm > 0.0f) {
+            // The CSS line box: the box is lineHeightEm times the size,
+            // and the glyphs are centred in it with half leading.
+            float natural = 0.0f;
+            float ascent = 0.0f;
+            if (FontBox(style.font, &natural, &ascent) && natural > 0.0f) {
+                const float height = style.lineHeightEm * size;
+                const float baseline = (height - natural) * 0.5f + ascent;
+                format->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM,
+                                       height, baseline);
+            }
+        }
+    }
+    blockFormats_[key] = format;
+    return format;
+}
+
+IDWriteTextFormat* DWriteEngine::MeasureFormatFor(
+    const FontSpec& font, const LineBox& box) const {
+    if (!factory_) return nullptr;
+    const std::wstring family = ToUtf16(font.family);
+    const float size = font.size > 0.0f ? font.size : 14.0f;
+    const MeasureFormatKey key(family, size, box.heightEm, box.baselineEm);
+    auto it = measureFormats_.find(key);
+    if (it != measureFormats_.end()) return it->second;
+    IDWriteTextFormat* format = nullptr;
+    if (FAILED(factory_->CreateTextFormat(
+            family.c_str(), nullptr, DWRITE_FONT_WEIGHT_REGULAR,
+            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, size, L"",
+            &format))) {
+        format = nullptr;
+    }
+    if (format && box.heightEm > 0.0f) {
+        // The diagram label box: proportional spacing, the pair the
+        // diagram measure format has always set.
+        format->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_PROPORTIONAL,
+                               box.heightEm, box.baselineEm);
+    }
+    measureFormats_[key] = format;
+    return format;
+}
+
+TextMeasure DWriteEngine::MeasureText(const std::string& text,
+                                      const FontSpec& font, float maxWidth,
+                                      const LineBox& box) {
+    TextMeasure out;
+    if (!factory_ || text.empty()) return out;
+    IDWriteTextFormat* format = MeasureFormatFor(font, box);
+    if (!format) return out;
+    const std::wstring wide = ToUtf16(text);
+    if (wide.empty() && !text.empty()) return out;
+    IDWriteTextLayout* layout = nullptr;
+    if (FAILED(factory_->CreateTextLayout(
+            wide.c_str(), static_cast<UINT32>(wide.size()), format,
+            maxWidth > 0.0f ? maxWidth : 1.0e6f, 1.0e6f, &layout)) ||
+        !layout) {
+        return out;
+    }
+    DWRITE_TEXT_METRICS metrics = {};
+    if (SUCCEEDED(layout->GetMetrics(&metrics))) {
+        out.width = metrics.widthIncludingTrailingWhitespace;
+        out.height = metrics.height;
+    }
+    layout->Release();
+    return out;
+}
+
+TextLayoutHandle DWriteEngine::BuildBlock(
+    const std::u16string& text, const std::vector<TextRangeStyle>& styles,
+    const BlockStyle& style) {
+    // An empty text is a legal block: the old per role layout accepted it
+    // and answered a zero height, and a table cell or an empty fence
+    // reaches this with no text at all.
+    if (!factory_ || !(style.maxWidth > 0.0f)) return nullptr;
+    IDWriteTextFormat* format = BlockFormatFor(style);
+    if (!format) return nullptr;
+    IDWriteTextLayout* layout = nullptr;
+    if (FAILED(factory_->CreateTextLayout(
+            reinterpret_cast<const WCHAR*>(text.data()),
+            static_cast<UINT32>(text.size()), format, style.maxWidth, 1.0e9f,
+            &layout)) ||
+        !layout) {
+        return nullptr;
+    }
+    switch (style.align) {
+        case TextAlign::Center:
+            layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+            break;
+        case TextAlign::Right:
+            layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+            break;
+        case TextAlign::Left:
+            break;  // DirectWrite's own default
+    }
+    for (const TextRangeStyle& span : styles) {
+        if (span.length == 0) continue;
+        const DWRITE_TEXT_RANGE range = {span.start, span.length};
+        if (span.weight > 0) {
+            layout->SetFontWeight(
+                static_cast<DWRITE_FONT_WEIGHT>(span.weight), range);
+        }
+        if (span.italic) layout->SetFontStyle(DWRITE_FONT_STYLE_ITALIC, range);
+        if (!span.family.empty()) {
+            const std::wstring family = textenc::Utf8ToWide(span.family);
+            layout->SetFontFamilyName(family.c_str(), range);
+        }
+        if (span.size > 0.0f) layout->SetFontSize(span.size, range);
+        if (span.underline) layout->SetUnderline(TRUE, range);
+        if (span.strike) layout->SetStrikethrough(TRUE, range);
+    }
+    DWRITE_TEXT_METRICS metrics = {};
+    if (FAILED(layout->GetMetrics(&metrics))) {
+        layout->Release();
+        return nullptr;
+    }
+    const float height = metrics.height > 0.0f ? metrics.height : 0.0f;
+    // The column is the width the caller asked for, the box the alignment
+    // and the clip are measured against, the same answer BuildLayout gives.
+    TextLayoutHandle handle = std::make_shared<DWriteTextLayout>(
+        layout, style.maxWidth, height,
+        std::vector<DWriteTextLayout::ColorSpan>{});
     layout->Release();
     return handle;
 }
