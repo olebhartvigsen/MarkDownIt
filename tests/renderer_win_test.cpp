@@ -1994,10 +1994,12 @@ TEST(RendererWin, ReportTableFullWalk) {
 
     // Column one must carry its code token in one piece, not
     // sliced fragments: the widest piece of the table's first
-    // column answers.
-    const float guardOx = (1228.0f - 800.0f) * 0.5f;
-    float col1Left = vx.size() >= 2 ? vx[0] + guardOx + 2.0f : 0.0f;
-    float col1Right = vx.size() >= 2 ? vx[1] + guardOx - 2.0f : 1228.0f;
+    // column answers. The pieces and the fills are both in frame
+    // coordinates now: the scroll and column offsets are applied to
+    // the drawing calls themselves (platform::OffsetTarget), not to a
+    // target transform the fake would ignore.
+    float col1Left = vx.size() >= 2 ? vx[0] + 2.0f : 0.0f;
+    float col1Right = vx.size() >= 2 ? vx[1] - 2.0f : 1228.0f;
     float widestCol1 = 0.0f;
     for (const FakeRenderTarget::TextDraw& d : rt.textDraws)
         if (d.x >= col1Left && d.x < col1Right)
@@ -2006,25 +2008,15 @@ TEST(RendererWin, ReportTableFullWalk) {
     fflush(stdout);
     EXPECT_GE(widestCol1, 250.0f);
 
-    // The fills replay in table-local coordinates while the pieces
-    // record in frame coordinates: the fake target ignores the
-    // replay transform, the paint pass runs after it was reset. The
-    // cell check therefore compares in the pieces' own space: the
+    // The fills and the pieces record in one space (frame
+    // coordinates), so the column check compares them directly. The
     // bands cluster the painted baselines, and every row band must
     // own ink in every column band. A cell whose lines painted
     // nothing is the glue the reader sees.
-    // The pieces carry the frame origin the replay transform would
-    // have applied, so the bands answer in their own space. A
-    // column that lost its text entirely, the blank column the
-    // report would photograph, owns no pieces; every column of
-    // these eight rows must keep at least six, one per row below
-    // the tolerance of a wrapping cell's shared baseline.
-    const float ox = (1228.0f - 800.0f) * 0.5f;
     for (size_t c = 1; c + 1 < vx.size(); ++c) {
         size_t owned = 0;
         for (const FakeRenderTarget::TextDraw& d : rt.textDraws) {
-            const float fx = d.x - ox;
-            if (fx < vx[c] || fx >= vx[c + 1]) continue;
+            if (d.x < vx[c] || d.x >= vx[c + 1]) continue;
             ++owned;
         }
         printf("FULLWALK column %zu owns %zu pieces\n", c, owned);
