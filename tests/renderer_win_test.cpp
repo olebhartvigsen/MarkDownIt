@@ -1638,8 +1638,20 @@ TEST(RendererWin, WashGeometryDeltaAgainstTheWalk) {
                        std::fabs(f.g - pal.markerBg.g) < 0.002f &&
                        std::fabs(f.b - pal.markerBg.b) < 0.002f;
             };
-            size_t compared = 0, countGap = 0;
-            float mx = 0.0f, my = 0.0f, mw = 0.0f, mh = 0.0f;
+            size_t winRects = 0, walkRects = 0;
+            for (const FakeRenderTarget::Fill& f : rtWin.fills) {
+                if (isMarker(f)) ++winRects;
+            }
+            for (const FakeRenderTarget::Fill& f : rtWalk.fills) {
+                if (isMarker(f)) ++walkRects;
+            }
+
+            // One band per drawn text line. A whole document marker washes
+            // every character of the line, so each side answers one band
+            // per line; the union of the fills in the band is the washed
+            // rectangle, and its four edges are what a reader sees move.
+            size_t bands = 0, unpaired = 0;
+            float ml = 0.0f, mt = 0.0f, mr = 0.0f, mb = 0.0f;
             for (const platform::LaidOutBlock& block : walk.blocks()) {
                 if (block.kind != BlockKind::Heading &&
                     block.kind != BlockKind::Paragraph &&
@@ -1647,55 +1659,63 @@ TEST(RendererWin, WashGeometryDeltaAgainstTheWalk) {
                     block.kind != BlockKind::BlockQuote) {
                     continue;
                 }
-                const float bandTop = block.y + 0.5f;
-                const float bandBottom = block.y + block.height - 0.5f;
-                std::vector<Rect> a;
-                std::vector<Rect> b;
-                for (const FakeRenderTarget::Fill& f : rtWin.fills) {
-                    if (!isMarker(f)) continue;
-                    if (f.top + (f.bottom - f.top) * 0.5f < bandTop ||
-                        f.top + (f.bottom - f.top) * 0.5f > bandBottom) {
+                float lineTop = walk.TextTop(block);
+                for (const TextLine& line : block.lines) {
+                    const float bandTop = lineTop;
+                    const float bandBottom = lineTop + line.height;
+                    lineTop = bandBottom;
+                    ++bands;
+                    float al = 1.0e9f, at = 1.0e9f, ar = -1.0e9f,
+                          ab = -1.0e9f;
+                    float bl = 1.0e9f, bt = 1.0e9f, br = -1.0e9f,
+                          bb = -1.0e9f;
+                    bool hasA = false, hasB = false;
+                    const auto collect = [&](const FakeRenderTarget::Fill& f,
+                                             float* l, float* t, float* r,
+                                             float* bo, bool* has) {
+                        const float cy = f.top + (f.bottom - f.top) * 0.5f;
+                        if (cy < bandTop || cy > bandBottom) return;
+                        if (f.left + 0.5f < block.x ||
+                            f.left > block.x + block.width + 0.5f) {
+                            return;
+                        }
+                        *l = (std::min)(*l, f.left);
+                        *t = (std::min)(*t, f.top);
+                        *r = (std::max)(*r, f.right);
+                        *bo = (std::max)(*bo, f.bottom);
+                        *has = true;
+                    };
+                    for (const FakeRenderTarget::Fill& f : rtWin.fills) {
+                        if (!isMarker(f)) continue;
+                        collect(f, &al, &at, &ar, &ab, &hasA);
+                    }
+                    for (const FakeRenderTarget::Fill& f : rtWalk.fills) {
+                        if (!isMarker(f)) continue;
+                        collect(f, &bl, &bt, &br, &bb, &hasB);
+                    }
+                    if (!hasA || !hasB) {
+                        if (hasA != hasB) ++unpaired;
                         continue;
                     }
-                    a.push_back(Rect{f.left, f.top, f.right - f.left,
-                                     f.bottom - f.top});
-                }
-                for (const FakeRenderTarget::Fill& f : rtWalk.fills) {
-                    if (!isMarker(f)) continue;
-                    if (f.top + (f.bottom - f.top) * 0.5f < bandTop ||
-                        f.top + (f.bottom - f.top) * 0.5f > bandBottom) {
-                        continue;
-                    }
-                    b.push_back(Rect{f.left, f.top, f.right - f.left,
-                                     f.bottom - f.top});
-                }
-                const auto order = [](const Rect& l, const Rect& r) {
-                    if (l.y != r.y) return l.y < r.y;
-                    return l.x < r.x;
-                };
-                std::sort(a.begin(), a.end(), order);
-                std::sort(b.begin(), b.end(), order);
-                if (a.size() != b.size()) countGap += 1;
-                const size_t n = (std::min)(a.size(), b.size());
-                for (size_t i = 0; i < n; ++i) {
-                    mx = (std::max)(mx, std::fabs(a[i].x - b[i].x));
-                    my = (std::max)(my, std::fabs(a[i].y - b[i].y));
-                    mw = (std::max)(mw, std::fabs(a[i].width - b[i].width));
-                    mh = (std::max)(mh, std::fabs(a[i].height - b[i].height));
-                    ++compared;
+                    ml = (std::max)(ml, std::fabs(al - bl));
+                    mt = (std::max)(mt, std::fabs(at - bt));
+                    mr = (std::max)(mr, std::fabs(ar - br));
+                    mb = (std::max)(mb, std::fabs(ab - bb));
                 }
             }
-            printf("WASH_DELTA %s z=%.2f rects=%zu bands_unpaired=%zu "
-                   "maxdx=%.3f maxdy=%.3f maxdw=%.3f maxdh=%.3f\n",
-                   name, zoom, compared, countGap, mx, my, mw, mh);
+            printf("WASH_DELTA %s z=%.2f bands=%zu winRects=%zu "
+                   "walkRects=%zu unpaired=%zu maxdl=%.3f maxdt=%.3f "
+                   "maxdr=%.3f maxdb=%.3f\n",
+                   name, zoom, bands, winRects, walkRects, unpaired, ml, mt,
+                   mr, mb);
             fflush(stdout);
-            worstX = (std::max)(worstX, mx);
-            worstY = (std::max)(worstY, my);
-            worstW = (std::max)(worstW, mw);
-            worstH = (std::max)(worstH, mh);
+            worstX = (std::max)(worstX, ml);
+            worstY = (std::max)(worstY, mt);
+            worstW = (std::max)(worstW, mr);
+            worstH = (std::max)(worstH, mb);
         }
     }
-    printf("WASH_DELTA worst maxdx=%.3f maxdy=%.3f maxdw=%.3f maxdh=%.3f\n",
+    printf("WASH_DELTA worst maxdl=%.3f maxdt=%.3f maxdr=%.3f maxdb=%.3f\n",
            worstX, worstY, worstW, worstH);
     fflush(stdout);
 }
