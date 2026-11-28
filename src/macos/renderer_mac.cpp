@@ -2093,12 +2093,12 @@ bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
     return false;
 }
 
-std::vector<navigation::VerticalLine> MacRenderer::VerticalBands() const {
+std::vector<VerticalLine> MacRenderer::VerticalBands() const {
     // The bands the mac always walked: each region's lines, with the
     // region's own ink edges and the source range each line covers. The
-    // step reads them through navigation::MoveVerticalIn, so the algorithm
+    // step reads them through MoveVerticalIn, so the algorithm
     // is the one both ports run and this function is only the record.
-    std::vector<navigation::VerticalLine> bands;
+    std::vector<VerticalLine> bands;
     for (const TextRegion& region : TextRegions()) {
         if (!region.lines || !region.visToSrc || region.lines->empty() ||
             region.visToSrc->empty()) {
@@ -2113,7 +2113,7 @@ std::vector<navigation::VerticalLine> MacRenderer::VerticalBands() const {
                 length += static_cast<uint32_t>(run.text.size());
             }
             const uint32_t lineEndVis = lineStartVis + length;
-            navigation::VerticalLine band;
+            VerticalLine band;
             band.top = top;
             band.height = line.height;
             band.left = region.x;
@@ -2145,14 +2145,14 @@ bool MacRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
     if (delta == 0 || !outOffset) return false;
 
     // The page as the one shared step reads it. The bands are this
-    // renderer's own records; the algorithm is navigation::MoveVerticalIn.
-    class RegionLayout final : public navigation::VerticalLayout {
+    // renderer's own records; the algorithm is MoveVerticalIn.
+    class RegionLayout final : public VerticalLayout {
     public:
-        RegionLayout(std::vector<navigation::VerticalLine> lines,
+        RegionLayout(std::vector<VerticalLine> lines,
                      const MacRenderer* renderer)
             : lines_(std::move(lines)), renderer_(renderer) {}
 
-        std::vector<navigation::VerticalLine> Lines() const override {
+        std::vector<VerticalLine> Lines() const override {
             return lines_;
         }
         uint32_t HitTest(float x, float y) const override {
@@ -2160,13 +2160,13 @@ bool MacRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
         }
 
     private:
-        std::vector<navigation::VerticalLine> lines_;
+        std::vector<VerticalLine> lines_;
         const MacRenderer* renderer_ = nullptr;
     };
 
     float desired = desiredX;
     const RegionLayout layout(VerticalBands(), this);
-    const uint32_t moved = navigation::MoveVerticalIn(
+    const uint32_t moved = MoveVerticalIn(
         layout, offset, delta, &desired, wrappedCaretOnLowerLine_);
     if (moved == offset) return false;
     *outOffset = moved;

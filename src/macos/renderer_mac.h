@@ -450,8 +450,8 @@ public:
 
     // Every drawn line as the vertical step reads it: the band, and the
     // source range its text covers. The step itself is
-    // navigation::MoveVerticalIn, the one algorithm both ports run.
-    std::vector<navigation::VerticalLine> VerticalBands() const;
+    // MoveVerticalIn, the one algorithm both ports run.
+    std::vector<VerticalLine> VerticalBands() const;
 
 private:
     // A rendered span of the document, in source bytes.
