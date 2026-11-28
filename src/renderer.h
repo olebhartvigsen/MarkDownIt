@@ -585,8 +585,6 @@ private:
                    const std::vector<platform::Rect>& washRects = {},
                    const layout::LaidTable* record = nullptr,
                    float viewportH = 0.0f);
-    void DrawMermaidBlock(platform::RenderTarget& target, const Node& n,
-                          float x, float y, float width);
     std::shared_ptr<mermaid::LaidOutFlowchart> GetMermaidLayout(
         const Node& n) const;
 };

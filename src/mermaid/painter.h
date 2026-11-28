@@ -24,6 +24,11 @@ namespace platform {
 // The engine has to be one the renderer does not use for the document
 // text: the text engine keeps only its last measurement, and the hit
 // tester needs the one the layout pass made.
+//
+// `labelLineBoxEm` is the flowchart's label line box, as a multiple of
+// the label size. Both ports pass their metrics' body line height, so a
+// flowchart at the page zoom lays its labels out in the box the body
+// text wears; zero keeps the font's natural box.
 void PaintMermaidDiagram(TextEngine* engine,
                           RenderTarget* target,
                           const mermaid::MermaidRender& diagram,
@@ -33,6 +38,7 @@ void PaintMermaidDiagram(TextEngine* engine,
                           float originY,
                           float padding,
                           const Palette& palette,
-                          const FontSpec& bodyFont);
+                          const FontSpec& bodyFont,
+                          float labelLineBoxEm = 0.0f);
 
 }  // namespace platform

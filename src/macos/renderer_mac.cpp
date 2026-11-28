@@ -939,7 +939,8 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
                     target_, diagram, zoom_, availWidth,
                     block.x, block.y - scrollOffset, pad, palette_,
                     DiagramFontFor(*block.node, metrics_.bodyFontSize,
-                                   false, false, false));
+                                   false, false, false),
+                    metrics_.bodyLineHeight);
                 break;
             }
 

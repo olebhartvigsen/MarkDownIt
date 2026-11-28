@@ -383,10 +383,10 @@ std::shared_ptr<const layout::DocumentLayout> Renderer::BuildSharedLayout(
     in.imageSize = [this, &doc, sel, contentWidth](const std::string& url) {
         return ImageSizeForUrl(doc, url, sel, contentWidth);
     };
-    // The flowchart relaid the painter shares with the walk: the very
-    // layout object DrawMermaidBlock lays its hands on, its cache and
-    // its measure format, so the charged band is the ink the frame
-    // paints. Without an engine the parse provisional layout stands.
+    // The flowchart relaid the shared painter draws: the very layout
+    // object the paint lays its hands on, its cache and its measure
+    // format, so the charged band is the ink the frame paints. Without an
+    // engine the parse provisional layout stands.
     in.flowchartRelaid = [this](const Node& n) {
         return GetMermaidLayout(n);
     };
@@ -712,32 +712,26 @@ void Renderer::PaintSharedOverlays(
                 }
                 break;
             }
-            case BlockKind::MermaidFlowchart: {
-                // The three painters follow the zoom themselves and
-                // measure against the column, the width the walk
-                // measured them at, so they get the band's origin and
-                // the content column, never the record's picture
-                // width.
-                DrawMermaidBlock(view, n, bandX, bandY, contentWidth);
-                break;
-            }
+            case BlockKind::MermaidFlowchart:
             case BlockKind::MermaidPie:
             case BlockKind::MermaidState:
             case BlockKind::MermaidSequence:
             case BlockKind::MermaidGantt: {
-                // The pie, the state, the sequence and the gantt diagram
-                // are painted by the one shared painter
-                // (src/mermaid/painter.cpp), the file the mac port draws
-                // with. It follows the zoom itself and measures its labels
-                // through the seam, so it takes the band's origin, the
-                // content column and the unzoomed body font, exactly as
-                // the flowchart path does. The layout is made at parse
-                // time and rides on the node, so the paint does not re-run
-                // it.
-                const mermaid::MermaidRender diagram =
-                    MermaidDiagramFor(n, nullptr);
-                if (!diagram.pie && !diagram.state && !diagram.seq &&
-                    !diagram.gantt) {
+                // All five Mermaid kinds are painted by the one shared
+                // painter (src/mermaid/painter.cpp), the file the mac port
+                // draws with. It follows the zoom itself and measures its
+                // labels through the seam, so it takes the band's origin,
+                // the content column, the unzoomed body font and the body
+                // line box its labels wear at the page zoom, exactly as
+                // the mac call does. The layout is made at parse time and
+                // rides on the node, so the paint does not re-run it; the
+                // flowchart's relaid is the one the walk charged.
+                const mermaid::MermaidRender diagram = MermaidDiagramFor(
+                    n, n.block == BlockKind::MermaidFlowchart
+                           ? GetMermaidLayout(n)
+                           : nullptr);
+                if (!diagram.flow && !diagram.pie && !diagram.state &&
+                    !diagram.seq && !diagram.gantt) {
                     break;
                 }
                 const float diagramPad = mermaid::kMermaidBlockPad;
@@ -751,7 +745,7 @@ void Renderer::PaintSharedOverlays(
                 platform::PaintMermaidDiagram(
                     TextEngineForWalk(), &view, diagram, zoom_,
                     availWidth, bandX, bandY, diagramPad, palette_,
-                    diagramFont);
+                    diagramFont, diagramMetrics.bodyLineHeight);
                 break;
             }
             default:
@@ -2633,14 +2627,8 @@ svg::SvgDoc* Renderer::GetSvgDoc(const Node& n, float availW) {
 }
 
 // -----------------------------------------------------------------------------
-// Mermaid flowchart rendering (Task 12).
+// Mermaid flowchart preparation.
 // -----------------------------------------------------------------------------
-
-// Dotted edge dash pattern: dash and gap in stroke-width multiples, the
-// pair the Direct2D custom dash style used. Mermaid's
-// `.flowchart .edgePath [style*='dotted']` renders ~3:3 dots at 1px
-// stroke; we use 1:2 to read as dots at 1.5px stroke.
-static const float kMermaidDash[] = {1.0f, 2.0f};
 
 // The diagram labels' line box, as multiples of the label size: the same
 // 1.3 box the page's reading measure is not. It is mermaid's metric, not
@@ -2651,7 +2639,8 @@ static constexpr float kMermaidLabelBaselineEm = 1.24f;
 // Every diagram measure and paint entry asks the same shared preparation
 // (src/mermaidrender.h): the label measure, the relaid flowchart and its
 // cache, and the block kind switch. This shell brings the label face and
-// the 1.3 em line box the Windows painter has always measured with.
+// the 1.3 em line box the flowchart measure has always used. The paint
+// itself is the shared painter's, all five kinds.
 
 // Note: layout is computed once at parse time (parser.cpp) and stored on
 // Node::mermaid_layout, so we never re-run layout on WM_PAINT. Height is
@@ -2667,329 +2656,4 @@ std::shared_ptr<mermaid::LaidOutFlowchart> Renderer::GetMermaidLayout(
     ctx.box.baselineEm = kMermaidLabelBaselineEm;
     return MermaidRelaidFlowchart(n, engine_, &ctx, &mermaid_layout_cache_,
                                   zoom_);
-}
-
-// The diagram's own numbers, the ones the Direct2D painter drew with.
-// They are mermaid's geometry, not the page's spacing, so they live
-// here rather than in the theme's block tokens.
-constexpr float kMermaidLaneInsetX = 6.0f;
-constexpr float kMermaidLaneInsetY = 2.0f;
-constexpr float kMermaidLaneTitleHeight = 20.0f;
-constexpr float kMermaidNodeRadius = 6.0f;
-constexpr float kMermaidEdgeStroke = 1.5f;
-constexpr float kMermaidEdgeStrokeThick = 3.5f;
-constexpr float kMermaidEdgeLabelWidth = 220.0f;
-constexpr float kMermaidEdgeLabelHeight = 28.0f;
-constexpr float kMermaidEdgeLabelPad = 2.0f;
-constexpr float kMermaidArrowLength = 10.0f;
-constexpr float kMermaidArrowHalfWidth = 6.0f;
-
-// Lays one diagram label out through the walk's text engine.
-//
-// `bodyBox` is the diagram at the page zoom: its labels wore the body
-// format's uniform line box then, so every line is lineBoxEm tall with
-// the glyphs centred in it. A diagram the column shrunk was drawn with
-// a clone that had no box of its own, so its labels keep the font's
-// natural metrics, the ones MeasureWrapped answers.
-static platform::TextLayoutHandle LayOutDiagramLabel(
-        platform::TextEngine* engine, const std::string& text,
-        const platform::FontSpec& font, float maxWidth,
-        platform::TextAlign align, bool bodyBox, float lineBoxEm) {
-    platform::GlyphRun run;
-    run.text = text;
-    run.font = font;
-    std::vector<platform::TextLine> lines =
-        engine->MeasureWrapped({run}, maxWidth, 0.0f);
-    if (bodyBox && !lines.empty()) {
-        const float natural = lines.front().height;
-        const float fontAscent = lines.front().ascent;
-        const float height = lineBoxEm * font.size;
-        const float ascent = (height - natural) * 0.5f + fontAscent;
-        for (platform::TextLine& line : lines) {
-            line.height = height;
-            line.ascent = ascent;
-        }
-    }
-    return platform::MakeLineLayout(std::move(lines), maxWidth, align);
-}
-
-// The widest line of a laid out label, which is the width an edge
-// label's backing rect takes.
-static float LabelWidth(const platform::TextLayout& block) {
-    const std::vector<platform::TextLine>* lines = block.Lines();
-    if (!lines) return block.Width();
-    float widest = 0.0f;
-    for (const platform::TextLine& line : *lines) {
-        if (line.width > widest) widest = line.width;
-    }
-    return widest;
-}
-
-// Draws the arrow head at the end of an edge. The head keeps its size
-// on screen: its length is divided by the scale, so a diagram shrunk
-// into the column does not get a smaller arrow.
-static void DrawArrowHead(platform::RenderTarget& target,
-                          const mermaid::Point& a, const mermaid::Point& b,
-                          float ox, float oy, float scale,
-                          const platform::Color& color) {
-    double dx = b.x - a.x;
-    double dy = b.y - a.y;
-    const double len = std::sqrt(dx * dx + dy * dy);
-    if (len < 1e-6) return;
-    dx /= len;
-    dy /= len;
-    const float denom = scale > 1e-6 ? scale : 1.0f;
-    const platform::Point tip{
-        ox + static_cast<float>(b.x * scale),
-        oy + static_cast<float>(b.y * scale)};
-    // Perpendicular in world units.
-    const double bx = b.x - dx * (kMermaidArrowLength / denom);
-    const double by = b.y - dy * (kMermaidArrowLength / denom);
-    const double px = -dy;
-    const double py = dx;
-    const double half = kMermaidArrowHalfWidth / denom;
-    const platform::Point left{
-        ox + static_cast<float>((bx + px * half) * scale),
-        oy + static_cast<float>((by + py * half) * scale)};
-    const platform::Point right{
-        ox + static_cast<float>((bx - px * half) * scale),
-        oy + static_cast<float>((by - py * half) * scale)};
-    target.FillPolygon({tip, left, right}, color);
-}
-
-// A dotted edge: the custom dash pattern the Direct2D stroke style
-// used (dash and gap in stroke widths, kMermaidDash), walked along the
-// polyline as separate segments because the seam has no dash style.
-// The phase carries across the joints, so the dots keep the spacing a
-// single stroked path had.
-static void StrokeDashedPolyline(platform::RenderTarget& target,
-                                 const std::vector<platform::Point>& route,
-                                 float strokeWidth,
-                                 const platform::Color& color) {
-    const float dash = kMermaidDash[0] * strokeWidth;
-    const float gap = kMermaidDash[1] * strokeWidth;
-    float phase = 0.0f;
-    bool on = true;
-    for (size_t i = 0; i + 1 < route.size(); ++i) {
-        const float x0 = route[i].x;
-        const float y0 = route[i].y;
-        const float x1 = route[i + 1].x;
-        const float y1 = route[i + 1].y;
-        const float dx = x1 - x0;
-        const float dy = y1 - y0;
-        const float length = std::sqrt(dx * dx + dy * dy);
-        if (length <= 0.0f) continue;
-        const float ux = dx / length;
-        const float uy = dy / length;
-        float travelled = 0.0f;
-        while (travelled < length) {
-            const float limit = on ? dash : gap;
-            const float step = (std::min)(limit - phase, length - travelled);
-            if (on && step > 0.0f) {
-                target.StrokeLine(x0 + ux * travelled, y0 + uy * travelled,
-                                  x0 + ux * (travelled + step),
-                                  y0 + uy * (travelled + step), color,
-                                  strokeWidth);
-            }
-            travelled += step;
-            phase += step;
-            if (phase >= limit - 0.001f) {
-                phase = 0.0f;
-                on = !on;
-            }
-        }
-    }
-}
-
-void Renderer::DrawMermaidBlock(platform::RenderTarget& target, const Node& n,
-                                 float x, float y, float width) {
-    if (!engine_) return;
-    const auto laid = GetMermaidLayout(n);
-    if (!laid) return;
-    const auto& lo = *laid;
-    const float pad = mermaid::kMermaidBlockPad;
-    // Fit the diagram into the text column: scale down (never up) when the
-    // natural canvas is wider than the available width.
-    const float availW =
-        width > 2.0f * pad ? width - 2.0f * pad : 0.0f;
-    // Lineær zoom: scale = min(zoom, availW/naturalW); aldrig op-skalér.
-    float scale = zoom_;
-    if (lo.width > 0 && availW > 0) {
-        float fit_scale = availW / static_cast<float>(lo.width);
-        if (fit_scale < scale) scale = fit_scale;
-    }
-    const float ox = x;
-    const float oy = y + pad;
-    // Text shrinks by the same factor the geometry did.
-    const float textScale = scale / (zoom_ > 0.001f ? zoom_ : 1.0f);
-    const bool bodyBox = !(textScale != 1.0f && textScale > 0.01f);
-
-    LayoutMetrics m = ComputeMetrics();
-    const Palette& pal = palette_;
-    platform::TextEngine* engine = TextEngineForWalk();
-
-    const platform::Color ink = layout::ToColor(pal.mermaidEdge);
-    const platform::Color nodeFill = layout::ToColor(pal.mermaidNodeFill);
-    const platform::Color nodeBorder = layout::ToColor(pal.mermaidNodeBorder);
-    const platform::Color textColor = layout::ToColor(pal.mermaidText);
-    // The swimlane band wears the diagram's cluster colours, so a
-    // subgraph follows the appearance instead of staying a light grey
-    // rectangle on a dark page.
-    const platform::Color laneFill = layout::ToColor(pal.mermaidClusterBg);
-    const platform::Color laneBorder = layout::ToColor(pal.mermaidClusterBorder);
-    const platform::Color laneTitle = layout::ToColor(pal.textPrimary);
-    const platform::Color paper{1.0f, 1.0f, 1.0f, 1.0f};
-
-    platform::FontSpec font;
-    font.family = "segoe ui";
-    font.size = m.bodyFontSize * kPtToDip * scale;
-
-    // Swimlane bands first, so nodes and edges overlay.
-    for (const auto& lb : lo.lanes) {
-        const float lx = ox + static_cast<float>(lb.x * scale);
-        const float ly = oy + static_cast<float>(lb.y * scale);
-        const float lw = static_cast<float>(lb.width * scale);
-        const float lh = static_cast<float>(lb.height * scale);
-        const float radius = kMermaidNodeRadius * scale;
-        const platform::Rect band{lx, ly, lw, lh};
-        if (lw <= 0.0f || lh <= 0.0f) continue;
-        target.FillRoundedRect(band, radius, laneFill);
-        target.StrokeRoundedRect(band, radius, laneBorder, 1.0f);
-
-        if (!lb.title.empty()) {
-            const platform::TextLayoutHandle block = LayOutDiagramLabel(
-                engine, lb.title, font, lw, platform::TextAlign::Left,
-                bodyBox, m.bodyLineHeight);
-            const float titleX = lx + kMermaidLaneInsetX * scale;
-            const float titleY = ly + kMermaidLaneInsetY * scale;
-            target.PushClip(platform::Rect{titleX, titleY, lw,
-                                           kMermaidLaneTitleHeight * scale});
-            target.DrawLayout(*block, titleX, titleY, laneTitle);
-            target.PopClip();
-        }
-    }
-
-    // Edges first.
-    for (const auto& e : lo.edges) {
-        if (e.route.size() < 2) continue;
-        // Stroke style: dotted edges use a dash pattern; thick edges
-        // draw at ~2.5x width, matching mermaid's visual weight.
-        const bool dotted = (e.style == mermaid::LineStyle::Dotted);
-        const bool thick = (e.style == mermaid::LineStyle::Thick);
-        const float stroke_w = thick ? kMermaidEdgeStrokeThick
-                                     : kMermaidEdgeStroke;
-        std::vector<platform::Point> route;
-        route.reserve(e.route.size());
-        for (const mermaid::Point& p : e.route) {
-            route.push_back(platform::Point{
-                ox + static_cast<float>(p.x * scale),
-                oy + static_cast<float>(p.y * scale)});
-        }
-        if (dotted) {
-            StrokeDashedPolyline(target, route, stroke_w, ink);
-        } else {
-            target.StrokePolygon(route, ink, stroke_w, false);
-        }
-        if (e.head == mermaid::Head::Arrow) {
-            DrawArrowHead(target, e.route[e.route.size() - 2], e.route.back(),
-                          ox, oy, scale, ink);
-        }
-
-        // Edge label: centered at the polyline midpoint, with an opaque
-        // backing rect so the line does not strike through the glyphs.
-        if (!e.label.empty()) {
-            const size_t mid_seg = (e.route.size() - 1) / 2;
-            const double mx =
-                (e.route[mid_seg].x + e.route[mid_seg + 1].x) * 0.5;
-            const double my =
-                (e.route[mid_seg].y + e.route[mid_seg + 1].y) * 0.5;
-            const float maxLblW = kMermaidEdgeLabelWidth * scale;
-            if (!(maxLblW > 0.0f)) continue;
-            const platform::TextLayoutHandle block = LayOutDiagramLabel(
-                engine, e.label, font, maxLblW, platform::TextAlign::Left,
-                bodyBox, m.bodyLineHeight);
-            const float lbl_w = LabelWidth(*block);
-            const float lbl_h = block->Height();
-            const float lx = ox + static_cast<float>(mx * scale) -
-                             lbl_w * 0.5f;
-            const float ly = oy + static_cast<float>(my * scale) -
-                             lbl_h * 0.5f;
-            const float back = kMermaidEdgeLabelPad;
-            target.FillRect(
-                platform::Rect{lx - back, ly - back,
-                               lbl_w + 2.0f * back, lbl_h + 2.0f * back},
-                paper);
-            target.PushClip(platform::Rect{lx, ly, maxLblW,
-                                           kMermaidEdgeLabelHeight * scale});
-            target.DrawLayout(*block, lx, ly, textColor);
-            target.PopClip();
-        }
-    }
-
-    // Nodes.
-    for (const auto& nd : lo.nodes) {
-        if (nd.is_dummy) continue;
-        const float nx =
-            ox + static_cast<float>((nd.x - nd.width / 2.0f) * scale);
-        const float ny =
-            oy + static_cast<float>((nd.y - nd.height / 2.0f) * scale);
-        const float nw = static_cast<float>(nd.width * scale);
-        const float nh = static_cast<float>(nd.height * scale);
-        const platform::Rect rect{nx, ny, nw, nh};
-
-        switch (nd.shape) {
-            case mermaid::NodeShape::Round: {
-                const float radius = kMermaidNodeRadius * scale;
-                target.FillRoundedRect(rect, radius, nodeFill);
-                target.StrokeRoundedRect(rect, radius, nodeBorder, 1.0f);
-                break;
-            }
-            case mermaid::NodeShape::Stadium: {
-                const float radius = nh * 0.5f;
-                target.FillRoundedRect(rect, radius, nodeFill);
-                target.StrokeRoundedRect(rect, radius, nodeBorder, 1.0f);
-                break;
-            }
-            case mermaid::NodeShape::Circle: {
-                target.FillEllipse(rect, nodeFill);
-                target.StrokeEllipse(rect, nodeBorder, 1.0f);
-                break;
-            }
-            case mermaid::NodeShape::Diamond: {
-                const std::vector<platform::Point> corners = {
-                    platform::Point{nx + nw * 0.5f, ny},
-                    platform::Point{nx + nw, ny + nh * 0.5f},
-                    platform::Point{nx + nw * 0.5f, ny + nh},
-                    platform::Point{nx, ny + nh * 0.5f}};
-                target.FillPolygon(corners, nodeFill);
-                target.StrokePolygon(corners, nodeBorder, 1.0f, true);
-                break;
-            }
-            case mermaid::NodeShape::Rect:
-            default: {
-                target.FillRect(rect, nodeFill);
-                target.StrokeRect(rect, nodeBorder, 1.0f);
-                break;
-            }
-        }
-
-        // Label text, centered. Mermaid line-break separators (<br/> etc.)
-        // split into separate lines, which the engine lays out as one
-        // multi-line block and the block centres inside the node.
-        if (nd.label.empty() || !(nw > 0.0f) || !(nh > 0.0f)) continue;
-        std::vector<std::string> lines = mermaid::SplitLabelLines(nd.label);
-        if (lines.empty()) lines.push_back(nd.label);
-        std::string joined;
-        for (size_t li = 0; li < lines.size(); ++li) {
-            if (li > 0) joined.push_back('\n');
-            joined += lines[li];
-        }
-        const platform::TextLayoutHandle block = LayOutDiagramLabel(
-            engine, joined, font, nw, platform::TextAlign::Center, bodyBox,
-            m.bodyLineHeight);
-        const float labelH = block->Height();
-        target.PushClip(rect);
-        target.DrawLayout(*block, nx, ny + (nh - labelH) * 0.5f, textColor);
-        target.PopClip();
-    }
 }
