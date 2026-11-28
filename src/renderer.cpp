@@ -23,6 +23,7 @@
 #include "textenc.h"
 #include "svgtext.h"
 #include "layout/text_runs.h"
+#include "layout/block_overlays.h"
 #include "layout/range_highlights.h"
 #include "layout/selection_rects.h"
 #include "mermaid/model.h"
@@ -243,17 +244,20 @@ void Renderer::FillMatchHighlights(platform::RenderTarget& target,
     if (!searchMatches_ || searchMatches_->empty()) return;
     if (u16ToSrc.empty() || u16Len == 0) return;
 
-    const layout::BlockTextMap map{&u16ToSrc, u16Len, blockStart, blockEnd};
-    // A block no match touches never reaches the hit test, and the probe is
-    // the shared one, so this answers the same as the pass itself would.
-    if (!layout::BlockIntersectsAny(*searchMatches_, map)) return;
+    layout::OverlayRegion region;
+    region.indexToSrc = &u16ToSrc;
+    region.indexLen = u16Len;
+    region.blockStart = blockStart;
+    region.blockEnd = blockEnd;
 
     const layout::PaintBand band{scrollY,
                                  scrollY + (viewportH > 0.0f ? viewportH : 0.0f)};
-    layout::PaintMatchHighlights(target, source, map, band, *searchMatches_,
-                                 searchCurrentIndex_,
-                                 layout::ToColor(matchColor),
-                                 layout::ToColor(currentColor));
+    static const std::vector<TextMatch> kNoMarkers;
+    layout::PaintRegionWashes(
+        target, source, region, band, kNoMarkers, *searchMatches_,
+        searchCurrentIndex_, layout::ToColor(palette_.markerBg),
+        layout::ToColor(palette_.markerLine), layout::ToColor(matchColor),
+        layout::ToColor(currentColor));
 }
 
 void Renderer::FillMarkerHighlights(platform::RenderTarget& target,
@@ -267,14 +271,20 @@ void Renderer::FillMarkerHighlights(platform::RenderTarget& target,
     if (!HasMarkers()) return;
     if (u16ToSrc.empty() || u16Len == 0) return;
 
-    const layout::BlockTextMap map{&u16ToSrc, u16Len, blockStart, blockEnd};
-    if (!layout::BlockIntersectsAny(*markerRanges_, map)) return;
+    layout::OverlayRegion region;
+    region.indexToSrc = &u16ToSrc;
+    region.indexLen = u16Len;
+    region.blockStart = blockStart;
+    region.blockEnd = blockEnd;
 
     const layout::PaintBand band{scrollY,
                                  scrollY + (viewportH > 0.0f ? viewportH : 0.0f)};
-    layout::PaintMarkerHighlights(target, source, map, band, *markerRanges_,
-                                  layout::ToColor(fillColor),
-                                  layout::ToColor(lineColor));
+    static const std::vector<TextMatch> kNoMatches;
+    layout::PaintRegionWashes(
+        target, source, region, band, *markerRanges_, kNoMatches,
+        searchCurrentIndex_, layout::ToColor(fillColor),
+        layout::ToColor(lineColor), layout::ToColor(palette_.findMatchBg),
+        layout::ToColor(palette_.findCurrentMatchBg));
 }
 
 LayoutMetrics Renderer::ComputeMetrics() const {
@@ -1011,15 +1021,12 @@ void Renderer::DrawCodeBlock(platform::RenderTarget& target, const Node& n,
         std::move(lines), codeWidth, platform::TextAlign::Left);
     const float blockH = block->Height() + 2.0f * m.codePad;
 
-    // Rounded background.
-    const platform::Rect bgRect{x, y, width, blockH};
-    if (m.codeRadius > 0.5f) {
-        target.FillRoundedRect(bgRect, m.codeRadius,
-                               layout::ToColor(pal.codeBg));
-    } else {
-        target.FillRect(bgRect, layout::ToColor(pal.codeBg));
-    }
-
+    // The card itself (its surface, its corner radius and, in a style that
+    // asks for one, its border) is a display item now: the frame replayed
+    // it under this call, because the owner's composition decision makes
+    // the display list order the order both ports paint in. This painter
+    // keeps only the layers above that surface: the washes, the selection
+    // and the words.
     // The block the highlight pass and the caret cache read: the same
     // text and format as before, built behind the seam so this file names
     // no DirectWrite type. A search fill has to sit on the block's lines,
@@ -1203,11 +1210,11 @@ void Renderer::DrawTable(platform::RenderTarget& target, const Node& n,
     LayoutMetrics m = ComputeMetrics();
     const Palette& pal = palette_;
 
-    // The washes and the grid are colours, not brushes: the seam keeps the
-    // brush alive for the call and the target owns its lifetime.
-    const platform::Color altColor = layout::ToColor(pal.tableRowAlt);
-    const platform::Color headerColor = layout::ToColor(pal.tableHeaderBg);
-    const platform::Color borderColor = layout::ToColor(pal.tableBorder);
+    // The stripes and the grid are display items now: the frame replayed
+    // them under this call, because the owner's composition decision makes
+    // the display list order the order both ports paint in. This painter
+    // keeps the layers above that surface (the row's washes, the selection
+    // and the cell words) and the caret records the table's cells own.
     const platform::Color selectionColor = layout::ToColor(pal.selectionBg);
     const bool wantSelection = sel && !sel->Empty();
 
@@ -1285,24 +1292,8 @@ void Renderer::DrawTable(platform::RenderTarget& target, const Node& n,
         rowH += 2.0f * m.cellPadY;
         }
 
-        bool isHeaderRow = (!row.cells.empty() && row.cells[0].isHeader);
-        if (isHeaderRow && m.tableHeaderFill) {
-            target.FillRect(
-                platform::Rect{x, curY, width, rowH}, headerColor);
-        } else if (!isHeaderRow &&
-                   (m.tableBodyFill || (m.tableZebra && ri % 2 == 1))) {
-            // The style's row wash. GitHub's zebra: the first body row
-            // is the first muted one, because the header is tr 1.
-            target.FillRect(
-                platform::Rect{x, curY, width, rowH}, altColor);
-        }
-
         for (size_t c = 0; c < row.cells.size() && c < cols; ++c) {
             float cellX = x + colXs[c];
-            if (m.tableVerticalLines) {
-                target.StrokeLine(cellX, curY, cellX, curY + rowH,
-                                  borderColor, 1.0f);
-            }
             std::u16string text16 = textenc::Utf32ToUtf16(row.cells[c].text);
             // Honour the column alignment written in the delimiter row
             // (`:---`, `:---:`, `---:`). The layout is aligned inside the
@@ -1469,17 +1460,6 @@ void Renderer::DrawTable(platform::RenderTarget& target, const Node& n,
                 }
             }
         }
-        if (m.tableVerticalLines) {
-            target.StrokeLine(x + width, curY, x + width, curY + rowH,
-                              borderColor, 1.0f);
-        }
-        // The top edge is part of the full grid only; a style with row
-        // hairlines draws the bottom of each row and no more.
-        if (m.tableVerticalLines)
-            target.StrokeLine(x, curY, x + width, curY,
-                              borderColor, 1.0f);
-        target.StrokeLine(x, curY + rowH, x + width, curY + rowH,
-                          borderColor, 1.0f);
         curY += rowH;
     }
 
@@ -2270,9 +2250,11 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
                       });
     }
 
-    // Phase three, the opaque layers above the glyph pass: cards and
-    // cells that cover their own bands, so they re-run above the list,
-    // in view coordinates, each at RecordY.
+    // Phase three, the overlay layers above the replayed surface: the
+    // washes, the selection and the words of a code card and of each table
+    // row, each at the record's own band. The card and the table surface
+    // themselves are display items now (the composition order the owner
+    // settled), so these calls add only what the list cannot carry.
     PaintSharedOverlays(rt, doc, sharedByNode, shared, m, contentWidth,
                         originX, topOffsetDip, viewportHeightDip, scrollX,
                         sel, scrollY);

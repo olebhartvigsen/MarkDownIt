@@ -15,6 +15,7 @@
 #include "mermaidrender.h"
 #include "svgtext.h"
 #include "hash.h"
+#include "layout/block_overlays.h"
 #include "layout/display_player.h"
 #include "layout/range_highlights.h"
 #include "layout/selection_rects.h"
@@ -1002,29 +1003,28 @@ void MacRenderer::PaintWashesInRegion(
     // is the region's own visToSrc: index i is rendered byte i and its
     // value is the source byte it came from. The same vector answers the
     // geometry, which is why the two can never disagree.
-    layout::BlockTextMap map;
-    map.u16ToSrc = &visToSrc;
-    map.u16Len = static_cast<uint32_t>(visToSrc.size() - 1);
-    map.blockStart = blockStart;
-    map.blockEnd = blockEnd;
+    layout::OverlayRegion region;
+    region.indexToSrc = &visToSrc;
+    region.indexLen = static_cast<uint32_t>(visToSrc.size() - 1);
+    region.blockStart = blockStart;
+    region.blockEnd = blockEnd;
+    region.x = x;
+    region.top = topDoc - scrollOffset;
 
     MacRangeSource source(lines, visToSrc, *engine_, x, topDoc - scrollOffset,
                           align, innerWidth);
     // The mac record answers every line it drew, so the pass is given a
     // band no line falls outside; the cull is the Windows adapter's.
     const layout::PaintBand band{-1.0e9f, 1.0e9f};
-    if (withMarkers && !markers_.empty()) {
-        layout::PaintMarkerHighlights(
-            *target_, source, map, band, markers_,
-            layout::ToColor(palette_.markerBg),
-            layout::ToColor(palette_.markerLine));
-    }
-    if (withSearch && !searchMatches_.empty()) {
-        layout::PaintMatchHighlights(
-            *target_, source, map, band, searchMatches_, searchCurrent_,
-            layout::ToColor(palette_.findMatchBg),
-            layout::ToColor(palette_.findCurrentMatchBg));
-    }
+    static const std::vector<TextMatch> kNoMatches;
+    layout::PaintRegionWashes(
+        *target_, source, region, band,
+        withMarkers ? markers_ : kNoMatches,
+        withSearch ? searchMatches_ : kNoMatches, searchCurrent_,
+        layout::ToColor(palette_.markerBg),
+        layout::ToColor(palette_.markerLine),
+        layout::ToColor(palette_.findMatchBg),
+        layout::ToColor(palette_.findCurrentMatchBg));
 }
 
 void MacRenderer::PaintMarkerHighlights(float scrollOffset) {
