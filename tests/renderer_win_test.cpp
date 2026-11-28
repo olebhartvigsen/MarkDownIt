@@ -1633,7 +1633,6 @@ TEST(RendererWin, WashGeometryDeltaAgainstTheWalk) {
             walk.SetRenderTarget(&walkTarget);
             walk.Render(doc, 0.0f, 0.0f);
 
-            const float padTop = ScaleMetrics(kBase, zoom).padTop;
             const auto isMarker = [&pal](const FakeRenderTarget::Fill& f) {
                 return std::fabs(f.r - pal.markerBg.r) < 0.002f &&
                        std::fabs(f.g - pal.markerBg.g) < 0.002f &&
@@ -1654,12 +1653,11 @@ TEST(RendererWin, WashGeometryDeltaAgainstTheWalk) {
                 std::vector<Rect> b;
                 for (const FakeRenderTarget::Fill& f : rtWin.fills) {
                     if (!isMarker(f)) continue;
-                    const float top = f.top - padTop;
-                    if (top + (f.bottom - f.top) * 0.5f < bandTop ||
-                        top + (f.bottom - f.top) * 0.5f > bandBottom) {
+                    if (f.top + (f.bottom - f.top) * 0.5f < bandTop ||
+                        f.top + (f.bottom - f.top) * 0.5f > bandBottom) {
                         continue;
                     }
-                    a.push_back(Rect{f.left, top, f.right - f.left,
+                    a.push_back(Rect{f.left, f.top, f.right - f.left,
                                      f.bottom - f.top});
                 }
                 for (const FakeRenderTarget::Fill& f : rtWalk.fills) {
