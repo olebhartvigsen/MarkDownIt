@@ -466,18 +466,15 @@ public:
                 uint32_t end = 0;
                 if (!bl.layout->LineTextRange(i, width, &start, &end)) break;
                 const float height = bl.layout->LineHeightAt(i);
-                const platform::TextHit first =
-                    bl.layout->CaretAtOffset(start);
                 VerticalLine line;
                 line.top = top;
                 line.height = height;
-                // The left edge is the line's own first glyph, which a
-                // list item's gutter moves right. The right edge is the
-                // block's column: a point past a short line's last glyph
-                // already hit tests to the line's end, so the block edge
-                // clamps the reader's column without shortening a line
-                // whose ink stops early.
-                line.left = bl.x + first.x;
+                // The left edge is the block's own column: a list item's
+                // gutter moves the block's x right, and a point left of
+                // it is outside the line. The right edge is the column's
+                // end, so a point past a short line's last glyph still
+                // hit tests to that line's end.
+                line.left = bl.x;
                 line.right = bl.x + width;
                 if (line.right < line.left) line.right = line.left;
                 line.srcStart = SourceOfPosition(bl, start);

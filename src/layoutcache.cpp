@@ -491,10 +491,46 @@ uint32_t LayoutCache::PointToOffsetInBlock(int blockIndex, float x,
 bool LayoutCache::OffsetToCaretRect(uint32_t offset,
                                      float* outX, float* outY,
                                      float* outH) const {
-    int idx = BlockForOffset(offset);
-    if (idx < 0) return false;
+    const int idx = BlockForOffset(offset);
+    if (idx >= 0) return OffsetToCaretRectIn(idx, offset, outX, outY, outH);
 
-    const auto& bl = blocks_[idx];
+    // A position between two drawn blocks, a blank line or the end of
+    // the document, is where a caret can sit but where nothing is drawn.
+    // Answer with the nearest block's own edge: the start of the first
+    // block below it, or the end of the last block above it, so every
+    // vertical move and every scroll still has an answer.
+    int below = -1;
+    int above = -1;
+    for (size_t i = 0; i < blocks_.size(); ++i) {
+        const auto& bl = blocks_[i];
+        if (bl.srcOffset > offset) {
+            if (below < 0 || bl.srcOffset < blocks_[static_cast<size_t>(below)].srcOffset)
+                below = static_cast<int>(i);
+        }
+        const uint32_t end = std::max(bl.srcCellEnd, bl.srcOffset + bl.srcLength);
+        if (end < offset) {
+            if (above < 0 || end > std::max(blocks_[static_cast<size_t>(above)].srcCellEnd,
+                                            blocks_[static_cast<size_t>(above)].srcOffset +
+                                                blocks_[static_cast<size_t>(above)].srcLength))
+                above = static_cast<int>(i);
+        }
+    }
+    const int pick = below >= 0 ? below : above;
+    if (pick < 0) return false;
+    const auto& bl = blocks_[static_cast<size_t>(pick)];
+    const uint32_t at = below >= 0
+        ? (bl.u16ToSrc.empty() ? offset : bl.u16ToSrc.front())
+        : (bl.u16ToSrc.empty() ? offset : bl.u16ToSrc.back());
+    return OffsetToCaretRectIn(pick, at, outX, outY, outH);
+}
+
+bool LayoutCache::OffsetToCaretRectIn(int blockIndex, uint32_t offset,
+                                       float* outX, float* outY,
+                                       float* outH) const {
+    if (blockIndex < 0 || static_cast<size_t>(blockIndex) >= blocks_.size())
+        return false;
+
+    const auto& bl = blocks_[static_cast<size_t>(blockIndex)];
     if (!bl.layout) return false;
 
     // Convert source offset to UTF-16 position within this layout
@@ -526,7 +562,7 @@ bool LayoutCache::OffsetToCaretRect(uint32_t offset,
     // records, which the portable block both ports build blocks with,
     // and otherwise the seam's answer stands.
     bool onUpperLine = false;
-    if (!caretOnLowerLine_ && bl.layout) {
+    if (!caretOnLowerLine_) {
         const std::vector<platform::TextLine>* lines = bl.layout->Lines();
         const float lineWidth = bl.width > 0.0f ? bl.width : bl.layout->Width();
         if (lines) {
@@ -556,12 +592,11 @@ bool LayoutCache::OffsetToCaretRect(uint32_t offset,
         caretH = hit.height;
     } else {
         const uint32_t count = bl.layout->LineCount();
+        const float lineWidth = bl.width > 0.0f ? bl.width : bl.layout->Width();
         for (uint32_t i = 0; i < count; ++i) {
             uint32_t lineStart = 0;
             uint32_t lineEnd = 0;
-            if (bl.layout->LineTextRange(i, bl.width > 0.0f ? bl.width
-                                                            : bl.layout->Width(),
-                                         &lineStart, &lineEnd) &&
+            if (bl.layout->LineTextRange(i, lineWidth, &lineStart, &lineEnd) &&
                 lineEnd == u16Pos) {
                 caretH = bl.layout->LineHeightAt(i);
             }
@@ -583,6 +618,132 @@ bool LayoutCache::OffsetToCaretRect(uint32_t offset,
     // app's line spacing). Fallback when metrics were unavailable.
     if (outH) *outH = (bl.fontHeight > 0.0f) ? bl.fontHeight : caretH;
     return true;
+}
+
+// --- The nearest line, and the rendered step ---
+
+uint32_t LayoutCache::PointToOffsetNearestLine(float x, float y) const {
+    int bestBlock = -1;
+    uint32_t bestLine = 0;
+    int bestScore = -1;
+    float bestDistance = 0.0f;
+    float bestTop = 0.0f;
+    float bestHeight = 0.0f;
+
+    for (size_t b = 0; b < blocks_.size(); ++b) {
+        const auto& bl = blocks_[b];
+        const bool inX = x >= bl.x && x <= bl.x + bl.width;
+        const uint32_t lineCount =
+            bl.layout ? bl.layout->LineCount() : 0;
+        if (lineCount == 0) {
+            // A block with no drawn line still owns its box: an empty
+            // table cell keeps one addressable band.
+            const float bottom = bl.y + bl.height;
+            const float distance = y < bl.y ? bl.y - y
+                                            : (y > bottom ? y - bottom : 0.0f);
+            const int score = (distance == 0.0f ? 2 : 0) + (inX ? 1 : 0);
+            if (score > bestScore ||
+                (score == bestScore && distance < bestDistance)) {
+                bestScore = score;
+                bestDistance = distance;
+                bestBlock = static_cast<int>(b);
+                bestLine = 0;
+                bestTop = bl.y;
+                bestHeight = bl.height;
+            }
+            continue;
+        }
+        float top = bl.y;
+        for (uint32_t i = 0; i < lineCount; ++i) {
+            const float height = bl.layout->LineHeightAt(i);
+            const float bottom = top + height;
+            const float distance = y < top ? top - y
+                                           : (y > bottom ? y - bottom : 0.0f);
+            const int score = (distance == 0.0f ? 2 : 0) + (inX ? 1 : 0);
+            // Ties go to the line below: a point between two bands is on
+            // its way down the page, so a click under a heading lands on
+            // the next line instead of the one above.
+            if (score > bestScore ||
+                (score == bestScore && distance <= bestDistance)) {
+                bestScore = score;
+                bestDistance = distance;
+                bestBlock = static_cast<int>(b);
+                bestLine = i;
+                bestTop = top;
+                bestHeight = height;
+            }
+            top = bottom;
+        }
+    }
+    if (bestBlock < 0) return UINT32_MAX;
+
+    const auto& bl = blocks_[static_cast<size_t>(bestBlock)];
+    // A point left of the block's own track is the column's margin, not
+    // a caret; a table cell owns its whole box, padding included.
+    const float track = bl.trackX >= 0.0f ? bl.trackX : bl.x;
+    if (!bl.isTableCell && x < track) return UINT32_MAX;
+
+    float hitX = x;
+    if (hitX > bl.x + bl.width) hitX = bl.x + bl.width;
+    // The point sits in the middle of the chosen line's band, so the
+    // block's own hit test cannot drift into a neighbouring line.
+    if (bestHeight <= 0.0f) bestHeight = 1.0f;
+    return PointToOffsetInBlock(bestBlock, hitX, bestTop + bestHeight * 0.5f);
+}
+
+uint32_t LayoutCache::StepRendered(uint32_t offset, bool left) const {
+    const uint32_t clamped = NormalizeToRenderedCaret(offset);
+    const int blockIndex = BlockForOffset(clamped);
+    if (blockIndex < 0) return clamped;
+    const auto& bl = blocks_[static_cast<size_t>(blockIndex)];
+
+    // A table cell is a wall: the step stays inside the clicked cell.
+    const bool walled = bl.isTableCell;
+
+    // The drawn spans of the block, and of the whole page for the step
+    // across a marker gap at a block's edge.
+    uint32_t previousEnd = UINT32_MAX;
+    uint32_t nextStart = UINT32_MAX;
+    uint32_t previousStart = UINT32_MAX;
+    uint32_t spanEndAtOffset = UINT32_MAX;
+    for (size_t bi = 0; bi < blocks_.size(); ++bi) {
+        const auto& other = blocks_[bi];
+        if (walled && static_cast<int>(bi) != blockIndex) continue;
+        for (size_t i = 0; i < other.u16ToSrc.size(); ++i) {
+            const uint32_t start = other.u16ToSrc[i];
+            const uint32_t end = i < other.u16ToSrcEnd.size()
+                ? other.u16ToSrcEnd[i] : start + 1;
+            if (end <= start) continue;
+            if (start == clamped) {
+                if (spanEndAtOffset == UINT32_MAX || end > spanEndAtOffset)
+                    spanEndAtOffset = end;
+            }
+            if (start < clamped && (previousStart == UINT32_MAX ||
+                                    start > previousStart))
+                previousStart = start;
+            if (end < clamped && (previousEnd == UINT32_MAX || end > previousEnd))
+                previousEnd = end;
+            if (start > clamped && (nextStart == UINT32_MAX || start < nextStart))
+                nextStart = start;
+        }
+    }
+
+    if (!left) {
+        // One step right is the end of the cluster the caret sits at the
+        // start of, or the next drawn cluster when it sits at one's end.
+        if (spanEndAtOffset != UINT32_MAX) return NormalizeToRenderedCaret(spanEndAtOffset);
+        if (nextStart != UINT32_MAX) return NormalizeToRenderedCaret(nextStart);
+        return clamped;
+    }
+    // One step left is the start of the cluster the caret sits at the
+    // end of, or the end of the nearest drawn cluster before it.
+    if (previousStart != UINT32_MAX) {
+        // The cluster that ends at the caret, if any, is the one it
+        // steps to the start of; otherwise the nearest start before it.
+        return previousStart;
+    }
+    if (previousEnd != UINT32_MAX) return NormalizeToRenderedCaret(previousEnd);
+    return clamped;
 }
 
 // --- UTF-8 / UTF-16 conversion helpers ---

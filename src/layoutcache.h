@@ -20,6 +20,10 @@ struct BlockLayout {
     float y = 0.0f;
     float width = 0.0f;
     float height = 0.0f;
+    // Where the block's own track begins, when it is not its text's left
+    // edge: a list item's margin. A point left of it is not a caret.
+    // Negative means "the same as x".
+    float trackX = -1.0f;
     uint32_t srcOffset = 0;   // copied from Node; start of rendered content
     uint32_t srcLength = 0;
     uint32_t srcCellStart = 0; // extended start (before opening markers)
@@ -127,6 +131,29 @@ public:
     bool OffsetToCaretRect(uint32_t offset,
                             float* outX, float* outY,
                             float* outH) const;
+
+    // The same, for one named block. A caller that resolved the block
+    // itself (the last of two adjacent cells wins a position on their
+    // seam) answers from that block instead of the first one found.
+    bool OffsetToCaretRectIn(int blockIndex, uint32_t offset,
+                              float* outX, float* outY,
+                              float* outH) const;
+
+    // Screen point to a caret offset, landing on the nearest drawn line
+    // when the point is in a gap between blocks: an exact band beats a
+    // near one, an x inside the block beats one outside it, and a tie
+    // goes to the line below, because a point between two bands is on
+    // its way down the page. A point left of the text column is not a
+    // caret (the caller keeps its line selection), and the answer is
+    // not normalized. Returns UINT32_MAX when nothing is near.
+    uint32_t PointToOffsetNearestLine(float x, float y) const;
+
+    // One grapheme cluster to the left or right through the drawn text.
+    // A hidden marker is never a caret position, so the step crosses the
+    // markers around it, and a table cell is a wall: a step never
+    // leaves the cell it starts in. Returns the offset unchanged at the
+    // drawn text's own edge.
+    uint32_t StepRendered(uint32_t offset, bool left) const;
 
 private:
     uint32_t PointToOffsetInBlock(int blockIndex, float x, float y) const;

@@ -385,3 +385,70 @@ TEST(Navigation, AnEmptyCellKeepsTheCaretAtItsOwnSentinel) {
     second.Add(LaidBlockFor(engine, "before", 0.0f, 90.0f, 80.0f, 24));
     EXPECT_EQ(second.NormalizeToRenderedCaret(30), 30u);
 }
+
+TEST(Navigation, AClickInAGapLandsOnTheNearestDrawnLine) {
+    fake::FakeTextEngine engine;
+    engine.BeginLayout();
+    LayoutCache lc;
+    lc.Add(LaidBlockFor(engine, "above", 0.0f, 0.0f, 80.0f, 0));
+    lc.Add(LaidBlockFor(engine, "below", 0.0f, 60.0f, 80.0f, 100));
+
+    // Ten points under the first block's bottom is nearer to it than to
+    // the block below, and the x is inside the column, so the click is a
+    // caret on that line.
+    const uint32_t hit = lc.PointToOffsetNearestLine(8.0f, 40.0f);
+    EXPECT_TRUE(hit != UINT32_MAX);
+    EXPECT_EQ(LayoutCache().PointToOffsetNearestLine(8.0f, 40.0f),
+              UINT32_MAX);
+    EXPECT_LE(hit, 5u);
+    // The left margin is not a caret.
+    EXPECT_EQ(lc.PointToOffsetNearestLine(-20.0f, 10.0f), UINT32_MAX);
+
+    // A position between two blocks has a caret rectangle of its own,
+    // answered from the nearest drawn line.
+    float x = 0.0f;
+    float y = 0.0f;
+    float h = 0.0f;
+    EXPECT_TRUE(lc.OffsetToCaretRect(50, &x, &y, &h));
+}
+
+TEST(Navigation, ARenderedStepCrossesTheHiddenMarkers) {
+    // "a **b** c": the drawn characters are source bytes 0, 4 and 8.
+    const std::string source = "a **b** c";
+    fake::FakeTextEngine engine;
+    engine.BeginLayout();
+    LayoutCache lc;
+    lc.SetSourceText(&source);
+
+    std::vector<platform::GlyphRun> runs;
+    platform::GlyphRun run;
+    run.text = "a b c";
+    run.font.size = 20.0f;
+    runs.push_back(run);
+    std::vector<platform::TextLine> lines =
+        engine.MeasureWrapped(runs, 200.0f, 0.0f);
+    BlockLayout bl;
+    bl.layout = platform::MakeLineLayout(
+        std::move(lines), 200.0f, platform::TextAlign::Left);
+    bl.width = 200.0f;
+    bl.srcLength = 9;
+    // "a " at 0, the bold "b" at 4, " c" at 7 and 8, then the sentinel.
+    const uint32_t visible[6] = {0, 1, 4, 7, 8, 9};
+    const uint32_t ends[6] = {1, 2, 5, 8, 9, 9};
+    for (int i = 0; i < 6; ++i) {
+        bl.u16ToSrc.push_back(visible[i]);
+        bl.u16ToSrcEnd.push_back(ends[i]);
+    }
+    lc.Add(bl);
+
+    // Stepping right from the space at 1 crosses both opening markers and
+    // lands on the 'b' at 4; the marker bytes are never a caret.
+    EXPECT_EQ(lc.StepRendered(1, false), 4u);
+    // Stepping left from the space at 7 crosses the closing markers the
+    // same way.
+    EXPECT_EQ(lc.StepRendered(7, true), 4u);
+    // One step from the first character reaches the space after it.
+    EXPECT_EQ(lc.StepRendered(0, false), 1u);
+    // At the drawn text's own end there is nothing further right.
+    EXPECT_EQ(lc.StepRendered(9, false), 9u);
+}

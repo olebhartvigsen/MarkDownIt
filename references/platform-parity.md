@@ -68,8 +68,10 @@ the seam: `TextEngine::FontBox` answers a face's own metrics, `BuildBlock`
 builds a role block from a `BlockStyle`, `MeasureText` answers a label
 measure, and `FontFamilies` answers the platform's list, so the renderer holds
 `FontSpec` and `BlockStyle` values and no format or factory handle. The cache
-itself is the Windows editor's; the mac editor reads its caret out of the
-painter's own walk records, a standing difference this step leaves as it was.
+itself is both editors' now: the mac renders one record per drawn block and
+per table cell from its own walk and asks the shared cache in UTF-16, so the
+mac editor no longer keeps a caret model of its own (plan 2.2, slice 8's
+record adoption, 2026-11-28).
 
 ### Decisions that shape parity, 2026-11-28
 
@@ -98,9 +100,10 @@ no change.
 The source view's geometry is one rule now: `SourceViewInset` and
 `SourceViewTextWidth` in `src/blocktext.h`. Windows's inset moved from 13 to
 16 and the mac's text moved from the column edge to 16 points inside it, so the
-source view's pixels move once on each port by decision. The block producer is
-still per port until the caret record adoption: Windows keeps the
-`LayoutCache` handle, the mac its measured lines.
+source view's pixels move once on each port by decision. Both ports now produce
+the same caret record: the mac builds one `BlockLayout` per drawn block and per
+table cell from its walk and hands the shared cache its UTF-16 map, so the
+source view's caret, the hits and the selection all read one model.
 
 ## Commands: ribbon to mac menu
 

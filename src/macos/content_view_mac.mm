@@ -93,8 +93,11 @@ std::vector<ContentView::AxTable> ContentView::AccessibilityTables() const {
     std::vector<AxTable> tables;
     const Document& doc = app_->GetDocument();
     if (doc.nodes.empty()) return tables;
-    const std::vector<MacRenderer::TextRegion> regions =
-        renderer_.TextRegions();
+    // The caret records of the pass: one entry per drawn block and per
+    // table cell, in the shared cache's shape. A cell owns the bytes
+    // between its pipes, so a cell entry is the one whose source range
+    // sits inside the table's.
+    const std::vector<BlockLayout>& blocks = renderer_.CaretBlocks();
     const Selection& selection = app_->selection();
     const uint32_t caret =
         selection.Empty() ? selection.active.offset : selection.Start();
@@ -103,16 +106,16 @@ std::vector<ContentView::AxTable> ContentView::AccessibilityTables() const {
         if (node.block != BlockKind::Table) continue;
         const uint32_t tableStart = node.contentOffset;
         const uint32_t tableEnd = node.contentOffset + node.contentLength;
-        // The cell regions of this table, in document order, which is
+        // The cell entries of this table, in document order, which is
         // the order of the model's rows and cells.
-        std::vector<const MacRenderer::TextRegion*> cellRegions;
-        for (const MacRenderer::TextRegion& region : regions) {
-            if (region.cell && region.srcStart >= tableStart &&
-                region.srcEnd <= tableEnd) {
-                cellRegions.push_back(&region);
+        std::vector<const BlockLayout*> cellBlocks;
+        for (const BlockLayout& block : blocks) {
+            if (block.isTableCell && block.srcOffset >= tableStart &&
+                block.srcOffset <= tableEnd) {
+                cellBlocks.push_back(&block);
             }
         }
-        if (cellRegions.empty()) continue;
+        if (cellBlocks.empty()) continue;
 
         AxTable table;
         size_t index = 0;
@@ -120,18 +123,20 @@ std::vector<ContentView::AxTable> ContentView::AccessibilityTables() const {
         for (const TableRow& row : node.rows) {
             int columnIndex = 0;
             for (const TableCell& cell : row.cells) {
-                if (index >= cellRegions.size()) break;
-                const MacRenderer::TextRegion& region =
-                    *cellRegions[index++];
+                if (index >= cellBlocks.size()) break;
+                const BlockLayout& block = *cellBlocks[index++];
                 AxCell ax;
+                const uint32_t cellStart = block.srcOffset;
+                const uint32_t cellEnd = block.srcCellEnd > block.srcOffset
+                    ? block.srcCellEnd : block.srcOffset;
                 const std::vector<Rect> rects =
-                    renderer_.RectsForRange(region.srcStart, region.srcEnd);
+                    renderer_.RectsForRange(cellStart, cellEnd);
                 if (rects.empty()) {
                     // An empty cell keeps its box addressable.
-                    ax.x = region.trackX;
-                    ax.y = region.top - scrollOffset_;
-                    ax.width = (region.x + region.width) - region.trackX;
-                    ax.height = region.emptyBandHeight;
+                    ax.x = block.x;
+                    ax.y = block.y - scrollOffset_;
+                    ax.width = block.width;
+                    ax.height = block.height;
                 } else {
                     float minX = rects[0].x, minY = rects[0].y;
                     float maxX = rects[0].x + rects[0].width;
@@ -151,7 +156,7 @@ std::vector<ContentView::AxTable> ContentView::AccessibilityTables() const {
                 ax.row = rowIndex;
                 ax.column = columnIndex;
                 ax.header = rowIndex == 0;
-                ax.caretCell = caret >= region.srcStart && caret <= region.srcEnd;
+                ax.caretCell = caret >= cellStart && caret <= cellEnd;
                 table.cells.push_back(ax);
                 ++columnIndex;
             }

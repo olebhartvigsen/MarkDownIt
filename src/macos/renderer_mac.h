@@ -18,6 +18,7 @@
 
 #include "dom.h"
 #include "layout/document_layout.h"
+#include "layoutcache.h"
 #include "platform/seams.h"
 #include "svg_mac.h"
 #include "image_mac.h"
@@ -162,7 +163,10 @@ public:
     // The source text the caret normalization reads. The renderer keeps
     // the pointer, the way the shared LayoutCache does, and the App
     // owns the string.
-    void SetSourceText(const std::string* text) { sourceText_ = text; }
+    void SetSourceText(const std::string* text) {
+        sourceText_ = text;
+        caretCache_.SetSourceText(text);
+    }
 
     // The directory holding the open .md file; see ImageCache::SetBaseDir.
     void SetImageBaseDir(const std::string& dir) { images_.SetBaseDir(dir); }
@@ -171,7 +175,10 @@ public:
     // view the find guide's view-modes clause needs (guide 4).
     // Every byte is on screen in this mode, so the caret, the
     // selection and the find scope all work on the raw buffer.
-    void SetSourceMode(bool on) { sourceMode_ = on; }
+    void SetSourceMode(bool on) {
+        sourceMode_ = on;
+        caretCache_.SetSyntaxRevealed(on);
+    }
     bool inSourceMode() const { return sourceMode_; }
 
     // The theme. The mac theme variant supplies macOS font names, the
@@ -289,6 +296,7 @@ public:
     // start from the line the caret is drawn on, or it lands a line off.
     void SetWrappedCaretOnLowerLine(bool lower) {
         wrappedCaretOnLowerLine_ = lower;
+        caretCache_.SetCaretOnLowerLine(lower);
     }
 
     // Marks the ranges the find bar matched.
@@ -421,50 +429,18 @@ private:
     LayoutMetrics ComputeMetrics() const;
 
 public:
-    // One addressable piece of drawn text: a block's own lines or one
-    // of its table cells, with the geometry and the map of its text.
-    // The content view's accessibility layer reads the regions, so a
-    // table, its rows and its cells can be named where they are drawn.
-    struct TextRegion {
-        const std::vector<TextLine>* lines = nullptr;
-        const std::vector<uint32_t>* visToSrc = nullptr;
-        const std::vector<uint32_t>* visToSrcEnd = nullptr;
-        float x = 0.0f;      // the x of the first glyph
-        float top = 0.0f;    // the y of the top of the first line
-        float width = 0.0f;  // the width the text wraps at
-        // The x where the region's own track begins: the margin of the
-        // document column for a block, the left edge of the cell for a
-        // cell. A click left of it is a Word-like line selection, and a
-        // click between it and the text is still a caret in the region
-        // (on a list bullet, or in cell padding).
-        float trackX = 0.0f;
-        // The height of the band when the region draws no lines, an
-        // empty table cell that keeps its box addressable.
-        float emptyBandHeight = 0.0f;
-        uint32_t srcStart = 0;
-        uint32_t srcEnd = 0;
-        // Set when the region is a table cell, which owns its box.
-        bool cell = false;
-        // The column alignment the cell's lines are painted with. The
-        // caret rectangle has to use it too, or the caret of a centred
-        // header cell sits at the cell's left edge (owner decision 5,
-        // 2026-11-28, proved by CaretRectsAgreeForAlignedCells).
-        ColumnAlign align = ColumnAlign::Default;
-    };
-    std::vector<TextRegion> TextRegions() const;
-
-    // Every drawn line as the vertical step reads it: the band, and the
-    // source range its text covers. The step itself is
-    // MoveVerticalIn, the one algorithm both ports run.
-    std::vector<VerticalLine> VerticalBands() const;
+    // The caret records the renderer answers from: one entry per drawn
+    // block and per table cell, in the shared cache's shape and in
+    // UTF-16, the index space the caret seam speaks. The accessibility
+    // layer reads the cell entries, and the view reads nothing else.
+    const std::vector<BlockLayout>& CaretBlocks() const {
+        return caretCache_.Blocks();
+    }
 
 private:
-    // A rendered span of the document, in source bytes.
-    struct RenderedSpan {
-        uint32_t start = 0;
-        uint32_t end = 0;
-    };
-    void CollectRenderedSpans(std::vector<RenderedSpan>* out) const;
+    // Builds the caret records from the laid out blocks: one entry per
+    // drawn block and per table cell, with its UTF-16 to source map.
+    void BuildCaretCache();
 
     // The x of the first glyph of a block's lines.
     float TextX(const LaidOutBlock& block) const;
@@ -576,6 +552,10 @@ private:
     // assigns every item to its block once by merging the item stream
     // with the ordered block records.
     std::vector<LaidOutBlock> blocks_;
+    // The caret's record of the same pass, in the shared cache's shape:
+    // one entry per drawn block and per table cell, its UTF-16 to source
+    // map, and the seam handle the caret's questions are asked of.
+    LayoutCache caretCache_;
     // The filter buttons of the last rendered shared layout, in document
     // coordinates.
     std::vector<platform::Rect> tableFilterButtons_;
