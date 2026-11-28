@@ -113,11 +113,11 @@ The document goes through the same steps on both platforms:
    onto any `RenderTarget`.
 4. The document renderer (`src/document_renderer.cpp`) owns the frame,
    the surface replay order and the caret queries over the display list,
-   and both ports compile it. The shells own what is native: the target,
-   scrolling, the image fetch and the platform services. `src/renderer.cpp`
-   is the Windows shell and still keeps its own Direct2D frame until it
-   adopts the shared one. A renderer shell does not own measuring or
-   block placement.
+   and the mac targets compile it. The shells own what is native: the
+   target, scrolling, the image fetch and the platform services.
+   `src/renderer.cpp` is the Windows shell and still keeps its own Direct2D
+   frame until it adopts the shared one. A renderer shell does not own
+   measuring or block placement.
 
 Rules that follow from this:
 

@@ -7,7 +7,9 @@
 // TextEngine seam, so it names no platform graphics type. The layout is
 // the shared one; the images and the SVG reader arrive through their own
 // seams. The mac editor is its one user today, and the Windows shell
-// keeps the Direct2D renderer until its own frame adopts this class.
+// keeps the Direct2D renderer until its own frame adopts this class. The
+// file is free of platform headers; the mac theme aliases it reads are
+// what keeps the Windows build out for now.
 
 #include <cstdint>
 #include <memory>

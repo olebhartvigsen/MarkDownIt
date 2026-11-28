@@ -398,6 +398,7 @@ if(BUILD_TESTS AND APPLE)
         tests/office_session_test.cpp
         tests/table_picker_test.cpp
         ${MARKDOWNIT_CORE_SOURCES}
+        ${MARKDOWNIT_DOCUMENT_RENDERER_SOURCES}
         ${MARKDOWNIT_SVG_SHARED_SOURCES}
         ${MARKDOWNIT_MERMAID_SOURCES}
         ${MARKDOWNIT_MERMAID_STATE_SOURCES}
@@ -686,6 +687,7 @@ if(APPLE)
     # usage declared in the manifest.
     add_library(markdownit_core STATIC
         ${MARKDOWNIT_CORE_SOURCES}
+        ${MARKDOWNIT_DOCUMENT_RENDERER_SOURCES}
         ${MARKDOWNIT_MERMAID_SOURCES}
         ${MARKDOWNIT_MERMAID_STATE_SOURCES}
         ${MARKDOWNIT_OFFICE_SOURCES}

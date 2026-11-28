@@ -2,8 +2,10 @@
 // queries an editor asks of one laid out document.
 //
 // It draws through the RenderTarget seam and measures through the
-// TextEngine seam, so it names no platform graphics type and both targets
-// compile it. The layout is the shared one; the images, the SVG reader and
+// TextEngine seam, so it names no platform graphics type. The mac targets
+// compile it today; it reads the theme's mac aliases, so the Windows build
+// joins when its theme spellings sit behind shared helpers. The layout is
+// the shared one; the images, the SVG reader and
 // the appearance come in through their own seams (platform::ImageSource,
 // platform::SvgRaster, the palette the shell hands in).
 

@@ -44,8 +44,6 @@ set(MARKDOWNIT_CORE_SOURCES
     src/layout/print_pages.cpp
     src/print_pdf.cpp
     src/layoutcache.cpp
-    src/document_renderer.cpp
-    src/qa_strings.cpp
     src/editcontroller.cpp
     src/documentcontroller.cpp
     src/commandstate.cpp
@@ -67,6 +65,18 @@ set(MARKDOWNIT_CORE_SOURCES
     src/svgtext.cpp
     src/svglink.cpp
     src/settings.cpp
+)
+
+# The document renderer: the mac shell's body, in the shared root and free
+# of platform headers, but it reads the theme's mac aliases for the palette
+# and the font names (ThemeColor is a plain struct and ThemeFontName a
+# std::string there, a D2D1_COLOR_F and a wide string on Windows). The mac
+# targets build it; the Windows shell joins when its own frame adopts the
+# class. The plan's slice 10 entry and the parity ledger say why.
+# usage: macos-core macos-tests
+set(MARKDOWNIT_DOCUMENT_RENDERER_SOURCES
+    src/document_renderer.cpp
+    src/qa_strings.cpp
 )
 
 # The SVG reader. It lives under src/macos/ for historical reasons but
