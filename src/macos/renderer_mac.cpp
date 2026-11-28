@@ -16,7 +16,6 @@
 #include "svgtext.h"
 #include "hash.h"
 #include "layout/block_overlays.h"
-#include "layout/chips.h"
 #include "layout/display_player.h"
 #include "layout/range_highlights.h"
 #include "layout/selection_rects.h"
@@ -65,6 +64,12 @@ constexpr float kPtToDip = 96.0f / 72.0f;
 // The rule room under an H1 or H2: GitHub pads the heading by .3em
 // and draws a 1px border under the padding. Those two values live in
 // LayoutMetrics (theme.h), shared with the Windows renderer.
+
+// The inline code card: a small side padding (LayoutMetrics::inlineCodePadX,
+// kept under half a space so it never reaches the neighbouring words), .2em of vertical
+// padding and a 6px corner radius, the GitHub values.
+constexpr float kInlineCodePadYRatio = 0.2f;
+constexpr float kInlineCodeRadius = 6.0f;
 
 // The spacing rules are shared with the Windows renderer in
 // blockspacing.h, so the two platforms leave the same space
@@ -789,16 +794,19 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
     PaintMarkerHighlights(scrollOffset);
     PaintSearchHighlights(scrollOffset);
 
-    // The inline code pills of the whole list: opaque pills laid over
-    // the surfaces the replay will draw (none of them under a plain text
-    // block), with the block's washes re-run above them and under the
-    // glyphs. One shared pass reads the display list's per run spans, so
-    // a wrapped span is one pill with a cap at each real end, the cap
-    // rule Windows adopts with it.
-    layout::PaintInlineCodeChips(*target_, displayList_, originX_,
-                                 metrics_.padTop - scrollOffset, metrics_,
-                                 layout::ToColor(palette_.inlineCodeBg),
-                                 zoom_, -1.0e30f, 1.0e30f);
+    // The inline code chips of the plain text blocks: opaque pills
+    // with the block's washes re-run above them and under the glyphs
+    // the replay draws. A renderer-side layer, because the chip rounds
+    // the real edges of each wrapped span, which the per block painter
+    // always drew from the block's own map.
+    for (const LaidOutBlock& block : blocks_) {
+        if (block.kind == BlockKind::Heading ||
+            block.kind == BlockKind::Paragraph ||
+            block.kind == BlockKind::List ||
+            block.kind == BlockKind::BlockQuote) {
+            PaintInlineCodeBg(block, scrollOffset);
+        }
+    }
 
     // A washed text block draws its marker wash above the chips and
     // under its glyphs, and there is no opaque surface in the list
@@ -1086,6 +1094,101 @@ void MacRenderer::PaintSearchHighlights(float scrollOffset) {
 
 
 
+void MacRenderer::PaintCodeRects(const std::vector<Rect>& rects,
+                                  float scrollOffset) const {
+    if (!target_) return;
+
+    // GitHub's inline code card: a 6px rounded fill with .4em of
+    // horizontal and .2em of vertical padding around the code run.
+    // The padding and the rounded cap belong to the real start and
+    // end of the span, not to every visual line: a wrapped span is
+    // one run, so the middle fragments meet the line edges square.
+    const float codeEm = metrics_.codeFontSize * kPtToDip * zoom_;
+    const float padX = metrics_.inlineCodePadX * codeEm;
+    for (std::size_t i = 0; i < rects.size(); ++i) {
+        const Rect& rect = rects[i];
+        if (rect.height <= 0.0f) continue;
+        const bool first = i == 0;
+        const bool last = i + 1 == rects.size();
+        const float boxH = std::min(rect.height, 1.6f * codeEm);
+        Rect drawn;
+        drawn.x = rect.x - (first ? padX : 0.0f);
+        drawn.y = rect.y - scrollOffset + (rect.height - boxH) * 0.5f;
+        drawn.width = rect.width + (first ? padX : 0.0f) +
+                      (last ? padX : 0.0f);
+        drawn.height = boxH;
+        target_->FillRoundedRectSides(drawn, kInlineCodeRadius * zoom_,
+                                      layout::ToColor(palette_.inlineCodeBg),
+                                      first, last);
+    }
+}
+
+void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
+                                     float scrollOffset) const {
+    if (!target_ || !block.node) return;
+
+    bool painted = false;
+    uint32_t visible = 0;
+    for (const InlineBlock& child : block.node->children) {
+        if (child.kind == InlineKind::Image) continue;
+        const uint32_t length =
+            static_cast<uint32_t>(layout::Utf32ToUtf8(child.text).size());
+        if (length == 0) continue;
+        if (child.code) {
+            std::vector<Rect> rects;
+            AppendVisibleRangeRects(block.lines, TextX(block), TextTop(block),
+                                    visible, visible + length, &rects);
+            // A wrapped code span keeps one run per visual line. If the
+            // source-to-visible map cannot place the span (the marker
+            // mapping can collapse a span to a zero-width edge), use the
+            // monospace runs themselves: their text is the span's text,
+            // split at the line breaks, and their x/width are already the
+            // glyph positions.
+            const std::string codeText = layout::Utf32ToUtf8(child.text);
+            std::vector<Rect> runRects;
+            std::size_t matched = 0;
+            float lineTop = TextTop(block);
+            for (const TextLine& line : block.lines) {
+                for (std::size_t i = 0; i < line.runs.size() && matched < codeText.size();
+                     ++i) {
+                    const GlyphRun& run = line.runs[i];
+                    if (!run.font.monospace) continue;
+                    if (run.text.size() > codeText.size() - matched) continue;
+                    if (codeText.compare(matched, run.text.size(), run.text) != 0)
+                        continue;
+                    const float runRight =
+                        i + 1 < line.runs.size()
+                            ? line.runs[i + 1].x
+                            : line.width;
+                    Rect rect;
+                    rect.x = TextX(block) + run.x;
+                    rect.y = lineTop;
+                    rect.width = runRight - run.x;
+                    rect.height = line.height;
+                    if (rect.width > 0.0f) runRects.push_back(rect);
+                    matched += run.text.size();
+                }
+                lineTop += line.height;
+            }
+            if (matched == codeText.size() && !runRects.empty()) {
+                PaintCodeRects(runRects, scrollOffset);
+            } else {
+                PaintCodeRects(rects, scrollOffset);
+            }
+            painted = true;
+        }
+        visible += length;
+    }
+
+    // The chip hides the wash painted in the global layer: it is opaque and
+    // wider than its glyphs, so the box, not the mark, is what the reader
+    // sees. Paint this block's washes again above the chips and below the
+    // text, so a marked code span shows yellow on its own characters.
+    if (painted) {
+        PaintBlockHighlights(block, scrollOffset);
+    }
+}
+
 void MacRenderer::PaintTableOverlays(const LaidOutBlock& block,
                                      float scrollOffset) {
     if (!target_ || !block.table) return;
@@ -1115,19 +1218,6 @@ void MacRenderer::PaintTableOverlays(const LaidOutBlock& block,
                                     scrollOffset);
         }
 
-        // The cell pills of this row, above the stripe the replay drew and
-        // under the cell words below: one shared pass over the walk's
-        // cellsText copy, banded to this row so a pinned copy of another
-        // row is not painted twice.
-        if (block.tableRecord && !block.tableRecord->cellsText.items.empty()) {
-            const float originY =
-                block.y - scrollOffset - block.tableRecord->headerTop;
-            layout::PaintInlineCodeChips(
-                *target_, block.tableRecord->cellsText, block.x, originY,
-                metrics_, layout::ToColor(palette_.inlineCodeBg), zoom_,
-                y - originY, y - originY + rowH);
-        }
-
         for (size_t c = 0; c < cells.size(); ++c) {
             const float innerW = TableColumnW(layout, c) -
                 2.0f * metrics_.cellPadX;
@@ -1149,6 +1239,29 @@ void MacRenderer::PaintTableOverlays(const LaidOutBlock& block,
                 y + std::max(metrics_.cellPadY,
                              (rowH - cellTextHeight) * 0.5f);
 
+            // A cell's code span gets the same wash as a paragraph
+            // span. The geometry comes from the cell's own line box,
+            // because a row centers a short cell against a taller one.
+            const TableCell& sourceCell = node.rows[r].cells[c];
+            for (const CellInlineSpan& span : sourceCell.inlineSpans) {
+                if (!span.code || span.u16End <= span.u16Start) continue;
+                uint32_t start = sourceCell.srcOffset;
+                uint32_t end = sourceCell.srcEnd;
+                if (span.u16Start < sourceCell.u16ToSrc.size()) {
+                    start = sourceCell.u16ToSrc[span.u16Start];
+                }
+                const size_t last = static_cast<size_t>(span.u16End) - 1;
+                if (last < sourceCell.u16ToSrcEnd.size()) {
+                    end = sourceCell.u16ToSrcEnd[last];
+                }
+                if (end <= start) continue;
+                std::vector<Rect> rects;
+                AppendRangeRects(cells[c].lines, cells[c].visToSrc,
+                                 cellX + metrics_.cellPadX,
+                                 lineY + scrollOffset, start, end, &rects,
+                                 cells[c].align, innerW);
+                PaintCodeRects(rects, scrollOffset);
+            }
             for (const TextLine& line : cells[c].lines) {
                 float lineX = cellX + metrics_.cellPadX;
                 if (cells[c].align == ColumnAlign::Center) {
@@ -1531,6 +1644,14 @@ void MacRenderer::AppendRangeRects(const std::vector<TextLine>& lines,
     // covers, the word processor guide's selection criterion.
     layout::AppendRangeRects(lines, visToSrc, *engine_, x, top, start, end,
                              rects, align, innerWidth, trimBlanks);
+}
+
+void MacRenderer::AppendVisibleRangeRects(
+    const std::vector<TextLine>& lines, float x, float top, uint32_t start,
+    uint32_t end, std::vector<Rect>* rects, ColumnAlign align,
+    float innerWidth, bool trimBlanks) const {
+    layout::AppendVisibleRangeRects(lines, *engine_, x, top, start, end,
+                                    rects, align, innerWidth, trimBlanks);
 }
 
 std::vector<Rect> MacRenderer::RectsForRangeInBlock(const LaidOutBlock& block,

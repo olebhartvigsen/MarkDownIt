@@ -37,7 +37,6 @@ set(MARKDOWNIT_CORE_SOURCES
     src/layout/table_layout.cpp
     src/layout/range_highlights.cpp
     src/layout/block_overlays.cpp
-    src/layout/chips.cpp
     src/layout/svg_mermaid_layout.cpp
     src/layout/display_player.cpp
     src/layout/print_pages.cpp
