@@ -34,6 +34,20 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Nothing a build or a test run does should report anywhere. The app vetoes
+# its own launch event when MARKDOWNIT_NO_ANALYTICS is set (the check lives in
+# analytics::TrackAppStart, src/analytics.cpp), which covers the launch smoke
+# and the capture walk, the two steps that really start the product. The rest
+# opt the toolchains out of the telemetry they would otherwise send: the .NET
+# CLI under WiX, PowerShell, npm and Homebrew.
+env:
+  MARKDOWNIT_NO_ANALYTICS: 1
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+  POWERSHELL_TELEMETRY_OPTOUT: 1
+  NPM_CONFIG_UPDATE_NOTIFIER: false
+  HOMEBREW_NO_ANALYTICS: 1
+
 jobs:
   # Fast, build-free gates that every push runs. They hold the source
   # manifest, the parity ledger and the command coverage against the
@@ -75,6 +89,14 @@ jobs:
         run: |
           python3 tools/test_check_capture_policy.py
           python3 tools/check_capture_policy.py
+
+      # The app sends one launch event by default, so a step that starts it
+      # would report from the runner. The veto is the workflow env plus the
+      # harnesses; this gate keeps both in place.
+      - name: Verify nothing reports from a build or a test run
+        run: |
+          python3 tools/test_check_no_telemetry.py
+          python3 tools/check_no_telemetry.py
 
       - name: Verify the test inventory checker
         run: python3 tools/test_check_test_inventory.py

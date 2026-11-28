@@ -47,6 +47,29 @@ machine. Nothing is queued and nothing is retried.
 The preference is stored with the rest of the app's settings: the registry on
 Windows, `~/Library/Application Support/MarkDownIt/settings.json` on macOS.
 
+## Builds and tests send nothing
+
+A build, a test run or a capture run must not report from the machine that
+builds the app, and it does not. Two environment variables veto the event
+inside `analytics::TrackAppStart`, so no shell and no test has to remember it:
+
+| Variable | Who sets it |
+|---|---|
+| `MARKDOWNIT_NO_ANALYTICS` | both CI workflows, the mac launch smoke, the Windows capture walk |
+| `DO_NOT_TRACK` | anything that follows the do-not-track convention |
+
+`0` and an empty value mean "carry on", so a wrapper that expands an unset
+variable does not silence a real launch by accident.
+
+The pipelines also opt out of the telemetry their own toolchains would send:
+`DOTNET_CLI_TELEMETRY_OPTOUT` and `POWERSHELL_TELEMETRY_OPTOUT` for the
+installer build, `NPM_CONFIG_UPDATE_NOTIFIER` for the office oracle, and
+`HOMEBREW_NO_ANALYTICS` for the Homebrew step.
+
+`tools/check_no_telemetry.py` is the gate: it fails when a workflow drops the
+veto, when a harness that starts the app stops setting it, or when a second
+place in the tree writes out the Aptabase endpoint.
+
 ## What the service sees
 
 The request goes to `eu.aptabase.com`, which receives the payload above plus
