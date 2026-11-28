@@ -10,6 +10,7 @@
 
 #include "renderer_mac.h"
 
+#include "blocktext.h"
 #include "svgtext.h"
 #include "hash.h"
 #include "layout/display_player.h"
@@ -1537,40 +1538,29 @@ bool MacRenderer::YForOffset(uint32_t offset, float& y) const {
 }
 
 float MacRenderer::TextX(const LaidOutBlock& block) const {
-    if (block.kind == BlockKind::List) {
-        // The text sits after the marker gutter: the measured width
-        // the shared layout settled on, which widens past the fixed
-        // reservation for a wide ordinal like "10." or "11."; a block
-        // with no marker falls back to the fixed formula.
-        const float gutter = block.markerWidth > 0.0f
-            ? block.markerWidth
-            : metrics_.listIndent * metrics_.markerRatio + metrics_.markerGutter;
-        return block.x + gutter;
-    }
-    if (block.kind == BlockKind::CodeBlock) {
-        return block.x + metrics_.codePad;
-    }
-    return block.x;
+    const BlockTextInset inset =
+        BlockTextInsetFor(block.kind, block.markerWidth, block.imagesHeight,
+                          metrics_);
+    return block.x + inset.x;
 }
 
 float MacRenderer::TextTop(const LaidOutBlock& block) const {
-    if (block.kind == BlockKind::CodeBlock) {
-        return block.y + metrics_.codePad;
-    }
-    return block.y + block.imagesHeight;
+    const BlockTextInset inset =
+        BlockTextInsetFor(block.kind, block.markerWidth, block.imagesHeight,
+                          metrics_);
+    return block.y + inset.top;
 }
 
 float MacRenderer::TextWidth(const LaidOutBlock& block) const {
-    if (block.kind == BlockKind::List) {
-        const float gutter = block.markerWidth > 0.0f
-            ? block.markerWidth
-            : metrics_.listIndent * metrics_.markerRatio + metrics_.markerGutter;
-        return block.width - gutter;
-    }
     if (block.kind == BlockKind::CodeBlock) {
         return block.width - metrics_.codePad * 2.0f;
     }
-    return block.width;
+    // The list gutter and a paragraph's zero inset come from the same
+    // shared rule as TextX, so the width and the x cannot disagree.
+    const BlockTextInset inset =
+        BlockTextInsetFor(block.kind, block.markerWidth, block.imagesHeight,
+                          metrics_);
+    return block.width - inset.x;
 }
 
 std::vector<MacRenderer::TextRegion> MacRenderer::TextRegions() const {

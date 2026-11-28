@@ -372,9 +372,10 @@ private:
     // Batch 3.3, the rect twin's private half. The source map of one
     // block's drawn text (the builders layout/selection_rects.h owns,
     // the same ones the mac record adopts), the frame placement of a
-    // record's own text (the mirror of the mac TextX/TextTop pair),
-    // the rect rule over one whole record, the map builder the kinds
-    // share, and the engine picker the walk and the twin share.
+    // record's own text (the shared BlockTextInsetFor rule plus the
+    // frame origin), the rect rule over one whole record, the map
+    // builder the kinds share, and the engine picker the walk and the
+    // twin share.
     platform::TextEngine* TextEngineForWalk();
     void BuildBlockMapping(const Node& n,
                            std::vector<uint32_t>* visToSrc,

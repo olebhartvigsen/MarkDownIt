@@ -1,4 +1,5 @@
 #include "renderer.h"
+#include "blocktext.h"
 #include "blockspacing.h"
 #include "hash.h"
 
@@ -1661,32 +1662,18 @@ void Renderer::BuildBlockMapping(const Node& n,
     }
 }
 
-// The frame placement of a record's own text, the mirror of the mac
-// TextX/TextTop pair: an indented list opens its text after the
-// marker gutter, a code card one pad inside its surface, and the
-// images a text block stacked above its text push the top down. The
-// numbers are the walk's own placement, the same placement the replay
-// paints the glyphs at, so the washes the rule answers sit under the
-// drawn text by construction.
+// The frame placement of a record's own text: the shared BlockTextInsetFor
+// rule says where the text sits inside the block, and this adds the frame
+// origin and the record's own x and y. The numbers are the walk's own
+// placement, the same placement the replay paints the glyphs at, so the
+// washes the rule answers sit under the drawn text by construction.
 void Renderer::TextOriginOf(const layout::LaidBlock& b,
                             const LayoutMetrics& m, float originX,
                             float frameTop, float* x, float* top) {
-    *x = originX + b.x;
-    if (b.kind == BlockKind::List) {
-        // b.markerWidth is the measured gutter (widened past the fixed
-        // formula for a wide ordinal like "10."); a block with no
-        // marker (an empty placeholder row) still falls back to the
-        // fixed reservation.
-        *x += b.markerWidth > 0.0f
-                  ? b.markerWidth
-                  : m.listIndent * m.markerRatio + m.markerGutter;
-    } else if (b.kind == BlockKind::CodeBlock) {
-        *x += m.codePad;
-    }
-    *top = frameTop + b.y + b.imagesHeight;
-    if (b.kind == BlockKind::CodeBlock) {
-        *top = frameTop + b.y + m.codePad;
-    }
+    const BlockTextInset inset =
+        BlockTextInsetFor(b.kind, b.markerWidth, b.imagesHeight, m);
+    *x = originX + b.x + inset.x;
+    *top = frameTop + b.y + inset.top;
 }
 
 // The rect rule over one whole record: the block's own text at the
