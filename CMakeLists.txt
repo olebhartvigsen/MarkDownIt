@@ -382,6 +382,7 @@ if(BUILD_TESTS AND APPLE)
         tests/mermaid_cache_test.cpp
         tests/theme_test.cpp
         tests/theme_alias_test.cpp
+        tests/caret_record_test.cpp
         tests/imagepath_test.cpp
         tests/markdown_style_test.cpp
         tests/perf_harness.cpp
@@ -534,6 +535,7 @@ elseif(BUILD_TESTS)
         tests/mermaid_cache_test.cpp
         tests/theme_test.cpp
         tests/theme_alias_test.cpp
+        tests/caret_record_test.cpp
         tests/imagepath_test.cpp
         tests/markdown_style_test.cpp
         tests/perf_harness.cpp

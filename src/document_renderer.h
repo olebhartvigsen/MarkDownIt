@@ -454,6 +454,20 @@ private:
     // drawn block and per table cell, with its UTF-16 to source map.
     void BuildCaretCache();
 
+    // The caret records of one block, appended while the layout pass is
+    // still holding the block's lines and maps.
+    void AppendCaretRecords(const LaidOutBlock& block);
+
+public:
+    // The caret records a shell fills itself, in the shared cache's shape
+    // (BlockLayout, UTF-16 maps, src/caretrecords.h). The Windows
+    // renderer builds its entries during its paint pass, from the same
+    // walk, so it hands them in here instead of having the class rebuild
+    // them; a shell that hands in nothing keeps the class's own build.
+    // The set is replaced by the next Measure, so a shell that keeps its
+    // own records sets them again after every layout.
+    void SetCaretRecords(std::vector<BlockLayout> records);
+
     // The x of the first glyph of a block's lines.
     float TextX(const LaidOutBlock& block) const;
 
@@ -551,7 +565,10 @@ private:
     std::vector<LaidOutBlock> blocks_;
     // The caret's record of the same pass, in the shared cache's shape:
     // one entry per drawn block and per table cell, its UTF-16 to source
-    // map, and the seam handle the caret's questions are asked of.
+    // map, and the seam handle the caret's questions are asked of. The
+    // records are filled by the append pass (or by a shell through
+    // SetCaretRecords), and the cache installs them.
+    std::vector<BlockLayout> caretRecords_;
     LayoutCache caretCache_;
     // The filter buttons of the last rendered shared layout, in document
     // coordinates.

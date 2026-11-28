@@ -12,6 +12,7 @@
 #include "document_renderer.h"
 
 #include "blocktext.h"
+#include "caretrecords.h"
 #include "itemspans.h"
 #include "mermaidrender.h"
 #include "svgtext.h"
@@ -243,6 +244,7 @@ void DocumentRenderer::ApplyLineSpacing(std::vector<TextLine>* lines, float ptSi
 
 float DocumentRenderer::Measure(const Document& doc, float widthDip) {
     blocks_.clear();
+    caretRecords_.clear();
     displayList_ = display::DisplayList{};
     needsLayout_ = false;
 
@@ -567,6 +569,7 @@ void DocumentRenderer::LayoutSourceBlocks(float x, float width, float* y) {
     block.y = *y;
     *y += block.height;
     blocks_.push_back(std::move(block));
+    AppendCaretRecords(blocks_.back());
 }
 
 void DocumentRenderer::AppendBlockFromLaid(const Document& doc,
@@ -685,6 +688,7 @@ void DocumentRenderer::AppendBlockFromLaid(const Document& doc,
     }
 
     blocks_.push_back(std::move(block));
+    AppendCaretRecords(blocks_.back());
 }
 
 layout::ImageSize DocumentRenderer::ImageSizeForUrl(const Document& doc,
@@ -1265,113 +1269,67 @@ float DocumentRenderer::TextWidth(const LaidOutBlock& block) const {
 }
 
 // One entry per drawn block and per table cell, in the shared cache's
-// shape. The maps are UTF-16, the caret seam's index space: each code
-// point of the drawn text takes one unit, or two when it is a surrogate
-// pair, and its source bytes come from the region's own rendered byte
-// map. Converting here, once per layout, is what keeps every caret
-// question on the shared model.
+// shape. The records come from the append pass (AppendCaretRecords), not
+// from a second pass over the painting list, and a shell that fills its
+// own records (the Windows renderer builds them in its paint pass) hands
+// them in through SetCaretRecords; both ways give the cache the same
+// entry, src/caretrecords.h.
 void DocumentRenderer::BuildCaretCache() {
     caretCache_.Clear();
     caretCache_.SetSourceText(sourceText_);
     caretCache_.SetSyntaxRevealed(sourceMode_);
     caretCache_.SetCaretOnLowerLine(wrappedCaretOnLowerLine_);
 
-    const auto addEntry =
-        [this](float x, float top, float width,
-               const std::vector<TextLine>& lines,
-               const std::vector<uint32_t>& visToSrc,
-               const std::vector<uint32_t>& visToSrcEnd, float emptyHeight,
-               uint32_t srcStart, uint32_t srcEnd, bool cell,
-               ColumnAlign align, float trackX) {
-            BlockLayout bl;
-            bl.x = x;
-            bl.y = top;
-            bl.width = width;
-            float height = 0.0f;
-            for (const TextLine& line : lines) height += line.height;
-            bl.height = height > 0.0f ? height : emptyHeight;
-            bl.srcOffset = srcStart;
-            bl.srcLength = srcEnd > srcStart ? srcEnd - srcStart : 0;
-            bl.textStartOffset = srcStart;
-            bl.srcCellStart = srcStart;
-            bl.srcCellEnd = srcEnd;
-            bl.isTableCell = cell;
-            bl.trackX = trackX;
+    for (const BlockLayout& bl : caretRecords_) caretCache_.Add(bl);
+}
 
-            if (!lines.empty()) {
-                platform::TextAlign textAlign = platform::TextAlign::Left;
-                if (align == ColumnAlign::Center) {
-                    textAlign = platform::TextAlign::Center;
-                } else if (align == ColumnAlign::Right) {
-                    textAlign = platform::TextAlign::Right;
-                }
-                bl.layout = platform::MakeLineLayout(lines, width, textAlign);
+void DocumentRenderer::SetCaretRecords(std::vector<BlockLayout> records) {
+    caretRecords_ = std::move(records);
+    BuildCaretCache();
+}
 
-                uint32_t vis = 0;
-                for (const TextLine& line : lines) {
-                    for (const GlyphRun& run : line.runs) {
-                        const std::string& text = run.text;
-                        for (size_t i = 0; i < text.size();) {
-                            const size_t len = layout::Utf8CharLen(text, i);
-                            uint32_t start = srcStart;
-                            uint32_t end = srcStart;
-                            if (vis < visToSrc.size()) {
-                                start = visToSrc[vis];
-                                end = vis < visToSrcEnd.size()
-                                    ? visToSrcEnd[vis]
-                                    : start + static_cast<uint32_t>(len);
-                            }
-                            const uint32_t units = len == 4 ? 2u : 1u;
-                            for (uint32_t k = 0; k < units; ++k) {
-                                bl.u16ToSrc.push_back(start);
-                                bl.u16ToSrcEnd.push_back(end);
-                            }
-                            vis += static_cast<uint32_t>(len);
-                            i += len;
-                        }
-                    }
-                }
+// The caret records of one block: its own text, or one entry per cell of a
+// table. The geometry is the painting block's, the lines and the maps are
+// the walk's, and the record shape is the shared one.
+void DocumentRenderer::AppendCaretRecords(const LaidOutBlock& block) {
+    if (block.kind == BlockKind::Table) {
+        float rowTop = block.y;
+        for (size_t r = 0; r < block.tableLayout.rows.size(); ++r) {
+            const std::vector<LaidOutBlock::TableCellLayout>& cells =
+                block.tableLayout.rows[r];
+            const float rowH = r < block.tableLayout.rowHeights.size()
+                ? block.tableLayout.rowHeights[r] : 0.0f;
+            for (size_t c = 0; c < cells.size(); ++c) {
+                const LaidOutBlock::TableCellLayout& cell = cells[c];
+                if (cell.visToSrc.empty()) continue;
+                const float cellX =
+                    block.x + TableColumnX(block.tableLayout, c);
+                const float innerW = TableColumnW(block.tableLayout, c) -
+                    2.0f * metrics_.cellPadX;
+                caretRecords_.push_back(caret::Record(
+                    cell.lines, cellX + metrics_.cellPadX,
+                    rowTop + metrics_.cellPadY, innerW,
+                    caret::LinesHeight(cell.lines, rowH),
+                    cell.srcCellStart,
+                    cell.srcCellEnd > cell.srcCellStart
+                        ? cell.srcCellEnd - cell.srcCellStart : 0,
+                    cell.srcCellStart, cell.srcCellEnd, true, cell.align, -1.0f,
+                    0, 0.0f, cell.visToSrc, cell.visToSrcEnd));
             }
-
-            // A region with no drawn text keeps one addressable position,
-            // the sentinel the shared caret model parks a caret at.
-            if (bl.u16ToSrc.empty()) {
-                bl.u16ToSrc.push_back(srcStart);
-                bl.u16ToSrcEnd.push_back(srcStart);
-            }
-            caretCache_.Add(std::move(bl));
-        };
-
-    for (const LaidOutBlock& block : blocks_) {
-        if (block.kind == BlockKind::Table) {
-            float rowTop = block.y;
-            for (size_t r = 0; r < block.tableLayout.rows.size(); ++r) {
-                const std::vector<LaidOutBlock::TableCellLayout>& cells =
-                    block.tableLayout.rows[r];
-                const float rowH = r < block.tableLayout.rowHeights.size()
-                    ? block.tableLayout.rowHeights[r] : 0.0f;
-                for (size_t c = 0; c < cells.size(); ++c) {
-                    const LaidOutBlock::TableCellLayout& cell = cells[c];
-                    if (cell.visToSrc.empty()) continue;
-                    const float cellX =
-                        block.x + TableColumnX(block.tableLayout, c);
-                    const float innerW = TableColumnW(block.tableLayout, c) -
-                        2.0f * metrics_.cellPadX;
-                    addEntry(cellX + metrics_.cellPadX,
-                             rowTop + metrics_.cellPadY, innerW, cell.lines,
-                             cell.visToSrc, cell.visToSrcEnd, rowH,
-                             cell.srcCellStart, cell.srcCellEnd, true,
-                             cell.align, -1.0f);
-                }
-                rowTop += rowH;
-            }
-        } else if (!block.lines.empty() && !block.visToSrc.empty()) {
-            addEntry(TextX(block), TextTop(block), TextWidth(block),
-                     block.lines, block.visToSrc, block.visToSrcEnd, 0.0f,
-                     block.visToSrc.front(), block.visToSrc.back(), false,
-                     ColumnAlign::Default, block.x);
+            rowTop += rowH;
         }
+        return;
     }
+    if (block.lines.empty() || block.visToSrc.empty()) return;
+
+    const uint32_t start = block.visToSrc.front();
+    const uint32_t end = block.visToSrc.back();
+    caretRecords_.push_back(caret::Record(
+        block.lines, TextX(block), TextTop(block), TextWidth(block),
+        caret::LinesHeight(block.lines, 0.0f),
+        start, end > start ? end - start : 0, start, end, false,
+        ColumnAlign::Default, block.x, 0, 0.0f, block.visToSrc,
+        block.visToSrcEnd));
 }
 
 uint32_t DocumentRenderer::HitTestPoint(float x, float y) const {

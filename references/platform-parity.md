@@ -107,7 +107,10 @@ The source view's geometry is one rule now: `SourceViewInset` and
 source view's pixels move once on each port by decision. Both ports now produce
 the same caret record: the mac builds one `BlockLayout` per drawn block and per
 table cell from its walk and hands the shared cache its UTF-16 map, so the
-source view's caret, the hits and the selection all read one model.
+source view's caret, the hits and the selection all read one model. The entry
+itself is built by one function, `caret::Record` in `src/caretrecords.h`, and
+the class fills it in the append pass (`SetCaretRecords` lets a shell hand in
+its own), so the record shape is not a mac spelling either (2026-11-28).
 
 ## Commands: ribbon to mac menu
 
