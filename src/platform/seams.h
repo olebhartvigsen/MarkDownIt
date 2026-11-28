@@ -1031,8 +1031,12 @@ public:
     // which is the unit both platforms lay out in, and is clamped to the
     // block. Lines whose band lies outside [cullTop, cullBottom) are skipped
     // without a hit test, so a range scrolled out of view costs nothing.
+    // trimBlanks shrinks each line's segment to its non-blank text, which
+    // only the marker washes ask for: the shared pass owns the policy, the
+    // platform owns the bytes it trims.
     virtual void AppendRangeRects(uint32_t start, uint32_t end,
                                   float cullTop, float cullBottom,
+                                  bool trimBlanks,
                                   std::vector<Rect>* out) = 0;
 };
 

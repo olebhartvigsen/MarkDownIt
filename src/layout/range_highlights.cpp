@@ -106,7 +106,7 @@ void PaintMatchHighlights(platform::RenderTarget& target,
         const U16Range u16 = ToU16Range(m, map, monotone);
         if (u16.end <= u16.start) continue;
         source.AppendRangeRects(
-            u16.start, u16.end, band.top, band.bottom,
+            u16.start, u16.end, band.top, band.bottom, false,
             static_cast<int>(i) == current ? &currentFills : &fills);
     }
     if (!fills.empty()) target.FillRects(fills, match);
@@ -135,7 +135,7 @@ void PaintMarkerHighlights(platform::RenderTarget& target,
         if (u16.end <= u16.start) continue;
         const size_t before = fills.size();
         source.AppendRangeRects(u16.start, u16.end, band.top, band.bottom,
-                                &fills);
+                                true, &fills);
         for (size_t r = before; r < fills.size(); ++r) {
             // A thin line along the bottom keeps a mark from relying on
             // colour alone.

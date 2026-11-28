@@ -181,7 +181,8 @@ static void FillSelectionHighlight(platform::RenderTarget& target,
     if (u16End <= u16Start) return;
     const float viewBottom = scrollY + (viewportH > 0.0f ? viewportH : 0.0f);
     std::vector<platform::Rect> rects;
-    source.AppendRangeRects(u16Start, u16End, scrollY, viewBottom, &rects);
+    source.AppendRangeRects(u16Start, u16End, scrollY, viewBottom, false,
+                            &rects);
     target.FillRects(rects, layout::ToColor(color));
 }
 
@@ -1055,6 +1056,7 @@ void Renderer::DrawCodeBlock(platform::RenderTarget& target, const Node& n,
         // the block and asked by both layers.
         platform::DWriteRangeSource range(caretBlock, x + m.codePad,
                                           y + m.codePad);
+        range.SetText(&text16);
         if (HasMarkers()) {
             FillMarkerHighlights(target, range, pal.markerBg, pal.markerLine,
                                  matchU16ToSrc,
@@ -1329,6 +1331,7 @@ void Renderer::DrawTable(platform::RenderTarget& target, const Node& n,
                 // once and asked by the marker and the search layer.
                 platform::DWriteRangeSource range(cellBlock, cellOrigin.x,
                                                   cellOrigin.y);
+                range.SetText(&text16);
                 // Marker layer for this cell, behind the search fills.
                 if (HasMarkers() && !row.cells[c].text.empty() &&
                     !text16.empty() && !row.cells[c].u16ToSrc.empty()) {
@@ -2177,6 +2180,7 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
             const uint32_t blockStart = n.srcOffset;
             const uint32_t blockEnd = blockStart + n.srcLength;
             platform::DWriteRangeSource source(layout, textX, curY);
+            source.SetText(&text16);
             FillMarkerHighlights(view, source, pal.markerBg, pal.markerLine,
                                  u16ToSrc,
                                  static_cast<UINT32>(text16.size()),
@@ -2421,6 +2425,7 @@ float Renderer::RenderSourceView(platform::RenderTarget& rt,
     // The platform's geometry answer for the one source block, asked by
     // the marker layer, the search fills and the selection wash.
     platform::DWriteRangeSource range(layout, textX, textY);
+    range.SetText(&text16);
     // Marker layer across the whole source, behind the search fills.
     if (HasMarkers() && !u16ToSrcMap.empty() && !text16.empty()) {
         FillMarkerHighlights(view, range, pal.markerBg, pal.markerLine,

@@ -307,6 +307,20 @@ public:
                                  float rowTop, float rowHeight,
                                  float scrollOffset);
 
+    // The shared wash pass over one region of the page: a block's own
+    // lines, or one table cell's. `visToSrc` is the region's own rendered
+    // to source map, the index space the shared pass is handed, and
+    // topDoc is the region's text top in document coordinates, which the
+    // scroll offset moves into the frame. The fills come from
+    // layout::PaintMarkerHighlights and PaintMatchHighlights, the one
+    // policy both ports run.
+    void PaintWashesInRegion(const std::vector<TextLine>& lines,
+                             const std::vector<uint32_t>& visToSrc, float x,
+                             float topDoc, ColumnAlign align,
+                             float innerWidth, uint32_t blockStart,
+                             uint32_t blockEnd, float scrollOffset,
+                             bool withMarkers, bool withSearch) const;
+
     // The text markers, the highlights the user marked. They are drawn
     // behind the text, like the search matches.
     void SetMarkers(const std::vector<TextMatch>* markers);

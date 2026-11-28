@@ -16,6 +16,7 @@
 #include "svgtext.h"
 #include "hash.h"
 #include "layout/display_player.h"
+#include "layout/range_highlights.h"
 #include "layout/selection_rects.h"
 #include "layout/text_runs.h"
 #include "platform/offset_target.h"
@@ -526,6 +527,44 @@ float TableColumnW(const LaidOutBlock::TableLayout& t, size_t c) {
     return c < t.colWs.size() ? t.colWs[c] : t.colW;
 }
 
+// The mac's answer to the same question the Windows DWriteRangeSource
+// answers: where a range of one region sits, as rectangles. The mac already
+// holds the record it drew, so the rectangles come from the shared rule
+// (layout::AppendVisibleRangeRects) over the region's own lines, and the
+// indices the shared wash pass hands in are the region's rendered bytes,
+// because the map it was given is the region's visToSrc.
+class MacRangeSource final : public TextRangeSource {
+public:
+    MacRangeSource(const std::vector<TextLine>& lines,
+                   const std::vector<uint32_t>& visToSrc,
+                   const TextEngine& engine, float x, float top,
+                   ColumnAlign align, float innerWidth)
+        : lines_(lines),
+          visToSrc_(visToSrc),
+          engine_(engine),
+          x_(x),
+          top_(top),
+          align_(align),
+          innerWidth_(innerWidth) {}
+
+    void AppendRangeRects(uint32_t start, uint32_t end, float /*cullTop*/,
+                          float /*cullBottom*/, bool trimBlanks,
+                          std::vector<Rect>* out) override {
+        if (!out || lines_.empty() || visToSrc_.empty()) return;
+        layout::AppendVisibleRangeRects(lines_, engine_, x_, top_, start, end,
+                                        out, align_, innerWidth_, trimBlanks);
+    }
+
+private:
+    const std::vector<TextLine>& lines_;
+    const std::vector<uint32_t>& visToSrc_;
+    const TextEngine& engine_;
+    float x_ = 0.0f;
+    float top_ = 0.0f;
+    ColumnAlign align_ = ColumnAlign::Default;
+    float innerWidth_ = 0.0f;
+};
+
 }  // namespace
 
 void MacRenderer::LayoutSourceBlocks(float x, float width, float* y) {
@@ -950,37 +989,67 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
     }
 }
 
+void MacRenderer::PaintWashesInRegion(
+    const std::vector<TextLine>& lines,
+    const std::vector<uint32_t>& visToSrc, float x, float topDoc,
+    ColumnAlign align, float innerWidth, uint32_t blockStart,
+    uint32_t blockEnd, float scrollOffset, bool withMarkers,
+    bool withSearch) const {
+    if (!target_ || !engine_ || lines.empty() || visToSrc.size() < 2) return;
+
+    // The map speaks the index space the shared pass computes in. On the
+    // mac a block's rendered text is addressed in UTF-8 bytes, so the map
+    // is the region's own visToSrc: index i is rendered byte i and its
+    // value is the source byte it came from. The same vector answers the
+    // geometry, which is why the two can never disagree.
+    layout::BlockTextMap map;
+    map.u16ToSrc = &visToSrc;
+    map.u16Len = static_cast<uint32_t>(visToSrc.size() - 1);
+    map.blockStart = blockStart;
+    map.blockEnd = blockEnd;
+
+    MacRangeSource source(lines, visToSrc, *engine_, x, topDoc - scrollOffset,
+                          align, innerWidth);
+    // The mac record answers every line it drew, so the pass is given a
+    // band no line falls outside; the cull is the Windows adapter's.
+    const layout::PaintBand band{-1.0e9f, 1.0e9f};
+    if (withMarkers && !markers_.empty()) {
+        layout::PaintMarkerHighlights(
+            *target_, source, map, band, markers_,
+            layout::ToColor(palette_.markerBg),
+            layout::ToColor(palette_.markerLine));
+    }
+    if (withSearch && !searchMatches_.empty()) {
+        layout::PaintMatchHighlights(
+            *target_, source, map, band, searchMatches_, searchCurrent_,
+            layout::ToColor(palette_.findMatchBg),
+            layout::ToColor(palette_.findCurrentMatchBg));
+    }
+}
+
 void MacRenderer::PaintMarkerHighlights(float scrollOffset) {
     if (!target_ || markers_.empty()) return;
 
-    // A code card and a table row paint their own background after this
-    // global layer. Their markers go through PaintBlockHighlights or
-    // PaintTableRowHighlights, so the wash lands above that background.
+    // The global layer of the page: a code card and a table row paint their
+    // own opaque surface, so their marks are re-run above it by
+    // PaintBlockHighlights and PaintTableRowHighlights. The fills and the
+    // two point underline are layout::PaintMarkerHighlights, the pass the
+    // Windows painter runs.
     for (const LaidOutBlock& block : blocks_) {
         if (block.kind == BlockKind::CodeBlock ||
             block.kind == BlockKind::Table) {
             continue;
         }
-        for (const TextMatch& marker : markers_) {
-            for (const Rect& rect : RectsForRangeInBlock(
-                     block, marker.start, marker.start + marker.length,
-                     true)) {
-                Rect drawn = rect;
-                drawn.y -= scrollOffset;
-                target_->FillRect(drawn, layout::ToColor(palette_.markerBg));
-
-                // The line along the bottom, so a mark never relies on
-                // colour alone.
-                Rect line;
-                line.x = drawn.x;
-                line.y = drawn.y + drawn.height - 1.0f;
-                line.width = drawn.width;
-                line.height = 1.0f;
-                target_->FillRect(line, layout::ToColor(palette_.markerLine));
-            }
-        }
+        const uint32_t blockStart = block.node ? block.node->srcOffset : 0;
+        const uint32_t blockEnd =
+            block.node ? blockStart + block.node->srcLength : 0;
+        PaintWashesInRegion(block.lines, block.visToSrc, TextX(block),
+                            TextTop(block), ColumnAlign::Default, 0.0f,
+                            blockStart, blockEnd, scrollOffset,
+                            /*withMarkers=*/true, /*withSearch=*/false);
     }
 }
+
 
 void MacRenderer::SetSelection(uint32_t from, uint32_t to, Color colour) {
     hasSelection_ = to > from;
@@ -991,75 +1060,49 @@ void MacRenderer::SetSelection(uint32_t from, uint32_t to, Color colour) {
 
 void MacRenderer::PaintBlockHighlights(const LaidOutBlock& block,
                                         float scrollOffset) const {
-    if (!target_ || (markers_.empty() && searchMatches_.empty())) return;
-
-    for (const TextMatch& marker : markers_) {
-        for (const Rect& rect : RectsForRangeInBlock(
-                 block, marker.start, marker.start + marker.length, true)) {
-            Rect drawn = rect;
-            drawn.y -= scrollOffset;
-            target_->FillRect(drawn, layout::ToColor(palette_.markerBg));
-            Rect line;
-            line.x = drawn.x;
-            line.y = drawn.y + drawn.height - 1.0f;
-            line.width = drawn.width;
-            line.height = 1.0f;
-            target_->FillRect(line, layout::ToColor(palette_.markerLine));
-        }
-    }
-    for (size_t i = 0; i < searchMatches_.size(); ++i) {
-        const TextMatch& match = searchMatches_[i];
-        const bool current = static_cast<int>(i) == searchCurrent_;
-        for (const Rect& rect : RectsForRangeInBlock(
-                 block, match.start, match.start + match.length)) {
-            Rect drawn = rect;
-            drawn.y -= scrollOffset;
-            target_->FillRect(drawn, current
-                                        ? layout::ToColor(palette_.findCurrentMatchBg)
-                                        : layout::ToColor(palette_.findMatchBg));
-        }
-    }
+    const uint32_t blockStart = block.node ? block.node->srcOffset : 0;
+    const uint32_t blockEnd =
+        block.node ? blockStart + block.node->srcLength : 0;
+    PaintWashesInRegion(block.lines, block.visToSrc, TextX(block),
+                        TextTop(block), ColumnAlign::Default, 0.0f, blockStart,
+                        blockEnd, scrollOffset, /*withMarkers=*/true,
+                        /*withSearch=*/true);
 }
+
 
 void MacRenderer::PaintTableRowHighlights(const LaidOutBlock& block,
                                            std::size_t row,
                                            float rowTop, float rowHeight,
                                            float scrollOffset) {
-    (void)row;
     if (!target_ || (markers_.empty() && searchMatches_.empty())) return;
+    if (!block.table || row >= block.tableLayout.rows.size()) return;
 
-    const auto inRow = [rowTop, rowHeight](const Rect& rect) {
-        return rect.y >= rowTop && rect.y < rowTop + rowHeight;
-    };
-    for (const TextMatch& marker : markers_) {
-        for (const Rect& rect : RectsForRangeInBlock(
-                 block, marker.start, marker.start + marker.length, true)) {
-            if (!inRow(rect)) continue;
-            Rect drawn = rect;
-            drawn.y -= scrollOffset;
-            target_->FillRect(drawn, layout::ToColor(palette_.markerBg));
-            Rect line;
-            line.x = drawn.x;
-            line.y = drawn.y + drawn.height - 1.0f;
-            line.width = drawn.width;
-            line.height = 1.0f;
-            target_->FillRect(line, layout::ToColor(palette_.markerLine));
+    // A row's washes are its cells' washes. Each cell is one region with
+    // its own rendered to source map, the geometry the row painter drew,
+    // so the shared pass answers exactly where the words sit and no
+    // rectangle has to be filtered back into the row.
+    const LaidOutBlock::TableLayout& layout = block.tableLayout;
+    const std::vector<LaidOutBlock::TableCellLayout>& cells =
+        layout.rows[row];
+    for (size_t c = 0; c < cells.size(); ++c) {
+        const float innerW =
+            TableColumnW(layout, c) - 2.0f * metrics_.cellPadX;
+        const float cellX = block.x + TableColumnX(layout, c);
+        float cellTextHeight = 0.0f;
+        for (const TextLine& line : cells[c].lines) {
+            cellTextHeight += line.height;
         }
-    }
-    for (size_t i = 0; i < searchMatches_.size(); ++i) {
-        const TextMatch& match = searchMatches_[i];
-        const bool current = static_cast<int>(i) == searchCurrent_;
-        for (const Rect& rect : RectsForRangeInBlock(
-                 block, match.start, match.start + match.length)) {
-            if (!inRow(rect)) continue;
-            Rect drawn = rect;
-            drawn.y -= scrollOffset;
-            target_->FillRect(drawn, current
-                                        ? layout::ToColor(palette_.findCurrentMatchBg)
-                                        : layout::ToColor(palette_.findMatchBg));
-        }
+        const float lineY =
+            rowTop + (std::max)(metrics_.cellPadY,
+                                (rowHeight - cellTextHeight) * 0.5f);
+        PaintWashesInRegion(cells[c].lines, cells[c].visToSrc,
+                            cellX + metrics_.cellPadX, lineY, cells[c].align,
+                            innerW, cells[c].srcCellStart, cells[c].srcCellEnd,
+                            scrollOffset, /*withMarkers=*/true,
+                            /*withSearch=*/true);
     }
 }
+
 
 void MacRenderer::PaintSearchHighlights(float scrollOffset) {
     if (!target_ || searchMatches_.empty()) return;
@@ -1069,18 +1112,13 @@ void MacRenderer::PaintSearchHighlights(float scrollOffset) {
             block.kind == BlockKind::Table) {
             continue;
         }
-        for (size_t i = 0; i < searchMatches_.size(); ++i) {
-            const TextMatch& match = searchMatches_[i];
-            const bool current = static_cast<int>(i) == searchCurrent_;
-            for (const Rect& rect : RectsForRangeInBlock(
-                     block, match.start, match.start + match.length)) {
-                Rect drawn = rect;
-                drawn.y -= scrollOffset;
-                target_->FillRect(drawn, current
-                                            ? layout::ToColor(palette_.findCurrentMatchBg)
-                                            : layout::ToColor(palette_.findMatchBg));
-            }
-        }
+        const uint32_t blockStart = block.node ? block.node->srcOffset : 0;
+        const uint32_t blockEnd =
+            block.node ? blockStart + block.node->srcLength : 0;
+        PaintWashesInRegion(block.lines, block.visToSrc, TextX(block),
+                            TextTop(block), ColumnAlign::Default, 0.0f,
+                            blockStart, blockEnd, scrollOffset,
+                            /*withMarkers=*/false, /*withSearch=*/true);
     }
 }
 

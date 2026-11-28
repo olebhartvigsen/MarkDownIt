@@ -61,7 +61,9 @@ void PaintMatchHighlights(platform::RenderTarget& target,
                           const platform::Color& currentMatch);
 
 // Fills the marker ranges for the block, then a two point line along the
-// bottom of every rectangle so a mark does not rely on colour alone.
+// bottom of every rectangle so a mark does not rely on colour alone. The
+// fills are trimmed to the drawn words, the rule the mac painter always
+// kept and now the one both ports ask the source to apply.
 void PaintMarkerHighlights(platform::RenderTarget& target,
                            platform::TextRangeSource& source,
                            const BlockTextMap& map, const PaintBand& band,

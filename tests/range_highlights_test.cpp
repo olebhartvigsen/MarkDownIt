@@ -68,13 +68,14 @@ public:
         uint32_t end = 0;
         float cullTop = 0.0f;
         float cullBottom = 0.0f;
+        bool trimBlanks = false;
     };
     std::vector<Ask> asks;
 
     void AppendRangeRects(uint32_t start, uint32_t end, float cullTop,
-                          float cullBottom,
+                          float cullBottom, bool trimBlanks,
                           std::vector<Rect>* out) override {
-        asks.push_back(Ask{start, end, cullTop, cullBottom});
+        asks.push_back(Ask{start, end, cullTop, cullBottom, trimBlanks});
         for (uint32_t i = start; i < end; ++i) {
             out->push_back(Rect{10.0f * static_cast<float>(i), 100.0f, 10.0f,
                                 20.0f});
@@ -213,6 +214,28 @@ TEST(RangeHighlights, TheBandIsWhatTheSourceCullsAgainst) {
     EXPECT_EQ(source.asks[0].cullBottom, 640.0f);
 }
 
+TEST(RangeHighlights, MarkerAsksTheSourceToTrimBlanksAndSearchDoesNot) {
+    // The owner's composition decision: the marker wash covers the drawn
+    // words, so the platform trims each line's segment to its non-blank
+    // text. A search match keeps its exact range, blanks included.
+    const layout::BlockTextMap map = IdentityMap(20);
+    FakeSource source;
+    FakeTarget target;
+    const std::vector<TextMatch> markers = {{2, 3}};
+    const std::vector<TextMatch> matches = {{2, 3}};
+
+    layout::PaintMarkerHighlights(target, source, map, kBand, markers, kMarker,
+                                  kMarkerLine);
+    EXPECT_EQ(source.asks.size(), static_cast<size_t>(1));
+    EXPECT_TRUE(source.asks[0].trimBlanks);
+
+    source.asks.clear();
+    layout::PaintMatchHighlights(target, source, map, kBand, matches, -1,
+                                 kMatch, kCurrent);
+    EXPECT_EQ(source.asks.size(), static_cast<size_t>(1));
+    EXPECT_TRUE(!source.asks[0].trimBlanks);
+}
+
 TEST(RangeHighlights, MarkerAddsALineAlongTheBottomOfEveryRect) {
     const layout::BlockTextMap map = IdentityMap(20);
     FakeSource source;
@@ -245,7 +268,7 @@ TEST(RangeHighlights, MarkerLineNeverRunsPastAShortRect) {
 
     class ShortSource : public TextRangeSource {
     public:
-        void AppendRangeRects(uint32_t, uint32_t, float, float,
+        void AppendRangeRects(uint32_t, uint32_t, float, float, bool,
                               std::vector<Rect>* out) override {
             out->push_back(Rect{0.0f, 10.0f, 8.0f, 1.0f});
         }

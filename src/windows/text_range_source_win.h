@@ -33,8 +33,14 @@ public:
     DWriteRangeSource& operator=(const DWriteRangeSource&) = delete;
 
     void AppendRangeRects(uint32_t start, uint32_t end, float cullTop,
-                          float cullBottom,
+                          float cullBottom, bool trimBlanks,
                           std::vector<Rect>* out) override;
+
+    // The block's text, in the UTF-16 units the layout was built from. A
+    // marker wash trims a line's segment to its non-blank text, and the
+    // blanks are only in the text, not in the hit test metrics. Without it
+    // a trimmed ask falls back to the untrimmed range.
+    void SetText(const std::u16string* text) { text_ = text; }
 
 private:
     // One line of the block, as DirectWrite reports it.
@@ -57,6 +63,7 @@ private:
     std::vector<Line> lines_;
     UINT32 totalU16_ = 0;
     bool valid_ = false;
+    const std::u16string* text_ = nullptr;
 };
 
 }  // namespace platform

@@ -2,10 +2,18 @@
 #include "windows/text_engine_win.h"
 
 #include <algorithm>
+#include <string>
 
 namespace platform {
 
 namespace {
+
+// The whitespace a marker wash trims away, the same set the mac trim keeps
+// (markers.h, IsBlankByte) in the unit this layout speaks.
+bool IsBlankUnit(char16_t c) {
+    return c == u' ' || c == u'\t' || c == u'\n' || c == u'\r' ||
+           c == u'\f' || c == u'\v';
+}
 
 // The native object behind a block, or null when the block is not one of
 // this adapter's own.
@@ -66,6 +74,7 @@ void DWriteRangeSource::BuildCache() {
 
 void DWriteRangeSource::AppendRangeRects(uint32_t start, uint32_t end,
                                          float cullTop, float cullBottom,
+                                         bool trimBlanks,
                                          std::vector<Rect>* out) {
     if (!out || !valid_ || !layout_) return;
     if (end <= start) return;
@@ -111,8 +120,18 @@ void DWriteRangeSource::AppendRangeRects(uint32_t start, uint32_t end,
         if (lineTop > cullBottom) break;
         const UINT32 lineStart = lines_[i].start;
         const UINT32 lineEnd = lineStart + lines_[i].metrics.length;
-        const UINT32 selLo = start > lineStart ? start : lineStart;
-        const UINT32 selHi = end < lineEnd ? end : lineEnd;
+        UINT32 selLo = start > lineStart ? start : lineStart;
+        UINT32 selHi = end < lineEnd ? end : lineEnd;
+        if (trimBlanks && text_ && selHi > selLo) {
+            // A marker covers the drawn words, never the blank beside
+            // them. Trim in the text, where the blanks are; the hit test
+            // then reports the words' own width.
+            const uint32_t textLen = static_cast<uint32_t>(text_->size());
+            if (selLo > textLen) selLo = textLen;
+            if (selHi > textLen) selHi = textLen;
+            while (selLo < selHi && IsBlankUnit((*text_)[selLo])) ++selLo;
+            while (selHi > selLo && IsBlankUnit((*text_)[selHi - 1])) --selHi;
+        }
         if (selHi > selLo) {
             const UINT32 count = selHi - selLo;
             hits.resize(count);
