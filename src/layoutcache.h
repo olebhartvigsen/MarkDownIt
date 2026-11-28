@@ -93,6 +93,26 @@ public:
     void SetSourceText(const std::string* src) { srcText_ = src; }
     const std::string* SourceText() const { return srcText_; }
 
+    // Which line a caret at a soft wrap is drawn on. The position is the
+    // same source byte at the end of the upper line and at the start of
+    // the lower one, so the model has to be told which side the reader
+    // put it on: the default draws the lower line, and a caller that
+    // stepped down into the wrap sets false so the caret stays at the
+    // end of the line above. The answer is exact for a layout that
+    // keeps its line records (the seam's portable block, which both
+    // ports build blocks with); a native block answers its own side and
+    // the flag only moves the vertical step.
+    void SetCaretOnLowerLine(bool lower) { caretOnLowerLine_ = lower; }
+    bool CaretOnLowerLine() const { return caretOnLowerLine_; }
+
+    // True when the screen draws the Markdown syntax itself, as the
+    // source view does. A caret at the visual end of emphasis or a link
+    // then stays where it is instead of stepping over the hidden
+    // markers, because those markers are on screen and are positions of
+    // their own.
+    void SetSyntaxRevealed(bool revealed) { syntaxRevealed_ = revealed; }
+    bool SyntaxRevealed() const { return syntaxRevealed_; }
+
     // Screen point to source offset. Used for mouse clicks.
     // Returns UINT32_MAX on failure.
     uint32_t PointToOffset(float x, float y) const;
@@ -125,6 +145,8 @@ private:
 
     std::vector<BlockLayout> blocks_;
     const std::string* srcText_ = nullptr; // source text for offset calc
+    bool caretOnLowerLine_ = true;
+    bool syntaxRevealed_ = false;
 };
 
 // UTF-8 / UTF-16 offset conversion helpers.

@@ -355,7 +355,7 @@ uint32_t LayoutCache::NormalizeToRenderedCaret(uint32_t offset) const {
             if (offset == start) return offset;
             if (offset == end) {
                 uint32_t normalized = end;
-                if (srcText_) {
+                if (srcText_ && !syntaxRevealed_) {
                     while (normalized < srcText_->size() &&
                            ((*srcText_)[normalized] == '*' ||
                             (*srcText_)[normalized] == '_' ||
@@ -398,11 +398,13 @@ uint32_t LayoutCache::NormalizeToRenderedCaret(uint32_t offset) const {
     else snapped = offset - previous <= next - offset ? previous : next;
 
     // Table-cell guard: a cell owns the full byte span between its pipes,
-    // rendered or not. An empty cell renders no text, so the snapped
-    // nearest rendered text lives in a DIFFERENT cell; keeping it would
-    // move the caret out of the clicked cell. A click (or any normalized
-    // caret) never crosses a cell boundary: clamp it back and, when the
-    // cell has no rendered text at all, park it at the cell's own start.
+    // rendered or not. An empty cell renders no text, so its map holds
+    // one sentinel position and nothing else, and the snapped nearest
+    // rendered text lives in a DIFFERENT cell; keeping it would move the
+    // caret out of the clicked cell. A click (or any normalized caret)
+    // never crosses a cell boundary: it is clamped back to the cell's
+    // own edge, and a cell with no rendered text at all parks at its own
+    // sentinel position (table guideline 7).
     for (const auto& bl : blocks_) {
         if (!bl.isTableCell) continue;
         // The renderer always sets srcCellStart/srcCellEnd for cell
@@ -412,8 +414,13 @@ uint32_t LayoutCache::NormalizeToRenderedCaret(uint32_t offset) const {
                                           bl.srcOffset + bl.srcLength);
         if (cellStart == 0 && cellEnd == 0) continue;
         if (offset < cellStart || offset > cellEnd) continue;
-        if (snapped < cellStart || snapped > cellEnd)
-            return bl.u16ToSrc.empty() ? bl.srcOffset : snapped;
+        if (bl.u16ToSrc.size() <= 1) {
+            // The sentinel: one addressable position, the cell's own
+            // start. Anything else was snapped into a neighbour.
+            return bl.u16ToSrc.empty() ? bl.srcOffset : bl.u16ToSrc.front();
+        }
+        if (snapped < cellStart) return cellStart;
+        if (snapped > cellEnd) return cellEnd;
         return snapped;
     }
     return snapped;
@@ -511,24 +518,70 @@ bool LayoutCache::OffsetToCaretRect(uint32_t offset,
     }
 
     float caretX = 0.0f, caretY = 0.0f;
-    const platform::TextHit hit = bl.layout->CaretAtOffset(u16Pos);
-    caretX = hit.x;
-    caretY = hit.y;
+
+    // A position at a soft wrap is drawn on the upper line as well as the
+    // lower one, and the model's flag says which. The lower side is the
+    // seam's own answer. The upper side is the end of the line whose text
+    // stops at this position: exact when the layout keeps its line
+    // records, which the portable block both ports build blocks with,
+    // and otherwise the seam's answer stands.
+    bool onUpperLine = false;
+    if (!caretOnLowerLine_ && bl.layout) {
+        const std::vector<platform::TextLine>* lines = bl.layout->Lines();
+        const float lineWidth = bl.width > 0.0f ? bl.width : bl.layout->Width();
+        if (lines) {
+            float top = 0.0f;
+            for (uint32_t i = 0; i < lines->size(); ++i) {
+                uint32_t lineStart = 0;
+                uint32_t lineEnd = 0;
+                const float height = bl.layout->LineHeightAt(i);
+                if (bl.layout->LineTextRange(i, lineWidth, &lineStart,
+                                             &lineEnd) &&
+                    lineEnd == u16Pos && lineStart < u16Pos) {
+                    const platform::TextLine& line = (*lines)[i];
+                    caretX = bl.layout->LineX(line) + line.width;
+                    caretY = top;
+                    onUpperLine = true;
+                }
+                top += height;
+            }
+        }
+    }
+
+    float caretH = 0.0f;
+    if (!onUpperLine) {
+        const platform::TextHit hit = bl.layout->CaretAtOffset(u16Pos);
+        caretX = hit.x;
+        caretY = hit.y;
+        caretH = hit.height;
+    } else {
+        const uint32_t count = bl.layout->LineCount();
+        for (uint32_t i = 0; i < count; ++i) {
+            uint32_t lineStart = 0;
+            uint32_t lineEnd = 0;
+            if (bl.layout->LineTextRange(i, bl.width > 0.0f ? bl.width
+                                                            : bl.layout->Width(),
+                                         &lineStart, &lineEnd) &&
+                lineEnd == u16Pos) {
+                caretH = bl.layout->LineHeightAt(i);
+            }
+        }
+    }
 
     if (outX) *outX = bl.x + caretX;
     // Vertically center the caret on the text within the line.
     // caretY is the top of the line; the text occupies roughly the
     // em-height portion, centered by the line-spacing/baseline ratio.
     if (outY) {
-        float caretH = (bl.fontHeight > 0.0f) ? bl.fontHeight : hit.height;
-        float lineH = hit.height;
-        *outY = bl.y + caretY + (lineH - caretH) * 0.5f;
+        const float height = (bl.fontHeight > 0.0f) ? bl.fontHeight : caretH;
+        const float lineH = caretH;
+        *outY = bl.y + caretY + (lineH - height) * 0.5f;
     }
     // Caret height: the font's natural line height (ascent+descent+
     // lineGap, set by the renderer), not the em size of one character
     // and not the rendered line box either (that one also carries the
     // app's line spacing). Fallback when metrics were unavailable.
-    if (outH) *outH = (bl.fontHeight > 0.0f) ? bl.fontHeight : hit.height;
+    if (outH) *outH = (bl.fontHeight > 0.0f) ? bl.fontHeight : caretH;
     return true;
 }
 

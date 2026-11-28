@@ -262,3 +262,126 @@ TEST(Navigation, VerticalCaretKnowsWhichSideOfAWrapItIsOn) {
                      /*caretOnLowerLine=*/true);
     EXPECT_EQ(lower, 100u);
 }
+
+// ---------------------------------------------------------------------------
+// The three caret behaviours the mac model owned alone. They are the shared
+// model's now, so they are pinned here, on the cache, on every runner.
+// ---------------------------------------------------------------------------
+
+TEST(Navigation, CaretKnowsWhichSideOfAWrapItIsDrawnOn) {
+    fake::FakeTextEngine engine;
+    engine.BeginLayout();
+    LayoutCache lc;
+    // "one two " fills the first line at 8 points per glyph, so the wrap
+    // position starts the second line.
+    lc.Add(LaidBlockFor(engine, kParagraph, 10.0f, 0.0f, 80.0f, 0));
+
+    float x = 0.0f;
+    float y = 0.0f;
+    float h = 0.0f;
+    // The default draws the lower line: the position is the start of its
+    // text, at the block's own left edge, on the second line.
+    EXPECT_TRUE(lc.OffsetToCaretRect(kWrapAt, &x, &y, &h));
+    EXPECT_NEAR(x, 10.0f, 0.01f);
+    EXPECT_NEAR(y, 30.0f, 0.01f);
+
+    // Told the caret is drawn at the end of the upper line, the same
+    // position answers there: the full width of "one two ", on line one.
+    lc.SetCaretOnLowerLine(false);
+    EXPECT_TRUE(lc.OffsetToCaretRect(kWrapAt, &x, &y, &h));
+    EXPECT_NEAR(x, 10.0f + 8.0f * 8.0f, 0.01f);
+    EXPECT_NEAR(y, 0.0f, 0.01f);
+
+    // A position that is not a wrap is the same on both settings.
+    lc.SetCaretOnLowerLine(true);
+    float px = 0.0f;
+    float py = 0.0f;
+    EXPECT_TRUE(lc.OffsetToCaretRect(4, &x, &y, &h));
+    EXPECT_TRUE(lc.OffsetToCaretRect(4, &px, &py, &h));
+    EXPECT_NEAR(x, px, 0.01f);
+    EXPECT_NEAR(y, py, 0.01f);
+}
+
+TEST(Navigation, CaretAtALinkEndSkipsTheHiddenDestination) {
+    // "[text](https://example.com)": the drawn word is four glyphs, mapped
+    // to source bytes 1 to 4, and the caret at its visual end is source
+    // byte 5, just before `](`.
+    const std::string source = "[text](https://example.com)";
+    fake::FakeTextEngine engine;
+    engine.BeginLayout();
+    LayoutCache lc;
+    lc.SetSourceText(&source);
+
+    std::vector<platform::GlyphRun> runs;
+    platform::GlyphRun run;
+    run.text = "text";
+    run.font.size = 20.0f;
+    runs.push_back(run);
+    std::vector<platform::TextLine> lines =
+        engine.MeasureWrapped(runs, 200.0f, 0.0f);
+    BlockLayout bl;
+    bl.layout = platform::MakeLineLayout(
+        std::move(lines), 200.0f, platform::TextAlign::Left);
+    bl.width = 200.0f;
+    bl.srcOffset = 1;
+    bl.srcLength = 4;
+    for (uint32_t i = 0; i < 4; ++i) {
+        bl.u16ToSrc.push_back(1 + i);
+        bl.u16ToSrcEnd.push_back(2 + i);
+    }
+    lc.Add(bl);
+
+    // The rendered screen hides the destination, so the caret at the end
+    // of the word steps past it and sits after the closing paren.
+    EXPECT_EQ(lc.NormalizeToRenderedCaret(5),
+              static_cast<uint32_t>(source.size()));
+
+    // The source view draws the destination, so the same position stays
+    // where it is: those bytes are on screen and are positions of their
+    // own.
+    lc.SetSyntaxRevealed(true);
+    EXPECT_EQ(lc.NormalizeToRenderedCaret(5), 5u);
+}
+
+TEST(Navigation, AnEmptyCellKeepsTheCaretAtItsOwnSentinel) {
+    fake::FakeTextEngine engine;
+    engine.BeginLayout();
+    LayoutCache lc;
+
+    // A cell whose text is all hidden syntax: it owns source bytes 10 to
+    // 20 and draws one sentinel position at 10.
+    BlockLayout cell;
+    cell.isTableCell = true;
+    cell.srcOffset = 10;
+    cell.srcLength = 10;
+    cell.srcCellStart = 10;
+    cell.srcCellEnd = 20;
+    cell.u16ToSrc.push_back(10);
+    cell.u16ToSrcEnd.push_back(10);
+    lc.Add(cell);
+
+    // A neighbour block with real drawn text, nearer to the far edge of
+    // the cell than the cell's own start is.
+    lc.Add(LaidBlockFor(engine, "next cell", 0.0f, 60.0f, 80.0f, 25));
+
+    // A position inside the empty cell must not snap into the neighbour:
+    // the sentinel is the cell's only position and the caret parks there.
+    EXPECT_EQ(lc.NormalizeToRenderedCaret(19), 10u);
+
+    // A cell with real text clamps a snapped position back to its own
+    // edge instead of leaving the cell. Its text sits late in the cell
+    // and the nearest drawn byte is in the block before it, so the
+    // snapped answer falls outside the cell.
+    LayoutCache second;
+    BlockLayout late;
+    late.isTableCell = true;
+    late.srcOffset = 39;
+    late.srcLength = 2;
+    late.srcCellStart = 30;
+    late.srcCellEnd = 42;
+    late.u16ToSrc.push_back(39);
+    late.u16ToSrcEnd.push_back(41);
+    second.Add(late);
+    second.Add(LaidBlockFor(engine, "before", 0.0f, 90.0f, 80.0f, 24));
+    EXPECT_EQ(second.NormalizeToRenderedCaret(30), 30u);
+}
