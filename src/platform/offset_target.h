@@ -96,6 +96,13 @@ public:
     }
     void PopClip() override { inner_->PopClip(); }
 
+    // The shift and the wrapped target. A painter that draws on its own
+    // concrete device, like the Windows SVG scene, reads the shift out
+    // of the wrapper chain and applies it itself.
+    float dx() const { return dx_; }
+    float dy() const { return dy_; }
+    RenderTarget* inner() const { return inner_; }
+
 private:
     Rect Shift(const Rect& rect) const {
         Rect out = rect;

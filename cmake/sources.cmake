@@ -67,13 +67,12 @@ set(MARKDOWNIT_CORE_SOURCES
     src/settings.cpp
 )
 
-# The document renderer: the mac shell's body, in the shared root and free
-# of platform headers, but it reads the theme's mac aliases for the palette
-# and the font names (ThemeColor is a plain struct and ThemeFontName a
-# std::string there, a D2D1_COLOR_F and a wide string on Windows). The mac
-# targets build it; the Windows shell joins when its own frame adopts the
-# class. The plan's slice 10 entry and the parity ledger say why.
-# usage: macos-core macos-tests
+# The document renderer: the frame of one laid out document, in the shared
+# root and free of platform headers. It reads no theme alias directly; the
+# palette and the font names go through the portable helpers, so both
+# ports build it from this one group. The plan's slice 10 entry and the
+# parity ledger say why it took until the Windows frame adoption.
+# usage: windows-app macos-core windows-tests macos-tests
 set(MARKDOWNIT_DOCUMENT_RENDERER_SOURCES
     src/document_renderer.cpp
     src/qa_strings.cpp
@@ -151,4 +150,15 @@ set(MARKDOWNIT_WINDOWS_APP_SOURCES
     src/windows/render_target_win.cpp
     src/windows/text_range_source_win.cpp
     src/windows/telemetry_win.cpp
+)
+
+# The Windows halves of the seams the shared document renderer draws
+# through: the Direct2D SVG scene, the WIC image service and the QA log.
+# They are named for their job and carry no shared logic; the renderer
+# itself stays platform blind.
+# usage: windows-app windows-tests
+set(MARKDOWNIT_WINDOWS_RENDERER_SOURCES
+    src/windows/svg_raster_win.cpp
+    src/windows/image_source_win.cpp
+    src/windows/qa_trace_win.cpp
 )

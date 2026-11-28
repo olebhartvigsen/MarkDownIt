@@ -43,6 +43,7 @@
 #include "layout/display_player.h"
 #include "mermaid/painter.h"
 #include "platform/offset_target.h"
+#include "windows/qa_trace_win.h"
 #include "windows/render_target_win.h"
 #include "windows/text_range_source_win.h"
 
@@ -538,18 +539,8 @@ platform::BitmapHandle Renderer::ImageHandleFor(
 
 // A pin decision, written where the QA walk reads: a state that quietly did
 // nothing and one that ran look the same in a picture, and this is the only
-// place the numbers exist.
-
-namespace {
-void QaPinTrace(const char* line) {
-    const char* path = std::getenv("MARKDOWNIT_QA_LOG");
-    if (!path || !*path) return;
-    if (FILE* log = std::fopen(path, "a")) {
-        std::fprintf(log, "%s\n", line);
-        std::fclose(log);
-    }
-}
-}  // namespace
+// place the numbers exist. The writer is the platform's (windows/qa_trace_win),
+// so the shared frame can log the same way once it paints this pass.
 
 void Renderer::PaintSharedOverlays(
     platform::RenderTarget& rt, const Document& doc,
@@ -721,7 +712,7 @@ void Renderer::PaintSharedOverlays(
                                  : 0,
                              b->table->header.items.size(), (double)scrollY,
                              editing_ ? 1 : 0);
-                    QaPinTrace(pinLine);
+                    platform::QaTraceLine(pinLine);
                 }
                 break;
             }

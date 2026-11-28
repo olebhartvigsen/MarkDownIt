@@ -168,6 +168,8 @@ add_executable(MarkDownIt WIN32
     ${MARKDOWNIT_MERMAID_STATE_SOURCES}
     ${MARKDOWNIT_OFFICE_SOURCES}
     ${MARKDOWNIT_WINDOWS_APP_SOURCES}
+    ${MARKDOWNIT_DOCUMENT_RENDERER_SOURCES}
+    ${MARKDOWNIT_WINDOWS_RENDERER_SOURCES}
     src/main.cpp
     src/app.cpp
     src/renderer.cpp
@@ -559,6 +561,8 @@ elseif(BUILD_TESTS)
         ${MARKDOWNIT_MERMAID_LEGACY_SOURCES}
         ${MARKDOWNIT_OFFICE_SOURCES}
         ${MARKDOWNIT_WINDOWS_APP_SOURCES}
+        ${MARKDOWNIT_DOCUMENT_RENDERER_SOURCES}
+        ${MARKDOWNIT_WINDOWS_RENDERER_SOURCES}
         # The Windows renderer chain the batch 5.3 twin drives: the
         # painters the wash test renders through, the shared diagram
         # painter, the DirectWrite Mermaid measure the painters charge,
