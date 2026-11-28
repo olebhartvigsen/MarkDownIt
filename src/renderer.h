@@ -524,8 +524,6 @@ private:
     svg::SvgDoc* SvgPictureDocFor(const Node& n, const Selection* sel,
                                   float drawW);
 
-    std::u16string ToUtf16(const std::u32string& s32);
-
     // True when there is at least one match to paint. The four paint paths
     // check this before creating any brush, so a closed find bar costs
     // nothing per frame.

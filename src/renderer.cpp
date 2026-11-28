@@ -236,12 +236,6 @@ static void MergeNodeItemSpans(
     }
 }
 
-// The seam colour of a palette entry. ThemeColor is D2D1_COLOR_F on Windows
-// and a plain four float struct elsewhere; the seam speaks the four floats.
-static platform::Color SeamColor(const ThemeColor& c) {
-    return platform::Color{c.r, c.g, c.b, c.a};
-}
-
 // Fill the selection highlight for a UTF-16 range of a laid out block.
 //
 // The geometry is the range source's, the seam the search and marker fills
@@ -260,7 +254,7 @@ static void FillSelectionHighlight(platform::RenderTarget& target,
     const float viewBottom = scrollY + (viewportH > 0.0f ? viewportH : 0.0f);
     std::vector<platform::Rect> rects;
     source.AppendRangeRects(u16Start, u16End, scrollY, viewBottom, &rects);
-    target.FillRects(rects, SeamColor(color));
+    target.FillRects(rects, layout::ToColor(color));
 }
 
 // ---------------------------------------------------------------------------
@@ -328,8 +322,9 @@ void Renderer::FillMatchHighlights(platform::RenderTarget& target,
     const layout::PaintBand band{scrollY,
                                  scrollY + (viewportH > 0.0f ? viewportH : 0.0f)};
     layout::PaintMatchHighlights(target, source, map, band, *searchMatches_,
-                                 searchCurrentIndex_, SeamColor(matchColor),
-                                 SeamColor(currentColor));
+                                 searchCurrentIndex_,
+                                 layout::ToColor(matchColor),
+                                 layout::ToColor(currentColor));
 }
 
 void Renderer::FillMarkerHighlights(platform::RenderTarget& target,
@@ -349,7 +344,8 @@ void Renderer::FillMarkerHighlights(platform::RenderTarget& target,
     const layout::PaintBand band{scrollY,
                                  scrollY + (viewportH > 0.0f ? viewportH : 0.0f)};
     layout::PaintMarkerHighlights(target, source, map, band, *markerRanges_,
-                                  SeamColor(fillColor), SeamColor(lineColor));
+                                  layout::ToColor(fillColor),
+                                  layout::ToColor(lineColor));
 }
 
 LayoutMetrics Renderer::ComputeMetrics() const {
@@ -602,8 +598,6 @@ platform::BitmapHandle Renderer::ImageHandleFor(
 // A pin decision, written where the QA walk reads: a state that quietly did
 // nothing and one that ran look the same in a picture, and this is the only
 // place the numbers exist.
-// Defined at the bottom of this file; the picture draw needs it up here.
-static std::string U32ToUtf8(const std::u32string& s);
 
 namespace {
 void QaPinTrace(const char* line) {
@@ -693,7 +687,7 @@ void Renderer::PaintSharedOverlays(
                         area.x = drawX;
                         area.y = drawY;
                         area.scale = zoom_;
-                        area.links = svg::CollectLinks(U32ToUtf8(n.raw));
+                        area.links = svg::CollectLinks(layout::Utf32ToUtf8(n.raw));
                         if (!area.links.empty()) {
                             svg_link_areas_.push_back(std::move(area));
                         }
@@ -1067,25 +1061,6 @@ float Renderer::BaseContentWidthDip() const {
     }
 }
 
-std::u16string Renderer::ToUtf16(const std::u32string& s32) {
-    std::u16string out;
-    out.reserve(s32.size());
-    for (char32_t cp : s32) {
-        if (cp <= 0xFFFF) {
-            out.push_back(static_cast<char16_t>(cp));
-        } else {
-            cp -= 0x10000;
-            out.push_back(static_cast<char16_t>(0xD800 + (cp >> 10)));
-            out.push_back(static_cast<char16_t>(0xDC00 + (cp & 0x3FF)));
-        }
-    }
-    return out;
-}
-
-// A UTF-8 to UTF-16 conversion for the source view below; the
-// definition lives with the source view code further down the file.
-static std::u16string Utf8ToUtf16(const std::string& s);
-
 void Renderer::DrawCodeBlock(platform::RenderTarget& target, const Node& n,
                               float x, float y,
                               float width, float& outH,
@@ -1097,13 +1072,13 @@ void Renderer::DrawCodeBlock(platform::RenderTarget& target, const Node& n,
 
     LayoutMetrics m = ComputeMetrics();
     const Palette& pal = palette_;
-    const platform::Color codeColor = SeamColor(pal.textPrimary);
+    const platform::Color codeColor = layout::ToColor(pal.textPrimary);
 
     std::u32string raw = n.raw;
     while (!raw.empty() && (raw.back() == 0x0A || raw.back() == 0x0D)) {
         raw.pop_back();
     }
-    std::u16string text16 = ToUtf16(raw);
+    std::u16string text16 = textenc::Utf32ToUtf16(raw);
     const std::string code = layout::Utf32ToUtf8(raw);
 
     float codeWidth = width - 2.0f * m.codePad;
@@ -1136,9 +1111,9 @@ void Renderer::DrawCodeBlock(platform::RenderTarget& target, const Node& n,
     const platform::Rect bgRect{x, y, width, blockH};
     if (m.codeRadius > 0.5f) {
         target.FillRoundedRect(bgRect, m.codeRadius,
-                               SeamColor(pal.codeBg));
+                               layout::ToColor(pal.codeBg));
     } else {
-        target.FillRect(bgRect, SeamColor(pal.codeBg));
+        target.FillRect(bgRect, layout::ToColor(pal.codeBg));
     }
 
     // The block the highlight pass and the caret cache read: the same
@@ -1203,7 +1178,7 @@ void Renderer::DrawCodeBlock(platform::RenderTarget& target, const Node& n,
     // records. The old per code point translation is gone; the wash
     // keeps its slot between the match fills and the glyphs.
     if (sel && !sel->Empty() && !washRects.empty()) {
-        const platform::Color selectionColor = SeamColor(pal.selectionBg);
+        const platform::Color selectionColor = layout::ToColor(pal.selectionBg);
         for (const platform::Rect& r : washRects) {
             target.FillRect(r, selectionColor);
         }
@@ -1325,10 +1300,10 @@ void Renderer::DrawTable(platform::RenderTarget& target, const Node& n,
 
     // The washes and the grid are colours, not brushes: the seam keeps the
     // brush alive for the call and the target owns its lifetime.
-    const platform::Color altColor = SeamColor(pal.tableRowAlt);
-    const platform::Color headerColor = SeamColor(pal.tableHeaderBg);
-    const platform::Color borderColor = SeamColor(pal.tableBorder);
-    const platform::Color selectionColor = SeamColor(pal.selectionBg);
+    const platform::Color altColor = layout::ToColor(pal.tableRowAlt);
+    const platform::Color headerColor = layout::ToColor(pal.tableHeaderBg);
+    const platform::Color borderColor = layout::ToColor(pal.tableBorder);
+    const platform::Color selectionColor = layout::ToColor(pal.selectionBg);
     const bool wantSelection = sel && !sel->Empty();
 
     size_t cols = 0;
@@ -1386,7 +1361,7 @@ void Renderer::DrawTable(platform::RenderTarget& target, const Node& n,
             rowH = rec->rowHeights[ri];
         } else {
         for (size_t c = 0; c < row.cells.size() && c < cols; ++c) {
-            std::u16string text16 = ToUtf16(row.cells[c].text);
+            std::u16string text16 = textenc::Utf32ToUtf16(row.cells[c].text);
             // The cell's height, measured through the seam: the same text,
             // format and inline styles the cell's own layout is built
             // with, so a code span still wraps and still needs its room.
@@ -1423,7 +1398,7 @@ void Renderer::DrawTable(platform::RenderTarget& target, const Node& n,
                 target.StrokeLine(cellX, curY, cellX, curY + rowH,
                                   borderColor, 1.0f);
             }
-            std::u16string text16 = ToUtf16(row.cells[c].text);
+            std::u16string text16 = textenc::Utf32ToUtf16(row.cells[c].text);
             // Honour the column alignment written in the delimiter row
             // (`:---`, `:---:`, `---:`). The layout is aligned inside the
             // cell, so the selection highlight below follows it, and the
@@ -1509,7 +1484,7 @@ void Renderer::DrawTable(platform::RenderTarget& target, const Node& n,
                     std::vector<platform::GlyphRun> cellRuns =
                         layout::TableCellRuns(
                             row.cells[c], row.cells[c].isHeader,
-                            SeamColor(pal.textPrimary), m,
+                            layout::ToColor(pal.textPrimary), m,
                             n.tableMonospace);
                     if (!cellRuns.empty() && innerCW > 0.0f &&
                         clipH > 0.0f) {
@@ -1535,7 +1510,7 @@ void Renderer::DrawTable(platform::RenderTarget& target, const Node& n,
                                 innerCW, clipH});
                             target.DrawLayout(
                                 *block, cellX + m.cellPadX, blockTop,
-                                SeamColor(pal.textPrimary));
+                                layout::ToColor(pal.textPrimary));
                             target.PopClip();
                         }
                     }
@@ -2090,7 +2065,7 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
     // reaches the neighbouring words or spaces. They go down first, under
     // the search and selection fills, as before.
     {
-        const platform::Color codeBg = SeamColor(pal.inlineCodeBg);
+        const platform::Color codeBg = layout::ToColor(pal.inlineCodeBg);
         const float codeEm = m.codeFontSize * kPtToDip * zoom_;
         const float padX = m.inlineCodePadX * codeEm;
         const float originY = m.padTop + topOffsetDip;
@@ -2177,7 +2152,7 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
 
         for (const auto& ib : n.children) {
             if (ib.kind == InlineKind::Image) continue;
-            std::u16string part16 = ToUtf16(ib.text);
+            std::u16string part16 = textenc::Utf32ToUtf16(ib.text);
             UINT32 start = static_cast<UINT32>(text16.size());
             text16 += part16;
             UINT32 length = static_cast<UINT32>(part16.size());
@@ -2356,7 +2331,7 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
                     b->lines, visToSrc, twinEngine, washX, washTop,
                     sel->Start(), sel->Start() + sel->Length(),
                     &washRects, ColumnAlign::Default, 0.0f, false);
-                view.FillRects(washRects, SeamColor(pal.selectionBg));
+                view.FillRects(washRects, layout::ToColor(pal.selectionBg));
             }
         }
 
@@ -2421,47 +2396,6 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
 
 // --- Source view: render raw markdown as monospace text with word wrap ---
 
-static std::u16string Utf8ToUtf16(const std::string& s) {
-    std::u16string out;
-    size_t i = 0;
-    while (i < s.size()) {
-        unsigned char c = static_cast<unsigned char>(s[i]);
-        if (c < 0x80) {
-            out += static_cast<char16_t>(c);
-            i += 1;
-        } else if (c < 0xC0) {
-            i += 1; // skip continuation byte
-        } else if (c < 0xE0) {
-            if (i + 1 < s.size()) {
-                char16_t ch = ((c & 0x1F) << 6) |
-                    (static_cast<unsigned char>(s[i+1]) & 0x3F);
-                out += ch;
-                i += 2;
-            } else { i += 1; }
-        } else if (c < 0xF0) {
-            if (i + 2 < s.size()) {
-                char16_t ch = ((c & 0x0F) << 12) |
-                    ((static_cast<unsigned char>(s[i+1]) & 0x3F) << 6) |
-                    (static_cast<unsigned char>(s[i+2]) & 0x3F);
-                out += ch;
-                i += 3;
-            } else { i += 1; }
-        } else {
-            if (i + 3 < s.size()) {
-                uint32_t cp = ((c & 0x07) << 18) |
-                    ((static_cast<unsigned char>(s[i+1]) & 0x3F) << 12) |
-                    ((static_cast<unsigned char>(s[i+2]) & 0x3F) << 6) |
-                    (static_cast<unsigned char>(s[i+3]) & 0x3F);
-                cp -= 0x10000;
-                out += static_cast<char16_t>(0xD800 + (cp >> 10));
-                out += static_cast<char16_t>(0xDC00 + (cp & 0x3FF));
-                i += 4;
-            } else { i += 1; }
-        }
-    }
-    return out;
-}
-
 void Renderer::DropSourceLayout() {
     // The state owns the handle, so replacing it releases the block.
     srcState_ = SourceLayoutState();
@@ -2478,7 +2412,7 @@ bool Renderer::EnsureSourceLayout(const std::string& src, float widthDip,
                       st.styleEpoch == styleEpoch_;
     if (same) return true;
     DropSourceLayout();
-    st.text16 = Utf8ToUtf16(src);
+    st.text16 = textenc::Utf8ToUtf16(src);
     if (st.text16.empty()) return false;
     // The source view's block, built behind the seam: the raw markdown in
     // the code format, wrapped at the column. One handle serves the draw,
@@ -2641,7 +2575,7 @@ float Renderer::RenderSourceView(platform::RenderTarget& rt,
     // Draw the text. The block is the layout the cache keeps, drawn
     // through the seam: the target takes the handle's native object to its
     // own DrawTextLayout, the call this used to make directly.
-    view.DrawLayout(*layout, textX, textY, SeamColor(pal.textPrimary));
+    view.DrawLayout(*layout, textX, textY, layout::ToColor(pal.textPrimary));
 
     // Add block layout to cache for hit-testing and caret placement.
     if (cache_) {
@@ -2672,29 +2606,6 @@ float Renderer::RenderSourceView(platform::RenderTarget& rt,
 
 
 // --- SVG block rendering ---
-
-// Convert a UTF-32 string (from Node::raw) to UTF-8.
-static std::string U32ToUtf8(const std::u32string& s) {
-    std::string out;
-    for (char32_t cp : s) {
-        if (cp < 0x80) {
-            out.push_back(static_cast<char>(cp));
-        } else if (cp < 0x800) {
-            out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
-            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-        } else if (cp < 0x10000) {
-            out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
-            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
-            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-        } else {
-            out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
-            out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
-            out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
-            out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-        }
-    }
-    return out;
-}
 
 void Renderer::ClearSvgCache() {
     for (auto& e : svg_cache_) {
@@ -2798,7 +2709,7 @@ svg::SvgDoc* Renderer::GetSvgDoc(const Node& n, float availW) {
     }
 
     // Cache miss: parse the SVG
-    std::string utf8 = U32ToUtf8(n.raw);
+    std::string utf8 = layout::Utf32ToUtf8(n.raw);
     if (utf8.empty()) return nullptr;
 
     SvgCacheEntry entry;
@@ -3055,16 +2966,16 @@ void Renderer::DrawMermaidBlock(platform::RenderTarget& target, const Node& n,
     const Palette& pal = palette_;
     platform::TextEngine* engine = TextEngineForWalk();
 
-    const platform::Color ink = SeamColor(pal.mermaidEdge);
-    const platform::Color nodeFill = SeamColor(pal.mermaidNodeFill);
-    const platform::Color nodeBorder = SeamColor(pal.mermaidNodeBorder);
-    const platform::Color textColor = SeamColor(pal.mermaidText);
+    const platform::Color ink = layout::ToColor(pal.mermaidEdge);
+    const platform::Color nodeFill = layout::ToColor(pal.mermaidNodeFill);
+    const platform::Color nodeBorder = layout::ToColor(pal.mermaidNodeBorder);
+    const platform::Color textColor = layout::ToColor(pal.mermaidText);
     // The swimlane band wears the diagram's cluster colours, so a
     // subgraph follows the appearance instead of staying a light grey
     // rectangle on a dark page.
-    const platform::Color laneFill = SeamColor(pal.mermaidClusterBg);
-    const platform::Color laneBorder = SeamColor(pal.mermaidClusterBorder);
-    const platform::Color laneTitle = SeamColor(pal.textPrimary);
+    const platform::Color laneFill = layout::ToColor(pal.mermaidClusterBg);
+    const platform::Color laneBorder = layout::ToColor(pal.mermaidClusterBorder);
+    const platform::Color laneTitle = layout::ToColor(pal.textPrimary);
     const platform::Color paper{1.0f, 1.0f, 1.0f, 1.0f};
 
     platform::FontSpec font;

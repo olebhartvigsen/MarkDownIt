@@ -113,4 +113,71 @@ inline std::wstring Utf8ToWide(const std::string& text) {
     return out;
 }
 
+// Encode code points as UTF-16 code units, the unit a seam text layout
+// speaks. A code point above the basic plane becomes its surrogate pair.
+inline std::u16string Utf32ToUtf16(const std::u32string& text) {
+    std::u16string out;
+    out.reserve(text.size());
+    for (char32_t cp : text) {
+        if (cp <= 0xFFFF) {
+            out.push_back(static_cast<char16_t>(cp));
+        } else {
+            cp -= 0x10000;
+            out.push_back(static_cast<char16_t>(0xD800 + (cp >> 10)));
+            out.push_back(static_cast<char16_t>(0xDC00 + (cp & 0x3FF)));
+        }
+    }
+    return out;
+}
+
+// Decode UTF-8 into UTF-16 code units. A malformed sequence advances one
+// byte at a time and never drops the rest of the string, the rule the
+// renderer's own conversion always kept.
+inline std::u16string Utf8ToUtf16(const std::string& text) {
+    std::u16string out;
+    size_t i = 0;
+    while (i < text.size()) {
+        const unsigned char c = static_cast<unsigned char>(text[i]);
+        if (c < 0x80) {
+            out += static_cast<char16_t>(c);
+            i += 1;
+        } else if (c < 0xC0) {
+            i += 1;  // skip continuation byte
+        } else if (c < 0xE0) {
+            if (i + 1 < text.size()) {
+                const char16_t ch = ((c & 0x1F) << 6) |
+                    (static_cast<unsigned char>(text[i + 1]) & 0x3F);
+                out += ch;
+                i += 2;
+            } else {
+                i += 1;
+            }
+        } else if (c < 0xF0) {
+            if (i + 2 < text.size()) {
+                const char16_t ch = ((c & 0x0F) << 12) |
+                    ((static_cast<unsigned char>(text[i + 1]) & 0x3F) << 6) |
+                    (static_cast<unsigned char>(text[i + 2]) & 0x3F);
+                out += ch;
+                i += 3;
+            } else {
+                i += 1;
+            }
+        } else {
+            if (i + 3 < text.size()) {
+                uint32_t cp = ((c & 0x07) << 18) |
+                    ((static_cast<unsigned char>(text[i + 1]) & 0x3F) << 12) |
+                    ((static_cast<unsigned char>(text[i + 2]) & 0x3F) << 6) |
+                    (static_cast<unsigned char>(text[i + 3]) & 0x3F);
+                cp -= 0x10000;
+                out += static_cast<char16_t>(0xD800 + (cp >> 10));
+                out += static_cast<char16_t>(0xDC00 + (cp & 0x3FF));
+                i += 4;
+            } else {
+                i += 1;
+            }
+        }
+    }
+    return out;
+}
+
 }  // namespace textenc

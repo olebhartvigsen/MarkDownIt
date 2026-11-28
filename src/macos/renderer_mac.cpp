@@ -37,40 +37,9 @@
 namespace platform {
 namespace {
 
-// A colour from the palette.
-Color ToColor(const ThemeColor& c) {
-    Color out;
-    out.r = c.r;
-    out.g = c.g;
-    out.b = c.b;
-    out.a = c.a;
-    return out;
-}
-
-// The DOM holds UTF-32, the encoder is UTF-8, so each code point
-// becomes one to four bytes.
-std::string Utf32ToUtf8(const std::u32string& text) {
-    std::string out;
-    out.reserve(text.size());
-    for (char32_t c : text) {
-        if (c < 0x80) {
-            out.push_back(static_cast<char>(c));
-        } else if (c < 0x800) {
-            out.push_back(static_cast<char>(0xC0 | (c >> 6)));
-            out.push_back(static_cast<char>(0x80 | (c & 0x3F)));
-        } else if (c < 0x10000) {
-            out.push_back(static_cast<char>(0xE0 | (c >> 12)));
-            out.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
-            out.push_back(static_cast<char>(0x80 | (c & 0x3F)));
-        } else {
-            out.push_back(static_cast<char>(0xF0 | (c >> 18)));
-            out.push_back(static_cast<char>(0x80 | ((c >> 12) & 0x3F)));
-            out.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
-            out.push_back(static_cast<char>(0x80 | (c & 0x3F)));
-        }
-    }
-    return out;
-}
+// A colour from the palette, and the DOM's UTF-32 to the encoder's UTF-8,
+// both live in the shared helpers (layout::ToColor, layout::Utf32ToUtf8):
+// this shell calls them and keeps no copy of its own.
 
 // The fallback image height and the reading blank strip moved into the
 // shared modules with the pass that uses them, so the renderer no longer
@@ -655,7 +624,7 @@ const SvgDoc* MacRenderer::GetSvgDoc(const Node& node) {
     // light-dark() and the dark-page remap both happen here, on the raw
     // markup, so the reader stays appearance-blind.
     const std::string resolvedText = svg::PrepareSvgForAppearance(
-        Utf32ToUtf8(node.raw), palette_.dark, Rgb24(palette_.pageBg),
+        layout::Utf32ToUtf8(node.raw), palette_.dark, Rgb24(palette_.pageBg),
         Rgb24(palette_.textPrimary));
     // A fenced block keeps its text in raw, the way the Windows draw
     // reads it; the inline children are empty for a fence.
@@ -703,7 +672,7 @@ void MacRenderer::LayoutSourceBlocks(float x, float width, float* y) {
     run.text = text;
     run.font = MakeFont(metrics_, metrics_.codeFontSize * kPtToDip * zoom_,
                         false, false, true);
-    const Color color = ToColor(palette_.textPrimary);
+    const Color color = layout::ToColor(palette_.textPrimary);
     run.color = color;
     std::vector<GlyphRun> runs;
     runs.push_back(std::move(run));
@@ -826,7 +795,7 @@ void MacRenderer::AppendBlockFromLaid(const Document& doc,
         case BlockKind::CodeBlock: {
             // The fence's text lives in raw; the inline children are
             // empty for a code block.
-            std::string code = Utf32ToUtf8(node.raw);
+            std::string code = layout::Utf32ToUtf8(node.raw);
             while (!code.empty() &&
                    (code.back() == '\n' || code.back() == '\r')) {
                 code.pop_back();
@@ -859,7 +828,7 @@ layout::ImageSize MacRenderer::ImageSizeForUrl(const Document& doc,
                 node.lang != "svg") {
                 continue;
             }
-            if (url != "svg:" + Utf32ToUtf8(node.raw)) continue;
+            if (url != "svg:" + layout::Utf32ToUtf8(node.raw)) continue;
             const SvgDoc* svgDoc = GetSvgDoc(node);
             if (svgDoc && svgDoc->Width() > 0.0f &&
                 svgDoc->Height() > 0.0f) {
@@ -1037,7 +1006,7 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
                         area.y = drawY;
                         area.scale = zoom_;
                         area.links = svg::CollectLinks(
-                            Utf32ToUtf8(block.node->raw));
+                            layout::Utf32ToUtf8(block.node->raw));
                         if (!area.links.empty()) {
                             svgLinkAreas_.push_back(std::move(area));
                         }
@@ -1123,7 +1092,7 @@ void MacRenderer::PaintMarkerHighlights(float scrollOffset) {
                      true)) {
                 Rect drawn = rect;
                 drawn.y -= scrollOffset;
-                target_->FillRect(drawn, ToColor(palette_.markerBg));
+                target_->FillRect(drawn, layout::ToColor(palette_.markerBg));
 
                 // The line along the bottom, so a mark never relies on
                 // colour alone.
@@ -1132,7 +1101,7 @@ void MacRenderer::PaintMarkerHighlights(float scrollOffset) {
                 line.y = drawn.y + drawn.height - 1.0f;
                 line.width = drawn.width;
                 line.height = 1.0f;
-                target_->FillRect(line, ToColor(palette_.markerLine));
+                target_->FillRect(line, layout::ToColor(palette_.markerLine));
             }
         }
     }
@@ -1154,13 +1123,13 @@ void MacRenderer::PaintBlockHighlights(const LaidOutBlock& block,
                  block, marker.start, marker.start + marker.length, true)) {
             Rect drawn = rect;
             drawn.y -= scrollOffset;
-            target_->FillRect(drawn, ToColor(palette_.markerBg));
+            target_->FillRect(drawn, layout::ToColor(palette_.markerBg));
             Rect line;
             line.x = drawn.x;
             line.y = drawn.y + drawn.height - 1.0f;
             line.width = drawn.width;
             line.height = 1.0f;
-            target_->FillRect(line, ToColor(palette_.markerLine));
+            target_->FillRect(line, layout::ToColor(palette_.markerLine));
         }
     }
     for (size_t i = 0; i < searchMatches_.size(); ++i) {
@@ -1171,8 +1140,8 @@ void MacRenderer::PaintBlockHighlights(const LaidOutBlock& block,
             Rect drawn = rect;
             drawn.y -= scrollOffset;
             target_->FillRect(drawn, current
-                                        ? ToColor(palette_.findCurrentMatchBg)
-                                        : ToColor(palette_.findMatchBg));
+                                        ? layout::ToColor(palette_.findCurrentMatchBg)
+                                        : layout::ToColor(palette_.findMatchBg));
         }
     }
 }
@@ -1193,13 +1162,13 @@ void MacRenderer::PaintTableRowHighlights(const LaidOutBlock& block,
             if (!inRow(rect)) continue;
             Rect drawn = rect;
             drawn.y -= scrollOffset;
-            target_->FillRect(drawn, ToColor(palette_.markerBg));
+            target_->FillRect(drawn, layout::ToColor(palette_.markerBg));
             Rect line;
             line.x = drawn.x;
             line.y = drawn.y + drawn.height - 1.0f;
             line.width = drawn.width;
             line.height = 1.0f;
-            target_->FillRect(line, ToColor(palette_.markerLine));
+            target_->FillRect(line, layout::ToColor(palette_.markerLine));
         }
     }
     for (size_t i = 0; i < searchMatches_.size(); ++i) {
@@ -1211,8 +1180,8 @@ void MacRenderer::PaintTableRowHighlights(const LaidOutBlock& block,
             Rect drawn = rect;
             drawn.y -= scrollOffset;
             target_->FillRect(drawn, current
-                                        ? ToColor(palette_.findCurrentMatchBg)
-                                        : ToColor(palette_.findMatchBg));
+                                        ? layout::ToColor(palette_.findCurrentMatchBg)
+                                        : layout::ToColor(palette_.findMatchBg));
         }
     }
 }
@@ -1233,8 +1202,8 @@ void MacRenderer::PaintSearchHighlights(float scrollOffset) {
                 Rect drawn = rect;
                 drawn.y -= scrollOffset;
                 target_->FillRect(drawn, current
-                                            ? ToColor(palette_.findCurrentMatchBg)
-                                            : ToColor(palette_.findMatchBg));
+                                            ? layout::ToColor(palette_.findCurrentMatchBg)
+                                            : layout::ToColor(palette_.findMatchBg));
             }
         }
     }
@@ -1307,7 +1276,7 @@ void MacRenderer::PaintCodeRects(const std::vector<Rect>& rects,
                       (last ? padX : 0.0f);
         drawn.height = boxH;
         target_->FillRoundedRectSides(drawn, kInlineCodeRadius * zoom_,
-                                      ToColor(palette_.inlineCodeBg),
+                                      layout::ToColor(palette_.inlineCodeBg),
                                       first, last);
     }
 }
@@ -1321,7 +1290,7 @@ void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
     for (const InlineBlock& child : block.node->children) {
         if (child.kind == InlineKind::Image) continue;
         const uint32_t length =
-            static_cast<uint32_t>(Utf32ToUtf8(child.text).size());
+            static_cast<uint32_t>(layout::Utf32ToUtf8(child.text).size());
         if (length == 0) continue;
         if (child.code) {
             std::vector<Rect> rects;
@@ -1333,7 +1302,7 @@ void MacRenderer::PaintInlineCodeBg(const LaidOutBlock& block,
             // monospace runs themselves: their text is the span's text,
             // split at the line breaks, and their x/width are already the
             // glyph positions.
-            const std::string codeText = Utf32ToUtf8(child.text);
+            const std::string codeText = layout::Utf32ToUtf8(child.text);
             std::vector<Rect> runRects;
             std::size_t matched = 0;
             float lineTop = TextTop(block);
