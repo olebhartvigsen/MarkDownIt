@@ -24,6 +24,7 @@
 #include "svgtext.h"
 #include "layout/text_runs.h"
 #include "layout/block_overlays.h"
+#include "layout/chips.h"
 #include "layout/range_highlights.h"
 #include "layout/selection_rects.h"
 #include "mermaid/model.h"
@@ -1363,13 +1364,18 @@ void Renderer::DrawTable(platform::RenderTarget& target, const Node& n,
                         target.FillRect(r, selectionColor);
                     }
                 }
-                // The glyphs are the engine's own laid out block: this
-                // cell's runs, broken at the column's inner width with the
-                // column's alignment, built here and drawn through the
-                // target. The walk record still fixes the column split and
-                // the row heights; the words no longer come from it, so a
-                // block without a record draws its text as well.
-                {
+                // The glyphs. With the walk's record this cell draws the
+                // record's own lines (decision 3: the walk's cell lines win,
+                // the same call the mac uses), so the two ports put the same
+                // glyphs at the same places. Without a record the old
+                // engine block is the fallback.
+                const layout::LaidTableCell* laidCell =
+                    (rec && ri < rec->cells.size() &&
+                     c < rec->cells[ri].size() &&
+                     !rec->cells[ri][c].lines.empty())
+                        ? &rec->cells[ri][c]
+                        : nullptr;
+                if (!laidCell) {
                     const float gutter =
                         (row.cells[c].isHeader &&
                          !n.tableFilterActive.empty())
@@ -1457,6 +1463,50 @@ void Renderer::DrawTable(platform::RenderTarget& target, const Node& n,
                     bl.u16ToSrcEnd = row.cells[c].u16ToSrcEnd;
                     bl.fontHeight = LineHeightOf(bodyRole_.font);
                     cache_->Add(bl);
+                }
+            }
+
+            // The record's words, above the stripe and the washes: the same
+            // lines the walk measured, at the same places the mac puts them.
+            // The inline code pills come first, one shared pass for the row
+            // so a wrapped span is one pill, and the glyphs go over them.
+            if (rec && ri < rec->cells.size()) {
+                const float originY = y - rec->headerTop;
+                layout::PaintInlineCodeChips(
+                    target, rec->cellsText, x, originY, m,
+                    layout::ToColor(pal.inlineCodeBg), zoom_, curY - originY,
+                    curY - originY + rowH);
+                for (size_t c = 0; c < row.cells.size() && c < cols &&
+                                   c < rec->cells[ri].size(); ++c) {
+                    const layout::LaidTableCell& laid = rec->cells[ri][c];
+                    if (laid.lines.empty()) continue;
+                    const float innerW = colWs[c] - 2.0f * m.cellPadX;
+                    const float innerH = rowH - 2.0f * m.cellPadY;
+                    if (!(innerW > 0.0f) || !(innerH > 0.0f)) continue;
+                    const float cellX = x + colXs[c];
+                    const ColumnAlign align = layout::CellAlign(n, row, c, m);
+                    float cellTextHeight = 0.0f;
+                    for (const platform::TextLine& line : laid.lines)
+                        cellTextHeight += line.height;
+                    float lineY =
+                        curY + (std::max)(m.cellPadY,
+                                          (rowH - cellTextHeight) * 0.5f);
+                    target.PushClip(platform::Rect{cellX + m.cellPadX,
+                                                   curY + m.cellPadY, innerW,
+                                                   innerH});
+                    for (const platform::TextLine& line : laid.lines) {
+                        float lineX = cellX + m.cellPadX;
+                        if (align == ColumnAlign::Center) {
+                            lineX += (innerW - line.width) * 0.5f;
+                        } else if (align == ColumnAlign::Right) {
+                            lineX += innerW - line.width;
+                        }
+                        layout::PaintTextLine(target, line, lineX, lineY,
+                                              layout::ToColor(
+                                                  pal.textPrimary));
+                        lineY += line.height;
+                    }
+                    target.PopClip();
                 }
             }
         }
@@ -1929,43 +1979,16 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
     // at the walk's own positions, and minus the band advance, which
     // the records own. The band top is the record's: the walk's gaps
     // are the gaps today's curY walk made.
-    // The inline code washes come from the runs the replay draws, so
-    // each wash sits exactly under its glyphs. They were once placed from
-    // a second DirectWrite layout, which measured the line a little
-    // differently and drifted off the text. A wash covers the term and
-    // nothing else: the padding stays under half a space, so it never
-    // reaches the neighbouring words or spaces. They go down first, under
-    // the search and selection fills, as before.
+    // The inline code pills come from the runs the replay draws, one
+    // shared pass over the display list's per run spans, so a wrapped
+    // span is one pill with a cap at each real end. They go down first,
+    // under the search and selection fills and under the glyphs.
     {
-        const platform::Color codeBg = layout::ToColor(pal.inlineCodeBg);
-        const float codeEm = m.codeFontSize * kPtToDip * zoom_;
-        const float padX = m.inlineCodePadX * codeEm;
         const float originY = m.padTop + topOffsetDip;
-        for (const display::Item& item : shared.list.items) {
-            const auto* t = std::get_if<display::Text>(&item);
-            if (!t) continue;
-            const float top = originY + t->top;
-            if (top > scrollY + viewH || top + t->line.height < scrollY)
-                continue;
-            const auto& runs = t->line.runs;
-            for (size_t i = 0; i < runs.size(); ++i) {
-                if (!runs[i].font.monospace || runs[i].text.empty())
-                    continue;
-                const float right = i + 1 < runs.size()
-                                        ? runs[i + 1].x
-                                        : t->line.width;
-                const float w = right - runs[i].x;
-                if (w <= 0.0f) continue;
-                const float boxH = std::min(t->line.height, 1.6f * codeEm);
-                const float left = originX + t->x + runs[i].x;
-                const float boxTop =
-                    top + (t->line.height - boxH) * 0.5f;
-                view.FillRoundedRect(
-                    platform::Rect{left - padX, boxTop, w + 2.0f * padX,
-                                   boxH},
-                    6.0f * zoom_, codeBg);
-            }
-        }
+        layout::PaintInlineCodeChips(
+            view, shared.list, originX, originY, m,
+            layout::ToColor(pal.inlineCodeBg), zoom_, scrollY - originY,
+            scrollY + viewH - originY);
     }
 
     for (size_t nodeIdx = 0; nodeIdx < doc.nodes.size(); ++nodeIdx) {
