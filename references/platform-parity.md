@@ -86,6 +86,15 @@ the longer reasoning.
 | Caret record index space | UTF-16; the seam's caret methods already speak UTF-16, so the mac converts at the boundary rather than the cache converting (slice 8) | The mac record maps rendered UTF-8 bytes and `LayoutCache` reads UTF-16 units, and either side could have been the one to convert. |
 | Offset rectangles for centred and right-aligned cells | Prove first: a test compares the two models' rectangles for centred and right-aligned cells and must be green before the record adoption lands; if it cannot be green, report the measured difference instead of adopting on trust (slice 8) | The two models agreed on plain and left-aligned text and nobody had compared an aligned cell, where a centred header cell's caret would expose a wrong rectangle. |
 
+The proof, `RendererMac.CaretRectsAgreeForAlignedCells` (2026-11-28), compared
+the two models and found a difference: the mac `OffsetToRect` added no alignment
+offset, so a centred or right-aligned cell's caret sat at the cell's left edge
+while its glyphs were painted aligned. A 100 point column with an 8 point line
+measured 46 points of difference for centre and 92 for right. The mac model now
+places the line with the cell's `ColumnAlign`, the rule the painter and the
+range rectangles already used, and the test is green. The shared model needed
+no change.
+
 The source view's geometry is one rule now: `SourceViewInset` and
 `SourceViewTextWidth` in `src/blocktext.h`. Windows's inset moved from 13 to
 16 and the mac's text moved from the column edge to 16 points inside it, so the

@@ -445,6 +445,11 @@ public:
         uint32_t srcEnd = 0;
         // Set when the region is a table cell, which owns its box.
         bool cell = false;
+        // The column alignment the cell's lines are painted with. The
+        // caret rectangle has to use it too, or the caret of a centred
+        // header cell sits at the cell's left edge (owner decision 5,
+        // 2026-11-28, proved by CaretRectsAgreeForAlignedCells).
+        ColumnAlign align = ColumnAlign::Default;
     };
     std::vector<TextRegion> TextRegions() const;
 

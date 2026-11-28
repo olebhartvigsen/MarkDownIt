@@ -10,6 +10,7 @@
 
 #include "gtest_lite.h"
 
+#include "../src/layoutcache.h"
 #include "../src/macos/renderer_mac.h"
 #include "../src/macos/svg_mac.h"
 #include "../src/parser.h"
@@ -1664,6 +1665,77 @@ TEST(RendererMac, RangeRectsFollowTheCellAlignment) {
     const float secondLeftEdge = leftEdge + block.tableLayout.colW;
     EXPECT_TRUE(std::fabs((right[0].x + right[0].width) -
                           (secondLeftEdge + innerW)) < 1.0f);
+}
+
+// Owner decision 5, 2026-11-28: the two caret models must answer the
+// same rectangle for a centred and a right-aligned cell before the mac
+// record adoption lands. The shared model is the cache's answer from a
+// block built with the column's alignment; the mac model is the
+// renderer's own OffsetToRect over the same measured lines. Before this
+// test the mac answer ignored the alignment, so the caret of a centred
+// header cell sat at the cell's left edge while its glyphs sat in the
+// middle.
+TEST(RendererMac, CaretRectsAgreeForAlignedCells) {
+    FakeEngine engine;
+    MacRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    Node table = Table({{"A", "B"}});
+    table.aligns = {ColumnAlign::Center, ColumnAlign::Right};
+    uint32_t src = 0;
+    for (TableRow& row : table.rows) {
+        for (TableCell& cell : row.cells) {
+            cell.srcOffset = src;
+            cell.srcEnd = src + 1;
+            cell.u16ToSrc = {src};
+            cell.u16ToSrcEnd = {src + 1};
+            ++src;
+        }
+    }
+
+    const Document doc = Doc({table});
+    renderer.Measure(doc, 1400.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    const LaidOutBlock& block = renderer.blocks()[0];
+    ASSERT_EQ(block.tableLayout.rows.size(), 1u);
+
+    LayoutCache cache;
+    for (size_t c = 0; c < block.tableLayout.rows[0].size(); ++c) {
+        const LaidOutBlock::TableCellLayout& cell =
+            block.tableLayout.rows[0][c];
+        const float innerW = layout::TableColumnW(block.tableLayout, c) -
+                             2.0f * BaseMetrics().cellPadX;
+        const ColumnAlign align = c == 0 ? ColumnAlign::Center
+                                         : ColumnAlign::Right;
+        const platform::TextAlign seamAlign =
+            align == ColumnAlign::Center ? platform::TextAlign::Center
+                                         : platform::TextAlign::Right;
+        const platform::TextLayoutHandle layout =
+            platform::MakeLineLayout(cell.lines, innerW, seamAlign);
+        ASSERT_TRUE(layout != nullptr);
+
+        BlockLayout bl;
+        bl.layout = layout;
+        bl.x = block.x + layout::TableColumnX(block.tableLayout, c) +
+               BaseMetrics().cellPadX;
+        bl.y = block.y + BaseMetrics().cellPadY;
+        bl.width = innerW;
+        bl.srcOffset = c;
+        bl.srcLength = 1;
+        bl.u16ToSrc = {c};
+        bl.u16ToSrcEnd = {c + 1};
+        cache.Add(bl);
+
+        float cacheX = 0.0f, cacheY = 0.0f, cacheH = 0.0f;
+        ASSERT_TRUE(cache.OffsetToCaretRect(static_cast<uint32_t>(c),
+                                            &cacheX, &cacheY, &cacheH));
+
+        float macX = 0.0f, macY = 0.0f, macW = 0.0f, macH = 0.0f;
+        ASSERT_TRUE(renderer.OffsetToRect(static_cast<uint32_t>(c), &macX,
+                                          &macY, &macW, &macH));
+        EXPECT_NEAR(macX, cacheX, 0.01f);
+    }
 }
 
 // The laid-out runs carry the palette's colours inside them, so a

@@ -1473,6 +1473,7 @@ std::vector<MacRenderer::TextRegion> MacRenderer::TextRegions() const {
                     region.srcStart = cell.srcCellStart;
                     region.srcEnd = cell.srcCellEnd;
                     region.cell = true;
+                    region.align = cell.align;
                     regions.push_back(region);
                 }
                 if (r < block.tableLayout.rowHeights.size()) {
@@ -1956,6 +1957,22 @@ bool MacRenderer::LineRangeAtPoint(float x, float y, uint32_t* outStart,
 bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
                                float* outWidth, float* outHeight) const {
     const std::vector<TextRegion> regions = TextRegions();
+    // Where the line's own offset lands inside the region. A table cell
+    // paints its lines at the column's alignment, so the caret has to be
+    // placed by the same rule; the shared cache asks its aligned layout
+    // and gets the same answer (owner decision 5, 2026-11-28).
+    const auto rectXIn = [](const TextRegion& region, const TextLine& line,
+                            const Rect& rect) {
+        float alignOffset = 0.0f;
+        if (region.cell) {
+            if (region.align == ColumnAlign::Center) {
+                alignOffset = (region.width - line.width) * 0.5f;
+            } else if (region.align == ColumnAlign::Right) {
+                alignOffset = region.width - line.width;
+            }
+        }
+        return region.x + alignOffset + rect.x;
+    };
     for (const TextRegion& region : regions) {
         if (offset < region.visToSrc->front() ||
             offset > region.visToSrc->back()) {
@@ -1999,7 +2016,7 @@ bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
                 ? length
                 : vis - foundStart;
             const Rect rect = engine_->OffsetToRect(line, inLine);
-            if (outX) *outX = region.x + rect.x;
+            if (outX) *outX = rectXIn(region, line, rect);
             if (outY) *outY = foundTop;
             if (outWidth) *outWidth = rect.width;
             if (outHeight) *outHeight = line.height;
@@ -2041,7 +2058,7 @@ bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
             top += (*above->lines)[i].height;
         }
         const Rect rect = engine_->OffsetToRect(line, length);
-        if (outX) *outX = above->x + rect.x;
+        if (outX) *outX = rectXIn(*above, line, rect);
         if (outY) *outY = top;
         if (outWidth) *outWidth = rect.width;
         if (outHeight) *outHeight = line.height;
@@ -2050,7 +2067,7 @@ bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
     if (below) {
         const TextLine& line = below->lines->front();
         const Rect rect = engine_->OffsetToRect(line, 0);
-        if (outX) *outX = below->x + rect.x;
+        if (outX) *outX = rectXIn(*below, line, rect);
         if (outY) *outY = below->top;
         if (outWidth) *outWidth = rect.width;
         if (outHeight) *outHeight = line.height;
