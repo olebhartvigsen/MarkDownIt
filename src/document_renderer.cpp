@@ -869,10 +869,25 @@ void DocumentRenderer::PaintOverlays(float scrollOffset) {
     }
 }
 
-void DocumentRenderer::Render(const Document& doc, float scrollOffset) {
+void DocumentRenderer::Render(const Document& doc, float scrollOffset,
+                              float scrollOffsetX) {
     svgLinkAreas_.clear();
     (void)doc;
     if (!target_) return;
+
+    // The horizontal scroll belongs to the coordinates, like the column's
+    // left edge and the vertical offset: one wrapper applies it once, so
+    // every layer below (the washes, the chips, the replay and the
+    // overlays) shifts by the same amount and no call site has to know.
+    // The wrapper is unwound on every exit, including the source view's.
+    platform::OffsetTarget hshift(target_, -scrollOffsetX, 0.0f);
+    RenderTarget* const outerTarget = target_;
+    target_ = &hshift;
+    struct RestoreTarget {
+        RenderTarget** slot;
+        RenderTarget* value;
+        ~RestoreTarget() { *slot = value; }
+    } restore{&target_, outerTarget};
 
     // The global marker and search washes go under everything the
     // replay draws above them. A code card and a table row paint their
@@ -943,6 +958,13 @@ void DocumentRenderer::Render(const Document& doc, float scrollOffset) {
             return ImageHandleFor(item);
         },
         [&] { PaintOverlays(scrollOffset); });
+
+    // The picture links were recorded at the block's own x. The view asks
+    // in the space the frame painted, which the horizontal scroll moved,
+    // so the same offset is applied to them here.
+    if (scrollOffsetX != 0.0f) {
+        for (SvgLinkArea& area : svgLinkAreas_) area.x -= scrollOffsetX;
+    }
 }
 
 void DocumentRenderer::PaintWashesInRegion(

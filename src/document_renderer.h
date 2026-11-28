@@ -217,7 +217,16 @@ public:
         const Document& doc, float contentWidthSeam);
 
     // Draws the laid out document.
-    void Render(const Document& doc, float scrollOffset);
+    //
+    // `scrollOffset` is the vertical scroll in points and
+    // `scrollOffsetX` the horizontal one. The mac view scrolls its own
+    // surface, so it passes zero for both; the Windows shell draws the
+    // page itself and passes the offsets its scroll bars report, which
+    // is what keeps a picture wider than the column reachable. A
+    // horizontal offset shifts every coordinate the frame paints by the
+    // same amount, so nothing else in the frame has to know about it.
+    void Render(const Document& doc, float scrollOffset,
+                float scrollOffsetX = 0.0f);
 
     // The link under a point in the view's own space, which is the space
     // the last frame painted in (block position minus the scroll). Nil

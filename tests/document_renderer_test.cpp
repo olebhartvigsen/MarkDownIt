@@ -696,6 +696,55 @@ TEST(DocumentRenderer, PaintsTheGitHubTableGrid) {
     EXPECT_TRUE(sawColumnEdge);
 }
 
+TEST(DocumentRenderer, HorizontalScrollShiftsTheFrameByTheOffset) {
+    FakeEngine engine;
+    DocumentRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+
+    const Document doc = Doc({
+        Para("a paragraph wide enough to wrap at a narrow column"),
+        Table({{"h1", "h2"}, {"a", "b"}}),
+    });
+    renderer.Measure(doc, 480.0f);
+
+    RecordingTarget plain;
+    renderer.SetRenderTarget(&plain);
+    renderer.Render(doc, 0.0f, 0.0f);
+
+    // The same frame, scrolled sideways. The offset is the transform:
+    // every call the frame makes moves by exactly minus the offset on x
+    // and by nothing on y, the overlays included.
+    const float kHScroll = 37.0f;
+    RecordingTarget shifted;
+    renderer.SetRenderTarget(&shifted);
+    renderer.Render(doc, 0.0f, kHScroll);
+
+    ASSERT_EQ(shifted.fills.size(), plain.fills.size());
+    for (size_t i = 0; i < plain.fills.size(); ++i) {
+        EXPECT_NEAR(shifted.fills[i].rect.x,
+                    plain.fills[i].rect.x - kHScroll, 0.01f);
+        EXPECT_NEAR(shifted.fills[i].rect.y, plain.fills[i].rect.y, 0.01f);
+        EXPECT_NEAR(shifted.fills[i].rect.width, plain.fills[i].rect.width,
+                    0.01f);
+    }
+    ASSERT_EQ(shifted.texts.size(), plain.texts.size());
+    ASSERT_TRUE(!plain.texts.empty());
+    for (size_t i = 0; i < plain.texts.size(); ++i) {
+        EXPECT_NEAR(shifted.texts[i].x, plain.texts[i].x - kHScroll, 0.01f);
+        EXPECT_NEAR(shifted.texts[i].baseline, plain.texts[i].baseline, 0.01f);
+        EXPECT_EQ(shifted.texts[i].text, plain.texts[i].text);
+    }
+    ASSERT_EQ(shifted.strokes.size(), plain.strokes.size());
+    for (size_t i = 0; i < plain.strokes.size(); ++i) {
+        EXPECT_NEAR(shifted.strokes[i].x0, plain.strokes[i].x0 - kHScroll,
+                    0.01f);
+        EXPECT_NEAR(shifted.strokes[i].x1, plain.strokes[i].x1 - kHScroll,
+                    0.01f);
+        EXPECT_NEAR(shifted.strokes[i].y0, plain.strokes[i].y0, 0.01f);
+    }
+}
+
 TEST(DocumentRenderer, GivesListsTheMarkerGutter) {
     FakeEngine engine;
     DocumentRenderer renderer;
