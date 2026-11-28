@@ -529,14 +529,6 @@ private:
     // replayed text sits under the chips it needs a background for.
     void PaintTableOverlays(const LaidOutBlock& block, float scrollOffset);
 
-    // Draws the lines of a block, with their underlines and their
-    // strike-throughs.
-    void PaintLines(const std::vector<TextLine>& lines, float x,
-                    float top) const;
-
-    // Draws the runs of one line.
-    void PaintLineRuns(const TextLine& line, float x, float y) const;
-
     // Draws the background of the inline code spans of a block, behind
     // its text.
     void PaintInlineCodeBg(const LaidOutBlock& block,
@@ -563,12 +555,7 @@ private:
     Palette palette_{};
 
     // Where each linked picture was drawn last frame, in view space.
-    struct SvgLinkArea {
-        float x = 0.0f;
-        float y = 0.0f;
-        float scale = 1.0f;
-        std::vector<svg::LinkBox> links;
-    };
+    using SvgLinkArea = svg::LinkArea;
     std::vector<SvgLinkArea> svgLinkAreas_;
 
     // The selection the owning view set for this frame.

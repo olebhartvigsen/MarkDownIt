@@ -277,12 +277,7 @@ private:
 
     // Where the last frame drew each linked SVG picture, and the links
     // inside it, in the picture's own user units.
-    struct SvgLinkArea {
-        float x = 0.0f;
-        float y = 0.0f;
-        float scale = 1.0f;   // document points per user unit
-        std::vector<svg::LinkBox> links;
-    };
+    using SvgLinkArea = svg::LinkArea;
     std::vector<SvgLinkArea> svg_link_areas_;
 
     // The test replacement of the walk's engine, SetWalkEngineForTesting

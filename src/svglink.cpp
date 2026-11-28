@@ -268,6 +268,17 @@ const LinkBox* LinkAt(const std::vector<LinkBox>& links, float u, float v) {
     return nullptr;
 }
 
+const LinkBox* LinkInAreas(const std::vector<LinkArea>& areas, float x,
+                           float y) {
+    for (auto it = areas.rbegin(); it != areas.rend(); ++it) {
+        if (it->scale <= 0.0f) continue;
+        const float u = (x - it->x) / it->scale;
+        const float v = (y - it->y) / it->scale;
+        if (const LinkBox* hit = LinkAt(it->links, u, v)) return hit;
+    }
+    return nullptr;
+}
+
 bool IsOpenableUrl(const std::string& href) {
     std::string scheme;
     for (size_t i = 0; i < href.size(); ++i) {

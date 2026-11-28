@@ -2560,17 +2560,10 @@ void Renderer::RememberImageSize(const std::string& url, float w, float h) {
 }
 
 bool Renderer::SvgLinkAt(float docX, float docY, std::string* href) const {
-    for (auto it = svg_link_areas_.rbegin(); it != svg_link_areas_.rend();
-         ++it) {
-        if (it->scale <= 0.0f) continue;
-        const float u = (docX - it->x) / it->scale;
-        const float v = (docY - it->y) / it->scale;
-        if (const svg::LinkBox* hit = svg::LinkAt(it->links, u, v)) {
-            if (href) *href = hit->href;
-            return true;
-        }
-    }
-    return false;
+    const svg::LinkBox* hit = svg::LinkInAreas(svg_link_areas_, docX, docY);
+    if (!hit) return false;
+    if (href) *href = hit->href;
+    return true;
 }
 
 svg::SvgDoc* Renderer::GetSvgDoc(const Node& n, float availW) {

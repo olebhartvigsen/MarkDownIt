@@ -39,6 +39,24 @@ void ApplyLineSpacing(std::vector<platform::TextLine>* lines,
                       float ptSize, float lineHeightEm, float zoom,
                       platform::TextEngine* engine);
 
+// One measured line, run by run, through a seam target. A link's
+// underline and a struck span are stroked, because the seam has no
+// decoration call: the underline two points under the baseline, the
+// strike across the middle of the x. The portable DrawLayout path draws
+// the same two strokes, so a caller that holds line records paints the
+// same glyphs as one that holds a block handle.
+void PaintTextLine(platform::RenderTarget& target,
+                   const platform::TextLine& line, float x, float y,
+                   const platform::Color& ink = platform::Color{0.0f, 0.0f,
+                                                               0.0f, 1.0f});
+
+// A block's measured lines from the top down.
+void PaintTextLines(platform::RenderTarget& target,
+                    const std::vector<platform::TextLine>& lines, float x,
+                    float top,
+                    const platform::Color& ink = platform::Color{0.0f, 0.0f,
+                                                                0.0f, 1.0f});
+
 // One run per inline span: a link is a colour change and an
 // underline, an inline code span takes the code face at the code
 // size, a strong span takes the semibold face. boldIn and italicIn

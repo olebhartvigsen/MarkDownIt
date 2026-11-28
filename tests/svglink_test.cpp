@@ -104,4 +104,36 @@ TEST(SvgLinks, OnlyWebAndMailSchemesAreOpenable) {
     EXPECT_FALSE(svg::IsOpenableUrl(""));
 }
 
+TEST(SvgLinks, AreasPlaceTheBoxesWhereThePictureWasDrawn) {
+    // A picture at (100, 50) at scale 2 puts user unit (5, 5) at
+    // (110, 60). A second area of the same picture at the origin holds
+    // that point at user unit (10, 10), and the later area wins where
+    // both hold a box, the paint order of the page.
+    svg::LinkArea scaled;
+    scaled.x = 100.0f;
+    scaled.y = 50.0f;
+    scaled.scale = 2.0f;
+    scaled.links = {{0.0f, 0.0f, 10.0f, 10.0f, "https://scaled"}};
+    svg::LinkArea unscaled;
+    unscaled.x = 100.0f;
+    unscaled.y = 50.0f;
+    unscaled.links = {{0.0f, 0.0f, 20.0f, 20.0f, "https://unscaled"}};
+    const std::vector<svg::LinkArea> areas = {scaled, unscaled};
+
+    const svg::LinkBox* hit = svg::LinkInAreas(areas, 110.0f, 60.0f);
+    ASSERT_TRUE(hit != nullptr);
+    EXPECT_TRUE(hit->href == "https://unscaled");
+    // With the later area gone, the scaled one answers, and outside both
+    // nothing does.
+    hit = svg::LinkInAreas({scaled}, 110.0f, 60.0f);
+    ASSERT_TRUE(hit != nullptr);
+    EXPECT_TRUE(hit->href == "https://scaled");
+    EXPECT_TRUE(svg::LinkInAreas(areas, 300.0f, 300.0f) == nullptr);
+    // A picture that drew at no scale is skipped rather than divided by
+    // zero.
+    svg::LinkArea flat = scaled;
+    flat.scale = 0.0f;
+    EXPECT_TRUE(svg::LinkInAreas({flat}, 110.0f, 60.0f) == nullptr);
+}
+
 }  // namespace

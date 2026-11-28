@@ -471,16 +471,10 @@ float MacRenderer::EffectivePadX(float widthDip) const {
 
 bool MacRenderer::SvgLinkInView(float viewX, float viewY,
                                 std::string* href) const {
-    for (auto it = svgLinkAreas_.rbegin(); it != svgLinkAreas_.rend(); ++it) {
-        if (it->scale <= 0.0f) continue;
-        const float u = (viewX - it->x) / it->scale;
-        const float v = (viewY - it->y) / it->scale;
-        if (const svg::LinkBox* hit = svg::LinkAt(it->links, u, v)) {
-            if (href) *href = hit->href;
-            return true;
-        }
-    }
-    return false;
+    const svg::LinkBox* hit = svg::LinkInAreas(svgLinkAreas_, viewX, viewY);
+    if (!hit) return false;
+    if (href) *href = hit->href;
+    return true;
 }
 
 const SvgDoc* MacRenderer::GetSvgDoc(const Node& node) {
@@ -867,8 +861,8 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
         // The source view has no display items; its one block draws
         // the raw buffer itself, with the washes under the glyphs.
         for (const LaidOutBlock& block : blocks_) {
-            PaintLines(block.lines, TextX(block),
-                       TextTop(block) - scrollOffset);
+            layout::PaintTextLines(*target_, block.lines, TextX(block),
+                                   TextTop(block) - scrollOffset);
         }
         return;
     }
@@ -942,8 +936,9 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
                             target_->FillRect(drawn, selColour_);
                         }
                     }
-                    PaintLines(block.lines, TextX(block),
-                               TextTop(block) - scrollOffset);
+                    layout::PaintTextLines(*target_, block.lines,
+                                           TextX(block),
+                                           TextTop(block) - scrollOffset);
                 }
                 break;
             }
@@ -1123,47 +1118,6 @@ void MacRenderer::PaintSearchHighlights(float scrollOffset) {
 }
 
 
-void MacRenderer::PaintLines(const std::vector<TextLine>& lines, float x,
-                              float top) const {
-    float y = top;
-    for (const TextLine& line : lines) {
-        PaintLineRuns(line, x, y);
-        y += line.height;
-    }
-}
-
-void MacRenderer::PaintLineRuns(const TextLine& line, float x,
-                                 float y) const {
-    if (!target_) return;
-
-    for (size_t i = 0; i < line.runs.size(); ++i) {
-        const GlyphRun& run = line.runs[i];
-        Color color = platform::RunInk(run);
-        target_->DrawText(run.text, run.font, x + run.x,
-                          y + line.ascent, color);
-
-        // The underline of a link and the strike-through of a struck
-        // span. The seam has no draw call for the two decorations, so
-        // they are stroked: two points under the baseline for the link,
-        // and across the middle of the x for the strike.
-        if (!run.underline && !run.strike) continue;
-        float runWidth = line.width - run.x;
-        if (i + 1 < line.runs.size()) {
-            runWidth = line.runs[i + 1].x - run.x;
-        }
-        if (runWidth <= 0.0f) continue;
-        if (run.underline) {
-            target_->StrokeLine(x + run.x, y + line.ascent + 2.0f,
-                                x + run.x + runWidth,
-                                y + line.ascent + 2.0f, color, 1.0f);
-        }
-        if (run.strike) {
-            const float strikeY = y + line.ascent - 0.30f * run.font.size;
-            target_->StrokeLine(x + run.x, strikeY, x + run.x + runWidth,
-                                strikeY, color, 1.0f);
-        }
-    }
-}
 
 void MacRenderer::PaintCodeRects(const std::vector<Rect>& rects,
                                   float scrollOffset) const {
@@ -1340,7 +1294,7 @@ void MacRenderer::PaintTableOverlays(const LaidOutBlock& block,
                 } else if (cells[c].align == ColumnAlign::Right) {
                     lineX += innerW - line.width;
                 }
-                PaintLineRuns(line, lineX, lineY);
+                layout::PaintTextLine(*target_, line, lineX, lineY);
                 lineY += line.height;
             }
             if (inner.width > 0.0f && inner.height > 0.0f) {

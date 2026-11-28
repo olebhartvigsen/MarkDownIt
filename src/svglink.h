@@ -41,6 +41,23 @@ std::vector<LinkBox> CollectLinks(const std::string& xml);
 // which matches the paint order: the shape drawn last is the one on top.
 const LinkBox* LinkAt(const std::vector<LinkBox>& links, float u, float v);
 
+// One drawn picture's link boxes, placed where the picture was drawn:
+// the origin in the caller's own coordinate space and the scale from
+// the SVG's user units to it. The mac renderer keeps a picture in view
+// points and the Windows one in document points; the box list and the
+// lookup are the same, so both send this struct.
+struct LinkArea {
+    float x = 0.0f;
+    float y = 0.0f;
+    float scale = 1.0f;   // caller points per user unit
+    std::vector<LinkBox> links;
+};
+
+// The link under a point in the caller's space, across every picture.
+// Later pictures win, the paint order of the page.
+const LinkBox* LinkInAreas(const std::vector<LinkArea>& areas, float x,
+                           float y);
+
 // Whether the app may hand this URL to the system browser. Only the
 // schemes a document should be able to open: https and mailto. Plain
 // http is refused along with javascript:, data:, file: and bare

@@ -68,6 +68,44 @@ void ApplyLineSpacing(std::vector<platform::TextLine>* lines,
     }
 }
 
+void PaintTextLine(platform::RenderTarget& target,
+                   const platform::TextLine& line, float x, float y,
+                   const platform::Color& ink) {
+    for (size_t i = 0; i < line.runs.size(); ++i) {
+        const platform::GlyphRun& run = line.runs[i];
+        const platform::Color color = platform::RunInk(run, ink);
+        target.DrawText(run.text, run.font, x + run.x, y + line.ascent,
+                        color);
+
+        if (!run.underline && !run.strike) continue;
+        float runWidth = line.width - run.x;
+        if (i + 1 < line.runs.size()) {
+            runWidth = line.runs[i + 1].x - run.x;
+        }
+        if (runWidth <= 0.0f) continue;
+        if (run.underline) {
+            target.StrokeLine(x + run.x, y + line.ascent + 2.0f,
+                              x + run.x + runWidth, y + line.ascent + 2.0f,
+                              color, 1.0f);
+        }
+        if (run.strike) {
+            const float strikeY = y + line.ascent - 0.30f * run.font.size;
+            target.StrokeLine(x + run.x, strikeY, x + run.x + runWidth,
+                              strikeY, color, 1.0f);
+        }
+    }
+}
+
+void PaintTextLines(platform::RenderTarget& target,
+                    const std::vector<platform::TextLine>& lines, float x,
+                    float top, const platform::Color& ink) {
+    float y = top;
+    for (const platform::TextLine& line : lines) {
+        PaintTextLine(target, line, x, y, ink);
+        y += line.height;
+    }
+}
+
 std::vector<platform::GlyphRun> BuildRuns(const Node& node,
                                           float baseSize, bool boldIn,
                                           bool italicIn,
