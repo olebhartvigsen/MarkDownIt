@@ -29,8 +29,8 @@ and why. Three checkers read this file:
 | Dark appearance (`src/app.cpp`, `src/ribbon.cpp` against `src/macos/main_mac.mm`) | uxtheme ordinals, DWM frame attributes, the ribbon's undocumented property 2004, `DarkMode_Explorer` scrollbars | `NSApp.appearance`, `effectiveAppearance`, semantic colours | The mechanism is native chrome on both sides; the appearance *decision* is shared (`src/thememode.h`, `src/theme_model.h`) and the document palette is shared (`theme.h`). A window frame belongs to the OS, so this one forks by necessity, like the ribbon row above. |
 | Appearance setting key | `ThemeMode` DWORD in the registry | `themeMode` in `settings.json` | The existing settings-store split; the `AppSettings` field and its meaning are shared. |
 
-The Mermaid painters are one body now. All five kinds, the flowchart, the pie,
-the state diagram, the sequence diagram and the gantt chart, paint through
+The Mermaid painters are one body for four of the five kinds. The pie, the
+state diagram, the sequence diagram and the gantt chart paint through
 `src/mermaid/painter.cpp` on both ports. The two Windows sequence and gantt
 painters are deleted. Where those bodies disagreed with the shared painter, the
 shared painter is authoritative by
@@ -39,6 +39,17 @@ mistake them for drift: the sequence autonumber digits are 12 mermaid units, not
 the Windows 16 DIP; the sequence activation outline is the palette activation
 stroke `#666666`, not the fill colour; the gantt section titles are bold, not
 regular weight.
+
+The flowchart is the exception. On Windows, `Renderer::DrawMermaidBlock`
+(`src/renderer.cpp`) still paints it, with its own arrow head, dashed polyline
+walker and block constants. On macOS the block goes through
+`platform::PaintMermaidDiagram` to `platform::PaintFlowchart` in the shared
+painter. This is an accident of history, not a platform difference: the
+flowchart arm was never moved when the other four kinds were, and an earlier
+version of this paragraph said all five were shared. That was false for
+Windows, and the plan's 2026-11-28 comparison records how it was found. The
+conversion is slice 6 in the plan's merge order, and this paragraph changes
+when it lands.
 
 The text painters are one body as well (plan 2.2, finished 2026-11-27). Both
 renderers draw through `platform::RenderTarget`, and a laid out block is a

@@ -247,8 +247,11 @@ one, look for a part you can move into shared code.
 
 - App shells: `src/app.cpp` against `src/macos/app_mac.cpp` and
   `main_mac.mm`.
-- Renderer shells: `renderer.cpp` against `renderer_mac.cpp`. All five Mermaid
-  kinds paint through `src/mermaid/painter.cpp` on both ports.
+- Renderer shells: `renderer.cpp` against `renderer_mac.cpp`. The pie, state,
+  sequence and gantt diagrams paint through `src/mermaid/painter.cpp` on both
+  ports. The flowchart does not on Windows: `Renderer::DrawMermaidBlock` still
+  paints it there, while the mac renderer uses `PaintFlowchart` through the
+  shared painter (plan 2.2, slice 6).
 - Chrome, settings, clipboard, find bar and outline pane widgets.
 
 Open migration steps and the reasoning behind them are in
