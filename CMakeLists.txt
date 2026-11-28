@@ -322,6 +322,7 @@ if(BUILD_TESTS AND APPLE)
         tests/undo_test.cpp
         tests/incremental_test.cpp
         tests/analytics_test.cpp
+        tests/renderer_win_test.cpp
         tests/clipboard_test.cpp
         tests/formatting_test.cpp
         tests/clear_format_test.cpp
@@ -465,6 +466,7 @@ elseif(BUILD_TESTS)
         tests/undo_test.cpp
         tests/incremental_test.cpp
         tests/analytics_test.cpp
+        tests/renderer_win_test.cpp
         tests/clipboard_test.cpp
         tests/formatting_test.cpp
         tests/autoformat_test.cpp
