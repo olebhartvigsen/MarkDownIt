@@ -124,8 +124,10 @@ TEST(SvgLinks, AreasPlaceTheBoxesWhereThePictureWasDrawn) {
     ASSERT_TRUE(hit != nullptr);
     EXPECT_TRUE(hit->href == "https://unscaled");
     // With the later area gone, the scaled one answers, and outside both
-    // nothing does.
-    hit = svg::LinkInAreas({scaled}, 110.0f, 60.0f);
+    // nothing does. Both lists are named: the answer points into the
+    // list, so a temporary would be freed before it is read.
+    const std::vector<svg::LinkArea> onlyScaled = {scaled};
+    hit = svg::LinkInAreas(onlyScaled, 110.0f, 60.0f);
     ASSERT_TRUE(hit != nullptr);
     EXPECT_TRUE(hit->href == "https://scaled");
     EXPECT_TRUE(svg::LinkInAreas(areas, 300.0f, 300.0f) == nullptr);
@@ -133,7 +135,8 @@ TEST(SvgLinks, AreasPlaceTheBoxesWhereThePictureWasDrawn) {
     // zero.
     svg::LinkArea flat = scaled;
     flat.scale = 0.0f;
-    EXPECT_TRUE(svg::LinkInAreas({flat}, 110.0f, 60.0f) == nullptr);
+    const std::vector<svg::LinkArea> onlyFlat = {flat};
+    EXPECT_TRUE(svg::LinkInAreas(onlyFlat, 110.0f, 60.0f) == nullptr);
 }
 
 }  // namespace

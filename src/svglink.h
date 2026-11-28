@@ -54,7 +54,8 @@ struct LinkArea {
 };
 
 // The link under a point in the caller's space, across every picture.
-// Later pictures win, the paint order of the page.
+// Later pictures win, the paint order of the page. The answer points
+// into `areas`, so the list has to outlive it.
 const LinkBox* LinkInAreas(const std::vector<LinkArea>& areas, float x,
                            float y);
 
