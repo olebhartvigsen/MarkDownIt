@@ -42,3 +42,16 @@ inline BlockTextInset BlockTextInsetFor(BlockKind kind, float markerWidth,
     }
     return inset;
 }
+
+// The source view is one monospaced block shaped like a code card, so it
+// takes the code card's inset on both ports (owner decision, 2026-11-28).
+// The Windows view used to borrow the table's cellPadX (13 in the default
+// style); the mac view drew at the column edge and wrapped at codePad. One
+// rule now: the text starts codePad inside the column and wraps at the
+// column less one codePad on each side.
+inline float SourceViewInset(const LayoutMetrics& m) { return m.codePad; }
+
+inline float SourceViewTextWidth(float contentWidth, const LayoutMetrics& m) {
+    const float w = contentWidth - 2.0f * SourceViewInset(m);
+    return w > 0.0f ? w : contentWidth;
+}

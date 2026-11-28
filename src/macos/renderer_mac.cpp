@@ -324,7 +324,9 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
     // byte on screen, so the caret, the selection and the find
     // scope work on raw bytes.
     if (sourceMode_) {
-        LayoutSourceBlocks(originX_, contentWidth_, &y);
+        const float sourceInset = SourceViewInset(metrics_);
+        LayoutSourceBlocks(originX_ + sourceInset,
+                           SourceViewTextWidth(contentWidth_, metrics_), &y);
         totalHeight_ = y + metrics_.padTop * 2.0f;
         return totalHeight_;
     }
@@ -585,8 +587,7 @@ void MacRenderer::LayoutSourceBlocks(float x, float width, float* y) {
     std::vector<GlyphRun> runs;
     runs.push_back(std::move(run));
 
-    block.lines = engine_->MeasureWrapped(
-        runs, width - metrics_.codePad * 2.0f, 0.0f);
+    block.lines = engine_->MeasureWrapped(runs, width, 0.0f);
     ApplyLineSpacing(&block.lines, metrics_.codeFontSize,
                      metrics_.codeLineHeight);
     for (const TextLine& line : block.lines) {
@@ -859,8 +860,19 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
 
     if (sourceMode_) {
         // The source view has no display items; its one block draws
-        // the raw buffer itself, with the washes under the glyphs.
+        // the raw buffer itself, with the washes under the selection
+        // and the glyphs on top. The selection is the renderer's here
+        // (owner decision, 2026-11-28), in the same one paint pass
+        // Windows has always used, so the view no longer fills it.
         for (const LaidOutBlock& block : blocks_) {
+            if (hasSelection_) {
+                for (const Rect& rect :
+                     RectsForRangeInBlock(block, selFrom_, selTo_)) {
+                    Rect drawn = rect;
+                    drawn.y -= scrollOffset;
+                    target_->FillRect(drawn, selColour_);
+                }
+            }
             layout::PaintTextLines(*target_, block.lines, TextX(block),
                                    TextTop(block) - scrollOffset);
         }

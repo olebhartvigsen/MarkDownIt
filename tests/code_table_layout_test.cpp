@@ -4,6 +4,7 @@
 // A fake run never breaks inside itself, so a fenced block's one
 // run wraps at the unchanged width, exactly what the renderers see.
 
+#include "blocktext.h"
 #include "fake_text_engine.h"
 #include "gtest_lite.h"
 #include "layout/document_layout.h"
@@ -610,4 +611,17 @@ TEST(TableLayout, AProseTablePinsItsHeaderWithASurfaceOfItsOwn) {
     EXPECT_TRUE(layout::PinnedHeader(b.y, b.height, b.table->headerHeight,
                                      b.y + 1.0f, &pinTop));
     NEAR(pinTop, b.y + 1.0f);
+}
+
+// The source view follows the code card's padding (owner decision 1,
+// 2026-11-28): one inset token, 16 points in the default style, on both
+// ports, and one column rule. The renderers only call these two, so the
+// numbers here are the source view's geometry on both runners.
+TEST(CodeTableLayout, SourceViewTakesTheCodeCardInset) {
+    EXPECT_NEAR(SourceViewInset(kM), kM.codePad, 0.001f);
+    EXPECT_NEAR(SourceViewInset(kM), 16.0f, 0.001f);
+    EXPECT_NEAR(SourceViewTextWidth(700.0f, kM), 700.0f - 32.0f, 0.001f);
+    // A column narrower than two pads still wraps somewhere, instead of
+    // handing the engine a negative width.
+    EXPECT_NEAR(SourceViewTextWidth(20.0f, kM), 20.0f, 0.001f);
 }

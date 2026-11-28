@@ -325,10 +325,11 @@ void ContentView::Draw(RenderTarget* target) {
     // The renderer needs the same range and colour: a code block paints
     // its own background inside the frame and would cover a wash drawn
     // here, so it draws the wash itself, above the card and under the
-    // glyphs.
+    // glyphs. The source view's selection belongs to the renderer too
+    // (owner decision, 2026-11-28), so the view leaves that one to it.
     renderer_.SetSelection(selection.Start(), selection.End(),
                            SelectionColor());
-    if (!selection.Empty()) {
+    if (!selection.Empty() && !renderer_.inSourceMode()) {
         const uint32_t from = selection.Start();
         const uint32_t to = selection.End();
         for (const Rect& rect : renderer_.SelectionRects(from, to)) {

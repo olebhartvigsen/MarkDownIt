@@ -71,6 +71,28 @@ measure, and `FontFamilies` answers the platform's list, so the renderer holds
 itself is the Windows editor's; the mac editor reads its caret out of the
 painter's own walk records, a standing difference this step leaves as it was.
 
+### Decisions that shape parity, 2026-11-28
+
+The repo owner settled five questions the port alignment plan had left open.
+They are decisions, not options, and this table is their record beside the
+code they govern. The plan's own entry (2.2, "The five owner decisions") gives
+the longer reasoning.
+
+| Decision | Ruling | Why it was asked |
+|---|---|---|
+| Source view text inset | 16 points, the mac `codePad`, on both ports; the source view follows the code card's padding (slice 9) | Windows borrowed the table's `cellPadX` (13) and drew at that inset, the mac drew at the column edge and wrapped at `codePad`; one shared body had to pick one number, and picking either moved one port's text and column. |
+| Source view selection | The renderer paints it in one paint pass on both ports; the mac view stops painting it from `content_view_mac.mm` (slice 9) | The mac view owned the selection layer and the Windows renderer owned its own, so sharing the source view would have pulled the AppKit view into the shared painter. |
+| Words and chips raster path | The display list owns the surface and the overlays run above it, the same rule the card and the table already carry (slice 10) | Windows drew a cell through one `DrawLayout`, the mac through `DrawText` per run with its own chips; choosing either path moves pixels on the port that loses its own. |
+| Caret record index space | UTF-16; the seam's caret methods already speak UTF-16, so the mac converts at the boundary rather than the cache converting (slice 8) | The mac record maps rendered UTF-8 bytes and `LayoutCache` reads UTF-16 units, and either side could have been the one to convert. |
+| Offset rectangles for centred and right-aligned cells | Prove first: a test compares the two models' rectangles for centred and right-aligned cells and must be green before the record adoption lands; if it cannot be green, report the measured difference instead of adopting on trust (slice 8) | The two models agreed on plain and left-aligned text and nobody had compared an aligned cell, where a centred header cell's caret would expose a wrong rectangle. |
+
+The source view's geometry is one rule now: `SourceViewInset` and
+`SourceViewTextWidth` in `src/blocktext.h`. Windows's inset moved from 13 to
+16 and the mac's text moved from the column edge to 16 points inside it, so the
+source view's pixels move once on each port by decision. The block producer is
+still per port until the caret record adoption: Windows keeps the
+`LayoutCache` handle, the mac its measured lines.
+
 ## Commands: ribbon to mac menu
 
 Every command the ribbon offers and the selector that carries it out

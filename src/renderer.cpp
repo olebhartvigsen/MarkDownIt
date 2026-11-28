@@ -2343,7 +2343,7 @@ float Renderer::MeasureSourceView(const std::string& src, float widthDip,
     float originX = wrapEnabled_
         ? (widthDip - contentWidth) * 0.5f
         : m.padX;
-    float textW = contentWidth - 2.0f * m.cellPadX;
+    float textW = SourceViewTextWidth(contentWidth, m);
 
     // A scroll frame (reuse granted) keeps the last layout; every other
     // frame builds it afresh, and the render that follows uses that one.
@@ -2377,8 +2377,8 @@ float Renderer::RenderSourceView(platform::RenderTarget& rt,
     float originX = wrapEnabled_
         ? (widthDip - contentWidth) * 0.5f
         : m.padX;
-    float textW = contentWidth - 2.0f * m.cellPadX;
-    float textX = originX + m.cellPadX;
+    float textW = SourceViewTextWidth(contentWidth, m);
+    float textX = originX + SourceViewInset(m);
     float textY = m.padTop + topOffsetDip;
 
     // Reuse what this frame's measure just built, or the last layout on a
