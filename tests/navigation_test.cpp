@@ -1,4 +1,5 @@
 #include "gtest_lite.h"
+#include "fake_text_engine.h"
 #include "layoutcache.h"
 #include "navigation.h"
 #include "textbuffer.h"
@@ -151,4 +152,113 @@ TEST(Navigation, APlainArrowEndsTheSelectionAtItsEdge) {
     empty.active = {4};
     EXPECT_EQ(HorizontalTarget(empty, false, false, 5), 5u);
     EXPECT_EQ(HorizontalTarget(empty, true, true, 3), 3u);
+}
+
+// ---------------------------------------------------------------------------
+// The vertical step over drawn lines. These three are the behaviours the mac
+// caret model pinned (`VerticalMoveEntersTheListBelow`,
+// `VerticalMoveStepsThroughANestedListOneLineAtATime`,
+// `VerticalCaretKnowsWhichSideOfAWrapItIsOn`). The step is one algorithm on
+// both ports now, so they run here, on the cache, on every runner.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// One laid out block for the cache: the words split into runs the fake
+// engine wraps, the lines handed to the seam's own layout handle, and an
+// identity UTF-16 to source map (the text is ASCII in these tests).
+BlockLayout LaidBlockFor(fake::FakeTextEngine& engine, const std::string& text,
+                         float x, float y, float width, uint32_t srcStart) {
+    std::vector<platform::GlyphRun> runs;
+    size_t at = 0;
+    while (at < text.size()) {
+        const size_t space = text.find(' ', at);
+        const size_t end = space == std::string::npos ? text.size() : space + 1;
+        platform::GlyphRun run;
+        run.text = text.substr(at, end - at);
+        run.font.size = 20.0f;  // the fake engine's line box is 30
+        runs.push_back(run);
+        at = end;
+    }
+    std::vector<platform::TextLine> lines =
+        engine.MeasureWrapped(runs, width, 0.0f);
+    float height = 0.0f;
+    for (const platform::TextLine& line : lines) height += line.height;
+
+    BlockLayout bl;
+    bl.layout =
+        platform::MakeLineLayout(std::move(lines), width,
+                                 platform::TextAlign::Left);
+    bl.x = x;
+    bl.y = y;
+    bl.width = width;
+    bl.height = height;
+    bl.srcOffset = srcStart;
+    bl.srcLength = static_cast<uint32_t>(text.size());
+    for (uint32_t i = 0; i < text.size(); ++i) {
+        bl.u16ToSrc.push_back(srcStart + i);
+        bl.u16ToSrcEnd.push_back(srcStart + i + 1);
+    }
+    return bl;
+}
+
+// "one two " fits 80 points (8 per glyph) and "three four" is the second
+// line, so the paragraph has a soft wrap after "two ".
+const char kParagraph[] = "one two three four";
+constexpr uint32_t kWrapAt = 8;  // the first byte of "three"
+
+}  // namespace
+
+TEST(Navigation, VerticalMoveEntersTheListBelow) {
+    fake::FakeTextEngine engine;
+    engine.BeginLayout();
+    LayoutCache lc;
+    lc.Add(LaidBlockFor(engine, kParagraph, 0.0f, 0.0f, 80.0f, 0));
+    // A list item's text starts right of the margin, so the reader's own
+    // column is left of it: the step has to clamp into the line.
+    lc.Add(LaidBlockFor(engine, "item here", 40.0f, 60.0f, 80.0f, 100));
+    float desiredX = 5.0f;
+    // The paragraph's last line, one step above the list. The list's text
+    // starts at x 40, right of the reader's column, and the step has to
+    // clamp into it instead of skipping the block.
+    const uint32_t down = MoveVertical(lc, kWrapAt + 1, 1, &desiredX, 0.0f,
+                                       30.0f);
+    EXPECT_EQ(down, 100u);
+}
+
+TEST(Navigation, VerticalMoveStepsThroughAListOneLineAtATime) {
+    fake::FakeTextEngine engine;
+    engine.BeginLayout();
+    LayoutCache lc;
+    lc.Add(LaidBlockFor(engine, kParagraph, 0.0f, 0.0f, 80.0f, 0));
+    lc.Add(LaidBlockFor(engine, "item here", 40.0f, 60.0f, 80.0f, 100));
+    float desiredX = 5.0f;
+    // From the paragraph's first line, one step down is its own second
+    // line, not the list below it.
+    const uint32_t down = MoveVertical(lc, 0, 1, &desiredX, 0.0f, 30.0f);
+    EXPECT_GE(down, kWrapAt);
+    EXPECT_LT(down, 100u);
+    // And one more step reaches the list.
+    const uint32_t next = MoveVertical(lc, down, 1, &desiredX, 0.0f, 30.0f);
+    EXPECT_EQ(next, 100u);
+}
+
+TEST(Navigation, VerticalCaretKnowsWhichSideOfAWrapItIsOn) {
+    fake::FakeTextEngine engine;
+    engine.BeginLayout();
+    LayoutCache lc;
+    lc.Add(LaidBlockFor(engine, "above", 0.0f, 0.0f, 80.0f, 0));
+    lc.Add(LaidBlockFor(engine, kParagraph, 0.0f, 30.0f, 80.0f, 100));
+    const uint32_t wrap = 100 + kWrapAt;
+    float desiredX = -1.0f;
+    // Drawn at the wrap's upper line, one step up leaves the block.
+    const uint32_t upper = MoveVertical(lc, wrap, -1, &desiredX, 0.0f, 30.0f);
+    EXPECT_EQ(upper, 0u);
+    // Drawn at the wrap's lower line, the step starts there and lands on
+    // the upper line of the same wrap.
+    desiredX = -1.0f;
+    const uint32_t lower =
+        MoveVertical(lc, wrap, -1, &desiredX, 0.0f, 30.0f,
+                     /*caretOnLowerLine=*/true);
+    EXPECT_EQ(lower, 100u);
 }

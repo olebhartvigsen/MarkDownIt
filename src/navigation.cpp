@@ -1,5 +1,6 @@
 #include "navigation.h"
 #include "editcontroller.h"
+#include "platform/seams.h"  // the seam handle the cache holds
 #include <algorithm>
 #include <cctype>
 #include <vector>
@@ -425,70 +426,167 @@ void WordSpanAt(const TextBuffer& buf, uint32_t offset,
     *outStart = start;
     *outEnd = end;
 }
-uint32_t MoveVertical(const LayoutCache& lc, uint32_t offset,
-                      int direction, float* desiredX,
-                      float scrollY, float lineHeight) {
-    float x, y, h;
-    if (!lc.OffsetToCaretRect(offset, &x, &y, &h)) return offset;
+namespace {
 
-    if (*desiredX < 0) *desiredX = x;
+// The source byte a UTF-16 position inside a block came from. An empty
+// map falls back to the block's own start, and a position past the map
+// clamps to its sentinel, the same answers the caret code reads.
+uint32_t SourceOfPosition(const BlockLayout& bl, uint32_t position) {
+    if (bl.u16ToSrc.empty()) return bl.srcOffset;
+    if (position >= bl.u16ToSrc.size()) return bl.u16ToSrc.back();
+    return bl.u16ToSrc[position];
+}
 
-    // Blocks can be separated by large vertical gaps (blank lines,
-    // heading spacing). One lineHeight step may land between blocks
-    // where PointToOffset fails; progressively scan further in the
-    // move direction until we hit rendered text or run out of doc.
-    uint32_t newOffset = UINT32_MAX;
-    float targetY = y;
-    for (int step = 1; step <= 12; ++step) {
-        targetY += static_cast<float>(direction) * lineHeight;
-        uint32_t cand = lc.PointToOffset(*desiredX, targetY);
-        if (cand == UINT32_MAX) {
-            // The x may fall outside narrower blocks (list items start
-            // after their marker gutter, code blocks are inset). Find
-            // the block by y alone and hit-test with x clamped inside.
-            int blkIdx = lc.FindBlockAtY(targetY);
-            if (blkIdx < 0) continue;
-            const auto& blocks = lc.Blocks();
-            const auto& bl = blocks[blkIdx];
-            float cx = *desiredX;
-            if (cx < bl.x) cx = bl.x;
-            if (cx >= bl.x + bl.width) cx = bl.x + bl.width - 1.0f;
-            cand = lc.PointToOffset(cx, targetY);
-            if (cand == UINT32_MAX) continue;
-        }
-        // Reject hits that are still on the current visual line. A
-        // tall block (H1-H3 use much larger fonts than body text)
-        // makes one generic lineHeight step land back inside the
-        // same block; moving must actually leave the current line.
-        float cx, cy, ch;
-        if (!lc.OffsetToCaretRect(cand, &cx, &cy, &ch)) continue;
-        bool movedPast = (direction < 0)
-            ? (cy < y - h * 0.5f)
-            : (cy > y + h * 0.5f);
-        if (!movedPast) continue;
-        newOffset = cand;
-        break;
+// The source end a line's last position covers: past the last character,
+// where the caret of a line's end sits.
+uint32_t SourceOfLineEnd(const BlockLayout& bl, uint32_t position) {
+    if (bl.u16ToSrc.empty()) return bl.srcOffset + bl.srcLength;
+    if (position >= bl.u16ToSrc.size()) {
+        return bl.srcOffset + bl.srcLength;
     }
-    // No block found in that direction: clamp to doc start/end so the
-    // caret still moves to the first/last line of the document.
-    if (newOffset == UINT32_MAX) {
-        const auto& blocks = lc.Blocks();
-        if (blocks.empty()) return offset;
-        if (direction < 0) {
-            newOffset = blocks.front().srcOffset;
-        } else {
-            const auto& last = blocks.back();
-            if (last.u16ToSrc.empty()) {
-                newOffset = last.srcOffset + last.srcLength;
-            } else if (lc.SourceText()) {
-                newOffset = NextGraphemeBoundary(
-                    *lc.SourceText(), last.u16ToSrc.back());
-            } else {
-                newOffset = last.srcOffset + last.srcLength;
+    return bl.u16ToSrc[position];
+}
+
+// The cache seen as a page of drawn lines: one band per visual line, from
+// the seam's own line queries, the record the caret already reads.
+class CacheVerticalLayout final : public VerticalLayout {
+public:
+    explicit CacheVerticalLayout(const LayoutCache& lc) : lc_(lc) {}
+
+    std::vector<VerticalLine> Lines() const override {
+        std::vector<VerticalLine> out;
+        for (const BlockLayout& bl : lc_.Blocks()) {
+            if (!bl.layout) continue;
+            const float width =
+                bl.width > 0.0f ? bl.width : bl.layout->Width();
+            const uint32_t count = bl.layout->LineCount();
+            float top = bl.y;
+            for (uint32_t i = 0; i < count; ++i) {
+                uint32_t start = 0;
+                uint32_t end = 0;
+                if (!bl.layout->LineTextRange(i, width, &start, &end)) break;
+                const float height = bl.layout->LineHeightAt(i);
+                const platform::TextHit first =
+                    bl.layout->CaretAtOffset(start);
+                VerticalLine line;
+                line.top = top;
+                line.height = height;
+                // The left edge is the line's own first glyph, which a
+                // list item's gutter moves right. The right edge is the
+                // block's column: a point past a short line's last glyph
+                // already hit tests to the line's end, so the block edge
+                // clamps the reader's column without shortening a line
+                // whose ink stops early.
+                line.left = bl.x + first.x;
+                line.right = bl.x + width;
+                if (line.right < line.left) line.right = line.left;
+                line.srcStart = SourceOfPosition(bl, start);
+                line.srcEnd = SourceOfLineEnd(bl, end);
+                out.push_back(line);
+                top += height;
             }
         }
+        return out;
     }
-    return newOffset;
+
+    uint32_t HitTest(float x, float y) const override {
+        return lc_.PointToOffset(x, y);
+    }
+
+private:
+    const LayoutCache& lc_;
+};
+
+}  // namespace
+
+uint32_t MoveVerticalIn(const VerticalLayout& layout, uint32_t offset,
+                        int direction, float* desiredX,
+                        bool caretOnLowerLine) {
+    if (direction == 0 || !desiredX) return offset;
+
+    const std::vector<VerticalLine> lines = layout.Lines();
+    if (lines.empty()) return offset;
+
+    // The line the caret is drawn on. A position at a soft wrap is drawn
+    // at the end of the upper line, or at the start of the lower one when
+    // a vertical step put it there, and the step has to start from that
+    // same line or it lands a line off.
+    int caretLine = -1;
+    // The last line that ends before the position, for a caret that sits
+    // between two blocks where no line holds it.
+    int lineAbove = -1;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        const VerticalLine& line = lines[i];
+        if (offset >= line.srcStart && offset <= line.srcEnd &&
+            (caretLine < 0 || caretOnLowerLine)) {
+            caretLine = static_cast<int>(i);
+        }
+        if (line.srcEnd < offset &&
+            (lineAbove < 0 || lines[lineAbove].srcEnd < line.srcEnd)) {
+            lineAbove = static_cast<int>(i);
+        }
+    }
+    if (caretLine < 0) {
+        if (lineAbove < 0) {
+            // Before the first drawn line: one step down is its first
+            // line, and there is nothing above it.
+            if (direction < 0) return offset;
+            caretLine = -1;
+        } else {
+            caretLine = lineAbove;
+        }
+    }
+
+    // The point sits in the middle of the line's band, so the hit test
+    // cannot drift into the line above or below it. A band that draws no
+    // glyphs has no position to answer with, and the step keeps going.
+    const int step = direction > 0 ? 1 : -1;
+    const int count = static_cast<int>(lines.size());
+    for (int i = caretLine + step; i >= 0 && i < count; i += step) {
+        const VerticalLine& target = lines[static_cast<size_t>(i)];
+        float hitX = *desiredX;
+        if (hitX < target.left) hitX = target.left;
+        if (hitX > target.right) hitX = target.right;
+        const uint32_t hit =
+            layout.HitTest(hitX, target.top + target.height * 0.5f);
+        if (hit == UINT32_MAX) continue;
+        if (hit != offset) return hit;
+    }
+    return offset;
+}
+
+uint32_t MoveVertical(const LayoutCache& lc, uint32_t offset,
+                      int direction, float* desiredX,
+                      float scrollY, float lineHeight,
+                      bool caretOnLowerLine) {
+    // The scroll and the line height were the old step's guesses at the
+    // page; the bands answer that question now.
+    (void)scrollY;
+    (void)lineHeight;
+    if (!desiredX) return offset;
+
+    float x = 0.0f;
+    float y = 0.0f;
+    float h = 0.0f;
+    if (!lc.OffsetToCaretRect(offset, &x, &y, &h)) return offset;
+    if (*desiredX < 0) *desiredX = x;
+
+    const CacheVerticalLayout layout(lc);
+    const uint32_t moved =
+        MoveVerticalIn(layout, offset, direction, desiredX, caretOnLowerLine);
+    if (moved != offset) return moved;
+
+    // Nothing to land on in that direction: clamp to the document's first
+    // or last line so the caret still reaches the edges of the page.
+    const auto& blocks = lc.Blocks();
+    if (blocks.empty()) return offset;
+    if (direction < 0) return blocks.front().srcOffset;
+    const auto& last = blocks.back();
+    if (last.u16ToSrc.empty()) return last.srcOffset + last.srcLength;
+    if (lc.SourceText()) {
+        return NextGraphemeBoundary(*lc.SourceText(), last.u16ToSrc.back());
+    }
+    return last.srcOffset + last.srcLength;
 }
 
 uint32_t MoveLineStart(const LayoutCache& lc, uint32_t offset) {

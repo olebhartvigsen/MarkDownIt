@@ -2093,38 +2093,18 @@ bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
     return false;
 }
 
-bool MacRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
-                                   uint32_t* outOffset) const {
-    if (delta == 0 || !outOffset) return false;
-
-    // Every drawn line, in the order the page draws them, with the band
-    // its text fills. A vertical step keeps the column, and a column that
-    // falls outside the line (a paragraph's plain left margin, a list's
-    // deeper text column) has to land on the nearest position inside it
-    // instead of dropping the line.
-    struct LineRef {
-        float top;
-        float height;
-        float left;
-        float right;
-    };
-    std::vector<LineRef> lines;
-    const std::vector<TextRegion> regions = TextRegions();
-    int caretLine = -1;
-    // The last line of the nearest region that ends before the position,
-    // for a position that sits between two regions: on the newline that
-    // ends a block, nothing holds it, and the step has to start from the
-    // line just above the gap.
-    int lineAbove = -1;
-    for (const TextRegion& region : regions) {
-        if (!region.lines || !region.visToSrc || region.lines->empty()) {
+std::vector<navigation::VerticalLine> MacRenderer::VerticalBands() const {
+    // The bands the mac always walked: each region's lines, with the
+    // region's own ink edges and the source range each line covers. The
+    // step reads them through navigation::MoveVerticalIn, so the algorithm
+    // is the one both ports run and this function is only the record.
+    std::vector<navigation::VerticalLine> bands;
+    for (const TextRegion& region : TextRegions()) {
+        if (!region.lines || !region.visToSrc || region.lines->empty() ||
+            region.visToSrc->empty()) {
             continue;
         }
-        uint32_t vis = 0;
-        const bool holdsCaret =
-            offset >= region.visToSrc->front() &&
-            offset <= region.visToSrc->back() &&
-            VisibleAtSource(*region.visToSrc, offset, &vis);
+        const size_t firstBand = bands.size();
         float top = region.top;
         uint32_t lineStartVis = 0;
         for (const TextLine& line : *region.lines) {
@@ -2133,69 +2113,64 @@ bool MacRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
                 length += static_cast<uint32_t>(run.text.size());
             }
             const uint32_t lineEndVis = lineStartVis + length;
-            // A position at a soft wrap is drawn at the end of the upper
-            // line, or at the start of the lower one when the caret came
-            // there by a vertical step. The step has to start from that
-            // same line, or it lands a line off and skips the line the
-            // caret is standing on.
-            if (holdsCaret && vis >= lineStartVis && vis <= lineEndVis &&
-                (caretLine < 0 || wrappedCaretOnLowerLine_)) {
-                caretLine = static_cast<int>(lines.size());
-            }
-            LineRef ref;
-            ref.top = top;
-            ref.height = line.height;
-            ref.left = region.x;
-            ref.right = region.x + engine_->OffsetToRect(line, length).x;
-            lines.push_back(ref);
+            navigation::VerticalLine band;
+            band.top = top;
+            band.height = line.height;
+            band.left = region.x;
+            band.right = region.x + engine_->OffsetToRect(line, length).x;
+            const size_t last = region.visToSrc->size() - 1;
+            const size_t startAt = lineStartVis < last ? lineStartVis : last;
+            const size_t endAt = lineEndVis < last ? lineEndVis : last;
+            band.srcStart = (*region.visToSrc)[startAt];
+            band.srcEnd = (*region.visToSrc)[endAt];
+            bands.push_back(band);
             lineStartVis = lineEndVis;
             top += line.height;
         }
-        if (region.visToSrc->back() < offset) {
-            lineAbove = static_cast<int>(lines.size()) - 1;
+        // A position in a marker before the region's first drawn byte, or
+        // after its last one, still belongs to the region's first or last
+        // line: the map clamps a boundary that way, and so does the step.
+        if (bands.size() > firstBand) {
+            bands[firstBand].srcStart =
+                (std::min)(region.visToSrc->front(), region.srcStart);
+            bands.back().srcEnd =
+                (std::max)(region.visToSrc->back(), region.srcEnd);
         }
     }
-    if (caretLine < 0) {
-        if (lineAbove < 0) {
-            if (delta < 0) return false;
-            // Before the first drawn line: one step down is its first
-            // line, and there is nothing above it.
-            caretLine = -1;
-        } else {
-            caretLine = lineAbove;
-        }
-    }
+    return bands;
+}
 
-    // The point sits in the middle of a line's band, so the hit test
-    // cannot drift into the line above or below it. A block's last line
-    // can be one that draws nothing, and its middle answers with the
-    // caret's own position again; the step then keeps going in the same
-    // direction until the layout names a position that differs.
-    const int lineCount = static_cast<int>(lines.size());
-    const int direction = delta > 0 ? 1 : -1;
-    for (int line = caretLine + delta; line >= 0 && line < lineCount;
-         line += direction) {
-        const LineRef& target = lines[static_cast<size_t>(line)];
-        // Hold the reader's column, but never hand the hit test an x the
-        // line cannot answer with: an indented line (a list item, a quote)
-        // starts well right of the margin a plain paragraph sits on, and
-        // an x left of it used to read as "no line here", which made the
-        // arrows jump over the whole list.
-        float hitX = desiredX;
-        if (hitX < target.left) hitX = target.left;
-        if (hitX > target.right) hitX = target.right;
-        const uint32_t hit =
-            HitTestPoint(hitX, target.top + target.height * 0.5f);
-        // A band that draws no glyphs, a spacer the layout keeps for
-        // spacing alone, has no text position to answer with. Step past
-        // it to the next line that does.
-        if (hit == UINT32_MAX) continue;
-        if (hit != offset) {
-            *outOffset = hit;
-            return true;
+bool MacRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
+                                   uint32_t* outOffset) const {
+    if (delta == 0 || !outOffset) return false;
+
+    // The page as the one shared step reads it. The bands are this
+    // renderer's own records; the algorithm is navigation::MoveVerticalIn.
+    class RegionLayout final : public navigation::VerticalLayout {
+    public:
+        RegionLayout(std::vector<navigation::VerticalLine> lines,
+                     const MacRenderer* renderer)
+            : lines_(std::move(lines)), renderer_(renderer) {}
+
+        std::vector<navigation::VerticalLine> Lines() const override {
+            return lines_;
         }
-    }
-    return false;
+        uint32_t HitTest(float x, float y) const override {
+            return renderer_->HitTestPoint(x, y);
+        }
+
+    private:
+        std::vector<navigation::VerticalLine> lines_;
+        const MacRenderer* renderer_ = nullptr;
+    };
+
+    float desired = desiredX;
+    const RegionLayout layout(VerticalBands(), this);
+    const uint32_t moved = navigation::MoveVerticalIn(
+        layout, offset, delta, &desired, wrappedCaretOnLowerLine_);
+    if (moved == offset) return false;
+    *outOffset = moved;
+    return true;
 }
 
 std::vector<Rect> MacRenderer::SelectionRects(uint32_t start,

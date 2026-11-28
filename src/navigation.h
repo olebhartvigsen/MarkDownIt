@@ -60,14 +60,48 @@ uint32_t ListItemContentStart(const Node& node, const std::string& source);
 bool MoveTableCell(const Document& doc, uint32_t offset, bool backwards,
                    uint32_t* destination);
 
+// One visual line's band, in document coordinates, with the source range
+// its text covers. The vertical step reads these instead of stepping by a
+// guessed line height, so it lands on the line that is actually drawn.
+struct VerticalLine {
+    float top = 0.0f;
+    float height = 0.0f;
+    // The ink's own edges: a list item's text starts right of the margin
+    // and a cell's text can be centred, so the reader's column is clamped
+    // into the line instead of being handed to the hit test as it stands.
+    float left = 0.0f;
+    float right = 0.0f;
+    uint32_t srcStart = 0;
+    uint32_t srcEnd = 0;
+};
+
+// The page as the vertical step sees it: its drawn lines, and a hit test.
+// Both ports answer it from the record they already hold, the cache on
+// Windows and the mac's own block records, so one algorithm runs.
+class VerticalLayout {
+public:
+    virtual ~VerticalLayout() = default;
+    virtual std::vector<VerticalLine> Lines() const = 0;
+    // The source offset at a point, or UINT32_MAX when no glyph is there.
+    virtual uint32_t HitTest(float x, float y) const = 0;
+};
+
+// The one vertical step, over any VerticalLayout.
+uint32_t MoveVerticalIn(const VerticalLayout& layout, uint32_t offset,
+                        int direction, float* desiredX,
+                        bool caretOnLowerLine = false);
+
 // Move up or down by one rendered line.
 // direction: -1 for up, +1 for down.
 // desiredX: in/out. On first vertical move, set to caret x.
 //          On subsequent moves, keep the same desiredX.
+// caretOnLowerLine: the caret sits at a soft wrap and is drawn at the
+//          start of the lower line, so the step starts there.
 // Returns the new offset.
 uint32_t MoveVertical(const LayoutCache& lc, uint32_t offset,
                       int direction, float* desiredX,
-                      float scrollY, float lineHeight);
+                      float scrollY, float lineHeight,
+                      bool caretOnLowerLine = false);
 
 // Move to the start of the visual line containing offset.
 uint32_t MoveLineStart(const LayoutCache& lc, uint32_t offset);
