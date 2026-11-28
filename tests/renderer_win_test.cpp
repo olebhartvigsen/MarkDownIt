@@ -1599,7 +1599,7 @@ TEST(RendererWin, WashGeometryDeltaAgainstTheWalk) {
             buf << file.rdbuf();
             const std::string src = buf.str();
             Document doc;
-            if (!ParseMarkdown(src, &doc) || doc.nodes.empty()) {
+            if (!ParseMarkdown(src, doc) || doc.nodes.empty()) {
                 printf("WASH_DELTA skip %s (parse)\n", name);
                 continue;
             }
@@ -1620,7 +1620,7 @@ TEST(RendererWin, WashGeometryDeltaAgainstTheWalk) {
                        nullptr);
 
             platform::DWriteEngine dw;
-            DocumentRenderer walk;
+            platform::DocumentRenderer walk;
             walk.SetTextEngine(&dw);
             walk.SetZoom(zoom);
             walk.SetContentWidthMode(3);
