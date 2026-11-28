@@ -21,10 +21,15 @@
 #include "../src/dom.h"
 #include "../src/theme.h"
 
+#include "../src/document_renderer.h"
+#include "../src/parser.h"
+
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
 #include <algorithm>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -1554,4 +1559,145 @@ TEST(RendererWin, RealEngineWrappedSlices) {
         fflush(stdout);
         return;
     }
+}
+
+// ---------------------------------------------------------------------------
+// The wash measurement the owner asked for before the walk's rectangles take
+// over the highlight fills on Windows (owner decision, 2026-11-28). The same
+// document is painted twice at one zoom: once by the Windows frame, whose
+// washes come from platform::DWriteRangeSource over the DirectWrite caret
+// layout, and once by platform::DocumentRenderer, whose washes come from the
+// walk's own TextLines. Only the text blocks are compared, because both
+// frames wash those through the highlight passes; a code card and a table
+// row keep their own surfaces. The rectangles are paired per block band in
+// draw order, so the largest |dx|, |dy|, |dw| and |dh| is the largest pixel
+// move the adoption takes. The test prints the numbers instead of pinning
+// them; the commit that adopts the walk records the result.
+TEST(RendererWin, WashGeometryDeltaAgainstTheWalk) {
+    static const char* const kFixtures[] = {
+        "cjk-and-emoji.md",      "headings-and-break.md",
+        "lists-nested.md",       "long-word.md",
+        "paragraphs-and-inline.md", "quote-and-code.md",
+        "right-to-left.md",      "wide-table.md",
+    };
+    static const float kZooms[] = {1.0f, 1.5f, 0.5f};
+
+    const Palette pal = BasePalette();
+    const float width = 900.0f;
+
+    float worstX = 0.0f, worstY = 0.0f, worstW = 0.0f, worstH = 0.0f;
+    for (float zoom : kZooms) {
+        for (const char* name : kFixtures) {
+            const std::string path =
+                std::string("tests/fixtures/parity/") + name;
+            std::ifstream file(path, std::ios::binary);
+            if (!file) {
+                printf("WASH_DELTA skip %s (no file)\n", name);
+                continue;
+            }
+            std::ostringstream buf;
+            buf << file.rdbuf();
+            const std::string src = buf.str();
+            Document doc;
+            if (!ParseMarkdown(src, &doc) || doc.nodes.empty()) {
+                printf("WASH_DELTA skip %s (parse)\n", name);
+                continue;
+            }
+            std::vector<TextMatch> marks;
+            TextMatch whole;
+            whole.start = 0;
+            whole.length = static_cast<uint32_t>(src.size());
+            marks.push_back(whole);
+
+            Renderer win;
+            ASSERT_TRUE(win.Init());
+            win.SetContentWidthMode(3);
+            win.SetZoom(zoom);
+            win.SetMarkers(&marks, true);
+            FakeRenderTarget rtWin;
+            platform::D2DTarget winTarget(&rtWin);
+            win.Render(winTarget, doc, width, 600.0f, 0.0f, 0.0f, 0.0f,
+                       nullptr);
+
+            platform::DWriteEngine dw;
+            DocumentRenderer walk;
+            walk.SetTextEngine(&dw);
+            walk.SetZoom(zoom);
+            walk.SetContentWidthMode(3);
+            walk.SetSourceText(&src);
+            walk.SetTheme(BaseMetrics(), pal);
+            walk.SetMarkers(&marks);
+            walk.Measure(doc, width);
+            FakeRenderTarget rtWalk;
+            platform::D2DTarget walkTarget(&rtWalk);
+            walk.SetRenderTarget(&walkTarget);
+            walk.Render(doc, 0.0f, 0.0f);
+
+            const float padTop = ScaleMetrics(kBase, zoom).padTop;
+            const auto isMarker = [&pal](const FakeRenderTarget::Fill& f) {
+                return std::fabs(f.r - pal.markerBg.r) < 0.002f &&
+                       std::fabs(f.g - pal.markerBg.g) < 0.002f &&
+                       std::fabs(f.b - pal.markerBg.b) < 0.002f;
+            };
+            size_t compared = 0, countGap = 0;
+            float mx = 0.0f, my = 0.0f, mw = 0.0f, mh = 0.0f;
+            for (const platform::LaidOutBlock& block : walk.blocks()) {
+                if (block.kind != BlockKind::Heading &&
+                    block.kind != BlockKind::Paragraph &&
+                    block.kind != BlockKind::List &&
+                    block.kind != BlockKind::BlockQuote) {
+                    continue;
+                }
+                const float bandTop = block.y + 0.5f;
+                const float bandBottom = block.y + block.height - 0.5f;
+                std::vector<Rect> a;
+                std::vector<Rect> b;
+                for (const FakeRenderTarget::Fill& f : rtWin.fills) {
+                    if (!isMarker(f)) continue;
+                    const float top = f.top - padTop;
+                    if (top + (f.bottom - f.top) * 0.5f < bandTop ||
+                        top + (f.bottom - f.top) * 0.5f > bandBottom) {
+                        continue;
+                    }
+                    a.push_back(Rect{f.left, top, f.right - f.left,
+                                     f.bottom - f.top});
+                }
+                for (const FakeRenderTarget::Fill& f : rtWalk.fills) {
+                    if (!isMarker(f)) continue;
+                    if (f.top + (f.bottom - f.top) * 0.5f < bandTop ||
+                        f.top + (f.bottom - f.top) * 0.5f > bandBottom) {
+                        continue;
+                    }
+                    b.push_back(Rect{f.left, f.top, f.right - f.left,
+                                     f.bottom - f.top});
+                }
+                const auto order = [](const Rect& l, const Rect& r) {
+                    if (l.y != r.y) return l.y < r.y;
+                    return l.x < r.x;
+                };
+                std::sort(a.begin(), a.end(), order);
+                std::sort(b.begin(), b.end(), order);
+                if (a.size() != b.size()) countGap += 1;
+                const size_t n = (std::min)(a.size(), b.size());
+                for (size_t i = 0; i < n; ++i) {
+                    mx = (std::max)(mx, std::fabs(a[i].x - b[i].x));
+                    my = (std::max)(my, std::fabs(a[i].y - b[i].y));
+                    mw = (std::max)(mw, std::fabs(a[i].width - b[i].width));
+                    mh = (std::max)(mh, std::fabs(a[i].height - b[i].height));
+                    ++compared;
+                }
+            }
+            printf("WASH_DELTA %s z=%.2f rects=%zu bands_unpaired=%zu "
+                   "maxdx=%.3f maxdy=%.3f maxdw=%.3f maxdh=%.3f\n",
+                   name, zoom, compared, countGap, mx, my, mw, mh);
+            fflush(stdout);
+            worstX = (std::max)(worstX, mx);
+            worstY = (std::max)(worstY, my);
+            worstW = (std::max)(worstW, mw);
+            worstH = (std::max)(worstH, mh);
+        }
+    }
+    printf("WASH_DELTA worst maxdx=%.3f maxdy=%.3f maxdw=%.3f maxdh=%.3f\n",
+           worstX, worstY, worstW, worstH);
+    fflush(stdout);
 }
