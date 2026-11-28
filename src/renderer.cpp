@@ -1,6 +1,7 @@
 #include "renderer.h"
 #include "blocktext.h"
 #include "itemspans.h"
+#include "mermaidrender.h"
 #include "blockspacing.h"
 #include "hash.h"
 
@@ -733,27 +734,8 @@ void Renderer::PaintSharedOverlays(
                 // the flowchart path does. The layout is made at parse
                 // time and rides on the node, so the paint does not re-run
                 // it.
-                mermaid::MermaidRender diagram;
-                switch (n.block) {
-                    case BlockKind::MermaidPie:
-                        diagram.kind = mermaid::MermaidKind::Pie;
-                        diagram.pie = n.mermaid_pie;
-                        break;
-                    case BlockKind::MermaidState:
-                        diagram.kind = mermaid::MermaidKind::State;
-                        diagram.state = n.mermaid_state;
-                        break;
-                    case BlockKind::MermaidSequence:
-                        diagram.kind = mermaid::MermaidKind::Sequence;
-                        diagram.seq = n.mermaid_seq;
-                        break;
-                    case BlockKind::MermaidGantt:
-                        diagram.kind = mermaid::MermaidKind::Gantt;
-                        diagram.gantt = n.mermaid_gantt;
-                        break;
-                    default:
-                        break;
-                }
+                const mermaid::MermaidRender diagram =
+                    MermaidDiagramFor(n, nullptr);
                 if (!diagram.pie && !diagram.state && !diagram.seq &&
                     !diagram.gantt) {
                     break;
@@ -2666,58 +2648,25 @@ static const float kMermaidDash[] = {1.0f, 2.0f};
 static constexpr float kMermaidLabelHeightEm = 1.3f;
 static constexpr float kMermaidLabelBaselineEm = 1.24f;
 
-// What one diagram measure needs: the engine and the label face. The
-// labels are measured unzoomed, the way the diagram coordinates are, so
-// the painter applies the zoom once.
-struct DiagramMeasureCtx {
-    platform::TextEngine* engine = nullptr;
-    platform::FontSpec font;
-    platform::LineBox box;
-};
-
-// One diagram label measured by the page's own text engine. The label is
-// joined with the newline its own line breaks stand for, so the engine
-// measures the same text the painter draws.
-mermaid::LabelSize MeasureLabelWithEngine(const std::string& label,
-                                          float maxWidth, void* ctx) {
-    const auto* c = static_cast<const DiagramMeasureCtx*>(ctx);
-    if (!c || !c->engine) return {0.0f, 0.0f};
-    const std::vector<std::string> lines = mermaid::SplitLabelLines(label);
-    std::string text;
-    for (size_t i = 0; i < lines.size(); ++i) {
-        if (i != 0) text.push_back('\n');
-        text += lines[i];
-    }
-    if (text.empty()) return {0.0f, 0.0f};
-    const platform::TextMeasure measured =
-        c->engine->MeasureText(text, c->font, maxWidth, c->box);
-    return {measured.width, measured.height};
-}
+// Every diagram measure and paint entry asks the same shared preparation
+// (src/mermaidrender.h): the label measure, the relaid flowchart and its
+// cache, and the block kind switch. This shell brings the label face and
+// the 1.3 em line box the Windows painter has always measured with.
 
 // Note: layout is computed once at parse time (parser.cpp) and stored on
 // Node::mermaid_layout, so we never re-run layout on WM_PAINT. Height is
 // derived through mermaid::MeasureLayoutHeight so measure and paint agree.
 std::shared_ptr<mermaid::LaidOutFlowchart> Renderer::GetMermaidLayout(
         const Node& n) const {
-    if (!n.mermaid_flowchart || n.mermaid_source.empty() || !engine_)
-        return n.mermaid_layout;
-    if (auto cached = mermaid_layout_cache_.Find(n.mermaid_source, zoom_))
-        return cached;
-    LayoutMetrics base = BaseMetrics();
-    DiagramMeasureCtx ctx;
+    const LayoutMetrics base = BaseMetrics();
+    MermaidLabelMeasure ctx;
     ctx.engine = engine_;
     ctx.font.family = textenc::WideToUtf8(std::wstring(base.bodyFont));
     ctx.font.size = base.bodyFontSize * kPtToDip;
     ctx.box.heightEm = kMermaidLabelHeightEm;
     ctx.box.baselineEm = kMermaidLabelBaselineEm;
-    auto laid = std::make_shared<mermaid::LaidOutFlowchart>(
-        mermaid::LayoutFlowchartWith(*n.mermaid_flowchart,
-                                     MeasureLabelWithEngine, &ctx));
-    if (!laid->nodes.empty()) {
-        mermaid_layout_cache_.Put(n.mermaid_source, zoom_, laid);
-        return laid;
-    }
-    return n.mermaid_layout;
+    return MermaidRelaidFlowchart(n, engine_, &ctx, &mermaid_layout_cache_,
+                                  zoom_);
 }
 
 // The diagram's own numbers, the ones the Direct2D painter drew with.

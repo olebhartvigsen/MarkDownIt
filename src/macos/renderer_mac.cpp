@@ -12,6 +12,7 @@
 
 #include "blocktext.h"
 #include "itemspans.h"
+#include "mermaidrender.h"
 #include "svgtext.h"
 #include "hash.h"
 #include "layout/display_player.h"
@@ -88,38 +89,11 @@ FontSpec MakeFont(const LayoutMetrics& metrics, float size, bool bold,
     return font;
 }
 
-// The measurement the shared flowchart layout asks for, answered with
-// the diagram text engine. The labels are joined with the same
-// newline the DirectWrite bridge uses, so both platforms measure the
-// same text, and the widest line and the summed heights are the raw
-// text metrics the layout expects.
-struct EngineMeasureCtx {
-    TextEngine* engine = nullptr;
-    FontSpec font;
-};
-
-mermaid::LabelSize MeasureWithEngine(const std::string& label, float maxWidth,
-                                      void* ctx) {
-    const auto* c = static_cast<const EngineMeasureCtx*>(ctx);
-    if (!c || !c->engine) return {0.0f, 0.0f};
-
-    const std::vector<std::string> lines = mermaid::SplitLabelLines(label);
-    std::string text;
-    for (size_t i = 0; i < lines.size(); ++i) {
-        if (i != 0) text.push_back('\n');
-        text += lines[i];
-    }
-    if (text.empty()) return {0.0f, 0.0f};
-
-    // The seam's own measure question: the label's text in the diagram
-    // face, its own newlines kept, and the font's natural box. The
-    // engine that draws the page answers it, so a label is never
-    // measured by a second text object.
-    const TextMeasure measured = c->engine->MeasureText(
-        text, c->font, maxWidth > 0.0f ? maxWidth : 1.0e6f, LineBox());
-    return {measured.width, measured.height};
-}
-
+// The diagram preparation both renderers share lives in
+// src/mermaidrender.h: the label measure, the relaid flowchart and its
+// cache, and the block kind switch. This shell brings the label face and
+// the font's natural line box, the mac half of the one named difference
+// in the plan's table.
 
 // True when the diagram has a layout to draw.
 bool HasMermaidLayout(const mermaid::MermaidRender& diagram) {
@@ -256,54 +230,16 @@ private:
 // cache keeps the two callers of a frame on one object.
 std::shared_ptr<mermaid::LaidOutFlowchart> MacRenderer::FlowRelaidFor(
     const Node& node) const {
-    if (node.mermaid_flowchart && !node.mermaid_source.empty() &&
-        diagramEngine_) {
-        if (auto cached = mermaid_layout_cache_.Find(node.mermaid_source,
-                                                   zoom_)) {
-            return cached;
-        }
-        EngineMeasureCtx ctx;
-        ctx.engine = diagramEngine_.get();
-        ctx.font = DiagramFontFor(node, metrics_.bodyFontSize,
-                                  false, false, false);
-        auto laid = std::make_shared<mermaid::LaidOutFlowchart>(
-            mermaid::LayoutFlowchartWith(*node.mermaid_flowchart,
-                                         MeasureWithEngine, &ctx));
-        if (!laid->nodes.empty()) {
-            mermaid_layout_cache_.Put(node.mermaid_source, zoom_, laid);
-            return laid;
-        }
-    }
-    return node.mermaid_layout;
+    MermaidLabelMeasure ctx;
+    ctx.engine = diagramEngine_.get();
+    ctx.font = DiagramFontFor(node, metrics_.bodyFontSize,
+                              false, false, false);
+    return MermaidRelaidFlowchart(node, diagramEngine_.get(), &ctx,
+                                  &mermaid_layout_cache_, zoom_);
 }
 
 mermaid::MermaidRender MacRenderer::MermaidRenderFor(const Node& node) const {
-    mermaid::MermaidRender diagram;
-    switch (node.block) {
-        case BlockKind::MermaidPie:
-            diagram.kind = mermaid::MermaidKind::Pie;
-            diagram.pie = node.mermaid_pie;
-            break;
-        case BlockKind::MermaidSequence:
-            diagram.kind = mermaid::MermaidKind::Sequence;
-            diagram.seq = node.mermaid_seq;
-            break;
-        case BlockKind::MermaidGantt:
-            diagram.kind = mermaid::MermaidKind::Gantt;
-            diagram.gantt = node.mermaid_gantt;
-            break;
-        case BlockKind::MermaidState:
-            diagram.kind = mermaid::MermaidKind::State;
-            diagram.state = node.mermaid_state;
-            break;
-        case BlockKind::MermaidFlowchart:
-        default: {
-            diagram.kind = mermaid::MermaidKind::Flowchart;
-            diagram.flow = FlowRelaidFor(node);
-            break;
-        }
-    }
-    return diagram;
+    return MermaidDiagramFor(node, FlowRelaidFor(node));
 }
 
 MacRenderer::MacRenderer() {
