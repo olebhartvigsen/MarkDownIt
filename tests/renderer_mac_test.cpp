@@ -1704,7 +1704,7 @@ TEST(RendererMac, CaretRectsAgreeForAlignedCells) {
     for (size_t c = 0; c < block.tableLayout.rows[0].size(); ++c) {
         const LaidOutBlock::TableCellLayout& cell =
             block.tableLayout.rows[0][c];
-        const float innerW = layout::TableColumnW(block.tableLayout, c) -
+        const float innerW = block.tableLayout.colWs[c] -
                              2.0f * BaseMetrics().cellPadX;
         const ColumnAlign align = c == 0 ? ColumnAlign::Center
                                          : ColumnAlign::Right;
@@ -1717,14 +1717,14 @@ TEST(RendererMac, CaretRectsAgreeForAlignedCells) {
 
         BlockLayout bl;
         bl.layout = layout;
-        bl.x = block.x + layout::TableColumnX(block.tableLayout, c) +
+        bl.x = block.x + block.tableLayout.colXs[c] +
                BaseMetrics().cellPadX;
         bl.y = block.y + BaseMetrics().cellPadY;
         bl.width = innerW;
-        bl.srcOffset = c;
+        bl.srcOffset = static_cast<uint32_t>(c);
         bl.srcLength = 1;
-        bl.u16ToSrc = {c};
-        bl.u16ToSrcEnd = {c + 1};
+        bl.u16ToSrc = {static_cast<uint32_t>(c)};
+        bl.u16ToSrcEnd = {static_cast<uint32_t>(c + 1)};
         cache.Add(bl);
 
         float cacheX = 0.0f, cacheY = 0.0f, cacheH = 0.0f;
