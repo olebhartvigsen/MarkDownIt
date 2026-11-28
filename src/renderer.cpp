@@ -1,5 +1,6 @@
 #include "renderer.h"
 #include "blocktext.h"
+#include "itemspans.h"
 #include "blockspacing.h"
 #include "hash.h"
 
@@ -161,81 +162,6 @@ private:
     platform::TextEngine* inner_;
     float zoom_;
 };
-
-// The item spans of the shared records, merged the way the mac
-// renderer merges its blocks and items: blocks and items both arrive
-// in document order, so one forward cursor names the range of items
-// whose reference y falls inside a block's band. A block with no
-// items keeps an empty range. Measure reads the ranges for the scroll
-// width of the pictures, the overlay passes of Render for an image
-// item's own rect.
-static void MergeNodeItemSpans(
-    const std::vector<layout::LaidBlock>& blocks,
-    const display::DisplayList& list, size_t nodeCount,
-    std::vector<std::pair<uint32_t, uint32_t>>* byNode) {
-    const uint32_t none = static_cast<uint32_t>(list.items.size());
-    byNode->assign(nodeCount, {none, none});
-    std::vector<std::pair<uint32_t, uint32_t>> byBlock(
-        blocks.size(), {none, none});
-    size_t block = 0;
-    for (uint32_t i = 0; i < list.items.size(); ++i) {
-        const display::Item& di = list.items[i];
-        float refY = 0.0f;
-        bool hasY = false;
-        if (const auto* fill = std::get_if<display::FillRect>(&di)) {
-            refY = fill->rect.y; hasY = true;
-        } else if (const auto* fill =
-                       std::get_if<display::FillRoundedRect>(&di)) {
-            refY = fill->rect.y; hasY = true;
-        } else if (const auto* fill =
-                       std::get_if<display::FillRoundedRectSides>(&di)) {
-            refY = fill->rect.y; hasY = true;
-        } else if (const auto* s = std::get_if<display::StrokeRect>(&di)) {
-            refY = s->rect.y; hasY = true;
-        } else if (const auto* s =
-                       std::get_if<display::StrokeRoundedRect>(&di)) {
-            refY = s->rect.y; hasY = true;
-        } else if (const auto* s = std::get_if<display::StrokeLine>(&di)) {
-            refY = s->y0; hasY = true;
-        } else if (const auto* s =
-                       std::get_if<display::StrokePolygon>(&di)) {
-            if (!s->points.empty()) { refY = s->points[0].y; hasY = true; }
-        } else if (const auto* f = std::get_if<display::FillPolygon>(&di)) {
-            if (!f->points.empty()) { refY = f->points[0].y; hasY = true; }
-        } else if (const auto* e = std::get_if<display::FillEllipse>(&di)) {
-            refY = e->rect.y; hasY = true;
-        } else if (const auto* e = std::get_if<display::StrokeEllipse>(&di)) {
-            refY = e->rect.y; hasY = true;
-        } else if (const auto* pie = std::get_if<display::PieSlice>(&di)) {
-            refY = pie->bounds.y; hasY = true;
-        } else if (const auto* t = std::get_if<display::Text>(&di)) {
-            refY = t->top; hasY = true;
-        } else if (const auto* img = std::get_if<display::Image>(&di)) {
-            refY = img->rect.y; hasY = true;
-        } else if (const auto* clip = std::get_if<display::PushClip>(&di)) {
-            refY = clip->rect.y; hasY = true;
-        }
-        // PopClip carries no place of its own; it closes the clip of
-        // the block the cursor is already in.
-        if (!hasY) continue;
-        while (block + 1 < blocks.size() &&
-               blocks[block + 1].y <= refY) {
-            ++block;
-        }
-        // The record's band owns every item whose extent sits in it.
-        if (refY >= blocks[block].y) {
-            if (byBlock[block].first > i) byBlock[block].first = i;
-            byBlock[block].second = i + 1;
-        }
-    }
-    for (size_t b = 0; b < blocks.size(); ++b) {
-        const uint32_t node = blocks[b].nodeIndex;
-        if (node >= nodeCount) continue;
-        // One node owns one record, so the node's span is the span of
-        // its record, empty ranges included.
-        (*byNode)[node] = byBlock[b];
-    }
-}
 
 // Fill the selection highlight for a UTF-16 range of a laid out block.
 //
@@ -1818,9 +1744,9 @@ float Renderer::Measure(const Document& doc, float widthDip,
         widestBlockRight_ = measureWidest_;
         return measureHeight_;
     }
-    std::vector<std::pair<uint32_t, uint32_t>> spans;
-    MergeNodeItemSpans(shared.blocks, shared.list, doc.nodes.size(),
-                       &spans);
+    std::vector<layout::ItemSpan> spans;
+    layout::MergeItemSpans(shared.blocks, shared.list, 0.0f, nullptr,
+                           &spans, doc.nodes.size());
 
     // The scrollable width: a picture can be wider than the column. A
     // standalone .svg fence counts natural size times the zoom and the

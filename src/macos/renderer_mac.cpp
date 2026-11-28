@@ -11,6 +11,7 @@
 #include "renderer_mac.h"
 
 #include "blocktext.h"
+#include "itemspans.h"
 #include "svgtext.h"
 #include "hash.h"
 #include "layout/display_player.h"
@@ -458,75 +459,11 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
     // block owns: a block with no items keeps an empty range. The
     // frame replays the whole list in one pass today, so nothing
     // slices by these spans yet; they are the contract a future per
-    // block replay will take.
-    blockItemSpans_.assign(blocks_.size(),
-                           {displayList_.items.size(),
-                            displayList_.items.size()});
-    {
-        size_t item = 0;
-        size_t block = 0;
-        const float padTop = metrics_.padTop;
-        auto blockStartsBy = [&](size_t i) {
-            return blocks_[i].y - padTop;
-        };
-        for (; item < displayList_.items.size(); ++item) {
-            const display::Item& di = displayList_.items[item];
-            float refY = 0.0f;
-            bool hasY = false;
-            if (const auto* fill = std::get_if<display::FillRect>(&di)) {
-                refY = fill->rect.y; hasY = true;
-            } else if (const auto* fill =
-                           std::get_if<display::FillRoundedRect>(&di)) {
-                refY = fill->rect.y; hasY = true;
-            } else if (const auto* fill =
-                           std::get_if<display::FillRoundedRectSides>(&di)) {
-                refY = fill->rect.y; hasY = true;
-            } else if (const auto* s =
-                           std::get_if<display::StrokeRect>(&di)) {
-                refY = s->rect.y; hasY = true;
-            } else if (const auto* s =
-                           std::get_if<display::StrokeRoundedRect>(&di)) {
-                refY = s->rect.y; hasY = true;
-            } else if (const auto* s =
-                           std::get_if<display::StrokeLine>(&di)) {
-                refY = s->y0; hasY = true;
-            } else if (const auto* s =
-                           std::get_if<display::StrokePolygon>(&di)) {
-                if (!s->points.empty()) { refY = s->points[0].y; hasY = true; }
-            } else if (const auto* f =
-                           std::get_if<display::FillPolygon>(&di)) {
-                if (!f->points.empty()) { refY = f->points[0].y; hasY = true; }
-            } else if (const auto* e =
-                           std::get_if<display::FillEllipse>(&di)) {
-                refY = e->rect.y; hasY = true;
-            } else if (const auto* e =
-                           std::get_if<display::StrokeEllipse>(&di)) {
-                refY = e->rect.y; hasY = true;
-            } else if (const auto* pie =
-                           std::get_if<display::PieSlice>(&di)) {
-                refY = pie->bounds.y; hasY = true;
-            } else if (const auto* t = std::get_if<display::Text>(&di)) {
-                refY = t->top; hasY = true;
-            } else if (const auto* img =
-                           std::get_if<display::Image>(&di)) {
-                refY = img->rect.y; hasY = true;
-            } else if (const auto* clip =
-                           std::get_if<display::PushClip>(&di)) {
-                refY = clip->rect.y; hasY = true;
-            }
-            // PopClip carries no place of its own; it closes the clip
-            // of the block the cursor is already in.
-            if (!hasY) continue;
-            while (block + 1 < blocks_.size() &&
-                   blockStartsBy(block + 1) <= refY) {
-                ++block;
-            }
-            if (blockItemSpans_[block].first > item) {
-                blockItemSpans_[block].first = item;
-            }
-            blockItemSpans_[block].second = item + 1;
-        }
-    }
+    // block replay will take. The merge itself is shared with the
+    // Windows renderer, src/itemspans.h; the padTop is the one thing
+    // this shell brings, because its records carry the frame origin.
+    layout::MergeItemSpans(laid.blocks, displayList_, metrics_.padTop,
+                           &blockItemSpans_);
 
     // The column starts one padTop under the top of the view and the
     // shared walk measures from the column's own top, so the height is

@@ -568,7 +568,9 @@ private:
     // coordinates.
     std::vector<platform::Rect> tableFilterButtons_;
     display::DisplayList displayList_;
-    std::vector<std::pair<size_t, size_t>> blockItemSpans_;
+    // The item range of each block, the shared merge's answer
+    // (src/itemspans.h): first item index, one past the last.
+    std::vector<std::pair<uint32_t, uint32_t>> blockItemSpans_;
     float contentWidth_ = 0.0f;
     // Right edge of the widest block drawn, in points. A standalone .svg is
     // drawn at its natural size and an image grows with the zoom, so either
