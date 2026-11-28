@@ -137,6 +137,18 @@ struct PieSlice {
 
 // Text -----------------------------------------------------------------
 
+// The source range of one inline span, in UTF-8 bytes into the source.
+// A run of a Text item carries the range of the span it was cut from,
+// not of its own glyphs: when a span wraps, every fragment on every
+// line names the same range, so a reader can tell one span split by
+// the wrap from two spans that meet on a line. `inlineCode` says the
+// span is an inline code span, which is the pill layer's fact.
+struct SourceRange {
+    uint32_t offset = 0;  // first source byte of the span
+    uint32_t length = 0;  // how many source bytes it covers
+    bool inlineCode = false;
+};
+
 // One laid out line of text at its place in the document. The runs
 // carry their own fonts, colors, run offsets and effects, and a run's
 // baseline is top + line.ascent. The line is the engine's output
@@ -152,6 +164,12 @@ struct Text {
     TextLine line;
     uint32_t srcOffset = 0;  // first source byte this line draws
     uint32_t srcLength = 0;  // how many source bytes it draws
+    // One entry per run of `line.runs`, in that order: the span each
+    // run was cut from. Empty when the item has no inline spans (a
+    // code block's line, a list marker). A zero length entry names no
+    // span, which is what an engine's slice that cannot be placed
+    // leaves behind.
+    std::vector<SourceRange> runSpans;
 };
 
 // Image ----------------------------------------------------------------

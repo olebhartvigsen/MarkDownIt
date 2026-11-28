@@ -33,7 +33,9 @@ std::vector<platform::GlyphRun> BuildCellRuns(const TableCell& cell,
                                               bool bold,
                                               const platform::Color& color,
                                               const LayoutMetrics& m,
-                                              bool monospace) {
+                                              bool monospace,
+                                              std::vector<display::SourceRange>*
+                                                  spans = nullptr) {
     std::vector<platform::GlyphRun> runs;
     const std::u32string& text = cell.text;
     const size_t count = text.size();
@@ -61,6 +63,7 @@ std::vector<platform::GlyphRun> BuildCellRuns(const TableCell& cell,
         bool strong = false, em = false, code = false, strike = false;
         styleAt(u16, &strong, &em, &code, &strike);
         const bool link = isLink(u16);
+        const uint32_t runStart = u16;  // the span this run is cut from
         std::string run;  // it takes every code point of one style
         while (i < count) {
             bool nS = false, nE = false, nC = false, nK = false;
@@ -89,6 +92,24 @@ std::vector<platform::GlyphRun> BuildCellRuns(const TableCell& cell,
         glyph.color = color;
         glyph.underline = link && m.linkUnderline; glyph.strike = strike;
         runs.push_back(std::move(glyph));
+        if (spans) {
+            // The source range of the run's own span, read through the
+            // cell's UTF-16 to source map: a code span that wraps answers
+            // the same range on every line it lands on.
+            display::SourceRange range;
+            range.inlineCode = code;
+            const uint32_t lastUnit = u16 > runStart ? u16 - 1 : runStart;
+            const uint32_t start =
+                runStart < cell.u16ToSrc.size() ? cell.u16ToSrc[runStart]
+                                                : cell.srcOffset;
+            const uint32_t end =
+                lastUnit < cell.u16ToSrcEnd.size()
+                    ? cell.u16ToSrcEnd[lastUnit]
+                    : (cell.srcEnd > start ? cell.srcEnd : start);
+            range.offset = start;
+            range.length = end > start ? end - start : 0;
+            spans->push_back(range);
+        }
     }
     return runs;
 }
@@ -460,11 +481,15 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
         const size_t here = (std::min)(row.cells.size(), columnCount);
         for (size_t c = 0; c < here; ++c) {
             const TableCell& cell = row.cells[c];
+            std::vector<display::SourceRange> runSpans;
             std::vector<platform::GlyphRun> runs =
                 BuildCellRuns(cell, cell.isHeader,
                               ToColor(in.palette->textPrimary), m,
-                              node.tableMonospace);
-            if (runs.empty()) runs = PlaceholderRuns(cell.isHeader, in);
+                              node.tableMonospace, &runSpans);
+            if (runs.empty()) {
+                runs = PlaceholderRuns(cell.isHeader, in);
+                runSpans.clear();
+            }
             const float gutter = cell.isHeader && !node.tableFilterActive.empty()
                                      ? m.tableFilterGutter
                                      : 0.0f;
@@ -482,6 +507,9 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
             lc.x = t.colXs[c]; lc.width = t.colWs[c];
             lc.y = rowTop;
             lc.srcCellStart = cell.srcOffset; lc.srcCellEnd = cell.srcEnd;
+            RunSpanCursor spans(runs, runSpans);
+            for (const platform::TextLine& line : lines)
+                lc.lineSpans.push_back(spans.ForLine(line));
             lc.lines = std::move(lines);
             laid.push_back(std::move(lc));
         }
@@ -613,6 +641,7 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
             float lineY = top + cell.y +
                           (std::max)(m.cellPadY,
                                      (t.rowHeights[0] - cellTextHeight) * 0.5f);
+            size_t li = 0;
             for (const platform::TextLine& line : cell.lines) {
                 float lineX = cell.x + m.cellPadX;
                 if (align == ColumnAlign::Center) {
@@ -630,6 +659,8 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
                                      ? headerRow.cells[c].srcEnd -
                                            headerRow.cells[c].srcOffset
                                      : 0;
+                if (li < cell.lineSpans.size()) text.runSpans = cell.lineSpans[li];
+                ++li;
                 t.header.items.push_back(text);
                 lineY += line.height;
             }
@@ -661,6 +692,7 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
                 display::PushClip{platform::Rect{cell.x + m.cellPadX,
                                                  top + cell.y + m.cellPadY,
                                                  innerW, innerH}});
+            size_t li = 0;
             for (const platform::TextLine& line : cell.lines) {
                 float lineX = cell.x + m.cellPadX;
                 if (align == ColumnAlign::Center) {
@@ -677,6 +709,8 @@ LaidBlock LayoutTableBlock(const LayoutCtx& ctx, const Node& node,
                                      ? row.cells[c].srcEnd -
                                            row.cells[c].srcOffset
                                      : 0;
+                if (li < cell.lineSpans.size()) text.runSpans = cell.lineSpans[li];
+                ++li;
                 t.cellsText.items.push_back(std::move(text));
                 lineY += line.height;
             }

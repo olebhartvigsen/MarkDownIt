@@ -109,6 +109,7 @@ LaidBlock LayoutHeading(const LayoutCtx& ctx, const Node& node,
     ApplyLineSpacing(&lines, size, m.headingLineHeight, in.zoom, in.engine);
 
     float textHeight = 0.0f;
+    RunSpanCursor spans(drawnRuns, SpanRuns(node));
     for (const platform::TextLine& line : lines) {
         display::Text item;
         item.x = 0.0f;
@@ -116,6 +117,7 @@ LaidBlock LayoutHeading(const LayoutCtx& ctx, const Node& node,
         item.line = line;
         item.srcOffset = node.contentOffset;
         item.srcLength = node.contentLength;
+        item.runSpans = spans.ForLine(line);
         ctx.list->items.push_back(item);
         *y += line.height;
         textHeight += line.height;

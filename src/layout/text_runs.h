@@ -71,6 +71,34 @@ std::vector<platform::GlyphRun> BuildRuns(const Node& node,
                                           const ThemeColor& linkColor,
                                           bool underlineLinks = true);
 
+// The span every run BuildRuns returns was cut from, in the same order:
+// one entry per non-empty inline child of the node. A block whose text
+// does not come from inline children (a code block, a list marker) has
+// no spans and gets an empty vector.
+std::vector<display::SourceRange> SpanRuns(const Node& node);
+
+// Places the runs of each measured line on the spans BuildRuns started
+// from. An engine splits a run at a wrap or a break but never joins or
+// reorders two, so one forward walk over the input text is enough: a
+// span split over two lines answers its own range on both, and two
+// spans that meet on a line answer two ranges. Call ForLine in line
+// order; a slice the walk cannot place answers a zero length range.
+class RunSpanCursor {
+public:
+    RunSpanCursor(std::vector<platform::GlyphRun> runs,
+                  std::vector<display::SourceRange> spans);
+
+    std::vector<display::SourceRange> ForLine(const platform::TextLine& line);
+
+private:
+    display::SourceRange Take(const std::string& text);
+
+    std::vector<platform::GlyphRun> runs_;
+    std::vector<display::SourceRange> spans_;
+    size_t index_ = 0;
+    size_t offset_ = 0;
+};
+
 // An information box: a quote that starts with a label word and a
 // colon, the way DocC writes its asides ("Note: ...", "Warning: ...").
 // The label stays in the text. Synonyms map to the four kinds.

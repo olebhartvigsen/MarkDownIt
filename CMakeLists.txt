@@ -357,6 +357,7 @@ if(BUILD_TESTS AND APPLE)
         tests/csvdocument_test.cpp
         tests/json_test.cpp
         tests/code_table_layout_test.cpp
+        tests/run_spans_test.cpp
         tests/svg_mermaid_layout_test.cpp
         tests/display_player_test.cpp
         tests/print_paint_test.cpp
@@ -502,6 +503,7 @@ elseif(BUILD_TESTS)
         tests/csvdocument_test.cpp
         tests/json_test.cpp
         tests/code_table_layout_test.cpp
+        tests/run_spans_test.cpp
         tests/svg_mermaid_layout_test.cpp
         tests/display_player_test.cpp
         tests/print_paint_test.cpp

@@ -40,6 +40,10 @@ struct ImageSize {
 // same rule both renderers apply.
 struct LaidTableCell {
     std::vector<platform::TextLine> lines;
+    // The span each run of each line was cut from, parallel to `lines`
+    // and to each line's runs. The words a painter draws read it for
+    // the inline code pills; the layout dump does not print it.
+    std::vector<std::vector<display::SourceRange>> lineSpans;
     float x = 0.0f;
     float y = 0.0f;
     float width = 0.0f;

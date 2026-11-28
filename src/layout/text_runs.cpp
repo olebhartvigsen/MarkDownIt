@@ -143,6 +143,62 @@ std::vector<platform::GlyphRun> BuildRuns(const Node& node,
     return runs;
 }
 
+std::vector<display::SourceRange> SpanRuns(const Node& node) {
+    std::vector<display::SourceRange> spans;
+    spans.reserve(node.children.size());
+    for (const InlineBlock& child : node.children) {
+        // BuildRuns drops an empty child, so the span list has to drop
+        // the same one or every later run shifts onto the wrong span.
+        if (Utf32ToUtf8(child.text).empty()) continue;
+        display::SourceRange span;
+        span.offset = child.srcOffset;
+        span.length = child.srcLength;
+        span.inlineCode = child.code;
+        spans.push_back(span);
+    }
+    return spans;
+}
+
+RunSpanCursor::RunSpanCursor(std::vector<platform::GlyphRun> runs,
+                             std::vector<display::SourceRange> spans)
+    : runs_(std::move(runs)), spans_(std::move(spans)) {}
+
+std::vector<display::SourceRange> RunSpanCursor::ForLine(
+        const platform::TextLine& line) {
+    std::vector<display::SourceRange> out;
+    out.reserve(line.runs.size());
+    for (const platform::GlyphRun& run : line.runs) {
+        out.push_back(Take(run.text));
+    }
+    return out;
+}
+
+display::SourceRange RunSpanCursor::Take(const std::string& text) {
+    const display::SourceRange none;
+    while (index_ < runs_.size() && offset_ >= runs_[index_].text.size()) {
+        ++index_;
+        offset_ = 0;
+    }
+    if (index_ >= runs_.size()) return none;
+    if (runs_[index_].text.compare(offset_, text.size(), text) == 0) {
+        offset_ += text.size();
+        return index_ < spans_.size() ? spans_[index_] : none;
+    }
+    // A slice that is not the next piece of the input run: look for it
+    // further on, so one dropped byte does not lose every span after it.
+    // An engine that reorders or invents text leaves the spans it cannot
+    // place as zero length ranges, and the pill layer skips them.
+    for (size_t i = index_; i < runs_.size(); ++i) {
+        const size_t from = i == index_ ? offset_ : 0;
+        const size_t at = runs_[i].text.find(text, from);
+        if (at == std::string::npos) continue;
+        index_ = i;
+        offset_ = at + text.size();
+        return i < spans_.size() ? spans_[i] : none;
+    }
+    return none;
+}
+
 std::vector<platform::GlyphRun> BuildHeadingRuns(const Node& node,
                                                  float size,
                                                  const ThemeColor& color,

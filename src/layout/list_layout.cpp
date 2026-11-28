@@ -204,6 +204,7 @@ LaidBlock LayoutListBlock(const LayoutCtx& ctx, const Node& node,
     }
 
     float textY = textTop;
+    RunSpanCursor spans(runs, SpanRuns(node));
     for (const platform::TextLine& line : lines) {
         display::Text item;
         item.x = block.x + markerW;
@@ -211,6 +212,7 @@ LaidBlock LayoutListBlock(const LayoutCtx& ctx, const Node& node,
         item.line = line;
         item.srcOffset = node.contentOffset;
         item.srcLength = node.contentLength;
+        item.runSpans = spans.ForLine(line);
         ctx.list->items.push_back(item);
         textY += line.height;
     }
