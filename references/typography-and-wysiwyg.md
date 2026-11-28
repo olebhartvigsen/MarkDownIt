@@ -2,7 +2,7 @@
 
 This reference is normative for the rendered page and for editing, in both
 native builds: Win32 (`src/renderer.cpp`, `src/app.cpp`) and macOS
-(`src/macos/renderer_mac.cpp`, `src/macos/app_mac.cpp`). It absorbs two
+(`src/document_renderer.cpp`, `src/macos/app_mac.cpp`). It absorbs two
 one-time plans, `.hermes/plans/2026-08-12_105500-markdown-layout-typography.md`
 and `.hermes/plans/2026-08-12_140000-wysiwyg-editor.md`, and replaces them as
 the standing statement of what the page looks like and how editing behaves.
@@ -38,7 +38,7 @@ Sources, for judgement calls:
 
 | Area | Windows | macOS |
 | --- | --- | --- |
-| Page renderer | `src/renderer.cpp`, Direct2D and DirectWrite | `src/macos/renderer_mac.cpp`, Core Graphics and Core Text |
+| Page renderer | `src/renderer.cpp`, Direct2D and DirectWrite | `src/document_renderer.cpp` through the Core Graphics and Core Text adapters |
 | Font request | Segoe UI, Cascadia Mono, semibold body face for headings | the same names, mapped onto the system faces, with semibold expressed as its own family name |
 | Appearance | fixed light palette | semantic colours, so light and dark follow the system |
 | Measure | four content-width modes with a cap | the column follows the window, with side padding |
@@ -266,7 +266,7 @@ mark that begins and ends on drawn text, and a drag that is one undo step.
 
 | Area | Gate |
 | --- | --- |
-| Type, spacing, palette, block treatments | `tests/renderer_mac_test.cpp` and the Windows renderer tests; the numeric tokens are pinned in `src/theme.h` |
+| Type, spacing, palette, block treatments | `tests/document_renderer_test.cpp` and the Windows renderer tests; the numeric tokens are pinned in `src/theme.h` |
 | Caret, selection, hit-testing | `caret_test`, `hittest_test`, `navigation_test`, `text_engine_mac_test` |
 | Editing commands and undo | `formatting_test`, `undo_test`, `editor_features_test`, `table_interaction_test` |
 | Plain typing and paste | `inputfilter_test`, `autoformat_test`, `composition_test` |

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Warn when one side of a platform pair changes alone.
 
-The pairs are the Windows and macOS twins of the renderer, the app
-controllers, the chrome and the stores: the places the two ports
-implement the same behavior twice today. A change that touches only
-one side is how the ports drift apart, so it is called out here.
+The pairs are the Windows and macOS twins of the app controllers, the
+chrome and the stores: the places the two ports implement the same behavior
+twice today. The renderer pair left this list when the renderer shell became
+one shared class (plan 2.2, slice 10). A change that touches only one side is
+how the ports drift apart, so it is called out here.
 
 This check is an advisory. It prints a warning and exits 0. The
 warning goes away when:
@@ -25,7 +26,6 @@ import subprocess
 import sys
 
 PAIRS = [
-    (("src/renderer.cpp",), ("src/macos/renderer_mac.cpp",)),
     (("src/app.cpp",), ("src/macos/app_mac.cpp",)),
     (("src/ribbon.cpp", "src/ribbon.xml"),
      ("src/macos/menu_mac.mm", "src/macos/toolbar_mac.mm")),

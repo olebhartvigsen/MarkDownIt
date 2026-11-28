@@ -38,11 +38,14 @@ set(MARKDOWNIT_CORE_SOURCES
     src/layout/range_highlights.cpp
     src/layout/block_overlays.cpp
     src/layout/chips.cpp
+    src/layout/frame.cpp
     src/layout/svg_mermaid_layout.cpp
     src/layout/display_player.cpp
     src/layout/print_pages.cpp
     src/print_pdf.cpp
     src/layoutcache.cpp
+    src/document_renderer.cpp
+    src/qa_strings.cpp
     src/editcontroller.cpp
     src/documentcontroller.cpp
     src/commandstate.cpp

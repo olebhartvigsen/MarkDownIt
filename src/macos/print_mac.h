@@ -21,7 +21,7 @@
 struct Document;
 
 namespace platform {
-class MacRenderer;
+class DocumentRenderer;
 }  // namespace platform
 
 namespace print_mac {
@@ -32,7 +32,7 @@ namespace print_mac {
 // margin, so no second scale factor ever enters the drawing. The operation
 // owns the panel, so a printer, a Save as PDF destination and a cancel all go
 // through AppKit. Returns false when a panel is already up.
-bool PrintDocument(NSWindow* window, platform::MacRenderer& renderer,
+bool PrintDocument(NSWindow* window, platform::DocumentRenderer& renderer,
                    const Document& document, const std::string& title);
 
 // What a written print job turned out to contain: the pages the pagination
@@ -48,14 +48,14 @@ struct PrintFileReport {
 // printer: AppKit asks the view for its pages and cuts them the way it cuts a
 // real job. The QA walk uses it, and it is the one honest way to look at the
 // pagination without paper.
-bool PrintToFile(const std::string& path, platform::MacRenderer& renderer,
+bool PrintToFile(const std::string& path, platform::DocumentRenderer& renderer,
                  const Document& document, const std::string& title,
                  PrintFileReport* report);
 
 // Writes the same pages to a PDF file, and reports how many pages it wrote.
 // The QA capture uses it, and it is also the one honest way to look at the
 // pagination of a document without a printer.
-bool WritePdf(const std::string& path, platform::MacRenderer& renderer,
+bool WritePdf(const std::string& path, platform::DocumentRenderer& renderer,
               const Document& document, const layout::PrintPage& page,
               int* pageCount);
 

@@ -6,8 +6,7 @@
 //
 // SVG, the picture form of a CodeBlock whose info string is "svg". It
 // is a page image, not a code specimen: natural size times the zoom
-// plus the two code pads, drawn with NO card (renderer_mac.cpp
-// 1329-1339). The charged width may reach past the content column the
+// plus the two code pads, drawn with NO card. The charged width may reach past the content column the
 // way a browser scrolls a page image; it rides block.width, the walk's
 // widest right edge. The natural size comes from the LayoutInput image
 // size seam under the url convention "svg:" plus the raw fence text:
@@ -53,10 +52,9 @@ std::string SvgUrlOf(const Node& node) {
     return "svg:" + Utf32ToUtf8(node.raw);
 }
 
-// The width a mermaid diagram is measured against. The mac renderer
-// keeps this split (renderer_mac.cpp 339-344, not exported from there):
-// a flowchart fits into the column less twice the block pad, a pie and
-// a sequence take the full column, because their painters do.
+// The width a mermaid diagram is measured against. The split is the
+// shared one: a flowchart fits into the column less twice the block pad,
+// a pie and a sequence take the full column, because their painters do.
 float MermaidMeasureWidth(const mermaid::MermaidRender& diagram,
                           float width) {
     const float pad = mermaid::kMermaidBlockPad;

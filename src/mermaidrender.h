@@ -13,7 +13,7 @@
 // The Mermaid render preparation both renderers wrote for themselves: the
 // label measure the flowchart layout calls, the relaid flowchart and its
 // cache, and the block kind to MermaidRender switch. Shared by
-// src/renderer.cpp and src/macos/renderer_mac.cpp.
+// src/renderer.cpp and src/document_renderer.cpp.
 //
 // What a shell still decides is the label's face and its line box. The
 // box is the one named difference in the plan's table: Windows measures

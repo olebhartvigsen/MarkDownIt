@@ -438,7 +438,7 @@ if(BUILD_TESTS AND APPLE)
     target_sources(MarkDownIt.tests PRIVATE
         tests/text_engine_mac_test.cpp
         tests/svg_native_mac_test.mm
-        tests/renderer_mac_test.cpp
+        tests/document_renderer_test.cpp
         tests/welcome_screen_test.cpp
         src/macos/text_engine_mac.cpp
         src/macos/fonts_mac.mm
@@ -446,9 +446,9 @@ if(BUILD_TESTS AND APPLE)
         # The renderer's layout arithmetic, driven by its test with a
         # fixed text engine, so the typography runs in CI and not only
         # on real hardware. The renderer links the pieces it draws with.
-        src/macos/renderer_mac.cpp
         src/macos/image_mac.mm
         src/macos/image_draw_mac.mm
+        src/macos/svg_raster_mac.cpp
         src/mermaid/painter.cpp
         src/welcome_screen.cpp
         src/welcome_palette.cpp
@@ -710,7 +710,7 @@ if(APPLE)
         src/macos/filewatch_mac.cpp
         src/macos/filewatch_mac.h
         src/macos/content_view_mac.mm
-        src/macos/renderer_mac.cpp
+        src/macos/svg_raster_mac.cpp
         src/mermaid/painter.cpp
         src/macos/text_engine_mac.cpp
         src/macos/fonts_mac.mm

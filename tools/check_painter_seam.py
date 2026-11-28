@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Ratchet the Windows painter onto the platform seams.
 
-The port-alignment plan, section 2.2, ends with one shared painter. The mac
-renderer is already there: `src/macos/renderer_mac.cpp` names no Core Graphics
+The port-alignment plan, section 2.2, ends with one shared painter. The
+document renderer is there: `src/document_renderer.cpp` names no Core Graphics
 or Core Text type, it draws through `platform::RenderTarget`. The Windows
 renderer is not: it still names Direct2D and DirectWrite types, and every one
 of those is a place where its painting cannot be shared with the mac.
@@ -142,7 +142,7 @@ WINDOWS_TOTAL_BASELINE = 0
 
 PAINTERS = [
     ("src/renderer.cpp", WINDOWS_RAW, WINDOWS_BASELINE, "windows painter"),
-    ("src/macos/renderer_mac.cpp", MAC_RAW, 0, "mac painter"),
+    ("src/document_renderer.cpp", MAC_RAW, 0, "document renderer"),
 ]
 
 # Files that count towards the Windows total. Kept separate from PAINTERS so a
@@ -181,7 +181,7 @@ def main(argv):
             failed = True
             print("::error::%s names %d platform graphics types, baseline is %d."
                   % (path, found, baseline))
-            print("Paint through platform::RenderTarget the way renderer_mac.cpp"
+            print("Paint through platform::RenderTarget the way document_renderer.cpp"
                   " does, or move the work into shared code.")
         elif found < baseline and pattern is WINDOWS_RAW:
             print("  the count went down: set the baseline for %s to %d in %s"

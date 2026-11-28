@@ -11,7 +11,7 @@
 #include "cg_target_mac.h"
 #include "crash_trace_mac.h"
 #include "layout/display_player.h"
-#include "renderer_mac.h"
+#include "document_renderer.h"
 
 namespace print_mac {
 namespace {
@@ -88,7 +88,7 @@ int InkOnPage(CGPDFDocumentRef pdf, size_t pageNumber) {
 // document for the paper the panel chose, and draws the band of the page the
 // operation asks for.
 @interface MdPrintView : NSView {
-    platform::MacRenderer* renderer_;
+    platform::DocumentRenderer* renderer_;
     const Document* document_;
     // The operation's print info, which the panel writes the chosen paper
     // into. A view has no printInfo of its own, and asking the operation is
@@ -99,7 +99,7 @@ int InkOnPage(CGPDFDocumentRef pdf, size_t pageNumber) {
     std::vector<layout::PrintBand> bands_;
 }
 
-- (instancetype)initWithRenderer:(platform::MacRenderer*)renderer
+- (instancetype)initWithRenderer:(platform::DocumentRenderer*)renderer
                         document:(const Document*)document
                        printInfo:(NSPrintInfo*)info;
 // Lays the document out for the imageable area of the sheet the panel chose.
@@ -142,7 +142,7 @@ static MdPrintPanelDriver* g_panelDriver = nil;
 
 @implementation MdPrintView
 
-- (instancetype)initWithRenderer:(platform::MacRenderer*)renderer
+- (instancetype)initWithRenderer:(platform::DocumentRenderer*)renderer
                         document:(const Document*)document
                        printInfo:(NSPrintInfo*)info {
     self = [super initWithFrame:NSMakeRect(0.0, 0.0, 612.0, 792.0)];
@@ -240,7 +240,7 @@ static MdPrintPanelDriver* g_panelDriver = nil;
 
 namespace print_mac {
 
-bool PrintDocument(NSWindow* window, platform::MacRenderer& renderer,
+bool PrintDocument(NSWindow* window, platform::DocumentRenderer& renderer,
                    const Document& document, const std::string& title) {
     if (!window) return false;
     // One panel at a time: beginning a second sheet on a window that already
@@ -288,7 +288,7 @@ bool PrintDocument(NSWindow* window, platform::MacRenderer& renderer,
     return true;
 }
 
-bool PrintToFile(const std::string& path, platform::MacRenderer& renderer,
+bool PrintToFile(const std::string& path, platform::DocumentRenderer& renderer,
                  const Document& document, const std::string& title,
                  PrintFileReport* report) {
     if (report) *report = PrintFileReport();
@@ -338,7 +338,7 @@ bool PrintToFile(const std::string& path, platform::MacRenderer& renderer,
     return ran == YES;
 }
 
-bool WritePdf(const std::string& path, platform::MacRenderer& renderer,
+bool WritePdf(const std::string& path, platform::DocumentRenderer& renderer,
               const Document& document, const layout::PrintPage& page,
               int* pageCount) {
     if (pageCount) *pageCount = 0;

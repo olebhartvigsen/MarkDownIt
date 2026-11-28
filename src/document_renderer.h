@@ -1,14 +1,13 @@
 #pragma once
 
-// The macOS renderer.
+// The document renderer: the frame, the surface replay order and the
+// queries an editor asks of one laid out document.
 //
-// The Windows renderer draws with Direct2D. This one draws with Core
-// Graphics through the RenderTarget seam, and measures with Core Text
-// through the TextEngine seam.
-//
-// The layout is the shared one: the theme metrics, the DOM structure and
-// the mermaid engine are all reused, so the two platforms lay the same
-// document out the same way. Only the drawing calls differ.
+// It draws through the RenderTarget seam and measures through the
+// TextEngine seam, so it names no platform graphics type. The layout is
+// the shared one; the images and the SVG reader arrive through their own
+// seams. The mac editor is its one user today, and the Windows shell
+// keeps the Direct2D renderer until its own frame adopts this class.
 
 #include <cstdint>
 #include <memory>
@@ -20,8 +19,8 @@
 #include "layout/document_layout.h"
 #include "layoutcache.h"
 #include "platform/seams.h"
-#include "svg_mac.h"
-#include "image_mac.h"
+#include "imagerender.h"
+#include "svgscene.h"
 #include "searchreplace.h"
 #include "svglink.h"
 #include "theme.h"
@@ -102,15 +101,15 @@ struct LaidOutBlock {
     TableLayout tableLayout;
 };
 
-// The mac renderer.
-class MacRenderer {
+// The document renderer.
+class DocumentRenderer {
 public:
     // The place of a source offset in the layout, in points. The return
     // value is false when the offset is not in the layout.
     bool YForOffset(uint32_t offset, float& y) const;
 
-    MacRenderer();
-    ~MacRenderer();
+    DocumentRenderer();
+    ~DocumentRenderer();
 
     // Sets the engine and the target the renderer draws with.
     void SetTextEngine(TextEngine* engine) { engine_ = engine; }
@@ -168,8 +167,19 @@ public:
         caretCache_.SetSourceText(text);
     }
 
-    // The directory holding the open .md file; see ImageCache::SetBaseDir.
-    void SetImageBaseDir(const std::string& dir) { images_.SetBaseDir(dir); }
+    // The image service the renderer asks for pictures and sizes.
+    void SetImageSource(ImageSource* images) {
+        images_ = images ? images : &NoImageSource();
+    }
+
+    // The directory holding the open .md file; see ImageSource::SetBaseDir.
+    void SetImageBaseDir(const std::string& dir) {
+        images_->SetBaseDir(dir);
+    }
+
+    // The platform's SVG rasterizer; see platform::SvgRaster. A renderer
+    // that is given none draws an SVG fence as a code specimen.
+    void SetSvgRaster(SvgRaster* raster) { svgRaster_ = raster; }
 
     // Draw the raw source text instead of the document: the source
     // view the find guide's view-modes clause needs (guide 4).
@@ -492,6 +502,11 @@ private:
     // down to a narrow-window minimum as the pane narrows.
     float EffectivePadX(float widthDip) const;
 
+    // The layers above the replayed surface: the washes of the opaque
+    // card and table row re-run, the selection and the code card's words,
+    // and the diagrams and pictures, each at its own band.
+    void PaintOverlays(float scrollOffset);
+
     // Draws the table layers that sit above the replayed stripe and
     // grid: the row washes, the code chips of the cells, and the cell
     // glyphs above them. The stripe is opaque, so every washed row runs
@@ -569,8 +584,8 @@ private:
     int qaPinTableBlocks_ = 0;
     // The width of the text column.
     int contentWidthMode_ = 0;
-    // The image cache, which holds the images of the document.
-    ImageCache images_;
+    // The image service, which holds and fetches the document's pictures.
+    ImageSource* images_ = &NoImageSource();
     // The ranges the find bar matched, and the one that is current.
     std::vector<TextMatch> searchMatches_;
     std::vector<TextMatch> markers_;
@@ -583,13 +598,17 @@ private:
     struct SvgEntry {
         uint32_t srcOffset = 0;
         uint64_t rawHash = 0;
-        SvgDoc doc;
+        std::unique_ptr<SvgScene> scene;
     };
     std::vector<SvgEntry> svgDocs_;
 
-    // The SVG document of a block, which is read the first time the
-    // block is drawn.
-    const SvgDoc* GetSvgDoc(const Node& node);
+    // The SVG scene of a block, which is read the first time the block
+    // is drawn.
+    SvgScene* GetSvgDoc(const Node& node);
+
+    // The platform's SVG rasterizer. Null in a renderer that has none,
+    // which draws an SVG fence as the code specimen it is.
+    SvgRaster* svgRaster_ = nullptr;
 
     // Whether the document is a standalone SVG file.
     bool standaloneSvg_ = false;

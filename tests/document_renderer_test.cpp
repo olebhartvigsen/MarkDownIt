@@ -11,7 +11,7 @@
 #include "gtest_lite.h"
 
 #include "../src/layoutcache.h"
-#include "../src/macos/renderer_mac.h"
+#include "document_renderer.h"
 #include "../src/macos/svg_mac.h"
 #include "../src/parser.h"
 
@@ -22,7 +22,7 @@
 using platform::FontSpec;
 using platform::GlyphRun;
 using platform::LaidOutBlock;
-using platform::MacRenderer;
+using platform::DocumentRenderer;
 using platform::Rect;
 using platform::TextEngine;
 using platform::TextLine;
@@ -385,9 +385,9 @@ bool SameColor(const platform::Color& a, const ThemeColor& b) {
 
 }  // namespace
 
-TEST(RendererMac, FollowsTheWindowWidth) {
+TEST(DocumentRenderer, FollowsTheWindowWidth) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -427,7 +427,7 @@ TEST(RendererMac, FollowsTheWindowWidth) {
     EXPECT_NEAR(renderer.blocks()[0].x, kPadX, 0.01f);
 }
 
-TEST(RendererMac, KeepsTheGitHubTypeScale) {
+TEST(DocumentRenderer, KeepsTheGitHubTypeScale) {
     // The measured GitHub values, in DIP at the default zoom. The
     // body is 16px at 1.5, code is 85% of it at 1.45. The theme caps
     // every heading against that body, so the first three come down
@@ -458,9 +458,9 @@ TEST(RendererMac, KeepsTheGitHubTypeScale) {
     EXPECT_NEAR(m.cellPadY, 6.0f, 0.01f);
 }
 
-TEST(RendererMac, AppliesTheLineSpacingAndTheReadingLead) {
+TEST(DocumentRenderer, AppliesTheLineSpacingAndTheReadingLead) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -494,9 +494,9 @@ TEST(RendererMac, AppliesTheLineSpacingAndTheReadingLead) {
                             2.0f * kBase.codePad, 0.02f);
 }
 
-TEST(RendererMac, SpacesBlocksLikeWindows) {
+TEST(DocumentRenderer, SpacesBlocksLikeWindows) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -521,9 +521,9 @@ TEST(RendererMac, SpacesBlocksLikeWindows) {
     EXPECT_NEAR(gap(6), 16.0f, 0.02f);  // the gap around a code block
 }
 
-TEST(RendererMac, ScalesEverythingWithTheZoom) {
+TEST(DocumentRenderer, ScalesEverythingWithTheZoom) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     renderer.SetZoom(2.0f);
@@ -544,9 +544,9 @@ TEST(RendererMac, ScalesEverythingWithTheZoom) {
                 0.02f);
 }
 
-TEST(RendererMac, MeasuresTablesTheWayColumnsCarryWords) {
+TEST(DocumentRenderer, MeasuresTablesTheWayColumnsCarryWords) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -610,9 +610,9 @@ TEST(RendererMac, MeasuresTablesTheWayColumnsCarryWords) {
                 0.01f);
 }
 
-TEST(RendererMac, MeasuresTablesEquallyWhenWordsFit) {
+TEST(DocumentRenderer, MeasuresTablesEquallyWhenWordsFit) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -649,9 +649,9 @@ TEST(RendererMac, MeasuresTablesEquallyWhenWordsFit) {
                 table.tableLayout.rowHeights[0], 0.02f);
 }
 
-TEST(RendererMac, PaintsTheGitHubTableGrid) {
+TEST(DocumentRenderer, PaintsTheGitHubTableGrid) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     RecordingTarget target;
@@ -696,9 +696,9 @@ TEST(RendererMac, PaintsTheGitHubTableGrid) {
     EXPECT_TRUE(sawColumnEdge);
 }
 
-TEST(RendererMac, GivesListsTheMarkerGutter) {
+TEST(DocumentRenderer, GivesListsTheMarkerGutter) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     RecordingTarget target;
@@ -757,9 +757,9 @@ TEST(RendererMac, GivesListsTheMarkerGutter) {
     EXPECT_EQ(ones, 2);
 }
 
-TEST(RendererMac, PaintsTheHeadingRuleTheBarAndTheBreak) {
+TEST(DocumentRenderer, PaintsTheHeadingRuleTheBarAndTheBreak) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     RecordingTarget target;
@@ -815,9 +815,9 @@ TEST(RendererMac, PaintsTheHeadingRuleTheBarAndTheBreak) {
     EXPECT_TRUE(sawBreak);
 }
 
-TEST(RendererMac, FillsTheInlineCodeBackground) {
+TEST(DocumentRenderer, FillsTheInlineCodeBackground) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     RecordingTarget target;
@@ -863,9 +863,9 @@ TEST(RendererMac, FillsTheInlineCodeBackground) {
     EXPECT_TRUE(sawBackground);
 }
 
-TEST(RendererMac, PaintsInlineCodeAfterHiddenMarkers) {
+TEST(DocumentRenderer, PaintsInlineCodeAfterHiddenMarkers) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     RecordingTarget target;
@@ -896,12 +896,12 @@ TEST(RendererMac, PaintsInlineCodeAfterHiddenMarkers) {
     EXPECT_EQ(pills, 0);
 }
 
-TEST(RendererMac, PaintsMarkersInBothModes) {
+TEST(DocumentRenderer, PaintsMarkersInBothModes) {
     const std::string markdown =
         "The system MUST use managed identities for authentication.\n";
     for (const bool editing : {false, true}) {
         FakeEngine engine;
-        MacRenderer renderer;
+        DocumentRenderer renderer;
         renderer.SetTextEngine(&engine);
         renderer.SetTheme(BaseMetrics(), BasePalette());
         RecordingTarget target;
@@ -927,9 +927,9 @@ TEST(RendererMac, PaintsMarkersInBothModes) {
     }
 }
 
-TEST(RendererMac, PaintsAMarkerAboveTheCodeCardAndUnderItsText) {
+TEST(DocumentRenderer, PaintsAMarkerAboveTheCodeCardAndUnderItsText) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     RecordingTarget target;
@@ -962,9 +962,9 @@ TEST(RendererMac, PaintsAMarkerAboveTheCodeCardAndUnderItsText) {
     EXPECT_GT(markerFill, codeCard);
 }
 
-TEST(RendererMac, FillsTheInlineCodeBackgroundOnEveryWrappedLine) {
+TEST(DocumentRenderer, FillsTheInlineCodeBackgroundOnEveryWrappedLine) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     RecordingTarget target;
@@ -1018,9 +1018,9 @@ TEST(RendererMac, FillsTheInlineCodeBackgroundOnEveryWrappedLine) {
     }
 }
 
-TEST(RendererMac, FillsCodeBackgroundInsideATableCell) {
+TEST(DocumentRenderer, FillsCodeBackgroundInsideATableCell) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     RecordingTarget target;
@@ -1044,9 +1044,9 @@ TEST(RendererMac, FillsCodeBackgroundInsideATableCell) {
     EXPECT_TRUE(sawBackground);
 }
 
-TEST(RendererMac, PaintsTheCodeCardWithoutABorder) {
+TEST(DocumentRenderer, PaintsTheCodeCardWithoutABorder) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     RecordingTarget target;
@@ -1070,9 +1070,9 @@ TEST(RendererMac, PaintsTheCodeCardWithoutABorder) {
     EXPECT_TRUE(sawCard);
 }
 
-TEST(RendererMac, UnderlinesLinks) {
+TEST(DocumentRenderer, UnderlinesLinks) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     RecordingTarget target;
@@ -1113,9 +1113,9 @@ TEST(RendererMac, UnderlinesLinks) {
     EXPECT_TRUE(sawUnderline);
 }
 
-TEST(RendererMac, DrawsImagesAboveTheirParagraph) {
+TEST(DocumentRenderer, DrawsImagesAboveTheirParagraph) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     RecordingTarget target;
@@ -1160,9 +1160,9 @@ TEST(RendererMac, DrawsImagesAboveTheirParagraph) {
     EXPECT_GE(y, block.y + block.imagesHeight - 0.01f);
 }
 
-TEST(RendererMac, KeepsACaretLineForABlankParagraph) {
+TEST(DocumentRenderer, KeepsACaretLineForABlankParagraph) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -1184,9 +1184,9 @@ TEST(RendererMac, KeepsACaretLineForABlankParagraph) {
     EXPECT_NEAR(h, kBodyEm * kBase.bodyLineHeight, 0.02f);
 }
 
-TEST(RendererMac, GivesAnEmptyParagraphNoHeight) {
+TEST(DocumentRenderer, GivesAnEmptyParagraphNoHeight) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -1242,9 +1242,9 @@ Node MarkedPara() {
     return node;
 }
 
-TEST(RendererMac, MapsTheRenderedTextBackToTheSource) {
+TEST(DocumentRenderer, MapsTheRenderedTextBackToTheSource) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     const std::string source = "a **b** c";
@@ -1272,9 +1272,9 @@ TEST(RendererMac, MapsTheRenderedTextBackToTheSource) {
     EXPECT_EQ(renderer.NormalizeToRenderedCaret(6u), 5u);
 }
 
-TEST(RendererMac, ClipsRangesToTheDrawnText) {
+TEST(DocumentRenderer, ClipsRangesToTheDrawnText) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     const std::string source = "a **b** c";
@@ -1303,9 +1303,9 @@ TEST(RendererMac, ClipsRangesToTheDrawnText) {
     EXPECT_TRUE(!renderer.RangeIsRendered(0u, 9u));
 }
 
-TEST(RendererMac, StepsSkipTheHiddenMarkers) {
+TEST(DocumentRenderer, StepsSkipTheHiddenMarkers) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     const std::string source = "a **b** c";
@@ -1327,9 +1327,9 @@ TEST(RendererMac, StepsSkipTheHiddenMarkers) {
     EXPECT_EQ(renderer.StepWord(9u, true), 8u);
 }
 
-TEST(RendererMac, PointToOffsetIsExactBetweenCharacters) {
+TEST(DocumentRenderer, PointToOffsetIsExactBetweenCharacters) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -1360,9 +1360,9 @@ TEST(RendererMac, PointToOffsetIsExactBetweenCharacters) {
     EXPECT_EQ(renderer.HitTestPoint(block.x - 20.0f, midY), UINT32_MAX);
 }
 
-TEST(RendererMac, WrappedLineClicksLandOnTheLine) {
+TEST(DocumentRenderer, WrappedLineClicksLandOnTheLine) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -1387,9 +1387,9 @@ TEST(RendererMac, WrappedLineClicksLandOnTheLine) {
     EXPECT_EQ(offset, 6u);
 }
 
-TEST(RendererMac, ListClicksAndCaretRectsUseTheMarkerGutter) {
+TEST(DocumentRenderer, ListClicksAndCaretRectsUseTheMarkerGutter) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -1426,9 +1426,9 @@ TEST(RendererMac, ListClicksAndCaretRectsUseTheMarkerGutter) {
     EXPECT_EQ(offset, 2u);
 }
 
-TEST(RendererMac, TableClicksLandInTheClickedCell) {
+TEST(DocumentRenderer, TableClicksLandInTheClickedCell) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -1472,9 +1472,9 @@ TEST(RendererMac, TableClicksLandInTheClickedCell) {
 // nearest drawn span lives in a different cell. A click must activate
 // the clicked cell itself: the caret parks at the cell's own content
 // start and has a rect to draw at (table guideline 7).
-TEST(RendererMac, EmptyTableCellClickKeepsCaretInClickedCell) {
+TEST(DocumentRenderer, EmptyTableCellClickKeepsCaretInClickedCell) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -1509,9 +1509,9 @@ TEST(RendererMac, EmptyTableCellClickKeepsCaretInClickedCell) {
 // Regression (blank paragraph click): a blank line between
 // paragraphs is a node of its own, and a click on its band must park
 // the caret there, on the placeholder line, not in a neighbour.
-TEST(RendererMac, BlankParagraphClickKeepsTheCaretOnTheLine) {
+TEST(DocumentRenderer, BlankParagraphClickKeepsTheCaretOnTheLine) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -1534,9 +1534,9 @@ TEST(RendererMac, BlankParagraphClickKeepsTheCaretOnTheLine) {
 }
 
 
-TEST(RendererMac, SourceModeDrawsTheRawBufferWithEveryByteAddressable) {
+TEST(DocumentRenderer, SourceModeDrawsTheRawBufferWithEveryByteAddressable) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -1586,9 +1586,9 @@ TEST(RendererMac, SourceModeDrawsTheRawBufferWithEveryByteAddressable) {
 // own rendered map, so the jump's y has to come from the cell's region.
 // Before this the table match had no y at all and the jump went
 // nowhere.
-TEST(RendererMac, YForOffsetFindsTextInsideTableCells) {
+TEST(DocumentRenderer, YForOffsetFindsTextInsideTableCells) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -1626,9 +1626,9 @@ TEST(RendererMac, YForOffsetFindsTextInsideTableCells) {
 // a cell draws its line at the column alignment. The range rectangles
 // read the same alignment, so the highlight is not stuck at the left
 // padding (highlighting spec 8).
-TEST(RendererMac, RangeRectsFollowTheCellAlignment) {
+TEST(DocumentRenderer, RangeRectsFollowTheCellAlignment) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -1675,9 +1675,9 @@ TEST(RendererMac, RangeRectsFollowTheCellAlignment) {
 // test the mac answer ignored the alignment, so the caret of a centred
 // header cell sat at the cell's left edge while its glyphs sat in the
 // middle.
-TEST(RendererMac, CaretRectsAgreeForAlignedCells) {
+TEST(DocumentRenderer, CaretRectsAgreeForAlignedCells) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -1742,9 +1742,9 @@ TEST(RendererMac, CaretRectsAgreeForAlignedCells) {
 // theme change must lay the document out again before it can draw in
 // the new appearance: dark mode once kept the light theme's dark ink
 // on the dark page.
-TEST(RendererMac, RecoloursTheRunsWhenTheThemeChanges) {
+TEST(DocumentRenderer, RecoloursTheRunsWhenTheThemeChanges) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -1769,9 +1769,9 @@ TEST(RendererMac, RecoloursTheRunsWhenTheThemeChanges) {
 // word-processor guidelines keep it addressable). While reading it is
 // not a block anyone sees: it drops out of the layout entirely, so
 // the list's own gap runs straight into its neighbor.
-TEST(RendererMac, DrawsTheBlankLineNextToListBareInBothModes) {
+TEST(DocumentRenderer, DrawsTheBlankLineNextToListBareInBothModes) {
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
 
@@ -1803,7 +1803,7 @@ TEST(RendererMac, DrawsTheBlankLineNextToListBareInBothModes) {
 // checked here against the same fixed text engine the rest of the suite
 // uses. A browser is the reference for every one of them.
 
-TEST(RendererMac, SvgCentresAMiddleAnchoredLabel) {
+TEST(DocumentRenderer, SvgCentresAMiddleAnchoredLabel) {
     platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='100'>"
@@ -1820,7 +1820,7 @@ TEST(RendererMac, SvgCentresAMiddleAnchoredLabel) {
     EXPECT_NEAR(target.texts[0].x, 90.0f, 0.01f);
 }
 
-TEST(RendererMac, SvgKeepsTheStartAnchorAtItsOwnX) {
+TEST(DocumentRenderer, SvgKeepsTheStartAnchorAtItsOwnX) {
     platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='100'>"
@@ -1834,7 +1834,7 @@ TEST(RendererMac, SvgKeepsTheStartAnchorAtItsOwnX) {
     EXPECT_NEAR(target.texts[0].x, 100.0f, 0.01f);
 }
 
-TEST(RendererMac, SvgAppliesTheGroupTranslate) {
+TEST(DocumentRenderer, SvgAppliesTheGroupTranslate) {
     platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='200'>"
@@ -1849,7 +1849,7 @@ TEST(RendererMac, SvgAppliesTheGroupTranslate) {
     EXPECT_NEAR(target.texts[0].baseline, 70.0f, 0.01f);
 }
 
-TEST(RendererMac, SvgDrawsARoundedRectRounded) {
+TEST(DocumentRenderer, SvgDrawsARoundedRectRounded) {
     platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='100'>"
@@ -1866,7 +1866,7 @@ TEST(RendererMac, SvgDrawsARoundedRectRounded) {
     EXPECT_NEAR(target.strokes[0].radius, 10.0f, 0.01f);
 }
 
-TEST(RendererMac, SvgSplitsADashedPathIntoSegments) {
+TEST(DocumentRenderer, SvgSplitsADashedPathIntoSegments) {
     platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='100'>"
@@ -1881,7 +1881,7 @@ TEST(RendererMac, SvgSplitsADashedPathIntoSegments) {
     EXPECT_EQ(target.strokes.size(), 10u);
 }
 
-TEST(RendererMac, SvgDoesNotCloseAnOpenPath) {
+TEST(DocumentRenderer, SvgDoesNotCloseAnOpenPath) {
     platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='200'>"
@@ -1898,7 +1898,7 @@ TEST(RendererMac, SvgDoesNotCloseAnOpenPath) {
     EXPECT_FALSE(target.polygons[0].closed);
 }
 
-TEST(RendererMac, SvgDrawsEverySegmentOfABentPolyline) {
+TEST(DocumentRenderer, SvgDrawsEverySegmentOfABentPolyline) {
     platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='200'>"
@@ -1916,7 +1916,7 @@ TEST(RendererMac, SvgDrawsEverySegmentOfABentPolyline) {
     EXPECT_FALSE(target.polygons[0].closed);
 }
 
-TEST(RendererMac, SvgTurnsAMarkerEndIntoAnArrowhead) {
+TEST(DocumentRenderer, SvgTurnsAMarkerEndIntoAnArrowhead) {
     platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='200'>"
@@ -1940,7 +1940,7 @@ TEST(RendererMac, SvgTurnsAMarkerEndIntoAnArrowhead) {
     EXPECT_EQ(target.polygons.size(), 2u);
 }
 
-TEST(RendererMac, SvgIgnoresAClosedPathInsideDefs) {
+TEST(DocumentRenderer, SvgIgnoresAClosedPathInsideDefs) {
     platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='200'>"
@@ -1954,7 +1954,7 @@ TEST(RendererMac, SvgIgnoresAClosedPathInsideDefs) {
     EXPECT_TRUE(target.polygons.empty());
 }
 
-TEST(RendererMac, SvgKeepsTheItalicOfALabel) {
+TEST(DocumentRenderer, SvgKeepsTheItalicOfALabel) {
     platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='100' font-family='Arial, Helvetica, sans-serif'>"
@@ -1971,7 +1971,7 @@ TEST(RendererMac, SvgKeepsTheItalicOfALabel) {
 }
 
 
-TEST(RendererMac, SvgRotatesAMarkerWithItsLine) {
+TEST(DocumentRenderer, SvgRotatesAMarkerWithItsLine) {
     platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='200' height='200'>"
@@ -2001,7 +2001,7 @@ TEST(RendererMac, SvgRotatesAMarkerWithItsLine) {
     EXPECT_NEAR((*head)[2].y, 111.0f, 0.01f);
 }
 
-TEST(RendererMac, SvgAppliesAScaleBeforeTheTranslate) {
+TEST(DocumentRenderer, SvgAppliesAScaleBeforeTheTranslate) {
     platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='300' height='100'>"
@@ -2022,7 +2022,7 @@ TEST(RendererMac, SvgAppliesAScaleBeforeTheTranslate) {
     EXPECT_NEAR(target.fills[0].rect.height, 10.0f, 0.01f);
 }
 
-TEST(RendererMac, SvgDrawsAnEllipticalArc) {
+TEST(DocumentRenderer, SvgDrawsAnEllipticalArc) {
     platform::SvgDoc doc;
     ASSERT_TRUE(doc.Load(
         "<svg width='100' height='100'>"
@@ -2048,7 +2048,7 @@ TEST(RendererMac, SvgDrawsAnEllipticalArc) {
 // and takes the nearest position inside the line it lands on. Asking
 // the hit test for the paragraph's own column read "no line here" from
 // every indented line, so one Down arrow jumped clean over the list.
-TEST(RendererMac, VerticalMoveEntersTheListBelow) {
+TEST(DocumentRenderer, VerticalMoveEntersTheListBelow) {
     const std::string source =
         "Before the list.\n"
         "\n"
@@ -2060,7 +2060,7 @@ TEST(RendererMac, VerticalMoveEntersTheListBelow) {
     ASSERT_TRUE(ParseMarkdown(source, doc));
 
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     renderer.SetSourceText(&source);
@@ -2096,7 +2096,7 @@ TEST(RendererMac, VerticalMoveEntersTheListBelow) {
 // The arrows walk the page one drawn line at a time, through a list's
 // own items, into a nested item and back out again. A step that skips a
 // line is a step the reader cannot take with the keyboard.
-TEST(RendererMac, VerticalMoveStepsThroughANestedListOneLineAtATime) {
+TEST(DocumentRenderer, VerticalMoveStepsThroughANestedListOneLineAtATime) {
     const std::string source =
         "Intro line.\n"
         "\n"
@@ -2110,7 +2110,7 @@ TEST(RendererMac, VerticalMoveStepsThroughANestedListOneLineAtATime) {
     ASSERT_TRUE(ParseMarkdown(source, doc));
 
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     renderer.SetSourceText(&source);
@@ -2147,13 +2147,13 @@ TEST(RendererMac, VerticalMoveStepsThroughANestedListOneLineAtATime) {
 // position in the block. A run md4c builds itself used to arrive with
 // offset zero, so that space mapped to byte zero and the caret that
 // stepped onto it jumped to the top of the document.
-TEST(RendererMac, SoftBreakKeepsTheCaretInItsBlock) {
+TEST(DocumentRenderer, SoftBreakKeepsTheCaretInItsBlock) {
     const std::string source = "> quote one\n> quote two\n";
     Document doc;
     ASSERT_TRUE(ParseMarkdown(source, doc));
 
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     renderer.SetSourceText(&source);
@@ -2185,7 +2185,7 @@ TEST(RendererMac, SoftBreakKeepsTheCaretInItsBlock) {
 // one after a vertical step. The step has to start from the line the
 // caret is drawn on, or pressing Up lands two rows higher than the row
 // above and the line in between cannot be reached with the keyboard.
-TEST(RendererMac, VerticalCaretKnowsWhichSideOfAWrapItIsOn) {
+TEST(DocumentRenderer, VerticalCaretKnowsWhichSideOfAWrapItIsOn) {
     const std::string source =
         "A paragraph long enough that the fixed grid has to break it in two lines here\n"
         "\n"
@@ -2194,7 +2194,7 @@ TEST(RendererMac, VerticalCaretKnowsWhichSideOfAWrapItIsOn) {
     ASSERT_TRUE(ParseMarkdown(source, doc));
 
     FakeEngine engine;
-    MacRenderer renderer;
+    DocumentRenderer renderer;
     renderer.SetTextEngine(&engine);
     renderer.SetTheme(BaseMetrics(), BasePalette());
     renderer.SetSourceText(&source);

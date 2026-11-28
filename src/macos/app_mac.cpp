@@ -52,7 +52,7 @@ namespace {
 // drawn, so the hidden markers are never searched. It is the same
 // rule the Windows window applies.
 bool FindScopeIsRendered(uint32_t start, uint32_t length, void* context) {
-    const auto* renderer = static_cast<const MacRenderer*>(context);
+    const auto* renderer = static_cast<const DocumentRenderer*>(context);
     return renderer != nullptr && renderer->RangeIsRendered(start, length);
 }
 
@@ -279,7 +279,7 @@ void App::RefreshFindResults(bool adoptCurrentMatch) {
     // same scope the Windows window passes.
     state.Refresh(buffer_.Text(), &FindScopeIsRendered,
                   contentView_
-                      ? const_cast<MacRenderer*>(&contentView_->renderer())
+                      ? const_cast<DocumentRenderer*>(&contentView_->renderer())
                       : nullptr);
     if (adoptCurrentMatch && state.HasQuery()) {
         state.AdoptMatchAt(sel_.active.offset);

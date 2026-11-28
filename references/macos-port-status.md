@@ -53,7 +53,7 @@ Everything else lives in `src/macos/`:
 |------|--------------|
 | `seams.h` | The narrow interfaces the mac layer is written against |
 | `text_engine_mac.*` | Core Text measurement and drawing |
-| `renderer_mac.*` | The renderer: blocks, inline styles, tables, images, mermaid, SVG |
+| `document_renderer.*` (shared) | The frame: blocks, inline styles, tables, images, mermaid, SVG |
 | `src/mermaid/painter.*` | The mermaid shapes (shared by both ports) |
 | `svg_mac.*` | The SVG reader and its painter |
 | `welcome_screen.*` (shared with Windows) | The welcome screen with the recent files |
@@ -452,7 +452,7 @@ measure; and the rectangle of a range ends at the left edge of the
 character after it, the way the Windows range boxes do, which the
 selection, the search marks and the code backgrounds all draw.
 
-`tests/renderer_mac_test.cpp` drives the renderer with a text engine
+`tests/document_renderer_test.cpp` drives the renderer with a text engine
 that measures on a fixed grid, so those numbers run in CI on every
 push: the column and its centering, the line heights, the gaps between
 the blocks, the table columns and rows, the marker gutter, the rule,

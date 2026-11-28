@@ -15,8 +15,12 @@ and why. Three checkers read this file:
 | Source or feature | Windows | macOS | Reason |
 |---|---|---|---|
 | Text layout engine (`src/textlayout_dwrite.cpp` against `src/textlayout_coretext.cpp`) | exe and tests | core and tests | One engine per platform behind `src/textlayout.h`. |
-| SVG document (`src/svgdoc.cpp`) | exe and tests | not built, the mac renderer paints through the shared reader `src/macos/svg_mac.cpp` | The DirectWrite SVG path is Windows side. The reader `svg_mac.cpp` is shared and lives under `src/macos/` for historical reasons. |
+| SVG document (`src/svgdoc.cpp`) | exe and tests | not built; the document renderer paints through the shared reader `src/macos/svg_mac.cpp` | The DirectWrite SVG path is Windows side. The reader `svg_mac.cpp` is shared and lives under `src/macos/` for historical reasons. |
 | Window chrome | ribbon, `src/ribbon.xml` | native menu and toolbar, `menu_mac.mm` and `toolbar_mac.mm` | The platform UI guidelines: `ribbon-menu-guidelines.md` on Windows, `macos-native-chrome.md` on macOS. |
+| Document renderer (`src/document_renderer.cpp`) | compiled by the exe and the tests, not yet used; the Windows shell keeps its own Direct2D frame in `src/renderer.cpp` | the mac app and the mac tests draw through it | Plan 2.2 slice 10. The class is portable and both targets build it; the Windows shell adopts it when its frame moves. Until then the Windows painter is the second body. |
+| SVG fence rasterizer (`platform::SvgRaster`, `src/svgscene.h`) | `src/svgdoc.cpp` inside the Windows painter | `src/macos/svg_raster_mac.cpp` over the shared reader `src/macos/svg_mac.cpp` | Two rasterizers, one interface. The appearance remap, the cache and the link boxes are shared in the document renderer; only parsing and drawing are the platform's. |
+| Image service (`platform::ImageSource`, `src/imagerender.h`) | `ImageHelper`, a blocking decode in the Windows painter | `src/macos/image_source_mac.h` over the asynchronous `ImageCache` | The fetch is platform-owned: the mac prefetches off the paint thread and asks for a relayout when a picture arrives. The renderer asks one interface for a size and a bitmap. |
+| QA strings (`src/qa_strings.cpp`) | the Windows shell formats its own trace | the document renderer formats the probe and block lines | Plan 2.2 slice 10: the strings read the shared layout records, so they live beside them. `PinnedHeaderHeightForQA` stays on both shells. |
 | Settings store | registry, `src/settings_win.cpp` | JSON under Application Support, `src/macos/settings_mac.cpp` | Platform convention. The `AppSettings` struct and the recent-files logic are shared in `src/settings.cpp`. |
 | Clipboard | Win32 handles, `src/clipboard_win.cpp` | NSPasteboard, `src/macos/clipboard_mac.mm` | Platform convention. The interface, the escaping, the HTML converter and the line ending normalizers are shared in `src/clipboard.cpp`. |
 | Usage telemetry transport | WinHTTP, `src/windows/telemetry_win.cpp` | `NSURLSession`, `src/macos/telemetry_mac.mm` | An HTTP stack is genuinely per platform: WinHTTP is an OS component on Windows and NSURLSession is part of Foundation on macOS, and neither builds on the other. Everything else is shared: the payload and the send (`src/analytics.*`), the one seam (`platform::TelemetrySink`, `src/platform/seams.h`), the opt-out setting and the decision to send. The OS version differs with the platform too (RtlGetVersion, because GetVersionEx lies without a manifest, against `NSProcessInfo`); the app version comes from `src/app.rc` on both. |
@@ -88,7 +92,7 @@ the longer reasoning.
 | Caret record index space | UTF-16; the seam's caret methods already speak UTF-16, so the mac converts at the boundary rather than the cache converting (slice 8) | The mac record maps rendered UTF-8 bytes and `LayoutCache` reads UTF-16 units, and either side could have been the one to convert. |
 | Offset rectangles for centred and right-aligned cells | Prove first: a test compares the two models' rectangles for centred and right-aligned cells and must be green before the record adoption lands; if it cannot be green, report the measured difference instead of adopting on trust (slice 8) | The two models agreed on plain and left-aligned text and nobody had compared an aligned cell, where a centred header cell's caret would expose a wrong rectangle. |
 
-The proof, `RendererMac.CaretRectsAgreeForAlignedCells` (2026-11-28), compared
+The proof, `DocumentRenderer.CaretRectsAgreeForAlignedCells` (2026-11-28), compared
 the two models and found a difference: the mac `OffsetToRect` added no alignment
 offset, so a centred or right-aligned cell's caret sat at the cell's left edge
 while its glyphs were painted aligned. A 100 point column with an 8 point line
@@ -177,7 +181,7 @@ they cannot disagree.
 
 | Ribbon command | Reason |
 |---|---|
-| cmdWidthStandard | The mac renderer follows the pane width on purpose, see the width cap row above. The width modes live in `renderer_mac.cpp` but no mac command runs them. |
+| cmdWidthStandard | The mac renderer follows the pane width on purpose, see the width cap row above. The width modes live in `src/document_renderer.cpp` but no mac command runs them. |
 | cmdWidth960 | Same as cmdWidthStandard. |
 | cmdWidth1600 | Same as cmdWidthStandard. |
 | cmdWidthFull | Same as cmdWidthStandard. |
@@ -232,7 +236,7 @@ row whose pattern matches nothing on its platform is stale and fails.
 | MermaidLegacy.* | windows | Kept while the legacy entry points migrate, see the legacy row above. |
 | ClipboardPaste.* | windows | The paste priority rules of the Win32 clipboard, driven through a real window with forged custom formats. The shared markdown escaping and line endings have their own portable tests on both runners. |
 | EmptyListMapping.DirectWritePlaceholderHasOneClickableCaret | windows | The DirectWrite caret landing rule of the Windows engine. The Core Text engine has its own TextEngineMac suite. |
-| RendererWin.* | windows | The Windows renderer's selection wash twin driven through the walk engine seam with fake D2D and DWrite shims, so the real SDK surface stays in the test. The shared rect rule itself is portable and cross-checked from the mac side by RendererMac reading the same walk records, plus the shared suites below. |
+| RendererWin.* | windows | The Windows renderer's selection wash twin driven through the walk engine seam with fake D2D and DWrite shims, so the real SDK surface stays in the test. The shared rect rule itself is portable and cross-checked from the mac side by DocumentRenderer reading the same walk records, plus the shared suites below. |
 | ClearInlineFormatting.* | macos | The clear formatting tests run on macOS only today, although the Windows side carries the command. Move the file into the shared suite in plan Batch 4. |
 | InlineMarkerRuns.* | macos | Same as ClearInlineFormatting. |
 | TextEngineMac.* | macos | The Core Text engine behind the seam. |
@@ -241,7 +245,7 @@ row whose pattern matches nothing on its platform is stale and fails.
 | SeamConformance.CoreTextEngineFollowsTheSeam | macos | The Core Text enrollment in the shared conformance grid. The grid itself runs on both runners through the fake engine; the DirectWrite engine has its own row above. |
 | SeamConformance.CoreTextEngineDrawsALaidOutBlock | macos | The laid out block grid over the Core Text engine and the Core Graphics target. The same block assertions run on both runners through the fake engine and the portable path. |
 | SvgNativeMac.* | macos | The CoreGraphics SVG probes behind the same seam. |
-| RendererMac.* | macos | The mac renderer layout arithmetic. |
+| DocumentRenderer.* | macos | The shared document renderer's layout arithmetic, driven by the mac tests. The Windows renderer has its own suite above until its frame adopts the shared one. |
 
 ## Sources built by no target
 

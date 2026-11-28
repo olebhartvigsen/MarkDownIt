@@ -25,6 +25,7 @@
 #include "layout/text_runs.h"
 #include "layout/block_overlays.h"
 #include "layout/chips.h"
+#include "layout/frame.h"
 #include "layout/range_highlights.h"
 #include "layout/selection_rects.h"
 #include "mermaid/model.h"
@@ -2260,30 +2261,26 @@ float Renderer::Render(platform::RenderTarget& rt, const Document& doc,
         }
     }
 
-    // Phase two, the replay: the whole display list under one column
-    // origin, the exact structure the mac twin uses. Every band sits at
-    // padTop + topOffset + record.y, exactly where the per node pass
-    // puts the caret bands, so the glyphs land on the same lines the
-    // cache points at; the column target keeps every item at its walked
-    // width and position.
+    // Phase two and three, in the shared frame: the whole display list
+    // under one column origin, then the overlay layers above the surface
+    // it drew. The order is not this shell's to choose (the owner's
+    // composition decision); the card and the table surface are display
+    // items, and the overlays add only what the list cannot carry.
     {
         const float originY = m.padTop + topOffsetDip;
         platform::OffsetTarget column(&rt, originX - scrollX,
                                       originY - scrollY);
-        display::Play(shared.list, &column,
-                      [this](const display::Image& item) {
-                          return ImageHandleFor(item);
-                      });
+        layout::PaintFrame(
+            column, shared.list,
+            [this](const display::Image& item) {
+                return ImageHandleFor(item);
+            },
+            [&] {
+                PaintSharedOverlays(rt, doc, sharedByNode, shared, m,
+                                    contentWidth, originX, topOffsetDip,
+                                    viewportHeightDip, scrollX, sel, scrollY);
+            });
     }
-
-    // Phase three, the overlay layers above the replayed surface: the
-    // washes, the selection and the words of a code card and of each table
-    // row, each at the record's own band. The card and the table surface
-    // themselves are display items now (the composition order the owner
-    // settled), so these calls add only what the list cannot carry.
-    PaintSharedOverlays(rt, doc, sharedByNode, shared, m, contentWidth,
-                        originX, topOffsetDip, viewportHeightDip, scrollX,
-                        sel, scrollY);
 
     rt.PopClip();
 

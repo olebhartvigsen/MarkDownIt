@@ -199,13 +199,13 @@ palette cannot do.
 - `src/theme.h`: `BaseMetrics()` and `BasePalette()`.
 - `src/blockspacing.h`: the margin collapse.
 - `src/renderer.cpp`: Windows layout and paint.
-- `src/macos/renderer_mac.cpp`: mac layout and paint.
-- `tests/renderer_mac_test.cpp`: the geometry tests, including the heading
+- `src/document_renderer.cpp`: the shared frame and paint.
+- `tests/document_renderer_test.cpp`: the geometry tests, including the heading
   rule, the 4px break, the code card and the table grid.
 
 ## Verification
 
-`RendererMac.AppliesTheLineSpacingAndTheReadingLead` checks the 1.5, 1.25 and
+`DocumentRenderer.AppliesTheLineSpacingAndTheReadingLead` checks the 1.5, 1.25 and
 1.45 line boxes. `SpacesBlocksLikeWindows` checks the collapsed gaps.
 `PaintsTheHeadingRuleTheBarAndTheBreak`, `PaintsTheCodeCardWithoutABorder` and
 `PaintsTheGitHubTableGrid` check the element geometry. The capture-parity job

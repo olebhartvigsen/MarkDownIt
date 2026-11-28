@@ -24,7 +24,7 @@
 #include "outline_nsview_mac.h"
 #include "outline_pane_mac.h"
 #include "print_mac.h"
-#include "renderer_mac.h"
+#include "document_renderer.h"
 #include "layout/print_pages.h"
 #include "content_view_mac.h"
 #include "outline.h"
@@ -1620,7 +1620,7 @@ static std::string OcrPdfPage(void* data, const std::string& path,
         // the Windows walk reports, and, when the walk names a file, the
         // pages as a PDF anyone can look at.
         layout::PrintPage page;
-        platform::MacRenderer& renderer = content_->MutableRenderer();
+        platform::DocumentRenderer& renderer = content_->MutableRenderer();
         std::shared_ptr<const layout::DocumentLayout> laid =
             renderer.PrintLayout(app_->GetDocument(), page.ContentWidth());
         const std::vector<layout::PrintBand> bands =

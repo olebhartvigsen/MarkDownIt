@@ -383,7 +383,7 @@ inventory, Windows-symbol grep, include-chain walk, CMake test target and
 link list, test count, golden fixture count, and the runner facts from the
 GitHub Actions image announcements. This session ran on Linux with no C++
 toolchain and no Cocoa headers, so nothing here proves that a
-renderer_mac.cpp compiles. The mac UI layer compiles only on macOS: on a
+document_renderer.cpp compiles. The mac UI layer compiles only on macOS: on a
 Mac with Xcode command line tools, or on a macos-15-arm64 runner. The
 shared core is verifiable anywhere, and specifically on the macOS test job
 once the two guards above land.

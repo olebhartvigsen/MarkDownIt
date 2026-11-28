@@ -220,7 +220,7 @@ loop that now runs on every build.
   into the laid-out runs, and ContentView::RefreshTheme re-set the
   palette without laying the document out again.
 - Fixed: RefreshTheme lays the document out again and invalidates.
-  Pinned by tests/renderer_mac_test.cpp
+  Pinned by tests/document_renderer_test.cpp
   (RecoloursTheRunsWhenTheThemeChanges) and by the capture-parity tool,
   which now fails any captured state whose document pane shows almost
   no text, the way a dark-on-dark document does.

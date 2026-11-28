@@ -51,6 +51,8 @@ ContentView::ContentView(App* app)
     // expects it.
     renderer_.SetDiagramTextEngine(std::make_unique<CoreTextEngine>());
     renderer_.SetTextEngine(engine_.get());
+    renderer_.SetImageSource(&images_);
+    renderer_.SetSvgRaster(&svgRaster_);
     palette_ = platform::SystemPalette();
     renderer_.SetTheme(BaseMetrics(), palette_);
     welcome_.SetPalette(platform::WelcomePaletteFor(

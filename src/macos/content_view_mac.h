@@ -19,7 +19,9 @@
 
 #include "app_mac.h"
 #include "caret.h"
-#include "renderer_mac.h"
+#include "document_renderer.h"
+#include "image_source_mac.h"
+#include "macos/svg_raster_mac.h"
 #include "welcome_screen.h"
 #include "searchreplace.h"
 #include "platform/seams.h"
@@ -152,11 +154,11 @@ public:
     void Draw(RenderTarget* target);
 
     // The renderer, which holds the laid out blocks.
-    const MacRenderer& renderer() const { return renderer_; }
+    const DocumentRenderer& renderer() const { return renderer_; }
     // The same renderer for a caller that asks it for a layout of its own,
     // outside the frame's: printing paginates a page and must not touch the
     // layout the window is showing.
-    MacRenderer& MutableRenderer() { return renderer_; }
+    DocumentRenderer& MutableRenderer() { return renderer_; }
 
     // The accessibility map (table spec 47): the tables of the current
     // layout with their rows, cells and the header row, in view
@@ -305,7 +307,11 @@ private:
     App* app_;
     std::unique_ptr<TextEngine> engine_;
     RenderTarget* target_;
-    MacRenderer renderer_;
+    DocumentRenderer renderer_;
+    // The renderer's image service and SVG rasterizer: the asynchronous
+    // cache and the Core Graphics reader this view owns.
+    MacImageSource images_;
+    MacSvgRaster svgRaster_;
     // Resolved whenever the appearance changes, never per frame.
     Palette palette_ = PaletteFor(ActiveMarkdownStyle(), theme::Appearance::Light);
     // The welcome screen, which is shown when no document is open.

@@ -1,14 +1,13 @@
-// The macOS renderer.
+// The document renderer: the frame, the surface replay order and the
+// queries an editor asks of one laid out document.
 //
-// The Windows renderer draws with Direct2D. This one draws with Core
-// Graphics through the RenderTarget seam, and measures with Core Text
-// through the TextEngine seam.
-//
-// The layout is the shared one: the theme metrics, the DOM structure and
-// the mermaid engine are all reused, so the two platforms lay the same
-// document out the same way. Only the drawing calls differ.
+// It draws through the RenderTarget seam and measures through the
+// TextEngine seam, so it names no platform graphics type and both targets
+// compile it. The layout is the shared one; the images, the SVG reader and
+// the appearance come in through their own seams (platform::ImageSource,
+// platform::SvgRaster, the palette the shell hands in).
 
-#include "renderer_mac.h"
+#include "document_renderer.h"
 
 #include "blocktext.h"
 #include "itemspans.h"
@@ -17,6 +16,7 @@
 #include "hash.h"
 #include "layout/block_overlays.h"
 #include "layout/chips.h"
+#include "layout/frame.h"
 #include "layout/display_player.h"
 #include "layout/range_highlights.h"
 #include "layout/selection_rects.h"
@@ -38,9 +38,18 @@
 #include "mermaid/seq_layout.h"
 #include "mermaid/painter.h"
 #include "navigation.h"
-#include "svg_mac.h"
 
 namespace platform {
+
+namespace {
+class NullImageSource final : public ImageSource {};
+}  // namespace
+
+ImageSource& NoImageSource() {
+    static NullImageSource source;
+    return source;
+}
+
 namespace {
 
 // A colour from the palette, and the DOM's UTF-32 to the encoder's UTF-8,
@@ -109,19 +118,6 @@ bool HasMermaidLayout(const mermaid::MermaidRender& diagram) {
 // caret reads them through the shared cache now: the renderer builds
 // one UTF-16 record per block and per cell and asks the cache.
 
-// The width a mermaid block is measured against.
-//
-// The Windows build measures a flowchart against the width inside the
-// block padding, and a pie and a sequence against the full column. The
-// painters fit the diagram into the padded width, so the measurement
-// follows the same split.
-float MermaidMeasureWidth(const mermaid::MermaidRender& diagram,
-                          float width) {
-    const float pad = mermaid::kMermaidBlockPad;
-    if (diagram.kind != mermaid::MermaidKind::Flowchart) return width;
-    return width > 2.0f * pad ? width - 2.0f * pad : 0.0f;
-}
-
 // The engine the shared layout measures through.
 //
 // The shared modules speak points into the seam and bake the zoom into
@@ -182,7 +178,7 @@ private:
 // the charge then share. The relaid comes from the diagram engine when
 // the fence measured up, the parse provisional layout otherwise; the
 // cache keeps the two callers of a frame on one object.
-std::shared_ptr<mermaid::LaidOutFlowchart> MacRenderer::FlowRelaidFor(
+std::shared_ptr<mermaid::LaidOutFlowchart> DocumentRenderer::FlowRelaidFor(
     const Node& node) const {
     MermaidLabelMeasure ctx;
     ctx.engine = diagramEngine_.get();
@@ -192,19 +188,19 @@ std::shared_ptr<mermaid::LaidOutFlowchart> MacRenderer::FlowRelaidFor(
                                   &mermaid_layout_cache_, zoom_);
 }
 
-mermaid::MermaidRender MacRenderer::MermaidRenderFor(const Node& node) const {
+mermaid::MermaidRender DocumentRenderer::MermaidRenderFor(const Node& node) const {
     return MermaidDiagramFor(node, FlowRelaidFor(node));
 }
 
-MacRenderer::MacRenderer() {
+DocumentRenderer::DocumentRenderer() {
     // The theme, until the caller sets its own: the same numbers the
     // Windows renderer starts from.
     baseMetrics_ = BaseMetrics();
     metrics_ = ComputeMetrics();
 }
-MacRenderer::~MacRenderer() = default;
+DocumentRenderer::~DocumentRenderer() = default;
 
-FontSpec MacRenderer::DiagramFontFor(const Node& node, float baseSize,
+FontSpec DocumentRenderer::DiagramFontFor(const Node& node, float baseSize,
                                       bool bold, bool italic,
                                       bool monospace) const {
     // The mermaid painters scale their text by the zoom themselves, the
@@ -213,7 +209,7 @@ FontSpec MacRenderer::DiagramFontFor(const Node& node, float baseSize,
     return MakeFont(metrics_, baseSize * kPtToDip, bold, italic, monospace);
 }
 
-void MacRenderer::ApplyLineSpacing(std::vector<TextLine>* lines, float ptSize,
+void DocumentRenderer::ApplyLineSpacing(std::vector<TextLine>* lines, float ptSize,
                                     float lineHeightEm) const {
     const float em = ptSize * kPtToDip * zoom_;
     // The CSS model: the line box is lineHeightEm times the font size,
@@ -237,7 +233,7 @@ void MacRenderer::ApplyLineSpacing(std::vector<TextLine>* lines, float ptSize,
     }
 }
 
-float MacRenderer::Measure(const Document& doc, float widthDip) {
+float DocumentRenderer::Measure(const Document& doc, float widthDip) {
     blocks_.clear();
     displayList_ = display::DisplayList{};
     needsLayout_ = false;
@@ -374,7 +370,7 @@ float MacRenderer::Measure(const Document& doc, float widthDip) {
     return totalHeight_;
 }
 
-void MacRenderer::SetContentWidthMode(int mode) {
+void DocumentRenderer::SetContentWidthMode(int mode) {
     // The mac shell pins this to full width. The width modes and their
     // cap are a Windows feature; this renderer ignores the cap.
     if (mode < 0 || mode > 3) {
@@ -388,7 +384,7 @@ void MacRenderer::SetContentWidthMode(int mode) {
 // reading mode, with the page's width and the light palette, and none of the
 // frame's state is written. Printing a dark window onto white paper would be
 // unreadable, and a page at the window's zoom would not be a page.
-std::shared_ptr<const layout::DocumentLayout> MacRenderer::PrintLayout(
+std::shared_ptr<const layout::DocumentLayout> DocumentRenderer::PrintLayout(
     const Document& doc, float contentWidthSeam) {
     const LayoutMetrics metrics = PaperMetrics(baseMetrics_);
     const Palette printPalette = BasePalette();
@@ -412,14 +408,14 @@ std::shared_ptr<const layout::DocumentLayout> MacRenderer::PrintLayout(
         layout::LayoutDocument(in));
 }
 
-LayoutMetrics MacRenderer::ComputeMetrics() const {
+LayoutMetrics DocumentRenderer::ComputeMetrics() const {
     LayoutMetrics m = ScaleMetrics(baseMetrics_, zoom_);
     // The mac pane stretches to the window and has no width mode. Leave
     // the shared cap untouched, but never consult it in this renderer.
     return m;
 }
 
-float MacRenderer::EffectivePadX(float widthDip) const {
+float DocumentRenderer::EffectivePadX(float widthDip) const {
     // A narrow pane gives the measure its room back: the side padding
     // slides from the theme's own value down to 16 as the pane narrows
     // under 640, the way the guideline asks a column to keep its width.
@@ -429,7 +425,7 @@ float MacRenderer::EffectivePadX(float widthDip) const {
     return narrow + (metrics_.padX - narrow) * std::min(1.0f, t);
 }
 
-bool MacRenderer::SvgLinkInView(float viewX, float viewY,
+bool DocumentRenderer::SvgLinkInView(float viewX, float viewY,
                                 std::string* href) const {
     const svg::LinkBox* hit = svg::LinkInAreas(svgLinkAreas_, viewX, viewY);
     if (!hit) return false;
@@ -437,17 +433,21 @@ bool MacRenderer::SvgLinkInView(float viewX, float viewY,
     return true;
 }
 
-const SvgDoc* MacRenderer::GetSvgDoc(const Node& node) {
-    // The document is read once per block content, and reused while the
-    // same block says the same thing.
+SvgScene* DocumentRenderer::GetSvgDoc(const Node& node) {
+    // The scene is read once per block content, and reused while the same
+    // block says the same thing. The reader is the platform's, behind
+    // platform::SvgRaster; this body owns the cache and the appearance
+    // remap, not the parsing.
+    if (!svgRaster_) return nullptr;
     const uint64_t rawHash = Fnv1aUtf32(node.raw);
     for (const SvgEntry& entry : svgDocs_) {
         if (entry.srcOffset == node.srcOffset && entry.rawHash == rawHash) {
-            return &entry.doc;
+            return entry.scene.get();
         }
     }
 
-    SvgDoc doc;
+    std::unique_ptr<SvgScene> scene = svgRaster_->NewScene();
+    if (!scene) return nullptr;
     // The reader has no appearance of its own: light-dark() is resolved
     // to the branch the page shows before the XML reaches it, the same
     // rule the Windows renderer applies before Direct2D sees the file.
@@ -458,16 +458,16 @@ const SvgDoc* MacRenderer::GetSvgDoc(const Node& node) {
         Rgb24(palette_.textPrimary));
     // A fenced block keeps its text in raw, the way the Windows draw
     // reads it; the inline children are empty for a fence.
-    if (!doc.Load(resolvedText)) return nullptr;
+    if (!scene->Load(resolvedText)) return nullptr;
     // A reader who opens a hundred documents should not keep a hundred
     // drawings alive.
     if (svgDocs_.size() >= 32) svgDocs_.clear();
     SvgEntry entry;
     entry.srcOffset = node.srcOffset;
     entry.rawHash = rawHash;
-    entry.doc = std::move(doc);
+    entry.scene = std::move(scene);
     svgDocs_.push_back(std::move(entry));
-    return &svgDocs_.back().doc;
+    return svgDocs_.back().scene.get();
 }
 
 namespace {
@@ -522,7 +522,7 @@ private:
 
 }  // namespace
 
-void MacRenderer::LayoutSourceBlocks(float x, float width, float* y) {
+void DocumentRenderer::LayoutSourceBlocks(float x, float width, float* y) {
     if (!sourceText_ || sourceText_->empty()) return;
 
     // The whole buffer is one block of monospace text, with the line
@@ -561,7 +561,7 @@ void MacRenderer::LayoutSourceBlocks(float x, float width, float* y) {
     blocks_.push_back(std::move(block));
 }
 
-void MacRenderer::AppendBlockFromLaid(const Document& doc,
+void DocumentRenderer::AppendBlockFromLaid(const Document& doc,
                                       const layout::LaidBlock& lb) {
     // The shared records count the nodes; the walk never points past
     // the document it measured.
@@ -679,7 +679,7 @@ void MacRenderer::AppendBlockFromLaid(const Document& doc,
     blocks_.push_back(std::move(block));
 }
 
-layout::ImageSize MacRenderer::ImageSizeForUrl(const Document& doc,
+layout::ImageSize DocumentRenderer::ImageSizeForUrl(const Document& doc,
                                                const std::string& url) {
     layout::ImageSize size;
     if (url.rfind("svg:", 0) == 0) {
@@ -696,7 +696,7 @@ layout::ImageSize MacRenderer::ImageSizeForUrl(const Document& doc,
                 continue;
             }
             if (url != "svg:" + layout::Utf32ToUtf8(node.raw)) continue;
-            const SvgDoc* svgDoc = GetSvgDoc(node);
+            SvgScene* svgDoc = GetSvgDoc(node);
             if (svgDoc && svgDoc->Width() > 0.0f &&
                 svgDoc->Height() > 0.0f) {
                 size.width = svgDoc->Width();
@@ -711,10 +711,10 @@ layout::ImageSize MacRenderer::ImageSizeForUrl(const Document& doc,
     // A raster image: the fetch starts here the way it always did, an
     // image still on its way is unknown, and the pass that sees it
     // arrive asks for the document to be laid out again.
-    images_.Prefetch(url);
+    images_->Prefetch(url);
     float naturalW = 0.0f;
     float naturalH = 0.0f;
-    if (images_.GetSize(url, &naturalW, &naturalH) && naturalW > 0.0f &&
+    if (images_->GetSize(url, &naturalW, &naturalH) && naturalW > 0.0f &&
         naturalH > 0.0f) {
         size.width = naturalW;
         size.height = naturalH;
@@ -725,21 +725,21 @@ layout::ImageSize MacRenderer::ImageSizeForUrl(const Document& doc,
     return size;
 }
 
-BitmapHandle MacRenderer::ImageHandleFor(const display::Image& item) {
+BitmapHandle DocumentRenderer::ImageHandleFor(const display::Image& item) {
     // The picture of a standalone .svg is drawn by the renderer from
     // its own parsed document, so the item answers nothing here and
     // the player skips it. Everything else comes from the image cache.
     if (item.url.rfind("svg:", 0) == 0) return nullptr;
-    return images_.Get(item.url);
+    return images_->Get(item.url);
 }
 
-void MacRenderer::SetMarkers(const std::vector<TextMatch>* markers) {
+void DocumentRenderer::SetMarkers(const std::vector<TextMatch>* markers) {
     markers_.clear();
     if (!markers) return;
     markers_ = *markers;
 }
 
-void MacRenderer::SetSearchMatches(const std::vector<TextMatch>* matches,
+void DocumentRenderer::SetSearchMatches(const std::vector<TextMatch>* matches,
                                   int currentIndex) {
     searchMatches_.clear();
     searchCurrent_ = -1;
@@ -750,103 +750,7 @@ void MacRenderer::SetSearchMatches(const std::vector<TextMatch>* matches,
     searchCurrent_ = currentIndex;
 }
 
-std::string MacRenderer::PinnedProbeForQA() const {
-    char line[224];
-    std::snprintf(line, sizeof(line),
-                  "paints=%d viewport=%.0f block=%.0f block-height=%.0f "
-                  "header-height=%.0f tables=%d pinned-now=%.0f editing=%d",
-                  qaRenderCount_, (double)qaViewportTopSeen_,
-                  (double)qaPinBlockY_, (double)qaPinBlockHeight_,
-                  (double)qaPinHeaderHeight_, qaPinTableBlocks_,
-                  (double)qaPinnedHeaderHeight_, editing_ ? 1 : 0);
-    return std::string(line);
-}
-
-std::string MacRenderer::BlocksForQA() const {
-    std::string out;
-    char item[64];
-    for (size_t i = 0; i < blocks_.size() && i < 8; ++i) {
-        std::snprintf(item, sizeof(item), "%s%d:%.0f:%.0f", i ? " " : "",
-                      static_cast<int>(blocks_[i].kind),
-                      static_cast<double>(blocks_[i].y),
-                      static_cast<double>(blocks_[i].height));
-        out += item;
-    }
-    std::snprintf(item, sizeof(item), " n=%zu", blocks_.size());
-    out += item;
-    return out;
-}
-
-void MacRenderer::Render(const Document& doc, float scrollOffset) {
-    svgLinkAreas_.clear();
-    (void)doc;
-    if (!target_) return;
-
-    // The global marker and search washes go under everything the
-    // replay draws above them. A code card and a table row paint their
-    // own opaque surface, which hides the washes, so their fills run
-    // again after the replay, above that surface (below).
-    PaintMarkerHighlights(scrollOffset);
-    PaintSearchHighlights(scrollOffset);
-
-    // The inline code pills of the whole list: opaque pills laid over
-    // the surfaces the replay will draw (none of them under a plain text
-    // block), with the block's washes re-run above them and under the
-    // glyphs. One shared pass reads the display list's per run spans, so
-    // a wrapped span is one pill with a cap at each real end, the cap
-    // rule Windows adopts with it.
-    layout::PaintInlineCodeChips(*target_, displayList_, originX_,
-                                 metrics_.padTop - scrollOffset, metrics_,
-                                 layout::ToColor(palette_.inlineCodeBg),
-                                 zoom_, -1.0e30f, 1.0e30f);
-
-    // A washed text block draws its marker wash above the chips and
-    // under its glyphs, and there is no opaque surface in the list
-    // between them: the replay puts the glyphs above both, the same
-    // order the per block painter used.
-    for (const LaidOutBlock& block : blocks_) {
-        if (block.kind == BlockKind::Heading ||
-            block.kind == BlockKind::Paragraph ||
-            block.kind == BlockKind::List ||
-            block.kind == BlockKind::BlockQuote) {
-            PaintBlockHighlights(block, scrollOffset);
-        }
-    }
-
-    if (sourceMode_) {
-        // The source view has no display items; its one block draws
-        // the raw buffer itself, with the washes under the selection
-        // and the glyphs on top. The selection is the renderer's here
-        // (owner decision, 2026-11-28), in the same one paint pass
-        // Windows has always used, so the view no longer fills it.
-        for (const LaidOutBlock& block : blocks_) {
-            if (hasSelection_) {
-                for (const Rect& rect :
-                     RectsForRangeInBlock(block, selFrom_, selTo_)) {
-                    Rect drawn = rect;
-                    drawn.y -= scrollOffset;
-                    target_->FillRect(drawn, selColour_);
-                }
-            }
-            layout::PaintTextLines(*target_, block.lines, TextX(block),
-                                   TextTop(block) - scrollOffset);
-        }
-        return;
-    }
-
-    // One replay of the whole list under one translate: the items are
-    // in content column coordinates, so the wrapper pins the column at
-    // originX_ and scrolls by the offset, the same numbers the per
-    // block painter always drew at. The player owns the run
-    // decorations and the dash flattening, so a line, a link and a
-    // table grid draw exactly as the seam spells them.
-    platform::OffsetTarget translated(target_, originX_,
-                                metrics_.padTop - scrollOffset);
-    display::Play(displayList_, &translated,
-                  [this](const display::Image& item) {
-                      return ImageHandleFor(item);
-                  });
-
+void DocumentRenderer::PaintOverlays(float scrollOffset) {
     // The layers the replay cannot draw. The code card and the table
     // row cover the global washes with their opaque surface, so their
     // fills run again above the surface, and the glyphs are drawn once
@@ -862,7 +766,7 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
                 // the card behind it.
                 if (block.node && block.node->lang == "svg" &&
                     standaloneSvg_) {
-                    const SvgDoc* svgDoc = GetSvgDoc(*block.node);
+                    SvgScene* svgDoc = GetSvgDoc(*block.node);
                     if (svgDoc && svgDoc->Width() > 0.0f &&
                         svgDoc->Height() > 0.0f) {
                         // Natural size times the zoom, the same rule the
@@ -870,9 +774,10 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
                         const float drawX = block.x + metrics_.codePad;
                         const float drawY = block.y + metrics_.codePad -
                                             scrollOffset;
-                        svgDoc->Draw(target_, engine_, drawX, drawY,
-                                     svgDoc->Width() * zoom_,
-                                     svgDoc->Height() * zoom_);
+                        svgDoc->Draw(*target_, *engine_,
+                                     Rect{drawX, drawY,
+                                          svgDoc->Width() * zoom_,
+                                          svgDoc->Height() * zoom_});
                         // The picture's own links, in the space the draw
                         // used, so a click can be answered from the
                         // frame that is on screen.
@@ -952,7 +857,83 @@ void MacRenderer::Render(const Document& doc, float scrollOffset) {
     }
 }
 
-void MacRenderer::PaintWashesInRegion(
+void DocumentRenderer::Render(const Document& doc, float scrollOffset) {
+    svgLinkAreas_.clear();
+    (void)doc;
+    if (!target_) return;
+
+    // The global marker and search washes go under everything the
+    // replay draws above them. A code card and a table row paint their
+    // own opaque surface, which hides the washes, so their fills run
+    // again after the replay, above that surface (below).
+    PaintMarkerHighlights(scrollOffset);
+    PaintSearchHighlights(scrollOffset);
+
+    // The inline code pills of the whole list: opaque pills laid over
+    // the surfaces the replay will draw (none of them under a plain text
+    // block), with the block's washes re-run above them and under the
+    // glyphs. One shared pass reads the display list's per run spans, so
+    // a wrapped span is one pill with a cap at each real end, the cap
+    // rule Windows adopts with it.
+    layout::PaintInlineCodeChips(*target_, displayList_, originX_,
+                                 metrics_.padTop - scrollOffset, metrics_,
+                                 layout::ToColor(palette_.inlineCodeBg),
+                                 zoom_, -1.0e30f, 1.0e30f);
+
+    // A washed text block draws its marker wash above the chips and
+    // under its glyphs, and there is no opaque surface in the list
+    // between them: the replay puts the glyphs above both, the same
+    // order the per block painter used.
+    for (const LaidOutBlock& block : blocks_) {
+        if (block.kind == BlockKind::Heading ||
+            block.kind == BlockKind::Paragraph ||
+            block.kind == BlockKind::List ||
+            block.kind == BlockKind::BlockQuote) {
+            PaintBlockHighlights(block, scrollOffset);
+        }
+    }
+
+    if (sourceMode_) {
+        // The source view has no display items; its one block draws
+        // the raw buffer itself, with the washes under the selection
+        // and the glyphs on top. The selection is the renderer's here
+        // (owner decision, 2026-11-28), in the same one paint pass
+        // Windows has always used, so the view no longer fills it.
+        for (const LaidOutBlock& block : blocks_) {
+            if (hasSelection_) {
+                for (const Rect& rect :
+                     RectsForRangeInBlock(block, selFrom_, selTo_)) {
+                    Rect drawn = rect;
+                    drawn.y -= scrollOffset;
+                    target_->FillRect(drawn, selColour_);
+                }
+            }
+            layout::PaintTextLines(*target_, block.lines, TextX(block),
+                                   TextTop(block) - scrollOffset);
+        }
+        return;
+    }
+
+    // One replay of the whole list under one translate: the items are
+    // in content column coordinates, so the wrapper pins the column at
+    // originX_ and scrolls by the offset, the same numbers the per
+    // block painter always drew at. The player owns the run
+    // decorations and the dash flattening, so a line, a link and a
+    // table grid draw exactly as the seam spells them.
+    platform::OffsetTarget translated(target_, originX_,
+                                metrics_.padTop - scrollOffset);
+    // The shared frame: the replay of the list, then the layers above the
+    // surface it drew. The order is the owner's composition decision, and
+    // the Windows shell calls the same function around the same list.
+    layout::PaintFrame(
+        translated, displayList_,
+        [this](const display::Image& item) {
+            return ImageHandleFor(item);
+        },
+        [&] { PaintOverlays(scrollOffset); });
+}
+
+void DocumentRenderer::PaintWashesInRegion(
     const std::vector<TextLine>& lines,
     const std::vector<uint32_t>& visToSrc, float x, float topDoc,
     ColumnAlign align, float innerWidth, uint32_t blockStart,
@@ -989,7 +970,7 @@ void MacRenderer::PaintWashesInRegion(
         layout::ToColor(palette_.findCurrentMatchBg));
 }
 
-void MacRenderer::PaintMarkerHighlights(float scrollOffset) {
+void DocumentRenderer::PaintMarkerHighlights(float scrollOffset) {
     if (!target_ || markers_.empty()) return;
 
     // The global layer of the page: a code card and a table row paint their
@@ -1013,14 +994,14 @@ void MacRenderer::PaintMarkerHighlights(float scrollOffset) {
 }
 
 
-void MacRenderer::SetSelection(uint32_t from, uint32_t to, Color colour) {
+void DocumentRenderer::SetSelection(uint32_t from, uint32_t to, Color colour) {
     hasSelection_ = to > from;
     selFrom_ = from;
     selTo_ = to;
     selColour_ = colour;
 }
 
-void MacRenderer::PaintBlockHighlights(const LaidOutBlock& block,
+void DocumentRenderer::PaintBlockHighlights(const LaidOutBlock& block,
                                         float scrollOffset) const {
     const uint32_t blockStart = block.node ? block.node->srcOffset : 0;
     const uint32_t blockEnd =
@@ -1032,7 +1013,7 @@ void MacRenderer::PaintBlockHighlights(const LaidOutBlock& block,
 }
 
 
-void MacRenderer::PaintTableRowHighlights(const LaidOutBlock& block,
+void DocumentRenderer::PaintTableRowHighlights(const LaidOutBlock& block,
                                            std::size_t row,
                                            float rowTop, float rowHeight,
                                            float scrollOffset) {
@@ -1066,7 +1047,7 @@ void MacRenderer::PaintTableRowHighlights(const LaidOutBlock& block,
 }
 
 
-void MacRenderer::PaintSearchHighlights(float scrollOffset) {
+void DocumentRenderer::PaintSearchHighlights(float scrollOffset) {
     if (!target_ || searchMatches_.empty()) return;
 
     for (const LaidOutBlock& block : blocks_) {
@@ -1086,7 +1067,7 @@ void MacRenderer::PaintSearchHighlights(float scrollOffset) {
 
 
 
-void MacRenderer::PaintTableOverlays(const LaidOutBlock& block,
+void DocumentRenderer::PaintTableOverlays(const LaidOutBlock& block,
                                      float scrollOffset) {
     if (!target_ || !block.table) return;
     const Node& node = *block.table;
@@ -1180,7 +1161,7 @@ void MacRenderer::PaintTableOverlays(const LaidOutBlock& block,
 // replayed at that edge with one translate and nothing is re-measured. The
 // copy carries its surface, its hairlines, its funnels and its words, so a
 // pinned header needs no painter of its own and neither port can forget it.
-void MacRenderer::DrawPinnedHeaders(RenderTarget* target, float visibleTop) {
+void DocumentRenderer::DrawPinnedHeaders(RenderTarget* target, float visibleTop) {
     if (!target) return;
     tableFilterButtons_.clear();
     qaRenderCount_ += 1;
@@ -1231,7 +1212,7 @@ void MacRenderer::DrawPinnedHeaders(RenderTarget* target, float visibleTop) {
     }
 }
 
-bool MacRenderer::YForOffset(uint32_t offset, float& y) const {
+bool DocumentRenderer::YForOffset(uint32_t offset, float& y) const {
     // The caret record answers it: the block that owns the position, and
     // the line it is drawn on. A position on the seam between two table
     // cells belongs to the later one, which is the text in front of the
@@ -1249,21 +1230,21 @@ bool MacRenderer::YForOffset(uint32_t offset, float& y) const {
     return caretCache_.OffsetToCaretRectIn(chosen, offset, &x, &y, &h);
 }
 
-float MacRenderer::TextX(const LaidOutBlock& block) const {
+float DocumentRenderer::TextX(const LaidOutBlock& block) const {
     const BlockTextInset inset =
         BlockTextInsetFor(block.kind, block.markerWidth, block.imagesHeight,
                           metrics_);
     return block.x + inset.x;
 }
 
-float MacRenderer::TextTop(const LaidOutBlock& block) const {
+float DocumentRenderer::TextTop(const LaidOutBlock& block) const {
     const BlockTextInset inset =
         BlockTextInsetFor(block.kind, block.markerWidth, block.imagesHeight,
                           metrics_);
     return block.y + inset.top;
 }
 
-float MacRenderer::TextWidth(const LaidOutBlock& block) const {
+float DocumentRenderer::TextWidth(const LaidOutBlock& block) const {
     if (block.kind == BlockKind::CodeBlock) {
         return block.width - metrics_.codePad * 2.0f;
     }
@@ -1281,7 +1262,7 @@ float MacRenderer::TextWidth(const LaidOutBlock& block) const {
 // pair, and its source bytes come from the region's own rendered byte
 // map. Converting here, once per layout, is what keeps every caret
 // question on the shared model.
-void MacRenderer::BuildCaretCache() {
+void DocumentRenderer::BuildCaretCache() {
     caretCache_.Clear();
     caretCache_.SetSourceText(sourceText_);
     caretCache_.SetSyntaxRevealed(sourceMode_);
@@ -1385,42 +1366,42 @@ void MacRenderer::BuildCaretCache() {
     }
 }
 
-uint32_t MacRenderer::HitTestPoint(float x, float y) const {
+uint32_t DocumentRenderer::HitTestPoint(float x, float y) const {
     uint32_t offset = 0;
     return PointToOffset(x, y, &offset) ? offset : UINT32_MAX;
 }
 
-bool MacRenderer::PointToOffset(float x, float y, uint32_t* outOffset) const {
+bool DocumentRenderer::PointToOffset(float x, float y, uint32_t* outOffset) const {
     const uint32_t at = caretCache_.PointToOffsetNearestLine(x, y);
     if (at == UINT32_MAX) return false;
     if (outOffset) *outOffset = caretCache_.NormalizeToRenderedCaret(at);
     return true;
 }
 
-uint32_t MacRenderer::NormalizeToRenderedCaret(uint32_t offset) const {
+uint32_t DocumentRenderer::NormalizeToRenderedCaret(uint32_t offset) const {
     return caretCache_.NormalizeToRenderedCaret(offset);
 }
 
-bool MacRenderer::OffsetIsRendered(uint32_t offset) const {
+bool DocumentRenderer::OffsetIsRendered(uint32_t offset) const {
     return caretCache_.OffsetIsRendered(offset);
 }
 
-bool MacRenderer::RangeIsRendered(uint32_t start, uint32_t length) const {
+bool DocumentRenderer::RangeIsRendered(uint32_t start, uint32_t length) const {
     return caretCache_.RangeIsRendered(start, length);
 }
 
-bool MacRenderer::ClipToRendered(uint32_t start, uint32_t length,
+bool DocumentRenderer::ClipToRendered(uint32_t start, uint32_t length,
                                  uint32_t* outStart, uint32_t* outEnd) const {
     return caretCache_.ClipToRendered(start, length, outStart, outEnd);
 }
 
-uint32_t MacRenderer::StepGrapheme(uint32_t offset, bool left) const {
+uint32_t DocumentRenderer::StepGrapheme(uint32_t offset, bool left) const {
     // One step through the drawn text: the shared model crosses the
     // markers around a cluster and never leaves a cell.
     return caretCache_.StepRendered(offset, left);
 }
 
-uint32_t MacRenderer::StepWord(uint32_t offset, bool left) const {
+uint32_t DocumentRenderer::StepWord(uint32_t offset, bool left) const {
     if (!sourceText_) return offset;
     const uint32_t clamped = caretCache_.NormalizeToRenderedCaret(offset);
     const uint32_t target = left
@@ -1429,12 +1410,12 @@ uint32_t MacRenderer::StepWord(uint32_t offset, bool left) const {
     return caretCache_.NormalizeToRenderedCaret(target);
 }
 
-uint32_t MacRenderer::LineBoundary(uint32_t offset, bool end) const {
+uint32_t DocumentRenderer::LineBoundary(uint32_t offset, bool end) const {
     return end ? MoveLineEnd(caretCache_, offset)
                : MoveLineStart(caretCache_, offset);
 }
 
-float MacRenderer::TextBottom() const {
+float DocumentRenderer::TextBottom() const {
     float bottom = 0.0f;
     for (const BlockLayout& bl : caretCache_.Blocks()) {
         float height = bl.height;
@@ -1444,7 +1425,7 @@ float MacRenderer::TextBottom() const {
     return bottom;
 }
 
-bool MacRenderer::LineRangeAtPoint(float x, float y, uint32_t* outStart,
+bool DocumentRenderer::LineRangeAtPoint(float x, float y, uint32_t* outStart,
                                    uint32_t* outEnd) const {
     // The x is ignored on purpose: a click in the margin is level with
     // a line, and the line is what the user wants to select.
@@ -1454,7 +1435,7 @@ bool MacRenderer::LineRangeAtPoint(float x, float y, uint32_t* outStart,
     return caretCache_.GetLineRangeAtY(block, y, outStart, outEnd);
 }
 
-bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
+bool DocumentRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
                                float* outWidth, float* outHeight) const {
     float x = 0.0f;
     float y = 0.0f;
@@ -1469,7 +1450,7 @@ bool MacRenderer::OffsetToRect(uint32_t offset, float* outX, float* outY,
     return true;
 }
 
-bool MacRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
+bool DocumentRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
                                    uint32_t* outOffset) const {
     if (delta == 0 || !outOffset) return false;
     // The page as the one shared step reads it: the cache's bands, and
@@ -1499,12 +1480,12 @@ bool MacRenderer::VerticalNeighbour(uint32_t offset, float desiredX, int delta,
     return true;
 }
 
-std::vector<Rect> MacRenderer::SelectionRects(uint32_t start,
+std::vector<Rect> DocumentRenderer::SelectionRects(uint32_t start,
                                                uint32_t end) const {
     return RectsForRange(start, end);
 }
 
-std::vector<Rect> MacRenderer::RectsForRange(uint32_t start,
+std::vector<Rect> DocumentRenderer::RectsForRange(uint32_t start,
                                              uint32_t end) const {
     std::vector<Rect> rects;
     for (const LaidOutBlock& block : blocks_) {
@@ -1515,7 +1496,7 @@ std::vector<Rect> MacRenderer::RectsForRange(uint32_t start,
     return rects;
 }
 
-void MacRenderer::AppendRangeRects(const std::vector<TextLine>& lines,
+void DocumentRenderer::AppendRangeRects(const std::vector<TextLine>& lines,
                                     const std::vector<uint32_t>& visToSrc,
                                     float x, float top, uint32_t start,
                                     uint32_t end,
@@ -1533,7 +1514,7 @@ void MacRenderer::AppendRangeRects(const std::vector<TextLine>& lines,
                              rects, align, innerWidth, trimBlanks);
 }
 
-std::vector<Rect> MacRenderer::RectsForRangeInBlock(const LaidOutBlock& block,
+std::vector<Rect> DocumentRenderer::RectsForRangeInBlock(const LaidOutBlock& block,
                                                      uint32_t start,
                                                      uint32_t end,
                                                      bool trimBlanks) const {

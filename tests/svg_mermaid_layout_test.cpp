@@ -106,7 +106,7 @@ TEST(SvgMermaidLayout, MermaidFlowchartChargesTheSharedLayout) {
     float y = 0.0f;
     layout::LaidBlock b = layout::LayoutMermaidBlock(rig.ctx, n, 1, &y);
 
-    // The mac measure rule (renderer_mac.cpp 1042-1048): 288 of padded
+    // The shared measure rule: 288 of padded
     // column halves a 576 wide diagram, the pads stay fixed, and the
     // charged width equals the column the fit filled.
     mermaid::MermaidRender d;  // the dispatch the module mirrors

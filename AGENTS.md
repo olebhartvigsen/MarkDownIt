@@ -111,10 +111,13 @@ The document goes through the same steps on both platforms:
    as data, no platform handles.
 3. `display::Play` (`src/layout/display_player.cpp`) replays the list
    onto any `RenderTarget`.
-4. The platform renderer (`src/renderer.cpp` on Windows,
-   `src/macos/renderer_mac.cpp` on macOS) owns what is native: the
-   target, scrolling, the caret and the platform painters for Mermaid
-   and SVG. It does not own measuring or block placement.
+4. The document renderer (`src/document_renderer.cpp`) owns the frame,
+   the surface replay order and the caret queries over the display list,
+   and both ports compile it. The shells own what is native: the target,
+   scrolling, the image fetch and the platform services. `src/renderer.cpp`
+   is the Windows shell and still keeps its own Direct2D frame until it
+   adopts the shared one. A renderer shell does not own measuring or
+   block placement.
 
 Rules that follow from this:
 
@@ -247,9 +250,11 @@ one, look for a part you can move into shared code.
 
 - App shells: `src/app.cpp` against `src/macos/app_mac.cpp` and
   `main_mac.mm`.
-- Renderer shells: `renderer.cpp` against `renderer_mac.cpp`. All five Mermaid
-  kinds, the flowchart included, paint through `src/mermaid/painter.cpp` on both
-  ports (plan 2.2, slice 6).
+- Renderer shells: `renderer.cpp` is the Windows shell and still owns its own
+  Direct2D frame; the mac frame is the shared `src/document_renderer.cpp`
+  (plan 2.2, slice 10). All five Mermaid kinds, the flowchart included, paint
+  through `src/mermaid/painter.cpp` on both ports (slice 6). Do not fork the
+  document renderer back into a mac file.
 - Chrome, settings, clipboard, find bar and outline pane widgets.
 
 Open migration steps and the reasoning behind them are in
@@ -264,7 +269,7 @@ Open migration steps and the reasoning behind them are in
 | File or group | What it holds |
 |---------------|---------------|
 | `parser.*`, `dom.h` | md4c bridge and the flat node list |
-| `layout/` | shared block layout, display list, player, selection rectangles |
+| `layout/` | shared block layout, display list, player, selection rectangles, the inline code pills (`layout/chips.*`) and the frame (`layout/frame.*`) |
 | `layoutcache.*`, `textlayout.h` | per-block layout cache and the UTF-16 text layout seam |
 | `theme.h`, `markdown_style.h`, `blockspacing.h` | tokens, the three styles, block gaps |
 | `textbuffer.*`, `editcontroller.*`, `undostack.*`, `caret.h` | the edit surface |
@@ -275,6 +280,8 @@ Open migration steps and the reasoning behind them are in
 | `documentfile.*`, `clipboard.*`, `settings.*`, `textenc.h` | file decoding, clipboard logic, settings struct, text encoding |
 | `csv.*`, `csvdocument.*`, `documentparse.*` | the CSV reader, the CSV to table node bridge, and the one kind switch both ports parse through |
 | `filewatch_model.h` | when a change on disk means a reload, a question, or nothing |
+| `document_renderer.*` | the frame of one laid out document: the replay, the overlays, the caret records and the editor queries, drawn through the seams |
+| `imagerender.h`, `svgscene.h`, `qa_strings.cpp` | the image and SVG rasterizer seams, and the QA lines the document renderer formats |
 | `welcome_screen.*` | the home screen (a new document, an open one, the recent files), drawn through the seams |
 | `svgtext.*`, `svgtypes.h`, `src/macos/svg_mac.cpp` | the SVG reader shared by both ports |
 | `mermaid.*`, `mermaidlayout.*`, `diagramcache.*`, `mermaid/` | Mermaid parsers, layouts, the dagre port, the diagram cache |
@@ -305,7 +312,7 @@ Open migration steps and the reasoning behind them are in
 |---------------|---------------|
 | `main_mac.mm`, `app_mac.*` | the application, the window, the selectors |
 | `content_view_mac.*`, `content_nsview_mac.h`, `outline_nsview_mac.*` | the AppKit views |
-| `renderer_mac.*` | the renderer shell (the Mermaid painter is shared, `src/mermaid/painter.*`) |
+| `image_source_mac.h` | the renderer's asynchronous image service, `ImageCache` behind `platform::ImageSource` |
 | `text_engine_mac.*`, `cg_target_mac.h`, `fonts_mac.*`, `textlayout_coretext.cpp` (in `src/`) | the seam adapters |
 | `menu_mac.*`, `toolbar_mac.*`, `table_picker_mac.*`, `zoom_hud_mac.*` | native chrome |
 | `findbar_mac.*`, `outline_pane_mac.*` | find bar and outline pane |
