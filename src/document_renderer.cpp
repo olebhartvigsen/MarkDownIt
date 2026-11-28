@@ -74,6 +74,28 @@ constexpr float kNoWrapContentWidthDip = 10000.0f;
 // same places.
 constexpr float kPtToDip = 96.0f / 72.0f;
 
+// A cheap digest of what the walk reads from the document, so a reused
+// layout can never outlive an edit made in place. The same fields and the
+// same mixing the Windows shell's layout cache uses.
+uint64_t LayoutFingerprint(const Document& doc) {
+    uint64_t h = 1469598103934665603ull;
+    const auto mix = [&h](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
+    mix(doc.nodes.size());
+    for (const Node& n : doc.nodes) {
+        mix(static_cast<uint64_t>(n.block));
+        mix(n.srcOffset);
+        mix(n.srcLength);
+        mix(n.raw.size());
+        mix(n.children.size());
+        mix(n.rows.size());
+        for (const InlineBlock& c : n.children) {
+            mix(c.text.size());
+            mix(c.srcLength);
+        }
+    }
+    return h;
+}
+
 // The rule room under an H1 or H2: GitHub pads the heading by .3em
 // and draws a 1px border under the padding. Those two values live in
 // LayoutMetrics (theme.h), shared with the Windows renderer.
@@ -243,6 +265,18 @@ void DocumentRenderer::ApplyLineSpacing(std::vector<TextLine>* lines, float ptSi
 }
 
 float DocumentRenderer::Measure(const Document& doc, float widthDip) {
+    // A scroll frame asks the question the last frame answered. While
+    // every input that shaped it is unchanged the layout is handed back
+    // untouched, which is what keeps a reused scroll frame from walking
+    // the document twice.
+    const uint64_t fingerprint = LayoutFingerprint(doc);
+    if (layoutReuse_ && hasMeasureKey_ && measuredDoc_ == &doc &&
+        measuredWidth_ == widthDip &&
+        measuredFingerprint_ == fingerprint &&
+        measuredEpoch_ == themeEpoch_) {
+        return totalHeight_;
+    }
+
     blocks_.clear();
     caretRecords_.clear();
     displayList_ = display::DisplayList{};
@@ -270,10 +304,16 @@ float DocumentRenderer::Measure(const Document& doc, float widthDip) {
     widestRight_ = 0.0f;
     contentWidth_ = wrap_ ? widthDip - pad * 2.0f
                           : kNoWrapContentWidthDip;
+    // The width mode's cap, the Windows reading measure: a capped column
+    // is narrower than the pane and is centred in it.
+    if (wrap_ && metrics_.maxContentWidth > 0.0f &&
+        contentWidth_ > metrics_.maxContentWidth) {
+        contentWidth_ = metrics_.maxContentWidth;
+    }
     if (contentWidth_ <= 0.0f) {
         contentWidth_ = 1.0f;
     }
-    originX_ = pad;
+    originX_ = wrap_ ? (widthDip - contentWidth_) * 0.5f : pad;
 
     float y = metrics_.padTop;
 
@@ -287,6 +327,12 @@ float DocumentRenderer::Measure(const Document& doc, float widthDip) {
                            SourceViewTextWidth(contentWidth_, metrics_), &y);
         totalHeight_ = y + metrics_.padTop * 2.0f;
         BuildCaretCache();
+        hasMeasureKey_ = true;
+        measuredDoc_ = &doc;
+        measuredWidth_ = widthDip;
+        measuredFingerprint_ = fingerprint;
+        measuredPadding_ = pad;
+        measuredEpoch_ = themeEpoch_;
         return totalHeight_;
     }
 
@@ -377,6 +423,12 @@ float DocumentRenderer::Measure(const Document& doc, float widthDip) {
     // Without this its right-hand part could not be reached.
     widestRight_ = displayList_.width;
     if (widestRight_ > contentWidth_) contentWidth_ = widestRight_;
+    hasMeasureKey_ = true;
+    measuredDoc_ = &doc;
+    measuredWidth_ = widthDip;
+    measuredFingerprint_ = fingerprint;
+    measuredPadding_ = pad;
+    measuredEpoch_ = themeEpoch_;
     return totalHeight_;
 }
 
@@ -388,6 +440,7 @@ void DocumentRenderer::SetContentWidthMode(int mode) {
     }
     contentWidthMode_ = mode;
     metrics_ = ComputeMetrics();
+    ++themeEpoch_;
 }
 
 // A page's layout, taken outside the frame's own: the walk runs at 100% in
@@ -420,8 +473,19 @@ std::shared_ptr<const layout::DocumentLayout> DocumentRenderer::PrintLayout(
 
 LayoutMetrics DocumentRenderer::ComputeMetrics() const {
     LayoutMetrics m = ScaleMetrics(baseMetrics_, zoom_);
-    // The mac pane stretches to the window and has no width mode. Leave
-    // the shared cap untouched, but never consult it in this renderer.
+    // The width mode's cap, the same numbers the Windows shell's settings
+    // use: 0 is the standard 800 point measure, 1 and 2 the two wider
+    // ones, and 3 the full pane. A mode-3 shell lays out at the full
+    // width exactly as before.
+    if (contentWidthMode_ == 0) {
+        m.maxContentWidth = 800.0f * zoom_;
+    } else if (contentWidthMode_ == 1) {
+        m.maxContentWidth = 960.0f * zoom_;
+    } else if (contentWidthMode_ == 2) {
+        m.maxContentWidth = 1600.0f * zoom_;
+    } else {
+        m.maxContentWidth = 100000.0f;
+    }
     return m;
 }
 
@@ -429,6 +493,7 @@ float DocumentRenderer::EffectivePadX(float widthDip) const {
     // A narrow pane gives the measure its room back: the side padding
     // slides from the theme's own value down to 16 as the pane narrows
     // under 640, the way the guideline asks a column to keep its width.
+    if (!narrowPadSlide_) return metrics_.padX;
     const float narrow = 16.0f * zoom_;
     if (widthDip >= 640.0f) return metrics_.padX;
     const float t = std::max(0.0f, (widthDip - 400.0f) / 240.0f);
@@ -585,6 +650,7 @@ void DocumentRenderer::AppendBlockFromLaid(const Document& doc,
     // the hits and the app layers keep reading the same geometry.
     LaidOutBlock block;
     block.node = &node;
+    block.nodeIndex = lb.nodeIndex;
     block.kind = lb.kind;
     block.level = lb.level;
     block.x = originX_ + lb.x;
@@ -872,6 +938,8 @@ void DocumentRenderer::PaintOverlays(float scrollOffset) {
 void DocumentRenderer::Render(const Document& doc, float scrollOffset,
                               float scrollOffsetX) {
     svgLinkAreas_.clear();
+    lastScrollX_ = scrollOffsetX;
+    lastScrollY_ = scrollOffset;
     (void)doc;
     if (!target_) return;
 
@@ -895,6 +963,27 @@ void DocumentRenderer::Render(const Document& doc, float scrollOffset,
     // again after the replay, above that surface (below).
     PaintMarkerHighlights(scrollOffset);
     PaintSearchHighlights(scrollOffset);
+
+    // The selection of the running text. It goes down before the pills,
+    // because one body means one order and the order comes from the
+    // display list: a selection that covers an inline code span sits
+    // under the pill on both ports (owner decision, 2026-11-28). A code
+    // card and a table row paint their own opaque surface after this,
+    // so their washes and their selection run again above it below.
+    if (hasSelection_) {
+        for (const LaidOutBlock& block : blocks_) {
+            if (block.kind == BlockKind::CodeBlock ||
+                block.kind == BlockKind::Table) {
+                continue;
+            }
+            for (const Rect& rect :
+                 RectsForRangeInBlock(block, selFrom_, selTo_)) {
+                Rect drawn = rect;
+                drawn.y -= scrollOffset;
+                target_->FillRect(drawn, selColour_);
+            }
+        }
+    }
 
     // The inline code pills of the whole list: opaque pills laid over
     // the surfaces the replay will draw (none of them under a plain text
@@ -1051,7 +1140,10 @@ void DocumentRenderer::PaintTableRowHighlights(const LaidOutBlock& block,
                                            std::size_t row,
                                            float rowTop, float rowHeight,
                                            float scrollOffset) {
-    if (!target_ || (markers_.empty() && searchMatches_.empty())) return;
+    if (!target_ ||
+        (markers_.empty() && searchMatches_.empty() && !hasSelection_)) {
+        return;
+    }
     if (!block.table || row >= block.tableLayout.rows.size()) return;
 
     // A row's washes are its cells' washes. Each cell is one region with
@@ -1077,6 +1169,23 @@ void DocumentRenderer::PaintTableRowHighlights(const LaidOutBlock& block,
                             innerW, cells[c].srcCellStart, cells[c].srcCellEnd,
                             scrollOffset, /*withMarkers=*/true,
                             /*withSearch=*/true);
+    }
+
+    // The row's share of the selection, above the opaque stripe the
+    // replay drew and under the cell pills the row's overlay paints
+    // next, the one order both ports share now. The rectangle rule is
+    // the same one the running text uses; the row band keeps a rect
+    // from a neighbouring row out of this pass.
+    if (hasSelection_) {
+        for (const Rect& rect : RectsForRangeInBlock(block, selFrom_, selTo_)) {
+            if (rect.y + rect.height <= rowTop ||
+                rect.y >= rowTop + rowHeight) {
+                continue;
+            }
+            Rect drawn = rect;
+            drawn.y -= scrollOffset;
+            target_->FillRect(drawn, selColour_);
+        }
     }
 }
 
@@ -1336,7 +1445,7 @@ void DocumentRenderer::AppendCaretRecords(const LaidOutBlock& block) {
                     cell.srcCellEnd > cell.srcCellStart
                         ? cell.srcCellEnd - cell.srcCellStart : 0,
                     cell.srcCellStart, cell.srcCellEnd, true, cell.align, -1.0f,
-                    0, 0.0f, cell.visToSrc, cell.visToSrcEnd));
+                    block.nodeIndex, 0.0f, cell.visToSrc, cell.visToSrcEnd));
             }
             rowTop += rowH;
         }
@@ -1350,7 +1459,7 @@ void DocumentRenderer::AppendCaretRecords(const LaidOutBlock& block) {
         block.lines, TextX(block), TextTop(block), TextWidth(block),
         caret::LinesHeight(block.lines, 0.0f),
         start, end > start ? end - start : 0, start, end, false,
-        ColumnAlign::Default, block.x, 0, 0.0f, block.visToSrc,
+        ColumnAlign::Default, block.x, block.nodeIndex, 0.0f, block.visToSrc,
         block.visToSrcEnd));
 }
 
@@ -1549,6 +1658,59 @@ std::vector<Rect> DocumentRenderer::RectsForRangeInBlock(const LaidOutBlock& blo
         }
     }
     return rects;
+}
+
+float DocumentRenderer::ContentWidthDip(float viewportWidthDip) const {
+    // What Measure would draw at this pane width, extended to the widest
+    // picture the last walk met: the horizontal scroll range.
+    const float pad = EffectivePadX(viewportWidthDip);
+    float width = wrap_ ? viewportWidthDip - pad * 2.0f
+                        : kNoWrapContentWidthDip;
+    if (wrap_ && metrics_.maxContentWidth > 0.0f &&
+        width > metrics_.maxContentWidth) {
+        width = metrics_.maxContentWidth;
+    }
+    if (width <= 0.0f) width = 1.0f;
+    if (contentWidth_ > width) width = contentWidth_;
+    return width;
+}
+
+bool DocumentRenderer::SvgLinkAt(float docX, float docY,
+                                 std::string* href) const {
+    // The areas are in the frame's own space, the one the last Render
+    // painted in, so the document point loses the scroll first.
+    return SvgLinkInView(docX - lastScrollX_, docY - lastScrollY_, href);
+}
+
+float DocumentRenderer::MeasureSourceView(const std::string& src,
+                                          float widthDip) {
+    // The raw buffer is the document here: one monospaced block whose
+    // map to the source is the identity. The string is borrowed, the
+    // same contract SetSourceText carries.
+    sourceText_ = &src;
+    caretCache_.SetSourceText(&src);
+    sourceMode_ = true;
+    caretCache_.SetSyntaxRevealed(true);
+    static const Document kNoDocument;
+    return Measure(kNoDocument, widthDip);
+}
+
+float DocumentRenderer::RenderSourceView(const std::string& src, float widthDip,
+                                         float scrollOffsetY,
+                                         float topOffsetDip,
+                                         float scrollOffsetX) {
+    if (!target_) return 0.0f;
+    const float height = MeasureSourceView(src, widthDip);
+
+    // A shell that draws below a ribbon hands the offset in; the frame
+    // itself starts at the top of its own surface.
+    RenderTarget* const outer = target_;
+    platform::OffsetTarget shifted(target_, 0.0f, topOffsetDip);
+    if (topOffsetDip != 0.0f) target_ = &shifted;
+    static const Document kNoDocument;
+    Render(kNoDocument, scrollOffsetY, scrollOffsetX);
+    target_ = outer;
+    return height + topOffsetDip;
 }
 
 }  // namespace platform

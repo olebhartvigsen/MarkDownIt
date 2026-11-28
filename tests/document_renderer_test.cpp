@@ -13,6 +13,7 @@
 #include "../src/layoutcache.h"
 #include "document_renderer.h"
 #include "../src/macos/svg_mac.h"
+#include "../src/layout/text_runs.h"
 #include "../src/parser.h"
 
 #include <cmath>
@@ -409,13 +410,21 @@ TEST(DocumentRenderer, FollowsTheWindowWidth) {
     EXPECT_NEAR(renderer.blocks()[0].x, narrowPad, 0.01f);
 
     // A window well past the old desktop width still gets the whole
-    // column. The shared Windows width modes must not creep back in as a
-    // cap on the mac pane.
+    // column: the default mode is the full pane, the mac rule.
     const float kVeryWide = 2200.0f - 2.0f * kPadX;
     renderer.Measure(doc, 2200.0f);
     EXPECT_NEAR(renderer.contentWidth(), kVeryWide, 0.01f);
     EXPECT_NEAR(renderer.blocks()[0].width, kVeryWide, 0.01f);
+
+    // The width modes are shared with the Windows shell now (plan 2.2,
+    // the mechanical parity items): mode 0 caps the column at 800 points
+    // and centres it in the pane, mode 3 leaves the pane alone.
     renderer.SetContentWidthMode(0);
+    renderer.Measure(doc, 2200.0f);
+    EXPECT_NEAR(renderer.contentWidth(), 800.0f, 0.01f);
+    EXPECT_NEAR(renderer.blocks()[0].x, (2200.0f - 800.0f) * 0.5f, 0.01f);
+    EXPECT_NEAR(renderer.blocks()[0].width, 800.0f, 0.01f);
+    renderer.SetContentWidthMode(3);
     renderer.Measure(doc, 2200.0f);
     EXPECT_NEAR(renderer.contentWidth(), kVeryWide, 0.01f);
 
@@ -2286,4 +2295,99 @@ TEST(DocumentRenderer, VerticalCaretKnowsWhichSideOfAWrapItIsOn) {
     uint32_t further = UINT32_MAX;
     ASSERT_TRUE(renderer.VerticalNeighbour(up, bx, -1, &further));
     EXPECT_LT(further, up);
+}
+
+TEST(DocumentRenderer, PaintsTheSelectionUnderTheInlinePill) {
+    // One body means one layer order, and the order is the display
+    // list's: the selection wash goes down before the inline code pills
+    // (owner decision, 2026-11-28). A code span inside the selection
+    // keeps its pill readable, and the wash shows on both sides of it.
+    FakeEngine engine;
+    DocumentRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    RecordingTarget target;
+    renderer.SetRenderTarget(&target);
+
+    const std::string markdown = "before `code` after\n";
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(markdown, doc));
+    renderer.Measure(doc, 700.0f);
+    renderer.SetSelection(0, static_cast<uint32_t>(markdown.size()),
+                          layout::ToColor(BasePalette().selectionBg));
+    renderer.Render(doc, 0.0f);
+
+    int wash = -1;
+    int pill = -1;
+    for (std::size_t i = 0; i < target.fills.size(); ++i) {
+        if (wash < 0 && SameColor(target.fills[i].color,
+                                  BasePalette().selectionBg)) {
+            wash = static_cast<int>(i);
+        }
+        if (pill < 0 &&
+            SameColor(target.fills[i].color, BasePalette().inlineCodeBg)) {
+            pill = static_cast<int>(i);
+        }
+    }
+    EXPECT_GE(wash, 0);
+    EXPECT_GE(pill, 0);
+    EXPECT_LT(wash, pill);
+}
+
+TEST(DocumentRenderer, PaintsTheSelectionInsideATableCell) {
+    // The row stripe is opaque and the replay draws it after the global
+    // washes, so a cell's selection has to run again above the stripe,
+    // under the cell pills and the cell words.
+    FakeEngine engine;
+    DocumentRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    RecordingTarget target;
+    renderer.SetRenderTarget(&target);
+
+    const std::string markdown =
+        "| a | b |\n|---|---|\n| one | two |\n";
+    Document doc;
+    ASSERT_TRUE(ParseMarkdown(markdown, doc));
+    renderer.Measure(doc, 600.0f);
+    const std::size_t start = markdown.find("one");
+    ASSERT_TRUE(start != std::string::npos);
+    renderer.SetSelection(static_cast<uint32_t>(start),
+                          static_cast<uint32_t>(start + 3),
+                          layout::ToColor(BasePalette().selectionBg));
+    renderer.Render(doc, 0.0f);
+
+    EXPECT_FALSE(renderer.blocks().empty());
+    if (renderer.blocks().empty()) return;
+    const LaidOutBlock& table = renderer.blocks()[0];
+    ASSERT_EQ(table.kind, BlockKind::Table);
+    int wash = -1;
+    for (std::size_t i = 0; i < target.fills.size(); ++i) {
+        const RecordingTarget::Fill& fill = target.fills[i];
+        if (!SameColor(fill.color, BasePalette().selectionBg)) continue;
+        if (fill.rect.y < table.y || fill.rect.y > table.y + table.height) {
+            continue;
+        }
+        wash = static_cast<int>(i);
+        EXPECT_GT(fill.rect.width, 1.0f);
+        break;
+    }
+    EXPECT_GE(wash, 0);
+}
+
+TEST(DocumentRenderer, KeepsTheThemePadAtEveryWidthWhenTold) {
+    // The Windows shell keeps the theme padding at every pane width and
+    // centres a capped column instead. The class takes that rule from
+    // the shell so both ports keep the pixels they had.
+    FakeEngine engine;
+    DocumentRenderer renderer;
+    renderer.SetTextEngine(&engine);
+    renderer.SetTheme(BaseMetrics(), BasePalette());
+    renderer.SetNarrowPadSlide(false);
+
+    const Document doc = Doc({Para("body text")});
+    renderer.Measure(doc, 500.0f);
+    ASSERT_EQ(renderer.blocks().size(), 1u);
+    EXPECT_NEAR(renderer.blocks()[0].x, kPadX, 0.01f);
+    EXPECT_NEAR(renderer.contentWidth(), 500.0f - 2.0f * kPadX, 0.01f);
 }

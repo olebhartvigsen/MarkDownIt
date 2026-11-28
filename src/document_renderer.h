@@ -36,6 +36,9 @@ namespace platform {
 struct LaidOutBlock {
     // The block this came from.
     const Node* node = nullptr;
+    // The index of that node in the document, which the app's outline and
+    // the caret's navigation read off the caret records.
+    size_t nodeIndex = 0;
     // The y of the block's top, relative to the document.
     float y = 0.0f;
     // The height of the block.
@@ -133,6 +136,7 @@ public:
     void SetZoom(float zoom) {
         zoom_ = zoom;
         metrics_ = ComputeMetrics();
+        ++themeEpoch_;
         // The diagrams are measured at the new zoom from now on. The
         // cache is keyed by source and zoom, so this is hygiene.
         mermaid_layout_cache_.Clear();
@@ -146,15 +150,31 @@ public:
     // With the wrap off the text is laid out on one very wide line and
     // the user scrolls to its end, the same way the Windows renderer
     // does it.
-    void SetWrap(bool wrap) { wrap_ = wrap; }
+    void SetWrap(bool wrap) {
+        wrap_ = wrap;
+        ++themeEpoch_;
+    }
 
     // Whether the text is wrapped.
     bool Wrap() const { return wrap_; }
 
+    // When true (the default) the side padding slides down to a narrow
+    // pane minimum below 640 points, the mac rule. A shell that keeps
+    // the theme padding at every width turns it off; the Windows shell
+    // does, because its column is capped and centred there instead.
+    void SetNarrowPadSlide(bool on) { narrowPadSlide_ = on; }
+
+    // True when the shell only scrolled: the last layout may be handed
+    // back while every input that shaped it is unchanged. Any other
+    // repaint lays out afresh, so an edit or a resize can never see a
+    // stale layout.
+    void SetLayoutReuse(bool on) { layoutReuse_ = on; }
+
     // Sets the width of the text column.
     //
     // The modes are the ones the settings keep: 0 is the standard
-    // width, 3 is the full window width.
+    // width, 3 is the full window width. A capped mode centres its
+    // column in the view, the Windows reading measure.
     void SetContentWidthMode(int mode);
 
     // Says whether the document is a standalone SVG file, which is
@@ -190,6 +210,7 @@ public:
     void SetSourceMode(bool on) {
         sourceMode_ = on;
         caretCache_.SetSyntaxRevealed(on);
+        ++themeEpoch_;
     }
     bool inSourceMode() const { return sourceMode_; }
 
@@ -198,6 +219,7 @@ public:
     void SetTheme(const LayoutMetrics& metrics, const Palette& palette) {
         baseMetrics_ = metrics;
         metrics_ = ComputeMetrics();
+        ++themeEpoch_;
         palette_ = palette;
         // The SVG scenes were read with the previous appearance, and a
         // light-dark() colour is baked in at read time. Dropping them is
@@ -359,7 +381,10 @@ public:
     // the caret has a place to sit. While reading it renders as a thin
     // strip, so the blank lines in the source do not open wide holes
     // around lists in the text.
-    void SetEditing(bool on) { editing_ = on; }
+    void SetEditing(bool on) {
+        editing_ = on;
+        ++themeEpoch_;
+    }
 
     // The band a table keeps at the viewport's top edge. The view calls it
     // after the page, with the visible top in the page's coordinates: only
@@ -408,6 +433,45 @@ public:
     // cannot know its size. The content view lays the document out
     // again when this turns true, so the image gets the room it needs.
     bool NeedsLayout() const { return needsLayout_; }
+
+    // The drawn content width at the current zoom: the capped column the
+    // width mode allows, extended to the right edge of the widest picture
+    // when one is wider than the column. It is the horizontal scroll
+    // range, so it has to describe what Render paints.
+    float ContentWidthDip(float viewportWidthDip) const;
+
+    // Drops the parsed SVG scenes, so the next frame reads them again
+    // (the appearance changed, or the file did).
+    void ClearSvgCache() { svgDocs_.clear(); }
+
+    // Clears the find highlights without touching the marker layer.
+    void ClearSearchMatches() { SetSearchMatches(nullptr, -1); }
+
+    // The link of a picture under a document point, the space before the
+    // scroll. The areas were recorded by the last frame.
+    bool SvgLinkAt(float docX, float docY, std::string* href) const;
+
+    // The raw source view: the whole buffer in one monospaced block, so
+    // every byte is addressable by the caret and the find scope, with the
+    // selection and the washes under the glyphs. MeasureSourceView lays it
+    // out; RenderSourceView paints it and answers the height the app
+    // scrolls. The string is borrowed, the way SetSourceText borrows it.
+    float MeasureSourceView(const std::string& src, float widthDip);
+    float RenderSourceView(const std::string& src, float widthDip,
+                           float scrollOffsetY, float topOffsetDip = 0.0f,
+                           float scrollOffsetX = 0.0f);
+
+    // The layers above the replayed surface: the washes of the opaque
+    // card and table row re-run, the selection and the code card's words,
+    // and the diagrams and pictures, each at its own band.
+    void PaintOverlays(float scrollOffset);
+
+    // Draws the table layers that sit above the replayed stripe and
+    // grid: the row washes, the code chips of the cells, and the cell
+    // glyphs above them. The stripe is opaque, so every washed row runs
+    // again; the chips and the glyphs re-run with them because the
+    // replayed text sits under the chips it needs a background for.
+    void PaintTableOverlays(const LaidOutBlock& block, float scrollOffset);
 
 private:
     // The line the caret at a soft wrap is drawn on, see the setter.
@@ -527,18 +591,6 @@ private:
     // down to a narrow-window minimum as the pane narrows.
     float EffectivePadX(float widthDip) const;
 
-    // The layers above the replayed surface: the washes of the opaque
-    // card and table row re-run, the selection and the code card's words,
-    // and the diagrams and pictures, each at its own band.
-    void PaintOverlays(float scrollOffset);
-
-    // Draws the table layers that sit above the replayed stripe and
-    // grid: the row washes, the code chips of the cells, and the cell
-    // glyphs above them. The stripe is opaque, so every washed row runs
-    // again; the chips and the glyphs re-run with them because the
-    // replayed text sits under the chips it needs a background for.
-    void PaintTableOverlays(const LaidOutBlock& block, float scrollOffset);
-
     TextEngine* engine_ = nullptr;
     // The mermaid layouts measured at a zoom, keyed by fence source.
     // It is mutable because the layout pass caches what it measures.
@@ -610,8 +662,9 @@ private:
     float qaPinBlockHeight_ = 0.0f;
     float qaPinHeaderHeight_ = 0.0f;
     int qaPinTableBlocks_ = 0;
-    // The width of the text column.
-    int contentWidthMode_ = 0;
+    // The width of the text column. Full pane by default, the mac rule;
+    // a shell with the width setting turns the cap on per mode.
+    int contentWidthMode_ = 3;
     // The image service, which holds and fetches the document's pictures.
     ImageSource* images_ = &NoImageSource();
     // The ranges the find bar matched, and the one that is current.
@@ -643,6 +696,24 @@ private:
     int searchCurrent_ = -1;
     // The zoom of the document.
     float zoom_ = 1.0f;
+    // Whether the side padding slides below a narrow pane (the mac rule),
+    // and the theme epoch, bumped when the metrics change, so a reused
+    // layout can never outlive the numbers it was measured with.
+    bool narrowPadSlide_ = true;
+    int themeEpoch_ = 0;
+    // The scroll the last frame painted at, so a picture link can be
+    // answered from document coordinates.
+    float lastScrollX_ = 0.0f;
+    float lastScrollY_ = 0.0f;
+    // The inputs a layout was measured from, for SetLayoutReuse. A key
+    // that does not match rebuilds; only a scroll frame asks for reuse.
+    bool layoutReuse_ = false;
+    bool hasMeasureKey_ = false;
+    const Document* measuredDoc_ = nullptr;
+    uint64_t measuredFingerprint_ = 0;
+    float measuredWidth_ = -1.0f;
+    float measuredPadding_ = -1.0f;
+    int measuredEpoch_ = -1;
     // The source text, which the caret normalization reads to skip the
     // markers that follow a link. The App owns the string.
     const std::string* sourceText_ = nullptr;
