@@ -13,6 +13,7 @@
 
 #include "markdown_style.h"
 #include "thememode.h"
+#include "theme_aliases.h"
 
 #ifdef _WIN32
 #include <d2d1.h>
@@ -67,14 +68,22 @@ inline ThemeColor MakeColor(uint32_t rgb, float alpha = 1.0f) {
 // A palette colour as a 0xRRGGBB value, for the places that speak a
 // plain integer: the SVG transform, which rewrites markup, and any
 // token that has to cross a seam that carries no float colours.
+//
+// The mapping is theme::Rgb24Of (src/theme_aliases.h), which has no
+// platform type, so portable code can ask for it without a ThemeColor.
+// This wrapper is the theme's own spelling and stays as it was.
 inline uint32_t Rgb24(const ThemeColor& c) {
-    const auto channel = [](float v) {
-        if (v < 0.0f) v = 0.0f;
-        if (v > 1.0f) v = 1.0f;
-        return static_cast<uint32_t>(v * 255.0f + 0.5f);
-    };
-    return (channel(c.r) << 16) | (channel(c.g) << 8) | channel(c.b);
+    return theme::Rgb24Of(c.r, c.g, c.b);
 }
+
+// A theme font name as UTF-8, which is the form the text seam's
+// FontSpec family carries. The conversion is theme::FamilyUtf8
+// (src/theme_aliases.h): a pass-through on the UTF-8 alias and the
+// shared wide conversion on the wide one.
+inline std::string ThemeFamilyUtf8(const ThemeFontName& name) {
+    return theme::FamilyUtf8(name);
+}
+
 
 // The default font family names. Both platforms ask for the same
 // faces. The mac engine draws these names with the platform's own

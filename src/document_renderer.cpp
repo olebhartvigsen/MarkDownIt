@@ -84,12 +84,18 @@ constexpr float kPtToDip = 96.0f / 72.0f;
 // A font, in the layout unit. The family override names the face a
 // heading asks for: the theme spells semibold as a family of its own,
 // the way the Windows build spells it in its heading formats.
+//
+// The theme keeps a family in the platform's spelling (UTF-8 here and a
+// wide string on Windows), and the seam's FontSpec carries UTF-8, so
+// the shared helper does the mapping on both ports. No value changes:
+// it is the same name in the same bytes.
 FontSpec MakeFont(const LayoutMetrics& metrics, float size, bool bold,
                   bool italic, bool monospace,
                   const char* family = nullptr) {
     FontSpec font;
-    font.family = monospace ? metrics.codeFont
-                            : (family ? family : metrics.bodyFont);
+    font.family = monospace
+        ? ThemeFamilyUtf8(metrics.codeFont)
+        : (family ? std::string(family) : ThemeFamilyUtf8(metrics.bodyFont));
     font.size = size;
     font.bold = bold;
     font.italic = italic;
