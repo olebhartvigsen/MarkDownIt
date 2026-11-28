@@ -466,17 +466,6 @@ private:
                           float innerWidth = 0.0f,
                           bool trimBlanks = false) const;
 
-    // The rectangles a range of already-mapped visible text covers. The
-    // inline-code background uses this path: its children are laid out in
-    // visual order, so the span's drawn range is a sum of child lengths,
-    // not a source range that has to be mapped back through the markers.
-    void AppendVisibleRangeRects(const std::vector<TextLine>& lines, float x,
-                                  float top, uint32_t start, uint32_t end,
-                                  std::vector<Rect>* rects,
-                                  ColumnAlign align = ColumnAlign::Default,
-                                  float innerWidth = 0.0f,
-                                  bool trimBlanks = false) const;
-
     // Paints the marks of the find bar under the text.
     void PaintSearchHighlights(float scrollOffset);
 
@@ -509,15 +498,6 @@ private:
     // again; the chips and the glyphs re-run with them because the
     // replayed text sits under the chips it needs a background for.
     void PaintTableOverlays(const LaidOutBlock& block, float scrollOffset);
-
-    // Draws the background of the inline code spans of a block, behind
-    // its text.
-    void PaintInlineCodeBg(const LaidOutBlock& block,
-                           float scrollOffset) const;
-
-    // Draws the rounded fills behind a set of inline-code rectangles.
-    void PaintCodeRects(const std::vector<Rect>& rects,
-                        float scrollOffset) const;
 
     TextEngine* engine_ = nullptr;
     // The mermaid layouts measured at a zoom, keyed by fence source.
